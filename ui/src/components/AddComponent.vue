@@ -255,6 +255,7 @@ const addComponentObject = ref({
 const permissionOptions = [
     { label: 'Required', value: 'REQUIRED' },
     { label: 'Transient', value: 'TRANSIENT'},
+    { label: 'Job', value: 'JOB'},
     { label: 'Ignored', value: 'IGNORED'}
 ]
 

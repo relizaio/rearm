@@ -185,6 +185,17 @@ const INSTANCE_GQL_DATA = `
         targetRelease
         targetReleaseDetails {
             version
+            parentReleases {
+                release
+                releaseDetails {
+                    uuid
+                    version
+                    componentDetails {
+                        uuid
+                        name
+                    }
+                }
+            }
         }
         identifier
         configuration

@@ -588,6 +588,81 @@ const filteredUnmatchedReleases: ComputedRef<any[]> = computed((): any[] => {
     return list.filter((u: any) => u.namespace === selectedNamespace.value)
 })
 
+// Build the body for the bulls-eye Actual-column tooltip. Lists every
+// feature-set dependency with its target version, the actual deployed
+// version on this instance, and a per-component verdict. JOB-status
+// deps are flagged as "drift OK" (excluded from match by design);
+// TRANSIENT deps still get a check or X based on whether they actually
+// match the target (drift is allowed for them too, but seeing the
+// state is useful). REQUIRED deps drive the green/red overall icon
+// already; the per-row breakdown explains why.
+function buildMatchTooltipBody(row: any) {
+    const lines: any[] = []
+    const headerText = row.notMatchingSince
+        ? `Not matching since ${(new Date(row.notMatchingSince)).toLocaleString('en-CA')}`
+        : 'Matching'
+    lines.push(h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, headerText))
+
+    const deps = (row.featureSetDetails && row.featureSetDetails.dependencies) || []
+    const targetParents = (row.targetReleaseDetails && row.targetReleaseDetails.parentReleases) || []
+    const targetByComponent: Record<string, any> = {}
+    targetParents.forEach((p: any) => {
+        const compUuid = p.releaseDetails && p.releaseDetails.componentDetails && p.releaseDetails.componentDetails.uuid
+        if (compUuid) targetByComponent[compUuid] = p.releaseDetails
+    })
+    const actualReleases = (updatedInstance.value && updatedInstance.value.releases) || []
+    const actualByComponent: Record<string, any> = {}
+    actualReleases.forEach((r: any) => {
+        if (r.namespace !== row.namespace) return
+        const rd = r.releaseDetails
+        const compUuid = rd && rd.componentDetails && rd.componentDetails.uuid
+        if (compUuid && !actualByComponent[compUuid]) actualByComponent[compUuid] = rd
+    })
+
+    if (deps.length === 0) {
+        lines.push(h('div', { style: 'font-style: italic; color: #888;' }, '(feature set has no dependencies)'))
+        return lines
+    }
+
+    deps.forEach((dep: any) => {
+        if (dep.status === 'IGNORED') return // not in CDX, skip
+        const compUuid = dep.uuid
+        const tgt = targetByComponent[compUuid]
+        const act = actualByComponent[compUuid]
+        const compName = (tgt && tgt.componentDetails && tgt.componentDetails.name)
+            || (act && act.componentDetails && act.componentDetails.name)
+            || compUuid
+        const tgtV = tgt ? tgt.version : '—'
+        const actV = act ? act.version : '—'
+        const versionsMatch = tgt && act && tgt.uuid === act.uuid
+        let icon = '✓'
+        let iconColor = '#2da44e'
+        let note = ''
+        if (dep.status === 'JOB') {
+            icon = versionsMatch ? '✓' : '⏳'
+            iconColor = versionsMatch ? '#2da44e' : '#9a6700'
+            note = versionsMatch ? '' : ' (drift OK — schedule-driven, awaiting next run)'
+        } else if (dep.status === 'TRANSIENT') {
+            icon = versionsMatch || !act ? '✓' : '✗'
+            iconColor = (versionsMatch || !act) ? '#2da44e' : '#cf222e'
+            note = !versionsMatch && act ? ' (drift; TRANSIENT match allows asymmetry only)' : ''
+        } else {
+            icon = versionsMatch ? '✓' : '✗'
+            iconColor = versionsMatch ? '#2da44e' : '#cf222e'
+        }
+        const tag = dep.status && dep.status !== 'REQUIRED'
+            ? h('span', { style: 'margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: #e8f1ff; color: #1f5ad3; font-size: 10px; font-weight: 600;' }, dep.status)
+            : null
+        lines.push(h('div', { style: 'display: flex; align-items: center; gap: 8px; line-height: 1.5; white-space: nowrap;' }, [
+            h('span', { style: `color: ${iconColor}; font-weight: 700; min-width: 14px; flex: 0 0 14px;` }, icon),
+            h('span', { style: 'flex: 0 0 auto;' }, compName),
+            tag,
+            h('span', { style: 'color: #aaa; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis;' }, `actual ${actV} / target ${tgtV}${note}`)
+        ]))
+    })
+    return lines
+}
+
 const instanceData: ComputedRef<any> = computed((): any => store.getters.instanceById(instanceUuid, -1))
 const instanceWord: ComputedRef<any> = computed((): any => props.instanceType === InstanceType.CLUSTER ? 'Cluster' : 'Instance')
 const cluster: ComputedRef<any> = computed((): any => {
@@ -1371,7 +1446,10 @@ const matchedProductFields: any[] = [
 
             if(row.matchedRelease){
                 els.push(h(NTooltip, {
-                    trigger: 'hover'
+                    trigger: 'hover',
+                    placement: 'top',
+                    width: 720,
+                    style: { maxWidth: '720px' }
                 }, {
                     trigger: () => h(NIcon, {
                         size: 16,
@@ -1379,7 +1457,7 @@ const matchedProductFields: any[] = [
                     }, {
                         default: () => h(Target20Regular)
                     }),
-                    default: () => row.notMatchingSince ? 'Not Matching Since:' + (new Date(row.notMatchingSince)).toLocaleString('en-CA') : 'Matching'
+                    default: () => buildMatchTooltipBody(row)
                 }))
 
                 els.push(h('span', [

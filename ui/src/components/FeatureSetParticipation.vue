@@ -37,11 +37,12 @@ const props = defineProps<{
 const loading = ref(false)
 const rows = ref<any[]>([])
 
-type Status = 'REQUIRED' | 'TRANSIENT' | 'IGNORED'
+type Status = 'REQUIRED' | 'TRANSIENT' | 'JOB' | 'IGNORED'
 
 function statusRank (s: string): number {
-    if (s === 'REQUIRED') return 3
-    if (s === 'TRANSIENT') return 2
+    if (s === 'REQUIRED') return 4
+    if (s === 'TRANSIENT') return 3
+    if (s === 'JOB') return 2
     if (s === 'IGNORED') return 1
     return 0
 }
@@ -101,6 +102,7 @@ function deriveBranchStatus (featureSet: any): Status | null {
 function statusTagType (status: string): 'success' | 'info' | 'warning' | 'default' {
     if (status === 'REQUIRED') return 'success'
     if (status === 'TRANSIENT') return 'info'
+    if (status === 'JOB') return 'info'
     if (status === 'IGNORED') return 'warning'
     return 'default'
 }
