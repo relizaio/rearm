@@ -20,13 +20,26 @@
                     <em>Sample policies</em> for starter scaffolds.
                 </n-tooltip>
             </div>
-            <n-button @click="createNew" type="primary">+ New policy</n-button>
+            <n-space>
+                <!-- Populate Default Agent Policies — only when the org has
+                     none yet, mirroring the empty-state defaults button on
+                     the approval-policy side. Seeds a single starter policy
+                     that requires every agent session to file an orientation
+                     report (AGENTIC_REPORT artifact) before any of its
+                     commits can be attributed. -->
+                <n-button v-if="!loading && !policies.length && !populating"
+                          @click="populateDefaults" type="default">
+                    Populate Default Agent Policies
+                </n-button>
+                <n-button v-if="populating" type="default" loading>Populating…</n-button>
+                <n-button @click="createNew" type="primary">+ New policy</n-button>
+            </n-space>
         </div>
 
         <n-spin v-if="loading" size="small"/>
         <div v-else>
             <div v-if="!policies.length" class="empty">
-                No policies yet. Click <strong>New policy</strong> above to add one.
+                No policies yet. Click <strong>Populate Default Agent Policies</strong> to seed the starter set, or <strong>+ New policy</strong> to add your own.
             </div>
             <n-data-table v-else :columns="columns" :data="policies" :pagination="{ pageSize: 25 }"/>
         </div>
@@ -37,8 +50,9 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NButton, NDataTable, NIcon, NSpin, NSwitch, NTag, NTooltip, NPopconfirm, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NButton, NDataTable, NIcon, NSpace, NSpin, NSwitch, NTag, NTooltip, NPopconfirm, DataTableColumns, useNotification } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
+import { Edit as EditIcon, Trash } from '@vicons/tabler'
 
 const props = defineProps<{ embedded?: boolean }>()
 
@@ -54,6 +68,7 @@ const myorg = computed(() => store.getters.myorg)
 const orgUuid = computed(() => (route.params.orguuid as string) || myorg.value?.uuid)
 const policies = ref<any[]>([])
 const loading = ref<boolean>(true)
+const populating = ref<boolean>(false)
 
 onMounted(load)
 
@@ -94,6 +109,35 @@ async function toggleEnabled (row: any) {
         row.enabled = !row.enabled
     } catch (e: any) {
         notification.error({ content: `Toggle failed: ${e?.message ?? e}` })
+    }
+}
+
+async function populateDefaults () {
+    if (populating.value) return
+    populating.value = true
+    try {
+        // Single starter policy: every agent session must file an
+        // orientation report (AGENTIC_REPORT artifact) before any of
+        // its commits can be attributed. OUTPUT + BLOCK because the
+        // report normally arrives during the session; gating session
+        // init (INPUT) would be too early.
+        const input = {
+            uuid: null,
+            org: orgUuid.value,
+            name: 'Require Orientation Report',
+            description: 'Reject agent sessions that have not filed an AGENTIC_REPORT artifact (orientation report) by the time their commits are attributed.',
+            kind: 'OUTPUT',
+            severity: 'BLOCK',
+            cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT")',
+            enabled: true
+        }
+        await store.dispatch('upsertAgentPolicy', input)
+        notification.success({ content: 'Seeded "Require Orientation Report".' })
+        await load()
+    } catch (e: any) {
+        notification.error({ content: `Populate failed: ${e?.message ?? e}` })
+    } finally {
+        populating.value = false
     }
 }
 
@@ -148,15 +192,27 @@ const columns = computed<DataTableColumns<any>>(() => [
         }),
     },
     {
-        title: '',
+        title: 'Actions',
         key: 'actions',
-        width: 100,
-        render: (row: any) => h(NPopconfirm, {
-            onPositiveClick: () => remove(row),
-        }, {
-            trigger: () => h(NButton, { size: 'tiny', quaternary: true, type: 'error' }, { default: () => 'Delete' }),
-            default: () => `Delete policy "${row.name}"? Past verdicts on sessions keep their recorded policy uuid for forensic value.`,
-        }),
+        width: 90,
+        render: (row: any) => h('div', { style: 'display: flex; gap: 6px; align-items: center;' }, [
+            h(NIcon, {
+                title: 'Edit policy',
+                size: 18,
+                style: 'cursor: pointer; color: #555;',
+                onClick: () => openPolicy(row.uuid)
+            }, { default: () => h(EditIcon) }),
+            h(NPopconfirm, {
+                onPositiveClick: () => remove(row),
+            }, {
+                trigger: () => h(NIcon, {
+                    title: 'Delete policy',
+                    size: 18,
+                    style: 'cursor: pointer; color: #c0392b;'
+                }, { default: () => h(Trash) }),
+                default: () => `Delete policy "${row.name}"? Past verdicts on sessions keep their recorded policy uuid for forensic value.`,
+            })
+        ]),
     },
 ])
 </script>

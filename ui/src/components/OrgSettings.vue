@@ -1,7 +1,8 @@
 <template>
     <div>
         <h4>Organization Settings</h4>
-        <n-tabs type="line" :value="currentTab" @update:value="handleTabSwitch">
+        <!-- Segmented pill look to match the Integrations sub-tabs. -->
+        <n-tabs type="segment" :value="currentTab" @update:value="handleTabSwitch" size="medium" animated style="margin-bottom: 16px;">
             <n-tab-pane name="integrations" tab="Integrations" v-if="isOrgAdmin">
                 <OrgIntegrations
                     :orguuid="orgResolved"
@@ -10,6 +11,392 @@
                     :is-global-admin="isGlobalAdmin"
                     :installation-type="myUser.installationType"
                 />
+            </n-tab-pane>
+
+            <n-tab-pane name="policies" tab="Policies" v-if="myUser.installationType !== 'OSS'">
+                <div class="programmaticAccessBlock mt-4">
+                    <n-space v-if="showPopulateApprovalDefaultsButton" style="margin-bottom: 16px;">
+                        <n-button type="primary" @click="showPopulateApprovalDefaultsModal = true">
+                            Populate Default Approval Setup
+                        </n-button>
+                    </n-space>
+                    <n-tabs type="segment" :value="policySubTab" @update:value="handlePolicySubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
+                    <n-tab-pane name="approvalPoliciesInner" tab="Approval Policies">
+                    <h4>Approval Policies:
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Policy" @click="showCreateApprovalPolicy = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <n-data-table :data="approvalPolicyTableData" :columns="approvalPolicyFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" :row-props="approvalPolicyRowProps" :row-class-name="approvalPolicyRowClassName" />
+
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showCreateApprovalPolicy" 
+                        title="Create Approval Policy"
+                    >
+                        <create-approval-policy
+                            :orgProp="orgResolved" 
+                            :isHideTitle="true"
+                            @approvalPolicyCreated="approvalPolicyCreated"/>
+                    </n-modal>
+
+                    <div v-if="!selectedPolicyUuid" class="text-muted" style="margin-top: 12px;">
+                        Click an approval policy row above to manage its rules and actions.
+                    </div>
+                    <template v-if="selectedPolicyUuid">
+                    <h4>Policy-Wide Actions:
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Policy-Wide Action" @click="resetGlobalOutputEvent(); loadEnvironmentTypesForOutputEvents(); showCreateGlobalOutputEventModal = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <div>
+                        <n-data-table :data="globalOutputEvents" :columns="globalOutputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
+                        <n-modal
+                            v-model:show="showCreateGlobalOutputEventModal"
+                            preset="dialog"
+                            :show-icon="false"
+                            style="width: 90%"
+                        >
+                            <n-form :model="globalOutputEvent">
+                                <h2>{{ globalOutputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Action</h2>
+                                <n-space vertical size="large">
+                                    <n-form-item label="Name" path="name">
+                                        <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
+                                    </n-form-item>
+                                    <n-form-item label="Type" path="type">
+                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptions" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
+                                        <n-select v-model:value="globalOutputEvent.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
+                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select Integration" :options="ciIntegrationsForGlobalSelect" />
+                                    </n-form-item>
+                                    <n-alert v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && (selectedGlobalCiIntegration.type === 'GITHUB' || selectedGlobalCiIntegration.type === 'GITLAB')" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
+                                        Policy-wide actions use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this action is silently skipped for that component.
+                                    </n-alert>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
+                                        <n-input v-model:value="globalOutputEvent.eventType" placeholder="Enter Name of GitHub Actions Event" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" placeholder="Enter Additional Optional Client Payload JSON" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
+                                        <n-input type="number" v-model:value="globalOutputEvent.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Jenkins Job Name" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
+                                        <n-input v-model:value="globalOutputEvent.eventType" required placeholder="Enter Azure DevOps project name" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter Pipeline Definition ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Choose Validation Integration" path="integration">
+                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
+                                    </n-form-item>
+                                    <n-alert v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
+                                        Policy-wide actions use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this action is silently skipped for that component.
+                                    </n-alert>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
+                                        <n-select v-model:value="globalOutputEvent.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" path="clientPayload">
+                                        <template #label>
+                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                Optional Output JSON (title / summary / text)
+                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                    <template #trigger>
+                                                        <n-icon size="16" class="clickable"><Info20Regular /></n-icon>
+                                                    </template>
+                                                    Static JSON. When set, ReARM sends this as the GitHub check-run "output" verbatim — title, summary and text fields all replace ReARM's defaults (including the auto metrics summary). Leave empty to keep defaults. Use the Dynamic CEL field below if you need per-release values.
+                                                </n-tooltip>
+                                                <n-button text type="primary" size="tiny" @click="populateGlobalOutputClientPayloadDefault">
+                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
+                                                    Use template
+                                                </n-button>
+                                            </span>
+                                        </template>
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder='{"title":"...","summary":"...","text":"..."}' />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" path="celClientPayload">
+                                        <template #label>
+                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                Dynamic output (CEL string expression)
+                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                    <template #trigger>
+                                                        <n-icon size="16" class="clickable"><Info20Regular /></n-icon>
+                                                    </template>
+                                                    CEL expression evaluated at fire time against the release. Result must be a JSON string with title / summary / text — it overwrites the Optional Output JSON above for this dispatch. Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
+                                                </n-tooltip>
+                                                <n-button text type="primary" size="tiny" @click="populateGlobalOutputCelClientPayloadDefault">
+                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
+                                                    Use template
+                                                </n-button>
+                                            </span>
+                                        </template>
+                                        <n-input v-model:value="globalOutputEvent.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
+                                        <n-input v-model:value="globalOutputEvent.checkName" placeholder="Defaults to rearm/<componentName>; override e.g. rearm/policy" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Choose Validation Integration" path="integration">
+                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Installation ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Optional Comment Suffix (markdown)" path="clientPayload">
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder="### See also&#10;- [Runbook](https://...)" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Dynamic Comment Suffix (CEL string expression)" path="celClientPayload">
+                                        <n-input v-model:value="globalOutputEvent.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"_Triggered for release " + release.version + "._"' />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
+                                        <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
+                                        <n-input v-model:value="globalOutputEvent.notificationMessage" placeholder="Email Message Contents" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EMAIL_NOTIFICATION'" label="Dynamic message (CEL string expression)" path="celClientPayload">
+                                        <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"Release " + release.version + " reached " + release.lifecycle' />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Include Suppressed Vulnerabilities" path="includeSuppressed">
+                                        <n-switch v-model:value="globalOutputEvent.includeSuppressed" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Snapshot tagging">
+                                        <n-radio-group v-model:value="globalSnapshotMode">
+                                            <n-radio value="NONE">None (date-stamped)</n-radio>
+                                            <n-radio value="APPROVAL">Tag by approval entry</n-radio>
+                                            <n-radio value="LIFECYCLE">Tag by lifecycle</n-radio>
+                                        </n-radio-group>
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT' && globalSnapshotMode === 'APPROVAL'" label="Snapshot approval entry">
+                                        <n-select v-model:value="globalOutputEvent.snapshotApprovalEntry" :options="globalApprovalEntryOptionsForTriggers" placeholder="Select approval entry" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT' && globalSnapshotMode === 'LIFECYCLE'" label="Snapshot lifecycle">
+                                        <n-select v-model:value="globalOutputEvent.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
+                                        <n-select v-model:value="globalOutputEvent.approvedEnvironment" filterable :options="environmentOptions" placeholder="Select an environment (e.g. UAT)" />
+                                    </n-form-item>
+                                    <n-button @click="addGlobalOutputEvent" type="success">Save</n-button>
+                                </n-space>
+                            </n-form>
+                        </n-modal>
+                    </div>
+
+                    <h4>Policy-Wide Rules:
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Policy-Wide Rule" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <div>
+                        <n-data-table :data="globalInputEvents" :columns="globalInputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
+                        <n-modal
+                            v-model:show="showCreateGlobalInputEventModal"
+                            preset="dialog"
+                            :show-icon="false"
+                            style="width: 90%"
+                        >
+                            <n-form :model="globalInputEvent">
+                                <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Rule</h2>
+                                <n-space vertical size="large">
+                                    <n-form-item path="enabled">
+                                        <template #label><strong>Enabled</strong></template>
+                                        <n-switch v-model:value="globalInputEvent.enabled" />
+                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
+                                            Disabled rules never fire for any component using this policy, regardless of per-component opt-out.
+                                        </n-text>
+                                    </n-form-item>
+                                    <n-form-item path="name">
+                                        <template #label><strong>Name</strong></template>
+                                        <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
+                                    </n-form-item>
+                                    <n-form-item path="preconditionCelExpression">
+                                        <template #label>
+                                            <strong>Precondition (optional)</strong>
+                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                <template #trigger>
+                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                </template>
+                                                A gate that decides whether the rule should run AT ALL. Evaluated before the Condition. If it returns false (or fails), the rule is skipped entirely — neither matched- nor else-branch actions fire, and PR snapshots render PENDING. Use it for "is the release ready to be evaluated?" — e.g. release.firstScanned == true. Leave empty to evaluate the rule on every release.
+                                            </n-tooltip>
+                                        </template>
+                                        <CelExpressionBuilder
+                                            v-model="globalInputEvent.preconditionCelExpression"
+                                            :approval-entry-options="globalApprovalEntryOptionsForTriggers"
+                                            :suppress-first-scanned-warning="true"
+                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
+                                        />
+                                    </n-form-item>
+                                    <n-form-item path="celExpression">
+                                        <template #label>
+                                            <strong>Condition</strong>
+                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                <template #trigger>
+                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                </template>
+                                                The rule's main test. Runs only if the Precondition passes (or is empty). When this CEL is true, the matched-branch actions fire. When it's false AND an else-branch is configured, those else-branch actions fire instead. Otherwise nothing fires.
+                                            </n-tooltip>
+                                        </template>
+                                        <CelExpressionBuilder
+                                            v-model="globalInputEvent.celExpression"
+                                            :approval-entry-options="globalApprovalEntryOptionsForTriggers"
+                                            :error="globalCelExpressionError"
+                                            :precondition-cel-expression="globalInputEvent.preconditionCelExpression"
+                                            @set-precondition="(v: string) => { globalInputEvent.preconditionCelExpression = v }"
+                                        />
+                                    </n-form-item>
+                                    <n-form-item path="globalInputEvent.outputEvents">
+                                        <template #label><strong>Actions when condition is met</strong></template>
+                                        <n-select v-model:value="globalInputEvent.outputEvents"
+                                        :options="globalOutputEventsForInputForm" multiple
+                                        placeholder="Fired when the condition above is TRUE" />
+                                    </n-form-item>
+                                    <n-form-item path="globalInputEvent.outputEventsOnFalse">
+                                        <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
+                                        <n-select v-model:value="globalInputEvent.outputEventsOnFalse"
+                                        :options="globalOutputEventsForInputForm" multiple
+                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
+                                    </n-form-item>
+                                    <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
+                                </n-space>
+                            </n-form>
+                        </n-modal>
+                    </div>
+                    </template>
+                    </n-tab-pane>
+
+                    <n-tab-pane name="agentPolicies" tab="AI Agent Policies">
+                        <AiAgentPoliciesOfOrg :embedded="true"/>
+                    </n-tab-pane>
+                    <n-tab-pane name="approvalRoles" tab="Approval Roles">
+                    <h4>Approval Roles:
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Role" @click="showCreateApprovalRole = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <n-data-table :columns="approvalRoleFields" :data="myorg.approvalRoles" class="table-hover" :pagination="globalEventsPagination"></n-data-table>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showCreateApprovalRole" 
+                        title="Create Approval Role"
+                    >
+                        <n-form :model="newApprovalRole">
+                            <n-form-item path="id" label="Role ID">
+                                <n-input v-model:value="newApprovalRole.id" placeholder="Enter New Approval Role ID"
+                                required />
+                            </n-form-item>
+                            <n-form-item path="displayView" label="Role Display Name">
+                                <n-input v-model:value="newApprovalRole.displayView" required placeholder="Enter New Approval Role Display Name" />
+                            </n-form-item>
+                            <n-space>
+                                <n-button type="success" @click="addApprovalRole">Create</n-button>
+                                <n-button type="warning" @click="resetCreateApprovalRole">Reset</n-button>
+                            </n-space>
+                        </n-form>
+                    </n-modal>
+
+                    </n-tab-pane>
+
+                    <n-tab-pane name="approvalEntries" tab="Approval Entries">
+                    <h4>Approval Entries:
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Entry" @click="showCreateApprovalEntry = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <n-data-table :data="approvalEntryTableData" :columns="approvalEntryFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showCreateApprovalEntry" 
+                        title="Create Approval Entry"
+                    >
+                        <create-approval-entry 
+                            :orgProp="orgResolved"
+                            :isHideTitle="true" 
+                            @approvalEntryCreated="approvalEntryCreated"/>
+                    </n-modal>
+                    </n-tab-pane>
+
+
+                    <!-- Global PR Validation has moved to Integrations → PR Validation
+                         sub-tab; it's conceptually integration plumbing, not a policy. -->
+
+                    <n-tab-pane name="globalPolicyAssignment" tab="Global Policy Assignment" v-if="isOrgAdmin">
+                        <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
+                    </n-tab-pane>
+                    </n-tabs>
+                </div>
+                <n-modal
+                    v-model:show="showPopulateApprovalDefaultsModal"
+                    preset="dialog"
+                    :show-icon="false"
+                    style="width: 90%; max-width: 900px;"
+                >
+                    <n-card
+                        size="huge"
+                        title="Populate Default Approval Setup"
+                        :bordered="false"
+                        role="dialog"
+                        aria-modal="true"
+                    >
+                        <n-space vertical size="large">
+                            <div>This will create the following default objects in order:</div>
+                            <div>
+                                <strong>Approval Roles</strong>
+                                <div v-for="role in defaultApprovalSetup.roles" :key="role.id">{{ role.id }} - {{ role.displayView }}</div>
+                            </div>
+                            <div>
+                                <strong>Approval Entries</strong>
+                                <div v-for="entry in defaultApprovalSetup.entries" :key="entry.approvalName">{{ entry.approvalName }} - {{ entry.approvalRoles.join(', ') }}</div>
+                            </div>
+                            <div>
+                                <strong>Approval Policies</strong>
+                                <div v-for="policy in defaultApprovalSetup.policies" :key="policy.policyName" style="margin-bottom: 12px;">
+                                    <div>{{ policy.policyName }}</div>
+                                    <div>Entries: {{ policy.approvalEntries.join(', ') }}</div>
+                                    <div>Actions:</div>
+                                    <div v-for="event in defaultApprovalSetup.outputEvents" :key="`${policy.policyName}-${event.name}`">{{ event.name }} - {{ outputTriggerLifecycleOptions.find((opt: any) => opt.value === event.toReleaseLifecycle)?.label || event.toReleaseLifecycle }}</div>
+                                    <div>Rules:</div>
+                                    <div v-for="event in getDefaultPolicyInputEvents(policy.approvalEntries)" :key="`${policy.policyName}-${event.name}`">{{ event.name }}</div>
+                                </div>
+                            </div>
+                            <div>
+                                <strong>Evidence Mapping</strong>
+                                <n-data-table
+                                    :columns="defaultApprovalEvidenceColumns"
+                                    :data="defaultApprovalEvidenceRows"
+                                    :pagination="false"
+                                    :row-key="dataTableRowKey"
+                                />
+                            </div>
+                            <div>
+                                You will be able to edit these approval roles, approval entries, approval policy, and triggers later.
+                            </div>
+                            <n-space>
+                                <n-button type="primary" :loading="populateApprovalDefaultsProcessing" @click="populateApprovalDefaults">Create Defaults</n-button>
+                                <n-button @click="showPopulateApprovalDefaultsModal = false" :disabled="populateApprovalDefaultsProcessing">Cancel</n-button>
+                            </n-space>
+                        </n-space>
+                    </n-card>
+                </n-modal>
             </n-tab-pane>
 
             <n-tab-pane name="committers" tab="Committers" v-if="myUser.installationType !== 'OSS'">
@@ -303,390 +690,6 @@
                 </div>
             </n-tab-pane>
 
-            <n-tab-pane name="policies" tab="Policies" v-if="myUser.installationType !== 'OSS'">
-                <div class="programmaticAccessBlock mt-4">
-                    <n-space v-if="showPopulateApprovalDefaultsButton" style="margin-bottom: 16px;">
-                        <n-button type="primary" @click="showPopulateApprovalDefaultsModal = true">
-                            Populate Default Approval Setup
-                        </n-button>
-                    </n-space>
-                    <n-tabs type="line" :value="policySubTab" @update:value="handlePolicySubTabSwitch" animated>
-                    <n-tab-pane name="agentPolicies" tab="AI Agent Policies">
-                        <AiAgentPoliciesOfOrg :embedded="true"/>
-                    </n-tab-pane>
-                    <n-tab-pane name="approvalRoles" tab="Approval Roles">
-                    <h4>Approval Roles:
-                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Role" @click="showCreateApprovalRole = true">
-                            <CirclePlus/>
-                        </Icon>
-                    </h4>
-                    <n-data-table :columns="approvalRoleFields" :data="myorg.approvalRoles" class="table-hover" :pagination="globalEventsPagination"></n-data-table>
-                    <n-modal
-                        preset="dialog"
-                        :show-icon="false"
-                        style="width: 90%;" 
-                        v-model:show="showCreateApprovalRole" 
-                        title="Create Approval Role"
-                    >
-                        <n-form :model="newApprovalRole">
-                            <n-form-item path="id" label="Role ID">
-                                <n-input v-model:value="newApprovalRole.id" placeholder="Enter New Approval Role ID"
-                                required />
-                            </n-form-item>
-                            <n-form-item path="displayView" label="Role Display Name">
-                                <n-input v-model:value="newApprovalRole.displayView" required placeholder="Enter New Approval Role Display Name" />
-                            </n-form-item>
-                            <n-space>
-                                <n-button type="success" @click="addApprovalRole">Create</n-button>
-                                <n-button type="warning" @click="resetCreateApprovalRole">Reset</n-button>
-                            </n-space>
-                        </n-form>
-                    </n-modal>
-
-                    </n-tab-pane>
-
-                    <n-tab-pane name="approvalEntries" tab="Approval Entries">
-                    <h4>Approval Entries:
-                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Entry" @click="showCreateApprovalEntry = true">
-                            <CirclePlus/>
-                        </Icon>
-                    </h4>
-                    <n-data-table :data="approvalEntryTableData" :columns="approvalEntryFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
-                    <n-modal
-                        preset="dialog"
-                        :show-icon="false"
-                        style="width: 90%;" 
-                        v-model:show="showCreateApprovalEntry" 
-                        title="Create Approval Entry"
-                    >
-                        <create-approval-entry 
-                            :orgProp="orgResolved"
-                            :isHideTitle="true" 
-                            @approvalEntryCreated="approvalEntryCreated"/>
-                    </n-modal>
-                    </n-tab-pane>
-
-                    <n-tab-pane name="approvalPoliciesInner" tab="Approval Policies">
-                    <h4>Approval Policies:
-                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Policy" @click="showCreateApprovalPolicy = true">
-                            <CirclePlus/>
-                        </Icon>
-                    </h4>
-                    <n-data-table :data="approvalPolicyTableData" :columns="approvalPolicyFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" :row-props="approvalPolicyRowProps" :row-class-name="approvalPolicyRowClassName" />
-
-                    <n-modal
-                        preset="dialog"
-                        :show-icon="false"
-                        style="width: 90%;" 
-                        v-model:show="showCreateApprovalPolicy" 
-                        title="Create Approval Policy"
-                    >
-                        <create-approval-policy
-                            :orgProp="orgResolved" 
-                            :isHideTitle="true"
-                            @approvalPolicyCreated="approvalPolicyCreated"/>
-                    </n-modal>
-
-                    <div v-if="!selectedPolicyUuid" class="text-muted" style="margin-top: 12px;">
-                        Click an approval policy row above to manage its rules and actions.
-                    </div>
-                    <template v-if="selectedPolicyUuid">
-                    <h4>Policy-Wide Actions:
-                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Policy-Wide Action" @click="resetGlobalOutputEvent(); loadEnvironmentTypesForOutputEvents(); showCreateGlobalOutputEventModal = true">
-                            <CirclePlus/>
-                        </Icon>
-                    </h4>
-                    <div>
-                        <n-data-table :data="globalOutputEvents" :columns="globalOutputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
-                        <n-modal
-                            v-model:show="showCreateGlobalOutputEventModal"
-                            preset="dialog"
-                            :show-icon="false"
-                            style="width: 90%"
-                        >
-                            <n-form :model="globalOutputEvent">
-                                <h2>{{ globalOutputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Action</h2>
-                                <n-space vertical size="large">
-                                    <n-form-item label="Name" path="name">
-                                        <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
-                                    </n-form-item>
-                                    <n-form-item label="Type" path="type">
-                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptions" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
-                                        <n-select v-model:value="globalOutputEvent.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
-                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select Integration" :options="ciIntegrationsForGlobalSelect" />
-                                    </n-form-item>
-                                    <n-alert v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && (selectedGlobalCiIntegration.type === 'GITHUB' || selectedGlobalCiIntegration.type === 'GITLAB')" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
-                                        Policy-wide actions use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this action is silently skipped for that component.
-                                    </n-alert>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
-                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
-                                        <n-input v-model:value="globalOutputEvent.eventType" placeholder="Enter Name of GitHub Actions Event" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
-                                        <n-input v-model:value="globalOutputEvent.clientPayload" placeholder="Enter Additional Optional Client Payload JSON" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
-                                        <n-input type="number" v-model:value="globalOutputEvent.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
-                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Jenkins Job Name" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
-                                        <n-input v-model:value="globalOutputEvent.eventType" required placeholder="Enter Azure DevOps project name" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
-                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter Pipeline Definition ID" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
-                                        <n-input v-model:value="globalOutputEvent.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Choose Validation Integration" path="integration">
-                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
-                                    </n-form-item>
-                                    <n-alert v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
-                                        Policy-wide actions use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this action is silently skipped for that component.
-                                    </n-alert>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
-                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
-                                        <n-select v-model:value="globalOutputEvent.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" path="clientPayload">
-                                        <template #label>
-                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                                Optional Output JSON (title / summary / text)
-                                                <n-tooltip trigger="hover" style="max-width: 360px;">
-                                                    <template #trigger>
-                                                        <n-icon size="16" class="clickable"><Info20Regular /></n-icon>
-                                                    </template>
-                                                    Static JSON. When set, ReARM sends this as the GitHub check-run "output" verbatim — title, summary and text fields all replace ReARM's defaults (including the auto metrics summary). Leave empty to keep defaults. Use the Dynamic CEL field below if you need per-release values.
-                                                </n-tooltip>
-                                                <n-button text type="primary" size="tiny" @click="populateGlobalOutputClientPayloadDefault">
-                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
-                                                    Use template
-                                                </n-button>
-                                            </span>
-                                        </template>
-                                        <n-input v-model:value="globalOutputEvent.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder='{"title":"...","summary":"...","text":"..."}' />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" path="celClientPayload">
-                                        <template #label>
-                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                                Dynamic output (CEL string expression)
-                                                <n-tooltip trigger="hover" style="max-width: 360px;">
-                                                    <template #trigger>
-                                                        <n-icon size="16" class="clickable"><Info20Regular /></n-icon>
-                                                    </template>
-                                                    CEL expression evaluated at fire time against the release. Result must be a JSON string with title / summary / text — it overwrites the Optional Output JSON above for this dispatch. Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
-                                                </n-tooltip>
-                                                <n-button text type="primary" size="tiny" @click="populateGlobalOutputCelClientPayloadDefault">
-                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
-                                                    Use template
-                                                </n-button>
-                                            </span>
-                                        </template>
-                                        <n-input v-model:value="globalOutputEvent.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
-                                        <n-input v-model:value="globalOutputEvent.checkName" placeholder="Defaults to rearm/<componentName>; override e.g. rearm/policy" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Choose Validation Integration" path="integration">
-                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Installation ID" path="schedule">
-                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Optional Comment Suffix (markdown)" path="clientPayload">
-                                        <n-input v-model:value="globalOutputEvent.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder="### See also&#10;- [Runbook](https://...)" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Dynamic Comment Suffix (CEL string expression)" path="celClientPayload">
-                                        <n-input v-model:value="globalOutputEvent.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"_Triggered for release " + release.version + "._"' />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
-                                        <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
-                                        <n-input v-model:value="globalOutputEvent.notificationMessage" placeholder="Email Message Contents" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'EMAIL_NOTIFICATION'" label="Dynamic message (CEL string expression)" path="celClientPayload">
-                                        <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"Release " + release.version + " reached " + release.lifecycle' />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Include Suppressed Vulnerabilities" path="includeSuppressed">
-                                        <n-switch v-model:value="globalOutputEvent.includeSuppressed" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Snapshot tagging">
-                                        <n-radio-group v-model:value="globalSnapshotMode">
-                                            <n-radio value="NONE">None (date-stamped)</n-radio>
-                                            <n-radio value="APPROVAL">Tag by approval entry</n-radio>
-                                            <n-radio value="LIFECYCLE">Tag by lifecycle</n-radio>
-                                        </n-radio-group>
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT' && globalSnapshotMode === 'APPROVAL'" label="Snapshot approval entry">
-                                        <n-select v-model:value="globalOutputEvent.snapshotApprovalEntry" :options="globalApprovalEntryOptionsForTriggers" placeholder="Select approval entry" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT' && globalSnapshotMode === 'LIFECYCLE'" label="Snapshot lifecycle">
-                                        <n-select v-model:value="globalOutputEvent.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
-                                    </n-form-item>
-                                    <n-form-item v-if="globalOutputEvent.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
-                                        <n-select v-model:value="globalOutputEvent.approvedEnvironment" filterable :options="environmentOptions" placeholder="Select an environment (e.g. UAT)" />
-                                    </n-form-item>
-                                    <n-button @click="addGlobalOutputEvent" type="success">Save</n-button>
-                                </n-space>
-                            </n-form>
-                        </n-modal>
-                    </div>
-
-                    <h4>Policy-Wide Rules:
-                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Policy-Wide Rule" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
-                            <CirclePlus/>
-                        </Icon>
-                    </h4>
-                    <div>
-                        <n-data-table :data="globalInputEvents" :columns="globalInputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
-                        <n-modal
-                            v-model:show="showCreateGlobalInputEventModal"
-                            preset="dialog"
-                            :show-icon="false"
-                            style="width: 90%"
-                        >
-                            <n-form :model="globalInputEvent">
-                                <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Rule</h2>
-                                <n-space vertical size="large">
-                                    <n-form-item path="enabled">
-                                        <template #label><strong>Enabled</strong></template>
-                                        <n-switch v-model:value="globalInputEvent.enabled" />
-                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
-                                            Disabled rules never fire for any component using this policy, regardless of per-component opt-out.
-                                        </n-text>
-                                    </n-form-item>
-                                    <n-form-item path="name">
-                                        <template #label><strong>Name</strong></template>
-                                        <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
-                                    </n-form-item>
-                                    <n-form-item path="preconditionCelExpression">
-                                        <template #label>
-                                            <strong>Precondition (optional)</strong>
-                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
-                                                <template #trigger>
-                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
-                                                </template>
-                                                A gate that decides whether the rule should run AT ALL. Evaluated before the Condition. If it returns false (or fails), the rule is skipped entirely — neither matched- nor else-branch actions fire, and PR snapshots render PENDING. Use it for "is the release ready to be evaluated?" — e.g. release.firstScanned == true. Leave empty to evaluate the rule on every release.
-                                            </n-tooltip>
-                                        </template>
-                                        <CelExpressionBuilder
-                                            v-model="globalInputEvent.preconditionCelExpression"
-                                            :approval-entry-options="globalApprovalEntryOptionsForTriggers"
-                                            :suppress-first-scanned-warning="true"
-                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
-                                        />
-                                    </n-form-item>
-                                    <n-form-item path="celExpression">
-                                        <template #label>
-                                            <strong>Condition</strong>
-                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
-                                                <template #trigger>
-                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
-                                                </template>
-                                                The rule's main test. Runs only if the Precondition passes (or is empty). When this CEL is true, the matched-branch actions fire. When it's false AND an else-branch is configured, those else-branch actions fire instead. Otherwise nothing fires.
-                                            </n-tooltip>
-                                        </template>
-                                        <CelExpressionBuilder
-                                            v-model="globalInputEvent.celExpression"
-                                            :approval-entry-options="globalApprovalEntryOptionsForTriggers"
-                                            :error="globalCelExpressionError"
-                                            :precondition-cel-expression="globalInputEvent.preconditionCelExpression"
-                                            @set-precondition="(v: string) => { globalInputEvent.preconditionCelExpression = v }"
-                                        />
-                                    </n-form-item>
-                                    <n-form-item path="globalInputEvent.outputEvents">
-                                        <template #label><strong>Actions when condition is met</strong></template>
-                                        <n-select v-model:value="globalInputEvent.outputEvents"
-                                        :options="globalOutputEventsForInputForm" multiple
-                                        placeholder="Fired when the condition above is TRUE" />
-                                    </n-form-item>
-                                    <n-form-item path="globalInputEvent.outputEventsOnFalse">
-                                        <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
-                                        <n-select v-model:value="globalInputEvent.outputEventsOnFalse"
-                                        :options="globalOutputEventsForInputForm" multiple
-                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
-                                    </n-form-item>
-                                    <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
-                                </n-space>
-                            </n-form>
-                        </n-modal>
-                    </div>
-                    </template>
-                    </n-tab-pane>
-
-                    <!-- Global PR Validation has moved to Integrations → PR Validation
-                         sub-tab; it's conceptually integration plumbing, not a policy. -->
-
-                    <n-tab-pane name="globalPolicyAssignment" tab="Global Policy Assignment" v-if="isOrgAdmin">
-                        <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
-                    </n-tab-pane>
-                    </n-tabs>
-                </div>
-                <n-modal
-                    v-model:show="showPopulateApprovalDefaultsModal"
-                    preset="dialog"
-                    :show-icon="false"
-                    style="width: 90%; max-width: 900px;"
-                >
-                    <n-card
-                        size="huge"
-                        title="Populate Default Approval Setup"
-                        :bordered="false"
-                        role="dialog"
-                        aria-modal="true"
-                    >
-                        <n-space vertical size="large">
-                            <div>This will create the following default objects in order:</div>
-                            <div>
-                                <strong>Approval Roles</strong>
-                                <div v-for="role in defaultApprovalSetup.roles" :key="role.id">{{ role.id }} - {{ role.displayView }}</div>
-                            </div>
-                            <div>
-                                <strong>Approval Entries</strong>
-                                <div v-for="entry in defaultApprovalSetup.entries" :key="entry.approvalName">{{ entry.approvalName }} - {{ entry.approvalRoles.join(', ') }}</div>
-                            </div>
-                            <div>
-                                <strong>Approval Policies</strong>
-                                <div v-for="policy in defaultApprovalSetup.policies" :key="policy.policyName" style="margin-bottom: 12px;">
-                                    <div>{{ policy.policyName }}</div>
-                                    <div>Entries: {{ policy.approvalEntries.join(', ') }}</div>
-                                    <div>Actions:</div>
-                                    <div v-for="event in defaultApprovalSetup.outputEvents" :key="`${policy.policyName}-${event.name}`">{{ event.name }} - {{ outputTriggerLifecycleOptions.find((opt: any) => opt.value === event.toReleaseLifecycle)?.label || event.toReleaseLifecycle }}</div>
-                                    <div>Rules:</div>
-                                    <div v-for="event in getDefaultPolicyInputEvents(policy.approvalEntries)" :key="`${policy.policyName}-${event.name}`">{{ event.name }}</div>
-                                </div>
-                            </div>
-                            <div>
-                                <strong>Evidence Mapping</strong>
-                                <n-data-table
-                                    :columns="defaultApprovalEvidenceColumns"
-                                    :data="defaultApprovalEvidenceRows"
-                                    :pagination="false"
-                                    :row-key="dataTableRowKey"
-                                />
-                            </div>
-                            <div>
-                                You will be able to edit these approval roles, approval entries, approval policy, and triggers later.
-                            </div>
-                            <n-space>
-                                <n-button type="primary" :loading="populateApprovalDefaultsProcessing" @click="populateApprovalDefaults">Create Defaults</n-button>
-                                <n-button @click="showPopulateApprovalDefaultsModal = false" :disabled="populateApprovalDefaultsProcessing">Cancel</n-button>
-                            </n-space>
-                        </n-space>
-                    </n-card>
-                </n-modal>
-            </n-tab-pane>
 
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
                 <div class="terminologyBlock mt-4">
@@ -1104,7 +1107,7 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -1388,7 +1391,10 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
 // Tab management with router integration
 const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 const currentTab = ref(route.query.tab as string || defaultTab)
-const policySubTab = ref(route.query.policyTab as string || 'approvalRoles')
+// Default Policies sub-tab is approvalPoliciesInner (Approval Policies) — the
+// most common entry point. Approval Roles / Entries are configuration of
+// vocabulary used inside the policies.
+const policySubTab = ref(route.query.policyTab as string || 'approvalPoliciesInner')
 
 const approvalRoleFields: any[] = [
     {
@@ -1406,18 +1412,16 @@ const approvalRoleFields: any[] = [
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
-                const deleteEl = h(NIcon, {
+                const deleteEl = h(NPopconfirm, {
+                    onPositiveClick: () => deleteApprovalRole(row.id)
+                }, {
+                    trigger: () => h(NIcon, {
                         title: 'Delete Approval Role',
                         class: 'icons clickable',
-                        size: 20,
-                        onClick: () => {
-                            deleteApprovalRole(row.id)
-                        }
-                    }, 
-                    { 
-                        default: () => h(Trash) 
-                    }
-                )
+                        size: 20
+                    }, { default: () => h(Trash) }),
+                    default: () => `Delete approval role "${row.id}"? Components using this role will need an existing role re-assigned.`
+                })
                 els.push(deleteEl)
             }
             if (!els.length) els = [h('div'), row.status]
@@ -2997,10 +3001,16 @@ const defaultApprovalEvidenceColumns: DataTableColumns<any> = [
 ]
 
 const showPopulateApprovalDefaultsButton = computed((): boolean => {
-    // Available any time (not just on a fresh org). populateApprovalDefaults
-    // skips per-item when the role / entry / policy already exists by name,
-    // so re-running it is safe — adds anything missing, leaves what's there.
-    return !!isWritable.value
+    // Only show when the org is genuinely empty across roles, entries, AND
+    // policies — i.e. a fresh setup. Once the operator has configured any
+    // of the three, hide the button to avoid re-running the seeder by
+    // accident (the seeder is per-name idempotent, but the button on a
+    // partially-configured org would still be confusing).
+    if (!isWritable.value) return false
+    const rolesEmpty = !(myorg.value?.approvalRoles?.length)
+    const entriesEmpty = !(orgApprovalEntries.value?.length)
+    const policiesEmpty = !(approvalPoliciesFullData.value?.length)
+    return rolesEmpty && entriesEmpty && policiesEmpty
 })
 
 async function gqlCreateApprovalEntryDirect (approvalName: string, approvalRoles: string[]) {
@@ -3174,104 +3184,73 @@ function resetCreateApprovalRole () {
     }
 }
 
+// The three delete functions below assume the caller has already
+// confirmed via n-popconfirm in the table render. Each just runs the
+// mutation and notifies on outcome — no swalWrapper / SwalData.
 async function deleteApprovalRole (approvalRoleId: string) {
-    const onSwalConfirm = async () => {
-        const updObj = {
+    try {
+        const org = await store.dispatch('deleteApprovalRole', {
             orgUuid: orgResolved.value,
-            approvalRoleId       
+            approvalRoleId
+        })
+        if (org && org.uuid) {
+            notify('success', 'Deleted', 'Successfully deleted approval role ' + approvalRoleId)
+        } else {
+            notify('error', 'Failed to Delete', 'There was an error deleting approval role')
         }
-        try {
-            const org = await store.dispatch('deleteApprovalRole', updObj)
-            if (org && org.uuid) {
-                notify('success', 'Deleted', 'Successfully deleted approval role ' + approvalRoleId)
-            } else {
-                notify('error', 'Failed to Delete', 'There was an error deleting approval role')
-            }
-        } catch (err: any) {
-            notify('error', 'Failed to Delete', commonFunctions.parseGraphQLError(err.message))
-        }
+    } catch (err: any) {
+        notify('error', 'Failed to Delete', commonFunctions.parseGraphQLError(err.message))
     }
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to delete approval role ${approvalRoleId}?`,
-        successTitle: 'Deleted!',
-        successText: `Approval role ${approvalRoleId} has been deleted.`,
-        dismissText: 'Delete has been cancelled.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 async function deleteApprovalPolicy (policyUuid: string, policyName?: string) {
-    const onSwalConfirm = async () => {
-        try {
-            const response = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation archiveApprovalPolicy($approvalPolicyUuid: ID!) {
-                        archiveApprovalPolicy(approvalPolicyUuid: $approvalPolicyUuid) {
-                            uuid
-                            status
-                            policyName
-                        }
-                    }`,
-                variables: {
-                    approvalPolicyUuid: policyUuid
-                },
-                fetchPolicy: 'no-cache'
-            })
-            if (response.data && response.data.archiveApprovalPolicy && response.data.archiveApprovalPolicy.status === 'ARCHIVED') {
-                notify('success', 'Archived', 'Successfully archived approval policy ' + response.data.archiveApprovalPolicy.policyName)
-                fetchApprovalPolicies()
-            } else {
-                notify('error', 'Failed to Archive', 'There was an error archiving approval policy')
-            }
-        } catch (err: any) {
-            notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation archiveApprovalPolicy($approvalPolicyUuid: ID!) {
+                    archiveApprovalPolicy(approvalPolicyUuid: $approvalPolicyUuid) {
+                        uuid
+                        status
+                        policyName
+                    }
+                }`,
+            variables: { approvalPolicyUuid: policyUuid },
+            fetchPolicy: 'no-cache'
+        })
+        if (response.data?.archiveApprovalPolicy?.status === 'ARCHIVED') {
+            notify('success', 'Archived', 'Successfully archived approval policy ' + response.data.archiveApprovalPolicy.policyName)
+            fetchApprovalPolicies()
+        } else {
+            notify('error', 'Failed to Archive', 'There was an error archiving approval policy')
         }
+    } catch (err: any) {
+        notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
     }
-    const displayName = policyName || policyUuid
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to delete approval policy ${displayName}?`,
-        successTitle: 'Deleted!',
-        successText: `Approval policy ${displayName} has been deleted.`,
-        dismissText: 'Deletion has been cancelled.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 async function deleteApprovalEntry (approvalEntryUuid: string, approvalEntryName?: string) {
-    const onSwalConfirm = async () => {
-        try {
-            const response = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation archiveApprovalEntry($approvalEntryUuid: ID!) {
-                        archiveApprovalEntry(approvalEntryUuid: $approvalEntryUuid) {
-                            uuid
-                            status
-                            approvalName
-                        }
-                    }`,
-                variables: {
-                    approvalEntryUuid
-                },
-                fetchPolicy: 'no-cache'
-            })
-            if (response.data && response.data.archiveApprovalEntry && response.data.archiveApprovalEntry.status === 'ARCHIVED') {
-                notify('success', 'Archived', 'Successfully archived approval entry ' + response.data.archiveApprovalEntry.approvalName)
-                fetchApprovalEntries()
-            } else {
-                notify('error', 'Failed to Archive', 'There was an error archiving approval entry')
-            }
-        } catch (err: any) {
-            notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation archiveApprovalEntry($approvalEntryUuid: ID!) {
+                    archiveApprovalEntry(approvalEntryUuid: $approvalEntryUuid) {
+                        uuid
+                        status
+                        approvalName
+                    }
+                }`,
+            variables: { approvalEntryUuid },
+            fetchPolicy: 'no-cache'
+        })
+        if (response.data?.archiveApprovalEntry?.status === 'ARCHIVED') {
+            notify('success', 'Archived', 'Successfully archived approval entry ' + response.data.archiveApprovalEntry.approvalName)
+            fetchApprovalEntries()
+        } else {
+            notify('error', 'Failed to Archive', 'There was an error archiving approval entry')
         }
+    } catch (err: any) {
+        notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
     }
-    const displayName = approvalEntryName || approvalEntryUuid
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to delete approval entry ${displayName}?`,
-        successTitle: 'Deleted!',
-        successText: `Approval entry ${displayName} has been deleted.`,
-        dismissText: 'Deletion has been cancelled.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 async function createApp() {
@@ -4931,18 +4910,16 @@ const approvalEntryFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
-                const deleteEl = h(NIcon, {
+                const deleteEl = h(NPopconfirm, {
+                    onPositiveClick: () => deleteApprovalEntry(row.uuid, row.approvalName)
+                }, {
+                    trigger: () => h(NIcon, {
                         title: 'Delete Approval Entry',
                         class: 'icons clickable',
-                        size: 20,
-                        onClick: () => {
-                            deleteApprovalEntry(row.uuid, row.approvalName)
-                        }
-                    }, 
-                    { 
-                        default: () => h(Trash) 
-                    }
-                )
+                        size: 20
+                    }, { default: () => h(Trash) }),
+                    default: () => `Delete approval entry "${row.approvalName}"? Approval policies referencing it will need to be updated.`
+                })
                 els.push(deleteEl)
             }
             if (!els.length) els = [h('div'), row.status]
@@ -5015,18 +4992,16 @@ const approvalPolicyFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
-                const deleteEl = h(NIcon, {
+                const deleteEl = h(NPopconfirm, {
+                    onPositiveClick: () => deleteApprovalPolicy(row.uuid, row.policyName)
+                }, {
+                    trigger: () => h(NIcon, {
                         title: 'Delete Approval Policy',
                         class: 'icons clickable',
-                        size: 20,
-                        onClick: () => {
-                            deleteApprovalPolicy(row.uuid, row.policyName)
-                        }
-                    }, 
-                    { 
-                        default: () => h(Trash) 
-                    }
-                )
+                        size: 20
+                    }, { default: () => h(Trash) }),
+                    default: () => `Archive approval policy "${row.policyName}"? Components currently using it will fall back to org rules.`
+                })
                 els.push(deleteEl)
             }
             if (!els.length) els = [h('div'), row.status]
