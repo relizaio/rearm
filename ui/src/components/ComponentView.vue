@@ -705,6 +705,10 @@
                                                     <div v-if="gie.enabled === false" style="margin-left: 28px; margin-top: 6px; font-size: 12px;" class="text-muted">
                                                         Disabled at the policy level — this rule will not fire for this {{ words.component }} regardless of the toggle above.
                                                     </div>
+                                                    <div v-if="gie.preconditionCelExpression" style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
+                                                        <span class="text-muted" style="margin-right: 6px;">Precondition:</span>
+                                                        <code>{{ gie.preconditionCelExpression }}</code>
+                                                    </div>
                                                     <div style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
                                                         <span class="text-muted" style="margin-right: 6px;">Condition:</span>
                                                         <code v-if="gie.celExpression">{{ gie.celExpression }}</code>
@@ -764,27 +768,65 @@
                                             style="width: 90%"
                                         >
                                             <n-form :model="inputTrigger">
-                                                <h2>Add or Update Trigger Event</h2>
+                                                <h2>{{ inputTrigger.uuid ? 'Edit' : 'Add' }} Rule</h2>
                                                 <n-space vertical size="large">
-                                                    <n-form-item label="Enabled" path="enabled">
+                                                    <n-form-item path="enabled">
+                                                        <template #label><strong>Enabled</strong></template>
                                                         <n-switch v-model:value="inputTrigger.enabled" />
                                                         <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
                                                             Disabled rules are skipped at evaluation time.
                                                         </n-text>
                                                     </n-form-item>
-                                                    <n-form-item label="Name" path="name">
+                                                    <n-form-item path="name">
+                                                        <template #label><strong>Name</strong></template>
                                                         <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
                                                     </n-form-item>
-                                                    <n-form-item label="Condition" path="celExpression">
+                                                    <n-form-item path="preconditionCelExpression">
+                                                        <template #label>
+                                                            <strong>Precondition (optional)</strong>
+                                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                                <template #trigger>
+                                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                                </template>
+                                                                A gate that decides whether the rule should run AT ALL. Evaluated before the Condition. If it returns false (or fails), the rule is skipped entirely — neither matched- nor else-branch actions fire, and PR snapshots render PENDING. Use it for "is the release ready to be evaluated?" — e.g. release.firstScanned == true. Leave empty to evaluate the rule on every release.
+                                                            </n-tooltip>
+                                                        </template>
+                                                        <CelExpressionBuilder
+                                                            v-model="inputTrigger.preconditionCelExpression"
+                                                            :approval-entry-options="approvalEntryOptionsForTriggers"
+                                                            :suppress-first-scanned-warning="true"
+                                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
+                                                        />
+                                                    </n-form-item>
+                                                    <n-form-item path="celExpression">
+                                                        <template #label>
+                                                            <strong>Condition</strong>
+                                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                                <template #trigger>
+                                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                                </template>
+                                                                The rule's main test. Runs only if the Precondition passes (or is empty). When this CEL is true, the matched-branch actions fire. When it's false AND an else-branch is configured, those else-branch actions fire instead. Otherwise nothing fires.
+                                                            </n-tooltip>
+                                                        </template>
                                                         <CelExpressionBuilder
                                                             v-model="inputTrigger.celExpression"
                                                             :approval-entry-options="approvalEntryOptionsForTriggers"
                                                             :error="celExpressionError"
+                                                            :precondition-cel-expression="inputTrigger.preconditionCelExpression"
+                                                            @set-precondition="(v: string) => { inputTrigger.preconditionCelExpression = v }"
                                                         />
                                                     </n-form-item>
-                                                    <n-form-item label="Actions" path="inputTrigger.outputEvents">
+                                                    <n-form-item path="inputTrigger.outputEvents">
+                                                        <template #label><strong>Actions when condition is met</strong></template>
                                                         <n-select v-model:value="inputTrigger.outputEvents"
-                                                        :options="outputTriggersForInputForm" multiple />
+                                                        :options="outputTriggersForInputForm" multiple
+                                                        placeholder="Fired when the condition above is TRUE" />
+                                                    </n-form-item>
+                                                    <n-form-item path="inputTrigger.outputEventsOnFalse">
+                                                        <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
+                                                        <n-select v-model:value="inputTrigger.outputEventsOnFalse"
+                                                        :options="outputTriggersForInputForm" multiple
+                                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
                                                     </n-form-item>
                                                     <n-button @click="addInputTrigger" type="success">
                                                         Save
@@ -1776,7 +1818,9 @@ const inputTrigger: Ref<InputTriggerEvent> = ref({
     name: '',
     celExpression: '',
     outputEvents: [],
-    enabled: true
+    outputEventsOnFalse: [],
+    enabled: true,
+    preconditionCelExpression: ''
 })
 const celExpressionError = ref('')
 
@@ -1786,6 +1830,8 @@ function resetInputTrigger () {
         name: '',
         celExpression: '',
         outputEvents: [],
+        outputEventsOnFalse: [],
+        preconditionCelExpression: '',
         enabled: true
     }
     celExpressionError.value = ''
@@ -2900,7 +2946,7 @@ async function addInputTrigger () {
     celExpressionError.value = ''
     const validation = validateInputTrigger(inputTriggerToPush)
     if (!validation.valid) {
-        if (validation.error === 'CEL expression is required.') {
+        if (validation.error === 'Condition is required.') {
             celExpressionError.value = validation.error
         } else {
             notify('error', 'Validation Error', validation.error!)
@@ -2969,13 +3015,13 @@ const outputTriggerTableFields: DataTableColumns<any> = [
             const els: any[] = []
             if (isWritable.value) {
                 els.push(h(NIcon, {
-                    title: 'Edit Trigger',
+                    title: 'Edit Action',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => editOutputTrigger(row)
                 }, () => h(Edit)))
                 els.push(h(NIcon, {
-                    title: 'Delete Trigger',
+                    title: 'Delete Action',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => deleteOutputTrigger(row.uuid)
@@ -3034,33 +3080,45 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         key: 'celExpression',
         title: 'Condition',
         render: (row: any) => {
-            if (!row.celExpression) {
-                return h(NAlert, { type: 'warning', style: 'font-size: 12px;' }, {
-                    default: () => 'No CEL expression — rule will not fire. Edit to add a condition.'
-                })
+            const els: any[] = []
+            if (row.preconditionCelExpression) {
+                els.push(h('div', { style: 'font-size: 12px; margin-bottom: 4px;' }, [
+                    h('strong', { style: 'color: #555;' }, 'Precondition: '),
+                    h('code', { style: 'font-size: 12px;' }, row.preconditionCelExpression)
+                ]))
             }
-            return h('code', { style: 'font-size: 12px;' }, row.celExpression)
+            if (row.celExpression) {
+                els.push(h('div', { style: 'font-size: 12px;' }, [
+                    h('strong', { style: 'color: #555;' }, 'Condition: '),
+                    h('code', { style: 'font-size: 12px;' }, row.celExpression)
+                ]))
+            } else {
+                els.push(h(NAlert, { type: 'warning', style: 'font-size: 12px; margin-top: 4px;' }, {
+                    default: () => 'No CEL expression — rule will not fire. Edit to add a condition.'
+                }))
+            }
+            return h('div', els)
         }
     },
     {
         key: 'outputTriggers',
         title: 'Policy Actions',
         render: (row: any) => {
-            let outTriggers = ''
-            if (row.outputEvents && row.outputEvents.length) {
-                const allOutputTriggers = [
-                    ...(updatedComponent.value.outputTriggers ?? []),
-                    ...(updatedComponent.value.approvalPolicyDetails?.globalOutputEvents ?? [])
-                ]
-                row.outputEvents.forEach((oe: string) => {
-                    const outTrigger = allOutputTriggers.find((x: any) => x.uuid === oe)
-                    if (outTrigger && outTrigger.uuid) {
-                        outTriggers += outTrigger.name + ', '
-                    }
-                })
-                if (outTriggers) outTriggers = outTriggers.substring(0, outTriggers.length - 2)
-            }
-            return h('div', outTriggers)
+            const allOutputTriggers = [
+                ...(updatedComponent.value.outputTriggers ?? []),
+                ...(updatedComponent.value.approvalPolicyDetails?.globalOutputEvents ?? [])
+            ]
+            const nameOf = (uuids: string[]): string => (uuids || []).map((u: string) => {
+                const ot = allOutputTriggers.find((x: any) => x.uuid === u)
+                return ot ? ot.name : ''
+            }).filter(Boolean).join(', ')
+            const onTrue = nameOf(row.outputEvents)
+            const onFalse = nameOf(row.outputEventsOnFalse)
+            const els: any[] = []
+            if (onTrue) els.push(h('div', { style: 'font-size: 12px;' }, [h('strong', 'When met: '), onTrue]))
+            if (onFalse) els.push(h('div', { style: 'font-size: 12px; margin-top: 2px;' }, [h('strong', 'Else: '), onFalse]))
+            if (!els.length) els.push(h('div', { style: 'font-size: 12px; color: #999;' }, '(no actions)'))
+            return h('div', els)
         }
     },
     {
@@ -3070,13 +3128,13 @@ const inputTriggerTableFields: DataTableColumns<any> = [
             const els: any[] = []
             if (isWritable.value) {
                 els.push(h(NIcon, {
-                    title: 'Edit Trigger',
+                    title: 'Edit Rule',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => editInputTrigger(row)
                 }, () => h(Edit)))
                 els.push(h(NIcon, {
-                    title: 'Delete Trigger',
+                    title: 'Delete Rule',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => deleteInputTrigger(row.uuid)

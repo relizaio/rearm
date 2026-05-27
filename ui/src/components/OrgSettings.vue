@@ -559,25 +559,63 @@
                             <n-form :model="globalInputEvent">
                                 <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Rule</h2>
                                 <n-space vertical size="large">
-                                    <n-form-item label="Enabled" path="enabled">
+                                    <n-form-item path="enabled">
+                                        <template #label><strong>Enabled</strong></template>
                                         <n-switch v-model:value="globalInputEvent.enabled" />
                                         <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
                                             Disabled rules never fire for any component using this policy, regardless of per-component opt-out.
                                         </n-text>
                                     </n-form-item>
-                                    <n-form-item label="Name" path="name">
+                                    <n-form-item path="name">
+                                        <template #label><strong>Name</strong></template>
                                         <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
                                     </n-form-item>
-                                    <n-form-item label="Condition" path="celExpression">
+                                    <n-form-item path="preconditionCelExpression">
+                                        <template #label>
+                                            <strong>Precondition (optional)</strong>
+                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                <template #trigger>
+                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                </template>
+                                                A gate that decides whether the rule should run AT ALL. Evaluated before the Condition. If it returns false (or fails), the rule is skipped entirely — neither matched- nor else-branch actions fire, and PR snapshots render PENDING. Use it for "is the release ready to be evaluated?" — e.g. release.firstScanned == true. Leave empty to evaluate the rule on every release.
+                                            </n-tooltip>
+                                        </template>
+                                        <CelExpressionBuilder
+                                            v-model="globalInputEvent.preconditionCelExpression"
+                                            :approval-entry-options="globalApprovalEntryOptionsForTriggers"
+                                            :suppress-first-scanned-warning="true"
+                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
+                                        />
+                                    </n-form-item>
+                                    <n-form-item path="celExpression">
+                                        <template #label>
+                                            <strong>Condition</strong>
+                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                <template #trigger>
+                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                </template>
+                                                The rule's main test. Runs only if the Precondition passes (or is empty). When this CEL is true, the matched-branch actions fire. When it's false AND an else-branch is configured, those else-branch actions fire instead. Otherwise nothing fires.
+                                            </n-tooltip>
+                                        </template>
                                         <CelExpressionBuilder
                                             v-model="globalInputEvent.celExpression"
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :error="globalCelExpressionError"
+                                            :precondition-cel-expression="globalInputEvent.preconditionCelExpression"
+                                            @set-precondition="(v: string) => { globalInputEvent.preconditionCelExpression = v }"
                                         />
                                     </n-form-item>
-                                    <n-form-item label="Actions" path="globalInputEvent.outputEvents">
+                                    <n-form-item path="globalInputEvent.outputEvents">
+                                        <template #label><strong>Actions when condition is met</strong></template>
                                         <n-select v-model:value="globalInputEvent.outputEvents"
-                                        :options="globalOutputEventsForInputForm" multiple />
+                                        :options="globalOutputEventsForInputForm" multiple
+                                        placeholder="Fired when the condition above is TRUE" />
+                                    </n-form-item>
+                                    <n-form-item path="globalInputEvent.outputEventsOnFalse">
+                                        <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
+                                        <n-select v-model:value="globalInputEvent.outputEventsOnFalse"
+                                        :options="globalOutputEventsForInputForm" multiple
+                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
                                     </n-form-item>
                                     <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
                                 </n-space>
@@ -5088,7 +5126,9 @@ const globalInputEvent: Ref<InputTriggerEvent> = ref({
     name: '',
     celExpression: '',
     outputEvents: [],
-    enabled: true
+    outputEventsOnFalse: [],
+    enabled: true,
+    preconditionCelExpression: ''
 })
 
 const globalCelExpressionError = ref('')
@@ -5099,7 +5139,9 @@ function resetGlobalInputEvent () {
         name: '',
         celExpression: '',
         outputEvents: [],
-        enabled: true
+        outputEventsOnFalse: [],
+        enabled: true,
+        preconditionCelExpression: ''
     }
     globalCelExpressionError.value = ''
 }
@@ -5220,8 +5262,10 @@ async function fetchApprovalPolicies () {
                         name
                         celExpression
                         outputEvents
+                        outputEventsOnFalse
                         scope
                         enabled
+                        preconditionCelExpression
                     }
                     globalOutputEvents {
                         uuid
@@ -5358,7 +5402,9 @@ async function saveGlobalInputEvents () {
             name: e.name,
             celExpression: e.celExpression || null,
             outputEvents: e.outputEvents || [],
-            enabled: e.enabled !== false  // default true; preserve explicit false
+            outputEventsOnFalse: e.outputEventsOnFalse || [],
+            enabled: e.enabled !== false,  // default true; preserve explicit false
+            preconditionCelExpression: e.preconditionCelExpression || null
         }))
         const resp = await graphqlClient.mutate({
             mutation: gql`
@@ -5370,8 +5416,10 @@ async function saveGlobalInputEvents () {
                             name
                             celExpression
                             outputEvents
+                            outputEventsOnFalse
                             scope
                             enabled
+                            preconditionCelExpression
                         }
                     }
                 }`,
@@ -5495,7 +5543,7 @@ function addGlobalInputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalInputEvent.value)
     const validation = validateInputTrigger(eventToPush)
     if (!validation.valid) {
-        if (validation.error && validation.error.includes('CEL')) {
+        if (validation.error === 'Condition is required.') {
             globalCelExpressionError.value = validation.error
         } else {
             notify('error', 'Validation Error', validation.error!)
@@ -5614,10 +5662,25 @@ const globalInputEventTableFields: DataTableColumns<any> = [
         key: 'celExpression',
         title: 'Condition',
         render: (row: any) => {
-            if (!row.celExpression) {
-                return h(NAlert, { type: 'warning', style: 'font-size: 12px;' }, { default: () => 'No CEL expression — rule will not fire. Edit to add a condition.' })
+            const els: any[] = []
+            // Show precondition first when present so the gate is
+            // visible at a glance — same display priority as the main
+            // CEL since it can block the rule from firing entirely.
+            if (row.preconditionCelExpression) {
+                els.push(h('div', { style: 'font-size: 12px; margin-bottom: 4px;' }, [
+                    h('strong', { style: 'color: #555;' }, 'Precondition: '),
+                    h('code', { style: 'font-size: 12px;' }, row.preconditionCelExpression)
+                ]))
             }
-            return h('code', { style: 'font-size: 12px;' }, row.celExpression)
+            if (row.celExpression) {
+                els.push(h('div', { style: 'font-size: 12px;' }, [
+                    h('strong', { style: 'color: #555;' }, 'Condition: '),
+                    h('code', { style: 'font-size: 12px;' }, row.celExpression)
+                ]))
+            } else {
+                els.push(h(NAlert, { type: 'warning', style: 'font-size: 12px; margin-top: 4px;' }, { default: () => 'No CEL expression — rule will not fire. Edit to add a condition.' }))
+            }
+            return h('div', els)
         }
     },
     {
@@ -5625,15 +5688,17 @@ const globalInputEventTableFields: DataTableColumns<any> = [
         title: 'Policy Actions',
         minWidth: 153,
         render: (row: any) => {
-            let outNames = ''
-            if (row.outputEvents && row.outputEvents.length) {
-                row.outputEvents.forEach((oeId: string) => {
-                    const oe = globalOutputEvents.value.find((x: any) => x.uuid === oeId)
-                    if (oe) outNames += oe.name + ', '
-                })
-                if (outNames) outNames = outNames.substring(0, outNames.length - 2)
-            }
-            return h('div', outNames)
+            const nameOf = (uuids: string[]): string => (uuids || []).map((u: string) => {
+                const oe = globalOutputEvents.value.find((x: any) => x.uuid === u)
+                return oe ? oe.name : ''
+            }).filter(Boolean).join(', ')
+            const onTrue = nameOf(row.outputEvents)
+            const onFalse = nameOf(row.outputEventsOnFalse)
+            const els: any[] = []
+            if (onTrue) els.push(h('div', { style: 'font-size: 12px;' }, [h('strong', 'When met: '), onTrue]))
+            if (onFalse) els.push(h('div', { style: 'font-size: 12px; margin-top: 2px;' }, [h('strong', 'Else: '), onFalse]))
+            if (!els.length) els.push(h('div', { style: 'font-size: 12px; color: #999;' }, '(no actions)'))
+            return h('div', els)
         }
     },
     {

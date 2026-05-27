@@ -1324,7 +1324,9 @@ const storeObject : any = {
                                         name
                                         celExpression
                                         outputEvents
+                                        outputEventsOnFalse
                                         enabled
+                                        preconditionCelExpression
                                     }
                                     globalOutputEvents {
                                         uuid

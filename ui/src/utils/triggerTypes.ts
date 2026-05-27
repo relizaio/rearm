@@ -5,7 +5,18 @@ export type InputTriggerEvent = {
     name: string;
     celExpression: string | null;
     outputEvents: string[];
+    // Optional else-branch action list. Fires when celExpression
+    // evaluates to false. null/undefined or [] keeps the legacy
+    // single-branch behavior (CEL false fires nothing).
+    outputEventsOnFalse?: string[];
     enabled?: boolean;
+    // Optional precondition CEL — evaluated BEFORE celExpression. If
+    // it returns false (or throws) the rule is skipped entirely
+    // (neither matched- nor else-branch actions fire). Necessary for
+    // else-branch rules because the false branch would otherwise fire
+    // on releases with missing data (metrics default to 0). Canonical
+    // example: gate metrics rules on `release.firstScanned == true`.
+    preconditionCelExpression?: string | null;
 }
 
 export type OutputTriggerEvent = {

@@ -736,8 +736,10 @@ const COMPONENT_FULL_DATA = `
             name
             celExpression
             outputEvents
+            outputEventsOnFalse
             scope
             enabled
+            preconditionCelExpression
         }
         globalOutputEvents {
             uuid
@@ -783,8 +785,10 @@ const COMPONENT_FULL_DATA = `
         name
         celExpression
         outputEvents
+        outputEventsOnFalse
         scope
         enabled
+        preconditionCelExpression
     }
     globalInputEventRefs {
         uuid

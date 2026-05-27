@@ -12,6 +12,21 @@
                 This expression cannot be represented in the visual builder. Edit in CEL mode.
             </n-alert>
             <template v-else>
+                <!-- Task 1: metrics variables default to 0 on unscanned
+                     releases, so "criticalVulns > 0" silently passes before
+                     scanning completes. Warn whenever METRICS is present
+                     without the rule-level scan-readiness guard, plus a
+                     one-click fix that flips Wait-for-first-scan ON on
+                     the parent rule. The button emits an event up — the
+                     guard lives on the rule, not on the CEL itself, which
+                     is the correct shape for both single-branch and
+                     else-branch rules. -->
+                <n-alert v-if="hasMetricsWithoutFirstScanned" type="warning" style="margin-bottom: 10px; font-size: 13px;">
+                    <div>This rule reads release metrics but doesn't gate on <strong>First Scanned</strong>. Releases without scans treat all metrics as 0, so the rule will silently pass on unscanned releases.</div>
+                    <n-button size="tiny" type="warning" style="margin-top: 6px;" @click="enableFirstScannedGuard">
+                        Enable Wait for First Scan
+                    </n-button>
+                </n-alert>
                 <!-- Top-level operator (only when >1 group) -->
                 <div v-if="builderState.groups.length > 1" style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 13px;">Match groups by:</span>
@@ -232,7 +247,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, watch, nextTick } from 'vue'
+import { computed, ref, reactive, watch, nextTick } from 'vue'
 import { NRadioGroup, NRadioButton, NRadio, NSelect, NInputNumber, NButton, NAlert, NInput, NTooltip, NIcon, NPopover } from 'naive-ui'
 import { QuestionCircle20Regular, ClipboardPaste20Regular } from '@vicons/fluent'
 import constants from '../utils/constants'
@@ -262,15 +277,34 @@ interface Props {
     approvalEntryOptions: { label: string; value: string }[]
     placeholder?: string
     error?: string
+    // From the parent rule editor: the rule's precondition CEL string.
+    // When non-empty and it references `firstScanned`, the Task-1
+    // METRICS-without-FIRST_SCANNED warning is suppressed — the
+    // precondition already gates the whole rule on scan readiness.
+    // Substring match is the cheap heuristic (no parsing).
+    preconditionCelExpression?: string | null
+    // Set on the precondition builder's own mount to suppress the
+    // warning loop-back — the precondition would otherwise warn about
+    // itself.
+    suppressFirstScannedWarning?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
     placeholder: '',
-    error: ''
+    error: '',
+    preconditionCelExpression: null,
+    suppressFirstScannedWarning: false
 })
 
 const emit = defineEmits<{
     (e: 'update:modelValue', value: string): void
+    // Task 1 fix-up button asks the parent rule editor to set the
+    // precondition CEL to a default first-scanned gate. Parent
+    // receives the suggested CEL string and writes it to
+    // preconditionCelExpression on the rule — single-branch and
+    // else-branch rules get the same correct fix (the rule sits out
+    // entirely on unscanned releases).
+    (e: 'set-precondition', value: string): void
 }>()
 
 // ─── Static option lists ─────────────────────────────────────────────────────
@@ -624,6 +658,57 @@ function changeConditionType(group: ConditionGroup, index: number, newType: Cond
 
 function addCondition(group: ConditionGroup) {
     group.conditions.push(createDefaultCondition('LIFECYCLE'))
+}
+
+// Task 1: surface the implicit firstScanned prerequisite. Metrics
+// variables resolve to 0 on unscanned releases, so a rule like
+// `criticalVulns > 0` silently passes before scanning completes —
+// bad gate. We warn when METRICS appears in the builder state
+// without firstScanned protection from either the main CEL or the
+// rule's precondition. Substring match on the precondition string is
+// the cheap detection — false positives (e.g. `!firstScanned`) are
+// rare enough that a noisy warning is fine.
+//
+// suppressFirstScannedWarning lets the precondition's own builder
+// mount skip this loop — without it the precondition builder would
+// warn about its own contents while trying to be the fix.
+const hasMetricsWithoutFirstScanned = computed((): boolean => {
+    if (props.suppressFirstScannedWarning) return false
+    let hasMetrics = false
+    let hasFirstScannedInMainCel = false
+    for (const g of builderState.groups) {
+        for (const c of g.conditions) {
+            if (c.type === 'METRICS') hasMetrics = true
+            if (c.type === 'FIRST_SCANNED') hasFirstScannedInMainCel = true
+        }
+    }
+    if (!hasMetrics) return false
+    if (hasFirstScannedInMainCel) return false
+    const pre = props.preconditionCelExpression || ''
+    if (pre.includes('firstScanned')) return false
+    return true
+})
+
+// Suggested precondition CEL fragment that the parent receives when
+// the user clicks "Enable Wait for First Scan". Single source of truth
+// so the emit and any future docs render the same string.
+const FIRST_SCANNED_PRECONDITION = 'release.firstScanned == true'
+
+// Compose the new precondition. If the existing one is empty, set the
+// fragment as-is. If it already gates on firstScanned, no-op (defensive
+// — the warning suppresses itself when firstScanned is present in the
+// precondition so this branch shouldn't fire in practice). Otherwise
+// AND the existing CEL with the fragment, wrapping the existing in
+// parens to keep precedence intact when the user already wrote a
+// boolean OR at the top of their precondition.
+function enableFirstScannedGuard () {
+    const existing = (props.preconditionCelExpression || '').trim()
+    if (!existing) {
+        emit('set-precondition', FIRST_SCANNED_PRECONDITION)
+        return
+    }
+    if (existing.includes('firstScanned')) return
+    emit('set-precondition', `(${existing}) && ${FIRST_SCANNED_PRECONDITION}`)
 }
 
 function removeCondition(group: ConditionGroup, index: number) {
