@@ -465,6 +465,259 @@
                                                 <n-data-table :data="policyGlobalOutputEvents" :columns="outputTriggerTableFieldsReadOnly" :row-key="dataTableUuidRowKey" />
                                             </template>
                                         </div>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="Input Events" tab="Rules" v-if="myUser.installationType !== 'OSS'">
+                                        <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Rules</h4>
+                                        <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Rule" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
+                                            <CirclePlus />
+                                        </Icon>
+                                        <!-- Policy-Wide Rules — co-located with local rules per
+                                             operator request. Toggle / override widgets save via the
+                                             same `saveTriggers` button below, which ships both
+                                             `releaseInputTriggers` (local) and `globalInputEventRefs`
+                                             (opt-out / override records) on the component mutation. -->
+                                        <div v-if="hasEffectivePolicy" style="margin-top: 28px;">
+                                            <h4 style="margin-bottom: 8px;">Policy-Wide Rules</h4>
+                                            <div v-if="policyGlobalInputEvents.length === 0" class="text-muted">
+                                                No policy-wide rules defined on the approval policy.
+                                            </div>
+                                            <div v-else>
+                                                <p class="text-muted" style="font-size: 0.9em; margin-bottom: 6px;">Policy-wide rules apply to this {{ words.component }} by default. Toggle a rule off to opt out, or override its actions locally.</p>
+                                                <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;" :style="{ opacity: gie.enabled === false ? 0.7 : 1 }">
+                                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                        <n-switch
+                                                            :value="isGlobalInputEventEnabled(gie.uuid)"
+                                                            @update:value="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
+                                                            :disabled="!isWritable"
+                                                        />
+                                                        <strong>{{ gie.name }}</strong>
+                                                        <n-tag v-if="gie.enabled === false" type="warning" size="small" round>Globally disabled</n-tag>
+                                                        <span class="text-muted" style="font-size: 0.85em;">
+                                                            ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
+                                                        </span>
+                                                    </div>
+                                                    <div v-if="gie.enabled === false" style="margin-left: 28px; margin-top: 6px; font-size: 12px;" class="text-muted">
+                                                        Disabled at the policy level — this rule will not fire for this {{ words.component }} regardless of the toggle above.
+                                                    </div>
+                                                    <div v-if="gie.preconditionCelExpression" style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
+                                                        <span class="text-muted" style="margin-right: 6px;">Precondition:</span>
+                                                        <code>{{ gie.preconditionCelExpression }}</code>
+                                                    </div>
+                                                    <div style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
+                                                        <span class="text-muted" style="margin-right: 6px;">Condition:</span>
+                                                        <code v-if="gie.celExpression">{{ gie.celExpression }}</code>
+                                                        <span v-else class="text-muted">(none — rule will not fire)</span>
+                                                    </div>
+                                                    <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
+                                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                                            <n-switch
+                                                                :value="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally || false"
+                                                                @update:value="(val: boolean) => toggleOverrideOutputEvents(gie.uuid, val)"
+                                                                :disabled="!isWritable"
+                                                            />
+                                                            <span>Override actions locally</span>
+                                                            <n-button v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally"
+                                                                size="tiny" quaternary type="warning"
+                                                                @click="resetGlobalInputEventOverride(gie.uuid)"
+                                                                :disabled="!isWritable">
+                                                                Reset to Default
+                                                            </n-button>
+                                                        </div>
+                                                        <div v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally" style="margin-top: 8px;">
+                                                            <span style="color: #f0a020; font-size: 0.85em; font-weight: bold;">⚠ Actions are overridden locally</span>
+                                                            <n-select
+                                                                :value="getGlobalInputEventRef(gie.uuid)?.outputEventsOverride || []"
+                                                                @update:value="(val: string[]) => updateOutputEventsOverride(gie.uuid, val)"
+                                                                :options="allOutputEventsForOverride"
+                                                                multiple
+                                                                placeholder="Select actions to use instead"
+                                                                :disabled="!isWritable"
+                                                                style="margin-top: 4px;"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" @click="saveTriggers">
+                                                    <template #icon>
+                                                        <n-icon><Check /></n-icon>
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetTriggers">
+                                                    <template #icon>
+                                                        <n-icon><X /></n-icon>
+                                                    </template>
+                                                    Reset Changes
+                                                </n-button>
+                                            </n-space>
+                                        </div>
+                                        <n-modal
+                                            v-model:show="showCreateInputTriggerModal"
+                                            preset="dialog"
+                                            :show-icon="false"
+                                            style="width: 90%"
+                                        >
+                                            <n-form :model="inputTrigger">
+                                                <h2>{{ inputTrigger.uuid ? 'Edit' : 'Add' }} Rule</h2>
+                                                <n-space vertical size="large">
+                                                    <n-form-item path="enabled">
+                                                        <template #label><strong>Enabled</strong></template>
+                                                        <n-switch v-model:value="inputTrigger.enabled" />
+                                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
+                                                            Disabled rules are skipped at evaluation time.
+                                                        </n-text>
+                                                    </n-form-item>
+                                                    <n-form-item path="name">
+                                                        <template #label><strong>Name</strong></template>
+                                                        <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
+                                                    </n-form-item>
+                                                    <n-form-item path="preconditionCelExpression">
+                                                        <template #label>
+                                                            <strong>Precondition (optional)</strong>
+                                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                                <template #trigger>
+                                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                                </template>
+                                                                A gate that decides whether the rule should run AT ALL. Evaluated before the Condition. If it returns false (or fails), the rule is skipped entirely — neither matched- nor else-branch actions fire, and PR snapshots render PENDING. Use it for "is the release ready to be evaluated?" — e.g. release.firstScanned == true. Leave empty to evaluate the rule on every release.
+                                                            </n-tooltip>
+                                                        </template>
+                                                        <CelExpressionBuilder
+                                                            v-model="inputTrigger.preconditionCelExpression"
+                                                            :approval-entry-options="approvalEntryOptionsForTriggers"
+                                                            :suppress-first-scanned-warning="true"
+                                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
+                                                        />
+                                                    </n-form-item>
+                                                    <n-form-item path="celExpression">
+                                                        <template #label>
+                                                            <strong>Condition</strong>
+                                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
+                                                                <template #trigger>
+                                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
+                                                                </template>
+                                                                The rule's main test. Runs only if the Precondition passes (or is empty). When this CEL is true, the matched-branch actions fire. When it's false AND an else-branch is configured, those else-branch actions fire instead. Otherwise nothing fires.
+                                                            </n-tooltip>
+                                                        </template>
+                                                        <CelExpressionBuilder
+                                                            v-model="inputTrigger.celExpression"
+                                                            :approval-entry-options="approvalEntryOptionsForTriggers"
+                                                            :error="celExpressionError"
+                                                            :precondition-cel-expression="inputTrigger.preconditionCelExpression"
+                                                            @set-precondition="(v: string) => { inputTrigger.preconditionCelExpression = v }"
+                                                        />
+                                                    </n-form-item>
+                                                    <n-form-item path="inputTrigger.outputEvents">
+                                                        <template #label><strong>Actions when condition is met</strong></template>
+                                                        <n-space vertical size="small" style="width: 100%;">
+                                                            <n-select v-model:value="inputTrigger.outputEvents"
+                                                            :options="outputTriggersForInputForm" multiple
+                                                            placeholder="Fired when the condition above is TRUE" />
+                                                            <!-- Inline action create — creates a local
+                                                                 component-level action and attaches its
+                                                                 (temp) uuid back to the rule's true-branch
+                                                                 list. The real uuid is assigned by the
+                                                                 server when the user hits Save Changes. -->
+                                                            <n-button v-if="isWritable" size="tiny" dashed @click="openCreateActionFromRule('true')">
+                                                                + Create new action
+                                                            </n-button>
+                                                        </n-space>
+                                                    </n-form-item>
+                                                    <n-form-item path="inputTrigger.outputEventsOnFalse">
+                                                        <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
+                                                        <n-space vertical size="small" style="width: 100%;">
+                                                            <n-select v-model:value="inputTrigger.outputEventsOnFalse"
+                                                            :options="outputTriggersForInputForm" multiple
+                                                            placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
+                                                            <n-button v-if="isWritable" size="tiny" dashed @click="openCreateActionFromRule('false')">
+                                                                + Create new action
+                                                            </n-button>
+                                                        </n-space>
+                                                    </n-form-item>
+                                                    <n-button @click="addInputTrigger" type="success">
+                                                        Save
+                                                    </n-button>
+                                                </n-space>
+                                            </n-form>
+                                        </n-modal>
+                                    </n-tab-pane>
+                                    <n-tab-pane v-if="false" name="Environment Mapping">
+                                        <div v-if="isWritable" class="envBranchMapBlock">
+                                            <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
+                                            <div>
+                                                <div v-for="et in environmentTypes" :key="et">
+                                                    <div class="etName">{{ et }}</div>
+                                                    <n-select v-on:update:value="value => {updatedComponent.envBranchMap[et] = value; save()}" :options="branchesForEnvMapping" v-model:value="updatedComponent.envBranchMap[et]" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </n-tab-pane>
+                                    <n-tab-pane v-if="false" name="Admin Zone">
+                                        <div class="versionSchemaBlock" v-if="false && resourceGroups && updatedComponent && componentData && updatedComponent.resourceGroup">
+                                            <label id="resourceGroupLabel">Resource Group</label>
+                                            <n-select
+                                                v-if="isAdmin"
+                                                v-on:update:value="value => {updatedComponent.resourceGroup = value; updateComponentResourceGroup()}" :options="resourceGroups" v-model:value="updatedComponent.resourceGroup" />
+                                            <div v-else>{{ resourceGroupMap[updatedComponent.resourceGroup] }} </div>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label id="visibilityLabel">Visibility</label>
+                                            <n-select
+                                                v-if="isAdmin"
+                                                @update:value="value => setComponentVisibility(value)" :options="visibilities" :value="updatedComponent.visibilitySetting" />
+                                            <div v-else>{{ resolvedVisibilityLabel }}</div>
+                                        </div>
+                                    </n-tab-pane>
+                                    <n-tab-pane v-if="isAdmin && myUser.installationType !== 'OSS'" name="Admin Settings">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label>Perspectives</label>
+                                            <n-select
+                                                v-if="perspectiveOptions.length > 0"
+                                                v-model:value="selectedPerspectives"
+                                                :options="perspectiveOptions"
+                                                multiple
+                                                placeholder="Select perspectives" />
+                                            <span v-else style="color: #888; font-size: 0.9em;">No manually created perspectives defined. You can create them via Organization Settings -&gt; Perspectives tab.</span>
+                                        </div>
+                                        <div class="coreSettingsActions" v-if="hasPerspectiveChanges" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" @click="savePerspectives">
+                                                    <template #icon>
+                                                        <n-icon><Check /></n-icon>
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetPerspectives">
+                                                    <template #icon>
+                                                        <n-icon><X /></n-icon>
+                                                    </template>
+                                                    Reset Changes
+                                                </n-button>
+                                            </n-space>
+                                        </div>
+
+                                        <div class="dangerZone">
+                                            <h5 class="dangerZoneHeader">Danger Zone</h5>
+                                            <p class="dangerZoneCopy">
+                                                Archiving the {{ words.component }} hides it from the active component
+                                                list. Existing releases keep their data and historical lookups stay
+                                                resolvable, but no new releases can be minted against an archived
+                                                {{ words.component }}.
+                                            </p>
+                                            <n-button v-if="isWritable" type="error" @click="archiveComponent">
+                                                <template #icon>
+                                                    <n-icon><Trash /></n-icon>
+                                                </template>
+                                                Archive {{ words.componentFirstUpper }}
+                                            </n-button>
+                                        </div>
+                                    </n-tab-pane>
+                                </n-tabs>
+
                                         <n-modal
                                             v-model:show="showCreateOutputTriggerModal"
                                             preset="dialog"
@@ -670,243 +923,6 @@
                                                 </n-space>
                                             </n-form>
                                         </n-modal>
-                                    </n-tab-pane>
-                                    <n-tab-pane name="Input Events" tab="Rules" v-if="myUser.installationType !== 'OSS'">
-                                        <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Rules</h4>
-                                        <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Rule" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
-                                            <CirclePlus />
-                                        </Icon>
-                                        <!-- Policy-Wide Rules — co-located with local rules per
-                                             operator request. Toggle / override widgets save via the
-                                             same `saveTriggers` button below, which ships both
-                                             `releaseInputTriggers` (local) and `globalInputEventRefs`
-                                             (opt-out / override records) on the component mutation. -->
-                                        <div v-if="hasEffectivePolicy" style="margin-top: 28px;">
-                                            <h4 style="margin-bottom: 8px;">Policy-Wide Rules</h4>
-                                            <div v-if="policyGlobalInputEvents.length === 0" class="text-muted">
-                                                No policy-wide rules defined on the approval policy.
-                                            </div>
-                                            <div v-else>
-                                                <p class="text-muted" style="font-size: 0.9em; margin-bottom: 6px;">Policy-wide rules apply to this {{ words.component }} by default. Toggle a rule off to opt out, or override its actions locally.</p>
-                                                <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;" :style="{ opacity: gie.enabled === false ? 0.7 : 1 }">
-                                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                                        <n-switch
-                                                            :value="isGlobalInputEventEnabled(gie.uuid)"
-                                                            @update:value="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
-                                                            :disabled="!isWritable"
-                                                        />
-                                                        <strong>{{ gie.name }}</strong>
-                                                        <n-tag v-if="gie.enabled === false" type="warning" size="small" round>Globally disabled</n-tag>
-                                                        <span class="text-muted" style="font-size: 0.85em;">
-                                                            ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
-                                                        </span>
-                                                    </div>
-                                                    <div v-if="gie.enabled === false" style="margin-left: 28px; margin-top: 6px; font-size: 12px;" class="text-muted">
-                                                        Disabled at the policy level — this rule will not fire for this {{ words.component }} regardless of the toggle above.
-                                                    </div>
-                                                    <div v-if="gie.preconditionCelExpression" style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
-                                                        <span class="text-muted" style="margin-right: 6px;">Precondition:</span>
-                                                        <code>{{ gie.preconditionCelExpression }}</code>
-                                                    </div>
-                                                    <div style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
-                                                        <span class="text-muted" style="margin-right: 6px;">Condition:</span>
-                                                        <code v-if="gie.celExpression">{{ gie.celExpression }}</code>
-                                                        <span v-else class="text-muted">(none — rule will not fire)</span>
-                                                    </div>
-                                                    <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
-                                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                                            <n-switch
-                                                                :value="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally || false"
-                                                                @update:value="(val: boolean) => toggleOverrideOutputEvents(gie.uuid, val)"
-                                                                :disabled="!isWritable"
-                                                            />
-                                                            <span>Override actions locally</span>
-                                                            <n-button v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally"
-                                                                size="tiny" quaternary type="warning"
-                                                                @click="resetGlobalInputEventOverride(gie.uuid)"
-                                                                :disabled="!isWritable">
-                                                                Reset to Default
-                                                            </n-button>
-                                                        </div>
-                                                        <div v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally" style="margin-top: 8px;">
-                                                            <span style="color: #f0a020; font-size: 0.85em; font-weight: bold;">⚠ Actions are overridden locally</span>
-                                                            <n-select
-                                                                :value="getGlobalInputEventRef(gie.uuid)?.outputEventsOverride || []"
-                                                                @update:value="(val: string[]) => updateOutputEventsOverride(gie.uuid, val)"
-                                                                :options="allOutputEventsForOverride"
-                                                                multiple
-                                                                placeholder="Select actions to use instead"
-                                                                :disabled="!isWritable"
-                                                                style="margin-top: 4px;"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
-                                            <n-space>
-                                                <n-button type="success" @click="saveTriggers">
-                                                    <template #icon>
-                                                        <n-icon><Check /></n-icon>
-                                                    </template>
-                                                    Save Changes
-                                                </n-button>
-                                                <n-button type="warning" @click="resetTriggers">
-                                                    <template #icon>
-                                                        <n-icon><X /></n-icon>
-                                                    </template>
-                                                    Reset Changes
-                                                </n-button>
-                                            </n-space>
-                                        </div>
-                                        <n-modal
-                                            v-model:show="showCreateInputTriggerModal"
-                                            preset="dialog"
-                                            :show-icon="false"
-                                            style="width: 90%"
-                                        >
-                                            <n-form :model="inputTrigger">
-                                                <h2>{{ inputTrigger.uuid ? 'Edit' : 'Add' }} Rule</h2>
-                                                <n-space vertical size="large">
-                                                    <n-form-item path="enabled">
-                                                        <template #label><strong>Enabled</strong></template>
-                                                        <n-switch v-model:value="inputTrigger.enabled" />
-                                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
-                                                            Disabled rules are skipped at evaluation time.
-                                                        </n-text>
-                                                    </n-form-item>
-                                                    <n-form-item path="name">
-                                                        <template #label><strong>Name</strong></template>
-                                                        <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
-                                                    </n-form-item>
-                                                    <n-form-item path="preconditionCelExpression">
-                                                        <template #label>
-                                                            <strong>Precondition (optional)</strong>
-                                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
-                                                                <template #trigger>
-                                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
-                                                                </template>
-                                                                A gate that decides whether the rule should run AT ALL. Evaluated before the Condition. If it returns false (or fails), the rule is skipped entirely — neither matched- nor else-branch actions fire, and PR snapshots render PENDING. Use it for "is the release ready to be evaluated?" — e.g. release.firstScanned == true. Leave empty to evaluate the rule on every release.
-                                                            </n-tooltip>
-                                                        </template>
-                                                        <CelExpressionBuilder
-                                                            v-model="inputTrigger.preconditionCelExpression"
-                                                            :approval-entry-options="approvalEntryOptionsForTriggers"
-                                                            :suppress-first-scanned-warning="true"
-                                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
-                                                        />
-                                                    </n-form-item>
-                                                    <n-form-item path="celExpression">
-                                                        <template #label>
-                                                            <strong>Condition</strong>
-                                                            <n-tooltip trigger="hover" placement="top-start" style="max-width: 360px;">
-                                                                <template #trigger>
-                                                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;"><QuestionMark /></n-icon>
-                                                                </template>
-                                                                The rule's main test. Runs only if the Precondition passes (or is empty). When this CEL is true, the matched-branch actions fire. When it's false AND an else-branch is configured, those else-branch actions fire instead. Otherwise nothing fires.
-                                                            </n-tooltip>
-                                                        </template>
-                                                        <CelExpressionBuilder
-                                                            v-model="inputTrigger.celExpression"
-                                                            :approval-entry-options="approvalEntryOptionsForTriggers"
-                                                            :error="celExpressionError"
-                                                            :precondition-cel-expression="inputTrigger.preconditionCelExpression"
-                                                            @set-precondition="(v: string) => { inputTrigger.preconditionCelExpression = v }"
-                                                        />
-                                                    </n-form-item>
-                                                    <n-form-item path="inputTrigger.outputEvents">
-                                                        <template #label><strong>Actions when condition is met</strong></template>
-                                                        <n-select v-model:value="inputTrigger.outputEvents"
-                                                        :options="outputTriggersForInputForm" multiple
-                                                        placeholder="Fired when the condition above is TRUE" />
-                                                    </n-form-item>
-                                                    <n-form-item path="inputTrigger.outputEventsOnFalse">
-                                                        <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
-                                                        <n-select v-model:value="inputTrigger.outputEventsOnFalse"
-                                                        :options="outputTriggersForInputForm" multiple
-                                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
-                                                    </n-form-item>
-                                                    <n-button @click="addInputTrigger" type="success">
-                                                        Save
-                                                    </n-button>
-                                                </n-space>
-                                            </n-form>
-                                        </n-modal>
-                                    </n-tab-pane>
-                                    <n-tab-pane v-if="false" name="Environment Mapping">
-                                        <div v-if="isWritable" class="envBranchMapBlock">
-                                            <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
-                                            <div>
-                                                <div v-for="et in environmentTypes" :key="et">
-                                                    <div class="etName">{{ et }}</div>
-                                                    <n-select v-on:update:value="value => {updatedComponent.envBranchMap[et] = value; save()}" :options="branchesForEnvMapping" v-model:value="updatedComponent.envBranchMap[et]" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </n-tab-pane>
-                                    <n-tab-pane v-if="false" name="Admin Zone">
-                                        <div class="versionSchemaBlock" v-if="false && resourceGroups && updatedComponent && componentData && updatedComponent.resourceGroup">
-                                            <label id="resourceGroupLabel">Resource Group</label>
-                                            <n-select
-                                                v-if="isAdmin"
-                                                v-on:update:value="value => {updatedComponent.resourceGroup = value; updateComponentResourceGroup()}" :options="resourceGroups" v-model:value="updatedComponent.resourceGroup" />
-                                            <div v-else>{{ resourceGroupMap[updatedComponent.resourceGroup] }} </div>
-                                        </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
-                                            <label id="visibilityLabel">Visibility</label>
-                                            <n-select
-                                                v-if="isAdmin"
-                                                @update:value="value => setComponentVisibility(value)" :options="visibilities" :value="updatedComponent.visibilitySetting" />
-                                            <div v-else>{{ resolvedVisibilityLabel }}</div>
-                                        </div>
-                                    </n-tab-pane>
-                                    <n-tab-pane v-if="isAdmin && myUser.installationType !== 'OSS'" name="Admin Settings">
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
-                                            <label>Perspectives</label>
-                                            <n-select
-                                                v-if="perspectiveOptions.length > 0"
-                                                v-model:value="selectedPerspectives"
-                                                :options="perspectiveOptions"
-                                                multiple
-                                                placeholder="Select perspectives" />
-                                            <span v-else style="color: #888; font-size: 0.9em;">No manually created perspectives defined. You can create them via Organization Settings -&gt; Perspectives tab.</span>
-                                        </div>
-                                        <div class="coreSettingsActions" v-if="hasPerspectiveChanges" style="margin-top: 20px;">
-                                            <n-space>
-                                                <n-button type="success" @click="savePerspectives">
-                                                    <template #icon>
-                                                        <n-icon><Check /></n-icon>
-                                                    </template>
-                                                    Save Changes
-                                                </n-button>
-                                                <n-button type="warning" @click="resetPerspectives">
-                                                    <template #icon>
-                                                        <n-icon><X /></n-icon>
-                                                    </template>
-                                                    Reset Changes
-                                                </n-button>
-                                            </n-space>
-                                        </div>
-
-                                        <div class="dangerZone">
-                                            <h5 class="dangerZoneHeader">Danger Zone</h5>
-                                            <p class="dangerZoneCopy">
-                                                Archiving the {{ words.component }} hides it from the active component
-                                                list. Existing releases keep their data and historical lookups stay
-                                                resolvable, but no new releases can be minted against an archived
-                                                {{ words.component }}.
-                                            </p>
-                                            <n-button v-if="isWritable" type="error" @click="archiveComponent">
-                                                <template #icon>
-                                                    <n-icon><Trash /></n-icon>
-                                                </template>
-                                                Archive {{ words.componentFirstUpper }}
-                                            </n-button>
-                                        </div>
-                                    </n-tab-pane>
-                                </n-tabs>
                             </n-modal>
                             <n-modal
                                 v-model:show="showCloneBranchModal"
@@ -2166,6 +2182,37 @@ function stripGraphQLMetadata(triggers: any[], stripScope: boolean = false) {
 }
 
 async function saveTriggers() {
+    // New output triggers added inline from "+ Create new action" inside a
+    // rule modal carry a temp-prefixed uuid that the rule references via
+    // outputEvents / outputEventsOnFalse. stripGraphQLMetadata rewrites
+    // the trigger's own uuid to "" so the server generates a fresh one,
+    // but it does NOT rewrite the references inside rules — leaving the
+    // rule pointing at a non-existent temp uuid and the backend choking
+    // with SERVICE_ERROR. Before stripping, remap each temp uuid on an
+    // output trigger to a real client-generated UUID (which the backend
+    // respects on updateComponent), and rewrite the same uuid in every
+    // rule's outputEvents/outputEventsOnFalse so the binding survives.
+    const tempToRealUuid: Record<string, string> = {}
+    if (updatedComponent.value.outputTriggers) {
+        for (const t of updatedComponent.value.outputTriggers) {
+            if (t.uuid && typeof t.uuid === 'string' && t.uuid.startsWith('temp-')) {
+                const real = crypto.randomUUID()
+                tempToRealUuid[t.uuid] = real
+                t.uuid = real
+            }
+        }
+    }
+    if (Object.keys(tempToRealUuid).length > 0 && updatedComponent.value.releaseInputTriggers) {
+        for (const rule of updatedComponent.value.releaseInputTriggers) {
+            if (Array.isArray(rule.outputEvents)) {
+                rule.outputEvents = rule.outputEvents.map((uuid: string) => tempToRealUuid[uuid] || uuid)
+            }
+            if (Array.isArray(rule.outputEventsOnFalse)) {
+                rule.outputEventsOnFalse = rule.outputEventsOnFalse.map((uuid: string) => tempToRealUuid[uuid] || uuid)
+            }
+        }
+    }
+
     // Strip scope and __typename before saving to backend
     updatedComponent.value.outputTriggers = stripGraphQLMetadata(updatedComponent.value.outputTriggers, true)
     updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(updatedComponent.value.releaseInputTriggers, true)
@@ -2818,6 +2865,20 @@ const tagFields: any[] = [
     }
 ]
 
+// "+ Create new action" inside the Local Rule modal sets this before
+// opening the action-create modal so addOutputTrigger can attach the
+// new (temp-uuid) entry back to the rule's outputEvents list. Local
+// actions get a temp uuid client-side; the real uuid is assigned
+// when the user hits Save Changes at the bottom of the tab.
+const pendingActionAttachBranch = ref<null | 'true' | 'false'>(null)
+
+function openCreateActionFromRule (branch: 'true' | 'false') {
+    pendingActionAttachBranch.value = branch
+    resetOutputTrigger()
+    loadEnvTypes()
+    showCreateOutputTriggerModal.value = true
+}
+
 async function addOutputTrigger () {
     if (!updatedComponent.value.outputTriggers) {
         updatedComponent.value.outputTriggers = []
@@ -2863,6 +2924,7 @@ async function addOutputTrigger () {
         return
     }
 
+    let isNewAction = false
     if (outputTriggerToPush.uuid) {
         // Check if trigger with this UUID already exists
         const existingIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === outputTriggerToPush.uuid)
@@ -2872,13 +2934,29 @@ async function addOutputTrigger () {
         } else {
             // Add new trigger
             updatedComponent.value.outputTriggers.push(outputTriggerToPush)
+            isNewAction = true
         }
     } else {
         // Add new trigger - generate temporary UUID for client-side tracking
         outputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + crypto.randomUUID()
         updatedComponent.value.outputTriggers.push(outputTriggerToPush)
+        isNewAction = true
     }
-    
+
+    // If this modal was opened from a rule's "+ Create new action" button,
+    // attach the new action's uuid to the rule's outputEvents /
+    // outputEventsOnFalse list. The temp uuid is what the rule references
+    // until the user hits Save Changes; the backend rewrites both refs
+    // and the trigger uuid in the same updateComponent call.
+    if (isNewAction && pendingActionAttachBranch.value) {
+        const target = pendingActionAttachBranch.value === 'true' ? 'outputEvents' : 'outputEventsOnFalse'
+        const list: string[] = (inputTrigger.value as any)[target] || []
+        if (!list.includes(outputTriggerToPush.uuid)) {
+            ;(inputTrigger.value as any)[target] = [...list, outputTriggerToPush.uuid]
+        }
+    }
+    pendingActionAttachBranch.value = null
+
     resetOutputTrigger()
     showCreateOutputTriggerModal.value = false
 }
