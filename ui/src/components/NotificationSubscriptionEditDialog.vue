@@ -3,7 +3,7 @@
         :show="show"
         preset="dialog"
         :show-icon="false"
-        style="width: 720px;"
+        style="width: 760px;"
         :title="isEdit ? `Edit subscription: ${original?.name ?? ''}` : 'New notification subscription'"
         @update:show="(v: boolean) => emit('update:show', v)"
     >
@@ -38,26 +38,39 @@
                 <code>size(event.affectedReleases) > 0</code>.
             </p>
 
-            <n-divider title-placement="left">Route</n-divider>
-            <n-form-item label="Severity gate">
-                <n-select v-model:value="form.routeMinSeverity"
-                          :options="severityOptions"
-                          clearable
-                          placeholder="No gate (any severity)"
-                          :disabled="saving"/>
-            </n-form-item>
-            <n-form-item label="Channels" required>
-                <n-select v-model:value="form.routeChannels"
-                          :options="channelOptions"
-                          multiple
-                          placeholder="Pick one or more channels"
-                          :disabled="saving || loadingChannels"
-                          :loading="loadingChannels"/>
-            </n-form-item>
+            <n-divider title-placement="left">Routes</n-divider>
             <p class="hint">
-                v1 surfaces one route per subscription. Multi-route configs (different severity gates →
-                different channels) are still authorable through the GraphQL <code>upsertNotificationSubscription</code> mutation directly.
+                Each route layers an extra gate (severity floor) on top of the CEL filter and
+                fans out to its own channel set. The first matching route wins per delivery —
+                order them most-specific first.
             </p>
+            <div v-for="(route, idx) in form.routes" :key="idx" class="route-block">
+                <div class="route-header">
+                    <strong>Route #{{ idx + 1 }}</strong>
+                    <n-button v-if="form.routes.length > 1"
+                              size="tiny" quaternary type="error"
+                              :disabled="saving"
+                              @click="removeRoute(idx)">
+                        Remove
+                    </n-button>
+                </div>
+                <n-form-item label="Severity gate">
+                    <n-select v-model:value="route.whenSeverityAtLeast"
+                              :options="severityOptions"
+                              clearable
+                              placeholder="No gate (any severity)"
+                              :disabled="saving"/>
+                </n-form-item>
+                <n-form-item label="Channels" required>
+                    <n-select v-model:value="route.channels"
+                              :options="channelOptions"
+                              multiple
+                              placeholder="Pick one or more channels"
+                              :disabled="saving || loadingChannels"
+                              :loading="loadingChannels"/>
+                </n-form-item>
+            </div>
+            <n-button size="small" :disabled="saving" @click="addRoute">+ Add route</n-button>
 
             <n-divider title-placement="left">Dedup</n-divider>
             <n-form-item label="Dedup window (minutes)">
@@ -88,6 +101,11 @@ import {
     NSpace, useNotification,
 } from 'naive-ui'
 
+interface RouteForm {
+    whenSeverityAtLeast: string | null,
+    channels: string[],
+}
+
 const props = defineProps<{
     show: boolean,
     orgUuid: string,
@@ -111,10 +129,13 @@ const form = reactive({
     status: 'ACTIVE' as 'ACTIVE' | 'DISABLED' | 'PREVIEW',
     eventTypes: [] as string[],
     celExpression: '',
-    routeMinSeverity: null as string | null,
-    routeChannels: [] as string[],
+    routes: [emptyRoute()] as RouteForm[],
     dedupWindowMinutes: null as number | null,
 })
+
+function emptyRoute (): RouteForm {
+    return { whenSeverityAtLeast: null, channels: [] }
+}
 
 const statusOptions = [
     { label: 'Active', value: 'ACTIVE' },
@@ -144,8 +165,10 @@ const channelOptions = computed(() =>
 const canSave = computed(() => {
     if (!form.name.trim()) return false
     if (!form.eventTypes.length) return false
-    if (!form.routeChannels.length) return false
-    return true
+    // Every route must have at least one channel; an empty channel list
+    // would silently no-op a route, so block save instead.
+    if (!form.routes.length) return false
+    return form.routes.every((r) => r.channels.length > 0)
 })
 
 onMounted(loadChannels)
@@ -158,28 +181,27 @@ watch(() => props.show, async (opening) => {
         form.status = props.original.status ?? 'ACTIVE'
         form.eventTypes = [...(props.original.eventTypes ?? [])]
         form.dedupWindowMinutes = props.original.dedupWindowMinutes ?? null
-        // filter / routes come back as JSON strings from the read API.
-        // Best-effort hydrate; users can edit even if the parse fails.
         try {
             const f = props.original.filter ? JSON.parse(props.original.filter) : null
             form.celExpression = f?.celExpression ?? ''
         } catch (e) { form.celExpression = '' }
         try {
             const rs = props.original.routes ? JSON.parse(props.original.routes) : []
-            const first = rs[0] ?? null
-            form.routeMinSeverity = first?.whenSeverityAtLeast ?? null
-            form.routeChannels = first?.channels ?? []
+            form.routes = rs.length
+                ? rs.map((r: any) => ({
+                    whenSeverityAtLeast: r.whenSeverityAtLeast ?? null,
+                    channels: r.channels ?? [],
+                }))
+                : [emptyRoute()]
         } catch (e) {
-            form.routeMinSeverity = null
-            form.routeChannels = []
+            form.routes = [emptyRoute()]
         }
     } else {
         form.name = ''
         form.status = 'ACTIVE'
         form.eventTypes = []
         form.celExpression = ''
-        form.routeMinSeverity = null
-        form.routeChannels = []
+        form.routes = [emptyRoute()]
         form.dedupWindowMinutes = null
     }
 })
@@ -196,6 +218,18 @@ async function loadChannels () {
     }
 }
 
+function addRoute () {
+    form.routes.push(emptyRoute())
+}
+
+function removeRoute (idx: number) {
+    form.routes.splice(idx, 1)
+    // Guard: always leave at least one route block visible. The "no
+    // routes" empty state isn't authorable through the dialog —
+    // a subscription with zero routes can't dispatch anything.
+    if (form.routes.length === 0) form.routes.push(emptyRoute())
+}
+
 async function save () {
     if (!canSave.value || saving.value) return
     saving.value = true
@@ -205,14 +239,12 @@ async function save () {
             name: form.name.trim(),
             status: form.status,
             eventTypes: form.eventTypes,
-            routes: [
-                {
-                    whenSeverityAtLeast: form.routeMinSeverity,
-                    andEnvIn: null,
-                    andLifecycleIn: null,
-                    channels: form.routeChannels,
-                },
-            ],
+            routes: form.routes.map((r) => ({
+                whenSeverityAtLeast: r.whenSeverityAtLeast,
+                andEnvIn: null,
+                andLifecycleIn: null,
+                channels: r.channels,
+            })),
         }
         if (isEdit.value) input.uuid = props.original.uuid
         if (form.celExpression.trim()) {
@@ -252,5 +284,18 @@ async function save () {
     background: rgba(0,0,0,0.04);
     padding: 1px 4px;
     border-radius: 3px;
+}
+.route-block {
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 12px 14px 4px 14px;
+    margin-bottom: 10px;
+    background: rgba(0,0,0,0.015);
+}
+.route-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
 }
 </style>

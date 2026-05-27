@@ -14,7 +14,7 @@
                     backoff window. FAILED rows hit MAX_ATTEMPTS=7 or a
                     non-retriable error (most often a misconfigured webhook
                     URL); the <code>lastError</code> column has the operator-
-                    facing diagnostic.
+                    facing diagnostic. Click any row for the full record.
                 </n-tooltip>
             </div>
             <n-space>
@@ -38,9 +38,41 @@
                           :data="page.items"
                           :pagination="paginationCfg"
                           remote
-                          :loading="loading"/>
+                          :loading="loading"
+                          :row-props="rowProps"/>
             <div class="total-row">Total: {{ page.totalCount }} deliveries</div>
         </div>
+
+        <n-drawer v-model:show="drawerOpen" :width="560" placement="right">
+            <n-drawer-content v-if="drawerRow" :title="`Delivery ${drawerRow.uuid?.substring(0, 8)}…`"
+                              closable>
+                <div class="drawer-section">
+                    <n-tag :type="statusType(drawerRow.status)" size="small">{{ drawerRow.status }}</n-tag>
+                    <n-tag size="small" bordered>{{ drawerRow.origin }}</n-tag>
+                    <span class="muted">attempt {{ drawerRow.attemptCount }} of 7</span>
+                </div>
+
+                <h5>Identifiers</h5>
+                <table class="kv">
+                    <tr><th>Delivery UUID</th><td><code>{{ drawerRow.uuid }}</code></td></tr>
+                    <tr><th>Event UUID</th><td><code>{{ drawerRow.outboxEventUuid }}</code></td></tr>
+                    <tr><th>Subscription</th><td>{{ resolveSubscription(drawerRow.subscriptionUuid) }}</td></tr>
+                    <tr><th>Channel</th><td>{{ resolveChannel(drawerRow.channelUuid) }}</td></tr>
+                    <tr><th>Dedup key</th><td><code>{{ drawerRow.dedupKey ?? '—' }}</code></td></tr>
+                </table>
+
+                <h5>Timeline</h5>
+                <table class="kv">
+                    <tr><th>Created</th><td>{{ formatDate(drawerRow.createdDate) }}</td></tr>
+                    <tr><th>Next attempt</th><td>{{ formatDate(drawerRow.nextAttemptAt) }}</td></tr>
+                    <tr><th>Sent</th><td>{{ formatDate(drawerRow.sentAt) }}</td></tr>
+                </table>
+
+                <h5>Last error</h5>
+                <div v-if="drawerRow.lastError" class="error-block">{{ drawerRow.lastError }}</div>
+                <div v-else class="muted">No error recorded.</div>
+            </n-drawer-content>
+        </n-drawer>
     </div>
 </template>
 
@@ -49,7 +81,7 @@ import { computed, h, onMounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
 import {
-    NButton, NDataTable, NIcon, NSelect, NSpace, NSpin, NTag, NTooltip,
+    NButton, NDataTable, NDrawer, NDrawerContent, NIcon, NSelect, NSpace, NSpin, NTag, NTooltip,
     DataTableColumns, useNotification,
 } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
@@ -67,6 +99,14 @@ const statusFilter = ref<string | null>(null)
 const originFilter = ref<string | null>(null)
 const currentPage = ref(1)
 const pageSize = 25
+
+// Detail-drawer state. Click a row → open with the row's full record.
+// We resolve channel + subscription UUIDs against the in-memory lookups
+// so the drawer shows names without an extra round-trip.
+const drawerOpen = ref(false)
+const drawerRow = ref<any | null>(null)
+const channelLookup = ref<Record<string, any>>({})
+const subscriptionLookup = ref<Record<string, any>>({})
 
 const statusOptions = [
     { label: 'PENDING', value: 'PENDING' },
@@ -95,7 +135,9 @@ watch([statusFilter, originFilter], () => {
     reload()
 })
 
-onMounted(reload)
+onMounted(async () => {
+    await Promise.all([reload(), loadLookups()])
+})
 
 async function reload () {
     if (!orgUuid.value) return
@@ -115,6 +157,24 @@ async function reload () {
     }
 }
 
+async function loadLookups () {
+    // Resolve channel + subscription names for the drawer. Fail-soft —
+    // if either list errors we still render the UUID short form.
+    if (!orgUuid.value) return
+    try {
+        const channels = await store.dispatch('fetchNotificationChannelsOfOrg', orgUuid.value) || []
+        const map: Record<string, any> = {}
+        for (const c of channels) map[c.uuid] = c
+        channelLookup.value = map
+    } catch (e) { /* leave empty; renderers fall back to UUID */ }
+    try {
+        const subs = await store.dispatch('fetchNotificationSubscriptionsOfOrg', orgUuid.value) || []
+        const map: Record<string, any> = {}
+        for (const s of subs) map[s.uuid] = s
+        subscriptionLookup.value = map
+    } catch (e) { /* leave empty */ }
+}
+
 function formatDate (s: any) {
     return s ? new Date(s).toLocaleString('en-CA') : '—'
 }
@@ -124,6 +184,28 @@ function statusType (s: string) {
     if (s === 'FAILED') return 'error'
     if (s === 'PENDING') return 'info'
     return 'default'
+}
+
+function resolveChannel (uuid: string | null | undefined): string {
+    if (!uuid) return '—'
+    const c = channelLookup.value[uuid]
+    return c ? `${c.name} (${c.type})` : `${uuid.substring(0, 8)}… (unknown)`
+}
+
+function resolveSubscription (uuid: string | null | undefined): string {
+    if (!uuid) return '—'
+    const s = subscriptionLookup.value[uuid]
+    return s ? s.name : `${uuid.substring(0, 8)}… (unknown)`
+}
+
+function rowProps (row: any) {
+    return {
+        style: 'cursor: pointer;',
+        onClick: () => {
+            drawerRow.value = row
+            drawerOpen.value = true
+        },
+    }
 }
 
 const columns = computed<DataTableColumns<any>>(() => [
@@ -145,8 +227,7 @@ const columns = computed<DataTableColumns<any>>(() => [
     {
         title: 'Channel',
         key: 'channelUuid',
-        render: (row: any) => h('code', { style: 'font-size: 11px;' },
-            row.channelUuid ? row.channelUuid.substring(0, 8) + '…' : '—'),
+        render: (row: any) => h('span', { style: 'font-size: 12px;' }, resolveChannel(row.channelUuid)),
     },
     { title: 'Attempts', key: 'attemptCount', width: 90 },
     {
@@ -165,7 +246,8 @@ const columns = computed<DataTableColumns<any>>(() => [
         title: 'Last error',
         key: 'lastError',
         render: (row: any) => row.lastError
-            ? h('span', { style: 'color: #c00; font-size: 12px;' }, row.lastError)
+            ? h('span', { style: 'color: #c00; font-size: 12px;' },
+                row.lastError.length > 80 ? row.lastError.substring(0, 80) + '…' : row.lastError)
             : '—',
     },
 ])
@@ -198,5 +280,52 @@ const columns = computed<DataTableColumns<any>>(() => [
     margin-top: 8px;
     font-size: 12px;
     color: #888;
+}
+.drawer-section {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 16px;
+}
+.muted {
+    color: #888;
+    font-size: 12px;
+}
+h5 {
+    margin: 16px 0 8px 0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #555;
+}
+table.kv {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+}
+table.kv th {
+    text-align: left;
+    color: #888;
+    font-weight: normal;
+    padding: 4px 12px 4px 0;
+    width: 130px;
+    vertical-align: top;
+}
+table.kv td {
+    padding: 4px 0;
+    word-break: break-all;
+}
+table.kv code {
+    font-size: 11px;
+}
+.error-block {
+    background: rgba(204, 0, 0, 0.06);
+    border-left: 3px solid #c00;
+    padding: 10px 12px;
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #800;
 }
 </style>
