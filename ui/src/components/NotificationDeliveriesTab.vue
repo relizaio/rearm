@@ -11,10 +11,10 @@
                     </template>
                     Each row is one (event × channel) dispatch attempt. PENDING
                     rows are waiting for the next channel-worker tick or a
-                    backoff window. FAILED rows hit MAX_ATTEMPTS=7 or a
-                    non-retriable error (most often a misconfigured webhook
-                    URL); the <code>lastError</code> column has the operator-
-                    facing diagnostic. Click any row for the full record.
+                    backoff window. FAILED rows hit the backend's max-attempts
+                    bound or a non-retriable error (most often a misconfigured
+                    webhook URL); the <code>lastError</code> column has the
+                    operator-facing diagnostic. Click any row for the full record.
                 </n-tooltip>
             </div>
             <n-space>
@@ -49,7 +49,7 @@
                 <div class="drawer-section">
                     <n-tag :type="statusType(drawerRow.status)" size="small">{{ drawerRow.status }}</n-tag>
                     <n-tag size="small" bordered>{{ drawerRow.origin }}</n-tag>
-                    <span class="muted">attempt {{ drawerRow.attemptCount }} of 7</span>
+                    <span class="muted">{{ drawerRow.attemptCount }} attempt{{ drawerRow.attemptCount === 1 ? '' : 's' }}</span>
                 </div>
 
                 <h5>Identifiers</h5>
@@ -102,11 +102,15 @@ const pageSize = 25
 
 // Detail-drawer state. Click a row → open with the row's full record.
 // We resolve channel + subscription UUIDs against the in-memory lookups
-// so the drawer shows names without an extra round-trip.
+// so the drawer shows names without an extra round-trip. `lookupsLoading`
+// distinguishes "still fetching" from "permanently unknown" — without
+// this guard a click in the load window would otherwise show "(unknown)"
+// the same as a 403 / RBAC mask would.
 const drawerOpen = ref(false)
 const drawerRow = ref<any | null>(null)
 const channelLookup = ref<Record<string, any>>({})
 const subscriptionLookup = ref<Record<string, any>>({})
+const lookupsLoading = ref(true)
 
 const statusOptions = [
     { label: 'PENDING', value: 'PENDING' },
@@ -158,21 +162,37 @@ async function reload () {
 }
 
 async function loadLookups () {
-    // Resolve channel + subscription names for the drawer. Fail-soft —
-    // if either list errors we still render the UUID short form.
+    // Resolve channel + subscription names for the drawer. Errors here
+    // (RBAC 403, network) MUST surface — otherwise every row in the
+    // drawer renders "(unknown)" with no operator signal that lookups
+    // are silently broken. Toast on failure so the operator knows the
+    // drawer's resolution is degraded; the list itself still works.
     if (!orgUuid.value) return
+    lookupsLoading.value = true
     try {
         const channels = await store.dispatch('fetchNotificationChannelsOfOrg', orgUuid.value) || []
         const map: Record<string, any> = {}
         for (const c of channels) map[c.uuid] = c
         channelLookup.value = map
-    } catch (e) { /* leave empty; renderers fall back to UUID */ }
+    } catch (e: any) {
+        notification.warning({
+            content: `Channel name lookup failed — delivery drawer will show UUIDs only: ${e?.message ?? e}`,
+            duration: 6000,
+        })
+    }
     try {
         const subs = await store.dispatch('fetchNotificationSubscriptionsOfOrg', orgUuid.value) || []
         const map: Record<string, any> = {}
         for (const s of subs) map[s.uuid] = s
         subscriptionLookup.value = map
-    } catch (e) { /* leave empty */ }
+    } catch (e: any) {
+        notification.warning({
+            content: `Subscription name lookup failed — delivery drawer will show UUIDs only: ${e?.message ?? e}`,
+            duration: 6000,
+        })
+    } finally {
+        lookupsLoading.value = false
+    }
 }
 
 function formatDate (s: any) {
@@ -189,13 +209,21 @@ function statusType (s: string) {
 function resolveChannel (uuid: string | null | undefined): string {
     if (!uuid) return '—'
     const c = channelLookup.value[uuid]
-    return c ? `${c.name} (${c.type})` : `${uuid.substring(0, 8)}… (unknown)`
+    if (c) return `${c.name} (${c.type})`
+    // Distinguish "still loading" from "permanently unknown" so a click
+    // in the load window doesn't look like the same outcome as a 403.
+    return lookupsLoading.value
+        ? `${uuid.substring(0, 8)}… (loading…)`
+        : `${uuid.substring(0, 8)}… (unknown)`
 }
 
 function resolveSubscription (uuid: string | null | undefined): string {
     if (!uuid) return '—'
     const s = subscriptionLookup.value[uuid]
-    return s ? s.name : `${uuid.substring(0, 8)}… (unknown)`
+    if (s) return s.name
+    return lookupsLoading.value
+        ? `${uuid.substring(0, 8)}… (loading…)`
+        : `${uuid.substring(0, 8)}… (unknown)`
 }
 
 function rowProps (row: any) {
