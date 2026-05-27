@@ -5543,7 +5543,7 @@ function addGlobalInputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalInputEvent.value)
     const validation = validateInputTrigger(eventToPush)
     if (!validation.valid) {
-        if (validation.error && validation.error.includes('CEL')) {
+        if (validation.error === 'Condition is required.') {
             globalCelExpressionError.value = validation.error
         } else {
             notify('error', 'Validation Error', validation.error!)

@@ -2946,7 +2946,7 @@ async function addInputTrigger () {
     celExpressionError.value = ''
     const validation = validateInputTrigger(inputTriggerToPush)
     if (!validation.valid) {
-        if (validation.error === 'CEL expression is required.') {
+        if (validation.error === 'Condition is required.') {
             celExpressionError.value = validation.error
         } else {
             notify('error', 'Validation Error', validation.error!)
