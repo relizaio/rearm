@@ -257,16 +257,14 @@
             <n-card style="max-width: 800px; width: 100%" size="huge" :title="addModalTitle" :bordered="false" role="dialog" aria-modal="true">
                 <n-form :model="createIntegrationObject">
                     <n-space vertical size="large">
+                        <!-- CI Type is pinned by the card the user opened
+                             this modal from (set in openAddForCard). The
+                             modal title already reflects the choice; a
+                             switcher here would let the user accidentally
+                             switch between, say, GitHub and Jenkins forms
+                             mid-edit, which is what triggered this fix. -->
                         <n-form-item label="Description" path="note">
                             <n-input v-model:value="createIntegrationObject.note" required placeholder="Enter Description" />
-                        </n-form-item>
-                        <n-form-item label="CI Type" path="createIntegrationObject.type">
-                            <n-radio-group v-model:value="createIntegrationObject.type" name="ciIntegrationType">
-                                <n-radio-button label="GitHub" value="GITHUB" />
-                                <n-radio-button label="GitLab" value="GITLAB" />
-                                <n-radio-button label="Jenkins" value="JENKINS" />
-                                <n-radio-button label="Azure DevOps" value="ADO" />
-                            </n-radio-group>
                         </n-form-item>
                         <n-form-item
                             v-if="createIntegrationObject.type === 'GITHUB'"
