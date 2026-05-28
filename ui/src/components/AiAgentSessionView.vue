@@ -91,7 +91,6 @@
                 v-model="reportContent"
                 :highlight="jsonHighlighter"
                 :readonly="true"
-                line-numbers
             ></prism-editor>
         </n-modal>
     </div>

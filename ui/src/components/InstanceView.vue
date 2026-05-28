@@ -203,7 +203,6 @@
                 v-model="prettyAgentData"
                 :highlight="jsonHighlighter"
                 :readonly="true"
-                line-numbers
             ></prism-editor>
         </n-modal>
         <n-modal
