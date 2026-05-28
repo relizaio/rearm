@@ -508,6 +508,18 @@ const policyColumns: DataTableColumns<any> = [
     padding: 5px;
 }
 .reportEditor { max-height: 70vh; overflow: auto; }
+/* prism-tomorrow is tuned for dark backgrounds; on the white editor its
+   token colours wash out. Override the JSON tokens with darker,
+   higher-contrast shades and drop the light text-shadow. */
+.editor :deep(.token) { text-shadow: none; }
+.editor :deep(.token.property) { color: #0550ae; }        /* JSON keys */
+.editor :deep(.token.string) { color: #0a6e2e; }          /* string values */
+.editor :deep(.token.number) { color: #8250df; }
+.editor :deep(.token.boolean),
+.editor :deep(.token.null),
+.editor :deep(.token.keyword) { color: #953800; }
+.editor :deep(.token.punctuation),
+.editor :deep(.token.operator) { color: #57606a; }
 .crumbs { margin-bottom: 12px; font-size: 13px; }
 .crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
