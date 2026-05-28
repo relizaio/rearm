@@ -77,6 +77,22 @@
                 </template>
             </n-tab-pane>
         </n-tabs>
+        <n-modal
+            v-model:show="showReportModal"
+            preset="dialog"
+            :show-icon="false"
+            style="width: 90%;"
+            :title="reportTitle || 'Agentic report'"
+        >
+            <n-spin v-if="reportLoading" size="small"/>
+            <prism-editor
+                v-else
+                class="editor reportEditor"
+                v-model="reportContent"
+                :highlight="jsonHighlighter"
+                :readonly="true"
+            ></prism-editor>
+        </n-modal>
     </div>
     <n-spin v-else size="small"/>
 </template>
@@ -85,8 +101,13 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
-import { fetchArrayBufferWithAuth } from '@/utils/fetchClient'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NSpace, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
+import { PrismEditor } from 'vue-prism-editor'
+import 'vue-prism-editor/dist/prismeditor.min.css'
+import * as prism from 'prismjs'
+import 'prismjs/components/prism-json'
+import 'prismjs/themes/prism-tomorrow.css'
 
 const store = useStore()
 const route = useRoute()
@@ -198,6 +219,36 @@ function commitUrl (row: any): string | null {
         return `${trimmed}/commit/${commit}`
     }
     return null
+}
+
+const showReportModal = ref<boolean>(false)
+const reportContent = ref<string>('')
+const reportTitle = ref<string>('')
+const reportLoading = ref<boolean>(false)
+
+const jsonHighlighter = (code: string) => prism.highlight(code, prism.languages.json, 'json')
+
+// View a REARM-stored artifact (e.g. an AGENTIC_REPORT) inline, read-only,
+// in the same PrismEditor used for instance agent data — no full download.
+async function viewArtifact (a: any) {
+    reportTitle.value = a.displayIdentifier || a.type || a.uuid
+    reportContent.value = ''
+    reportLoading.value = true
+    showReportModal.value = true
+    try {
+        const resp = await fetchWithAuth(`/api/manual/v1/artifact/${a.uuid}/rawdownload`)
+        const text = await resp.text()
+        try {
+            reportContent.value = JSON.stringify(JSON.parse(text), null, 2)
+        } catch {
+            reportContent.value = text
+        }
+    } catch (e: any) {
+        notification.error({ content: `Could not load artifact: ${e?.message ?? e}` })
+        showReportModal.value = false
+    } finally {
+        reportLoading.value = false
+    }
 }
 
 async function downloadArtifact (a: any) {
@@ -339,11 +390,17 @@ const artifactColumns: DataTableColumns<any> = [
     {
         title: '',
         key: 'download',
-        width: 140,
+        width: 180,
         render: (row: any) => {
             if (row.storedIn === 'REARM') {
-                return h(NButton, { size: 'tiny', onClick: () => downloadArtifact(row) },
-                    { default: () => 'Download' })
+                const btns = []
+                if (row.type === 'AGENTIC_REPORT') {
+                    btns.push(h(NButton, { size: 'tiny', onClick: () => viewArtifact(row) },
+                        { default: () => 'View' }))
+                }
+                btns.push(h(NButton, { size: 'tiny', onClick: () => downloadArtifact(row) },
+                    { default: () => 'Download' }))
+                return h(NSpace, { size: 4, wrapItem: false }, { default: () => btns })
             }
             const uri = externalUri(row)
             if (uri) {
@@ -441,6 +498,27 @@ const policyColumns: DataTableColumns<any> = [
 
 <style scoped>
 .aiAgentSessionView { padding: 16px; }
+.editor {
+    background: #fffefe;
+    color: #3a3838;
+    font-family: Fira code, Fira Mono, Consolas, Menlo, Courier, monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 5px;
+}
+.reportEditor { max-height: 70vh; overflow: auto; }
+/* prism-tomorrow is tuned for dark backgrounds; on the white editor its
+   token colours wash out. Override the JSON tokens with darker,
+   higher-contrast shades and drop the light text-shadow. */
+.editor :deep(.token) { text-shadow: none; }
+.editor :deep(.token.property) { color: #0550ae; }        /* JSON keys */
+.editor :deep(.token.string) { color: #0a6e2e; }          /* string values */
+.editor :deep(.token.number) { color: #8250df; }
+.editor :deep(.token.boolean),
+.editor :deep(.token.null),
+.editor :deep(.token.keyword) { color: #953800; }
+.editor :deep(.token.punctuation),
+.editor :deep(.token.operator) { color: #57606a; }
 .crumbs { margin-bottom: 12px; font-size: 13px; }
 .crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }

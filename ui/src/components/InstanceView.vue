@@ -203,7 +203,6 @@
                 v-model="prettyAgentData"
                 :highlight="jsonHighlighter"
                 :readonly="true"
-                line-numbers
             ></prism-editor>
         </n-modal>
         <n-modal
@@ -2340,6 +2339,18 @@ await onCreate()
     max-height: 70vh;
     overflow: auto;
 }
+/* prism-tomorrow is tuned for dark backgrounds; on the white editor its
+   token colours wash out. Darker, higher-contrast JSON tokens for the
+   read-only agent-data viewer (matches the agentic-report viewer). */
+.agentDataEditor :deep(.token) { text-shadow: none; }
+.agentDataEditor :deep(.token.property) { color: #0550ae; }
+.agentDataEditor :deep(.token.string) { color: #0a6e2e; }
+.agentDataEditor :deep(.token.number) { color: #8250df; }
+.agentDataEditor :deep(.token.boolean),
+.agentDataEditor :deep(.token.null),
+.agentDataEditor :deep(.token.keyword) { color: #953800; }
+.agentDataEditor :deep(.token.punctuation),
+.agentDataEditor :deep(.token.operator) { color: #57606a; }
 .dangerZone {
     margin-top: 32px;
     padding-top: 16px;
