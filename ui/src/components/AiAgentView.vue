@@ -207,7 +207,7 @@ const isOrgAdmin = computed<boolean>(() => {
         && p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
 })
 
-const agentDisplay = computed(() => agent.value?.displayName || agent.value?.name || '')
+const agentDisplay = computed(() => agent.value?.effectiveDisplayName || agent.value?.name || '')
 
 const openSessions = computed(() => agent.value?.openSessions ?? [])
 const closedSessions = computed(() => agent.value?.closedSessions ?? [])
@@ -260,7 +260,7 @@ const siblingColumns: DataTableColumns<any> = [
         render: (row: any) => h('a', {
             href: '#',
             onClick: (e: Event) => { e.preventDefault(); openSibling(row.uuid) },
-        }, row.name),
+        }, row.effectiveDisplayName || row.name),
     },
     { title: 'UUID', key: 'uuid', render: (row: any) => h('code', { class: 'mono-cell' }, shortUuid(row.uuid)) },
     { title: 'Type', key: 'agentType', width: 80 },
@@ -340,7 +340,7 @@ async function saveName () {
 }
 
 const subAgentColumns: DataTableColumns<any> = [
-    { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, row.name) },
+    { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, row.effectiveDisplayName || row.name) },
     { title: 'Sessions', key: 'sess', render: (row: any) => (row.sessionCounts?.openSessions ?? 0) + ' open / ' + (row.sessionCounts?.closedSessions ?? 0) + ' closed' },
     { title: 'Last activity', key: 'lastActivityAt', render: (row: any) => row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString('en-CA') : '—' },
 ]

@@ -68,7 +68,7 @@
                             </div>
                             <div class="acard__head">
                                 <div class="acard__name">
-                                    <span>{{ a.displayName || a.name }}</span>
+                                    <span>{{ a.effectiveDisplayName || a.name }}</span>
                                     <n-icon v-if="isOrgAdmin" class="acard__edit-name" size="16"
                                             title="Edit display name" @click.stop="openEditName(a)"><EditIcon/></n-icon>
                                 </div>

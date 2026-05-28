@@ -2063,6 +2063,7 @@ const storeObject : any = {
                             org
                             name
                             displayName
+                            effectiveDisplayName
                             iconKind
                             color
                             notes
@@ -2100,6 +2101,7 @@ const storeObject : any = {
                             org
                             name
                             displayName
+                            effectiveDisplayName
                             iconKind
                             color
                             notes
