@@ -78,6 +78,7 @@ import {
     DataTableColumns, useNotification,
 } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
+import { Edit as EditIcon } from '@vicons/tabler'
 
 const props = defineProps<{
     org: string,
@@ -202,11 +203,11 @@ const columns = computed<DataTableColumns<any>>(() => [
             if (row.revokedAt) return label
             return h('span', { class: 'identity-cell' }, [
                 label,
-                h(NButton, {
-                    size: 'tiny', quaternary: true, class: 'edit-id-btn',
+                h(NIcon, {
+                    size: 15, class: 'edit-id-btn',
                     title: 'Edit allowed-signers principal',
                     onClick: () => openEditIdentity(row),
-                }, { default: () => 'Edit' }),
+                }, { default: () => h(EditIcon) }),
             ])
         },
     },
@@ -243,5 +244,7 @@ const columns = computed<DataTableColumns<any>>(() => [
 :deep(.fp) { font-size: 11px; word-break: break-all; }
 .identity-cell { display: inline-flex; align-items: center; gap: 6px; }
 .identity-cell .dim { color: var(--n-text-color-3, #999); }
+.edit-id-btn { cursor: pointer; color: var(--n-text-color-3, #888); }
+.edit-id-btn:hover { color: var(--n-primary-color, #18a058); }
 .id-hint { font-size: 12px; color: var(--n-text-color-3, #666); margin: 4px 0 0; }
 </style>

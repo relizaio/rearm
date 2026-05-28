@@ -11,8 +11,8 @@
             <div class="hero__title">
                 <div v-if="!editingName" class="hero__name-row">
                     <h3>{{ agentDisplay }}</h3>
-                    <n-button v-if="isOrgAdmin" size="tiny" quaternary class="hero__edit-name"
-                              title="Edit display name" @click="startEditName">Edit</n-button>
+                    <n-icon v-if="isOrgAdmin" class="hero__edit-name" size="18"
+                            title="Edit display name" @click="startEditName"><EditIcon/></n-icon>
                 </div>
                 <div v-else class="hero__name-edit">
                     <n-input v-model:value="nameDraft" size="small" placeholder="Display name (blank = use registration name)"
@@ -176,6 +176,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NIcon, NInput, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
+import { Edit as EditIcon } from '@vicons/tabler'
 import SessionTable from './AiAgentSessionTable.vue'
 import SigningKeyManager from './SigningKeyManager.vue'
 
@@ -353,7 +354,8 @@ const subAgentColumns: DataTableColumns<any> = [
 .hero__title { flex: 1; }
 .hero__name-row { display: flex; align-items: center; gap: 8px; }
 .hero__name-row h3 { margin: 0; }
-.hero__edit-name { align-self: center; }
+.hero__edit-name { align-self: center; cursor: pointer; color: var(--n-text-color-3, #888); }
+.hero__edit-name:hover { color: var(--n-primary-color, #18a058); }
 .hero__name-edit { display: flex; align-items: center; gap: 6px; }
 .hero__id { font-weight: 400; font-family: monospace; font-size: 14px; color: var(--n-text-color-3, #666); }
 .hero__ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; margin-bottom: 4px; }
