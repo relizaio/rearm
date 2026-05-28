@@ -105,6 +105,52 @@
                     <n-descriptions-item label="Org"><code>{{ agent.org }}</code></n-descriptions-item>
                     <n-descriptions-item>
                         <template #label>
+                            Agent name
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
+                                </template>
+                                Registration name the runtime supplies via --agent-name.
+                                Part of the resolution key — immutable. Weakest input to the
+                                shown name.
+                            </n-tooltip>
+                        </template>
+                        <code>{{ agent.name }}</code>
+                    </n-descriptions-item>
+                    <n-descriptions-item>
+                        <template #label>
+                            Bound key note(s)
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
+                                </template>
+                                Note(s) on the bound FREEFORM key(s). Used as the shown name
+                                when no display name is set. Edit under Org Settings › Free
+                                Form Keys.
+                            </n-tooltip>
+                        </template>
+                        <span v-if="keyNotes.length">{{ keyNotes.join(', ') }}</span>
+                        <span v-else class="dim">—</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item>
+                        <template #label>
+                            Display name
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
+                                </template>
+                                Admin-set override (edit it in the header). Strongest input —
+                                wins over the key note and the registration name.
+                            </n-tooltip>
+                        </template>
+                        <span v-if="agent.displayName">{{ agent.displayName }}</span>
+                        <span v-else class="dim">— (not set)</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item label="Shown as">
+                        <strong>{{ agentDisplay }}</strong>
+                    </n-descriptions-item>
+                    <n-descriptions-item>
+                        <template #label>
                             Identity
                             <n-tooltip trigger="hover" :width="320">
                                 <template #trigger>
@@ -207,12 +253,15 @@ const isOrgAdmin = computed<boolean>(() => {
         && p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
 })
 
-const agentDisplay = computed(() => agent.value?.displayName || agent.value?.name || '')
+const agentDisplay = computed(() => agent.value?.effectiveDisplayName || agent.value?.name || '')
 
 const openSessions = computed(() => agent.value?.openSessions ?? [])
 const closedSessions = computed(() => agent.value?.closedSessions ?? [])
 
 const boundApiKeys = computed(() => agent.value?.boundApiKeys ?? [])
+
+const keyNotes = computed<string[]>(() =>
+    boundApiKeys.value.map((k: any) => k.notes).filter((n: any) => !!n && String(n).trim()))
 
 function apiKeyLabel (k: any): string {
     let label = (k.type || 'FREEFORM') + '__' + k.object
@@ -260,7 +309,7 @@ const siblingColumns: DataTableColumns<any> = [
         render: (row: any) => h('a', {
             href: '#',
             onClick: (e: Event) => { e.preventDefault(); openSibling(row.uuid) },
-        }, row.name),
+        }, row.effectiveDisplayName || row.name),
     },
     { title: 'UUID', key: 'uuid', render: (row: any) => h('code', { class: 'mono-cell' }, shortUuid(row.uuid)) },
     { title: 'Type', key: 'agentType', width: 80 },
@@ -340,7 +389,7 @@ async function saveName () {
 }
 
 const subAgentColumns: DataTableColumns<any> = [
-    { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, row.name) },
+    { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, row.effectiveDisplayName || row.name) },
     { title: 'Sessions', key: 'sess', render: (row: any) => (row.sessionCounts?.openSessions ?? 0) + ' open / ' + (row.sessionCounts?.closedSessions ?? 0) + ' closed' },
     { title: 'Last activity', key: 'lastActivityAt', render: (row: any) => row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString('en-CA') : '—' },
 ]

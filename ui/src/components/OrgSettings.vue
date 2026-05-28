@@ -1735,7 +1735,7 @@ const freeFormKeyFields: Ref<any> = ref([
                 links.push(h(
                     RouterLink,
                     { to: { name: 'AiAgentView', params: { uuid: a.uuid } } },
-                    { default: () => a.name || a.uuid }
+                    { default: () => a.effectiveDisplayName || a.name || a.uuid }
                 ))
             })
             return h('div', links)
@@ -4306,6 +4306,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     boundAgents {
                                         uuid
                                         name
+                                        effectiveDisplayName
                                     }
                                     permissions {
                                         permissions {
