@@ -467,7 +467,7 @@ import * as prism from 'prismjs';
 import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
-import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular} from '@vicons/fluent'
+import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular, DismissCircle20Regular} from '@vicons/fluent'
 import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, Clipboard, X, Check, Server, History } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
@@ -604,9 +604,15 @@ const filteredUnmatchedReleases: ComputedRef<any[]> = computed((): any[] => {
 // already; the per-row breakdown explains why.
 function buildMatchTooltipBody(row: any) {
     const lines: any[] = []
-    const headerText = row.notMatchingSince
-        ? `Not matching since ${(new Date(row.notMatchingSince)).toLocaleString('en-CA')}`
-        : 'Matching'
+    const isMatching = !!row.matchedRelease && !row.notMatchingSince
+    let headerText: string
+    if (isMatching) {
+        headerText = 'Matching'
+    } else if (row.notMatchingSince) {
+        headerText = `Not matching since ${(new Date(row.notMatchingSince)).toLocaleString('en-CA')}`
+    } else {
+        headerText = 'Not matching'
+    }
     lines.push(h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, headerText))
 
     const deps = (row.featureSetDetails && row.featureSetDetails.dependencies) || []
@@ -1503,9 +1509,23 @@ const matchedProductFields: any[] = [
                     
                 ]))
             }else {
-                els.push(h('span', 'Not Matched'))
+                els.push(h(NTooltip, {
+                    trigger: 'hover',
+                    placement: 'top',
+                    width: 720,
+                    style: { maxWidth: '720px' }
+                }, {
+                    trigger: () => h(NIcon, {
+                        size: 16,
+                        color: 'red'
+                    }, {
+                        default: () => h(DismissCircle20Regular)
+                    }),
+                    default: () => buildMatchTooltipBody(row)
+                }))
+                els.push(h('span', { style: 'margin-left: 4px;' }, 'Not Matched'))
             }
-            
+
             return els
         }
     },
