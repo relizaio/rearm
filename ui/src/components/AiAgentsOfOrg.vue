@@ -67,7 +67,11 @@
                                 {{ a.iconKind || '◆' }}
                             </div>
                             <div class="acard__head">
-                                <div class="acard__name">{{ a.name }}</div>
+                                <div class="acard__name">
+                                    <span>{{ a.displayName || a.name }}</span>
+                                    <n-icon v-if="isOrgAdmin" class="acard__edit-name" size="16"
+                                            title="Edit display name" @click.stop="openEditName(a)"><EditIcon/></n-icon>
+                                </div>
                                 <div class="acard__ids">
                                     <n-tooltip trigger="hover">
                                         <template #trigger>
@@ -147,6 +151,21 @@
                 />
             </div>
         </n-space>
+
+        <n-modal v-model:show="showEditName" preset="card" title="Edit agent display name" style="width: 480px;">
+            <n-input v-model:value="nameDraft" placeholder="Display name (blank = use registration name)"
+                     @keyup.enter="saveName"/>
+            <p class="edit-name-hint">
+                Cosmetic label shown in the dashboard. The agent's registration name
+                (supplied by the runtime via --agent-name) is unchanged.
+            </p>
+            <template #footer>
+                <n-space justify="end">
+                    <n-button @click="showEditName = false">Cancel</n-button>
+                    <n-button type="primary" :loading="savingName" @click="saveName">Save</n-button>
+                </n-space>
+            </template>
+        </n-modal>
     </div>
 </template>
 
@@ -154,14 +173,55 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns } from 'naive-ui'
+import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
+import { Edit as EditIcon } from '@vicons/tabler'
 
 const store = useStore()
 const route = useRoute()
 const router = useRouter()
+const notification = useNotification()
 
 const orgUuid = computed(() => route.params.orguuid as string)
+
+const myUser = computed<any>(() => store.getters.myuser)
+const isOrgAdmin = computed<boolean>(() => {
+    const org = orgUuid.value
+    const perms = myUser.value?.permissions?.permissions
+    if (!org || !perms) return false
+    return perms.some((p: any) => p.org === org && p.object === org
+        && p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
+})
+
+const showEditName = ref<boolean>(false)
+const editingAgent = ref<any>(null)
+const nameDraft = ref<string>('')
+const savingName = ref<boolean>(false)
+
+function openEditName (a: any) {
+    editingAgent.value = a
+    nameDraft.value = a.displayName ?? ''
+    showEditName.value = true
+}
+
+async function saveName () {
+    if (!editingAgent.value) return
+    savingName.value = true
+    try {
+        const updated = await store.dispatch('setAgentDisplayName', {
+            uuid: editingAgent.value.uuid,
+            displayName: nameDraft.value.trim() || null,
+        })
+        editingAgent.value.displayName = updated.displayName
+        showEditName.value = false
+        editingAgent.value = null
+        notification.success({ content: 'Display name saved' })
+    } catch (e: any) {
+        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+    } finally {
+        savingName.value = false
+    }
+}
 const loading = ref<boolean>(false)
 const kpis = ref<any>(null)
 const agents = ref<any[]>([])
@@ -300,7 +360,10 @@ const sessionColumns: DataTableColumns<any> = [
 .acard__top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .acard__mark { width: 36px; height: 36px; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 18px; flex-shrink: 0; }
 .acard__head { flex: 1; min-width: 0; }
-.acard__name { font-weight: 600; }
+.acard__name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.acard__edit-name { cursor: pointer; color: var(--n-text-color-3, #888); }
+.acard__edit-name:hover { color: var(--n-primary-color, #18a058); }
+.edit-name-hint { font-size: 12px; color: var(--n-text-color-3, #666); margin: 8px 0 0; }
 .acard__ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .acard__chip { font-family: monospace; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--n-color-embedded, #f5f5f5); color: var(--n-text-color-2, #555); border: 1px solid transparent; }
 .acard__chip-l { text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; color: var(--n-text-color-3, #888); margin-right: 4px; }

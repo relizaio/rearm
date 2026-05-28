@@ -1722,6 +1722,26 @@ const freeFormKeyFields: Ref<any> = ref([
         title: 'Notes'
     },
     {
+        key: 'boundAgents',
+        title: 'Bound Agent(s)',
+        render: (row: any) => {
+            const agents = row.boundAgents || []
+            if (!agents.length) {
+                return h('span', { class: 'text-muted' }, '—')
+            }
+            const links: any[] = []
+            agents.forEach((a: any, idx: number) => {
+                if (idx > 0) links.push(h('span', ', '))
+                links.push(h(
+                    RouterLink,
+                    { to: { name: 'AiAgentView', params: { uuid: a.uuid } } },
+                    { default: () => a.name || a.uuid }
+                ))
+            })
+            return h('div', links)
+        }
+    },
+    {
         key: 'controls',
         title: 'Manage',
         render: (row: any) => {
@@ -4283,6 +4303,10 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     accessDate
                                     createdDate
                                     notes
+                                    boundAgents {
+                                        uuid
+                                        name
+                                    }
                                     permissions {
                                         permissions {
                                             org

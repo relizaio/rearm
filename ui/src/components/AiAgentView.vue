@@ -2,14 +2,24 @@
     <div class="aiAgentView" v-if="agent">
         <n-breadcrumb separator="›" class="crumbs">
             <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
-            <n-breadcrumb-item>{{ agent.name }}</n-breadcrumb-item>
+            <n-breadcrumb-item>{{ agentDisplay }}</n-breadcrumb-item>
         </n-breadcrumb>
         <div class="hero">
             <div class="hero__mark" :style="{ background: agent.color || '#888' }">
                 {{ agent.iconKind || '◆' }}
             </div>
             <div class="hero__title">
-                <h3>{{ agent.name }}</h3>
+                <div v-if="!editingName" class="hero__name-row">
+                    <h3>{{ agentDisplay }}</h3>
+                    <n-icon v-if="isOrgAdmin" class="hero__edit-name" size="18"
+                            title="Edit display name" @click="startEditName"><EditIcon/></n-icon>
+                </div>
+                <div v-else class="hero__name-edit">
+                    <n-input v-model:value="nameDraft" size="small" placeholder="Display name (blank = use registration name)"
+                             style="max-width: 320px;" @keyup.enter="saveName"/>
+                    <n-button size="small" type="primary" :loading="savingName" @click="saveName">Save</n-button>
+                    <n-button size="small" quaternary @click="editingName = false">Cancel</n-button>
+                </div>
                 <div class="hero__ids">
                     <n-tooltip trigger="hover">
                         <template #trigger>
@@ -86,6 +96,7 @@
                     :org="agent.org"
                     owner-type="AGENT"
                     :owner-uuid="agent.uuid"
+                    :can-edit-identity="isOrgAdmin"
                 />
             </n-tab-pane>
             <n-tab-pane name="metadata" tab="Metadata">
@@ -112,6 +123,25 @@
                                 {{ siblingAgents.length }} other agent{{ siblingAgents.length > 1 ? 's' : '' }}
                             </a>
                         </span>
+                    </n-descriptions-item>
+                    <n-descriptions-item>
+                        <template #label>
+                            Bound API key(s)
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
+                                </template>
+                                FREEFORM API key(s) bound to this agent's identity — the
+                                credential an agent runtime authenticates with to drive this
+                                agent. Manage them under Org Settings › Free Form Keys.
+                            </n-tooltip>
+                        </template>
+                        <span v-if="boundApiKeys.length">
+                            <code v-for="(k, idx) in boundApiKeys" :key="k.uuid" class="bound-key">
+                                <span v-if="idx > 0">, </span>{{ apiKeyLabel(k) }}
+                            </code>
+                        </span>
+                        <span v-else class="dim">—</span>
                     </n-descriptions-item>
                     <n-descriptions-item label="Type">{{ agent.agentType }}</n-descriptions-item>
                     <n-descriptions-item label="Status">{{ agent.status }}</n-descriptions-item>
@@ -147,6 +177,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NIcon, NInput, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
+import { Edit as EditIcon } from '@vicons/tabler'
 import SessionTable from './AiAgentSessionTable.vue'
 import SigningKeyManager from './SigningKeyManager.vue'
 
@@ -163,9 +194,31 @@ const tab = ref<string>('open')
 const editingNotes = ref<boolean>(false)
 const notesDraft = ref<string>('')
 const savingNotes = ref<boolean>(false)
+const editingName = ref<boolean>(false)
+const nameDraft = ref<string>('')
+const savingName = ref<boolean>(false)
+
+const myUser = computed<any>(() => store.getters.myuser)
+const isOrgAdmin = computed<boolean>(() => {
+    const org = agent.value?.org
+    const perms = myUser.value?.permissions?.permissions
+    if (!org || !perms) return false
+    return perms.some((p: any) => p.org === org && p.object === org
+        && p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
+})
+
+const agentDisplay = computed(() => agent.value?.displayName || agent.value?.name || '')
 
 const openSessions = computed(() => agent.value?.openSessions ?? [])
 const closedSessions = computed(() => agent.value?.closedSessions ?? [])
+
+const boundApiKeys = computed(() => agent.value?.boundApiKeys ?? [])
+
+function apiKeyLabel (k: any): string {
+    let label = (k.type || 'FREEFORM') + '__' + k.object
+    if (k.keyOrder) label += '__ord__' + k.keyOrder
+    return label
+}
 
 const identityShareCount = computed(() => 1 + siblingAgents.value.length)
 
@@ -264,6 +317,28 @@ async function saveNotes () {
     }
 }
 
+function startEditName () {
+    nameDraft.value = agent.value?.displayName ?? ''
+    editingName.value = true
+}
+
+async function saveName () {
+    savingName.value = true
+    try {
+        const updated = await store.dispatch('setAgentDisplayName', {
+            uuid: agent.value.uuid,
+            displayName: nameDraft.value.trim() || null,
+        })
+        agent.value.displayName = updated.displayName
+        editingName.value = false
+        notification.success({ content: 'Display name saved' })
+    } catch (e: any) {
+        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+    } finally {
+        savingName.value = false
+    }
+}
+
 const subAgentColumns: DataTableColumns<any> = [
     { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, row.name) },
     { title: 'Sessions', key: 'sess', render: (row: any) => (row.sessionCounts?.openSessions ?? 0) + ' open / ' + (row.sessionCounts?.closedSessions ?? 0) + ' closed' },
@@ -278,6 +353,11 @@ const subAgentColumns: DataTableColumns<any> = [
 .hero { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .hero__mark { width: 56px; height: 56px; border-radius: 12px; color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600; }
 .hero__title { flex: 1; }
+.hero__name-row { display: flex; align-items: center; gap: 8px; }
+.hero__name-row h3 { margin: 0; }
+.hero__edit-name { align-self: center; cursor: pointer; color: var(--n-text-color-3, #888); }
+.hero__edit-name:hover { color: var(--n-primary-color, #18a058); }
+.hero__name-edit { display: flex; align-items: center; gap: 6px; }
 .hero__id { font-weight: 400; font-family: monospace; font-size: 14px; color: var(--n-text-color-3, #666); }
 .hero__ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; margin-bottom: 4px; }
 .hero__chip { font-family: monospace; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--n-color-embedded, #f5f5f5); color: var(--n-text-color-2, #555); border: 1px solid transparent; }

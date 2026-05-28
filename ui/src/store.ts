@@ -2062,6 +2062,7 @@ const storeObject : any = {
                             uuid
                             org
                             name
+                            displayName
                             iconKind
                             color
                             notes
@@ -2098,6 +2099,7 @@ const storeObject : any = {
                             uuid
                             org
                             name
+                            displayName
                             iconKind
                             color
                             notes
@@ -2142,6 +2144,13 @@ const storeObject : any = {
                                 version
                                 publisher
                                 description
+                            }
+                            boundApiKeys {
+                                uuid
+                                type
+                                object
+                                keyOrder
+                                notes
                             }
                         }
                     }`,
@@ -2299,6 +2308,18 @@ const storeObject : any = {
                 variables: { input }
             })
             return response.data.updateAgent
+        },
+        async setAgentDisplayName (context: any, { uuid, displayName }: { uuid: string, displayName: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setAgentDisplayName($uuid: ID!, $displayName: String) {
+                        setAgentDisplayName(uuid: $uuid, displayName: $displayName) {
+                            uuid name displayName
+                        }
+                    }`,
+                variables: { uuid, displayName }
+            })
+            return response.data.setAgentDisplayName
         },
         async fetchAgentPoliciesOfOrg (context: any, orgUuid: string) {
             const response = await graphqlClient.query({
@@ -2470,6 +2491,18 @@ const storeObject : any = {
                 variables: { uuid }
             })
             return response.data.revokeSigningKey
+        },
+        async updateSigningKeyIdentity (context: any, { uuid, identity }: { uuid: string, identity: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateSigningKeyIdentity($uuid: ID!, $identity: String) {
+                        updateSigningKeyIdentity(uuid: $uuid, identity: $identity) {
+                            uuid format ownerType ownerUuid fingerprint identity createdDate revokedAt
+                        }
+                    }`,
+                variables: { uuid, identity }
+            })
+            return response.data.updateSigningKeyIdentity
         },
     },
 }
