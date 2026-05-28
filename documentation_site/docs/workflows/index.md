@@ -4,6 +4,7 @@ sidebarDepth: 2
 
 # ReARM Workflows
 
+- [Bootstrap an AI Agent](./agentic)
 - [Bundling & Auto-Integrate](./bundling)
 - [License Compliance](./license-compliance)
 - [Auditing Findings](./auditing-findings)
