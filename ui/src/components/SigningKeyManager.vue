@@ -84,6 +84,7 @@ const props = defineProps<{
     org: string,
     ownerType: 'AGENT' | 'COMMITTER',
     ownerUuid: string,
+    canEditIdentity?: boolean,
 }>()
 
 const store = useStore()
@@ -200,7 +201,7 @@ const columns = computed<DataTableColumns<any>>(() => [
         key: 'identity',
         render: (row: any) => {
             const label = row.identity ? h('code', null, row.identity) : h('span', { class: 'dim' }, '—')
-            if (row.revokedAt) return label
+            if (row.revokedAt || !props.canEditIdentity) return label
             return h('span', { class: 'identity-cell' }, [
                 label,
                 h(NIcon, {

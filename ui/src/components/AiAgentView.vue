@@ -96,6 +96,7 @@
                     :org="agent.org"
                     owner-type="AGENT"
                     :owner-uuid="agent.uuid"
+                    :can-edit-identity="isOrgAdmin"
                 />
             </n-tab-pane>
             <n-tab-pane name="metadata" tab="Metadata">
