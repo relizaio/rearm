@@ -21,6 +21,28 @@
         <div v-if="!keys.length" class="empty">No keys enrolled.</div>
         <n-data-table v-else :columns="columns" :data="keys" :pagination="{ pageSize: 10 }" size="small"/>
 
+        <n-modal v-model:show="showEditIdentity" preset="card" title="Edit signing-key identity" style="width: 560px;">
+            <n-form label-placement="top">
+                <n-form-item label="Allowed-signers principal (identity)">
+                    <n-input v-model:value="identityDraft" placeholder="e.g. agent@your-org.example"/>
+                </n-form-item>
+                <p class="id-hint">
+                    The allowed-signers principal used to build the verification trust
+                    store. <strong>This is not</strong> what your commits are stamped with —
+                    the git author email comes from the agent's local git config. For SSH
+                    keys the verifier sweeps all enrolled principals, so this is primarily a
+                    display/label value today; it must stay non-blank for SSH.
+                </p>
+            </n-form>
+            <template #footer>
+                <n-space>
+                    <n-button @click="showEditIdentity = false">Cancel</n-button>
+                    <n-button type="primary" :loading="savingIdentity" :disabled="!canSaveIdentity"
+                              @click="saveIdentity">Save</n-button>
+                </n-space>
+            </template>
+        </n-modal>
+
         <n-modal v-model:show="showEnroll" preset="card" title="Enrol public key" style="width: 640px;">
             <n-form label-placement="top">
                 <n-form-item label="Format" required>
@@ -74,6 +96,38 @@ const draft = ref<{ format: 'SSH' | 'GPG', pubKey: string }>({
 })
 
 const canEnrol = computed(() => !!draft.value.pubKey.trim())
+
+const showEditIdentity = ref<boolean>(false)
+const editingKey = ref<any>(null)
+const identityDraft = ref<string>('')
+const savingIdentity = ref<boolean>(false)
+const canSaveIdentity = computed(() =>
+    editingKey.value?.format !== 'SSH' || !!identityDraft.value.trim())
+
+function openEditIdentity (row: any) {
+    editingKey.value = row
+    identityDraft.value = row.identity || ''
+    showEditIdentity.value = true
+}
+
+async function saveIdentity () {
+    if (!editingKey.value) return
+    savingIdentity.value = true
+    try {
+        await store.dispatch('updateSigningKeyIdentity', {
+            uuid: editingKey.value.uuid,
+            identity: identityDraft.value.trim() || null,
+        })
+        notification.success({ content: 'Identity updated' })
+        showEditIdentity.value = false
+        editingKey.value = null
+        await load()
+    } catch (e: any) {
+        notification.error({ content: `Update failed: ${e?.message ?? e}`, duration: 8000 })
+    } finally {
+        savingIdentity.value = false
+    }
+}
 
 onMounted(load)
 watch(() => props.ownerUuid, load)
@@ -143,7 +197,18 @@ const columns = computed<DataTableColumns<any>>(() => [
     {
         title: 'Identity',
         key: 'identity',
-        render: (row: any) => row.identity ? h('code', null, row.identity) : '—',
+        render: (row: any) => {
+            const label = row.identity ? h('code', null, row.identity) : h('span', { class: 'dim' }, '—')
+            if (row.revokedAt) return label
+            return h('span', { class: 'identity-cell' }, [
+                label,
+                h(NButton, {
+                    size: 'tiny', quaternary: true, class: 'edit-id-btn',
+                    title: 'Edit allowed-signers principal',
+                    onClick: () => openEditIdentity(row),
+                }, { default: () => 'Edit' }),
+            ])
+        },
     },
     {
         title: 'Status',
@@ -176,4 +241,7 @@ const columns = computed<DataTableColumns<any>>(() => [
 .info-icon { color: #888; cursor: help; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 8px 0; }
 :deep(.fp) { font-size: 11px; word-break: break-all; }
+.identity-cell { display: inline-flex; align-items: center; gap: 6px; }
+.identity-cell .dim { color: var(--n-text-color-3, #999); }
+.id-hint { font-size: 12px; color: var(--n-text-color-3, #666); margin: 4px 0 0; }
 </style>

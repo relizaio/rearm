@@ -113,6 +113,25 @@
                             </a>
                         </span>
                     </n-descriptions-item>
+                    <n-descriptions-item>
+                        <template #label>
+                            Bound API key(s)
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
+                                </template>
+                                FREEFORM API key(s) bound to this agent's identity — the
+                                credential an agent runtime authenticates with to drive this
+                                agent. Manage them under Org Settings › Free Form Keys.
+                            </n-tooltip>
+                        </template>
+                        <span v-if="boundApiKeys.length">
+                            <code v-for="(k, idx) in boundApiKeys" :key="k.uuid" class="bound-key">
+                                <span v-if="idx > 0">, </span>{{ apiKeyLabel(k) }}
+                            </code>
+                        </span>
+                        <span v-else class="dim">—</span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Type">{{ agent.agentType }}</n-descriptions-item>
                     <n-descriptions-item label="Status">{{ agent.status }}</n-descriptions-item>
                     <n-descriptions-item label="Model">
@@ -166,6 +185,14 @@ const savingNotes = ref<boolean>(false)
 
 const openSessions = computed(() => agent.value?.openSessions ?? [])
 const closedSessions = computed(() => agent.value?.closedSessions ?? [])
+
+const boundApiKeys = computed(() => agent.value?.boundApiKeys ?? [])
+
+function apiKeyLabel (k: any): string {
+    let label = (k.type || 'FREEFORM') + '__' + k.object
+    if (k.keyOrder) label += '__ord__' + k.keyOrder
+    return label
+}
 
 const identityShareCount = computed(() => 1 + siblingAgents.value.length)
 

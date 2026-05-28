@@ -2143,6 +2143,13 @@ const storeObject : any = {
                                 publisher
                                 description
                             }
+                            boundApiKeys {
+                                uuid
+                                type
+                                object
+                                keyOrder
+                                notes
+                            }
                         }
                     }`,
                 variables: { uuid },
@@ -2470,6 +2477,18 @@ const storeObject : any = {
                 variables: { uuid }
             })
             return response.data.revokeSigningKey
+        },
+        async updateSigningKeyIdentity (context: any, { uuid, identity }: { uuid: string, identity: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateSigningKeyIdentity($uuid: ID!, $identity: String) {
+                        updateSigningKeyIdentity(uuid: $uuid, identity: $identity) {
+                            uuid format ownerType ownerUuid fingerprint identity createdDate revokedAt
+                        }
+                    }`,
+                variables: { uuid, identity }
+            })
+            return response.data.updateSigningKeyIdentity
         },
     },
 }
