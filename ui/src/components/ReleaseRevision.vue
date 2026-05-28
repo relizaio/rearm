@@ -2,8 +2,8 @@
     <div class="container">
         <div class="instanceView" v-if="release && release.version">
             <h5 v-if="release">Release: {{release.componentDetails.name}}, version {{release.version}}
-                <a :href="'/api/manual/v1/release/exportAsBom/' + releaseUuid" target="_blank" rel="noopener noreferrer">
-                    <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
+                <a href="#" @click.prevent="exportReleaseObom">
+                    <n-icon class="clickable icons" title="Export as OBOM (CycloneDX JSON)" size="20"><Download /></n-icon>
                 </a>
             </h5>
             <div v-if="release" class="mb-3 settingsBlock">
@@ -277,6 +277,29 @@ const diffedProducts: ComputedRef<any[]> = computed((): any => {
     }
     return diffedProducts
 })
+
+const exportReleaseObom = async function () {
+    try {
+        const gqlResp: any = await graphqlClient.query({
+            query: gql`
+                query exportAsObomManual($releaseUuid: ID!) {
+                    exportAsObomManual(releaseUuid: $releaseUuid)
+                }
+            `,
+            variables: { releaseUuid: releaseUuid.value },
+            fetchPolicy: 'no-cache'
+        })
+        const fileName = releaseUuid.value + '-obom.json'
+        const blob = new Blob([gqlResp.data.exportAsObomManual], { type: 'application/json' })
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = fileName
+        link.click()
+        notify('info', 'Processing Download', 'Your OBOM is being downloaded...')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+}
 
 const copyToClipboard = async function (text: string) {
     try {
