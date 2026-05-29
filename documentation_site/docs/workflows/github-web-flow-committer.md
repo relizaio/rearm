@@ -41,9 +41,9 @@ In the ReARM UI go to **Organization Settings → Committers → New committer**
 | Linked ReARM user | *None — standalone* (GitHub is not a ReARM user) |
 | **Name**         | `GitHub`                               |
 | **Email**        | `noreply@github.com`                   |
-| Aliases          | *(leave empty)*                        |
+| Aliases          | `web-flow@github.com`                  |
 
-The name/email are for clean attribution on the commit and in the UI — verification itself matches on the enrolled key, not the email.
+The name/email are for clean attribution on the commit and in the UI — verification itself matches on the enrolled key, not the email. Add `web-flow@github.com` as an alias because GitHub stamps some web-UI commits with that committer address instead of `noreply@github.com`; the alias lets ReARM resolve both back to this one committer.
 
 ### 3. Enrol the web-flow key
 
