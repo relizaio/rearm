@@ -25,7 +25,7 @@ function sidebar() {
           {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
           {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
           {text: 'Pull Requests', link: '/workflows/pull-requests'},
-          {text: 'Verifying GitHub Web-Flow Commits', link: '/workflows/github-web-flow-committer'}
+          {text: 'Committers & Commit Signing', link: '/workflows/committers'}
         ]},
         {text: 'Configure', link: '/configure/', items: [
           {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'}
