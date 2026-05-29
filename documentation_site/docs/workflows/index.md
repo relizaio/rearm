@@ -12,5 +12,5 @@ sidebarDepth: 2
 - [Supply Chain Forensics](./supply-chain-forensics)
 - [Exporting Compliance Artifacts](./exporting-compliance-artifacts)
 - [Pull Requests](./pull-requests)
-- [Verifying GitHub Web-Flow Commits](./github-web-flow-committer)
+- [Committers & Commit Signing](./committers)
 
