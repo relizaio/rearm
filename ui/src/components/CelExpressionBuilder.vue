@@ -185,7 +185,7 @@
                 <n-popover
                     trigger="click"
                     placement="bottom-end"
-                    :width="640"
+                    :width="880"
                     style="max-height: 70vh; overflow: auto;"
                 >
                     <template #trigger>
@@ -208,7 +208,7 @@
                                             @click="insertSnippet(v.snippet)"
                                         ><ClipboardPaste20Regular /></n-icon>
                                     </td>
-                                    <td style="padding: 2px 8px 2px 0;"><code v-html="v.display"></code></td>
+                                    <td style="padding: 2px 8px 2px 0; white-space: nowrap;"><code v-html="v.display"></code></td>
                                     <td v-html="v.desc"></td>
                                 </tr>
                             </tbody>
