@@ -122,6 +122,28 @@
                                 <span>Add another {{ card.name }}</span>
                             </button>
                         </template>
+
+                        <!--
+                            Pro-only hint on the Slack / MS Teams cards.
+                            See ai-plans/notifications/integration-unification.md
+                            (Option E): these integrations cover release-event
+                            notifications; security/vuln events use a separate
+                            destination configured in the Notifications screen.
+                        -->
+                        <div
+                            v-if="showCiFeatures && (card.id === 'SLACK' || card.id === 'MSTEAMS')"
+                            class="messaging-notifications-hint"
+                        >
+                            <span class="hint-text">
+                                Security alerts use a separate destination —
+                                <router-link
+                                    class="hint-link"
+                                    :to="`/orgSettings/${orguuid}?tab=notifications&notificationsTab=channels`"
+                                >
+                                    manage in Notifications →
+                                </router-link>
+                            </span>
+                        </div>
                     </div>
                 </div>
             </template>
@@ -1203,6 +1225,22 @@ watch(() => props.orguuid, async () => {
     transition: color .12s, border-color .12s;
 }
 .add-another:hover { color: var(--green); border-color: var(--green); }
+
+/* Pro-only hint on Slack/MSTeams cards (see ai-plans/notifications/integration-unification.md). */
+.messaging-notifications-hint {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.4;
+}
+.messaging-notifications-hint .hint-link {
+    color: var(--green);
+    text-decoration: none;
+    font-weight: 500;
+}
+.messaging-notifications-hint .hint-link:hover { text-decoration: underline; }
 
 /* ---- info banner -------------------------------------------------------- */
 .info-banner {
