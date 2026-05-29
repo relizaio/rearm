@@ -51,7 +51,16 @@
                                 </template>
                                 {{ rel.version }}
                             </n-tooltip>
-                            <span v-if="!props.showFullPageIcon" style="flex-shrink: 0;">&nbsp;·&nbsp;{{ formatDate(rel.createdDate) }}</span>
+                            <span style="flex-shrink: 0; display: inline-flex; align-items: center;">
+                                <template v-if="!props.showFullPageIcon">&nbsp;·&nbsp;{{ formatDate(rel.createdDate) }}</template>
+                                <span v-else>&nbsp;·&nbsp;</span>
+                                <n-tooltip trigger="hover" :delay="200">
+                                    <template #trigger>
+                                        <n-icon size="14" style="margin-left: 4px; cursor: help; vertical-align: middle;"><Clock /></n-icon>
+                                    </template>
+                                    Release created: {{ formatDateTime(rel.createdDate) }}
+                                </n-tooltip>
+                            </span>
                             <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ rel.lifecycle }}</span>
                         </span>
                         <span
@@ -107,7 +116,7 @@ export default {
 import { ref, Ref, computed, watch, onMounted } from 'vue'
 import { NIcon, NSpin, NSpace, NInputNumber, NSelect, NTooltip, useNotification } from 'naive-ui'
 import { ArrowExpand20Regular } from '@vicons/fluent'
-import { Refresh } from '@vicons/tabler'
+import { Refresh, Clock } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
@@ -258,6 +267,12 @@ async function openVulnModal(rel: any, severityFilter: string, typeFilter: strin
 function formatDate(dateStr: string): string {
     if (!dateStr) return ''
     return new Date(dateStr).toLocaleDateString('en-CA')
+}
+
+// Full timestamp down to the second, e.g. "2026-05-28, 9:09:36 p.m."
+function formatDateTime(dateStr: string): string {
+    if (!dateStr) return ''
+    return new Date(dateStr).toLocaleString('en-CA')
 }
 
 watch(() => props.perspectiveUuid, () => fetchReleases())
