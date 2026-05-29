@@ -172,11 +172,26 @@ const channelOptions = computed(() =>
     }))
 )
 
-// Perspectives are already in the global Vuex state (loaded at app
-// startup; see TopNavBar / AppHome which use the same getter). If the
-// org has zero perspectives, the dropdown stays empty and routes
-// continue to behave as "match anything" — same as a route with an
-// empty perspectives array.
+// Perspectives normally hydrate at app startup (see TopNavBar /
+// AppHome). Dispatch defensively on dialog mount/show so deep-link
+// entries (browser-back to a notifications-tab URL before the nav
+// has loaded) don't render the dropdown silently empty. Cheap if
+// already cached. The action mutates state.perspectives, which the
+// `perspectivesOfOrg` getter reads from — no return value needed.
+async function ensurePerspectivesLoaded () {
+    if (!props.orgUuid) return
+    try {
+        await store.dispatch('fetchPerspectives', props.orgUuid)
+    } catch (e: any) {
+        // Soft-fail: an empty dropdown means routes can't be perspective-
+        // scoped, but the rest of the dialog still works. Don't block save.
+        notification.warning({
+            content: `Perspective list failed to load — gating fields will be empty: ${e?.message ?? e}`,
+            duration: 6000,
+        })
+    }
+}
+
 const perspectivesOfOrg = computed<any[]>(() =>
     store.getters.perspectivesOfOrg(props.orgUuid) || [])
 const perspectiveOptions = computed(() =>
@@ -195,11 +210,13 @@ const canSave = computed(() => {
     return form.routes.every((r) => r.channels.length > 0)
 })
 
-onMounted(loadChannels)
+onMounted(async () => {
+    await Promise.all([loadChannels(), ensurePerspectivesLoaded()])
+})
 
 watch(() => props.show, async (opening) => {
     if (!opening) return
-    await loadChannels()
+    await Promise.all([loadChannels(), ensurePerspectivesLoaded()])
     if (props.original) {
         form.name = props.original.name ?? ''
         form.status = props.original.status ?? 'ACTIVE'
@@ -275,7 +292,11 @@ async function save () {
                 // so the backend's "perspectives == null/empty = no gate"
                 // branch is the canonical no-op rather than a populated
                 // empty-list with edge-case semantics.
-                perspectives: r.perspectives.length > 0 ? r.perspectives : null,
+                // Defensive `?? []` against mid-edit undefined — the
+                // form interface declares perspectives as non-nullable
+                // string[], but a future edit-load fallback or third-
+                // party caller could mutate it; don't NPE in save().
+                perspectives: (r.perspectives ?? []).length > 0 ? r.perspectives : null,
             })),
         }
         if (isEdit.value) input.uuid = props.original.uuid
