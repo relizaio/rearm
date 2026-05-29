@@ -2544,7 +2544,8 @@ const storeObject : any = {
             //   { uuid?, org, resourceGroup?, name, type, status?,
             //     slackConfig?: { webhookUrl },
             //     webhookConfig?: { url, authScheme, authToken },
-            //     emailConfig?: { recipients: string[] } }
+            //     emailConfig?: { recipients: string[] },
+            //     teamsConfig?: { webhookUrl } }
             // Blank per-type config on update preserves the existing
             // server-side state ("rename without re-typing"); status
             // defaults to ENABLED on create.

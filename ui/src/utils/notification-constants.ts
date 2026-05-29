@@ -26,15 +26,16 @@
  *
  * NOTE: NotificationChannelType has five Java values (SLACK, MS_TEAMS,
  * EMAIL, WEBHOOK, SENTINEL). The TS list ships those with shipped
- * channel workers. MS_TEAMS / SENTINEL will be added by the Phase 10/11
- * commits that land their respective dispatchers; until then, a row
- * of those types is impossible because the UI can't create one.
+ * channel workers. SENTINEL will be added by the Phase 11 commit that
+ * lands its dispatcher; until then, a row of that type is impossible
+ * because the UI can't create one.
  */
 
 // ---------- Channel ----------
 
 export const NOTIFICATION_CHANNEL_TYPES = [
     { label: 'Slack', value: 'SLACK' },
+    { label: 'Microsoft Teams', value: 'MS_TEAMS' },
     { label: 'Email', value: 'EMAIL' },
     { label: 'Generic webhook (HTTPS)', value: 'WEBHOOK' },
 ] as const

@@ -39,6 +39,24 @@
                 <p class="hint">Must start with <code>https://hooks.slack.com/services/</code> — validated at save and dispatch.</p>
             </template>
 
+            <!-- MS_TEAMS-specific fields -->
+            <template v-if="form.type === 'MS_TEAMS'">
+                <n-divider title-placement="left">Microsoft Teams webhook</n-divider>
+                <n-form-item :label="isEdit ? 'Workflow URL (leave blank to keep existing)' : 'Workflow URL'"
+                             path="teamsWebhookUrl"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.teamsWebhookUrl"
+                             placeholder="https://prod-XX.<region>.logic.azure.com:443/workflows/.../triggers/manual/paths/invoke?..."
+                             :disabled="saving"/>
+                </n-form-item>
+                <p class="hint">
+                    Power Automate Workflows webhook URL. Create one in Teams via
+                    <em>+ → Workflows → Post to a channel when a webhook request is received</em>.
+                    Must be HTTPS and end at a <code>logic.azure.com</code> host — validated at save and dispatch.
+                    The legacy O365 connector path is deprecated by Microsoft and not supported.
+                </p>
+            </template>
+
             <!-- EMAIL-specific fields -->
             <template v-if="form.type === 'EMAIL'">
                 <n-divider title-placement="left">Email recipients</n-divider>
@@ -142,6 +160,7 @@ const form = reactive({
     type: 'SLACK' as NotificationChannelType,
     status: 'ENABLED' as NotificationChannelStatus,
     slackWebhookUrl: '',
+    teamsWebhookUrl: '',
     webhookUrl: '',
     webhookAuthScheme: 'NONE' as NotificationWebhookAuthScheme,
     webhookAuthToken: '',
@@ -165,6 +184,7 @@ const canSave = computed(() => {
     if (!isEdit.value) {
         // Create path: per-type required fields.
         if (form.type === 'SLACK' && !form.slackWebhookUrl.trim()) return false
+        if (form.type === 'MS_TEAMS' && !form.teamsWebhookUrl.trim()) return false
         if (form.type === 'WEBHOOK') {
             if (!form.webhookUrl.trim()) return false
             if (form.webhookAuthScheme !== 'NONE' && !form.webhookAuthToken.trim()) return false
@@ -204,6 +224,7 @@ watch(() => props.show, (opening) => {
     // the existing value (the read API doesn't return it, two-layer
     // credential hygiene). Blank on save = preserve existing.
     form.slackWebhookUrl = ''
+    form.teamsWebhookUrl = ''
     form.webhookUrl = ''
     form.webhookAuthScheme = 'NONE'
     form.webhookAuthToken = ''
@@ -225,6 +246,10 @@ async function save () {
         if (form.type === 'SLACK') {
             if (form.slackWebhookUrl.trim()) {
                 input.slackConfig = { webhookUrl: form.slackWebhookUrl.trim() }
+            }
+        } else if (form.type === 'MS_TEAMS') {
+            if (form.teamsWebhookUrl.trim()) {
+                input.teamsConfig = { webhookUrl: form.teamsWebhookUrl.trim() }
             }
         } else if (form.type === 'WEBHOOK') {
             const wc: any = {}
