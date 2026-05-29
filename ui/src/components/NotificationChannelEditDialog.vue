@@ -75,6 +75,59 @@
                 </p>
             </template>
 
+            <!-- SENTINEL-specific fields -->
+            <template v-if="form.type === 'SENTINEL'">
+                <n-divider title-placement="left">Azure Sentinel — service principal</n-divider>
+                <p class="hint">
+                    Used to acquire an Azure AD bearer token via the client-credentials grant.
+                    On edit, leave all three fields blank to keep the existing values.
+                </p>
+                <n-form-item :label="isEdit ? 'Tenant ID (leave blank to keep existing)' : 'Tenant ID'"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.sentinelTenantId"
+                             placeholder="11111111-2222-3333-4444-555555555555"
+                             :disabled="saving"/>
+                </n-form-item>
+                <n-form-item :label="isEdit ? 'Client ID (leave blank to keep existing)' : 'Client ID'"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.sentinelClientId"
+                             placeholder="App registration UUID"
+                             :disabled="saving"/>
+                </n-form-item>
+                <n-form-item :label="isEdit ? 'Client secret (leave blank to keep existing)' : 'Client secret'"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.sentinelClientSecret"
+                             type="password"
+                             show-password-on="click"
+                             :placeholder="isEdit ? '••• (existing kept)' : 'Service-principal secret'"
+                             :disabled="saving"/>
+                </n-form-item>
+
+                <n-divider title-placement="left">Sentinel — DCR routing</n-divider>
+                <p class="hint">
+                    The Data Collection Endpoint, Data Collection Rule immutable ID, and stream name
+                    are required together so the Logs Ingestion API knows where to land the records.
+                </p>
+                <n-form-item :label="isEdit ? 'DCE URL (leave blank to keep existing)' : 'DCE URL'"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.sentinelDcrEndpoint"
+                             placeholder="https://<name>.<region>.ingest.monitor.azure.com"
+                             :disabled="saving"/>
+                </n-form-item>
+                <n-form-item :label="isEdit ? 'DCR immutable ID (leave blank to keep existing)' : 'DCR immutable ID'"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.sentinelDcrImmutableId"
+                             placeholder="dcr-xxxxxxxxxxxxxxxxxxxxxxxxxx"
+                             :disabled="saving"/>
+                </n-form-item>
+                <n-form-item :label="isEdit ? 'Stream name (leave blank to keep existing)' : 'Stream name'"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.sentinelStreamName"
+                             placeholder="Custom-ReARMNotifications_CL"
+                             :disabled="saving"/>
+                </n-form-item>
+            </template>
+
             <!-- WEBHOOK-specific fields -->
             <template v-if="form.type === 'WEBHOOK'">
                 <n-divider title-placement="left">Generic webhook</n-divider>
@@ -167,6 +220,16 @@ const form = reactive({
     // Comma- or newline-separated recipient list; parsed to an array
     // at save time so the form keeps a friendly single-field shape.
     recipientsRaw: '',
+    // Sentinel: all six fields are sensitive — secret blob is
+    // assembled and encrypted server-side. Blank-on-edit preserves the
+    // existing secret (the partial-update path is intentionally
+    // unsupported, matching the backend's validateSentinelConfig).
+    sentinelTenantId: '',
+    sentinelClientId: '',
+    sentinelClientSecret: '',
+    sentinelDcrEndpoint: '',
+    sentinelDcrImmutableId: '',
+    sentinelStreamName: '',
 })
 
 const typeOptions = NOTIFICATION_CHANNEL_TYPES
@@ -191,6 +254,16 @@ const canSave = computed(() => {
         }
         if (form.type === 'EMAIL' && parseRecipients(form.recipientsRaw).length === 0) {
             return false
+        }
+        if (form.type === 'SENTINEL') {
+            // All six fields required on create. Partial updates on
+            // edit aren't supported — see backend validateSentinelConfig.
+            if (!form.sentinelTenantId.trim()) return false
+            if (!form.sentinelClientId.trim()) return false
+            if (!form.sentinelClientSecret.trim()) return false
+            if (!form.sentinelDcrEndpoint.trim()) return false
+            if (!form.sentinelDcrImmutableId.trim()) return false
+            if (!form.sentinelStreamName.trim()) return false
         }
     }
     return true
@@ -229,6 +302,12 @@ watch(() => props.show, (opening) => {
     form.webhookAuthScheme = 'NONE'
     form.webhookAuthToken = ''
     form.recipientsRaw = ''
+    form.sentinelTenantId = ''
+    form.sentinelClientId = ''
+    form.sentinelClientSecret = ''
+    form.sentinelDcrEndpoint = ''
+    form.sentinelDcrImmutableId = ''
+    form.sentinelStreamName = ''
 })
 
 async function save () {
@@ -269,6 +348,28 @@ async function save () {
             const recipients = parseRecipients(form.recipientsRaw)
             if (recipients.length > 0) {
                 input.emailConfig = { recipients }
+            }
+        } else if (form.type === 'SENTINEL') {
+            // All-six-or-none on the wire — partial updates aren't
+            // supported (see backend validateSentinelConfig). If any one
+            // field is populated, all should be (canSave gates this on
+            // create; on edit, all-blank means "preserve existing").
+            const allBlank =
+                !form.sentinelTenantId.trim()
+                && !form.sentinelClientId.trim()
+                && !form.sentinelClientSecret.trim()
+                && !form.sentinelDcrEndpoint.trim()
+                && !form.sentinelDcrImmutableId.trim()
+                && !form.sentinelStreamName.trim()
+            if (!allBlank) {
+                input.sentinelConfig = {
+                    tenantId: form.sentinelTenantId.trim(),
+                    clientId: form.sentinelClientId.trim(),
+                    clientSecret: form.sentinelClientSecret.trim(),
+                    dcrEndpoint: form.sentinelDcrEndpoint.trim(),
+                    dcrImmutableId: form.sentinelDcrImmutableId.trim(),
+                    streamName: form.sentinelStreamName.trim(),
+                }
             }
         }
 

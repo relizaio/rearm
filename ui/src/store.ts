@@ -2545,7 +2545,9 @@ const storeObject : any = {
             //     slackConfig?: { webhookUrl },
             //     webhookConfig?: { url, authScheme, authToken },
             //     emailConfig?: { recipients: string[] },
-            //     teamsConfig?: { webhookUrl } }
+            //     teamsConfig?: { webhookUrl },
+            //     sentinelConfig?: { tenantId, clientId, clientSecret,
+            //                        dcrEndpoint, dcrImmutableId, streamName } }
             // Blank per-type config on update preserves the existing
             // server-side state ("rename without re-typing"); status
             // defaults to ENABLED on create.

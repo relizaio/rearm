@@ -24,11 +24,9 @@
  *   NotificationSeverity.java           → NotificationSeverity
  *   NotificationChannelData.webhookAuthScheme → NotificationWebhookAuthScheme
  *
- * NOTE: NotificationChannelType has five Java values (SLACK, MS_TEAMS,
- * EMAIL, WEBHOOK, SENTINEL). The TS list ships those with shipped
- * channel workers. SENTINEL will be added by the Phase 11 commit that
- * lands its dispatcher; until then, a row of that type is impossible
- * because the UI can't create one.
+ * NOTE: NotificationChannelType has five Java values, all of which
+ * now ship channel workers (Phases 4 / 9 / 10 / 11). The TS list
+ * mirrors the Java enum 1:1.
  */
 
 // ---------- Channel ----------
@@ -37,6 +35,7 @@ export const NOTIFICATION_CHANNEL_TYPES = [
     { label: 'Slack', value: 'SLACK' },
     { label: 'Microsoft Teams', value: 'MS_TEAMS' },
     { label: 'Email', value: 'EMAIL' },
+    { label: 'Azure Sentinel', value: 'SENTINEL' },
     { label: 'Generic webhook (HTTPS)', value: 'WEBHOOK' },
 ] as const
 export type NotificationChannelType =
