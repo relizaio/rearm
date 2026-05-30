@@ -484,7 +484,6 @@ function renderPendingBadge (status: { label: string, title: string, kind: strin
 }
 
 const branchUuid: Ref<string> = ref(props.branchUuidProp ? props.branchUuidProp.toString() : route.params.branchuuid ? route.params.branchuuid.toString() : '')
-const prNumber: Ref<string> = ref(props.prnumberprop ? props.prnumberprop.toString() : route.params.prnumber ? route.params.prnumber.toString() : '')
 
 const isLinkVcsRepo = ref(false)
 
@@ -695,18 +694,7 @@ const releaseFilter = ref({
 })
 
 const releases: ComputedRef<any> = computed((): any => {
-    let releases = null
-    if (prNumber.value) {
-        const foundPr = branchData.value.pullRequests.find((pr: any) => {
-            return pr.number == prNumber.value
-        })
-        const sces = foundPr && foundPr.commits ? foundPr.commits : null
-        releases = store.getters.releasesOfBranchPr(branchUuid.value, sces)
-    } 
-    if(!releases){
-        releases = store.getters.releasesOfBranch(branchUuid.value)
-    }
-    return releases
+    return store.getters.releasesOfBranch(branchUuid.value)
 })
 
 // Initialize pagination from route query parameters

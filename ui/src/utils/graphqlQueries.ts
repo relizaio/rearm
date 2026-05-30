@@ -97,6 +97,79 @@ const MULTI_RELEASE_GQL_DATA = `
     }
 `
 
+// Slim fragment for the branch-view release list (store.fetchReleases). Only
+// the fields the BranchView table + scan-status util actually read — no SCE
+// block, events, tickets, branch/component details, or artifact digests/tags.
+// Metrics totals come from the backend's light view; the detail modal
+// re-fetches the full release on open.
+const BRANCH_RELEASE_LIST_GQL_DATA = `
+    uuid
+    branch
+    version
+    marketingVersion
+    createdDate
+    lifecycle
+    tags {
+        key
+        value
+        removable
+    }
+    metrics {
+        lastScanned
+        firstScanned
+        critical
+        high
+        medium
+        low
+        unassigned
+        policyViolationsSecurityTotal
+        policyViolationsLicenseTotal
+        policyViolationsOperationalTotal
+    }
+    artifactDetails {
+        enrichmentStatus
+        metrics {
+            dtrackSubmissionFailed
+            dependencyTrackFullUri
+        }
+    }
+`
+
+// Slim fragment for child releases rendered by ReleaseEl in the product
+// release view (store.fetchReleasesByOrgUuids). Only the fields ReleaseEl
+// reads — no metrics, tags, tickets, branch details, marketing version, or
+// commit-author/signature detail. The "open release" action re-fetches the
+// full release on demand.
+const CHILD_RELEASE_GQL_DATA = `
+    uuid
+    version
+    status
+    org
+    sourceCodeEntry
+    componentDetails {
+        uuid
+        name
+        type
+    }
+    sourceCodeEntryDetails {
+        commit
+        vcsBranch
+        vcsRepository {
+            uri
+        }
+    }
+    artifactDetails {
+        uuid
+        displayIdentifier
+        digestRecords {
+            value
+        }
+    }
+    parentReleases {
+        release
+    }
+`
+
 const INSTANCE_GQL_DATA = `
     uuid
     name
@@ -1399,6 +1472,8 @@ export default {
     InstanceGqlData: INSTANCE_GQL_DATA,
     InstancesGql: INSTANCES_GQL,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
+    BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,
+    ChildReleaseGqlData: CHILD_RELEASE_GQL_DATA,
     SingleReleaseGql: SINGLE_RELEASE_GQL,
     SingleReleaseGqlData: SINGLE_RELEASE_GQL_DATA,
     SingleReleaseGqlLight: SINGLE_RELEASE_GQL_LIGHT,
