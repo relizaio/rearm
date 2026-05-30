@@ -720,7 +720,7 @@ const storeObject : any = {
                 query: gql`
                     query FetchReleases($branchID: ID!) {
                         releases(branchFilter: $branchID) {
-                            ${graphqlQueries.MultiReleaseGqlData}
+                            ${graphqlQueries.BranchReleaseListGqlData}
                         }
                     }`,
                 variables: { branchID: params.branch },
@@ -1680,7 +1680,7 @@ const storeObject : any = {
                     query: gql`
                         query FetchReleasesByOrgUuids($orgId: ID!, $releaseIds: [ID]) {
                             releases(orgFilter: $orgId, releaseFilter: $releaseIds) {
-                                ${graphqlQueries.MultiReleaseGqlData}
+                                ${graphqlQueries.ChildReleaseGqlData}
                             }
                         }`,
                     variables: {
