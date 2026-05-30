@@ -282,7 +282,7 @@
                 preset="dialog"
                 :show-icon="false"
                 :on-after-leave="closeReleaseModal">
-                <release-view :uuidprop="showReleaseUuid" @closeRelease="closeReleaseModal" />
+                <release-view :uuidprop="showReleaseUuid" @closeRelease="closeReleaseModal" @navigate="showRelease" />
             </n-modal>
         </div>
         <n-modal

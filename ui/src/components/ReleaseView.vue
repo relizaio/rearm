@@ -1743,13 +1743,12 @@ async function fetchRelease () {
 }
 
 // --- prev/next release navigation -------------------------------------------
-// ReleaseView is rendered three ways: a routed full page (/release/show/:uuid),
-// a modal opened via a ?release=<uuid> query param on a parent route, and a
-// prop-only modal (:uuidprop, no URL). Navigation drives content off the
-// internal releaseUuid ref + refetch, and syncs whichever URL mechanism (if
-// any) is currently driving the view so deep links / back button stay correct.
-const isRoutedReleasePage = (): boolean => route.name === 'ReleaseView'
-const hasReleaseQueryParam = (): boolean => route.query.release != null
+// ReleaseView is rendered two ways: a routed full page (/release/show/:uuid),
+// and embedded in a modal (:uuidprop) — e.g. the branch/component view's
+// ?release= modal, or the instance-revision modal. Navigation always drives
+// content off the internal releaseUuid ref + refetch; URL syncing differs by
+// mode. The presence of uuidprop is the definitive "I'm embedded" signal.
+const isEmbedded = (): boolean => props.uuidprop != null
 
 async function goToRelease (uuid: string) {
     if (!uuid || uuid === releaseUuid.value) return
@@ -1768,26 +1767,22 @@ async function goToRelease (uuid: string) {
         isLoading.value = false
         loadingBar.finish()
     }
-    if (isRoutedReleasePage()) {
-        router.push({ name: 'ReleaseView', params: { uuid } })
-    } else if (hasReleaseQueryParam()) {
-        router.replace({ query: { ...route.query, release: uuid } })
-    } else {
-        // prop-only modal: no URL to sync; let a parent mirror the selection.
+    if (isEmbedded()) {
+        // Embedded modal: the parent owns the URL (the branch view tracks the
+        // ?release= param via history.replaceState, which Vue Router doesn't
+        // see), so delegate URL/selection syncing to it rather than navigating.
         emit('navigate', uuid)
+    } else {
+        // Routed full page: keep the path param in sync (deep link + back button).
+        router.push({ name: 'ReleaseView', params: { uuid } })
     }
 }
 
-// External id changes (browser back, a deep link, a parent updating ?release=
-// or :uuidprop) drive the same refetch. The uuid guard in goToRelease prevents
-// the self-triggered URL update from looping.
+// External id changes (browser back/forward on the full page, or a parent
+// updating :uuidprop) drive the same refetch. The uuid guard in goToRelease
+// prevents the self-triggered update from looping.
 watch(() => route.params.uuid, (newUuid) => {
-    if (isRoutedReleasePage() && newUuid && newUuid.toString() !== releaseUuid.value) {
-        goToRelease(newUuid.toString())
-    }
-})
-watch(() => route.query.release, (newUuid) => {
-    if (newUuid && newUuid.toString() !== releaseUuid.value) {
+    if (!isEmbedded() && newUuid && newUuid.toString() !== releaseUuid.value) {
         goToRelease(newUuid.toString())
     }
 })
