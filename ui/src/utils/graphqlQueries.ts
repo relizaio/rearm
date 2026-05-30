@@ -679,8 +679,20 @@ const SINGLE_RELEASE_GQL_DATA = `
     parentReleases {
         release
         releaseDetails {
-            ${singleReleaseDataParentRecursion}        
+            ${singleReleaseDataParentRecursion}
         }
+    }
+    previousRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
+    }
+    nextRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
     }
 `
 
@@ -1147,6 +1159,18 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                 }
             }
         }
+    }
+    previousRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
+    }
+    nextRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
     }
 `
 

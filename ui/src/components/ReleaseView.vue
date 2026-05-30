@@ -555,6 +555,24 @@
                             <span>-</span>
                             {{ updatedRelease ? updatedRelease.version : '' }}</span>
                         </h3>
+                        <n-tooltip v-if="release.previousRelease" trigger="hover">
+                            <template #trigger>
+                                <Icon class="clickable" style="margin-left:10px; vertical-align: middle;" size="22" @click="goToRelease(release.previousRelease.uuid)"><ChevronLeft20Regular/></Icon>
+                            </template>
+                            <div><strong>Previous release on this {{ words.branch }}</strong></div>
+                            <div>{{ release.previousRelease.version }}</div>
+                            <div>Lifecycle: {{ release.previousRelease.lifecycle }}</div>
+                            <div v-if="release.previousRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.previousRelease.createdDate) }}</div>
+                        </n-tooltip>
+                        <n-tooltip v-if="release.nextRelease" trigger="hover">
+                            <template #trigger>
+                                <Icon class="clickable" style="margin-left:4px; vertical-align: middle;" size="22" @click="goToRelease(release.nextRelease.uuid)"><ChevronRight20Regular/></Icon>
+                            </template>
+                            <div><strong>Next release on this {{ words.branch }}</strong></div>
+                            <div>{{ release.nextRelease.version }}</div>
+                            <div>Lifecycle: {{ release.nextRelease.lifecycle }}</div>
+                            <div v-if="release.nextRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.nextRelease.createdDate) }}</div>
+                        </n-tooltip>
                         <n-tooltip trigger="hover">
                             <template #trigger>
                                 <Icon class="clickable" style="margin-left:10px;" size="16"><Info20Regular/></Icon>
@@ -1203,7 +1221,7 @@ import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
-import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular } from '@vicons/fluent'
+import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
@@ -1416,7 +1434,7 @@ const props = defineProps<{
     orgprop?: string
 }>()
 
-const emit = defineEmits(['approvalsChanged', 'closeRelease'])
+const emit = defineEmits(['approvalsChanged', 'closeRelease', 'navigate'])
 
 const lifecycleOptions = constants.LifecycleOptions
 
@@ -1723,6 +1741,56 @@ async function fetchRelease () {
         componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
 }
+
+// --- prev/next release navigation -------------------------------------------
+// ReleaseView is rendered two ways: a routed full page (/release/show/:uuid),
+// and embedded in a modal (:uuidprop) — e.g. the branch/component view's
+// ?release= modal, or the instance-revision modal. Navigation always drives
+// content off the internal releaseUuid ref + refetch; URL syncing differs by
+// mode. The presence of uuidprop is the definitive "I'm embedded" signal.
+const isEmbedded = (): boolean => props.uuidprop != null
+
+async function goToRelease (uuid: string) {
+    if (!uuid || uuid === releaseUuid.value) return
+    releaseUuid.value = uuid
+    // A neighbour may be a product or a component release; re-detect so the
+    // right query (and its artifact handling) is used, and reset the lazy
+    // product-artifacts flag.
+    productArtifactsLoaded.value = false
+    isLoading.value = true
+    loadingBar.start()
+    try {
+        isProductRelease.value = await detectIsProduct()
+        await fetchRelease()
+        await fetchReleaseKeys()
+    } finally {
+        isLoading.value = false
+        loadingBar.finish()
+    }
+    if (isEmbedded()) {
+        // Embedded modal: the parent owns the URL (the branch view tracks the
+        // ?release= param via history.replaceState, which Vue Router doesn't
+        // see), so delegate URL/selection syncing to it rather than navigating.
+        emit('navigate', uuid)
+    } else {
+        // Routed full page: keep the path param in sync (deep link + back button).
+        router.push({ name: 'ReleaseView', params: { uuid } })
+    }
+}
+
+// External id changes (browser back/forward on the full page, or a parent
+// updating :uuidprop) drive the same refetch. The uuid guard in goToRelease
+// prevents the self-triggered update from looping.
+watch(() => route.params.uuid, (newUuid) => {
+    if (!isEmbedded() && newUuid && newUuid.toString() !== releaseUuid.value) {
+        goToRelease(newUuid.toString())
+    }
+})
+watch(() => props.uuidprop, (newUuid) => {
+    if (newUuid && newUuid !== releaseUuid.value) {
+        goToRelease(newUuid)
+    }
+})
 
 // BOM EXPORT
 
