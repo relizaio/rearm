@@ -104,6 +104,7 @@ const MULTI_RELEASE_GQL_DATA = `
 // re-fetches the full release on open.
 const BRANCH_RELEASE_LIST_GQL_DATA = `
     uuid
+    branch
     version
     marketingVersion
     createdDate
