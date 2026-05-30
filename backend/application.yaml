@@ -24,7 +24,7 @@ spring:
     username: ${PG_USER:postgres}
     password: ${PG_PASS:relizaPass}
     # NB: test-on-borrow / validationQuery (Tomcat-JDBC / dbcp2 keys) were
-    # removed here — Spring Boot uses HikariCP, which ignores them. Hikari
+    # removed here - Spring Boot uses HikariCP, which ignores them. Hikari
     # validates borrowed connections via JDBC isValid() automatically; no
     # connection-test-query is needed for pgjdbc.
     hikari:
@@ -39,7 +39,7 @@ spring:
       # back when idle (ZGC reclaims the burst heap).
       minimum-idle: ${DB_POOL_MIN:5}
       # keepalive-time: probe idle pooled connections so infra/LB/Postgres
-      # idle-kill can't silently leave a dead connection in the pool —
+      # idle-kill can't silently leave a dead connection in the pool -
       # this is the direct fix for the observed staleness.
       keepalive-time: ${DB_KEEPALIVE_MS:120000}
       # max-lifetime: recycle connections well before any infra-side idle
