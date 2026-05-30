@@ -892,6 +892,16 @@ public class SharedReleaseService {
 	public UUID findNextReleasesOfBranchForRelease (UUID branchUuid,  UUID release) {
 		return repository.findNextReleasesOfBranchForRelease(branchUuid.toString(), release);
 	}
+
+	/**
+	 * Strict same-branch previous release: the raw LAG query without the
+	 * inferred-fork-point fallback that {@link #findPreviousReleasesOfBranchForRelease}
+	 * applies at a branch root. Used for release-view navigation, which must stay
+	 * within the same branch / feature set (returns null at the first release).
+	 */
+	public UUID findPreviousReleaseStrictlyOnBranch (UUID branchUuid, UUID release) {
+		return repository.findPreviousReleasesOfBranchForRelease(branchUuid.toString(), release);
+	}
 	
 
 	/**

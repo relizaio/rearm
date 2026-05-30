@@ -1808,6 +1808,19 @@ type Release {
 	"""
 	preferredBomIdentifier: String
 	releaseCollection: ReleaseCollection
+	"""
+	Adjacent releases on this release's own branch / feature set, ordered by
+	created date (the same CANCELLED-excluding lineage used for the SBOM-component
+	changelog). previousRelease is the release created immediately before this one
+	on the branch, nextRelease the one immediately after; both are null at the
+	branch's first / last release. Unlike the changelog baseline these do NOT fall
+	back to a base-branch fork point — navigation stays within the same branch.
+	Lazily resolved: only queried when selected. Select a light subselection
+	(e.g. uuid version lifecycle createdDate) — used by the release view's
+	prev/next navigation arrows.
+	"""
+	previousRelease: Release
+	nextRelease: Release
 	intermediateFailedReleases: [IntermediateFailedRelease]
 	# True if the release has been queued for SBOM-component reconciliation
 	# but the every-minute scheduler hasn't drained it yet. Use to surface a

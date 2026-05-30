@@ -1847,6 +1847,26 @@ public class ReleaseDatafetcher {
 		ReleaseData rd = dfe.getSource();
 		return sharedReleaseService.greedylocateProductsOfRelease(rd);
 	}
+
+	@DgsData(parentType = "Release", field = "previousRelease")
+	public ReleaseData previousReleaseOfRelease (DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		if (null == rd.getBranch()) {
+			return null;
+		}
+		UUID prevUuid = sharedReleaseService.findPreviousReleaseStrictlyOnBranch(rd.getBranch(), rd.getUuid());
+		return null == prevUuid ? null : sharedReleaseService.getReleaseData(prevUuid).orElse(null);
+	}
+
+	@DgsData(parentType = "Release", field = "nextRelease")
+	public ReleaseData nextReleaseOfRelease (DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		if (null == rd.getBranch()) {
+			return null;
+		}
+		UUID nextUuid = sharedReleaseService.findNextReleasesOfBranchForRelease(rd.getBranch(), rd.getUuid());
+		return null == nextUuid ? null : sharedReleaseService.getReleaseData(nextUuid).orElse(null);
+	}
 	
 	@DgsData(parentType = "Release", field = "componentDetails")
 	public CompletionStage<Optional<ComponentData>> projectOfRelease(DgsDataFetchingEnvironment dfe) {
