@@ -2,18 +2,56 @@ server:
   port: 8086
   use-forward-headers: true
   forward-headers-strategy: native
+  # Graceful shutdown: on SIGTERM stop accepting new requests and let
+  # in-flight ones finish (up to spring.lifecycle.timeout-per-shutdown-phase)
+  # before the JVM exits. Pairs with the pod's preStop sleep +
+  # terminationGracePeriodSeconds so the old replica drains after it has been
+  # removed from the Service endpoints, closing the deregistration race.
+  shutdown: graceful
   error:
     include-message: always
 
 spring:
+  lifecycle:
+    # Max time to wait for in-flight requests to finish during graceful
+    # shutdown. Keep under the pod terminationGracePeriodSeconds (preStop
+    # sleep + this must fit inside it). Env-overridable for ops tuning.
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
   codec:
     max-in-memory-size: 50MB
   datasource:
     url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5440}/${PG_DATABASE:postgres}
     username: ${PG_USER:postgres}
     password: ${PG_PASS:relizaPass}
-    test-on-borrow: true
-    validationQuery: SELECT 1
+    # NB: test-on-borrow / validationQuery (Tomcat-JDBC / dbcp2 keys) were
+    # removed here — Spring Boot uses HikariCP, which ignores them. Hikari
+    # validates borrowed connections via JDBC isValid() automatically; no
+    # connection-test-query is needed for pgjdbc.
+    hikari:
+      # Pool sizing is per-application-instance. Keep these env-overridable
+      # so ops can tune against the replica count and Postgres
+      # max_connections without a code change. Budget:
+      #   replicas * maximum-pool-size + keycloak + rebom + headroom
+      #   must stay under Postgres max_connections.
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      # minimum-idle < maximum-pool-size: steady-state footprint tracks
+      # minimum-idle; the pool only bursts to max under load and trims
+      # back when idle (ZGC reclaims the burst heap).
+      minimum-idle: ${DB_POOL_MIN:5}
+      # keepalive-time: probe idle pooled connections so infra/LB/Postgres
+      # idle-kill can't silently leave a dead connection in the pool —
+      # this is the direct fix for the observed staleness.
+      keepalive-time: ${DB_KEEPALIVE_MS:120000}
+      # max-lifetime: recycle connections well before any infra-side idle
+      # limit (cloud LB / pgbouncer / firewall idle windows are commonly
+      # ~5-10 min). Must exceed the longest query (now capped at 2m via
+      # jakarta.persistence.query.timeout below); 10m leaves clear margin.
+      max-lifetime: ${DB_MAX_LIFETIME_MS:600000}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:20000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:5000}
+      # Surface long-held connections (e.g. the advisory-lock scheduled
+      # jobs) in the logs without aborting them.
+      leak-detection-threshold: ${DB_LEAK_DETECTION_MS:60000}
   jpa:
 #    show-sql: true
     hibernate:
@@ -27,6 +65,11 @@ spring:
       jakarta:
         persistence:
           query:
+            # Global statement timeout, milliseconds (Hibernate divides by
+            # 1000 for JDBC setQueryTimeout). 120000 = 2 min. Reduced from
+            # 5 min: the old value let a single slow query pin a pooled
+            # connection long enough to risk pool starvation. Applied
+            # globally to every query (no per-query overrides).
             timeout: 120000
   security:
     oauth2:
