@@ -91,6 +91,20 @@ public class AgentService {
 	}
 
 	/**
+	 * Root agents in an org that share a given AgentIdentity. A FREEFORM
+	 * key binds to one identity; the identity can back several root
+	 * agents (one per agent name used with that key). Used to surface
+	 * "which agents does this key drive" in the UI.
+	 */
+	public List<AgentData> listRootsByAgentIdentity(UUID orgUuid, UUID agentIdentity) {
+		if (orgUuid == null || agentIdentity == null) return List.of();
+		return listByOrg(orgUuid).stream()
+				.filter(a -> a.getAgentType() == AgentType.ROOT)
+				.filter(a -> agentIdentity.equals(a.getAgentIdentity()))
+				.collect(Collectors.toList());
+	}
+
+	/**
 	 * Walk {@code rootAgent} from any leaf agent. Returns the agent
 	 * itself when it is already a ROOT, or the resolved root when it
 	 * is a SUB. A SUB whose {@code rootAgent} points at a missing /
@@ -259,6 +273,21 @@ public class AgentService {
 		if (color != null) ad.setColor(color);
 		if (notes != null) ad.setNotes(notes);
 		if (status != null) ad.setStatus(status);
+		return saveData(ad, wu);
+	}
+
+	/**
+	 * Set the admin-chosen {@code displayName}. Blank clears it (UI then
+	 * falls back to {@code name}). Never touches {@code name} — the
+	 * runtime resolution key stays intact, so re-resolution and the
+	 * (org, agentIdentity, lower(name)) index are unaffected.
+	 */
+	@Transactional
+	public AgentData setDisplayName(UUID agentUuid, String displayName, WhoUpdated wu) throws RelizaException {
+		Agent a = repository.findByIdWriteLocked(agentUuid)
+				.orElseThrow(() -> new RelizaException("Agent not found: " + agentUuid));
+		AgentData ad = AgentData.dataFromRecord(a);
+		ad.setDisplayName(StringUtils.isBlank(displayName) ? null : displayName.trim());
 		return saveData(ad, wu);
 	}
 

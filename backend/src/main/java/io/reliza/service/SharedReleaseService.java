@@ -590,9 +590,13 @@ public class SharedReleaseService {
 		Set<ParentRelease> parentReleases = new HashSet<>();
 		boolean requirementsMet = true;
 		
-		// Group dependencies by component UUID to handle same component with multiple branches
+		// Group dependencies by component UUID to handle same component with multiple branches.
+		// JOB-status deps participate in product-release composition just like REQUIRED /
+		// TRANSIENT — the product release remembers what version of the job was current at
+		// integration time, the UI surfaces it, and only the actual-vs-target match treats
+		// JOB releases as non-gating (so a stale deployed job doesn't flap the match).
 		Map<UUID, List<ChildComponent>> componentToDeps = dependencies.stream()
-			.filter(cp -> !cp.getUuid().equals(bd.getComponent()) && (cp.getStatus() == StatusEnum.REQUIRED || cp.getStatus() == StatusEnum.TRANSIENT))
+			.filter(cp -> !cp.getUuid().equals(bd.getComponent()) && (cp.getStatus() == StatusEnum.REQUIRED || cp.getStatus() == StatusEnum.TRANSIENT || cp.getStatus() == StatusEnum.JOB))
 			.collect(Collectors.groupingBy(ChildComponent::getUuid));
 		
 		for (Map.Entry<UUID, List<ChildComponent>> entry : componentToDeps.entrySet()) {

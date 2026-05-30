@@ -72,12 +72,26 @@ public class AgentData extends RelizaDataParent implements RelizaObject {
 	private UUID org;
 
 	/**
-	 * Display name. Unique per org (case-insensitive). The agent supplies
-	 * this on first session; the user can rename it later via
-	 * {@code updateAgent}.
+	 * Registration key, not a display label. The agent runtime supplies
+	 * this via {@code --agent-name} on every session; it is the {@code name}
+	 * half of the ({@link #org}, {@link #agentIdentity}, lower(name))
+	 * resolution key used by {@code findOrRegisterRootAgent}. Treat as
+	 * immutable — renaming it decouples the row from the runtime (which
+	 * keeps registering under the original name) and would auto-create a
+	 * duplicate. User-facing renames go through {@link #displayName}.
 	 */
 	@JsonProperty
 	private String name;
+
+	/**
+	 * Optional human-chosen label shown in the UI in place of
+	 * {@link #name}. Editable by org admins; falls back to {@link #name}
+	 * when unset. Purely cosmetic — never used for resolution,
+	 * attribution, or uniqueness, so it carries none of {@link #name}'s
+	 * registration-key constraints.
+	 */
+	@JsonProperty
+	private String displayName;
 
 	/**
 	 * Pointer to a {@link ModelOntology} row describing the AI/ML model

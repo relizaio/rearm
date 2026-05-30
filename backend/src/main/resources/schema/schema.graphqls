@@ -521,6 +521,16 @@ type Mutation {
 	deleteApiKey(apiKeyUuid: ID!): Boolean
 	getNewVersionProgrammatic(newVersionInput: GetNewVersionInput!): Version
 	addReleaseProgrammatic(release: ReleaseInputProg!): Release
+	"""
+	Batch counterpart to addReleaseProgrammatic. Creates every supplied
+	release in a single all-or-nothing transaction — if any entry fails,
+	none are persisted. Auto-integration of products is deferred until all
+	releases are created, then fired once per affected feature set (deduped
+	across the whole batch) instead of once per release. Use this when a CI
+	run builds several component releases at once and you want a single
+	product auto-integrate rather than one per component version.
+	"""
+	addReleasesProgrammatic(releases: [ReleaseInputProg!]!): [Release]
 	addOutboundDeliverablesProgrammatic(deliverables: AddODeliverableInput!): Release
 	createComponentProgrammatic(component: CreateComponentInput!): Component
 	"""
@@ -643,6 +653,11 @@ type Mutation {
 	# registration goes through spawnSubAgentProgrammatic.
 	updateAgent(input: AgentUpdateInput!): Agent
 
+	# Set the admin-chosen display label for an agent. Org-admin only.
+	# Does NOT touch the registration `name` (the runtime resolution
+	# key) — pass null/blank to clear and fall back to name.
+	setAgentDisplayName(uuid: ID!, displayName: String): Agent
+
 	# Open a session for a ROOT agent on the calling FREEFORM key. v1
 	# requires agentName + agentModel on the input — multi-root-per-key
 	# means we cannot infer which agent the caller is acting as without
@@ -722,6 +737,13 @@ type Mutation {
 	# operator to do it ahead of time.
 	enrollSigningKeyProgrammatic(signingKey: SigningKeyInput!): SigningKey
 	revokeSigningKey(uuid: ID!): SigningKey
+	"""
+	Update the allowed_signers principal (identity) on an enrolled key.
+	Operator JWT path. Fingerprint / pubKey are immutable; SSH keys
+	must keep a non-blank identity. Pass null/blank to clear a GPG
+	informational identity.
+	"""
+	updateSigningKeyIdentity(uuid: ID!, identity: String): SigningKey
 }
 
 type EnrichmentTriggerResult {
@@ -1117,6 +1139,12 @@ type ApiKey {
 	accessDate: DateTime
 	createdDate: DateTime
 	notes: String
+	"""
+	Root agents this key is bound to via the agent-identity it
+	resolves to (agent_identity_credentials). Empty until an agent
+	has authenticated with this key at least once. FREEFORM keys only.
+	"""
+	boundAgents: [Agent]
 }
 
 type User {
@@ -3419,6 +3447,15 @@ enum Status {
 	COMPLETE
 	DRAFT
 	IGNORED
+	# Schedule-driven workload (k8s Job / CronJob etc.). Included in
+	# the instance plan CDX so the operator sees the version that
+	# last ran, but excluded from product-release matching entirely.
+	# The deployed version may lag the target until the job next
+	# runs, and the system does not flag that as a mismatch.
+	# Distinct from TRANSIENT (which still requires version agreement
+	# when both sides have the dep) and IGNORED (which is fully
+	# omitted from the CDX).
+	JOB
 	OPTIONAL
 	PENDING
 	REJECTED
@@ -4543,8 +4580,25 @@ agents may share a model.
 type Agent {
 	uuid: ID
 	org: ID
-	"""Display name. Unique per org (case-insensitive)."""
+	"""
+	Registration key supplied by the runtime via --agent-name. Part of
+	the (org, agentIdentity, lower(name)) resolution key — treat as
+	immutable. User-facing renames go through displayName.
+	"""
 	name: String
+	"""
+	Optional admin-chosen label shown in the UI in place of name. Falls
+	back to name when null. Cosmetic only — never used for resolution
+	or uniqueness.
+	"""
+	displayName: String
+	"""
+	Resolved label the UI should render. Precedence (strongest last):
+	name → first bound FREEFORM key note → displayName. I.e.
+	displayName if set, else the note on a bound FREEFORM key, else name.
+	Read-only — set displayName to override.
+	"""
+	effectiveDisplayName: String
 	"""ModelOntology row this agent runs."""
 	model: ModelOntology
 	"""Optional dashboard glyph."""
@@ -4596,6 +4650,12 @@ type Agent {
 	verifier filters at lookup time.
 	"""
 	signingKeys: [SigningKey]
+	"""
+	FREEFORM API keys bound to this agent's identity
+	(agent_identity_credentials of type REARM_API_KEY). These are the
+	keys an agent runtime authenticates with to drive this agent.
+	"""
+	boundApiKeys: [ApiKey]
 }
 
 type AgentSessionCounts {
@@ -4634,8 +4694,17 @@ type PolicyEvent {
 enum PolicyKind {
 	"""Evaluated on session initialize + on artifact attach."""
 	INPUT
-	"""Evaluated on commit attribution and on artifact attach."""
+	"""Evaluated on commit attribution and on artifact attach. Verdict locks at commit-attribution time."""
 	OUTPUT
+	"""
+	Stays AWAITING through the entire session lifetime; verdict locks
+	only at session close. Use when the gate depends on an artifact
+	the agent doesn't file until its final step — for example, a
+	FINAL agentic-report tag that by definition arrives after the
+	last commit. OUTPUT in that case would harden to FAILED before
+	the report ever lands.
+	"""
+	CLOSE
 }
 
 enum PolicySeverity {

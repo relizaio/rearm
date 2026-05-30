@@ -942,11 +942,46 @@ public class ReleaseDatafetcher {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
+		if (null == authCtx.ahp()) throw new AccessDeniedException("Invalid authorization type");
+		Map<String, Object> progReleaseInput = dfe.getArgument("release");
+		return createReleaseFromProgrammaticInput(progReleaseInput, authCtx, false);
+	}
+
+	/**
+	 * Batch release create. Authenticates once, then creates every supplied
+	 * release in this single @Transactional unit (all-or-nothing — any failure
+	 * rolls the whole batch back). Per-release product auto-integration is
+	 * deferred during creation and fired once afterwards, deduped per affected
+	 * feature set across the whole batch, so a multi-component CI build yields a
+	 * single product auto-integrate rather than one per component version.
+	 */
+	@DgsData(parentType = "Mutation", field = "addReleasesProgrammatic")
+	@Transactional
+	public List<ReleaseData> addReleasesProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException, Exception {
+		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
+		if (null == authCtx.ahp()) throw new AccessDeniedException("Invalid authorization type");
+		List<Map<String, Object>> releaseInputs = dfe.getArgument("releases");
+		if (null == releaseInputs || releaseInputs.isEmpty()) {
+			throw new RelizaException("At least one release is required for addReleasesProgrammatic");
+		}
+		List<ReleaseData> created = new ArrayList<>(releaseInputs.size());
+		for (Map<String, Object> progReleaseInput : releaseInputs) {
+			created.add(createReleaseFromProgrammaticInput(progReleaseInput, authCtx, true));
+		}
+		// Auto-integrate was deferred above; fire once per affected feature set,
+		// deduped across the whole batch (autoIntegrateFeatureSetProduct resolves
+		// the latest release of each dependency, so one pass picks up every
+		// release in the batch that maps to a given feature set).
+		ossReleaseService.autoIntegrateProductsForBatch(created);
+		return created;
+	}
+
+	private ReleaseData createReleaseFromProgrammaticInput(Map<String, Object> progReleaseInput,
+			ProgrammaticAuthContext authCtx, boolean deferAutoIntegrate) throws IOException, RelizaException, Exception {
 		var ahp = authCtx.ahp();
 		UUID authOrgUuid = authCtx.orgUuid();
-		if (null == ahp) throw new AccessDeniedException("Invalid authorization type");
-
-		Map<String, Object> progReleaseInput = dfe.getArgument("release");
 
 		// Deprecated input: ReleaseInputProg.sceArts has been silently ignored
 		// since this resolver was written — the SCE-attached artifact path is
@@ -1174,7 +1209,7 @@ public class ReleaseDatafetcher {
 							.lifecycle(lifecycle)
 							.endpoint(endpoint);
 			var rd = ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDtoBuilder.build(),
-					ar.getWhoUpdated(), shouldRebuild));
+					ar.getWhoUpdated(), shouldRebuild, deferAutoIntegrate));
 			log.debug("release created: {}", rd);
 			VariantData vd = variantService.getBaseVariantForRelease(rd);
 			// Clear existing outbound deliverables when rebuilding

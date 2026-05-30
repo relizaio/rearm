@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import java.time.Duration;
+import java.time.ZonedDateTime;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -658,10 +659,19 @@ public class RebomService {
             .toList();
         
         rmd.setWeaknessDetails(weaknessDtos);
+        // Mark scan as complete. Without these the UI artifact-row gate
+        // (`row.metrics.firstScanned`) is false for direct-parse SARIF
+        // artifacts that don't go through DTrack, so the row always shows
+        // N/A in the Vulnerabilities & Weaknesses / Policy Violations
+        // columns even after the SARIF has been parsed (including the
+        // happy-path zero-findings case).
+        ZonedDateTime now = ZonedDateTime.now();
+        rmd.setFirstScanned(now);
+        rmd.setLastScanned(now);
         vulnAnalysisService.processReleaseMetricsDto(artifactDto.getOrg(), artifactDto.getOrg(), AnalysisScope.ORG, rmd);
         return rmd;
     }
-    
+
     public ReleaseMetricsDto parseCycloneDxContent(String vdrContent, ArtifactDto artifactDto) {
         UUID artifactUuid = artifactDto.getUuid();
         String query = """
@@ -704,10 +714,17 @@ public class RebomService {
             })
             .toList();
         rmd.setVulnerabilityDetails(vulnerabilityDtos);
+        // Same temporal-marker fix as parseSarifOnRebom — see comment
+        // there. Without these, direct-parse VDR/BOV artifacts (those
+        // not routed through DTrack) leave firstScanned null and the
+        // UI artifact-row columns render N/A even after parsing.
+        ZonedDateTime now = ZonedDateTime.now();
+        rmd.setFirstScanned(now);
+        rmd.setLastScanned(now);
         vulnAnalysisService.processReleaseMetricsDto(artifactDto.getOrg(), artifactDto.getOrg(), AnalysisScope.ORG, rmd);
         return rmd;
     }
-    
+
     private ReleaseMetricsDto.VulnerabilitySeverity mapSeverity(String severity) {
         if (severity == null) return ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
         

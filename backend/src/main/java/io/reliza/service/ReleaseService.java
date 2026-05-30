@@ -514,6 +514,14 @@ public class ReleaseService {
 						transientReleasesToMatch.add(filterReleaseData.getUuid());
 						// if transient is present, also use that for locating products
 						releasesToFindProducts.add(rd);
+					} else if (cp.getStatus() == StatusEnum.JOB) {
+						// JOB-status deps are schedule-driven workloads
+						// (k8s Job / CronJob etc.). Their deployed version
+						// may legitimately lag the target, so they're
+						// excluded from matching entirely — neither in
+						// candidate selection nor in the core equality
+						// check. The release is still tracked / surfaced
+						// in the instance CDX; only matching ignores it.
 					} else if (cp.getStatus() != StatusEnum.IGNORED) {
 						releasesToMatch.add(filterReleaseData.getUuid());
 						releasesToFindProducts.add(rd);
@@ -577,9 +585,13 @@ public class ReleaseService {
 						var cp = childComponents.get(nonProxyReleaseData.getComponent());
 						// since we may have legacy proxy release here, try that too
 						if (null == cp) cp = childComponents.get(filterReleaseData.getComponent());
-						if (null == cp || (cp.getStatus() != StatusEnum.IGNORED && cp.getStatus() != StatusEnum.TRANSIENT)) {
+						// Mirror the input-side filter — JOB-status deps
+						// don't gate the match either.
+						if (null == cp || (cp.getStatus() != StatusEnum.IGNORED
+								&& cp.getStatus() != StatusEnum.TRANSIENT
+								&& cp.getStatus() != StatusEnum.JOB)) {
 							coreReleasesInFeatureSet.add(filterReleaseData.getUuid());
-							if (!releasesToMatch.contains(filterReleaseData.getUuid())) { 
+							if (!releasesToMatch.contains(filterReleaseData.getUuid())) {
 								coreMayMatch = false;
 								log.info("didn't match because of  uuid = " + filterReleaseData.getUuid() + " , version = " + filterReleaseData.getVersion());
 							}

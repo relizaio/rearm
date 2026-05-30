@@ -37,8 +37,10 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.service.AgentIdentityService;
+import io.reliza.service.ApiKeyService;
 import io.reliza.service.AgentMonitoringService;
 import io.reliza.service.AgentService;
 import io.reliza.service.AgentSessionService;
@@ -65,6 +67,9 @@ public class AgentDataFetcher {
 
 	@Autowired
 	private AgentIdentityService agentIdentityService;
+
+	@Autowired
+	private ApiKeyService apiKeyService;
 
 	@Autowired
 	private AgentSessionService agentSessionService;
@@ -222,6 +227,73 @@ public class AgentDataFetcher {
 		return agentSessionService.listByAgent(ad.getUuid(), List.of("CLOSED"));
 	}
 
+	/**
+	 * Field resolver: Agent.effectiveDisplayName — the label the UI
+	 * renders. Precedence (strongest last): name, then first bound
+	 * FREEFORM key note, then displayName. So an explicit displayName
+	 * wins; absent that, a note on a bound key gives a friendly label
+	 * for free; absent both, the registration name. No re-auth (parent
+	 * query already authorized).
+	 */
+	@DgsData(parentType = "Agent", field = "effectiveDisplayName")
+	public String agentEffectiveDisplayName(DgsDataFetchingEnvironment dfe) {
+		AgentData ad = dfe.getSource();
+		if (ad == null) return null;
+		if (StringUtils.isNotBlank(ad.getDisplayName())) return ad.getDisplayName();
+		if (ad.getAgentIdentity() != null) {
+			for (AgentIdentityCredential cred : agentIdentityService.listCredentials(ad.getAgentIdentity())) {
+				if (!AgentIdentityCredential.IdentityType.REARM_API_KEY.name().equals(cred.getIdentityType())) continue;
+				try {
+					var ak = apiKeyService.getApiKeyDto(UUID.fromString(cred.getIdentityValue()));
+					if (ak.isPresent() && StringUtils.isNotBlank(ak.get().getNotes())) {
+						return ak.get().getNotes();
+					}
+				} catch (IllegalArgumentException e) {
+					// non-uuid credential value — skip
+				}
+			}
+		}
+		return ad.getName();
+	}
+
+	/**
+	 * Field resolver: ApiKey.boundAgents — root agents driven by this
+	 * key. Resolves the key uuid through agent_identity_credentials to
+	 * an AgentIdentity, then to the root agents sharing it. Empty when
+	 * the key has never been used to open a session. No re-auth: the
+	 * parent apiKeys query already authorized org access.
+	 */
+	@DgsData(parentType = "ApiKey", field = "boundAgents")
+	public List<AgentData> apiKeyBoundAgents(DgsDataFetchingEnvironment dfe) {
+		ApiKeyDto ak = dfe.getSource();
+		if (ak == null || ak.getUuid() == null || ak.getOrg() == null) return List.of();
+		Optional<AgentIdentityData> identity = agentIdentityService.findByCredential(
+				AgentIdentityCredential.IdentityType.REARM_API_KEY, ak.getUuid().toString());
+		if (identity.isEmpty()) return List.of();
+		return agentService.listRootsByAgentIdentity(ak.getOrg(), identity.get().getUuid());
+	}
+
+	/**
+	 * Field resolver: Agent.boundApiKeys — the FREEFORM key(s) bound to
+	 * this agent's identity. No re-auth: the parent agent query already
+	 * authorized org access.
+	 */
+	@DgsData(parentType = "Agent", field = "boundApiKeys")
+	public List<ApiKeyDto> agentBoundApiKeys(DgsDataFetchingEnvironment dfe) {
+		AgentData ad = dfe.getSource();
+		if (ad == null || ad.getAgentIdentity() == null) return List.of();
+		List<ApiKeyDto> keys = new java.util.ArrayList<>();
+		for (AgentIdentityCredential cred : agentIdentityService.listCredentials(ad.getAgentIdentity())) {
+			if (!AgentIdentityCredential.IdentityType.REARM_API_KEY.name().equals(cred.getIdentityType())) continue;
+			try {
+				apiKeyService.getApiKeyDto(UUID.fromString(cred.getIdentityValue())).ifPresent(keys::add);
+			} catch (IllegalArgumentException e) {
+				// non-uuid credential value (future credential types) — skip
+			}
+		}
+		return keys;
+	}
+
 	@DgsData(parentType = "Agent", field = "sessionCounts")
 	public AgentMonitoringService.AgentSessionCounts agentSessionCounts(DgsDataFetchingEnvironment dfe) {
 		AgentData ad = dfe.getSource();
@@ -293,6 +365,25 @@ public class AgentDataFetcher {
 				(String) input.get("notes"),
 				status,
 				wu);
+	}
+
+	/**
+	 * Set an agent's admin-chosen display label. Org-admin only
+	 * ({@code CallType.ADMIN}) — a deliberately tighter gate than the
+	 * self-reported display fields on {@code updateAgent}. Never touches
+	 * the registration {@code name}.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setAgentDisplayName")
+	public AgentData setAgentDisplayName(@InputArgument("uuid") UUID uuid,
+			@InputArgument("displayName") String displayName) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		AgentData existing = agentService.getAgentData(uuid)
+				.orElseThrow(() -> new RelizaException("Agent not found: " + uuid));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, existing.getOrg(), List.of(existing), CallType.ADMIN);
+		return agentService.setDisplayName(uuid, displayName, WhoUpdated.getWhoUpdated(oud.get()));
 	}
 
 	@PreAuthorize("isAuthenticated()")

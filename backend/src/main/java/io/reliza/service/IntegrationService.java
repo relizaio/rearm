@@ -972,8 +972,9 @@ public class IntegrationService {
 			ignoreViolation = orgOpt.get().getIgnoreViolation();
 		}
 		final OrganizationData.IgnoreViolation finalIgnoreViolation = ignoreViolation;
-		
-		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
+
+		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "",
+				CommonVariables.DTRACK_VIOLATIONS_PAGE_SIZE, rawPage -> {
 			List<ViolationDto> pageResults = new ArrayList<>();
 			for (Object vd : rawPage) {
 				DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
@@ -1173,9 +1174,14 @@ public class IntegrationService {
 	// overrides fetchDtrackPage. See IntegrationServiceDtrackPaginationTest.
 	<T> List<T> executeDtrackPaginatedCallWithTransform(String baseUri, String apiToken,
 			String existingParams, Function<List<Object>, List<T>> pageTransformer) throws RelizaException {
+		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, existingParams,
+				CommonVariables.DTRACK_DEFAULT_PAGE_SIZE, pageTransformer);
+	}
+
+	<T> List<T> executeDtrackPaginatedCallWithTransform(String baseUri, String apiToken,
+			String existingParams, int pageSize, Function<List<Object>, List<T>> pageTransformer) throws RelizaException {
 		List<T> allResults = new ArrayList<>();
 		int pageNumber = 1;
-		int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 		boolean hasMorePages = true;
 		int totalRawFetched = 0;
 		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
@@ -1433,7 +1439,7 @@ public class IntegrationService {
 				
 				// Paginated retrieval - extract project UUIDs per page to avoid OOM
 				int pageNumber = 1;
-				int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
+				int pageSize = CommonVariables.DTRACK_VIOLATIONS_PAGE_SIZE;
 				boolean hasMorePages = true;
 				int totalViolationsProcessed = 0;
 				

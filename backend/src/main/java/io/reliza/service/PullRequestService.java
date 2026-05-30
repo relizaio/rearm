@@ -354,7 +354,14 @@ public class PullRequestService {
 
 	@Transactional
 	public PullRequestData updatePullRequest(PullRequestData prd, WhoUpdated wu) throws RelizaException {
-		Optional<PullRequest> oPr = repository.findById(prd.getUuid());
+		// Write-lock the row for the duration of the tx (same as advanceHead).
+		// save() reads the current revision, writes an audit row at that
+		// revision, then bumps it; concurrent writers (webhook intake, CI
+		// addrelease/getversion, agentic commit-linking) that all read the
+		// same revision otherwise collide on audit_revision_unique and the
+		// loser's tx aborts. Locking here makes every existing-row mutator
+		// serialize so each reads a fresh revision.
+		Optional<PullRequest> oPr = repository.findByIdWriteLocked(prd.getUuid());
 		if (oPr.isEmpty()) {
 			throw new RelizaException("PullRequest not found: " + prd.getUuid());
 		}

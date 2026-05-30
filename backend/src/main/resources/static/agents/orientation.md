@@ -1,7 +1,7 @@
 ---
-rearm_cli_min: 26.05.8
-rearm_cli_recommended: 26.05.10
-last_updated: 2026-05-20
+rearm_cli_min: 26.05.19
+rearm_cli_recommended: 26.05.19
+last_updated: 2026-05-28
 ---
 
 # ReARM agent orientation
@@ -81,16 +81,17 @@ Other permission shapes won't authorize session operations and you'll
 see `Not authorized` on every call. Report to the operator if that
 happens — you can't fix it from your side.
 
-### 1.2 Install the CLI — `26.05.8` exactly
+### 1.2 Install the CLI — `26.05.19` exactly
 
 The CLI is the only sanctioned programmatic surface (raw HTTP is
-WAF-blocked in many deployments). Use **`26.05.8`** — older versions
-lack the `rearm agent session ...` and `rearm agent enrollkey`
-subcommands this doc relies on.
+WAF-blocked in many deployments). Use **`26.05.19`** — older versions
+lack the `rearm agent session ...` / `rearm agent enrollkey`
+subcommands and the release vulnerability/violation output this doc
+relies on.
 
 ```bash
 # Pick the right asset for your platform (see Linux x86_64 below)
-VERSION=26.05.8
+VERSION=26.05.19
 ASSET=rearm-${VERSION}-linux-amd64.zip
 curl -fsSL -O https://d7ge14utcyki8.cloudfront.net/rearm-download/${VERSION}/${ASSET}
 
@@ -100,24 +101,24 @@ sha256sum "${ASSET}"
 # Compare against the line for your platform in the table below.
 ```
 
-Hashes for `26.05.8` (verbatim from
-`https://d7ge14utcyki8.cloudfront.net/rearm-download/26.05.8/sha256sums.txt`):
+Hashes for `26.05.19` (verbatim from
+`https://d7ge14utcyki8.cloudfront.net/rearm-download/26.05.19/sha256sums.txt`):
 
 ```
-d29c42147bb29b3e425d0c8f63c6236b4a9a5705f20d5fc32e0b31cc7b53bc11  rearm-26.05.8-darwin-amd64.zip
-a6a0922627ded69023f945dc5019ac0c0a165f782429a1b2714c23f3720e81a1  rearm-26.05.8-darwin-arm64.zip
-ef446ad3e40e5ee927e5dc387ebc28ba85233341dcb0682ed49ad38610af355c  rearm-26.05.8-freebsd-386.zip
-221e3c1a18b7cb7ef096be55cd497a5ed0d4311a2a13b0637078a3ce1c495c9a  rearm-26.05.8-freebsd-amd64.zip
-86e1688cc7d35f58a0233e7652dcfaaff987c5a59c8d9c827d33e6f94c27617a  rearm-26.05.8-freebsd-arm.zip
-e94eb24f0f90ad98a6192cf5b5a47b3f6c74a9d734a51bafe53c8913ba9b7d6d  rearm-26.05.8-linux-386.zip
-8512c3d874500da335be9d2e53455efc7b5979410174f307f568667fb54f0851  rearm-26.05.8-linux-amd64.zip
-2dd014842755c6b1f29e9b2c1a93b8f4fccd443b0920927125250604430beff8  rearm-26.05.8-linux-arm.zip
-59779bb4be5f3d7a5c5d7a523c02dc99d6be102ddc310b0efd433436fcae05ed  rearm-26.05.8-linux-arm64.zip
-413ba1ea9b9e03741936379c3d09490b638c6b2d76d1e2aa1263839b6d7b5ff8  rearm-26.05.8-openbsd-386.zip
-becdc5676bbc6ba7c75d296c2c61b3f2f0b680c5efa44c664bd76bd516380afd  rearm-26.05.8-openbsd-amd64.zip
-53d3cea21e3cd5a9e6fffa898ff022f0229253b9eb649b3b4c3c0b3d34a531cb  rearm-26.05.8-solaris-amd64.zip
-0556b354eb5ca5b45ed8f14b4749fb4ee4e0e38892898f6858e2b99468175ad2  rearm-26.05.8-windows-386.zip
-6f74508b6161ae02123ab6ee123f4136b9950204b1fc0c21f2a15fd5df441d1b  rearm-26.05.8-windows-amd64.zip
+86aca7d26831ba2223f92474c0fb09df358ad1cb3d5900014fe01d37a65be62f  rearm-26.05.19-darwin-amd64.zip
+9acfe21f43b16d58f49da4d8f07325db018d0da37862b2e613db8cf043c38308  rearm-26.05.19-darwin-arm64.zip
+a58de1a83cc458247b9d5d8a4e2ce656b08b65751ca15dd57e67a1aecc870187  rearm-26.05.19-freebsd-386.zip
+639e3375fad9f22e223b2e361ea5d9a0f0609c21d11edf107f08857b274f593e  rearm-26.05.19-freebsd-amd64.zip
+3882c4bc67bb265fc3b2624499243661d716642e3a499cba5694012c04eef394  rearm-26.05.19-freebsd-arm.zip
+63b22ec64430e1f9396e02a022f597564c5c975d8f4c36a86eb2f6be550eaa23  rearm-26.05.19-linux-386.zip
+3b89e52b43b2ea4ff46fd243a435e07eb0420e19d80452c87cc7c8e52ee45901  rearm-26.05.19-linux-amd64.zip
+e464245a5c328a7a1256a25655df43fb24dfcf2600b17115c50d58f3144bff27  rearm-26.05.19-linux-arm.zip
+1371acff4d6bbe76aa31bccd24db0c1d6450016c8e4447d6c02ff6409afb08cb  rearm-26.05.19-linux-arm64.zip
+df5da80633fe048a0ef1a1accb69d0597f4936a3a91b6093c04079e9d01d6d4b  rearm-26.05.19-openbsd-386.zip
+4b1f91715c300de72ec70e343fb0b7acf84efb7780c5729dc0d76b4d60ebf548  rearm-26.05.19-openbsd-amd64.zip
+121bf114740bf012b6456e6c31ebd0733bcdc3eeaca3e7ba6179e5877783bc03  rearm-26.05.19-solaris-amd64.zip
+0be42938ddf2832a0aec75702145810168ba6f125588f86af4d38276da35a251  rearm-26.05.19-windows-386.zip
+92b5a19fe8956a30fc399c708ae51049e3e1c922cb529ae6170d10faa267acf2  rearm-26.05.19-windows-amd64.zip
 ```
 
 If the hash doesn't match, **stop**. Don't run an unverified binary.
@@ -233,6 +234,15 @@ policies (the `policyEvents[]` you saw on `init`). **Not every org
 requires an orientation artifact**; whether you need to attach
 anything is policy-driven. Read `policyEvents[]` to find out.
 
+**`AGENTIC_REPORT` artifacts must be UTF-8 text — JSON is the expected
+shape** (the orientation and final reports below are JSON). ReARM
+renders them in an in-app read-only viewer that pretty-prints JSON and
+otherwise shows the raw text, so operators can read a report without
+downloading it. Don't attach binary blobs (zips, images, compiled
+output) under the `AGENTIC_REPORT` type — they won't render and defeat
+the point of the report. Binary deliverables belong on a release or
+component as their own artifact type, not as a session report.
+
 The canonical case is an `AWAITING` verdict on an "orientation-report"
 policy whose CEL is something like `!session.artifacts.exists(a,
 a.type == "AGENTIC_REPORT")` (match-to-block: the expression matches
@@ -272,39 +282,213 @@ Common tags to know about:
 | ---------------------------------- | ------------------------------------------------------------------------------------ |
 | `agenticPhase=ORIENTATION`         | Initial plan/brief at session start.                                                 |
 | `agenticPhase=CHECKPOINT`          | Mid-session progress update.                                                         |
-| `agenticPhase=FINAL`               | End-of-session summary.                                                              |
+| `agenticPhase=FINAL`               | End-of-session summary. See §2.6.                                                    |
 
 Policies pattern-match on tags, so use the canonical names if you
 want the corresponding policy gates to fire. If your org's policies
 don't reference any of these, tags are still preserved on the
 artifact for the operator's audit.
 
-### 2.6 Commit trailers
+**Never put secrets in any artifact you attach.** Reports are
+operator-readable and persist beyond the session; treat them like
+any other audit log. Strip API keys, FREEFORM secrets, passwords,
+private SSH/GPG material, signed JWTs, internal connection strings,
+and customer data before you write the file. If a stack trace or
+command output naturally captures credentials (env-var dumps, curl
+`-v` traces, raw `kubectl` secret reads), redact those lines before
+attaching — `<redacted>` is fine, the operator just needs to see
+*that* a value existed there.
 
-Every commit you author needs the canonical two-line trailer block:
+### 2.6 Final session report
+
+A FINAL-phase `AGENTIC_REPORT` summarises the session for the
+operator and for any audit done after the fact. **Always ship one**
+just before you call `rearm agent session close`, even if no
+explicit policy demands it — the operator's review is easier when
+every session ends with a self-summary in the same shape.
+
+**Some orgs enforce this with a `CLOSE`-kind agent policy.** Unlike
+`OUTPUT`-kind policies (which harden their verdict at commit-
+attribution time), `CLOSE` policies stay `AWAITING` for the whole
+session and only lock at `session close`. Operators use them when
+the satisfying artifact arrives *after* the agent's last commit —
+exactly the FINAL-report case. A typical CEL looks like
+`!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" &&
+a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))`.
+Read `policyEvents[]` on `init` — if you see this rule `AWAITING`
+on a `CLOSE`-kind policy, the session will be marked `FAILED` at
+close without a FINAL report, and downstream release-side gates
+(e.g. `release.agentSessions.exists(s, s.hasFailedPolicy)`) will
+reject the release.
+
+**Timing: attach the FINAL report as your last action, just before
+`session close`.** Earlier attachments are fine too, but the
+operator-facing report is most useful when it captures the
+genuinely final state — including the last commit's outcome and any
+late-breaking issues.
+
+**Contents.** Keep the JSON small and honest. A useful shape:
+
+```json
+{
+  "agentic_phase": "FINAL",
+  "summary": "1-3 sentences on what was accomplished and the current state.",
+  "tasks_received": [
+    "verbatim from the operator's prompt, one per item"
+  ],
+  "tasks_completed": [
+    {"task": "<as above>", "outcome": "DONE | PARTIAL | SKIPPED | BLOCKED"}
+  ],
+  "metrics": {
+    "commits_authored": 3,
+    "files_changed": 7,
+    "tests_run": 142,
+    "tests_passed": 142,
+    "tests_failed": 0,
+    "artifacts_attached": 2,
+    "inbox_events_handled": 1,
+    "iterations": 4
+  },
+  "issues_encountered": "Free-text. CI was flaky on the first push and re-running it cleared it; one failing test was pre-existing and out of scope — see commit abc1234. Nothing else surprising."
+}
+```
+
+The `metrics` block uses the numbers you actually have at session
+end — pick the ones you tracked. **Don't guess or fabricate values
+for fields you didn't measure** (omit the key instead). Useful
+counts you usually do have: commits authored, files changed,
+artifacts attached, inbox events handled, iterations / self-revision
+rounds. Counts you have when you ran them yourself: tests run /
+passed / failed, lint warnings, type-check errors. Counts you can
+read off ReARM at close: `releases[].length` and
+`pullRequests[].length` via `rearm agent session show <uuid>`.
+
+`tasks_received` should be the operator's prompt restated in their
+words, not your paraphrase — the operator should be able to grep
+their original ask against this field.
+
+`tasks_completed[].outcome` is one of:
+
+- `DONE` — finished as asked.
+- `PARTIAL` — finished part of the task; describe what's left in
+  `issues_encountered` or in the per-item entry as a nested
+  `"note": "…"` field.
+- `SKIPPED` — intentionally not done; explain why.
+- `BLOCKED` — couldn't proceed because of an external factor (CI
+  outage, policy you couldn't satisfy, missing credentials).
+  Recovery requires operator action — name what.
+
+`issues_encountered` is free-text. Be honest. The operator wants to
+know about flaky retries, the test you turned off, the
+recommendation you skipped, the workaround you used. A clean report
+that says "nothing surprising" when there *was* something surprising
+is worse than a messy report that surfaces the surprise — the
+operator finds out either way.
+
+**Re-check before attach: no secrets, no customer data, no internal
+URLs that aren't already public.** If anything in `issues_encountered`
+came from a tool output (a build log, a kubectl describe, a curl
+trace), reread it for credentials and redact before saving.
+
+Ship it:
+
+```bash
+cat > /tmp/final.json <<'JSON'
+{ "agentic_phase": "FINAL", "summary": "…", "tasks_received": [...], … }
+JSON
+
+rearm agent session add-artifact <session-uuid> \
+  --file /tmp/final.json \
+  --type AGENTIC_REPORT \
+  --display-id final \
+  --tag agenticPhase=FINAL
+```
+
+Then proceed to `rearm agent session close` (§2.8).
+
+### 2.7 Commit trailers
+
+Every commit you author MUST carry two trailers in the commit
+message's **trailer block** — the final paragraph of the message,
+each trailer on its own line:
 
 ```
 <your normal commit subject>
 
-<your normal commit body>
+<your normal commit body — any length, any structure>
 
-ReARM-Agentic-Session: <clientSessionId-you-picked>
+ReARM-Agentic-Session: <clientSessionId-you-picked-at-init>
 ReARM-Agent: <root-agent-uuid-from-init>
 ```
 
-`ReARM-Agentic-Session` is the **free-form string** you chose at
-`init` (not the row uuid). Both trailers are case-insensitive on the
-key and the value runs to first whitespace. Order doesn't matter,
-both must be present.
+- `ReARM-Agentic-Session` is the **free-form string** you chose at
+  `init` (not the row uuid).
+- `ReARM-Agent` is the root-agent uuid returned by `init`.
+- Keys are case-insensitive; values run to the first whitespace.
+- Order between the two trailers does not matter; both must be
+  present.
 
 Sign the commit with the key you enrolled in §2.4. An unsigned commit
 will be rejected by the signature gate on the component side.
+
+#### Why placement matters — read once, never get it wrong
+
+ReARM extracts these via
+`git log --pretty='… %(trailers:key=ReARM-Agent,key=ReARM-Agentic-Session,unfold,separator=%x20)'`.
+That `%(trailers:…)` placeholder invokes git's **standard trailer
+parser**, which has one hard rule: it only inspects the **last
+paragraph** of the commit message — where "paragraph" means a run of
+non-empty lines bounded by blank lines or the end of the message.
+Anything earlier is body prose and is silently discarded.
+
+If the parser sees no `ReARM-Agent` / `ReARM-Agentic-Session`
+trailers, the `addrelease` call ships only the bare subject and your
+commit lands as `signature=UNKNOWN_KEY`, **unattributed to any agent
+or session** — even though the trailers are visible to a human
+reading the message. There is no second, more lenient parser
+downstream.
+
+#### Self-check before every push
+
+```bash
+git log -1 --format=%B | git interpret-trailers --parse
+```
+
+Both `ReARM-Agentic-Session:` and `ReARM-Agent:` MUST appear in the
+output. If only one appears, or only `Co-Authored-By:` appears, or
+the output is empty — the commit is broken. Amend the commit
+message (`git commit --amend`) and re-check before pushing.
+
+#### Common mistakes that silently break attribution
+
+| What you did                                                              | Why it fails                                                              |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Put both trailers on one line (`ReARM-Agentic-Session: foo ReARM-Agent: bar`) | Git accepts only **one** trailer per line. The second key is treated as the first trailer's value. |
+| Put the trailers at the **top** of the body (right after the subject)     | They're in the first paragraph, not the last — the parser ignores them.   |
+| Put them in the **middle** of the body                                    | Same — only the final paragraph counts as the trailer block.              |
+| Put them at the end but separated from another trailer (e.g. `Co-Authored-By:`) by a blank line | The blank line splits the trailer block in two; only the truly final paragraph is parsed. |
+| Mixed them into a paragraph with prose sentences                          | Git rejects the whole paragraph as non-trailer because most of it isn't `Key: Value`. |
+
+If you include `Co-Authored-By:` or any other trailer (from a coding
+tool's signature, from a hook), **all trailers must live in the same
+final paragraph, contiguous, one per line — no blank lines between
+them**:
+
+```
+... body ...
+
+ReARM-Agentic-Session: auth-bug-fix-1779124086
+ReARM-Agent: 8a44b1ce-7e29-4a6f-9c87-1f0a45e9d8b1
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+#### What ReARM does with valid trailers
 
 The trailers surface back as `SourceCodeEntry.agent` and
 `SourceCodeEntry.agentSession` once a CI run picks up the commit via
 `rearm getversion --scearts …` or `rearm addrelease`.
 
-### 2.7 Heartbeat and close
+### 2.8 Heartbeat and close
 
 While you're active, you don't need to do anything — the session
 auto-tracks `lastActivityAt` on every state change. If you're going
@@ -315,7 +499,8 @@ dashboard's "connected" pill stays honest:
 rearm agent session touch <session-uuid>
 ```
 
-When the work is complete, close:
+When the work is complete, **ship the FINAL report first (§2.6)**,
+then close:
 
 ```bash
 rearm agent session close <session-uuid>
@@ -323,6 +508,14 @@ rearm agent session close <session-uuid>
 
 Idempotent. Commits already attributed continue to resolve to the
 session (historical view); new commits can't attach.
+
+`close` triggers `CLOSE`-kind policy verdicts (§2.6). If a
+`CLOSE`-kind rule was `AWAITING` and the session still doesn't
+satisfy it at close time (e.g. FINAL report missing), the verdict
+locks `FAILED` and any release tainted by this session via
+`release.agentSessions.exists(s, s.hasFailedPolicy)` becomes
+ungateable until the operator intervenes. Attaching the report is
+cheap; missing it can be expensive.
 
 ## 3. Polling the inbox
 
@@ -382,7 +575,7 @@ The disapproval-then-fix flow distilled to mechanics:
 init session                                                       # §2.3
   ├─ enrol signing key (first time only)                           # §2.4
   ├─ attach orientation artifact if policy requires                # §2.5
-  ├─ author signed+trailered commits                               # §2.6
+  ├─ author signed+trailered commits                               # §2.7
   ├─ open PR                                                       # standard SCM flow
   └─ between major tasks, poll inbox every 60s                     # §3
        └─ event: APPROVAL { newValue=DISAPPROVED, reason="…" }
@@ -391,7 +584,8 @@ init session                                                       # §2.3
             ├─ push (PR auto-updates)
             └─ continue polling
        └─ event: APPROVAL { newValue=APPROVED }
-            └─ session work is done — close the session
+            ├─ attach FINAL report (summary + metrics + issues)    # §2.6
+            └─ close the session                                   # §2.8
 ```
 
 **Stay in the same session** through the loop. Don't open a new
@@ -417,8 +611,12 @@ When the inbox points you at a release uuid (typical for
 `LIFECYCLE_CHANGE` and `APPROVAL` events), look it up:
 
 ```bash
-rearm agent release show <release-uuid>
+rearm agent release show <release-uuid> --session <session-uuid>
 ```
+
+Pass `--session <session-uuid>` (or `--client-session-id <id>`, the
+value from your commit trailer) — the backend verifies your key owns
+the session before returning anything.
 
 Returns `updateEvents[]` (human-readable lifecycle reasons,
 pre-aggregated — no need to re-derive from triggers),
@@ -427,6 +625,77 @@ and `sourceCodeEntryDetails[]` (per-commit attribution + signature
 state). The `updateEvents[].message` field is the most useful single
 field — it spells out *why* a CEL gate flipped the release (e.g.
 *"Triggered by 'Reject when any commit is not VERIFIED' (CEL: …)"*).
+
+### Reading a release's vulnerabilities and violations
+
+`agent release show` also returns the release's `metrics` — the
+security posture from the latest Dependency-Track scan
+(`metrics.lastScanned`; null/empty until a scan has completed):
+
+- severity counts — `critical`, `high`, `medium`, `low`, `unassigned`;
+- policy-violation totals — `policyViolationsSecurityTotal`,
+  `policyViolationsLicenseTotal`, `policyViolationsOperationalTotal`;
+- per-finding detail lists:
+  - `vulnerabilityDetails[]` — `purl`, `vulnId`, `severity`,
+    `analysisState`;
+  - `violationDetails[]` — `purl`, `type`, `license`, `analysisState`.
+
+This is how you inspect *which* CVEs / license or policy violations a
+release carries — e.g. after a `POLICY_GATE` `LIFECYCLE_CHANGE` whose
+`reason` names a vuln threshold (`CEL: release.highVulns > 0`), pull
+`vulnerabilityDetails[]` to see the actual findings and decide whether
+to bump a dependency, request a VEX, or escalate.
+
+#### Localize findings per artifact — a release has *several* SBOMs
+
+The release-level `metrics` above is an **aggregate**. A single release
+almost always carries **multiple** scanned artifacts, and they are not
+the same thing:
+
+- the **source-code SBOM** (attached to the source code entry) — your
+  dependencies as seen in the repo;
+- one or more **deliverable SBOMs** (attached to each built deliverable,
+  e.g. the container image) — what actually ships, including base-image
+  and OS packages the source SBOM never sees;
+- **SARIF** (`CODE_SCANNING_RESULT`) and **VDR** artifacts, which also
+  carry findings.
+
+A very common shape: the **source-code SBOM is clean but the deliverable
+(container) SBOM is not** — the vulnerabilities live in the base image,
+not your code. If you only read the release aggregate you'll see "N
+high" with no idea where it came from. **Don't conclude the code is at
+fault from the aggregate.** Instead, walk the per-artifact `metrics`
+(every artifact carries its own counts + `vulnerabilityDetails` +
+`violationDetails`):
+
+- `sourceCodeEntryDetails.artifactDetails[]` — source-code SBOM(s) / SARIF;
+- `artifactDetails[]` — release-level artifacts;
+- `variantDetails[].outboundDeliverableDetails[].artifactDetails[]` —
+  deliverable SBOMs / scan results (the deliverable's `displayIdentifier`
+  tells you which image).
+
+Each artifact's `type` / `displayIdentifier` / `bomFormat` identifies
+what it is. So you can say "source SBOM: 0 high; container deliverable
+`…/rearm-cli`: 6 high" and act on the right layer.
+
+**Suppression quirk (v1).** Release-level `metrics` reflects vulnerability
+suppressions applied at **release scope** (a vuln suppressed for this
+release at a non-org scope is dropped from the release totals/details);
+the **per-artifact** `metrics` are **raw** (artifact scope) and do *not*
+see that release-scope suppression. So the release-level and per-artifact
+detail lists can legitimately differ — that's expected, not a bug. When
+they disagree, the release-level list is the suppression-adjusted view;
+the per-artifact list is the unfiltered scan.
+
+**Permissions.** A release **your own session built** (one of the
+session's commits traces through to it) is readable with just the
+FREEFORM `AGENT` key that owns the session — no extra grant needed,
+and `metrics` comes with it. To read a release **not** attributed to
+your session, the key additionally needs explicit `RESOURCE` read
+permission on that release's component / product (scope `RELEASE` /
+`COMPONENT` / `PRODUCT`); without it the lookup is denied. If you hit
+`Not authorized` on a release you didn't build, that's the missing
+grant — ask the operator rather than retrying.
 
 ## 6. CEL surface (what policies can check)
 
@@ -544,8 +813,8 @@ rearm agent session add-artifact <session-uuid> --file <path> --type <Type> --ta
 # --- inbox (60s cadence, only between major tasks) ---
 rearm agent session inbox <session-uuid> --since '<last cursor>'
 
-# --- release inspection after an inbox event ---
-rearm agent release show <release-uuid>
+# --- release inspection (lifecycle, approvals, vulnerabilities/violations) ---
+rearm agent release show <release-uuid> --session <session-uuid>
 
 # --- deployment / devops (ReARM Pro only — read §10 before using) ---
 rearm devops listfeaturesets --instanceuri <sandbox-url> --namespace <ns>

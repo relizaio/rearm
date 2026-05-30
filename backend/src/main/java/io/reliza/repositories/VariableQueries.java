@@ -541,7 +541,13 @@ class VariableQueries {
 			+ " AND r.created_date <= cast (:toDate as timestamptz)"
 			+ " ORDER BY r.created_date desc ";
 
-	protected static final String FIND_PREVIOUS_RELEASES_OF_BRANCH_FOR_RELEASE = 
+	// SBOM-changelog lineage queries (prev / next / fork-point). Only CANCELLED
+	// releases are excluded — a CANCELLED release never really existed. REJECTED
+	// releases ARE kept in the lineage on purpose: a rejected build is a real
+	// artifact set, and in gate workflows (a build rejected by a gate, then a
+	// fixed build passes) the user expects the passing release's "Changes in
+	// SBOM Components" to diff against the rejected predecessor, not skip it.
+	protected static final String FIND_PREVIOUS_RELEASES_OF_BRANCH_FOR_RELEASE =
 			"""
 			WITH PreviousRelease AS (
 				SELECT *,
@@ -549,7 +555,7 @@ class VariableQueries {
 						ORDER BY created_date
 					) as previous_release_uuid
 				FROM rearm.releases r where r.record_data->>'branch' = :branch
-				AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
+				AND r.record_data->>'lifecycle' NOT IN ('CANCELLED')
 			)	
 			""" 
 			+ "select previous_release_uuid from PreviousRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
@@ -562,7 +568,7 @@ class VariableQueries {
 						ORDER BY created_date
 					) as next_release_uuid
 				FROM rearm.releases r where r.record_data->>'branch' = :branch
-				AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
+				AND r.record_data->>'lifecycle' NOT IN ('CANCELLED')
 			)	
 			""" 
 			+ "select next_release_uuid from NextRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
@@ -571,7 +577,7 @@ class VariableQueries {
 			SELECT uuid FROM rearm.releases r 
 			WHERE r.record_data->>'branch' = :branchUuidAsString
 			AND r.created_date < cast(:timestamp as timestamptz)
-			AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
+			AND r.record_data->>'lifecycle' NOT IN ('CANCELLED')
 			ORDER BY r.created_date DESC
 			LIMIT 1
 			""";

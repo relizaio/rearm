@@ -370,6 +370,21 @@ public class SignatureDataFetcher {
 		return signingKeyService.revoke(uuid, WhoUpdated.getWhoUpdated(oud.get()));
 	}
 
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateSigningKeyIdentity")
+	public SigningKeyData updateSigningKeyIdentity(@InputArgument("uuid") UUID uuid,
+			@InputArgument("identity") String identity) throws RelizaException {
+		var oud = userService.getUserDataByAuth(currentAuth());
+		Optional<SigningKeyData> okd = signingKeyService.getSigningKeyData(uuid);
+		RelizaObject ro = okd.orElse(null);
+		// Org-admin only — editing the allowed-signers principal changes
+		// what the verifier will accept, so it's a tighter gate than the
+		// WRITE used for enrol/revoke.
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
+		return signingKeyService.updateIdentity(uuid, identity, WhoUpdated.getWhoUpdated(oud.get()));
+	}
+
 	// ----- helpers -----
 
 	private JwtAuthenticationToken currentAuth() {

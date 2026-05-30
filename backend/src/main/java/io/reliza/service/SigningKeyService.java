@@ -150,6 +150,27 @@ public class SigningKeyService {
 		}
 	}
 
+	/**
+	 * Update the {@code identity} (allowed_signers principal) on an
+	 * enrolled key. Fingerprint and pubKey are immutable — only the
+	 * principal label changes. SSH keys must keep a non-blank identity;
+	 * GPG identity is informational and may be cleared.
+	 */
+	@Transactional
+	public SigningKeyData updateIdentity(UUID keyUuid, String identity, WhoUpdated wu) throws RelizaException {
+		SigningKey k = repository.findByIdWriteLocked(keyUuid)
+				.orElseThrow(() -> new RelizaException("SigningKey not found: " + keyUuid));
+		SigningKeyData kd = SigningKeyData.dataFromRecord(k);
+		String normalized = StringUtils.isBlank(identity) ? null : identity.trim();
+		if (kd.getFormat() == SignatureFormat.SSH && normalized == null) {
+			throw new RelizaException("SSH SigningKey requires an identity (allowed_signers principal)");
+		}
+		kd.setIdentity(normalized);
+		Map<String, Object> recordData = Utils.dataToRecord(kd);
+		SigningKey saved = save(k, recordData, wu);
+		return SigningKeyData.dataFromRecord(saved);
+	}
+
 	@Transactional
 	public SigningKeyData revoke(UUID keyUuid, WhoUpdated wu) throws RelizaException {
 		SigningKey k = repository.findByIdWriteLocked(keyUuid)

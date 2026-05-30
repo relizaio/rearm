@@ -672,46 +672,72 @@ public class OssReleaseService {
 			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_REJECTED);
 		} else if (curLifecycle == ReleaseLifecycle.ASSEMBLED) {
 			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_ASSEMBLED);
-			// Best-effort — must not fail the lifecycle-update transaction
-			// if a downstream feature-set integration trips over.
-			try { autoIntegrateProducts(rData); }
-			catch (Exception e) { log.error("autoIntegrateProducts failed on lifecycle change for release {}", rData.getUuid(), e); }
+			autoIntegrateProducts(rData);
 		}
 	}
 	
 	@Async
 	public void autoIntegrateProducts(ReleaseData rd) {
+		autoIntegrateProductsForRelease(rd, new HashSet<>());
+	}
+
+	/**
+	 * Batch auto-integrate. Processes each release in order against a shared set of
+	 * already-processed feature sets, so a given feature set is auto-integrated at
+	 * most once for the whole batch. Only ASSEMBLED releases trigger integration —
+	 * mixed-lifecycle batches behave like single creates (lifecycle gating unchanged).
+	 */
+	@Async
+	public void autoIntegrateProductsForBatch(List<ReleaseData> releases) {
+		if (null == releases || releases.isEmpty()) {
+			return;
+		}
+		Set<UUID> processedFeatureSets = new HashSet<>();
+		for (ReleaseData rd : releases) {
+			if (rd.getLifecycle() == ReleaseLifecycle.ASSEMBLED) {
+				try {
+					autoIntegrateProductsForRelease(rd, processedFeatureSets);
+				} catch (Exception e) {
+					log.error("autoIntegrateProducts failed for release {} in batch", rd.getUuid(), e);
+				}
+			}
+		}
+	}
+
+	private void autoIntegrateProductsForRelease(ReleaseData rd, Set<UUID> processedFeatureSets) {
 		if (null == rd.getBranch()) {
 			return;
 		}
-		
-		Set<UUID> processedFeatureSets = new HashSet<>();
-		
+
 		// PATH 1: Find feature sets with EXPLICIT dependency on this component+branch
 		List<BranchData> explicitFs = branchService.findFeatureSetDataByChildComponentBranch(
 			rd.getOrg(), rd.getComponent(), rd.getBranch());
-		
+
 		for (BranchData fs : explicitFs) {
+			// Skip if already auto-integrated earlier in the batch
+			if (processedFeatureSets.contains(fs.getUuid())) {
+				continue;
+			}
 			if (fs.getAutoIntegrate() == AutoIntegrateState.ENABLED) {
 				autoIntegrateFeatureSetProduct(fs, rd);
 				processedFeatureSets.add(fs.getUuid());
 			}
 		}
-		
+
 		// PATH 2: Find feature sets with PATTERN-BASED dependencies
 		Optional<ComponentData> componentOpt = getComponentService.getComponentData(rd.getComponent());
 		if (componentOpt.isPresent()) {
 			String componentName = componentOpt.get().getName();
-			
+
 			// Get all feature sets with patterns in this org
 			List<BranchData> patternFs = branchService.findFeatureSetDataWithDependencyPatterns(rd.getOrg());
-			
+
 			for (BranchData fs : patternFs) {
-				// Skip if already processed via explicit dependency
+				// Skip if already processed via explicit dependency or earlier in the batch
 				if (processedFeatureSets.contains(fs.getUuid())) {
 					continue;
 				}
-				
+
 				// Check if component name matches any pattern in this feature set
 				if (dependencyPatternService.componentMatchesAnyPattern(
 						componentName, fs.getDependencyPatterns())) {
@@ -719,6 +745,7 @@ public class OssReleaseService {
 					// The effective dependencies will be resolved inside autoIntegrateFeatureSetProduct
 					// which will handle branch matching and other validation
 					autoIntegrateFeatureSetProduct(fs, rd);
+					processedFeatureSets.add(fs.getUuid());
 				}
 			}
 		}
@@ -957,7 +984,7 @@ public class OssReleaseService {
 		}
 
 		// Get new version. Wrapper retries on (branch, version) unique-constraint
-		// collisions � two concurrent auto-integrations on the same product feature
+		// collisions — two concurrent auto-integrations on the same product feature
 		// set will otherwise both compute the same next version and one will fail.
 		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(
 			featureSet.getUuid(),
@@ -982,8 +1009,9 @@ public class OssReleaseService {
 			Release created = createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
 			return created != null ? Optional.of(created.getUuid()) : Optional.empty();
 		} catch (Exception e) {
-			// Pass `e` so the stack trace lands in production logs —
-			// pre-fix the swallowed message hid the actual cause.
+			// The previous version logged just the message without the
+			// throwable, so the actual cause was invisible in production
+			// — pass `e` so the stack trace lands on the next failure.
 			log.error("Exception on creating programmatic release, feature set = "
 					+ featureSet.getUuid(), e);
 			return Optional.empty();
@@ -1319,11 +1347,23 @@ public class OssReleaseService {
 
 	@Transactional
 	public Release createRelease (ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
-		return createRelease(releaseDto, wu, false);
+		return createRelease(releaseDto, wu, false, false);
 	}
-	
+
 	@Transactional
 	public Release createRelease (ReleaseDto releaseDto, WhoUpdated wu, boolean rebuildRelease) throws RelizaException {
+		return createRelease(releaseDto, wu, rebuildRelease, false);
+	}
+
+	/**
+	 * @param deferAutoIntegrate when true, the per-release product auto-integration is
+	 *        skipped so a batch caller can fire it once, deduped across the whole batch,
+	 *        after all releases are created (see autoIntegrateProductsForBatch). The other
+	 *        post-save side-effects (follow-release / follow-instance refresh, SBOM
+	 *        reconcile) still run per release.
+	 */
+	@Transactional
+	public Release createRelease (ReleaseDto releaseDto, WhoUpdated wu, boolean rebuildRelease, boolean deferAutoIntegrate) throws RelizaException {
 		Release r = new Release();
 		// resolve branch or feature set uuid to its corresponding project or product parent
 		Optional<BranchData> bdOpt = Optional.empty();
@@ -1447,9 +1487,10 @@ public class OssReleaseService {
 		// return even though the row had already been written.
 		if (rData.getLifecycle() == ReleaseLifecycle.ASSEMBLED ) {
 			final ReleaseData postSaveRd = rData;
-			try { autoIntegrateProducts(postSaveRd); }
-			catch (Exception e) { log.error("autoIntegrateProducts failed for release {}", postSaveRd.getUuid(), e); }
-		}
+			if (!deferAutoIntegrate) {
+				try { autoIntegrateProducts(postSaveRd); }
+				catch (Exception e) { log.error("autoIntegrateProducts failed for release {}", postSaveRd.getUuid(), e); }
+			}
 		// Queue SBOM-component reconciliation for any release that came in with
 		// artifacts attached (e.g. addReleaseProgrammatic / addReleaseManual
 		// passing them on the create payload). The post-creation addArtifact

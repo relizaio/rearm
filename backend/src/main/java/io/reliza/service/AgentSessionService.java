@@ -259,6 +259,23 @@ public class AgentSessionService {
 		sd.setStatus(SessionStatus.CLOSED);
 		sd.setClosedAt(now);
 		sd.setLastActivityAt(now);
+		// CLOSE-kind agent policies lock their verdict here. Same
+		// best-effort shape as the other hook calls — log on failure
+		// but don't block the close. The session is in CLOSED status
+		// at this point, so the CEL evaluator sees the closing state.
+		if (policyHook != null) {
+			try {
+				AgentData agent = agentService.getAgentData(sd.getAgent()).orElse(null);
+				if (agent != null) {
+					List<AgentPolicyHook.PolicyEvent> events =
+							policyHook.evaluateOnSessionClose(sd, agent);
+					appendPolicyEvents(sd, events);
+				}
+			} catch (Exception e) {
+				log.warn("Policy evaluation failed on session close for session {}: {}",
+						sessionUuid, e.getMessage());
+			}
+		}
 		return saveData(sd, wu);
 	}
 
@@ -294,6 +311,23 @@ public class AgentSessionService {
 				if (sd.getLastActivityAt() != null && sd.getLastActivityAt().isAfter(idleCutoff)) continue;
 				sd.setStatus(SessionStatus.CLOSED);
 				sd.setClosedAt(now);
+				// Same CLOSE-kind verdict lock as the explicit close
+				// path. Idle-autoclose is a normal close from the
+				// policy engine's standpoint; the session went terminal
+				// without the agent ever filing what it owed.
+				if (policyHook != null) {
+					try {
+						AgentData agent = agentService.getAgentData(sd.getAgent()).orElse(null);
+						if (agent != null) {
+							List<AgentPolicyHook.PolicyEvent> events =
+									policyHook.evaluateOnSessionClose(sd, agent);
+							appendPolicyEvents(sd, events);
+						}
+					} catch (Exception e) {
+						log.warn("Policy evaluation failed on idle autoclose for session {}: {}",
+								s.getUuid(), e.getMessage());
+					}
+				}
 				saveData(sd, wu);
 				closed++;
 			} catch (Exception e) {

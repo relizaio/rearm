@@ -59,6 +59,24 @@ public interface AgentPolicyHook {
 			UUID sceUuid) throws RelizaException;
 
 	/**
+	 * Evaluate CLOSE-kind policies when the session transitions to
+	 * CLOSED. Unlike OUTPUT (which hardens at commit-attribution
+	 * time), CLOSE policies stay AWAITING through the entire session
+	 * lifetime and only lock their verdict at session close — letting
+	 * operators express gates that depend on artifacts the agent
+	 * doesn't file until its final step (e.g. an AGENTIC_REPORT with
+	 * an {@code agenticPhase=FINAL} tag, which by definition arrives
+	 * after the agent's commits).
+	 *
+	 * Never throws — verdicts are recorded on the session by the
+	 * caller. BLOCK severity here is read at downstream gates
+	 * (release approval, PR aggregation) the same way OUTPUT FAILED
+	 * is read; this hook does not abort the close.
+	 */
+	List<PolicyEvent> evaluateOnSessionClose(AgentSessionData session, AgentData rootAgent)
+			throws RelizaException;
+
+	/**
 	 * Verdict for a single policy evaluation. Records the policy
 	 * identity, the state, and the wall-clock evaluation time so the
 	 * session's policy log can rehydrate without re-evaluating.
@@ -72,7 +90,15 @@ public interface AgentPolicyHook {
 			PolicySeverity severity, PolicyState state, String message,
 			ZonedDateTime evaluatedAt) {}
 
-	enum PolicyKind { INPUT, OUTPUT }
+	/**
+	 * Lifecycle phase a policy is evaluated against:
+	 * <ul>
+	 *  <li>{@code INPUT} — at session init. BLOCK severity refuses the session.</li>
+	 *  <li>{@code OUTPUT} — at artifact attach AND commit attribution; locks verdict at commit.</li>
+	 *  <li>{@code CLOSE} — stays AWAITING until session close; locks verdict at close.</li>
+	 * </ul>
+	 */
+	enum PolicyKind { INPUT, OUTPUT, CLOSE }
 	enum PolicySeverity { BLOCK, WARN }
 	enum PolicyState { PASSED, WARNING, FAILED, AWAITING }
 

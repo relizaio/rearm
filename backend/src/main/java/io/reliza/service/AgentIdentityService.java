@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +57,32 @@ public class AgentIdentityService {
 	public Optional<AgentIdentityData> getAgentIdentityData(UUID uuid) {
 		if (uuid == null) return Optional.empty();
 		return identityRepo.findById(uuid).map(AgentIdentityData::dataFromRecord);
+	}
+
+	/**
+	 * Read-only reverse lookup: which AgentIdentity owns a given
+	 * credential pair, without the find-or-create side effect of
+	 * {@link #findOrRegisterByCredential}. Returns empty when the
+	 * credential has never been bound (e.g. a freshly minted FREEFORM
+	 * key that no agent has used yet).
+	 */
+	public Optional<AgentIdentityData> findByCredential(
+			AgentIdentityCredential.IdentityType identityType, String identityValue) {
+		if (identityType == null || identityValue == null || identityValue.isBlank()) {
+			return Optional.empty();
+		}
+		return credRepo.findByTypeAndValue(identityType.name(), identityValue)
+				.flatMap(c -> identityRepo.findById(c.getAgentIdentityUuid()))
+				.map(AgentIdentityData::dataFromRecord);
+	}
+
+	/**
+	 * Credentials bound to an AgentIdentity, oldest first. Used to
+	 * surface the FREEFORM key(s) backing an agent in the UI.
+	 */
+	public List<AgentIdentityCredential> listCredentials(UUID agentIdentityUuid) {
+		if (agentIdentityUuid == null) return List.of();
+		return credRepo.findByAgentIdentityUuid(agentIdentityUuid);
 	}
 
 	/**

@@ -47,6 +47,10 @@ public class CommonVariables {
 	// dtrackBufferSize cap in IntegrationService). See
 	// memory/dtrack-pagination-fix-stress.md for the full numbers.
 	public static final int DTRACK_DEFAULT_PAGE_SIZE = 2000;
+	// Violations are fetched with a smaller page than the default — the
+	// /api/v1/violation payload is heavier per record, so 50 keeps each
+	// page small while the per-page UUID extraction still avoids OOM.
+	public static final int DTRACK_VIOLATIONS_PAGE_SIZE = 50;
 	
 	public static final String NAME_FIELD = "name";
 	public static final String DESCRIPTION_FIELD = "description";
@@ -382,6 +386,15 @@ public class CommonVariables {
 		COMPLETE,
 		DRAFT,
 		IGNORED,
+		// Schedule-driven workload (k8s Job / CronJob etc.). The
+		// dep is included in the instance plan CDX (operator wants
+		// to see the version that last ran) but it does NOT
+		// participate in product-release matching at all — the
+		// actual deployed version legitimately lags the target
+		// until the job next runs. Behaviour differs from TRANSIENT
+		// (which still requires versions to agree when both sides
+		// have the dep) and from IGNORED (which is fully omitted).
+		JOB,
 		PENDING,
 		REJECTED,
 		REQUIRED,
