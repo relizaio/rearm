@@ -555,6 +555,24 @@
                             <span>-</span>
                             {{ updatedRelease ? updatedRelease.version : '' }}</span>
                         </h3>
+                        <n-tooltip v-if="release.previousRelease" trigger="hover">
+                            <template #trigger>
+                                <Icon class="clickable" style="margin-left:10px; vertical-align: middle;" size="22" @click="goToRelease(release.previousRelease.uuid)"><ChevronLeft20Regular/></Icon>
+                            </template>
+                            <div><strong>Previous release on this {{ words.branch }}</strong></div>
+                            <div>{{ release.previousRelease.version }}</div>
+                            <div>Lifecycle: {{ release.previousRelease.lifecycle }}</div>
+                            <div v-if="release.previousRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.previousRelease.createdDate) }}</div>
+                        </n-tooltip>
+                        <n-tooltip v-if="release.nextRelease" trigger="hover">
+                            <template #trigger>
+                                <Icon class="clickable" style="margin-left:4px; vertical-align: middle;" size="22" @click="goToRelease(release.nextRelease.uuid)"><ChevronRight20Regular/></Icon>
+                            </template>
+                            <div><strong>Next release on this {{ words.branch }}</strong></div>
+                            <div>{{ release.nextRelease.version }}</div>
+                            <div>Lifecycle: {{ release.nextRelease.lifecycle }}</div>
+                            <div v-if="release.nextRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.nextRelease.createdDate) }}</div>
+                        </n-tooltip>
                         <n-tooltip trigger="hover">
                             <template #trigger>
                                 <Icon class="clickable" style="margin-left:10px;" size="16"><Info20Regular/></Icon>
@@ -1203,7 +1221,7 @@ import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
-import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular } from '@vicons/fluent'
+import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
@@ -1416,7 +1434,7 @@ const props = defineProps<{
     orgprop?: string
 }>()
 
-const emit = defineEmits(['approvalsChanged', 'closeRelease'])
+const emit = defineEmits(['approvalsChanged', 'closeRelease', 'navigate'])
 
 const lifecycleOptions = constants.LifecycleOptions
 
@@ -1723,6 +1741,61 @@ async function fetchRelease () {
         componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
 }
+
+// --- prev/next release navigation -------------------------------------------
+// ReleaseView is rendered three ways: a routed full page (/release/show/:uuid),
+// a modal opened via a ?release=<uuid> query param on a parent route, and a
+// prop-only modal (:uuidprop, no URL). Navigation drives content off the
+// internal releaseUuid ref + refetch, and syncs whichever URL mechanism (if
+// any) is currently driving the view so deep links / back button stay correct.
+const isRoutedReleasePage = (): boolean => route.name === 'ReleaseView'
+const hasReleaseQueryParam = (): boolean => route.query.release != null
+
+async function goToRelease (uuid: string) {
+    if (!uuid || uuid === releaseUuid.value) return
+    releaseUuid.value = uuid
+    // A neighbour may be a product or a component release; re-detect so the
+    // right query (and its artifact handling) is used, and reset the lazy
+    // product-artifacts flag.
+    productArtifactsLoaded.value = false
+    isLoading.value = true
+    loadingBar.start()
+    try {
+        isProductRelease.value = await detectIsProduct()
+        await fetchRelease()
+        await fetchReleaseKeys()
+    } finally {
+        isLoading.value = false
+        loadingBar.finish()
+    }
+    if (isRoutedReleasePage()) {
+        router.push({ name: 'ReleaseView', params: { uuid } })
+    } else if (hasReleaseQueryParam()) {
+        router.replace({ query: { ...route.query, release: uuid } })
+    } else {
+        // prop-only modal: no URL to sync; let a parent mirror the selection.
+        emit('navigate', uuid)
+    }
+}
+
+// External id changes (browser back, a deep link, a parent updating ?release=
+// or :uuidprop) drive the same refetch. The uuid guard in goToRelease prevents
+// the self-triggered URL update from looping.
+watch(() => route.params.uuid, (newUuid) => {
+    if (isRoutedReleasePage() && newUuid && newUuid.toString() !== releaseUuid.value) {
+        goToRelease(newUuid.toString())
+    }
+})
+watch(() => route.query.release, (newUuid) => {
+    if (newUuid && newUuid.toString() !== releaseUuid.value) {
+        goToRelease(newUuid.toString())
+    }
+})
+watch(() => props.uuidprop, (newUuid) => {
+    if (newUuid && newUuid !== releaseUuid.value) {
+        goToRelease(newUuid)
+    }
+})
 
 // BOM EXPORT
 

@@ -898,6 +898,18 @@ const BRANCH_GQL_DATA = `
         type
         createdType
     }
+    previousRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
+    }
+    nextRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
+    }
 `
 
 const SINGLE_RELEASE_GQL = gql`
@@ -1147,6 +1159,18 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                 }
             }
         }
+    }
+    previousRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
+    }
+    nextRelease {
+        uuid
+        version
+        lifecycle
+        createdDate
     }
 `
 
