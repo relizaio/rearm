@@ -56,7 +56,7 @@
                                 <span v-else>&nbsp;·&nbsp;</span>
                                 <n-tooltip trigger="hover" :delay="200">
                                     <template #trigger>
-                                        <n-icon size="14" style="margin-left: 4px; cursor: help; vertical-align: middle;"><Clock /></n-icon>
+                                        <n-icon size="14" style="margin-left: 4px; cursor: help; vertical-align: middle;"><CalendarTime /></n-icon>
                                     </template>
                                     Release created: {{ formatDateTime(rel.createdDate) }}
                                 </n-tooltip>
@@ -116,7 +116,7 @@ export default {
 import { ref, Ref, computed, watch, onMounted } from 'vue'
 import { NIcon, NSpin, NSpace, NInputNumber, NSelect, NTooltip, useNotification } from 'naive-ui'
 import { ArrowExpand20Regular } from '@vicons/fluent'
-import { Refresh, Clock } from '@vicons/tabler'
+import { Refresh, CalendarTime } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
