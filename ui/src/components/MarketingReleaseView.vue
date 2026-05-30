@@ -31,17 +31,17 @@
                         </router-link -->
                     </n-gi>
                     <n-gi span="2">
-                        <!-- n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
-                            <span title="Criticial Severity Vulnerabilities" class="circle" style="background: #f86c6b; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', 'Vulnerability')">{{ updatedRelease.metrics.critical }}</span>    
-                            <span title="High Severity Vulnerabilities" class="circle" style="background: #fd8c00; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'HIGH', 'Vulnerability')">{{ updatedRelease.metrics.high }}</span>
-                            <span title="Medium Severity Vulnerabilities" class="circle" style="background: #ffc107; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'MEDIUM', 'Vulnerability')">{{ updatedRelease.metrics.medium }}</span>
-                            <span title="Low Severity Vulnerabilities" class="circle" style="background: #4dbd74; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'LOW', 'Vulnerability')">{{ updatedRelease.metrics.low }}</span>
-                            <span title="Vulnerabilities with Unassigned Severity" class="circle" style="background: #777; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'UNASSIGNED', 'Vulnerability')">{{ updatedRelease.metrics.unassigned }}</span>
+                        <n-space :size="1" v-if="marketingRelease.devReleasePointer && marketingRelease.devReleaseDetails && marketingRelease.devReleaseDetails.metrics && marketingRelease.devReleaseDetails.metrics.lastScanned">
+                            <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ marketingRelease.devReleaseDetails.metrics.critical }}</span>
+                            <span title="High Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.HIGH, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, 'HIGH', ['Vulnerability', 'Weakness'])">{{ marketingRelease.devReleaseDetails.metrics.high }}</span>
+                            <span title="Medium Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, 'MEDIUM', ['Vulnerability', 'Weakness'])">{{ marketingRelease.devReleaseDetails.metrics.medium }}</span>
+                            <span title="Low Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.LOW, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, 'LOW', ['Vulnerability', 'Weakness'])">{{ marketingRelease.devReleaseDetails.metrics.low }}</span>
+                            <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{ background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, 'UNASSIGNED', ['Vulnerability', 'Weakness'])">{{ marketingRelease.devReleaseDetails.metrics.unassigned }}</span>
                             <div style="width: 30px;"></div>
-                            <span title="Licensing Policy Violations" class="circle" style="background: blue; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
-                            <span title="Security Policy Violations" class="circle" style="background: red; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
-                            <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
-                        </n-space> -->
+                            <span title="Licensing Policy Violations" class="circle" :style="{ background: constants.ViolationColors.LICENSE, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, '', 'Violation')">{{ marketingRelease.devReleaseDetails.metrics.policyViolationsLicenseTotal }}</span>
+                            <span title="Security Policy Violations" class="circle" :style="{ background: constants.ViolationColors.SECURITY, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, '', 'Violation')">{{ marketingRelease.devReleaseDetails.metrics.policyViolationsSecurityTotal }}</span>
+                            <span title="Operational Policy Violations" class="circle" :style="{ background: constants.ViolationColors.OPERATIONAL, cursor: 'pointer' }" @click="viewDetailedVulnerabilitiesForRelease(marketingRelease.devReleasePointer, '', 'Violation')">{{ marketingRelease.devReleaseDetails.metrics.policyViolationsOperationalTotal }}</span>
+                        </n-space>
                     </n-gi>
                     <n-gi span="1">
                         <span class="lifecycle" style="float: right; margin-right: 80px;">
@@ -169,6 +169,23 @@
                             createButtonText="Select Release"
                             @createdRelease="handleTargetIntegrationUpdate" />
         </n-modal>
+
+        <vulnerability-modal
+            v-model:show="showVulnModal"
+            :component-name="marketingRelease?.componentDetails?.name || ''"
+            :version="marketingRelease?.devReleaseDetails?.version || ''"
+            :data="vulnModalData"
+            :loading="vulnModalLoading"
+            :artifacts="vulnModalArtifacts"
+            :org-uuid="vulnModalOrgUuid"
+            :dtrack-project-uuids="vulnModalDtrackProjectUuids"
+            :release-uuid="marketingRelease?.devReleasePointer || ''"
+            :component-uuid="marketingRelease?.componentDetails?.uuid || ''"
+            :component-type="marketingRelease?.componentDetails?.type || ''"
+            :artifact-view-only="false"
+            :initial-severity-filter="vulnModalSeverity"
+            :initial-type-filter="vulnModalType"
+        />
     </div>
 </template>
     
@@ -179,10 +196,13 @@ export default {
 </script>
 <script lang="ts" setup>
 import CreateRelease from '@/components/CreateRelease.vue'
+import VulnerabilityModal from './VulnerabilityModal.vue'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
+import constants from '@/utils/constants'
 import graphqlQueries from '@/utils/graphqlQueries'
+import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { Info20Regular, Copy20Regular } from '@vicons/fluent'
 import { Box, CirclePlus, ClipboardCheck, Download, Edit, FileInvoice, GitCompare, Link, Trash, Upload } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
@@ -198,6 +218,41 @@ const route = useRoute()
 const router = useRouter()
 const store = useStore()
 const notification = useNotification()
+
+// Findings modal — backed by the dev release this marketing release
+// points at (devReleasePointer). The severity circles open it filtered
+// to vulnerabilities + weaknesses; the violation circles to violations.
+const showVulnModal = ref(false)
+const vulnModalData: Ref<any[]> = ref([])
+const vulnModalLoading = ref(false)
+const vulnModalArtifacts: Ref<any[]> = ref([])
+const vulnModalOrgUuid = ref('')
+const vulnModalDtrackProjectUuids: Ref<string[]> = ref([])
+const vulnModalSeverity = ref('')
+const vulnModalType: Ref<string | string[]> = ref('')
+
+async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string, severityFilter: string = '', typeFilter: string | string[] = '') {
+    if (!releaseUuid) return
+    vulnModalSeverity.value = severityFilter
+    vulnModalType.value = typeFilter
+    vulnModalLoading.value = true
+    showVulnModal.value = true
+    try {
+        const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
+            releaseUuid,
+            marketingRelease.value.org
+        )
+        vulnModalArtifacts.value = releaseData.artifacts
+        vulnModalOrgUuid.value = releaseData.orgUuid
+        vulnModalDtrackProjectUuids.value = releaseData.dtrackProjectUuids
+        vulnModalData.value = releaseData.vulnerabilityData || []
+    } catch (error) {
+        console.error('Error fetching vulnerability details:', error)
+        notification.error({ content: 'Error', meta: 'Failed to load vulnerability details', duration: 3000 })
+    } finally {
+        vulnModalLoading.value = false
+    }
+}
 const notify = async function (type: NotificationType, title: string, content: string) {
     notification[type]({
         content: content,

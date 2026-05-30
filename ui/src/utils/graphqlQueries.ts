@@ -1282,6 +1282,18 @@ const MARKETING_RELEASE_GQL_DATA = `
     devReleasePointer
     devReleaseDetails {
         version
+        metrics {
+            lastScanned
+            firstScanned
+            critical
+            high
+            medium
+            low
+            unassigned
+            policyViolationsSecurityTotal
+            policyViolationsLicenseTotal
+            policyViolationsOperationalTotal
+        }
     }
     createdDate
     events {
