@@ -496,11 +496,11 @@
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                                     <router-link :to="{ name: item.routeName, params: { orguuid: myorg?.uuid, compuuid: item.uuid } }">{{ item.name }}</router-link>
                                     <n-space :size="1">
-                                        <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'CRITICAL', 'Vulnerability')">{{ item.metrics.critical }}</span>
-                                        <span title="High Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.HIGH, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'HIGH', 'Vulnerability')">{{ item.metrics.high }}</span>
-                                        <span title="Medium Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'MEDIUM', 'Vulnerability')">{{ item.metrics.medium }}</span>
-                                        <span title="Low Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.LOW, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'LOW', 'Vulnerability')">{{ item.metrics.low }}</span>
-                                        <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'UNASSIGNED', 'Vulnerability')">{{ item.metrics.unassigned }}</span>
+                                        <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ item.metrics.critical }}</span>
+                                        <span title="High Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.HIGH, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'HIGH', ['Vulnerability', 'Weakness'])">{{ item.metrics.high }}</span>
+                                        <span title="Medium Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'MEDIUM', ['Vulnerability', 'Weakness'])">{{ item.metrics.medium }}</span>
+                                        <span title="Low Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.LOW, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'LOW', ['Vulnerability', 'Weakness'])">{{ item.metrics.low }}</span>
+                                        <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'UNASSIGNED', ['Vulnerability', 'Weakness'])">{{ item.metrics.unassigned }}</span>
                                         <div style="width: 12px;"></div>
                                         <span title="Licensing Policy Violations" class="circle" :style="{background: constants.ViolationColors.LICENSE, cursor: 'pointer'}" @click="openVulnModalForComponent(item, '', 'Violation')">{{ item.metrics.policyViolationsLicenseTotal }}</span>
                                         <span title="Security Policy Violations" class="circle" :style="{background: constants.ViolationColors.SECURITY, cursor: 'pointer'}" @click="openVulnModalForComponent(item, '', 'Violation')">{{ item.metrics.policyViolationsSecurityTotal }}</span>
@@ -1359,11 +1359,11 @@ const vulnModalComponentName = ref('')
 const vulnModalData: Ref<any[]> = ref([])
 const vulnModalLoading = ref(false)
 const vulnModalSeverityFilter = ref('')
-const vulnModalTypeFilter = ref('')
+const vulnModalTypeFilter: Ref<string | string[]> = ref('')
 const vulnModalComponentUuid = ref('')
 const vulnModalComponentType = ref('')
 
-function openVulnModalForComponent (item: any, severityFilter: string = '', typeFilter: string = '') {
+function openVulnModalForComponent (item: any, severityFilter: string = '', typeFilter: string | string[] = '') {
     const typeLabel = vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'product' : 'component'
     vulnModalComponentName.value = `Findings for ${typeLabel}: ${item.name}`
     vulnModalComponentUuid.value = item.uuid

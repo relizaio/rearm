@@ -69,11 +69,11 @@
                             :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0, background: getPendingStatus(rel).kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
                         >{{ getPendingStatus(rel).label }}</span>
                         <n-space :size="1" v-else-if="rel.metrics?.lastScanned" style="flex-shrink: 0;">
-                            <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', 'Vulnerability')">{{ rel.metrics.critical }}</span>
-                            <span title="High Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.HIGH, cursor: 'pointer' }" @click="openVulnModal(rel, 'HIGH', 'Vulnerability')">{{ rel.metrics.high }}</span>
-                            <span title="Medium Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer' }" @click="openVulnModal(rel, 'MEDIUM', 'Vulnerability')">{{ rel.metrics.medium }}</span>
-                            <span title="Low Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.LOW, cursor: 'pointer' }" @click="openVulnModal(rel, 'LOW', 'Vulnerability')">{{ rel.metrics.low }}</span>
-                            <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{ background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer' }" @click="openVulnModal(rel, 'UNASSIGNED', 'Vulnerability')">{{ rel.metrics.unassigned }}</span>
+                            <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ rel.metrics.critical }}</span>
+                            <span title="High Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.HIGH, cursor: 'pointer' }" @click="openVulnModal(rel, 'HIGH', ['Vulnerability', 'Weakness'])">{{ rel.metrics.high }}</span>
+                            <span title="Medium Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer' }" @click="openVulnModal(rel, 'MEDIUM', ['Vulnerability', 'Weakness'])">{{ rel.metrics.medium }}</span>
+                            <span title="Low Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.LOW, cursor: 'pointer' }" @click="openVulnModal(rel, 'LOW', ['Vulnerability', 'Weakness'])">{{ rel.metrics.low }}</span>
+                            <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{ background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer' }" @click="openVulnModal(rel, 'UNASSIGNED', ['Vulnerability', 'Weakness'])">{{ rel.metrics.unassigned }}</span>
                             <div style="width: 12px;"></div>
                             <span title="Licensing Policy Violations" class="circle" :style="{ background: constants.ViolationColors.LICENSE, cursor: 'pointer' }" @click="openVulnModal(rel, '', 'Violation')">{{ rel.metrics.policyViolationsLicenseTotal }}</span>
                             <span title="Security Policy Violations" class="circle" :style="{ background: constants.ViolationColors.SECURITY, cursor: 'pointer' }" @click="openVulnModal(rel, '', 'Violation')">{{ rel.metrics.policyViolationsSecurityTotal }}</span>
@@ -182,7 +182,7 @@ const vulnModalArtifacts: Ref<any[]> = ref([])
 const vulnModalOrgUuid = ref('')
 const vulnModalDtrackProjectUuids: Ref<string[]> = ref([])
 const vulnModalSeverity = ref('')
-const vulnModalType = ref('')
+const vulnModalType: Ref<string | string[]> = ref('')
 
 function getDateRange(): { startDate: Date, endDate: Date } {
     if (props.startDate && props.endDate) {
@@ -241,7 +241,7 @@ async function fetchReleases() {
     }
 }
 
-async function openVulnModal(rel: any, severityFilter: string, typeFilter: string) {
+async function openVulnModal(rel: any, severityFilter: string, typeFilter: string | string[]) {
     vulnModalRelease.value = rel
     vulnModalSeverity.value = severityFilter
     vulnModalType.value = typeFilter

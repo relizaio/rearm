@@ -2085,11 +2085,11 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
             if (status.kind !== 'ready') return [renderPendingBadge(status)]
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'HIGH', 'Vulnerability')}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'LOW', 'Vulnerability')}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'CRITICAL', ['Vulnerability', 'Weakness'])}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'HIGH', ['Vulnerability', 'Weakness'])}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'MEDIUM', ['Vulnerability', 'Weakness'])}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'LOW', ['Vulnerability', 'Weakness'])}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'UNASSIGNED', ['Vulnerability', 'Weakness'])}, row.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2128,9 +2128,9 @@ const currentReleaseArtifacts: Ref<any[]> = ref([])
 const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
 const currentSeverityFilter: Ref<string> = ref('')
-const currentTypeFilter: Ref<string> = ref('')
+const currentTypeFilter: Ref<string | string[]> = ref('')
 
-async function viewDetailedVulnerabilitiesForRelease(releaseRow: any, severityFilter: string = '', typeFilter: string = '') {
+async function viewDetailedVulnerabilitiesForRelease(releaseRow: any, severityFilter: string = '', typeFilter: string | string[] = '') {
     loadingVulnerabilities.value = true
     showDetailedVulnerabilitiesModal.value = true
     selectedReleaseForModal.value = releaseRow
