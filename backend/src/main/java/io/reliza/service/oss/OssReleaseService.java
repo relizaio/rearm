@@ -1491,6 +1491,7 @@ public class OssReleaseService {
 				try { autoIntegrateProducts(postSaveRd); }
 				catch (Exception e) { log.error("autoIntegrateProducts failed for release {}", postSaveRd.getUuid(), e); }
 			}
+		}
 		// Queue SBOM-component reconciliation for any release that came in with
 		// artifacts attached (e.g. addReleaseProgrammatic / addReleaseManual
 		// passing them on the create payload). The post-creation addArtifact
