@@ -44,7 +44,7 @@
                             >{{ effectiveLifecycleLabel }}</n-tag>
                         </h5>
                         <div class="componentIconsAndSettings">
-                            <n-space v-cloak>
+                            <n-space v-cloak :size="0">
                                 <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" size="24"><Tool /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" size="24"><List /></n-icon>
@@ -55,17 +55,16 @@
                                     <template #trigger>
                                         <n-icon class="icons" size="24"><InfoCircle /></n-icon>
                                     </template>
-                                    <strong>{{ words.componentFirstUpper }} UUID:</strong> {{ componentData.uuid }}
-                                    <n-icon class="clickable icons" @click="copyToClipboard(componentData.uuid)" size="24"><Clipboard /></n-icon>
-                                </n-tooltip>
-                                <n-tooltip trigger="hover" v-if="updatedComponent && updatedComponent.vcsRepositoryDetails && updatedComponent.vcsRepositoryDetails.uri">
-                                    <template #trigger>
-                                        <n-icon class="icons" size="24"><GitMerge /></n-icon>
-                                    </template>
-                                    <strong>VCS Repository:</strong>
-                                    {{ updatedComponent.vcsRepositoryDetails.uri }}
-                                    <a :href="'https://' + updatedComponent.vcsRepositoryDetails.uri" rel="noopener noreferrer"
-                                    target="_blank"><n-icon class="clickable icons" title="Open VCS Repository URI in New Window" size="24"><ExternalLink /></n-icon></a>
+                                    <div>
+                                        <strong>{{ words.componentFirstUpper }} UUID:</strong> {{ componentData.uuid }}
+                                        <n-icon class="clickable icons" title="Copy UUID" @click="copyToClipboard(componentData.uuid)" size="24"><Clipboard /></n-icon>
+                                    </div>
+                                    <div v-if="updatedComponent && updatedComponent.vcsRepositoryDetails && updatedComponent.vcsRepositoryDetails.uri">
+                                        <strong>VCS Repository:</strong> {{ updatedComponent.vcsRepositoryDetails.uri }}
+                                        <n-icon class="clickable icons" title="Copy VCS Repository URI" @click="copyToClipboard(updatedComponent.vcsRepositoryDetails.uri, 'VCS repository')" size="24"><Clipboard /></n-icon>
+                                        <a :href="'https://' + updatedComponent.vcsRepositoryDetails.uri" rel="noopener noreferrer"
+                                        target="_blank"><n-icon class="clickable icons" title="Open VCS Repository URI in New Window" size="24"><ExternalLink /></n-icon></a>
+                                    </div>
                                 </n-tooltip>
 
                                 <n-icon v-if="componentData" @click="navigateToVulnAnalysis" class="clickable icons" size="24" :title="'Open ' + words.componentFirstUpper + ' Finding Analysis'">
@@ -1023,7 +1022,7 @@ import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star, Eye, QuestionMark, Calendar, Download } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, ExternalLink, Check, X, AlertCircle, Star, Eye, QuestionMark, Calendar, Download } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
@@ -1143,10 +1142,10 @@ const router = useRouter()
 const store = useStore()
 const notification = useNotification()
 
-async function copyToClipboard (text: string) {
+async function copyToClipboard (text: string, label = 'uuid') {
     try {
         navigator.clipboard.writeText(text);
-        notify('info', 'Copied', `${words.value.componentFirstUpper} uuid copied: ${text}`)
+        notify('info', 'Copied', `${words.value.componentFirstUpper} ${label} copied: ${text}`)
     } catch (error) {
         console.error(error)
     }
@@ -3328,7 +3327,7 @@ async function handleTabSwitch(tabName: string) {
 
 <style scoped lang="scss">
 .icons {
-    margin-left: 10px;
+    margin-left: 4px;
 }
 .apiKeyButtons {
     display: grid;
