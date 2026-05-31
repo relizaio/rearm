@@ -147,7 +147,7 @@ public class VexStatementProposalService {
         // Keep only VEX-typed artifacts: the proposal table only ever keys off a VEX
         // source artifact, and this trims the IN-list handed to the repository. One
         // batch lookup — missing artifacts are simply absent from the result.
-        return artifactService.getArtifactDataList(candidates).stream()
+        return artifactService.getArtifactDataListLight(candidates).stream()
             .filter(ad -> ad.getType() == ArtifactData.ArtifactType.VEX)
             .map(ArtifactData::getUuid)
             .collect(Collectors.toCollection(LinkedHashSet::new));

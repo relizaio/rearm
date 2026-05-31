@@ -510,7 +510,8 @@ public class ReleaseDatafetcher {
 			@InputArgument("branchFilter") UUID branchFilter,
 			@InputArgument("orgFilter") UUID orgFilter,
 			@InputArgument("releaseFilter") List<UUID> releaseFilter,
-			@InputArgument("numRecords") Integer numRecords) throws RelizaException
+			@InputArgument("numRecords") Integer numRecords,
+			DgsDataFetchingEnvironment dfe) throws RelizaException
 	{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -536,15 +537,24 @@ public class ReleaseDatafetcher {
 			throw new AccessDeniedException("Illegal input");
 		}
 		
+		// Load the heavy metrics detail arrays only when the query actually
+		// selects them; otherwise serve totals from the light view (avoids
+		// reading/deserializing vulnerabilityDetails/violationDetails/weaknessDetails
+		// for every release in the list).
+		boolean needsMetricsDetails = dfe.getSelectionSet().containsAnyOf(
+				"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails");
 		List<ReleaseData> retRel = new LinkedList<>();
 		if (null != branchFilter) {
 			log.debug("num of release records in get releases dto = " + numRecords);
-			
-			retRel = sharedReleaseService.listReleaseDataOfBranch(branchFilter, numRecords, true);
+			retRel = needsMetricsDetails
+					? sharedReleaseService.listReleaseDataOfBranch(branchFilter, numRecords, true)
+					: sharedReleaseService.listReleaseDataOfBranchLight(branchFilter, numRecords, true);
 			// TODO: combination of branchfilter and releasefilter
 		} else if (null != orgFilter) {
 			if (null != releaseFilter) {
-				retRel = sharedReleaseService.getReleaseDataList(releaseFilter, orgFilter); 
+				retRel = needsMetricsDetails
+						? sharedReleaseService.getReleaseDataList(releaseFilter, orgFilter)
+						: sharedReleaseService.getReleaseDataListLight(releaseFilter, orgFilter);
 			} else {
 				retRel = releaseService.listReleaseDataOfOrg(orgFilter, false);
 			}
@@ -1947,11 +1957,26 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Release", field = "artifactDetails")
 	public List<ArtifactData> artifactsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
+		List<UUID> artUuids = rd.getArtifacts();
+		if (null == artUuids || artUuids.isEmpty()) {
+			return new LinkedList<>();
+		}
+		// Load the heavy metrics detail arrays only when the query selects them;
+		// otherwise serve totals from the light view. Batched (was an N+1 per
+		// artifact), then re-ordered to the release's artifact order with missing
+		// ids skipped — preserving prior behavior.
+		boolean needsMetricsDetails = dfe.getSelectionSet().containsAnyOf(
+				"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails");
+		List<ArtifactData> loaded = needsMetricsDetails
+				? artifactService.getArtifactDataList(artUuids)
+				: artifactService.getArtifactDataListLight(artUuids);
+		Map<UUID, ArtifactData> byId = loaded.stream()
+				.collect(Collectors.toMap(ArtifactData::getUuid, a -> a, (a, b) -> a));
 		List<ArtifactData> artList = new LinkedList<>();
-		for (UUID artUuid : rd.getArtifacts()) {
-			Optional<ArtifactData> artifactOpt = artifactService.getArtifactData(artUuid);
-			if (artifactOpt.isPresent()) {
-				artList.add(artifactOpt.get());
+		for (UUID artUuid : artUuids) {
+			ArtifactData ad = byId.get(artUuid);
+			if (ad != null) {
+				artList.add(ad);
 			} else {
 				log.warn("Artifact not found for UUID: {}, releaseId: {}", artUuid, rd.getUuid());
 				// Skip missing artifacts instead of crashing

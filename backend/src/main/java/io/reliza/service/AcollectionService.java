@@ -300,7 +300,8 @@ public class AcollectionService {
 	}
 	private List<UUID> getInternalBomIdsFromACollection(AcollectionData collection){
 		List<UUID> artIds = collection.getArtifacts().stream().map(VersionedArtifact::artifactUuid).toList();
-		List<ArtifactData> artList = artifactService.getArtifactDataList(artIds);
+		// totals-only: only internalBom is read from these artifacts.
+		List<ArtifactData> artList = artifactService.getArtifactDataListLight(artIds);
 		
 		List<UUID> bomIds = artList.stream()
 		.filter(art -> null != art.getInternalBom())

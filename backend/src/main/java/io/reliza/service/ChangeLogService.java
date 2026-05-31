@@ -1171,8 +1171,8 @@ public class ChangeLogService {
 			}
 		}
 		
-		// Fetch child component release data
-		List<ReleaseData> childReleaseDataList = sharedReleaseService.getReleaseDataList(childReleaseUuids, org);
+		// Fetch child component release data (totals-only: changelog uses branch/component, not finding detail)
+		List<ReleaseData> childReleaseDataList = sharedReleaseService.getReleaseDataListLight(childReleaseUuids, org);
 		List<UUID> branchList = childReleaseDataList.stream()
 			.map(ReleaseData::getBranch).distinct().toList();
 		Map<UUID, String> branchNameMap = branchService.getBranchDataList(branchList)

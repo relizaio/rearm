@@ -61,6 +61,7 @@ import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
 import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.repositories.ReleaseLiteRepository;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.dto.ChangelogRecords.CommitRecord;
 import lombok.extern.slf4j.Slf4j;
@@ -88,10 +89,12 @@ public class SharedReleaseService {
 	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 10;
 	
 	private final ReleaseRepository repository;
+	private final ReleaseLiteRepository liteRepository;
 	private final MetricsAuditRepository metricsAuditRepository;
-	
-	SharedReleaseService(ReleaseRepository repository, MetricsAuditRepository metricsAuditRepository) {
+
+	SharedReleaseService(ReleaseRepository repository, ReleaseLiteRepository liteRepository, MetricsAuditRepository metricsAuditRepository) {
 		this.repository = repository;
+		this.liteRepository = liteRepository;
 		this.metricsAuditRepository = metricsAuditRepository;
 	}
 	
@@ -187,6 +190,46 @@ public class SharedReleaseService {
 		return ord;
 	}
 	
+	/**
+	 * Totals-only read: returns ReleaseData built from the light view (no
+	 * per-finding metric detail arrays, no approval/update events). Use on read
+	 * paths that only need release fields + severity/policy totals to avoid
+	 * loading the heavy metrics jsonb. For detail-level needs use
+	 * {@link #getReleaseData(UUID)}.
+	 */
+	public Optional<ReleaseData> getReleaseDataLight (UUID uuid) {
+		return liteRepository.findById(uuid).map(ReleaseData::fromLite);
+	}
+
+	/**
+	 * Batch totals-only read. Skips uuids that no longer resolve (logged), like
+	 * {@link #getReleaseDataList(Collection, UUID)}.
+	 */
+	public List<ReleaseData> getReleaseDataListLight (Collection<UUID> uuidList) {
+		if (uuidList == null || uuidList.isEmpty()) {
+			return new LinkedList<>();
+		}
+		return liteRepository.findByUuidIn(uuidList).stream()
+				.map(ReleaseData::fromLite)
+				.collect(Collectors.toCollection(LinkedList::new));
+	}
+
+	/**
+	 * Org-scoped batch totals-only read — drop-in for
+	 * {@link #getReleaseDataList(Collection, UUID)} that mirrors its org filter
+	 * (releases whose org differs are skipped, as the org-scoped per-uuid load
+	 * does) while avoiding the heavy metrics detail arrays and events.
+	 */
+	public List<ReleaseData> getReleaseDataListLight (Collection<UUID> uuidList, UUID org) {
+		if (uuidList == null || uuidList.isEmpty()) {
+			return new LinkedList<>();
+		}
+		return liteRepository.findByUuidIn(uuidList).stream()
+				.map(ReleaseData::fromLite)
+				.filter(rd -> org == null || org.equals(rd.getOrg()))
+				.collect(Collectors.toCollection(LinkedList::new));
+	}
+
 	public Optional<ReleaseData> getReleaseData (UUID uuid, UUID myOrgUuid) {
 		Optional<ReleaseData> orData = Optional.empty();
 		Optional<Release> r = getRelease(uuid, myOrgUuid);
@@ -318,6 +361,27 @@ public class SharedReleaseService {
 		}
 		return rdList;
 	}
+
+	/**
+	 * Totals-only counterpart to {@link #listReleaseDataOfBranch(UUID, Integer, boolean)}:
+	 * same branch filter / ordering / sort, but releases are loaded via the light
+	 * view so the heavy metrics detail arrays (and events) are never read. Use on
+	 * list paths that only surface release fields + totals.
+	 */
+	public List<ReleaseData> listReleaseDataOfBranchLight (UUID branchUuid, Integer numRecords, boolean sorted) {
+		if (null == numRecords || 0 == numRecords) numRecords = DEFAULT_NUM_RELEASES;
+		String limitAsStr = numRecords < 1 ? "ALL" : numRecords.toString();
+		List<ReleaseData> rdList = liteRepository.findReleasesOfBranchLite(branchUuid.toString(), limitAsStr, "0")
+										.stream()
+										.map(ReleaseData::fromLite)
+										.collect(Collectors.toList());
+		if (sorted) {
+			BranchData bd = branchService.getBranchData(branchUuid).get();
+			ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
+			rdList.sort(new ReleaseData.ReleaseVersionComparator(pd.getVersionSchema(), bd.getVersionSchema()));
+		}
+		return rdList;
+	}
 	
 	public List<GenericReleaseData> listReleaseDataOfBranch (UUID branchUuid, UUID orgUuid, ReleaseLifecycle lifecycle, Integer limit) {
 		return listReleaseDataOfBranch(branchUuid, orgUuid, lifecycle, limit, null);
@@ -425,7 +489,7 @@ public class SharedReleaseService {
 		if (dependencies.isEmpty()) {
 			return retListOfReleases;
 		} else {
-			List<ReleaseData> depsFromDb = getReleaseDataList(dependencies, rd.getOrg());
+			List<ReleaseData> depsFromDb = getReleaseDataListLight(dependencies, rd.getOrg());
 			depsFromDb.forEach(depData -> {
 				// check we're not going in circles
 				if (!retListOfUuids.contains(depData.getUuid())) {
@@ -1086,7 +1150,7 @@ public class SharedReleaseService {
 
 	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
 		Set<UUID> releaseIds = gatherReleaseIdsForArtifact(artifactUuid, orgUuid);
-		var releaseDatas = getReleaseDataList(releaseIds, orgUuid);
+		var releaseDatas = getReleaseDataListLight(releaseIds, orgUuid);
 		return sortReleasesByBranchAndVersion(releaseDatas);
 	}
 
@@ -1157,7 +1221,7 @@ public class SharedReleaseService {
 	public List<ComponentWithBranches> findReleaseDatasByReleaseIds(Collection<UUID> releaseIds, final UUID org) {
 		if (releaseIds == null || releaseIds.isEmpty()) return List.of();
 		Set<UUID> ids = (releaseIds instanceof Set<?>) ? (Set<UUID>) releaseIds : new HashSet<>(releaseIds);
-		var releaseDatas = getReleaseDataList(ids, org);
+		var releaseDatas = getReleaseDataListLight(ids, org);
 		return convertReleasesToComponentWithBranches(releaseDatas, org, null);
 	}
 
@@ -1172,7 +1236,7 @@ public class SharedReleaseService {
 		long afterGatherReleases = System.currentTimeMillis();
 		log.debug("findReleaseDatasByDtrackProjects - gatherReleaseIdsForArtifacts took {} ms, found {} releases", afterGatherReleases - afterArtifacts, releaseIds.size());
 		
-		var releaseDatas = getReleaseDataList(releaseIds, org);
+		var releaseDatas = getReleaseDataListLight(releaseIds, org);
 		log.debug("releaseDatas size = {}", releaseDatas.size());
 		long afterGetReleaseData = System.currentTimeMillis();
 		log.debug("findReleaseDatasByDtrackProjects - getReleaseDataList took {} ms", afterGetReleaseData - afterGatherReleases);

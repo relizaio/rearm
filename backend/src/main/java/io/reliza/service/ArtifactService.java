@@ -70,6 +70,7 @@ import io.reliza.model.DeliverableData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.VariantData;
+import io.reliza.repositories.ArtifactLiteRepository;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
@@ -123,6 +124,7 @@ public class ArtifactService {
 	private GetDeliverableService getDeliverableService;
 	
 	private final ArtifactRepository repository;
+	private final ArtifactLiteRepository liteRepository;
 
     private final String url;
     private final WebClient webClient;
@@ -131,10 +133,12 @@ public class ArtifactService {
 
     public ArtifactService(
 		ArtifactRepository repository,
+		ArtifactLiteRepository liteRepository,
 		@Value("${relizaprops.ociArtifacts.namespace}") String registryNamespace,
         @Value("${relizaprops.ociArtifacts.serviceUrl}") String url
 	) {
 		this.repository = repository;
+		this.liteRepository = liteRepository;
         this.url= url;
 		this.registryNamespace = registryNamespace;
 		// Configure WebClient with increased buffer size for large OCI artifacts
@@ -205,6 +209,26 @@ public class ArtifactService {
 	public List<ArtifactData> getArtifactDataList (Iterable<UUID> uuids) {
 		List<Artifact> artifacts = getArtifacts(uuids);
 		return artifacts.stream().map(ArtifactData::dataFromRecord).collect(Collectors.toList());
+	}
+
+	/**
+	 * Totals-only read: ArtifactData built from the light view (no per-finding
+	 * metric detail arrays). Use on read paths that only need artifact fields +
+	 * severity/policy totals to avoid loading the heavy metrics jsonb. For
+	 * detail-level needs use {@link #getArtifactData(UUID)}.
+	 */
+	public Optional<ArtifactData> getArtifactDataLight (UUID uuid) {
+		return liteRepository.findById(uuid).map(ArtifactData::fromLite);
+	}
+
+	/** Batch totals-only read counterpart to {@link #getArtifactDataList(Iterable)}. */
+	public List<ArtifactData> getArtifactDataListLight (Collection<UUID> uuids) {
+		if (uuids == null || uuids.isEmpty()) {
+			return new LinkedList<>();
+		}
+		return liteRepository.findByUuidIn(uuids).stream()
+				.map(ArtifactData::fromLite)
+				.collect(Collectors.toList());
 	}
 
 	public List<Artifact> listArtifactsByOrg (UUID org) {
@@ -1381,7 +1405,7 @@ public class ArtifactService {
 	
 	public Optional<ArtifactData> getArtifactSignature(ArtifactData ad) {
 		Optional<ArtifactData> retAd = Optional.empty();
-		var signatureAD = getArtifactDataList(ad.getArtifacts()).stream().filter(a -> a.getType() == ArtifactType.SIGNATURE).findFirst();
+		var signatureAD = getArtifactDataListLight(ad.getArtifacts()).stream().filter(a -> a.getType() == ArtifactType.SIGNATURE).findFirst();
 		if (signatureAD.isPresent()) {
 			if (!signatureAD.get().getOrg().equals(ad.getOrg())) {
 				log.error(String.format("Signature artifact does not belong to the same organization as the artifact: %s, %s", ad.getUuid(), signatureAD.get().getUuid()));

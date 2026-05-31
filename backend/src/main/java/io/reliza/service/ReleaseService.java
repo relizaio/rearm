@@ -566,8 +566,8 @@ public class ReleaseService {
 				ReleaseData rc = rcIterator.next();
 				Set<UUID> coreReleases = rc.getCoreParentReleases();
 				Set<UUID> coreReleasesInFeatureSet = new HashSet<>();
-				// get release data in bulk to optimize performance
-				var coreReleasesRd = sharedReleaseService.getReleaseDataList(coreReleases, fsData.getOrg())
+				// get release data in bulk to optimize performance (totals-only: only uuid/component read below)
+				var coreReleasesRd = sharedReleaseService.getReleaseDataListLight(coreReleases, fsData.getOrg())
 						.stream()
 						.collect(Collectors.toMap(x -> x.getUuid(), Function.identity()));
 				// optimization - if we have a core release that is not in feature set, exit right away - it won't match

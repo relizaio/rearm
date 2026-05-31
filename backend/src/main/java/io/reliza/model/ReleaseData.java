@@ -361,7 +361,30 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		rd.setSbomReconcilePending(fc != null && fc.sbomReconcileRequestedAt() != null);
 		return rd;
 	}
-	
+
+	/**
+	 * Totals-only counterpart to {@link #dataFromRecord(Release)} that builds a
+	 * ReleaseData from a {@link ReleaseLite}. The metrics come from the generated
+	 * metrics_totals column, so the per-finding detail arrays
+	 * (vulnerabilityDetails / violationDetails / weaknessDetails) are never
+	 * loaded; approvalEvents and updateEvents are intentionally not populated.
+	 * Use only where the caller does not need finding-level detail or events.
+	 */
+	public static ReleaseData fromLite (ReleaseLite r) {
+		if (r.getSchemaVersion() != 0) {
+			throw new IllegalStateException("Release schema version is " + r.getSchemaVersion() + ", which is not currently supported");
+		}
+		ReleaseData rd = Utils.OM.convertValue(r.getRecordData(), ReleaseData.class);
+		rd.setUuid(r.getUuid());
+		rd.setCreatedDate(r.getCreatedDate());
+		if (r.getMetricsTotals() != null) {
+			rd.setMetrics(Utils.OM.convertValue(r.getMetricsTotals(), ReleaseMetricsDto.class));
+		}
+		FlowControl fc = r.getFlowControl();
+		rd.setSbomReconcilePending(fc != null && fc.sbomReconcileRequestedAt() != null);
+		return rd;
+	}
+
 	public static class ReleaseDateComparator implements Comparator<ReleaseData> {
 
 		@Override

@@ -376,6 +376,27 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		return ad;
 	}
 
+	/**
+	 * Totals-only counterpart to {@link #dataFromRecord(Artifact)} that builds an
+	 * ArtifactData from an {@link ArtifactLite}. The metrics come from the
+	 * generated metrics_totals column, so the per-finding detail arrays
+	 * (vulnerabilityDetails / violationDetails / weaknessDetails) are never
+	 * loaded. Use only where the caller does not need finding-level detail.
+	 */
+	public static ArtifactData fromLite (ArtifactLite a) {
+		if (a.getSchemaVersion() != 0) {
+			throw new IllegalStateException("Artifact repository schema version is " + a.getSchemaVersion() + ", which is not currently supported");
+		}
+		ArtifactData ad = Utils.OM.convertValue(a.getRecordData(), ArtifactData.class);
+		ad.setUuid(a.getUuid());
+		ad.setCreatedDate(a.getCreatedDate());
+		ad.setUpdatedDate(a.getLastUpdatedDate());
+		if (a.getMetricsTotals() != null) {
+			ad.setMetrics(Utils.OM.convertValue(a.getMetricsTotals(), DependencyTrackIntegration.class));
+		}
+		return ad;
+	}
+
 
 	public static ArtifactData artifactDataFactory(ArtifactDto artifactDto, UUID artifactUuid) {
 		ArtifactData ad = new ArtifactData();

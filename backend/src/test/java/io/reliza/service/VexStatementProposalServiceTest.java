@@ -372,7 +372,7 @@ class VexStatementProposalServiceTest {
         // Answer like the real findAllById: return only the artifacts actually passed
         // in. A binding path the traversal misses therefore never reaches the query —
         // which is exactly what the captor assertions below pin down.
-        when(artifactService.getArtifactDataList(any())).thenAnswer(inv -> {
+        when(artifactService.getArtifactDataListLight(any())).thenAnswer(inv -> {
             List<ArtifactData> found = new ArrayList<>();
             for (UUID id : (Iterable<UUID>) inv.getArgument(0)) {
                 ArtifactData ad = artifactsById.get(id);

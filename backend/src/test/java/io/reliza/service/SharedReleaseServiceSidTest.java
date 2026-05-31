@@ -30,6 +30,7 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.MetricsAuditRepository;
+import io.reliza.repositories.ReleaseLiteRepository;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.oss.OssPerspectiveService;
 
@@ -42,6 +43,7 @@ import io.reliza.service.oss.OssPerspectiveService;
 public class SharedReleaseServiceSidTest {
 
 	@Mock private ReleaseRepository releaseRepository;
+	@Mock private ReleaseLiteRepository releaseLiteRepository;
 	@Mock private MetricsAuditRepository metricsAuditRepository;
 	@Mock private GetComponentService getComponentService;
 	@Mock private OssPerspectiveService ossPerspectiveService;
@@ -60,7 +62,7 @@ public class SharedReleaseServiceSidTest {
 		ospField.setAccessible(true);
 		ospField.set(resolver, ossPerspectiveService);
 
-		service = new SharedReleaseService(releaseRepository, metricsAuditRepository);
+		service = new SharedReleaseService(releaseRepository, releaseLiteRepository, metricsAuditRepository);
 		var resolverField = SharedReleaseService.class.getDeclaredField("sidPurlResolver");
 		resolverField.setAccessible(true);
 		resolverField.set(service, resolver);

@@ -223,6 +223,10 @@ public class OssReleaseService {
 		r = (Release) WhoUpdated.injectWhoUpdatedData(r, wu);
 		r = repository.save(r);
 		if (acollectionMode == AcollectionMode.RESOLVE) acollectionService.resolveReleaseCollection(r.getUuid(), wu);
+		// Re-aggregate any open PR whose commits[] includes this release's
+		// SCE. Covers the case where a release is created/updated without
+		// a VALIDATE_PR trigger firing (e.g. fresh release attached to an
+		// existing PR head, or lifecycle change to CANCELLED/REJECTED).
 		try {
 			ReleaseData savedRd = ReleaseData.dataFromRecord(r);
 			pullRequestAggregatorService.recomputeForReleaseSce(savedRd, wu);
@@ -344,17 +348,33 @@ public class OssReleaseService {
 	}
 	@Transactional
 	public Release updateReleaseLifecycle (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu) {
-		return updateReleaseLifecycle(releaseId, newLifecycle, wu, true);
+		return updateReleaseLifecycle(releaseId, newLifecycle, wu, true, null, null);
 	}
-	
+
 	@Transactional
 	public Release updateReleaseLifecycle (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu, boolean considerTriggers) {
+		return updateReleaseLifecycle(releaseId, newLifecycle, wu, considerTriggers, null, null);
+	}
+
+	/**
+	 * Canonical overload — accepts the firing trigger's UUID and a
+	 * human-readable reason string. Both are recorded on the LIFECYCLE
+	 * {@link ReleaseUpdateEvent} so the audit / UI can answer "why did
+	 * this release move to REJECTED?" without cross-referencing the
+	 * component definition. {@code triggerUuid} populates {@code objectId};
+	 * {@code reason} populates the new {@code message} field. Pass null
+	 * for both on manual / UI-driven transitions where there is no
+	 * trigger-side context to record.
+	 */
+	@Transactional
+	public Release updateReleaseLifecycle (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu,
+			boolean considerTriggers, UUID triggerUuid, String reason) {
 		Release r = sharedReleaseService.getRelease(releaseId).get();
 		ReleaseData rd = ReleaseData.dataFromRecord(r);
 		ReleaseLifecycle oldLifecycle = rd.getLifecycle();
 		rd.setLifecycle(newLifecycle);
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.LIFECYCLE, ReleaseUpdateAction.CHANGED, oldLifecycle.name(),
-				newLifecycle.name(), null, ZonedDateTime.now(), wu);
+				newLifecycle.name(), null, null, ZonedDateTime.now(), wu);
 		rd.addUpdateEvent(rue);
 		r = saveRelease(r, rd, wu, considerTriggers);
 		ReleaseData savedRd = ReleaseData.dataFromRecord(r);
@@ -1155,8 +1175,9 @@ public class OssReleaseService {
 		latestComponentReleaseUuids.removeAll(pinnedReleases);
 		currentComponentReleaseUuids.removeAll(pinnedReleases);
 
-		List<ReleaseData> latestComponentRds = sharedReleaseService.getReleaseDataList(latestComponentReleaseUuids, fs.getOrg());
-		List<ReleaseData> currentComponentRds = sharedReleaseService.getReleaseDataList(currentComponentReleaseUuids, fs.getOrg());
+		// totals-only read: only component/uuid/branch/version are used below.
+		List<ReleaseData> latestComponentRds = sharedReleaseService.getReleaseDataListLight(latestComponentReleaseUuids, fs.getOrg());
+		List<ReleaseData> currentComponentRds = sharedReleaseService.getReleaseDataListLight(currentComponentReleaseUuids, fs.getOrg());
 
 		Map<UUID, ReleaseData> latestComponentRdMap = latestComponentRds.stream().collect(Collectors.toMap(ReleaseData::getComponent, Function.identity(), this::selectBestReleaseForComponent));
 		Map<UUID, ReleaseData> currentComponentRdMap = currentComponentRds.stream().collect(Collectors.toMap(ReleaseData::getComponent, Function.identity(), this::selectBestReleaseForComponent));
