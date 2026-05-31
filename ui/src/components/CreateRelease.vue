@@ -58,6 +58,19 @@
                         required
                         placeholder="Enter release version" />
             </n-form-item>
+            <n-form-item
+                        v-if="props.isChooseNamespace"
+                        path="namespace"
+                        label="Namespace">
+                <n-select v-if="props.instanceType === InstanceType.STANDALONE_INSTANCE"
+                            v-model:value="chosenNamespace"
+                            :options="props.knownNamespaces || []"
+                            tag
+                            filterable
+                            placeholder="Select or enter a namespace" />
+                <n-input v-else-if="props.instanceType === InstanceType.CLUSTER_INSTANCE" :disabled="true" :placeholder="props.reservedNs"></n-input>
+                <n-input v-else :disabled="true" placeholder="CLUSTER--WIDE"></n-input>
+            </n-form-item>
         </n-form>
         <div v-if="!props.attemptPickRelease || (releaseCandidates && releaseCandidates.length > 0)"> 
             <n-button type="success" @click="onSubmit" variant="primary">
@@ -109,6 +122,9 @@ const props = defineProps<{
     disallowPlaceholder?: boolean,
     disallowCreateRelease?: boolean,
     isChooseNamespace?: boolean,
+    knownNamespaces?: any[],
+    instanceType?: string,
+    reservedNs?: string,
     isHideReset?: boolean,
     createButtonText?: string
 }>()
@@ -117,6 +133,11 @@ const emit = defineEmits(['createdRelease'])
 
 
 const store = useStore()
+const InstanceType = constants.InstanceType
+// Namespace chosen for the target release when isChooseNamespace is set (only
+// the STANDALONE_INSTANCE path is user-editable; CLUSTER_INSTANCE uses the
+// instance's reserved namespace, cluster-wide otherwise). Defaults to 'default'.
+const chosenNamespace = ref('default')
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
 const componentProduct = ref(props.inputType)
@@ -336,6 +357,13 @@ const onSubmit = async function () {
             }
         } else if (release.value.uuid) {
             retRlz = release.value
+        }
+        if (props.isChooseNamespace && retRlz) {
+            if (props.instanceType === InstanceType.CLUSTER_INSTANCE) {
+                retRlz.namespace = props.reservedNs
+            } else if (props.instanceType === InstanceType.STANDALONE_INSTANCE) {
+                retRlz.namespace = chosenNamespace.value || 'default'
+            }
         }
         emit('createdRelease', retRlz)
     } catch (err: any) {

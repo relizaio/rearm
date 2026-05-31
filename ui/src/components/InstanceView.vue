@@ -188,6 +188,9 @@
                                 inputType="COMPONENT"
                                 :attemptPickRelease="true"
                                 :isChooseNamespace="true"
+                                :knownNamespaces="knownNamespaces"
+                                :instanceType="updatedInstance.instanceType"
+                                :reservedNs="updatedInstance.namespace"
                                 createButtonText="Select Release"
                                 @createdRelease="componentTargetReleaseAdded" />
         </n-modal>
