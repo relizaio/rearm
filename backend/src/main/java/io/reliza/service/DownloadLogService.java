@@ -112,11 +112,11 @@ public class DownloadLogService {
 	private DownloadLogData enrichWithNames(DownloadLogData dld) {
 		if (dld.getSubjectUuid() != null) {
 			if (dld.getSubjectType() == DownloadSubjectType.ARTIFACT) {
-				artifactService.getArtifactData(dld.getSubjectUuid())
+				artifactService.getArtifactDataLight(dld.getSubjectUuid())
 						.map(ArtifactData::getDisplayIdentifier)
 						.ifPresent(dld::setSubjectName);
 			} else if (dld.getSubjectType() == DownloadSubjectType.RELEASE) {
-				sharedReleaseService.getReleaseData(dld.getSubjectUuid())
+				sharedReleaseService.getReleaseDataLight(dld.getSubjectUuid())
 						.map(ReleaseData::getVersion)
 						.ifPresent(dld::setSubjectName);
 			}

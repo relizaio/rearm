@@ -65,7 +65,7 @@ public class ScopeTargetResolver {
         Set<UUID> seen = new LinkedHashSet<>();
         List<MatchCandidate> out = new ArrayList<>();
         for (UUID releaseUuid : releases) {
-            Optional<ReleaseData> rd = sharedReleaseService.getReleaseData(releaseUuid, org);
+            Optional<ReleaseData> rd = sharedReleaseService.getReleaseDataLight(releaseUuid, org);
             if (rd.isEmpty()) continue;
             UUID id = (target == AnalysisScope.BRANCH) ? rd.get().getBranch() : rd.get().getComponent();
             if (id != null && seen.add(id)) {

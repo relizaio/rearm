@@ -230,6 +230,16 @@ public class SharedReleaseService {
 				.collect(Collectors.toCollection(LinkedList::new));
 	}
 
+	/**
+	 * Org-scoped totals-only single read — drop-in for {@link #getReleaseData(UUID, UUID)}
+	 * that returns the release only when it belongs to {@code org}, while avoiding the
+	 * heavy metrics detail arrays and approval/update events.
+	 */
+	public Optional<ReleaseData> getReleaseDataLight (UUID uuid, UUID org) {
+		return liteRepository.findById(uuid).map(ReleaseData::fromLite)
+				.filter(rd -> org == null || org.equals(rd.getOrg()));
+	}
+
 	public Optional<ReleaseData> getReleaseData (UUID uuid, UUID myOrgUuid) {
 		Optional<ReleaseData> orData = Optional.empty();
 		Optional<Release> r = getRelease(uuid, myOrgUuid);

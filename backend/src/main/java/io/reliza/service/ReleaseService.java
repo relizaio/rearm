@@ -491,8 +491,8 @@ public class ReleaseService {
 		Set<UUID> presentComponents = Set.of();
 		if (latestRd.isPresent()) {
 			var latestRlzComponents = latestRd.get().getParentReleases();
-			presentComponents = latestRlzComponents.stream().map(x -> 
-				sharedReleaseService.getReleaseData(x.getRelease()).get().getComponent()).collect(Collectors.toSet());
+			presentComponents = latestRlzComponents.stream().map(x ->
+				sharedReleaseService.getReleaseDataLight(x.getRelease()).get().getComponent()).collect(Collectors.toSet());
 		}
 
 		final Set<UUID> projectForIgnoreFiltering = new HashSet<>(presentComponents);
@@ -505,7 +505,7 @@ public class ReleaseService {
 			ReleaseData filterReleaseData = null;
 			try {
 				filterReleaseData = getReleaseData(r, fsData.getOrg()).get();
-				ReleaseData rd = sharedReleaseService.getReleaseData(r).get();
+				ReleaseData rd = sharedReleaseService.getReleaseDataLight(r).get();
 				var cp = childComponents.get(rd.getComponent());
 				// since we may have legacy proxy release here, try that too
 				if (null == cp) cp = childComponents.get(filterReleaseData.getComponent());
@@ -581,7 +581,7 @@ public class ReleaseService {
 						// handle proxy releases
 						if (null == filterReleaseData) filterReleaseData = getReleaseData(r, fsData.getOrg()).get();
 						ReleaseData nonProxyReleaseData = coreReleasesRd.get(r);
-						if (null == nonProxyReleaseData) nonProxyReleaseData = sharedReleaseService.getReleaseData(r).get();
+						if (null == nonProxyReleaseData) nonProxyReleaseData = sharedReleaseService.getReleaseDataLight(r).get();
 						var cp = childComponents.get(nonProxyReleaseData.getComponent());
 						// since we may have legacy proxy release here, try that too
 						if (null == cp) cp = childComponents.get(filterReleaseData.getComponent());

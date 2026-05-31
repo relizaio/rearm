@@ -96,9 +96,9 @@ class ScopeTargetResolverTest {
         ReleaseData rd1 = mockReleaseData(branchA, null);
         ReleaseData rd2 = mockReleaseData(branchA, null);
         ReleaseData rd3 = mockReleaseData(branchB, null);
-        Mockito.when(srs.getReleaseData(release1, org)).thenReturn(java.util.Optional.of(rd1));
-        Mockito.when(srs.getReleaseData(release2, org)).thenReturn(java.util.Optional.of(rd2));
-        Mockito.when(srs.getReleaseData(release3, org)).thenReturn(java.util.Optional.of(rd3));
+        Mockito.when(srs.getReleaseDataLight(release1, org)).thenReturn(java.util.Optional.of(rd1));
+        Mockito.when(srs.getReleaseDataLight(release2, org)).thenReturn(java.util.Optional.of(rd2));
+        Mockito.when(srs.getReleaseDataLight(release3, org)).thenReturn(java.util.Optional.of(rd3));
 
         List<MatchCandidate> out = r2.targets(org, AnalysisScope.BRANCH, Set.of(release1, release2, release3), null);
         assertEquals(2, out.size());
@@ -117,8 +117,8 @@ class ScopeTargetResolverTest {
         r2.sharedReleaseService = srs;
         ReleaseData rd1 = mockReleaseData(null, componentA);
         ReleaseData rd2 = mockReleaseData(null, componentA);
-        Mockito.when(srs.getReleaseData(release1, org)).thenReturn(java.util.Optional.of(rd1));
-        Mockito.when(srs.getReleaseData(release2, org)).thenReturn(java.util.Optional.of(rd2));
+        Mockito.when(srs.getReleaseDataLight(release1, org)).thenReturn(java.util.Optional.of(rd1));
+        Mockito.when(srs.getReleaseDataLight(release2, org)).thenReturn(java.util.Optional.of(rd2));
 
         List<MatchCandidate> out = r2.targets(org, AnalysisScope.COMPONENT, Set.of(release1, release2), null);
         assertEquals(1, out.size());
