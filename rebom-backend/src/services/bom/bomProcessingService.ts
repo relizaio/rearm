@@ -23,7 +23,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 
 // Enrichment timeout constant - used by both enrichCycloneDxBom and triggerEnrichment
-const ENRICHMENT_TIMEOUT_MS = 3600000; // 60 minutes timeout
+const ENRICHMENT_TIMEOUT_MS = 1800000; // 30 minutes timeout
 const ENRICHMENT_GRACE_PERIOD_MS = 300000; // 5 minutes grace period for stale PENDING status
 
 export function extractTldFromBom(bom: any): any {
