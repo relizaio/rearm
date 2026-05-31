@@ -383,6 +383,14 @@ public class OssReleaseService {
 				&& newLifecycle.ordinal() <= ReleaseLifecycle.GENERAL_AVAILABILITY.ordinal()) {
 			cascadeLifecycleToComponents(savedRd, newLifecycle, wu, new HashSet<>());
 		}
+		// Crossing up into ">= ASSEMBLED" is the all-BOMs-uploaded signal: enqueue
+		// a reconcile so the drain re-evaluates the once-per-release BOM-diff
+		// notification under the now-eligible lifecycle gate. Idempotent —
+		// markSbomReconcileRequested no-ops if a request is already pending.
+		if (oldLifecycle.ordinal() < ReleaseLifecycle.ASSEMBLED.ordinal()
+				&& newLifecycle.ordinal() >= ReleaseLifecycle.ASSEMBLED.ordinal()) {
+			sbomComponentService.requestReconcile(releaseId);
+		}
 		return r;
 	}
 

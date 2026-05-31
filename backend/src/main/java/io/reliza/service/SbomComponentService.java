@@ -29,6 +29,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
 import io.reliza.common.HeapPressureGuard;
+import io.reliza.model.AcollectionData.ArtifactChangelog;
+import io.reliza.model.AcollectionData.DiffComponent;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactCanonicalMap;
 import io.reliza.model.ArtifactData;
@@ -41,8 +43,10 @@ import io.reliza.model.FlowControl;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseArtifactIndex;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.ParsedBomComponent;
 import io.reliza.model.tea.Rebom.ParsedBomDependency;
@@ -96,6 +100,10 @@ public class SbomComponentService {
 	@Autowired private GetDeliverableService getDeliverableService;
 	@Autowired private GetComponentService getComponentService;
 	@Autowired private VariantService variantService;
+	@Autowired private NotificationService notificationService;
+	// @Lazy: the post-reconcile pipeline calls back into AcollectionService for
+	// the snapshot resolve + changelog cache; lazy keeps startup wiring cycle-safe.
+	@Autowired @Lazy private AcollectionService acollectionService;
 	@Autowired private ReleaseRepository releaseRepository;
 
 	/**
@@ -174,6 +182,12 @@ public class SbomComponentService {
 			try {
 				self.reconcileReleaseSbomComponents(releaseUuid);
 				releaseRepository.clearSbomReconcileRequested(releaseUuid);
+				// The release's full inventory is now rebuilt — the natural
+				// "all BOMs reconciled" moment. Run the post-reconcile pipeline:
+				// refresh the acollection snapshot, recompute the changelog cache,
+				// and fire the once-per-release notification. Best-effort; won't
+				// disturb the drain.
+				postReconcileBomDiff(releaseUuid);
 				processed++;
 			} catch (Exception e) {
 				int nextAttempt = releaseRepository.findById(releaseUuid)
@@ -483,6 +497,188 @@ private static int currentReconcileFailureCount(Release r) {
 			}
 		}
 		self.reconcileReleaseSbomComponents(releaseUuid);
+	}
+
+	// ===================================================================
+	// Reconcile-driven BOM-diff: acollection changelog cache,
+	// snapshot safety net, and once-per-release notification
+	// ===================================================================
+
+	/**
+	 * Post-reconcile pipeline, run off the drain once a release's component
+	 * inventory has been rebuilt. Three responsibilities, all best-effort:
+	 *
+	 * <ol>
+	 * <li><b>Snapshot safety net (Phase 4a):</b> re-resolve the acollection
+	 *     snapshot so the artifact list TEA reads stays current. This is the
+	 *     home for the catch-all that {@code ReleaseFinalizerService.finalize
+	 *     Release} used to provide before finalize became a no-op.</li>
+	 * <li><b>Changelog cache (Phase 2):</b> recompute the SBOM-components
+	 *     changelog as a set-difference of reconcile inventories and cache it
+	 *     onto {@code acollection.artifactComparison} — for both this release
+	 *     (vs its predecessor) and the next release (vs this one), since this
+	 *     release's inventory change invalidates the successor's diff too.
+	 *     Ungated by lifecycle so DRAFT releases also show a current changelog
+	 *     in the UI.</li>
+	 * <li><b>Notification (Phase 1):</b> fire the once-per-release BOM-diff
+	 *     alert, gated on lifecycle {@code >= ASSEMBLED} and the one-shot
+	 *     {@code flow_control.bomDiffNotifiedAt} flag, reusing the self-diff
+	 *     computed for the cache.</li>
+	 * </ol>
+	 */
+	public void postReconcileBomDiff(UUID releaseUuid) {
+		// (1) Snapshot safety net — independent failure domain from the diff work.
+		// Cheap-on-no-change: skips the per-artifact rebom resolve when the
+		// artifact set is unchanged (the common case, since mutations already
+		// resolve the snapshot synchronously via saveRelease).
+		try {
+			acollectionService.resolveReleaseCollectionIfArtifactsChanged(releaseUuid, WhoUpdated.getAutoWhoUpdated());
+		} catch (Exception e) {
+			log.warn("post-reconcile acollection resolve failed for release {}: {}",
+					releaseUuid, e.getMessage());
+		}
+
+		try {
+			// Light read: this path only needs record-data fields (branch,
+			// lifecycle, org, component) for the diff + notification gate — no
+			// metrics detail arrays or approval/update events.
+			Optional<ReleaseData> ord = sharedReleaseService.getReleaseDataLight(releaseUuid);
+			if (ord.isEmpty()) return;
+			ReleaseData rd = ord.get();
+			UUID branch = rd.getBranch();
+
+			Map<String, DiffComponent> selfInventory = collectReleaseInventory(releaseUuid);
+
+			// (2a) This release vs its lineage predecessor → cache + notification baseline.
+			ArtifactChangelog selfDiff = null;
+			UUID prevReleaseUuid = sharedReleaseService
+					.findPreviousReleasesOfBranchForRelease(branch, releaseUuid);
+			if (prevReleaseUuid != null) {
+				Map<String, DiffComponent> prevInventory = collectReleaseInventory(prevReleaseUuid);
+				// Only diff against a populated baseline — an empty predecessor
+				// inventory usually means it just isn't reconciled yet, and
+				// caching an all-"added" diff would be misleading.
+				if (!selfInventory.isEmpty() && !prevInventory.isEmpty()) {
+					selfDiff = diffInventories(selfInventory, prevInventory);
+					acollectionService.cacheReleaseChangelog(releaseUuid, prevReleaseUuid, selfDiff);
+				}
+			}
+
+			// (2b) Next release vs this one → keep the successor's cached diff fresh.
+			UUID nextReleaseUuid = sharedReleaseService
+					.findNextReleasesOfBranchForRelease(branch, releaseUuid);
+			if (nextReleaseUuid != null) {
+				Map<String, DiffComponent> nextInventory = collectReleaseInventory(nextReleaseUuid);
+				if (!nextInventory.isEmpty() && !selfInventory.isEmpty()) {
+					ArtifactChangelog nextDiff = diffInventories(nextInventory, selfInventory);
+					acollectionService.cacheReleaseChangelog(nextReleaseUuid, releaseUuid, nextDiff);
+				}
+			}
+
+			// (3) Once-per-release notification, reusing the self-diff.
+			maybeFireBomDiffNotification(rd, selfDiff);
+		} catch (Exception e) {
+			log.warn("post-reconcile BOM-diff cache/notification failed for release {}: {}",
+					releaseUuid, e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Once-per-release BOM-diff notification. Gate: lifecycle {@code >=
+	 * ASSEMBLED} (the all-BOMs-uploaded signal) and the one-shot
+	 * {@code flow_control.bomDiffNotifiedAt} flag unset. A valid {@code
+	 * selfDiff} (non-null — i.e. a populated baseline was available) is
+	 * required, so we don't burn the one-shot claim before a comparable
+	 * predecessor inventory exists; a later reconcile retries. The atomic
+	 * claim then fires {@link NotificationService#sendBomDiffAlert} (which
+	 * itself no-ops unless the diff has both additions and removals).
+	 */
+	private void maybeFireBomDiffNotification(ReleaseData rd, ArtifactChangelog selfDiff) {
+		if (selfDiff == null) return;
+		ReleaseLifecycle lifecycle = rd.getLifecycle();
+		if (lifecycle == null || lifecycle.ordinal() < ReleaseLifecycle.ASSEMBLED.ordinal()) return;
+		// Atomic one-shot claim: 0 rows affected => a prior reconcile already notified.
+		if (releaseRepository.claimBomDiffNotification(rd.getUuid()) == 0) return;
+		notificationService.sendBomDiffAlert(rd.getOrg(), rd, selfDiff);
+	}
+
+	/**
+	 * Set-difference two release inventories into an {@link ArtifactChangelog}:
+	 * components present in {@code curr} but not {@code prev} are added,
+	 * those present in {@code prev} but not {@code curr} are removed. Both maps
+	 * are keyed by canonical purl (version-included), so a version bump shows
+	 * as a remove of the old + add of the new — matching rebom's prior diff.
+	 */
+	private static ArtifactChangelog diffInventories(
+			Map<String, DiffComponent> curr, Map<String, DiffComponent> prev) {
+		Set<DiffComponent> added = new LinkedHashSet<>();
+		for (Map.Entry<String, DiffComponent> e : curr.entrySet()) {
+			if (!prev.containsKey(e.getKey())) added.add(e.getValue());
+		}
+		Set<DiffComponent> removed = new LinkedHashSet<>();
+		for (Map.Entry<String, DiffComponent> e : prev.entrySet()) {
+			if (!curr.containsKey(e.getKey())) removed.add(e.getValue());
+		}
+		return new ArtifactChangelog(added, removed);
+	}
+
+	/**
+	 * Lean inventory for a release: maps each canonical purl (version-included)
+	 * the release's BOM artifacts declare to a {@link DiffComponent} carrying
+	 * that same canonical purl plus the version — matching the shape rebom's
+	 * {@code bomDiff} produced (full purl in {@code purl}, version alongside),
+	 * so cached changelogs and the UI rendering are unchanged. Avoids the full
+	 * per-component participation/parent synthesis of
+	 * {@link #listReleaseSbomComponents}; resolution mirrors that method
+	 * (product releases fold in their transitive dependency inventories).
+	 */
+	public Map<String, DiffComponent> collectReleaseInventory(UUID releaseUuid) {
+		// Light read: only org / component-type / dependency record-data fields are
+		// used to resolve the canonical-purl set — no metrics detail or events.
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseDataLight(releaseUuid);
+		if (ord.isEmpty()) return Map.of();
+		ReleaseData rd = ord.get();
+		UUID orgUuid = rd.getOrg();
+		if (orgUuid == null) return Map.of();
+
+		boolean isProduct = getComponentService.getComponentData(rd.getComponent())
+				.map(cd -> cd.getType() == ComponentType.PRODUCT)
+				.orElse(false);
+
+		Set<UUID> sourceReleaseUuids = new LinkedHashSet<>();
+		sourceReleaseUuids.add(releaseUuid);
+		if (isProduct) {
+			for (ReleaseData dep : sharedReleaseService.unwindReleaseDependencies(rd)) {
+				sourceReleaseUuids.add(dep.getUuid());
+			}
+		}
+
+		Set<UUID> canonicalSet = new LinkedHashSet<>();
+		for (ReleaseArtifactIndex idx :
+				releaseArtifactIndexRepository.findByOrgAndReleaseUuidIn(orgUuid, sourceReleaseUuids)) {
+			canonicalSet.add(idx.getCanonicalArtifactUuid());
+		}
+		if (canonicalSet.isEmpty()) return Map.of();
+
+		List<ArtifactSbomComponent> rows = artifactSbomComponentRepository
+				.findByOrgAndCanonicalArtifactUuidIn(orgUuid, canonicalSet);
+		if (rows.isEmpty()) return Map.of();
+
+		Set<UUID> componentIds = new LinkedHashSet<>();
+		for (ArtifactSbomComponent r : rows) componentIds.add(r.getSbomComponentUuid());
+
+		Map<UUID, SbomComponent> comps = findSbomComponentsByIds(componentIds, orgUuid);
+		Map<String, DiffComponent> out = new LinkedHashMap<>();
+		for (SbomComponent sc : comps.values()) {
+			String canonicalPurl = sc.getCanonicalPurl();
+			if (canonicalPurl == null) continue;
+			String version = null;
+			if (sc.getRecordData() != null && sc.getRecordData().get("version") != null) {
+				version = String.valueOf(sc.getRecordData().get("version"));
+			}
+			out.put(canonicalPurl, new DiffComponent(canonicalPurl, version));
+		}
+		return out;
 	}
 
 	// ===================================================================

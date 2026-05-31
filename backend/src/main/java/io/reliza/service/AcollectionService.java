@@ -23,7 +23,6 @@ import io.reliza.model.AcollectionData;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.AcollectionData.ArtifactComparison;
 import io.reliza.model.AcollectionData.VersionedArtifact;
-import io.reliza.model.ArtifactData;
 import io.reliza.model.Branch;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ArtifactData.StoredIn;
@@ -44,9 +43,6 @@ public class AcollectionService {
 	
 	@Autowired
 	RebomService rebomService;
-
-	@Autowired
-	NotificationService notificationService;
 
 	@Autowired
 	GetComponentService getComponentService;
@@ -105,6 +101,41 @@ public class AcollectionService {
 		return latestAcd;
 	}
 		
+	/**
+	 * Cheap-on-no-change wrapper for the reconcile drain's snapshot safety net.
+	 * {@link #resolveReleaseCollection} does a per-artifact rebom
+	 * {@code resolveBomMetas} round-trip before its equality short-circuit; on
+	 * the drain that work is almost always wasted, since every artifact-set
+	 * mutation already resolves the snapshot synchronously via
+	 * {@code saveRelease(AcollectionMode.RESOLVE)}. This pre-checks the gathered
+	 * artifact UUID set against the latest acollection's and skips the full
+	 * resolve when they match — no rebom calls in the common case.
+	 *
+	 * <p>Caveat: matches on the UUID set only, so an in-place {@code bomVersion}
+	 * bump on an already-attached artifact (same UUID) isn't picked up here.
+	 * That only affects the acollection's internal version counter (not the
+	 * artifact list or changelog), and the artifact-mutation paths that change
+	 * a BOM go through add/replace — which change the UUID set — so this is safe
+	 * for the drain's redundant catch-all.
+	 */
+	public AcollectionData resolveReleaseCollectionIfArtifactsChanged (UUID releaseUuid, WhoUpdated wu) {
+		// Light read: only the gathered artifact UUID set (record-data fields) is
+		// needed for the cheap change-check; no metrics detail / events.
+		ReleaseData rd = sharedReleaseService.getReleaseDataLight(releaseUuid).orElse(null);
+		if (rd == null) return null;
+		AcollectionData latest = getLatestCollectionDataOfRelease(releaseUuid);
+		if (latest != null && latest.getArtifacts() != null) {
+			Set<UUID> current = artifactGatherService.gatherReleaseArtifacts(rd);
+			Set<UUID> snapshot = latest.getArtifacts().stream()
+					.map(VersionedArtifact::artifactUuid)
+					.collect(java.util.stream.Collectors.toSet());
+			if (current.equals(snapshot)) {
+				return latest;
+			}
+		}
+		return resolveReleaseCollection(releaseUuid, wu);
+	}
+
 	@Transactional
 	public AcollectionData resolveReleaseCollection (UUID releaseUuid, WhoUpdated wu) {
 		AcollectionData resolvedCollection = null;
@@ -172,146 +203,49 @@ public class AcollectionService {
 		return repository.save(ac);
 	}
 
-	public void releaseBomChangelogRoutine(UUID releaseId, UUID branch, UUID org){
-
-		UUID prevReleaseId = null;
-
-		// Always recalculate prevReleaseId during finalization
-		// Don't trust the stored comparedReleaseUuid as it may be incorrect (e.g., from out-of-order finalization)
-		prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
-		
-		
-		UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
-
-		if (prevReleaseId != null) {
-			// Validate that prevRelease is actually before current release chronologically
-			// This prevents inverted changelogs from being created
-			Optional<ReleaseData> prevRd = sharedReleaseService.getReleaseData(prevReleaseId);
-			Optional<ReleaseData> currRd = sharedReleaseService.getReleaseData(releaseId);
-			
-			if (prevRd.isPresent() && currRd.isPresent()) {
-				if (prevRd.get().getCreatedDate().isAfter(currRd.get().getCreatedDate())) {
-					log.warn("SBOM_CHANGELOG: prevRelease {} (date: {}) is AFTER current release {} (date: {}) - treating as first release", 
-						prevReleaseId, prevRd.get().getCreatedDate(), 
-						releaseId, currRd.get().getCreatedDate());
-					prevReleaseId = null;
-				}
-			}
-			
-			if (prevReleaseId != null) {
-				// Force recalculate during finalization to handle race condition where initial Acollection had incomplete artifacts
-				resolveBomDiff(releaseId, prevReleaseId, org, true);
-			}
-		} else {
-			log.warn("SBOM_CHANGELOG: No previous release found for release {}, cannot calculate diff", releaseId);
+	/**
+	 * Cache a reconcile-computed SBOM-components changelog onto the release's
+	 * latest acollection ({@code artifactComparison}), the value the UI and TEA
+	 * read. The changelog itself is now produced by the reconcile set-diff in
+	 * {@link io.reliza.service.SbomComponentService}; this just persists it.
+	 *
+	 * <p>No-op if the release has no acollection yet (a mutation-path
+	 * {@code resolveReleaseCollection} will create one and a later reconcile
+	 * re-caches) or if the cached value is already identical — so unchanged
+	 * diffs don't churn the row.
+	 */
+	public void cacheReleaseChangelog(UUID releaseUuid, UUID comparedReleaseUuid, ArtifactChangelog changelog) {
+		AcollectionData latest = getLatestCollectionDataOfRelease(releaseUuid);
+		if (latest == null) {
+			log.debug("SBOM_CHANGELOG: no acollection yet for release {}, skipping changelog cache", releaseUuid);
+			return;
 		}
-		if (nextReleaseId != null) {
-			resolveBomDiff(nextReleaseId, releaseId, org, true);
+		ArtifactComparison existing = latest.getArtifactComparison();
+		if (existing != null && changelog.equals(existing.changelog())
+				&& java.util.Objects.equals(comparedReleaseUuid, existing.comparedReleaseUuid())) {
+			return;
 		}
+		persistArtifactChangelogForCollection(changelog, comparedReleaseUuid, latest.getUuid());
 	}
 
-
-	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org){
-		resolveBomDiff(releaseId, prevReleaseId, org, false);
-	}
-
-	public boolean resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
-		return resolveBomDiff(releaseId, prevReleaseId, org, forceRecalculate, false);
-	}
-
-	public boolean resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate,
-			boolean suppressNotification){
-		log.debug("SBOM_DIFF_DEBUG: Starting resolveBomDiff for release {} vs prev {}, forceRecalculate={}", releaseId, prevReleaseId, forceRecalculate);
-		
-		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
-		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
-		
-		log.debug("SBOM_DIFF_DEBUG: Current acollection: uuid={}, artifacts={}", 
-			currAcollectionData != null ? currAcollectionData.getUuid() : "null",
-			currAcollectionData != null && currAcollectionData.getArtifacts() != null ? currAcollectionData.getArtifacts().size() : "null");
-		log.debug("SBOM_DIFF_DEBUG: Previous acollection: uuid={}, artifacts={}", 
-			prevAcollectionData != null ? prevAcollectionData.getUuid() : "null",
-			prevAcollectionData != null && prevAcollectionData.getArtifacts() != null ? prevAcollectionData.getArtifacts().size() : "null");
-		
-		if(null != currAcollectionData && null != currAcollectionData.getArtifacts() 
-			&& currAcollectionData.getArtifacts().size() > 0 
-			&& null != prevAcollectionData 
-			&& prevAcollectionData.getArtifacts().size() > 0
-			&& ! prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts())
-		){
-			log.debug("SBOM_DIFF_DEBUG: Conditions met, proceeding with BOM diff calculation");
-			
-            List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
-			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
-			
-			log.debug("SBOM_DIFF_DEBUG: Current internal BOM IDs: {}", currArtifacts);
-			log.debug("SBOM_DIFF_DEBUG: Previous internal BOM IDs: {}", prevArtifacts);
-			
-			if (currArtifacts.isEmpty() && prevArtifacts.isEmpty()) {
-				log.debug("SBOM_CHANGELOG: Both current and previous releases have NO internal BOM IDs - cannot calculate changelog");
-				return false;
-			}
-			
-			log.debug("SBOM_DIFF_DEBUG: Calling rebomService.getArtifactChangelog");
-			// Call with prevArtifacts (old/baseline) first, then currArtifacts (new/current)
-			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(prevArtifacts, currArtifacts, org);
-			log.debug("SBOM_DIFF_DEBUG: Changelog result - added: {}, removed: {}", 
-				artifactChangelog != null && artifactChangelog.added() != null ? artifactChangelog.added().size() : "null",
-				artifactChangelog != null && artifactChangelog.removed() != null ? artifactChangelog.removed().size() : "null");
-
-			// If forceRecalculate is true (called from finalization), always update even if changelog appears same
-			// This handles the race condition where initial Acollection had incomplete artifacts
-			if (forceRecalculate || null == currAcollectionData.getArtifactComparison() || null == currAcollectionData.getArtifactComparison().changelog()  || !currAcollectionData.getArtifactComparison().changelog().equals(artifactChangelog)) {
-				
-				persistArtifactChangelogForCollection(artifactChangelog, prevReleaseId, currAcollectionData.getUuid(), suppressNotification);
-
-			}else{
-				log.debug("SBOM_CHANGELOG: Duplicate trigger for release {}, not persisting changelog", releaseId);
-			}
-			return true;
-		} else {
-			log.debug("SBOM_CHANGELOG: Skipping resolveBomDiff - conditions not met. Current artifacts null/empty: {}, Previous artifacts null/empty: {}, Artifacts equal: {}",
-				currAcollectionData.getArtifacts() == null || currAcollectionData.getArtifacts().isEmpty(),
-				prevAcollectionData == null || prevAcollectionData.getArtifacts() == null || prevAcollectionData.getArtifacts().isEmpty(),
-				prevAcollectionData != null && prevAcollectionData.getArtifacts() != null && currAcollectionData.getArtifacts() != null && prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts()));
-			return false;
-		}
-	}
-
+	// Persists the SBOM components changelog onto the acollection (consumed by
+	// the UI / TEA). The BOM-diff *notification* is no longer fired here — it
+	// fires exactly once per release off the reconcile drain
+	// (SbomComponentService.postReconcileBomDiff), gated on lifecycle >=
+	// ASSEMBLED, so re-computations don't double-notify.
 	@Transactional
 	private void persistArtifactChangelogForCollection(ArtifactChangelog artifactChangelog, UUID comparedReleaseUuid,
-			UUID acollection, boolean suppressNotification){
+			UUID acollection){
 		Acollection ac = getAcollectionWriteLocked(acollection).get();
 		AcollectionData acd = AcollectionData.dataFromRecord(ac);
 		AcollectionData.ArtifactComparison artifactComparison = new AcollectionData.ArtifactComparison(artifactChangelog, comparedReleaseUuid);
 		acd.setArtifactComparison(artifactComparison);
-		Map<String,Object> recordData = Utils.dataToRecord(acd);	
+		Map<String,Object> recordData = Utils.dataToRecord(acd);
 
 		ac.setRecordData(recordData);
 		repository.save(ac);
+	}
 
-		AcollectionData updatedAcd = AcollectionData.dataFromRecord(ac);
-		UUID org = updatedAcd.getOrg();
-		UUID releaseUuid = updatedAcd.getRelease();
-		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
-		if (!suppressNotification && ord.isPresent()) {
-			notificationService.sendBomDiffAlert(org, ord.get(), artifactChangelog);
-		}
-	}
-	private List<UUID> getInternalBomIdsFromACollection(AcollectionData collection){
-		List<UUID> artIds = collection.getArtifacts().stream().map(VersionedArtifact::artifactUuid).toList();
-		// totals-only: only internalBom is read from these artifacts.
-		List<ArtifactData> artList = artifactService.getArtifactDataListLight(artIds);
-		
-		List<UUID> bomIds = artList.stream()
-		.filter(art -> null != art.getInternalBom())
-		.map(art -> art.getInternalBom().id())
-		.distinct()
-		.toList();
-		
-		return bomIds;
-	}
-	
 	/**
 	 * Extracts acollections from releases between two releases for SBOM comparison.
 	 * Used for changelog generation to compare SBOM changes across a release range.

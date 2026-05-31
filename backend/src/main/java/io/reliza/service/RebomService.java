@@ -31,7 +31,6 @@ import tools.jackson.databind.ObjectMapper;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.dto.BearIntegrationDto;
-import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.dto.ArtifactDto;
@@ -516,35 +515,6 @@ public class RebomService {
         return bomMetas;
     }
 
-    public record DiffComponent (String purl, String version) {}
-    
-    public record DiffResult (List<DiffComponent> added, List<DiffComponent> removed) {}
-
-    public ArtifactChangelog getArtifactChangelog(List<UUID> fromIds, List<UUID> toIds, UUID org){
-        String query = """
-        query bomDiff ($fromIds: [ID], $toIds: [ID], $org: ID!) {
-            bomDiff(fromIds: $fromIds, toIds: $toIds, org: $org) {
-               added{
-                purl
-                version
-               }
-               removed{
-                purl
-                version
-               }
-            }
-        }""";
-            
-        Map<String, Object> variables = new HashMap<>();
-        variables.put("fromIds", fromIds);
-        variables.put("toIds", toIds);
-        variables.put("org", org.toString());
-        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
-        var br = response.get("bomDiff");
-
-        ArtifactChangelog diffResult = Utils.OM.convertValue(br, new TypeReference<ArtifactChangelog>() {});
-        return diffResult;
-    }
     public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, BomFormat bomFormat, UUID org)  throws RelizaException{
         return uploadRebomRequest(bomJson, rebomOverride, bomFormat, org, null);
     }

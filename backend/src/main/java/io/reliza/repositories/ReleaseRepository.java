@@ -435,4 +435,19 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "WHERE uuid = :uuid AND sbom_schema_version < :version", nativeQuery = true)
 	void recordSbomReconciledAtVersion(@Param("uuid") UUID uuid, @Param("version") int version);
 
+	/**
+	 * Atomically claim the once-per-release BOM-diff notification. Stamps
+	 * {@code flow_control.bomDiffNotifiedAt} only if it isn't set yet and
+	 * returns the affected-row count: 1 means this caller won the claim and
+	 * should evaluate + fire the alert, 0 means a prior reconcile already
+	 * notified. The single-threaded scheduler drain makes a race unlikely,
+	 * but the conditional UPDATE keeps the one-shot guarantee regardless.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{bomDiffNotifiedAt}', to_jsonb(now()), true) "
+			+ "WHERE uuid = :uuid AND (flow_control->>'bomDiffNotifiedAt') IS NULL", nativeQuery = true)
+	int claimBomDiffNotification(@Param("uuid") UUID uuid);
+
 }

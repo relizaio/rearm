@@ -6,29 +6,31 @@ package io.reliza.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
-import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ReleaseData;
-import io.reliza.model.ReleaseData.ReleaseLifecycle;
-import io.reliza.model.WhoUpdated;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * "Finalize" used to resolve the acollection snapshot and compute the SBOM
+ * components changelog for a release. As of the reconcile-driven BOM-diff work,
+ * both of those happen on the SBOM-component reconcile drain
+ * ({@code SbomComponentService.postReconcileBomDiff}: snapshot resolve +
+ * changelog cache + once-per-release notification).
+ *
+ * <p>The finalizer GraphQL mutations are intentionally retained for backward
+ * compatibility, so this service is now a thin compatibility shim: it just
+ * enqueues a reconcile, letting the drain run the pipeline. The methods are
+ * kept (rather than removed) so existing CI / CLI callers keep working.
+ */
 @Service
 @Slf4j
 public class ReleaseFinalizerService {
-
-    @Autowired
-    private AcollectionService acollectionService;
 
     @Autowired
     private SharedReleaseService sharedReleaseService;
@@ -40,10 +42,12 @@ public class ReleaseFinalizerService {
     private BranchService branchService;
 
     @Autowired
+    private SbomComponentService sbomComponentService;
+
+    @Autowired
     private ScheduledExecutorService scheduledExecutorService;
 
     public void scheduleFinalizeRelease(UUID releaseId) {
-        // log.info("RGDEBUG: scheduling finalize release for {}", releaseId);
         scheduledExecutorService.schedule(() -> {
             try {
                 finalizeRelease(releaseId);
@@ -53,22 +57,14 @@ public class ReleaseFinalizerService {
         }, 180, TimeUnit.SECONDS);
     }
 
+    /**
+     * Compatibility shim — enqueues an SBOM-component reconcile so the drain
+     * resolves the acollection snapshot, refreshes the changelog cache, and
+     * fires the once-per-release notification. Idempotent
+     * ({@code markSbomReconcileRequested} no-ops if a request is already pending).
+     */
     public void finalizeRelease(UUID releaseUuid) {
-
-        Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
-        if (ord.isPresent()) {
-            ReleaseData rd = ord.get();
-            UUID branch = rd.getBranch();
-            UUID org = rd.getOrg();
-
-            acollectionService.resolveReleaseCollection(releaseUuid, WhoUpdated.getAutoWhoUpdated());
-            
-            // Then calculate the BOM changelog
-            acollectionService.releaseBomChangelogRoutine(releaseUuid, branch, org);
-            // Add more finalization steps here as needed
-        } else {
-            log.warn("SBOM_CHANGELOG: Release not found for UUID: {}", releaseUuid);
-        }
+        sbomComponentService.requestReconcile(releaseUuid);
     }
 
     public void finalizeAllReleases() {
@@ -81,108 +77,37 @@ public class ReleaseFinalizerService {
         }, 0, TimeUnit.SECONDS);
     }
 
+    /**
+     * Admin back-fill: enqueue an SBOM-component reconcile for every release so
+     * the drain re-resolves each acollection snapshot + changelog cache. The
+     * old pairwise rebom-diff walk is gone — the reconcile drain handles the
+     * prev/next changelog recompute itself.
+     */
     private void doFinalizeAllReleases() {
-        log.info("FINALIZE_ALL: Starting finalizeAllReleases");
-        var allComponents = componentService.listAllComponentData();
+        log.info("FINALIZE_ALL: enqueuing SBOM reconcile for all releases");
         int componentCount = 0;
         int branchCount = 0;
-        int pairCount = 0;
-        int skipCount = 0;
-        int errorCount = 0;
-        Map<UUID, Optional<UUID>> baseBranchCache = new HashMap<>();
-
+        int releaseCount = 0;
+        var allComponents = componentService.listAllComponentData();
         for (ComponentData cd : allComponents) {
-            if (cd.getType() != ComponentType.COMPONENT) {
-                continue;
-            }
             componentCount++;
             var branches = branchService.listBranchDataOfComponent(cd.getUuid(), null);
-            log.debug("FINALIZE_ALL: === Component: {} ({}) - {} branches ===", cd.getName(), cd.getUuid(), branches.size());
             for (BranchData bd : branches) {
+                branchCount++;
                 try {
-                    branchCount++;
-                    // Get all releases for this branch (no limit), sorted by version descending
-                    List<ReleaseData> releasesDesc = sharedReleaseService.listReleaseDataOfBranch(bd.getUuid(), (Integer) null, true);
-                    int totalReleases = releasesDesc.size();
-                    // Filter out CANCELLED and REJECTED releases, reverse to ascending version order
-                    List<ReleaseData> releases = new ArrayList<>(releasesDesc.size());
-                    for (int i = releasesDesc.size() - 1; i >= 0; i--) {
-                        ReleaseData rd = releasesDesc.get(i);
-                        if (rd.getLifecycle() != ReleaseLifecycle.CANCELLED
-                                && rd.getLifecycle() != ReleaseLifecycle.REJECTED) {
-                            releases.add(rd);
-                        }
-                    }
-
-                    if (releases.isEmpty()) {
-                        continue;
-                    }
-
-                    log.debug("FINALIZE_ALL:   Branch: {} - {} active releases ({} total, {} skipped)",
-                            bd.getName(), releases.size(), totalReleases, totalReleases - releases.size());
+                    List<ReleaseData> releases =
+                            sharedReleaseService.listReleaseDataOfBranch(bd.getUuid(), (Integer) null, true);
                     for (ReleaseData rd : releases) {
-                        log.debug("FINALIZE_ALL:     Release: {} ({})", rd.getVersion(), rd.getUuid());
-                    }
-
-                    // Handle first release: find its previous via fork point for non-base branches
-                    ReleaseData firstRelease = releases.get(0);
-                    if (bd.getType() != BranchData.BranchType.BASE) {
-                        UUID prevForFirst = sharedReleaseService.findPreviousReleasesOfBranchForRelease(
-                                bd.getUuid(), firstRelease.getUuid(), firstRelease, cd, baseBranchCache);
-                        if (prevForFirst != null) {
-                            try {
-                                log.debug("FINALIZE_ALL:     Diff: fork-point {} -> {}", prevForFirst, firstRelease.getVersion());
-                                boolean computed = acollectionService.resolveBomDiff(firstRelease.getUuid(), prevForFirst,
-                                        firstRelease.getOrg(), true, true);
-                                if (computed) { pairCount++; } else { skipCount++; }
-                            } catch (Exception e) {
-                                errorCount++;
-                                log.warn("FINALIZE_ALL: Error on fork-point diff {} -> {} (branch {}): {}", prevForFirst, firstRelease.getVersion(), bd.getName(), extractCause(e));
-                                log.debug("FINALIZE_ALL: Full error on fork-point diff {} -> {}", prevForFirst, firstRelease.getUuid(), e);
-                            }
-                        }
-                    }
-
-                    // Walk consecutive pairs
-                    for (int i = 0; i < releases.size() - 1; i++) {
-                        ReleaseData prev = releases.get(i);
-                        ReleaseData curr = releases.get(i + 1);
-                        try {
-                            log.debug("FINALIZE_ALL:     Diff: {} -> {}", prev.getVersion(), curr.getVersion());
-                            boolean computed = acollectionService.resolveBomDiff(curr.getUuid(), prev.getUuid(),
-                                    curr.getOrg(), true, true);
-                            if (computed) { pairCount++; } else { skipCount++; }
-                        } catch (Exception e) {
-                            errorCount++;
-                            log.warn("FINALIZE_ALL: Error on diff {} -> {} (branch {}): {}", prev.getVersion(), curr.getVersion(), bd.getName(), extractCause(e));
-                            log.debug("FINALIZE_ALL: Full error on diff {} -> {}", prev.getVersion(), curr.getVersion(), e);
-                        }
+                        sbomComponentService.requestReconcile(rd.getUuid());
+                        releaseCount++;
                     }
                 } catch (Exception e) {
-                    errorCount++;
-                    log.warn("FINALIZE_ALL: Error processing branch {} of component {}: {}", bd.getName(), cd.getName(), extractCause(e));
-                    log.debug("FINALIZE_ALL: Full error on branch {} of component {}", bd.getUuid(), cd.getUuid(), e);
+                    log.warn("FINALIZE_ALL: error enqueuing reconcile for branch {} of component {}: {}",
+                            bd.getName(), cd.getName(), e.getMessage());
                 }
             }
         }
-        log.info("FINALIZE_ALL: Completed. {} components, {} branches, {} pairs processed, {} skipped (no BOMs), {} errors",
-                componentCount, branchCount, pairCount, skipCount, errorCount);
-    }
-
-    private String extractCause(Exception e) {
-        Throwable root = e;
-        while (root.getCause() != null) {
-            root = root.getCause();
-        }
-        String msg = root.getMessage();
-        if (msg == null) {
-            return root.getClass().getSimpleName();
-        }
-        // Truncate verbose messages (e.g. JSON validation errors with full SPDX list)
-        int idx = msg.indexOf('[');
-        if (idx > 0 && msg.length() > 200) {
-            return msg.substring(0, idx).trim();
-        }
-        return msg.length() > 200 ? msg.substring(0, 200) + "..." : msg;
+        log.info("FINALIZE_ALL: Completed. {} components, {} branches, {} releases enqueued",
+                componentCount, branchCount, releaseCount);
     }
 }
