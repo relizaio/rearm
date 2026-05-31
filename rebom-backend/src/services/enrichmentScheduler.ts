@@ -1,5 +1,5 @@
 import { logger } from '../logger';
-import { EnrichmentStatus } from '../types';
+import { EnrichmentStatus, IntegrationType } from '../types';
 import * as BomRepository from '../bomRepository';
 import { fetchFromOci, extractRepositoryNameFromBom } from './oci';
 import { enrichBomAsync } from './bom/bomProcessingService';
@@ -10,33 +10,65 @@ import { AdvisoryLockKey, tryAdvisoryLock, releaseAdvisoryLock } from './advisor
 const SCHEDULER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const ENRICHMENT_BATCH_LIMIT = 50;
 
+// A BOM stuck in PENDING past this window is treated as abandoned: the
+// fire-and-forget enrich kicked off at ingest never reached a terminal status
+// — the pod rolled mid-enrichment, or BEAR was configured after the BOM was
+// uploaded so the ingest-time attempt early-returned with no credentials.
+// Matches triggerEnrichment's timeout(30m)+grace(5m) so the scheduler never
+// races an enrich that is genuinely still in flight.
+const STALE_PENDING_THRESHOLD_MS = 35 * 60 * 1000;
+
 let schedulerInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
 
 // TODO: implement retry counter and permanently failed status on bom enrichment 
 
 /**
- * Finds BOMs that need enrichment (status is null, FAILED, or SKIPPED).
+ * Finds BOMs that need enrichment. Picks up:
+ *  - never-attempted / retryable rows: enrichmentStatus null, FAILED, or SKIPPED;
+ *  - abandoned PENDING rows: stuck in PENDING past STALE_PENDING_THRESHOLD_MS,
+ *    but ONLY for orgs that actually have a BEAR integration configured.
+ *    Without this branch a BOM whose ingest-time enrich never reached a
+ *    terminal status (pod rolled mid-run, or BEAR was configured after the
+ *    upload) stays PENDING forever — the manual triggerEnrichment mutation was
+ *    the only way to recover it. The org-has-BEAR guard keeps un-enrichable
+ *    PENDING rows (no integration → getBearCredentials returns null) out of the
+ *    batch so they can't starve enrichable ones under the LIMIT.
  * Returns up to ENRICHMENT_BATCH_LIMIT records.
  * IMPORTANT: Must include 'bom' field so extractRepositoryNameFromBom can find repository name.
  */
 async function findBomsNeedingEnrichment(): Promise<Array<{ uuid: string; organization: string; serialNumber: string; meta: any; bom: any }>> {
   const queryText = `
-    SELECT uuid, organization, meta->>'serialNumber' as "serialNumber", bom
-    FROM rebom.boms 
-    WHERE meta->>'enrichmentStatus' IS NULL 
-       OR meta->>'enrichmentStatus' = $1
-       OR meta->>'enrichmentStatus' = $2
-    ORDER BY created_date ASC
-    LIMIT $3
+    SELECT b.uuid, b.organization, b.meta->>'serialNumber' as "serialNumber", b.bom
+    FROM rebom.boms b
+    WHERE b.meta->>'enrichmentStatus' IS NULL
+       OR b.meta->>'enrichmentStatus' = $1
+       OR b.meta->>'enrichmentStatus' = $2
+       OR (
+            b.meta->>'enrichmentStatus' = $3
+            AND b.created_date < $4
+            AND EXISTS (
+              SELECT 1 FROM rebom.integrations i
+              WHERE i.organization = b.organization
+                AND i.config->>'type' = $5
+                AND i.config->>'uri' IS NOT NULL
+                AND i.config->>'secretUuid' IS NOT NULL
+            )
+          )
+    ORDER BY b.created_date ASC
+    LIMIT $6
   `;
-  
+
+  const stalePendingCutoff = new Date(Date.now() - STALE_PENDING_THRESHOLD_MS).toISOString();
   const result = await runQuery(queryText, [
     EnrichmentStatus.FAILED,
     EnrichmentStatus.SKIPPED,
+    EnrichmentStatus.PENDING,
+    stalePendingCutoff,
+    IntegrationType.BEAR,
     ENRICHMENT_BATCH_LIMIT
   ]);
-  
+
   return result.rows;
 }
 
