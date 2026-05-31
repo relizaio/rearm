@@ -128,7 +128,21 @@ const storeObject : any = {
             return (uuid: string) => state.components.filter((p: any) => (p.org === constants.ExternalPublicComponentsOrg))
         },
         productsOfOrg (state: any) {
-            return (uuid: string) => state.components.filter((p: any) => (p.org === uuid) && (p.type === 'PRODUCT') && (p.status !== 'ARCHIVED'))
+            return (uuid: string) => {
+                const prods = state.components.filter((p: any) => (p.org === uuid) && (p.type === 'PRODUCT') && (p.status !== 'ARCHIVED'))
+                if (prods && prods.length) {
+                    prods.sort((a: any, b: any) => {
+                        if (a.name.toLowerCase() < b.name.toLowerCase()) {
+                            return -1
+                        } else if (a.name.toLowerCase() > b.name.toLowerCase()) {
+                            return 1
+                        } else {
+                            return 0
+                        }
+                    })
+                }
+                return prods
+            }
         },
         vcsReposOfOrg (state: any) {
             return (uuid: string) => state.vcsRepos.filter((vcs: any) => (vcs.org === uuid))

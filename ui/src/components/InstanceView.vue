@@ -1640,18 +1640,21 @@ matchedProductFields.push({
         // return h('span', row.type)
     }
 })
-matchedProductFields.push({
-    key: 'alerts',
-    title: 'Alerts?',
-    render: (row: any) => h(NSwitch, {
-        size: 'medium',
-        value: row.alertsEnabled,
-        'onUpdate:value': (value: boolean) => toggleAlerts(row, value)
-    }, {
-        checked: () => h(NIcon, {}, {default: () => h(AlertOn24Regular)}),
-        unchecked: () => h(NIcon, {}, {default: () => h(AlertOff24Regular)})
-    })
-})
+// Alerts? column hidden for now — the per-product alerts toggle is not wired to
+// anything yet. Kept commented (not deleted) so it can be re-enabled once the
+// alerts feature does something.
+// matchedProductFields.push({
+//     key: 'alerts',
+//     title: 'Alerts?',
+//     render: (row: any) => h(NSwitch, {
+//         size: 'medium',
+//         value: row.alertsEnabled,
+//         'onUpdate:value': (value: boolean) => toggleAlerts(row, value)
+//     }, {
+//         checked: () => h(NIcon, {}, {default: () => h(AlertOn24Regular)}),
+//         unchecked: () => h(NIcon, {}, {default: () => h(AlertOff24Regular)})
+//     })
+// })
 matchedProductFields.push({
     key: 'controls',
     title: '',

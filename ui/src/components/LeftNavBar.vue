@@ -228,7 +228,7 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
         },
     ]
 
-    const topOptions = myuser.installationType === 'SAAS' ? baseOptions.concat(nonOssOptions) : baseOptions
+    const topOptions = myuser.installationType !== 'OSS' ? baseOptions.concat(nonOssOptions) : baseOptions
     return topOptions.concat(settingsOptions)
 }
 
