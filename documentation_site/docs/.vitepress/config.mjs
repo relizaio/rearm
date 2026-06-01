@@ -19,6 +19,7 @@ function sidebar() {
         {text: 'Workflows', link: '/workflows/', items: [
           {text: 'Bootstrap an AI Agent', link: '/workflows/agentic'},
           {text: 'Bundling & Auto-Integrate', link: '/workflows/bundling'},
+          {text: 'DevOps: Instances & Delivery', link: '/workflows/devops'},
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'},
           {text: 'Importing VEX', link: '/workflows/importing-vex'},

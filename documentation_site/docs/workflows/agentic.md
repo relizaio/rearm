@@ -1,10 +1,18 @@
 # Bootstrap an AI Agent
 
-::: tip Available in ReARM Pro
-Agent sessions, attribution, and the inbox poll endpoint are ReARM Pro features.
+::: tip Available in both ReARM Community Edition and ReARM Pro
+The **agentic core** works in **both editions**: agent identities, agent sessions, commit attribution (`ReARM-Agent` / `ReARM-Agentic-Session` trailers), signing-key enrolment, and the inbox poll endpoint are all present in ReARM CE and ReARM Pro.
+
+What is **ReARM Pro only**:
+
+- **Agent policies** — the CEL verdicts and `BLOCK`-severity session gating in [Agent policies](#agent-policies) below. On CE the policy machinery isn't loaded, so a session's `policyEvents[]` is always empty (it means "no checks exist", *not* "everything passed") and nothing auto-gates a release on agent behaviour.
+- **Approval policies** — the human approve/disapprove gating that the closed-loop demo below relies on.
+- **The DevOps surface** — instances and feature-set deploys (see the [DevOps workflow](./devops)), including granting an agent permission to deploy.
+
+So on CE you get full agent attribution and a signed, auditable session trail; the policy-driven gating and deploy steps are Pro additions.
 :::
 
-This page walks an **operator** through the steps to point an AI coding agent (Claude Code, Cursor, Aider, your own runtime) at a ReARM Pro instance. ReARM treats the agent as a worker that needs guardrails: the operator stays the principal, the agent stays the worker, and every step is captured in the audit trail.
+This page walks an **operator** through the steps to point an AI coding agent (Claude Code, Cursor, Aider, your own runtime) at a ReARM instance (Community Edition or Pro). ReARM treats the agent as a worker that needs guardrails: the operator stays the principal, the agent stays the worker, and every step is captured in the audit trail.
 
 The agent itself **does not need to read this page** — its contract lives at `$REARM_URL/api/agents/orientation.md`, which the operator points the agent at in its first prompt. That document is served by the running ReARM instance and is pinned to the same version as the backend; an agent fetching it always sees the contract for the instance it's actually talking to.
 
@@ -13,7 +21,7 @@ The agent itself **does not need to read this page** — its contract lives at `
 The operator's setup is intentionally minimal — two things, both
 one-time per agent identity:
 
-1. **A ReARM Pro org** the agent will work under.
+1. **A ReARM org** (Community Edition or Pro) the agent will work under.
 2. **A FREEFORM API key** scoped to that org with `PermissionFunction.AGENT` at `ORGANIZATION` scope. `ESSENTIAL_READ` is the minimum permission type — the agent surface intentionally accepts the floor so an agent-flow key doesn't have to carry broader rights. Mint the key from **Org Settings → API Keys → Add FREEFORM key** in the ReARM UI, then attach the `AGENT` function on the org scope from the permissions panel. The plaintext secret is shown **only once** on creation — capture it immediately into your secret store.
 
 That's it. **You do not provision a signing key for the agent.** The
@@ -70,6 +78,10 @@ Once pointed at the orientation doc:
 
 ## Agent policies
 
+::: warning ReARM Pro only
+Agent policies are not present in ReARM Community Edition — the policy engine lives in the Pro-only packages. On CE, `policyEvents[]` is always empty and none of the gating below applies; sessions, attribution, and signing still work fully. The rest of this section applies to ReARM Pro.
+:::
+
 Operators configure CEL-based **agent policies** (Org Settings →
 Policies → AI Agent Policies tab) that ReARM evaluates against each
 session. Three kinds, distinguished by *when* their verdict locks:
@@ -119,6 +131,19 @@ The canonical demo:
 6. Agent attaches a FINAL report and closes the session.
 
 Every step is in the audit trail: session row, commits with their attribution, releases with `updateEvents[].message` carrying the rejection reason, approval events with comments. The orientation artifact at step 1 and the final report at step 6 bracket the session's audit story.
+
+## Letting an agent deploy (ReARM Pro)
+
+::: warning ReARM Pro only
+Relies on the DevOps surface, which is not present in ReARM Community Edition.
+:::
+
+By default an agent's FREEFORM key carries only the `AGENT` function — enough to run sessions, attribute commits, and read releases, but **not** to change what is deployed. In ReARM Pro you can additionally grant that key the **`DEVOPS` permission function scoped to a specific instance** (or its parent cluster). That unlocks the `rearm devops` commands against that instance, so the agent can deploy what it just built:
+
+- **`rearm devops versionfeatureset`** — create a new [Feature Set](../concepts/#feature-set) for a product that re-pins one or more component branches to specific releases. This is "assemble the exact set of component versions I want to ship together."
+- **`rearm devops switchfeatureset`** — point a running [Instance](../concepts/#instance) at that feature set. The in-cluster [`rearm-cd`](./devops) reconciler picks up the change and rolls the instance to match.
+
+So an agent with DevOps permission on its instance can close the loop end to end: build and attribute a release, then **promote and deploy it** by versioning a feature set and switching its instance onto it — every step landing in the same session audit trail. Grant this deliberately and scope it narrowly (a single instance, never org-wide): it is the difference between an agent that *proposes* changes and one that *ships* them. The orientation doc (`§10`) tells the agent to never run a `rearm devops` command unless the operator's task explicitly names the target instance. See the [DevOps workflow](./devops) for the full surface.
 
 ## When the agent will stop
 
