@@ -24,16 +24,21 @@ let isRunning = false;
 // TODO: implement retry counter and permanently failed status on bom enrichment 
 
 /**
- * Finds BOMs that need enrichment. Picks up:
+ * Finds BOMs that need enrichment, restricted to orgs that actually have a
+ * BEAR integration configured. The org-has-BEAR guard is applied to every
+ * candidate — not just stale-PENDING rows — because the batch is capped at
+ * ENRICHMENT_BATCH_LIMIT: if it filled with rows from orgs that have no BEAR
+ * integration, those rows would be fetched only to be dropped at runtime
+ * (getBearCredentials returns null), starving the orgs that can actually be
+ * enriched. Pushing the guard into the query keeps the whole LIMIT budget on
+ * enrichable BOMs. Within that constraint it picks up:
  *  - never-attempted / retryable rows: enrichmentStatus null, FAILED, or SKIPPED;
- *  - abandoned PENDING rows: stuck in PENDING past STALE_PENDING_THRESHOLD_MS,
- *    but ONLY for orgs that actually have a BEAR integration configured.
- *    Without this branch a BOM whose ingest-time enrich never reached a
- *    terminal status (pod rolled mid-run, or BEAR was configured after the
- *    upload) stays PENDING forever — the manual triggerEnrichment mutation was
- *    the only way to recover it. The org-has-BEAR guard keeps un-enrichable
- *    PENDING rows (no integration → getBearCredentials returns null) out of the
- *    batch so they can't starve enrichable ones under the LIMIT.
+ *  - abandoned PENDING rows: stuck in PENDING past STALE_PENDING_THRESHOLD_MS.
+ *    A BOM whose ingest-time enrich never reached a terminal status (pod rolled
+ *    mid-run, or BEAR was configured after the upload) stays PENDING forever —
+ *    the manual triggerEnrichment mutation was otherwise the only way to recover it.
+ * The EXISTS guard mirrors getBearCredentials' configured-check (type=BEAR with
+ * non-null uri + secretUuid).
  * Returns up to ENRICHMENT_BATCH_LIMIT records.
  * IMPORTANT: Must include 'bom' field so extractRepositoryNameFromBom can find repository name.
  */
@@ -41,18 +46,20 @@ async function findBomsNeedingEnrichment(): Promise<Array<{ uuid: string; organi
   const queryText = `
     SELECT b.uuid, b.organization, b.meta->>'serialNumber' as "serialNumber", b.bom
     FROM rebom.boms b
-    WHERE b.meta->>'enrichmentStatus' IS NULL
-       OR b.meta->>'enrichmentStatus' = $1
-       OR b.meta->>'enrichmentStatus' = $2
-       OR (
-            b.meta->>'enrichmentStatus' = $3
-            AND b.created_date < $4
-            AND EXISTS (
-              SELECT 1 FROM rebom.integrations i
-              WHERE i.organization = b.organization
-                AND i.config->>'type' = $5
-                AND i.config->>'uri' IS NOT NULL
-                AND i.config->>'secretUuid' IS NOT NULL
+    WHERE EXISTS (
+            SELECT 1 FROM rebom.integrations i
+            WHERE i.organization = b.organization
+              AND i.config->>'type' = $5
+              AND i.config->>'uri' IS NOT NULL
+              AND i.config->>'secretUuid' IS NOT NULL
+          )
+      AND (
+            b.meta->>'enrichmentStatus' IS NULL
+         OR b.meta->>'enrichmentStatus' = $1
+         OR b.meta->>'enrichmentStatus' = $2
+         OR (
+              b.meta->>'enrichmentStatus' = $3
+              AND b.created_date < $4
             )
           )
     ORDER BY b.created_date ASC
