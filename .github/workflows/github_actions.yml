@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/rearm-helm-action@c83365ad50ee4075d92d041c186cf592e158fc01 v1.10.1
+        uses: relizaio/rearm-helm-action@c83365ad50ee4075d92d041c186cf592e158fc01 # v1.10.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
-        uses: relizaio/rearm-helm-action@c83365ad50ee4075d92d041c186cf592e158fc01 v1.10.1
+        uses: relizaio/rearm-helm-action@c83365ad50ee4075d92d041c186cf592e158fc01 # v1.10.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Build And Submit ReARM Helm to ReARM
-        uses: relizaio/rearm-helm-action@c83365ad50ee4075d92d041c186cf592e158fc01 v1.10.1
+        uses: relizaio/rearm-helm-action@c83365ad50ee4075d92d041c186cf592e158fc01 # v1.10.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
