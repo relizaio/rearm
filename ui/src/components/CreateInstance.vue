@@ -50,7 +50,8 @@
                     <n-button type="warning" @click="onResetManual">Reset</n-button>
                 </n-form>
             </n-tab-pane>
-            <n-tab-pane name="createauto" tab="Auto Ephemeral" v-if="instanceTypeProp === InstanceType.STANDALONE_INSTANCE">
+            <!-- Auto Ephemeral hidden: not supported in ReARM yet. -->
+            <n-tab-pane name="createauto" tab="Auto Ephemeral" v-if="false && instanceTypeProp === InstanceType.STANDALONE_INSTANCE">
                 <create-release
                                 v-if="!autoInstance.productReleaseUuid"     
                                 :orgProp="props.orgProp"
