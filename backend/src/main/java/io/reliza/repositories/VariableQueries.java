@@ -223,11 +223,16 @@ class VariableQueries {
 	// fields serialize at the top level of metrics, mirroring dtrackSubmissionFailed).
 	// ISO-8601 string cast to timestamptz matches FlowControl's sbomReconcileSkipUntil
 	// pattern in ReleaseRepository.findUuidsOfReleasesPendingSbomReconcile.
+	// split_part(.., '[', 1) strips any trailing zone-region suffix ("...Z[GMT]")
+	// before the cast: a buggy writer (since fixed) stored ZonedDateTime.toString()
+	// values that Postgres can't cast, and one such row threw for the whole query,
+	// stalling the scheduler. Stripping the suffix keeps those legacy rows castable
+	// so they get picked up and rewritten with a clean Instant string (self-heal).
 	protected static final String LIST_INITIAL_ARTIFACT_UUIDS_PENDING_DEPENDENCY_TRACK = """
 			select uuid from rearm.artifacts a where a.metrics->>'lastScanned' is null
 			and a.metrics->>'uploadToken' is not null
 			and (a.metrics->>'dtrackFetchSkipUntil' is null
-				or (a.metrics->>'dtrackFetchSkipUntil')::timestamptz < now())
+				or split_part(a.metrics->>'dtrackFetchSkipUntil', '[', 1)::timestamptz < now())
 			order by a.record_data->>'createdDate' asc
 			limit :limit
 		""";

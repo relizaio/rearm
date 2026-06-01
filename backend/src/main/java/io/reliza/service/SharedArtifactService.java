@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -428,7 +429,10 @@ public class SharedArtifactService {
 		dti.setDtrackFetchStatus(DtrackFetchStatus.FAILED);
 		dti.setDtrackFetchFailureCount(nextCount);
 		dti.setDtrackFetchFailureReason(truncate(failureReason, DependencyTrackIntegration.FETCH_FAILURE_REASON_MAX_LEN));
-		dti.setDtrackFetchSkipUntil(ZonedDateTime.now()
+		// Store as an Instant ISO-8601 string (".....Z"), not ZonedDateTime.toString():
+		// the latter appends the zone-region suffix (e.g. "...Z[GMT]") on a GMT-TZ pod,
+		// which Postgres can't cast to timestamptz in the scheduler pickup query.
+		dti.setDtrackFetchSkipUntil(Instant.now()
 				.plusSeconds(BackoffPolicy.dtrackFetchSkipSeconds(nextCount))
 				.toString());
 		saveArtifactMetrics(a, dti);
