@@ -14,7 +14,8 @@
                                 v-on:update:value="onFilterChange"
                                 :options="environmentTypes" />
                     </div>
-                    <div>Type:
+                    <!-- Type filter hidden: ephemeral/persistent instance types are not supported in ReARM yet. -->
+                    <div v-if="false">Type:
                         <n-select
                                 v-model:value="filterValue.type"
                                 v-on:update:value="onFilterChange"
