@@ -5,7 +5,6 @@
 package io.reliza.model.dto;
 
 import java.net.URI;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;

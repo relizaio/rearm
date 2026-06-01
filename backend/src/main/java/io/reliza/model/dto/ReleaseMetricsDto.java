@@ -1101,28 +1101,6 @@ public class ReleaseMetricsDto implements Cloneable {
 		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt,
 				null, null, null, null, null);
 	}
-
-	/**
-	 * Union two nullable sets into a {@link LinkedHashSet}; null inputs treated as empty.
-	 * Used by the per-vulnerability merge to preserve enrichment data across artifact sources
-	 * when one source has the field and the other has null.
-	 */
-	private static <T> Set<T> unionNullSafe(Set<T> a, Set<T> b) {
-		Set<T> out = new LinkedHashSet<>();
-		if (a != null) out.addAll(a);
-		if (b != null) out.addAll(b);
-		return out;
-	}
-
-	private static <T> T firstNonNull(T a, T b) {
-		return a != null ? a : b;
-	}
-
-	private static String firstNonBlank(String a, String b) {
-		if (a != null && !a.isBlank()) return a;
-		if (b != null && !b.isBlank()) return b;
-		return null;
-	}
 	
 	/**
 	 * Select the base vulnerability to preserve analysis state from.

@@ -670,6 +670,10 @@ private static int currentReconcileFailureCount(Release r) {
 		Map<UUID, SbomComponent> comps = findSbomComponentsByIds(componentIds, orgUuid);
 		Map<String, DiffComponent> out = new LinkedHashMap<>();
 		for (SbomComponent sc : comps.values()) {
+			// Root components are the release's own top-level identity (the BOM's
+			// metadata.component), not consumed dependencies — exclude them so a
+			// release's own purl doesn't surface as an added/removed component.
+			if (isMarkedRoot(sc)) continue;
 			String canonicalPurl = sc.getCanonicalPurl();
 			if (canonicalPurl == null) continue;
 			String version = null;
