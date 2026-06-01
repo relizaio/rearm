@@ -501,7 +501,7 @@ const CARDS: CardConfig[] = [
     { id: 'ADO', name: 'Azure DevOps', vendor: 'Microsoft', category: 'ci', description: 'Trigger Azure DevOps pipelines.', logoBg: '#0078D4', logoMark: 'AZ', multiInstance: true },
     // Security & Compliance
     { id: 'DEPENDENCYTRACK', name: 'Dependency-Track', vendor: 'OWASP', category: 'security', description: 'Push SBOMs and pull vulnerability + policy findings.', logoBg: '#1B4E72', logoMark: 'DT', multiInstance: false },
-    { id: 'BEAR', name: 'BEAR', vendor: 'Reliza', category: 'security', description: 'BOM enrichment and risk-signal service.', logoBg: '#22332B', logoMark: 'BR', multiInstance: false }
+    { id: 'BEAR', name: 'BEAR', vendor: 'Reliza', category: 'security', description: 'BOM enrichment service.', logoBg: '#22332B', logoMark: 'BR', multiInstance: false }
 ]
 
 const SECTIONS = [
