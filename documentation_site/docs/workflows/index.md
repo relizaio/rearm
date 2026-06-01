@@ -6,6 +6,7 @@ sidebarDepth: 2
 
 - [Bootstrap an AI Agent](./agentic)
 - [Bundling & Auto-Integrate](./bundling)
+- [DevOps: Instances, Secrets & Delivery](./devops)
 - [License Compliance](./license-compliance)
 - [Auditing Findings](./auditing-findings)
 - [Importing VEX](./importing-vex)

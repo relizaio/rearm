@@ -97,8 +97,19 @@ In the case of a Product Release, Release would only have components (other Rele
 ## Instance
 Instance is a medium which runs software built by organization (Components or Products). This could be a VM, a set of VMs, a Kubernetes cluster, a PaaS solution - literally anything that is configured to run software. Instance is defined by its URI.
 
+In ReARM Pro, an Instance is also the unit ReARM tracks deployments against: it records which [Feature Set](#feature-set) and releases are targeted per namespace, and the in-cluster `rearm-cd` agent can reconcile the running deployment to match. See the [DevOps workflow](../workflows/devops).
+
 ## Cluster
-Cluster is a set of instances. In example, Kubernetes may be considered a cluster with Instances running inside its namespaces.
+Cluster is a set of instances. In example, Kubernetes may be considered a cluster with Instances running inside its namespaces. A Cluster lets ReARM Pro manage feature-set deploys and secrets across the instances it contains.
+
+## Agent
+An Agent is an autonomous worker — typically an AI coding agent such as Claude Code, Cursor, Aider, or a custom runtime — that acts against ReARM under its own identity, distinct from human users. An Agent is described by its name, model, and vendor, and authenticates with a FREEFORM API key carrying the `AGENT` permission function. Work an Agent performs is attributed back to it: commits it authors carry a `ReARM-Agent` trailer, and ReARM records every [Session](#session) the Agent runs — giving a full audit trail of which agent (and model) did what. Agents are available in **both ReARM Community Edition and ReARM Pro**; policy-based gating of agent behaviour is a ReARM Pro addition. See the [agentic workflow](../workflows/agentic).
+
+## Session
+A Session (Agent Session) is a bounded unit of work an [Agent](#agent) opens when it starts a task and closes when the work is done. It carries a client-supplied session id, the agent identity and model, any artifacts the agent attaches (for example orientation and final reports), and — in ReARM Pro — the verdicts of any agent policies evaluated against it. Commits made during the Session carry a `ReARM-Agentic-Session` trailer that links them back to it, so a release can be traced to the exact session — and agent — that produced it. The Session's whole lifecycle (open, blocked, artifacts, policy verdicts, close) is captured in the audit trail.
+
+## Sub-agent
+A Sub-agent is an [Agent](#agent) spawned by a root Agent to handle part of a task — for example a coding agent that delegates focused subtasks to specialized helper agents. A Sub-agent is registered under its root: it inherits the root's API key and is appended to the root's sub-agents list, and it **does not own its own [Session](#session)**. Instead, its work contributes to the root Agent's Session, so attribution rolls up to the root. This mirrors how agentic runtimes spawn child agents within a single task while keeping one coherent, auditable session.
 
 ## Evidence Store
 A Supply-Chain Evidence Store is a system of record that collects, stores, versions, verifies, and traces all digital artefacts required to prove the integrity, safety, and compliance of software, firmware, and hardware throughout their lifecycle.
