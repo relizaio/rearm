@@ -35,6 +35,13 @@ export interface ParsedBomComponent {
 	name: string | null;
 	version: string | null;
 	isRoot: boolean;
+	// cpe carried alongside the purl so downstream vuln matching can match on
+	// either coordinate (NVD/CPE-keyed advisories vs purl-keyed ones). null when
+	// the BOM declared no cpe for the component.
+	cpe: string | null;
+	// Declared license identifiers (SPDX id, free-text name, or SPDX expression),
+	// deduped. Always an array (possibly empty) so the field is never null.
+	licenses: string[];
 }
 
 export interface ParsedBomDependency {
@@ -74,9 +81,43 @@ export function canonicalizePurl(rawPurl: string | undefined | null): string | n
 	}
 }
 
+/**
+ * Normalize a CycloneDX component.licenses array into a deduped list of
+ * identifier strings. Each entry is either { license: { id | name } } or
+ * { expression }; prefer SPDX id, then free-text name, then expression.
+ */
+function extractLicenses(raw: { licenses?: any } | undefined): string[] {
+	const arr = raw?.licenses;
+	if (!Array.isArray(arr)) return [];
+	const out: string[] = [];
+	const seen = new Set<string>();
+	for (const entry of arr) {
+		if (!entry || typeof entry !== 'object') continue;
+		let val: string | undefined;
+		if (entry.license && typeof entry.license === 'object') {
+			val =
+				typeof entry.license.id === 'string'
+					? entry.license.id
+					: typeof entry.license.name === 'string'
+						? entry.license.name
+						: undefined;
+		} else if (typeof entry.expression === 'string') {
+			val = entry.expression;
+		}
+		if (typeof val === 'string') {
+			const v = val.trim();
+			if (v && !seen.has(v)) {
+				seen.add(v);
+				out.push(v);
+			}
+		}
+	}
+	return out;
+}
+
 function toParsedComponent(
 	rawPurl: string,
-	fallback: { group?: any; name?: any; version?: any } | undefined,
+	fallback: { group?: any; name?: any; version?: any; cpe?: any; licenses?: any } | undefined,
 	isRoot: boolean
 ): ParsedBomComponent | null {
 	const canonicalPurl = canonicalizePurl(rawPurl);
@@ -100,6 +141,8 @@ function toParsedComponent(
 			parsed?.version ??
 			(typeof fallback?.version === 'string' ? fallback.version : null),
 		isRoot,
+		cpe: typeof fallback?.cpe === 'string' && fallback.cpe.length > 0 ? fallback.cpe : null,
+		licenses: extractLicenses(fallback),
 	};
 }
 
