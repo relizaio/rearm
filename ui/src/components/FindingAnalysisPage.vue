@@ -1,6 +1,6 @@
 <template>
     <div class="finding-analysis-page">
-        <n-tabs v-model:value="activeTab" type="line" animated @update:value="onTabChange">
+        <n-tabs v-model:value="activeTab" type="segment" animated @update:value="onTabChange">
             <n-tab-pane name="findings" tab="Finding Analysis">
                 <vulnerability-analysis />
             </n-tab-pane>

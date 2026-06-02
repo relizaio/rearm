@@ -64,7 +64,7 @@
             </div>
         </div>
 
-        <n-tabs type="line" v-model:value="tab">
+        <n-tabs type="segment" v-model:value="tab" animated>
             <n-tab-pane name="open" :tab="`Open sessions · ${openSessions.length}`">
                 <SessionTable :rows="openSessions" :on-open="openSession"/>
             </n-tab-pane>

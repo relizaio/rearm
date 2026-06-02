@@ -1,6 +1,6 @@
 <template>
     <n-card title="Mitigation Attestations">
-        <n-tabs v-model:value="statusFilter" type="line">
+        <n-tabs v-model:value="statusFilter" type="segment" animated>
             <n-tab-pane name="PENDING" tab="Pending" />
             <n-tab-pane name="ATTESTED" tab="Attested" />
             <n-tab-pane name="WAIVED" tab="Waived" />

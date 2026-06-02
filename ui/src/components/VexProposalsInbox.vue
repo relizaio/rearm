@@ -1,6 +1,6 @@
 <template>
     <n-card title="VEX Statement Proposals">
-        <n-tabs v-model:value="statusFilter" type="line">
+        <n-tabs v-model:value="statusFilter" type="segment" animated>
             <n-tab-pane name="PENDING" tab="Pending" />
             <n-tab-pane name="ACCEPTED" tab="Accepted" />
             <n-tab-pane name="REJECTED" tab="Rejected" />

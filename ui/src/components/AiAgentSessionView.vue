@@ -20,7 +20,7 @@
         </div>
         <h3>{{ session.title || '(untitled)' }}</h3>
 
-        <n-tabs type="line" v-model:value="tab">
+        <n-tabs type="segment" v-model:value="tab" animated>
             <n-tab-pane name="overview" tab="Overview">
                 <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="Status">
