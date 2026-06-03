@@ -30,6 +30,29 @@ describe('bomComponentExtractor.canonicalizePurl', () => {
 		const raw = 'pkg:npm/foo@1.0.0';
 		expect(canonicalizePurl(raw)).toBe('pkg:npm/foo@1.0.0');
 	});
+
+	it('preserves the required uuid qualifier for julia', () => {
+		const raw = 'pkg:julia/Dates@1.9.0?uuid=ade2ca70-3b73-5b8e-9b35-2c0d1c0e1f2a&os=linux';
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:julia/Dates@1.9.0?uuid=ade2ca70-3b73-5b8e-9b35-2c0d1c0e1f2a');
+	});
+
+	it('preserves the required tag_id qualifier for swid', () => {
+		const raw = 'pkg:swid/Acme/Enterprise%20Server@1.0.0?tag_id=75b8c285-fa7b-485b-b199-4745e3004d0d&arch=x64';
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:swid/Acme/Enterprise%20Server@1.0.0?tag_id=75b8c285-fa7b-485b-b199-4745e3004d0d');
+	});
+
+	it('preserves repository_url for oci and strips other qualifiers', () => {
+		const raw = 'pkg:oci/myapp@sha256%3Aabc?repository_url=ghcr.io%2Facme%2Fmyapp&tag=latest';
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:oci/myapp@sha256:abc?repository_url=ghcr.io%2Facme%2Fmyapp');
+	});
+
+	it('still strips qualifiers for types without a required qualifier', () => {
+		const raw = 'pkg:npm/foo@1.0.0?arch=any&os=linux';
+		expect(canonicalizePurl(raw)).toBe('pkg:npm/foo@1.0.0');
+	});
 });
 
 describe('bomComponentExtractor.parseBom', () => {

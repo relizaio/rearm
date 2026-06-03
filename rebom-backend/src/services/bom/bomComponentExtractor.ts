@@ -61,20 +61,39 @@ export interface ParsedBom {
 }
 
 /**
+ * purl types whose identity is incomplete without a specific qualifier — the
+ * purl-spec marks these `requirement: "required"` (julia/swid), plus oci where
+ * the registry must be preserved to disambiguate the image. Canonicalization
+ * keeps ONLY the listed qualifier for these types and strips everything else.
+ */
+const PRESERVED_QUALIFIERS: Record<string, string> = {
+	julia: 'uuid',
+	swid: 'tag_id',
+	oci: 'repository_url',
+};
+
+/**
  * Strip qualifiers and subpath from a purl, leaving the canonical
- * identity part: pkg:<type>/<namespace>/<name>@<version>. Returns null
- * if the input is missing or unparseable.
+ * identity part: pkg:<type>/<namespace>/<name>@<version>. For purl types in
+ * {@link PRESERVED_QUALIFIERS} the one required qualifier is retained (DTrack
+ * and OSV match on the qualifier-stripped purl, but these types lose identity
+ * without it). Returns null if the input is missing or unparseable.
  */
 export function canonicalizePurl(rawPurl: string | undefined | null): string | null {
 	if (!rawPurl) return null;
 	try {
 		const parsed = PackageURL.fromString(rawPurl);
+		const preserveKey = PRESERVED_QUALIFIERS[parsed.type];
+		let qualifiers: { [k: string]: string } | undefined = undefined;
+		if (preserveKey && parsed.qualifiers && (parsed.qualifiers as any)[preserveKey] != null) {
+			qualifiers = { [preserveKey]: String((parsed.qualifiers as any)[preserveKey]) };
+		}
 		const canonical = new PackageURL(
 			parsed.type,
 			parsed.namespace ?? undefined,
 			parsed.name,
 			parsed.version ?? undefined,
-			undefined,
+			qualifiers,
 			undefined
 		);
 		return canonical.toString();
