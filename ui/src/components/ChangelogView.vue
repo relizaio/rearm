@@ -80,7 +80,7 @@
             </n-button>
         </div>
         
-        <n-tabs v-if="changelog" v-model:value="activeTab" type="line" animated style="margin-top: 4px;">
+        <n-tabs v-if="changelog" v-model:value="activeTab" type="segment" animated style="margin-top: 4px;">
             <!-- Code / Component Changes tab -->
             <n-tab-pane name="code" :tab="codeTabLabel">
                 <SeverityFilter v-model:selectedSeverity="selectedSeverity" />

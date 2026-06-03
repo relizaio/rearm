@@ -1,7 +1,7 @@
 <template>
     <div class="createComponentGlobal">
         <div v-if="!props.isHideTitle">Create {{ componentProductWords.componentFirstUpper }}</div>
-        <n-tabs v-if="!isProduct" type="line" animated>
+        <n-tabs v-if="!isProduct" type="segment" animated>
             <n-tab-pane name="create" :tab="'Create ' + componentProductWords.componentFirstUpper">
         <n-form
             ref="createComponentForm"

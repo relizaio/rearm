@@ -184,8 +184,8 @@
                             >
                                 <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
                                 <n-tabs
-                                    class="card-tabs"
-                                    size="large"
+                                    type="segment"
+                                    size="medium"
                                     animated
                                     style="margin: 0 -4px"
                                     pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
@@ -975,7 +975,7 @@
                     </div>
                 </div>
                 <div class="componentDetails">
-                    <n-tabs v-if="componentData && componentData.type === 'COMPONENT'" v-model:value="selectedTab" type="line" @update:value="handleTabChange">
+                    <n-tabs v-if="componentData && componentData.type === 'COMPONENT'" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
                         <n-tab-pane name="branches" tab="Branches">
                             <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>

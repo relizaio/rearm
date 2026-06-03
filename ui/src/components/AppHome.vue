@@ -49,9 +49,9 @@
                         <h3>Search Releases</h3>
                         <div class="searchUnit artifactSearch">
                             <n-tabs
-                            class="card-tabs"
+                            type="segment"
                             default-value="searchreleasesbytext"
-                            size="large"
+                            size="medium"
                             animated
                             style="margin: 0 -4px"
                             pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"

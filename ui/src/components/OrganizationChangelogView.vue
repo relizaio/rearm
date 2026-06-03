@@ -17,7 +17,7 @@
                     </n-button>
                 </div>
                 
-                <n-tabs v-model:value="activeTab" type="line" animated style="margin-top: 4px;">
+                <n-tabs v-model:value="activeTab" type="segment" animated style="margin-top: 4px;">
                     <n-tab-pane name="sbom" tab="📦 SBOM Changes">
                         <div v-if="aggregationType === 'NONE' && changelog.__typename === 'NoneOrganizationChangelog'">
                             <div v-for="component in changelog.components" :key="component.componentUuid">
@@ -77,7 +77,7 @@
             </div>
             
             <div v-else-if="!loading">
-                <n-tabs type="line" animated style="margin-top: 20px;">
+                <n-tabs type="segment" animated style="margin-top: 20px;">
                     <n-tab-pane name="sbom" tab="📦 SBOM Changes">
                         <p class="no-data-hint">No changelog data available for the selected date range</p>
                     </n-tab-pane>

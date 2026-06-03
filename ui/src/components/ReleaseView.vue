@@ -685,7 +685,7 @@
         </div>
 
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
-            <n-tabs style="padding-left:0.2%;" type="line" @update:value="handleTabSwitch">
+            <n-tabs style="padding-left:0.2%;" type="segment" @update:value="handleTabSwitch" animated>
                 <n-tab-pane name="components" tab="Components">
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Components

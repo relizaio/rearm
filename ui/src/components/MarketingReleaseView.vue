@@ -60,7 +60,7 @@
         </div>
        
         <div class="row" v-if="marketingRelease && marketingRelease.orgDetails && updatedMarketingRelease && updatedMarketingRelease.orgDetails">
-            <n-tabs style="padding-left:2%;" type="line" @update:value="handleTabChange">
+            <n-tabs style="padding-left:2%;" type="segment" @update:value="handleTabChange" animated>
                 <n-tab-pane name="integration" tab="Integration">
                     <div class="container" v-if="updatedMarketingRelease.type !== 'PLACEHOLDER'">
                         <div class="versionSchemaBlock">

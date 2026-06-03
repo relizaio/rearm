@@ -1,9 +1,9 @@
 <template>
     <div class="createInstanceGlobal">
         <n-tabs
-            class="card-tabs"
+            type="segment"
             :default-value="isWritableGeneral ? 'createmanual' : 'createauto'"
-            size="large"
+            size="medium"
             animated
             style="margin: 0 -4px"
             pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
