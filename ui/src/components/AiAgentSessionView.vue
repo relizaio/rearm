@@ -202,13 +202,26 @@ const modelLabel = computed<string>(() => {
     return `${pub}${m.name}${ver}`
 })
 
+// Exhaustive map of the ModelAssertionState enum. Anything outside it
+// (null on a legacy row, or a future enum member the UI predates) must
+// render as the neutral 'unknown' rather than silently claiming the
+// weaker-but-specific 'declared' provenance — mislabeling provenance is
+// worse than admitting we don't know it.
+const ASSERTION_LABELS: Record<string, string> = {
+    DECLARED: 'declared',
+    RUNTIME_OBSERVED: 'observed',
+}
+
+const ASSERTION_TIPS: Record<string, string> = {
+    DECLARED: 'Declared: the agent self-reported this model via the CLI. ReARM trusts the agent\'s word; it is not independently verified, and does not carry the authority of the session\'s commit signatures.',
+    RUNTIME_OBSERVED: 'Observed: the model was read from the runtime\'s own record. This label does not carry the authority of the session\'s commit signatures.',
+}
+
 const assertionLabel = computed<string>(() =>
-    session.value?.modelAssertion === 'RUNTIME_OBSERVED' ? 'observed' : 'declared')
+    ASSERTION_LABELS[session.value?.modelAssertion] ?? 'unknown')
 
 const assertionTip = computed<string>(() =>
-    session.value?.modelAssertion === 'RUNTIME_OBSERVED'
-        ? 'Observed: the model was read from the runtime\'s own record. This label does not carry the authority of the session\'s commit signatures.'
-        : 'Declared: the agent self-reported this model via the CLI. ReARM trusts the agent\'s word; it is not independently verified, and does not carry the authority of the session\'s commit signatures.')
+    ASSERTION_TIPS[session.value?.modelAssertion] ?? 'The provenance of this model attribution is unknown.')
 
 onMounted(load)
 
