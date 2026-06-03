@@ -141,6 +141,46 @@ describe('bomComponentExtractor.parseBom', () => {
 		expect(got.components[0].canonicalPurl).toBe('pkg:npm/has-purl@1.0');
 	});
 
+	it('emits a CPE-canonical component when it has a cpe but no purl', () => {
+		const bom = {
+			components: [
+				{
+					type: 'application',
+					name: 'openssl',
+					version: '1.0.1',
+					cpe: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+				},
+			],
+		};
+		const got = parseBom(bom);
+		expect(got.components).toHaveLength(1);
+		expect(got.components[0]).toMatchObject({
+			canonicalPurl: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+			fullPurl: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+			cpe: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+			name: 'openssl',
+			version: '1.0.1',
+			isRoot: false,
+		});
+	});
+
+	it('still drops a component with neither purl nor cpe', () => {
+		const bom = { components: [{ name: 'device-only', version: '1.0' }] };
+		expect(parseBom(bom).components).toHaveLength(0);
+	});
+
+	it('prefers purl over cpe when a component has both', () => {
+		const bom = {
+			components: [
+				{ purl: 'pkg:npm/foo@1.0', cpe: 'cpe:2.3:a:vendor:foo:1.0:*:*:*:*:*:*:*' },
+			],
+		};
+		const got = parseBom(bom);
+		expect(got.components).toHaveLength(1);
+		expect(got.components[0].canonicalPurl).toBe('pkg:npm/foo@1.0');
+		expect(got.components[0].cpe).toBe('cpe:2.3:a:vendor:foo:1.0:*:*:*:*:*:*:*');
+	});
+
 	it('de-duplicates identical (canonical, full) pairs', () => {
 		const bom = {
 			components: [

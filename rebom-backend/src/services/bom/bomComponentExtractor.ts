@@ -147,6 +147,31 @@ function toParsedComponent(
 }
 
 /**
+ * Build a component from its CPE when it has no purl. The CPE string is already
+ * self-namespacing (`cpe:...`), so it serves directly as the canonical identity.
+ * Used only as the purl > cpe fallback — components with neither are dropped.
+ * Returns null when no usable CPE is present.
+ */
+function toCpeOnlyComponent(
+	component: { type?: any; group?: any; name?: any; version?: any; cpe?: any; licenses?: any } | undefined,
+	isRoot: boolean
+): ParsedBomComponent | null {
+	const cpe = typeof component?.cpe === 'string' && component.cpe.length > 0 ? component.cpe : null;
+	if (!cpe) return null;
+	return {
+		canonicalPurl: cpe,
+		fullPurl: cpe,
+		type: typeof component?.type === 'string' ? component.type : null,
+		group: typeof component?.group === 'string' ? component.group : null,
+		name: typeof component?.name === 'string' ? component.name : null,
+		version: typeof component?.version === 'string' ? component.version : null,
+		isRoot,
+		cpe,
+		licenses: extractLicenses(component),
+	};
+}
+
+/**
  * Parse components + dependencies out of a CycloneDX BOM in one pass.
  * Safe to call with anything non-object / missing fields — always returns
  * the two arrays (possibly empty).
@@ -173,18 +198,27 @@ export function parseBom(bom: any): ParsedBom {
 		if (!refMap.has(pc.fullPurl)) refMap.set(pc.fullPurl, record);
 	};
 
-	// Root from metadata.component — synthesised as a first-class node if it has a purl.
+	// Root from metadata.component — synthesised as a first-class node if it has a
+	// purl, else a CPE-canonical node when it carries a cpe (purl > cpe).
 	const rootMeta: any = bom?.metadata?.component;
-	if (rootMeta && typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
-		pushComponent(toParsedComponent(rootMeta.purl, rootMeta, true), rootMeta['bom-ref']);
+	if (rootMeta && typeof rootMeta === 'object') {
+		if (typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
+			pushComponent(toParsedComponent(rootMeta.purl, rootMeta, true), rootMeta['bom-ref']);
+		} else {
+			pushComponent(toCpeOnlyComponent(rootMeta, true), rootMeta['bom-ref']);
+		}
 	}
 
 	if (Array.isArray(bom.components)) {
 		for (const component of bom.components) {
 			if (!component || typeof component !== 'object') continue;
 			const rawPurl = component.purl;
-			if (typeof rawPurl !== 'string' || rawPurl.length === 0) continue;
-			pushComponent(toParsedComponent(rawPurl, component, false), component['bom-ref']);
+			if (typeof rawPurl === 'string' && rawPurl.length > 0) {
+				pushComponent(toParsedComponent(rawPurl, component, false), component['bom-ref']);
+			} else {
+				// No purl — fall back to a CPE-canonical node (dropped if no cpe).
+				pushComponent(toCpeOnlyComponent(component, false), component['bom-ref']);
+			}
 		}
 	}
 
