@@ -58,7 +58,7 @@ describe('bomComponentExtractor.parseBom', () => {
 		});
 	});
 
-	it('captures cpe and normalized/deduped licenses when present, defaults otherwise', () => {
+	it('captures cpe and passes licenses through in exact CycloneDX shape', () => {
 		const bom = {
 			components: [
 				{
@@ -68,22 +68,30 @@ describe('bomComponentExtractor.parseBom', () => {
 						{ license: { id: 'MIT' } },
 						{ license: { name: 'Custom License' } },
 						{ expression: '(Apache-2.0 OR MIT)' },
-						{ license: { id: 'MIT' } }, // duplicate -> deduped
 					],
 				},
 				{ purl: 'pkg:npm/bare@1.0' },
+				{ purl: 'pkg:npm/garbage@1.0', licenses: ['not-an-object', null] },
 			],
 		};
 		const got = parseBom(bom);
 		const withMeta = got.components.find((c) => c.canonicalPurl === 'pkg:npm/withmeta@1.0');
 		expect(withMeta?.cpe).toBe('cpe:2.3:a:vendor:withmeta:1.0:*:*:*:*:*:*:*');
-		expect(withMeta?.licenses).toEqual(['MIT', 'Custom License', '(Apache-2.0 OR MIT)']);
+		// structural passthrough — id/name/expression distinction preserved
+		expect(withMeta?.licenses).toEqual([
+			{ license: { id: 'MIT' } },
+			{ license: { name: 'Custom License' } },
+			{ expression: '(Apache-2.0 OR MIT)' },
+		]);
 		const bare = got.components.find((c) => c.canonicalPurl === 'pkg:npm/bare@1.0');
 		expect(bare?.cpe).toBeNull();
 		expect(bare?.licenses).toEqual([]);
+		// non-object entries are dropped
+		const garbage = got.components.find((c) => c.canonicalPurl === 'pkg:npm/garbage@1.0');
+		expect(garbage?.licenses).toEqual([]);
 	});
 
-	it('carries cpe/licenses onto the synthesised root node', () => {
+	it('carries cpe/licenses (structural) onto the synthesised root node', () => {
 		const bom = {
 			metadata: {
 				component: {
@@ -95,7 +103,7 @@ describe('bomComponentExtractor.parseBom', () => {
 		};
 		const root = parseBom(bom).components.find((c) => c.isRoot);
 		expect(root?.cpe).toBe('cpe:2.3:a:acme:myapp:1.0.0:*:*:*:*:*:*:*');
-		expect(root?.licenses).toEqual(['Apache-2.0']);
+		expect(root?.licenses).toEqual([{ license: { id: 'Apache-2.0' } }]);
 	});
 
 	it('drops components without a purl but keeps the rest', () => {
