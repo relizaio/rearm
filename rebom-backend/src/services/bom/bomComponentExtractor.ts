@@ -39,9 +39,12 @@ export interface ParsedBomComponent {
 	// either coordinate (NVD/CPE-keyed advisories vs purl-keyed ones). null when
 	// the BOM declared no cpe for the component.
 	cpe: string | null;
-	// Declared license identifiers (SPDX id, free-text name, or SPDX expression),
-	// deduped. Always an array (possibly empty) so the field is never null.
-	licenses: string[];
+	// Declared licenses in EXACT CycloneDX shape: each item is
+	// { license: { id | name, text?, url?, ... } } or { expression }. Passed
+	// through structurally (not flattened to strings) so the precise id/name/
+	// expression distinction is preserved and can be re-emitted to / matched by
+	// Dependency-Track. Always an array (possibly empty).
+	licenses: any[];
 }
 
 export interface ParsedBomDependency {
@@ -82,37 +85,15 @@ export function canonicalizePurl(rawPurl: string | undefined | null): string | n
 }
 
 /**
- * Normalize a CycloneDX component.licenses array into a deduped list of
- * identifier strings. Each entry is either { license: { id | name } } or
- * { expression }; prefer SPDX id, then free-text name, then expression.
+ * Pass a CycloneDX component.licenses array through structurally, preserving the
+ * exact shape (each item is { license: { id | name, ... } } or { expression }).
+ * Only well-formed object entries are kept; the array is returned verbatim
+ * otherwise so it can be re-emitted to Dependency-Track unchanged.
  */
-function extractLicenses(raw: { licenses?: any } | undefined): string[] {
+function extractLicenses(raw: { licenses?: any } | undefined): any[] {
 	const arr = raw?.licenses;
 	if (!Array.isArray(arr)) return [];
-	const out: string[] = [];
-	const seen = new Set<string>();
-	for (const entry of arr) {
-		if (!entry || typeof entry !== 'object') continue;
-		let val: string | undefined;
-		if (entry.license && typeof entry.license === 'object') {
-			val =
-				typeof entry.license.id === 'string'
-					? entry.license.id
-					: typeof entry.license.name === 'string'
-						? entry.license.name
-						: undefined;
-		} else if (typeof entry.expression === 'string') {
-			val = entry.expression;
-		}
-		if (typeof val === 'string') {
-			const v = val.trim();
-			if (v && !seen.has(v)) {
-				seen.add(v);
-				out.push(v);
-			}
-		}
-	}
-	return out;
+	return arr.filter((entry) => entry && typeof entry === 'object');
 }
 
 function toParsedComponent(

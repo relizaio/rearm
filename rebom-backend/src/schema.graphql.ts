@@ -147,7 +147,7 @@ const typeDefs = gql`
     version: String
     isRoot: Boolean!
     cpe: String
-    licenses: [String!]!
+    licenses: [Object!]!
   }
 
   type BomDependency {
