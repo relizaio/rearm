@@ -736,6 +736,16 @@ function freshForm (): ChannelForm {
     }
 }
 
+// Optimistic-locking note. The three upsert paths in this file
+// (upsertNotificationChannel, upsertNotificationSubscription,
+// upsertNotificationChannelGroup) do NOT forward the `revision` value
+// from the loaded row. The backend entities use @Version, but the
+// GraphQL Input shapes don't currently expose an `expectedRevision`
+// field, so the UI can't gate save on it. Accepted as-is across all
+// three surfaces for consistency; a stale concurrent edit on the same
+// row is last-writer-wins. If multi-admin races become a real customer
+// concern, the fix is a coordinated schema change (add expectedRevision
+// to all three Input shapes) + a UI guard that surfaces the conflict.
 const channelForm = ref<ChannelForm>(freshForm())
 
 const sentinelPlaceholder = computed<string>(() =>
@@ -1416,10 +1426,11 @@ async function saveSubscription (): Promise<void> {
         status: f.status,
         eventTypes: f.eventTypes,
         filter: filterInput,
-        // Spread the original route's unmodelled fields (channelGroups,
-        // andEnvIn, andLifecycleIn, perspectives) so an Edit → Save
-        // round-trip doesn't silently strip them. The slice-2-modeled
-        // fields overlay last and win.
+        // Spread the original route's still-unmodelled fields
+        // (andEnvIn, andLifecycleIn, perspectives) so an Edit → Save
+        // round-trip doesn't silently strip them. The slice-2 +
+        // slice-4 modelled fields (severity, channels, channelGroups)
+        // overlay last and win.
         routes: f.routes.map(r => ({
             ...(r._raw || {}),
             whenSeverityAtLeast: r.whenSeverityAtLeast,
