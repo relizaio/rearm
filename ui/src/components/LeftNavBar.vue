@@ -43,7 +43,7 @@ import type { MenuOption } from 'naive-ui'
 import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
-import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
+import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined, BellOutlined } from '@vicons/antd'
 import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Robot } from '@vicons/tabler'
 
 
@@ -178,6 +178,21 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
             key: 'secrets',
             icon: renderIcon(Key)
         },
+        {
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
+                            name: 'NotificationsOfOrg',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'Notifications' }
+                ),
+            key: 'notifications',
+            icon: renderIcon(BellOutlined)
+        },
     ]
 
     const settingsOptions = [
@@ -266,6 +281,7 @@ const routeToMenuKey: Record<string, string> = {
     'InstancesOfOrg': 'instances',
     'Instance': 'instances',
     'SecretsOfOrg': 'secrets',
+    'NotificationsOfOrg': 'notifications',
     'AnalyticsOfOrg': 'analytics',
     'VulnerabilityAnalysis': 'vulnerabilityAnalysis',
     'VexProposalReview': 'vulnerabilityAnalysis',
