@@ -57,7 +57,69 @@
             </n-tab-pane>
 
             <n-tab-pane name="history" tab="History">
-                <n-empty description="Delivery history UI lands in a later Phase 7 slice." />
+                <div class="tab-toolbar">
+                    <div class="tab-toolbar-info">
+                        Audit log of every delivery row: when, to whom, status, attempts. Test rows (channel-test button) and PREVIEW rows (subscriptions in preview mode) are included.
+                    </div>
+                    <n-button size="small" @click="loadDeliveries">
+                        <template #icon><n-icon><Refresh /></n-icon></template>
+                        Refresh
+                    </n-button>
+                </div>
+
+                <n-grid :cols="3" :x-gap="12" class="history-filters">
+                    <n-gi>
+                        <n-form-item label="Status" :show-feedback="false">
+                            <n-select
+                                v-model:value="historyFilters.status"
+                                :options="deliveryStatusOptions"
+                                placeholder="Any"
+                                clearable
+                                @update:value="loadDeliveries"
+                            />
+                        </n-form-item>
+                    </n-gi>
+                    <n-gi>
+                        <n-form-item label="Origin" :show-feedback="false">
+                            <n-select
+                                v-model:value="historyFilters.origin"
+                                :options="deliveryOriginOptions"
+                                placeholder="Any"
+                                clearable
+                                @update:value="loadDeliveries"
+                            />
+                        </n-form-item>
+                    </n-gi>
+                    <n-gi>
+                        <n-form-item label="Channel" :show-feedback="false">
+                            <n-select
+                                v-model:value="historyFilters.channelUuid"
+                                :options="channelFilterOptions"
+                                placeholder="Any"
+                                clearable
+                                @update:value="loadDeliveries"
+                            />
+                        </n-form-item>
+                    </n-gi>
+                </n-grid>
+
+                <n-data-table
+                    :data="deliveries"
+                    :columns="deliveryColumns"
+                    :loading="deliveriesLoading"
+                    :single-line="false"
+                    :bordered="false"
+                />
+
+                <div class="history-pagination">
+                    <n-pagination
+                        v-model:page="historyPage"
+                        :page-count="historyPageCount"
+                        :page-size="historyPageSize"
+                        :item-count="historyTotalCount"
+                        @update:page="loadDeliveries"
+                    />
+                </div>
             </n-tab-pane>
         </n-tabs>
 
@@ -391,9 +453,9 @@ import { useStore } from 'vuex'
 import {
     NTabs, NTabPane, NDataTable, NButton, NIcon, NEmpty, NModal, NCard, NForm,
     NFormItem, NInput, NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag,
-    NRadioGroup, NRadioButton, useDialog, useMessage
+    NRadioGroup, NRadioButton, NPagination, useDialog, useMessage
 } from 'naive-ui'
-import { CirclePlus, Trash, Edit as EditIcon } from '@vicons/tabler'
+import { CirclePlus, Trash, Edit as EditIcon, Refresh } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -415,6 +477,22 @@ interface SubscriptionRoute {
     // perspectives) survive an Edit → Save round-trip instead of being
     // silently stripped. Empty on Create.
     _raw?: Record<string, any>
+}
+
+interface DeliveryRow {
+    uuid: string
+    org: string
+    outboxEventUuid: string
+    subscriptionUuid: string | null
+    channelUuid: string
+    status: string
+    origin: string
+    dedupKey: string | null
+    attemptCount: number
+    nextAttemptAt: string | null
+    sentAt: string | null
+    lastError: string | null
+    createdDate: string
 }
 
 interface SubscriptionRow {
@@ -500,6 +578,29 @@ const channelOptions = computed(() =>
         .filter(c => c.status === 'ENABLED')
         .map(c => ({ label: `${c.name} (${TYPE_LABELS[c.type] || c.type})`, value: c.uuid }))
 )
+
+// History tab — channel filter spans ALL channels (incl. disabled) so a
+// user investigating why nothing landed on a disabled channel can still
+// see past deliveries.
+const channelFilterOptions = computed(() =>
+    channels.value.map(c => ({ label: `${c.name} (${TYPE_LABELS[c.type] || c.type})`, value: c.uuid }))
+)
+
+const deliveryStatusOptions = [
+    { label: 'PENDING', value: 'PENDING' },
+    { label: 'SENT', value: 'SENT' },
+    { label: 'ACKED', value: 'ACKED' },
+    { label: 'FAILED', value: 'FAILED' },
+    { label: 'RATE_LIMITED', value: 'RATE_LIMITED' },
+    { label: 'EVAL_TIMEOUT', value: 'EVAL_TIMEOUT' },
+    { label: 'TEST', value: 'TEST' },
+    { label: 'PREVIEW', value: 'PREVIEW' },
+]
+
+const deliveryOriginOptions = [
+    { label: 'REAL', value: 'REAL' },
+    { label: 'SYNTHETIC (test / Quick Start)', value: 'SYNTHETIC' },
+]
 
 const showChannelModal = ref<boolean>(false)
 const savingChannel = ref<boolean>(false)
@@ -603,6 +704,21 @@ const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
 const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
 
+// Delivery history state
+const deliveries = ref<DeliveryRow[]>([])
+const deliveriesLoading = ref<boolean>(false)
+const historyPage = ref<number>(1)
+const historyPageSize = ref<number>(25)
+const historyTotalCount = ref<number>(0)
+const historyPageCount = computed<number>(() =>
+    Math.max(1, Math.ceil(historyTotalCount.value / historyPageSize.value))
+)
+const historyFilters = ref<{ status: string | null, origin: string | null, channelUuid: string | null }>({
+    status: null,
+    origin: null,
+    channelUuid: null,
+})
+
 // ---- GraphQL queries / mutations -----------------------------------------
 
 const LIST_CHANNELS_QUERY = gql`
@@ -643,10 +759,40 @@ const TEST_CHANNEL_MUTATION = gql`
     }
 `
 
+// Narrow projection used by the test-channel poll loop. Keeps the SLA
+// path independent of the wider history projection (which fetches more
+// fields).
 const LIST_DELIVERIES_QUERY = gql`
     query notificationDeliveries($orgUuid: ID!, $eventUuid: ID, $limit: Int) {
         notificationDeliveries(orgUuid: $orgUuid, eventUuid: $eventUuid, limit: $limit) {
             items { uuid status attemptCount lastError sentAt }
+        }
+    }
+`
+
+const HISTORY_DELIVERIES_QUERY = gql`
+    query notificationDeliveriesPage(
+        $orgUuid: ID!,
+        $channelUuid: ID,
+        $status: NotificationDeliveryStatusEnum,
+        $origin: NotificationDeliveryOriginEnum,
+        $limit: Int,
+        $offset: Int
+    ) {
+        notificationDeliveries(
+            orgUuid: $orgUuid,
+            channelUuid: $channelUuid,
+            status: $status,
+            origin: $origin,
+            limit: $limit,
+            offset: $offset
+        ) {
+            items {
+                uuid org outboxEventUuid subscriptionUuid channelUuid
+                status origin dedupKey attemptCount nextAttemptAt sentAt
+                lastError createdDate
+            }
+            totalCount limit offset
         }
     }
 `
@@ -714,6 +860,32 @@ async function loadSubscriptions (): Promise<void> {
         message.error(`Failed to load subscriptions: ${extractError(e)}`)
     } finally {
         subscriptionsLoading.value = false
+    }
+}
+
+async function loadDeliveries (): Promise<void> {
+    deliveriesLoading.value = true
+    try {
+        const offset = (historyPage.value - 1) * historyPageSize.value
+        const res = await graphqlClient.query({
+            query: HISTORY_DELIVERIES_QUERY,
+            variables: {
+                orgUuid: orgUuid.value,
+                channelUuid: historyFilters.value.channelUuid,
+                status: historyFilters.value.status,
+                origin: historyFilters.value.origin,
+                limit: historyPageSize.value,
+                offset,
+            },
+            fetchPolicy: 'network-only',
+        })
+        const page = res.data?.notificationDeliveries
+        deliveries.value = page?.items || []
+        historyTotalCount.value = page?.totalCount || 0
+    } catch (e: any) {
+        message.error(`Failed to load history: ${extractError(e)}`)
+    } finally {
+        deliveriesLoading.value = false
     }
 }
 
@@ -1163,6 +1335,82 @@ const subscriptionColumns = computed(() => [
     },
 ])
 
+// Cross-ref helpers — history rows carry uuids; resolve to names from
+// the already-loaded channels + subscriptions lists.
+const channelNameById = computed<Record<string, string>>(() => {
+    const m: Record<string, string> = {}
+    for (const c of channels.value) m[c.uuid] = c.name
+    return m
+})
+const subscriptionNameById = computed<Record<string, string>>(() => {
+    const m: Record<string, string> = {}
+    for (const s of subscriptions.value) m[s.uuid] = s.name
+    return m
+})
+
+function deliveryStatusTagType (status: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
+    if (status === 'SENT' || status === 'ACKED') return 'success'
+    if (status === 'FAILED' || status === 'EVAL_TIMEOUT' || status === 'RATE_LIMITED') return 'error'
+    if (status === 'PREVIEW' || status === 'TEST') return 'info'
+    return 'default'
+}
+
+function formatHistoryTimestamp (s: string | null): string {
+    if (!s) return '—'
+    // Avoid pulling in a date library for one column; rely on the
+    // browser's locale-aware string formatter. createdDate from the
+    // backend is ISO-8601 UTC.
+    try { return new Date(s).toLocaleString() } catch { return s }
+}
+
+function truncate (s: string | null, n: number): string {
+    if (!s) return ''
+    return s.length > n ? `${s.slice(0, n - 1)}…` : s
+}
+
+const deliveryColumns = computed(() => [
+    {
+        title: 'When', key: 'createdDate',
+        render: (row: DeliveryRow) => formatHistoryTimestamp(row.sentAt || row.createdDate),
+    },
+    {
+        title: 'Status', key: 'status',
+        render: (row: DeliveryRow) => h(
+            NTag,
+            { type: deliveryStatusTagType(row.status), size: 'small' },
+            { default: () => row.status },
+        ),
+    },
+    {
+        title: 'Origin', key: 'origin',
+        render: (row: DeliveryRow) => h(
+            NTag,
+            { type: row.origin === 'SYNTHETIC' ? 'info' : 'default', size: 'small' },
+            { default: () => row.origin },
+        ),
+    },
+    {
+        title: 'Channel', key: 'channelUuid',
+        render: (row: DeliveryRow) => channelNameById.value[row.channelUuid] || truncate(row.channelUuid, 12),
+    },
+    {
+        title: 'Subscription', key: 'subscriptionUuid',
+        render: (row: DeliveryRow) => row.subscriptionUuid
+            ? (subscriptionNameById.value[row.subscriptionUuid] || truncate(row.subscriptionUuid, 12))
+            : h('span', { class: 'muted-12' }, '(channel test)'),
+    },
+    {
+        title: 'Attempts', key: 'attemptCount',
+        render: (row: DeliveryRow) => `${row.attemptCount}`,
+    },
+    {
+        title: 'Last error', key: 'lastError',
+        render: (row: DeliveryRow) => row.lastError
+            ? h('span', { title: row.lastError, class: 'muted-12' }, truncate(row.lastError, 60))
+            : '',
+    },
+])
+
 // ---- helpers -------------------------------------------------------------
 
 function extractError (e: any): string {
@@ -1171,11 +1419,11 @@ function extractError (e: any): string {
 
 onMounted(async () => {
     userPermission.value = commonFunctions.getUserPermission(orgUuid.value, myuser.value)?.org || ''
-    // Load both in parallel. The subscription form's channel picker
-    // degrades to an empty placeholder if the user opens the modal
-    // before channels resolve, which is acceptable given the typical
-    // few-hundred-ms load.
-    await Promise.all([loadChannels(), loadSubscriptions()])
+    // Load channels, subscriptions, and the first page of delivery
+    // history in parallel. Subscription edit modal's channel picker
+    // degrades to an empty placeholder if opened before channels
+    // resolve — acceptable given the typical few-hundred-ms load.
+    await Promise.all([loadChannels(), loadSubscriptions(), loadDeliveries()])
 })
 </script>
 
@@ -1194,6 +1442,9 @@ onMounted(async () => {
 }
 .tab-toolbar-info { font-size: 12.5px; color: var(--n-text-color-3, #888); }
 .muted-12 { font-size: 12px; color: var(--n-text-color-3, #888); }
+
+.history-filters { margin-bottom: 12px; }
+.history-pagination { margin-top: 12px; display: flex; justify-content: flex-end; }
 
 .routes-section {
     border: 1px solid var(--n-border-color, #eee);
