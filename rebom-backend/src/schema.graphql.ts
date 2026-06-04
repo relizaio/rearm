@@ -23,6 +23,7 @@ const typeDefs = gql`
     getBearIntegration(org: ID!): BearIntegration
     getBomDigestProbe(bomContent: BomContentInput!): String!
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
+    isEnrichmentConfigured(org: ID!): Boolean!
   }
 
   type Mutation {
