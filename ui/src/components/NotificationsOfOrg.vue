@@ -15,14 +15,12 @@
             :show-icon="false"
         >
             <template #header>
-                <span class="quick-start-title">Welcome to Notifications</span>
+                <span class="quick-start-title">{{ quickStartBannerTitle }}</span>
             </template>
             <div class="quick-start-body">
-                <div>
-                    Get from zero to a working subscription in three steps — your first channel, your first rule, then we land it in <strong>Preview</strong> mode so deliveries record in History without firing your real destination. Flip it to Active once you've verified.
-                </div>
+                <div>{{ quickStartBannerBody }}</div>
                 <n-button type="primary" size="small" @click="openQuickStart">
-                    Start
+                    {{ quickStartBannerCta }}
                 </n-button>
             </div>
         </n-alert>
@@ -385,7 +383,7 @@
         </n-modal>
 
         <!-- Quick Start wizard modal -->
-        <n-modal v-model:show="showQuickStart" preset="dialog" :show-icon="false" :mask-closable="false">
+        <n-modal v-model:show="showQuickStart" preset="dialog" :show-icon="false" :mask-closable="false" :on-close="closeQuickStart">
             <n-card
                 style="width: 640px"
                 size="huge"
@@ -477,14 +475,27 @@
                     </n-form>
                 </div>
 
-                <!-- Step 3: done -->
+                <!-- Step 3: done — test event in flight + flip-to-Active guidance -->
                 <div v-if="quickStartStep === 3">
                     <n-space vertical size="large">
-                        <n-alert type="success" :show-icon="false">
-                            <strong>Done.</strong> Your subscription is in <strong>Preview</strong> mode. Matching deliveries land in History without firing the real destination.
+                        <n-alert v-if="quickStartTestState.status === 'PENDING'" type="info" :show-icon="false">
+                            Sending a real test message to <strong>{{ qsChannel.name }}</strong>… polling for delivery status.
                         </n-alert>
+                        <n-alert v-else-if="quickStartTestState.status === 'SENT'" type="success" :show-icon="false">
+                            <strong>Test message sent.</strong> Check the channel — you should see a card landing in <strong>{{ qsChannel.name }}</strong>.
+                        </n-alert>
+                        <n-alert v-else-if="quickStartTestState.status === 'FAILED'" type="error" :show-icon="false">
+                            <strong>Test delivery failed:</strong> {{ quickStartTestState.lastError || 'no error returned' }}. Edit the channel and re-verify the webhook URL.
+                        </n-alert>
+                        <n-alert v-else-if="quickStartTestState.status === 'ERROR'" type="error" :show-icon="false">
+                            <strong>Test could not start:</strong> {{ quickStartTestState.lastError }}
+                        </n-alert>
+                        <n-alert v-else-if="quickStartTestState.status === 'TIMEOUT'" type="warning" :show-icon="false">
+                            Delivery did not reach a terminal state within 30s. Check History for the latest status of the test event.
+                        </n-alert>
+
                         <div class="muted-12">
-                            Verify the right kinds of events show up in <strong>History</strong> (tagged <code>PREVIEW</code>). When you're confident, edit the subscription and flip the status to <strong>Active</strong> to start sending to your channel.
+                            Your subscription is in <strong>Preview</strong> mode — real vuln events that match will record in <strong>History</strong> (tagged <code>PREVIEW</code>) without firing your channel until you flip it to <strong>Active</strong>. Verify a few previews land first; promote when you're confident.
                         </div>
                         <n-space>
                             <n-button type="primary" @click="quickStartGoToHistory">View History</n-button>
@@ -1085,6 +1096,25 @@ function freshQsSubscription (): QuickStartSubscription {
 const qsChannel = ref<QuickStartChannel>(freshQsChannel())
 const qsSubscription = ref<QuickStartSubscription>(freshQsSubscription())
 
+// Step-3 test event state. The wizard fires a real synthetic event
+// to the just-created channel (design doc §6.7: "admin confirms the
+// test message arrived"). Uses testNotificationChannel which bypasses
+// the subscription's PREVIEW state — the channel is exercised
+// end-to-end, the subscription stays safely in PREVIEW until the
+// operator promotes it to ACTIVE.
+interface QuickStartTestState {
+    eventUuid: string | null
+    status: 'IDLE' | 'PENDING' | 'SENT' | 'FAILED' | 'ERROR' | 'TIMEOUT'
+    attempts: number
+    lastError: string
+}
+
+function freshQuickStartTestState (): QuickStartTestState {
+    return { eventUuid: null, status: 'IDLE', attempts: 0, lastError: '' }
+}
+
+const quickStartTestState = ref<QuickStartTestState>(freshQuickStartTestState())
+
 // Quick Start type picker is intentionally narrower than the full
 // channel form — Slack + Teams are the common starter destinations
 // (one URL, no other config). Sentinel (six fields) and Webhook
@@ -1094,14 +1124,41 @@ const qsChannelTypeOptions = [
     { label: 'Microsoft Teams', value: 'MS_TEAMS' },
 ]
 
+// Per the design-doc §6.7 anti-pattern: "a default subscription with no
+// channel = silent failures." The symmetric gap — a channel exists but no
+// subscription — also leaves the user with a half-finished setup and
+// nothing firing. So the banner now surfaces on EITHER side being empty,
+// with the message + CTA adapting to which gap exists.
+const quickStartGap = computed<'BOTH' | 'NO_SUB' | 'NONE'>(() => {
+    if (channels.value.length === 0) return 'BOTH'
+    if (subscriptions.value.length === 0) return 'NO_SUB'
+    return 'NONE'
+})
+
 const canShowQuickStart = computed<boolean>(() =>
     canWrite.value
     && !channelsLoading.value
     && !subscriptionsLoading.value
-    && channels.value.length === 0
-    && subscriptions.value.length === 0
+    && quickStartGap.value !== 'NONE'
     && !showQuickStart.value
 )
+
+const quickStartBannerTitle = computed<string>(() => {
+    if (quickStartGap.value === 'NO_SUB') return 'Finish setting up notifications'
+    return 'Welcome to Notifications'
+})
+
+const quickStartBannerBody = computed<string>(() => {
+    if (quickStartGap.value === 'NO_SUB') {
+        return "You've got a channel but no subscription. Add a rule that picks which events fire on it — we'll land it in Preview mode so you can verify before going live."
+    }
+    return 'Get from zero to a working subscription in three steps — your first channel, your first rule, then a real test message to the channel. The subscription itself lands in Preview mode so real vuln traffic records in History without firing your channel until you flip it to Active.'
+})
+
+const quickStartBannerCta = computed<string>(() => {
+    if (quickStartGap.value === 'NO_SUB') return 'Add subscription'
+    return 'Start'
+})
 
 // Channel groups state
 const channelGroups = ref<ChannelGroupRow[]>([])
@@ -1377,16 +1434,48 @@ let historyInflightToken = 0
 // ---- Quick Start wizard --------------------------------------------------
 
 function openQuickStart (): void {
-    quickStartStep.value = 1
     qsChannel.value = freshQsChannel()
     qsSubscription.value = freshQsSubscription()
-    quickStartChannelUuid.value = null
     quickStartError.value = ''
+    quickStartTestState.value = freshQuickStartTestState()
+    // Defensive reset — if a prior open hit an unhandled exception
+    // mid-save, the loading flag could be stuck true and disable
+    // every button on the form.
+    quickStartSaving.value = false
+    // If the user already has channels but no subscription, the
+    // channel step is moot — skip straight to step 2 with the first
+    // enabled channel pre-selected. Banner CTA text already adjusted
+    // ("Add subscription" instead of "Start").
+    if (quickStartGap.value === 'NO_SUB') {
+        const existing = channels.value.find(c => c.status === 'ENABLED')
+            || channels.value[0]
+        if (existing) {
+            quickStartChannelUuid.value = existing.uuid
+            qsChannel.value.name = existing.name
+            qsChannel.value.type = existing.type
+            qsSubscription.value.name = slugifySubName(existing.name)
+            quickStartStep.value = 2
+            showQuickStart.value = true
+            return
+        }
+    }
+    quickStartStep.value = 1
+    quickStartChannelUuid.value = null
     showQuickStart.value = true
 }
 
 function closeQuickStart (): void {
     showQuickStart.value = false
+}
+
+// Trim and sanitize a channel name into something likely to survive
+// future backend name validation. Today the backend just requires
+// non-blank, but a clean slug avoids "vulns-My Slack #sec!!!" showing
+// up in the form and making the user reach for backspace.
+function slugifySubName (channelName: string): string {
+    const slug = channelName.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
+    const trimmed = slug.length > 50 ? slug.slice(0, 50) : slug
+    return `vulns-${trimmed || 'channel'}`
 }
 
 async function quickStartCreateChannel (): Promise<void> {
@@ -1418,7 +1507,7 @@ async function quickStartCreateChannel (): Promise<void> {
         quickStartChannelUuid.value = created.uuid
         // Auto-suggest a subscription name based on the channel name so
         // step 2 doesn't start empty.
-        qsSubscription.value.name = `vulns-${c.name.trim()}`
+        qsSubscription.value.name = slugifySubName(c.name)
         await loadChannels()
         quickStartStep.value = 2
         quickStartError.value = ''
@@ -1464,11 +1553,81 @@ async function quickStartCreateSubscription (): Promise<void> {
         await loadSubscriptions()
         quickStartStep.value = 3
         quickStartError.value = ''
+        // Fire the §6.7 confirmation event: a real synthetic message
+        // to the channel itself (bypasses subscription evaluation, so
+        // the new sub's PREVIEW status doesn't block the test landing).
+        // Run async — step 3 UI polls the resulting delivery row.
+        quickStartFireTestEvent().catch(() => {/* state captured below */})
     } catch (e: any) {
         quickStartError.value = extractError(e)
     } finally {
         quickStartSaving.value = false
     }
+}
+
+async function quickStartFireTestEvent (): Promise<void> {
+    if (!quickStartChannelUuid.value) {
+        quickStartTestState.value.status = 'ERROR'
+        quickStartTestState.value.lastError = 'Internal: channel uuid lost'
+        return
+    }
+    quickStartTestState.value = { ...freshQuickStartTestState(), status: 'PENDING' }
+    try {
+        const res = await graphqlClient.mutate({
+            mutation: TEST_CHANNEL_MUTATION,
+            variables: { channelUuid: quickStartChannelUuid.value },
+        })
+        const eventUuid = res.data?.testNotificationChannel?.uuid
+        if (!eventUuid) {
+            quickStartTestState.value.status = 'ERROR'
+            quickStartTestState.value.lastError = 'No outbox event returned'
+            return
+        }
+        quickStartTestState.value.eventUuid = eventUuid
+        // Reuse the slice-1 pollForDelivery loop (30s budget, terminal-
+        // state aware: SENT/ACKED → success; FAILED/RATE_LIMITED/
+        // EVAL_TIMEOUT → failure with the lastError).
+        await pollQuickStartDelivery(eventUuid)
+    } catch (e: any) {
+        quickStartTestState.value.status = 'ERROR'
+        quickStartTestState.value.lastError = extractError(e)
+    }
+}
+
+async function pollQuickStartDelivery (eventUuid: string): Promise<void> {
+    const deadline = Date.now() + 30000
+    while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 1500))
+        try {
+            const res = await graphqlClient.query({
+                query: LIST_DELIVERIES_QUERY,
+                variables: { orgUuid: orgUuid.value, eventUuid, limit: 5 },
+                fetchPolicy: 'network-only',
+            })
+            const items = res.data?.notificationDeliveries?.items || []
+            if (items.length > 0) {
+                const d = items[0]
+                quickStartTestState.value.attempts = d.attemptCount || 0
+                quickStartTestState.value.lastError = d.lastError || ''
+                if (d.status === 'SENT' || d.status === 'ACKED') {
+                    quickStartTestState.value.status = 'SENT'
+                    return
+                }
+                if (d.status === 'FAILED'
+                    || d.status === 'RATE_LIMITED'
+                    || d.status === 'EVAL_TIMEOUT') {
+                    quickStartTestState.value.status = 'FAILED'
+                    if (!quickStartTestState.value.lastError) {
+                        quickStartTestState.value.lastError = `Delivery ${d.status.toLowerCase().replace(/_/g, ' ')}`
+                    }
+                    return
+                }
+            }
+        } catch {
+            // Transient — keep polling within budget.
+        }
+    }
+    quickStartTestState.value.status = 'TIMEOUT'
 }
 
 function quickStartGoToHistory (): void {
@@ -1618,6 +1777,11 @@ async function markRowRead (row: InboxRow): Promise<void> {
             inboxItems.value = inboxItems.value.filter(r => r.uuid !== row.uuid)
             if (inboxTotalCount.value > 0) inboxTotalCount.value -= 1
         }
+        // Invalidate any concurrent loadInbox so its late-landing
+        // response can't overwrite this optimistic patch with stale
+        // pre-mark data. Same idea as the inflight-token guard in
+        // loadInbox itself — just from the mutation side.
+        inboxInflightToken++
     } catch (e: any) {
         message.error(`Mark read failed: ${extractError(e)}`)
     }
@@ -1625,13 +1789,19 @@ async function markRowRead (row: InboxRow): Promise<void> {
 
 async function markRowUnread (row: InboxRow): Promise<void> {
     try {
-        await graphqlClient.mutate({
+        const wasUnmarked = await graphqlClient.mutate({
             mutation: MARK_UNREAD_MUTATION,
             variables: { deliveryUuid: row.uuid },
         })
+        const removed = wasUnmarked.data?.markNotificationUnread === true
         const idx = inboxItems.value.findIndex(r => r.uuid === row.uuid)
         if (idx >= 0) inboxItems.value[idx].readAt = null
-        inboxUnreadCount.value += 1
+        // Only bump the unread count when a row actually went from
+        // read → unread server-side. The button is gated by
+        // row.readAt != null so this is rarely false in practice, but
+        // a stale-cached row could otherwise double-count.
+        if (removed) inboxUnreadCount.value += 1
+        inboxInflightToken++
     } catch (e: any) {
         message.error(`Mark unread failed: ${extractError(e)}`)
     }
@@ -1640,30 +1810,49 @@ async function markRowUnread (row: InboxRow): Promise<void> {
 async function bulkMarkRead (): Promise<void> {
     if (selectedInboxRows.value.length === 0) return
     inboxBulkLoading.value = true
+    const uuids = [...selectedInboxRows.value]
     try {
-        // Fire one mutation per selected row in parallel. The backend
-        // guards each call with the visibility filter, so a malformed
-        // selection is rejected per-uuid, not silently.
-        await Promise.all(selectedInboxRows.value.map(uuid =>
+        // Fire one mutation per selected row in parallel. Use
+        // allSettled so a single failed uuid doesn't drop the success
+        // count from the surviving 24/25; the backend's per-uuid
+        // visibility guard is the per-row check, the UI surfaces the
+        // mixed outcome.
+        const results = await Promise.allSettled(uuids.map(uuid =>
             graphqlClient.mutate({
                 mutation: MARK_READ_MUTATION,
                 variables: { deliveryUuid: uuid },
             })
         ))
-        message.success(`Marked ${selectedInboxRows.value.length} read`)
+        const ok = results.filter(r => r.status === 'fulfilled').length
+        const failed = results.length - ok
+        if (failed === 0) {
+            message.success(`Marked ${ok} read`)
+        } else if (ok > 0) {
+            message.warning(`Marked ${ok} of ${results.length} read (${failed} failed)`)
+        } else {
+            message.error(`Mark read failed for all ${results.length} selected`)
+        }
         selectedInboxRows.value = []
-        await loadInbox()
-    } catch (e: any) {
-        message.error(`Bulk mark read failed: ${extractError(e)}`)
     } finally {
         inboxBulkLoading.value = false
+        // Always reload regardless of pass/fail mix so the table
+        // reconciles with server truth — the optimistic-patch
+        // approach we use for the single-row path doesn't fit here
+        // because partial failures could leave the table in an
+        // arbitrary state.
+        await loadInbox()
     }
 }
 
 function markAllReadConfirm (): void {
+    const n = Math.min(inboxUnreadCount.value, 500)
+    const remainder = Math.max(0, inboxUnreadCount.value - 500)
+    const tail = remainder > 0
+        ? ` Backend caps a single sweep at 500 — re-run to clear the remaining ${remainder}.`
+        : ''
     dialog.warning({
         title: 'Mark every visible unread notification as read?',
-        content: `This marks up to ${inboxUnreadCount.value} unread item(s) as read. Backend caps a single sweep at 500.`,
+        content: `This marks up to ${n} unread item(s) as read.${tail}`,
         positiveText: 'Mark all read',
         negativeText: 'Cancel',
         onPositiveClick: async () => {
@@ -2313,7 +2502,11 @@ const inboxColumns = computed(() => [
 function severityTagType (severity: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
     if (severity === 'CRITICAL' || severity === 'HIGH') return 'error'
     if (severity === 'MEDIUM') return 'warning'
-    if (severity === 'LOW' || severity === 'INFO') return 'info'
+    if (severity === 'LOW') return 'info'
+    // INFO and NONE collapse to the neutral default — a triage queue
+    // shouldn't fight for the eye on informational events. Separating
+    // LOW (info-blue) from INFO (default-grey) preserves the backend
+    // enum distinction in the UI.
     return 'default'
 }
 
@@ -2378,18 +2571,24 @@ onMounted(async () => {
     // edit modal's pickers degrade to empty placeholders if opened
     // before channels / groups resolve — acceptable given the typical
     // few-hundred-ms load. Inbox tab body loads lazily on tab open.
-    await Promise.all([
+    const initialIsInbox = activeTab.value === 'inbox'
+    // Skip the badge-only round-trip when the initial tab is Inbox —
+    // the subsequent loadInbox() pulls unreadCount inside its own
+    // response so the separate notificationUnreadCount call would
+    // double-spend on landing.
+    const eagerLoads: Array<Promise<void>> = [
         loadChannels(),
         loadChannelGroups(),
         loadSubscriptions(),
         loadDeliveries(),
-        loadInboxUnreadCount(),
-    ])
+    ]
+    if (!initialIsInbox) eagerLoads.push(loadInboxUnreadCount())
+    await Promise.all(eagerLoads)
     // If the initial route lands directly on the Inbox tab (e.g. a
     // bookmarked URL or a slash-style notification link), the lazy
     // tab-activation hook on onTabChange doesn't fire — kick the load
     // explicitly here.
-    if (activeTab.value === 'inbox') {
+    if (initialIsInbox) {
         await loadInbox()
     }
 })
