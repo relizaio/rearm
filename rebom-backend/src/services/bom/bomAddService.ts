@@ -110,13 +110,15 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   const inputForProcessing = downgradeCycloneDxSpecIfNeeded(structuredClone(rawBom));
   const processedBom = await processBomObj(inputForProcessing);
 
-  // CycloneDX serialNumber is optional, but the deduplication lookups below key
-  // on it (BomRepository runs serialNumber.startsWith('urn:uuid:')). A BOM
-  // without one would throw "Cannot read properties of undefined (reading
-  // 'startsWith')". Generate a urn:uuid serialNumber so serialNumber-less BOMs
-  // (minimal / hand-authored SBOMs) ingest cleanly instead of crashing.
+  // serialNumber is the BOM's identity and must come from the producing tool —
+  // we do not mint one on our side (it keys deduplication / version lineage).
+  // Reject a BOM without one with a clear error instead of crashing downstream
+  // where BomRepository runs serialNumber.startsWith('urn:uuid:') on undefined.
   if (processedBom && !processedBom.serialNumber) {
-    processedBom.serialNumber = `urn:uuid:${uuidv4()}`;
+    throw new BomValidationError(
+      'CycloneDX BOM is missing a serialNumber. A serialNumber (e.g. urn:uuid:...) is required; rebom does not generate one.',
+      { field: 'serialNumber', constraint: 'CycloneDX serialNumber is required', value: processedBom.serialNumber }
+    );
   }
 
   await validateBom(processedBom); // throws BomValidationError on failure
