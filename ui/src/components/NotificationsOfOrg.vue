@@ -78,6 +78,81 @@
                 />
             </n-tab-pane>
 
+            <n-tab-pane name="inbox" :tab="inboxUnreadCount > 0 ? `Inbox (${inboxUnreadCount})` : 'Inbox'">
+                <div class="tab-toolbar">
+                    <div class="tab-toolbar-info">
+                        Your personal triage queue. Org-admins see every delivery; perspective-members see deliveries that touch a release in one of their perspectives.
+                    </div>
+                    <n-space size="small">
+                        <n-button
+                            v-if="canWrite && selectedInboxRows.length > 0"
+                            size="small"
+                            type="primary"
+                            @click="bulkMarkRead"
+                            :loading="inboxBulkLoading"
+                        >
+                            <template #icon><n-icon><Check /></n-icon></template>
+                            Mark {{ selectedInboxRows.length }} read
+                        </n-button>
+                        <n-button
+                            v-if="canWrite && inboxUnreadCount > 0"
+                            size="small"
+                            secondary
+                            @click="markAllReadConfirm"
+                            :loading="inboxMarkAllLoading"
+                        >
+                            Mark all read
+                        </n-button>
+                        <n-button size="small" @click="loadInbox">
+                            <template #icon><n-icon><Refresh /></n-icon></template>
+                            Refresh
+                        </n-button>
+                    </n-space>
+                </div>
+
+                <n-grid :cols="2" :x-gap="12" class="history-filters">
+                    <n-gi>
+                        <n-form-item label="Show" :show-feedback="false">
+                            <n-radio-group v-model:value="inboxUnreadOnly" @update:value="applyInboxFilters">
+                                <n-radio-button :value="true">Unread only</n-radio-button>
+                                <n-radio-button :value="false">All visible</n-radio-button>
+                            </n-radio-group>
+                        </n-form-item>
+                    </n-gi>
+                    <n-gi>
+                        <n-form-item label="Status" :show-feedback="false">
+                            <n-select
+                                v-model:value="inboxStatusFilter"
+                                :options="deliveryStatusOptions"
+                                placeholder="Any"
+                                clearable
+                                @update:value="applyInboxFilters"
+                            />
+                        </n-form-item>
+                    </n-gi>
+                </n-grid>
+
+                <n-data-table
+                    :data="inboxItems"
+                    :columns="inboxColumns"
+                    :loading="inboxLoading"
+                    :single-line="false"
+                    :bordered="false"
+                    :row-key="(row) => row.uuid"
+                    v-model:checked-row-keys="selectedInboxRows"
+                />
+
+                <div v-if="inboxTotalCount > inboxPageSize" class="history-pagination">
+                    <n-pagination
+                        v-model:page="inboxPage"
+                        :page-count="inboxPageCount"
+                        :page-size="inboxPageSize"
+                        :item-count="inboxTotalCount"
+                        @update:page="loadInbox"
+                    />
+                </div>
+            </n-tab-pane>
+
             <n-tab-pane name="groups" tab="Channel groups">
                 <div class="tab-toolbar">
                     <div class="tab-toolbar-info">
@@ -669,7 +744,7 @@ import {
     NRadioGroup, NRadioButton, NPagination, NSteps, NStep,
     useDialog, useMessage
 } from 'naive-ui'
-import { CirclePlus, Trash, Edit as EditIcon, Refresh } from '@vicons/tabler'
+import { CirclePlus, Trash, Edit as EditIcon, Refresh, Check } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -728,6 +803,25 @@ interface DeliveryRow {
     createdDate: string
 }
 
+interface InboxRow {
+    uuid: string
+    org: string
+    outboxEventUuid: string
+    subscriptionUuid: string | null
+    channelUuid: string
+    status: string
+    origin: string
+    dedupKey: string | null
+    attemptCount: number
+    nextAttemptAt: string | null
+    sentAt: string | null
+    lastError: string | null
+    createdDate: string
+    readAt: string | null
+    eventType: string | null
+    severity: string | null
+}
+
 interface SubscriptionRow {
     uuid: string
     org: string
@@ -759,6 +853,9 @@ const activeTab = ref<string>((route.query.tab as string) || 'channels')
 
 function onTabChange (tab: string): void {
     router.replace({ query: { ...route.query, tab } })
+    // Lazy-load the inbox body the first time the tab is opened so a
+    // user who never goes there doesn't pay the round-trip cost.
+    if (tab === 'inbox') loadInbox()
 }
 
 const channels = ref<ChannelRow[]>([])
@@ -1021,6 +1118,22 @@ const channelGroupOptions = computed(() =>
     }))
 )
 
+// Inbox MVP state (Phase 14)
+const inboxItems = ref<InboxRow[]>([])
+const inboxLoading = ref<boolean>(false)
+const inboxTotalCount = ref<number>(0)
+const inboxUnreadCount = ref<number>(0)
+const inboxPage = ref<number>(1)
+const inboxPageSize = ref<number>(25)
+const inboxPageCount = computed<number>(() =>
+    Math.max(1, Math.ceil(inboxTotalCount.value / inboxPageSize.value))
+)
+const inboxUnreadOnly = ref<boolean>(true)
+const inboxStatusFilter = ref<string | null>(null)
+const selectedInboxRows = ref<string[]>([])
+const inboxBulkLoading = ref<boolean>(false)
+const inboxMarkAllLoading = ref<boolean>(false)
+
 // Delivery history state
 const deliveries = ref<DeliveryRow[]>([])
 const deliveriesLoading = ref<boolean>(false)
@@ -1084,6 +1197,58 @@ const LIST_DELIVERIES_QUERY = gql`
         notificationDeliveries(orgUuid: $orgUuid, eventUuid: $eventUuid, limit: $limit) {
             items { uuid status attemptCount lastError sentAt }
         }
+    }
+`
+
+// Phase 14 Inbox MVP queries + mutations. Sibling to the History query
+// surface — the backend visibility filter is server-side; the UI just
+// supplies orgUuid + filters + pagination.
+const INBOX_QUERY = gql`
+    query notificationInbox(
+        $orgUuid: ID!,
+        $unreadOnly: Boolean,
+        $status: NotificationDeliveryStatusEnum,
+        $limit: Int,
+        $offset: Int
+    ) {
+        notificationInbox(
+            orgUuid: $orgUuid,
+            unreadOnly: $unreadOnly,
+            status: $status,
+            limit: $limit,
+            offset: $offset
+        ) {
+            items {
+                uuid org outboxEventUuid subscriptionUuid channelUuid
+                status origin dedupKey attemptCount nextAttemptAt sentAt
+                lastError createdDate readAt eventType severity
+            }
+            totalCount unreadCount limit offset
+        }
+    }
+`
+
+const INBOX_UNREAD_COUNT_QUERY = gql`
+    query notificationUnreadCount($orgUuid: ID!) {
+        notificationUnreadCount(orgUuid: $orgUuid)
+    }
+`
+
+const MARK_READ_MUTATION = gql`
+    mutation markNotificationRead($deliveryUuid: ID!) {
+        markNotificationRead(deliveryUuid: $deliveryUuid) { uuid readAt }
+    }
+`
+
+const MARK_UNREAD_MUTATION = gql`
+    mutation markNotificationUnread($deliveryUuid: ID!) {
+        markNotificationUnread(deliveryUuid: $deliveryUuid)
+    }
+`
+
+const MARK_ALL_READ_MUTATION = gql`
+    mutation markAllNotificationsRead($orgUuid: ID!) {
+        markAllNotificationsRead(orgUuid: $orgUuid)
     }
 `
 
@@ -1395,6 +1560,142 @@ function confirmDeleteGroup (row: ChannelGroupRow): void {
             }
         },
     })
+}
+
+// Inbox MVP — load + filters + mark-read flows.
+let inboxInflightToken = 0
+
+async function loadInbox (): Promise<void> {
+    const myToken = ++inboxInflightToken
+    inboxLoading.value = true
+    try {
+        const offset = (inboxPage.value - 1) * inboxPageSize.value
+        const res = await graphqlClient.query({
+            query: INBOX_QUERY,
+            variables: {
+                orgUuid: orgUuid.value,
+                unreadOnly: inboxUnreadOnly.value,
+                status: inboxStatusFilter.value,
+                limit: inboxPageSize.value,
+                offset,
+            },
+            fetchPolicy: 'network-only',
+        })
+        if (myToken !== inboxInflightToken) return
+        const page = res.data?.notificationInbox
+        inboxItems.value = page?.items || []
+        inboxTotalCount.value = page?.totalCount || 0
+        inboxUnreadCount.value = page?.unreadCount || 0
+        // Drop checked rows that aren't on the new page.
+        const visible = new Set(inboxItems.value.map(r => r.uuid))
+        selectedInboxRows.value = selectedInboxRows.value.filter(uuid => visible.has(uuid))
+    } catch (e: any) {
+        if (myToken !== inboxInflightToken) return
+        message.error(`Failed to load inbox: ${extractError(e)}`)
+    } finally {
+        if (myToken === inboxInflightToken) inboxLoading.value = false
+    }
+}
+
+function applyInboxFilters (): void {
+    inboxPage.value = 1
+    loadInbox()
+}
+
+async function markRowRead (row: InboxRow): Promise<void> {
+    try {
+        const res = await graphqlClient.mutate({
+            mutation: MARK_READ_MUTATION,
+            variables: { deliveryUuid: row.uuid },
+        })
+        const readAt = res.data?.markNotificationRead?.readAt || new Date().toISOString()
+        // Optimistic update — patch the row in place rather than reload.
+        const idx = inboxItems.value.findIndex(r => r.uuid === row.uuid)
+        if (idx >= 0) inboxItems.value[idx].readAt = readAt
+        if (inboxUnreadCount.value > 0) inboxUnreadCount.value -= 1
+        // If we're filtering unread-only, drop the row from the table.
+        if (inboxUnreadOnly.value) {
+            inboxItems.value = inboxItems.value.filter(r => r.uuid !== row.uuid)
+            if (inboxTotalCount.value > 0) inboxTotalCount.value -= 1
+        }
+    } catch (e: any) {
+        message.error(`Mark read failed: ${extractError(e)}`)
+    }
+}
+
+async function markRowUnread (row: InboxRow): Promise<void> {
+    try {
+        await graphqlClient.mutate({
+            mutation: MARK_UNREAD_MUTATION,
+            variables: { deliveryUuid: row.uuid },
+        })
+        const idx = inboxItems.value.findIndex(r => r.uuid === row.uuid)
+        if (idx >= 0) inboxItems.value[idx].readAt = null
+        inboxUnreadCount.value += 1
+    } catch (e: any) {
+        message.error(`Mark unread failed: ${extractError(e)}`)
+    }
+}
+
+async function bulkMarkRead (): Promise<void> {
+    if (selectedInboxRows.value.length === 0) return
+    inboxBulkLoading.value = true
+    try {
+        // Fire one mutation per selected row in parallel. The backend
+        // guards each call with the visibility filter, so a malformed
+        // selection is rejected per-uuid, not silently.
+        await Promise.all(selectedInboxRows.value.map(uuid =>
+            graphqlClient.mutate({
+                mutation: MARK_READ_MUTATION,
+                variables: { deliveryUuid: uuid },
+            })
+        ))
+        message.success(`Marked ${selectedInboxRows.value.length} read`)
+        selectedInboxRows.value = []
+        await loadInbox()
+    } catch (e: any) {
+        message.error(`Bulk mark read failed: ${extractError(e)}`)
+    } finally {
+        inboxBulkLoading.value = false
+    }
+}
+
+function markAllReadConfirm (): void {
+    dialog.warning({
+        title: 'Mark every visible unread notification as read?',
+        content: `This marks up to ${inboxUnreadCount.value} unread item(s) as read. Backend caps a single sweep at 500.`,
+        positiveText: 'Mark all read',
+        negativeText: 'Cancel',
+        onPositiveClick: async () => {
+            inboxMarkAllLoading.value = true
+            try {
+                const res = await graphqlClient.mutate({
+                    mutation: MARK_ALL_READ_MUTATION,
+                    variables: { orgUuid: orgUuid.value },
+                })
+                const n = res.data?.markAllNotificationsRead || 0
+                message.success(`Marked ${n} read`)
+                await loadInbox()
+            } catch (e: any) {
+                message.error(`Mark all failed: ${extractError(e)}`)
+            } finally {
+                inboxMarkAllLoading.value = false
+            }
+        },
+    })
+}
+
+async function loadInboxUnreadCount (): Promise<void> {
+    try {
+        const res = await graphqlClient.query({
+            query: INBOX_UNREAD_COUNT_QUERY,
+            variables: { orgUuid: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        inboxUnreadCount.value = res.data?.notificationUnreadCount || 0
+    } catch {
+        // Badge is decorative; failures are fine.
+    }
 }
 
 async function loadDeliveries (): Promise<void> {
@@ -1947,6 +2248,75 @@ function truncate (s: string | null, n: number): string {
     return s.length > n ? `${s.slice(0, n - 1)}…` : s
 }
 
+const inboxColumns = computed(() => [
+    {
+        type: 'selection' as const,
+        // Selection cell only meaningful for unread rows — read rows
+        // can't be re-marked-read.
+        disabled: (row: InboxRow) => !!row.readAt,
+    },
+    {
+        title: 'When', key: 'when',
+        render: (row: InboxRow) => formatHistoryTimestamp(row.sentAt || row.createdDate),
+    },
+    {
+        title: 'Status', key: 'status',
+        render: (row: InboxRow) => h(
+            NTag,
+            { type: deliveryStatusTagType(row.status), size: 'small' },
+            { default: () => row.status },
+        ),
+    },
+    {
+        title: 'Event', key: 'eventType',
+        render: (row: InboxRow) => row.eventType
+            ? truncate(row.eventType.replace(/_/g, ' ').toLowerCase(), 40)
+            : h('span', { class: 'muted-12' }, '—'),
+    },
+    {
+        title: 'Severity', key: 'severity',
+        render: (row: InboxRow) => row.severity
+            ? h(
+                NTag,
+                { type: severityTagType(row.severity), size: 'small' },
+                { default: () => row.severity },
+            )
+            : h('span', { class: 'muted-12' }, '—'),
+    },
+    {
+        title: 'Channel', key: 'channelUuid',
+        render: (row: InboxRow) => channelNameById.value[row.channelUuid]
+            || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'),
+    },
+    {
+        title: 'Read', key: 'readAt',
+        render: (row: InboxRow) => row.readAt
+            ? h(NSpace, { size: 'small', align: 'center' }, {
+                default: () => [
+                    h('span', { class: 'muted-12' }, formatHistoryTimestamp(row.readAt)),
+                    h(NButton, {
+                        size: 'tiny', secondary: true,
+                        onClick: () => markRowUnread(row),
+                        disabled: !canWrite.value,
+                        title: 'Mark unread',
+                    }, { default: () => 'Unread' }),
+                ],
+            })
+            : h(NButton, {
+                size: 'tiny', secondary: true, type: 'primary',
+                onClick: () => markRowRead(row),
+                disabled: !canWrite.value,
+            }, { icon: () => h(NIcon, null, { default: () => h(Check) }), default: () => 'Mark read' }),
+    },
+])
+
+function severityTagType (severity: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
+    if (severity === 'CRITICAL' || severity === 'HIGH') return 'error'
+    if (severity === 'MEDIUM') return 'warning'
+    if (severity === 'LOW' || severity === 'INFO') return 'info'
+    return 'default'
+}
+
 const deliveryColumns = computed(() => [
     {
         title: 'When', key: 'createdDate',
@@ -2003,16 +2373,17 @@ function extractError (e: any): string {
 
 onMounted(async () => {
     userPermission.value = commonFunctions.getUserPermission(orgUuid.value, myuser.value)?.org || ''
-    // Load channels, channel groups, subscriptions, and the first
-    // page of delivery history in parallel. Subscription edit modal's
-    // pickers degrade to empty placeholders if opened before channels
-    // / groups resolve — acceptable given the typical few-hundred-ms
-    // load.
+    // Load channels, channel groups, subscriptions, the first page of
+    // delivery history, and the inbox badge in parallel. Subscription
+    // edit modal's pickers degrade to empty placeholders if opened
+    // before channels / groups resolve — acceptable given the typical
+    // few-hundred-ms load. Inbox tab body loads lazily on tab open.
     await Promise.all([
         loadChannels(),
         loadChannelGroups(),
         loadSubscriptions(),
         loadDeliveries(),
+        loadInboxUnreadCount(),
     ])
 })
 </script>
