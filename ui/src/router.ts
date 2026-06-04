@@ -140,6 +140,11 @@ const routes : any[] = [
         component: () => import('@/components/OrgSettings.vue')
     },
     {
+        path: '/notificationsOfOrg/:orguuid',
+        name: 'NotificationsOfOrg',
+        component: () => import('@/components/NotificationsOfOrg.vue')
+    },
+    {
         path: '/instancesOfOrg/:orguuid',
         name: 'InstancesOfOrg',
         component: () => import('@/components/InstancesOfOrg.vue')
