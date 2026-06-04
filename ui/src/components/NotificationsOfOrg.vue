@@ -56,6 +56,31 @@
                 />
             </n-tab-pane>
 
+            <n-tab-pane name="groups" tab="Channel groups">
+                <div class="tab-toolbar">
+                    <div class="tab-toolbar-info">
+                        Named, cross-type collections of channels. Reference one group instead of repeating a channel list across multiple subscription routes — e.g. "Security oncall" = Slack #sec + Teams #leadership + Email security@.
+                    </div>
+                    <n-button
+                        v-if="canWrite"
+                        type="primary"
+                        size="small"
+                        @click="openCreateGroup"
+                    >
+                        <template #icon><n-icon><CirclePlus /></n-icon></template>
+                        Add group
+                    </n-button>
+                </div>
+
+                <n-data-table
+                    :data="channelGroups"
+                    :columns="channelGroupColumns"
+                    :loading="channelGroupsLoading"
+                    :single-line="false"
+                    :bordered="false"
+                />
+            </n-tab-pane>
+
             <n-tab-pane name="history" tab="History">
                 <div class="tab-toolbar">
                     <div class="tab-toolbar-info">
@@ -262,6 +287,50 @@
             </n-card>
         </n-modal>
 
+        <!-- Channel group create/edit modal -->
+        <n-modal v-model:show="showGroupModal" preset="dialog" :show-icon="false">
+            <n-card
+                style="width: 600px"
+                size="huge"
+                :title="groupForm.uuid ? `Edit group — ${groupForm.name || ''}` : 'Add channel group'"
+                :bordered="false"
+                role="dialog"
+                aria-modal="true"
+            >
+                <n-form :model="groupForm">
+                    <n-space vertical size="large">
+                        <n-form-item label="Name">
+                            <n-input v-model:value="groupForm.name" placeholder="e.g. security-oncall" />
+                        </n-form-item>
+                        <n-form-item label="Channels">
+                            <n-select
+                                v-model:value="groupForm.channels"
+                                :options="channelOptions"
+                                multiple
+                                placeholder="Pick the channels in this group"
+                            />
+                        </n-form-item>
+
+                        <n-alert v-if="groupModalError" type="error" :show-icon="false">
+                            {{ groupModalError }}
+                        </n-alert>
+
+                        <n-space>
+                            <n-button
+                                @click="saveGroup"
+                                type="primary"
+                                :loading="savingGroup"
+                                :disabled="!groupForm.name.trim() || groupForm.channels.length === 0"
+                            >
+                                Save
+                            </n-button>
+                            <n-button @click="showGroupModal = false">Cancel</n-button>
+                        </n-space>
+                    </n-space>
+                </n-form>
+            </n-card>
+        </n-modal>
+
         <!-- Subscription create/edit modal -->
         <n-modal v-model:show="showSubscriptionModal" preset="dialog" :show-icon="false">
             <n-card
@@ -338,7 +407,7 @@
                                                 v-model:value="r.channels"
                                                 :options="channelOptions"
                                                 multiple
-                                                placeholder="Pick one or more channels"
+                                                placeholder="Pick channels (and/or groups below)"
                                             />
                                         </n-form-item>
                                     </n-gi>
@@ -354,6 +423,17 @@
                                             >
                                                 <template #icon><n-icon><Trash /></n-icon></template>
                                             </n-button>
+                                        </n-form-item>
+                                    </n-gi>
+                                    <n-gi :span="22" :offset="0">
+                                        <n-form-item :label="i === 0 ? 'Channel groups (optional)' : ''" :show-feedback="false">
+                                            <n-select
+                                                v-model:value="r.channelGroups"
+                                                :options="channelGroupOptions"
+                                                multiple
+                                                placeholder="(none)"
+                                                clearable
+                                            />
                                         </n-form-item>
                                     </n-gi>
                                 </n-grid>
@@ -472,11 +552,30 @@ interface ChannelRow {
 interface SubscriptionRoute {
     whenSeverityAtLeast: string | null
     channels: string[]
-    // Carries the as-loaded route object on edit so fields the slice-2
-    // UI doesn't model yet (channelGroups, andEnvIn, andLifecycleIn,
-    // perspectives) survive an Edit → Save round-trip instead of being
-    // silently stripped. Empty on Create.
+    channelGroups: string[]
+    // Carries the as-loaded route object on edit so fields the slice-4
+    // UI still doesn't model (andEnvIn, andLifecycleIn, perspectives)
+    // survive an Edit → Save round-trip instead of being silently
+    // stripped. channels + channelGroups overlay this last and win.
+    // Empty on Create.
     _raw?: Record<string, any>
+}
+
+interface ChannelGroupRow {
+    uuid: string
+    org: string
+    resourceGroup: string | null
+    name: string
+    channels: string[]
+    revision: number
+    createdDate: string | null
+    lastUpdatedDate: string | null
+}
+
+interface ChannelGroupForm {
+    uuid: string | null
+    name: string
+    channels: string[]
 }
 
 interface DeliveryRow {
@@ -679,7 +778,11 @@ interface SubscriptionForm {
 }
 
 function freshRoute (): SubscriptionRoute {
-    return { whenSeverityAtLeast: null, channels: [] }
+    return { whenSeverityAtLeast: null, channels: [], channelGroups: [] }
+}
+
+function freshGroupForm (): ChannelGroupForm {
+    return { uuid: null, name: '', channels: [] }
 }
 
 function freshSubscriptionForm (): SubscriptionForm {
@@ -703,6 +806,21 @@ const showSubscriptionModal = ref<boolean>(false)
 const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
 const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
+
+// Channel groups state
+const channelGroups = ref<ChannelGroupRow[]>([])
+const channelGroupsLoading = ref<boolean>(false)
+const showGroupModal = ref<boolean>(false)
+const savingGroup = ref<boolean>(false)
+const groupModalError = ref<string>('')
+const groupForm = ref<ChannelGroupForm>(freshGroupForm())
+
+const channelGroupOptions = computed(() =>
+    channelGroups.value.map(g => ({
+        label: `${g.name} (${g.channels.length} ch)`,
+        value: g.uuid,
+    }))
+)
 
 // Delivery history state
 const deliveries = ref<DeliveryRow[]>([])
@@ -797,6 +915,28 @@ const HISTORY_DELIVERIES_QUERY = gql`
     }
 `
 
+const LIST_GROUPS_QUERY = gql`
+    query notificationChannelGroups($orgUuid: ID!) {
+        notificationChannelGroups(orgUuid: $orgUuid) {
+            uuid org resourceGroup name channels revision createdDate lastUpdatedDate
+        }
+    }
+`
+
+const UPSERT_GROUP_MUTATION = gql`
+    mutation upsertNotificationChannelGroup($input: NotificationChannelGroupInput!) {
+        upsertNotificationChannelGroup(input: $input) {
+            uuid org resourceGroup name channels revision createdDate lastUpdatedDate
+        }
+    }
+`
+
+const DELETE_GROUP_MUTATION = gql`
+    mutation deleteNotificationChannelGroup($uuid: ID!) {
+        deleteNotificationChannelGroup(uuid: $uuid)
+    }
+`
+
 const LIST_SUBSCRIPTIONS_QUERY = gql`
     query notificationSubscriptions($orgUuid: ID!) {
         notificationSubscriptions(orgUuid: $orgUuid) {
@@ -869,6 +1009,90 @@ async function loadSubscriptions (): Promise<void> {
 // the newer state. The token guards apply-time so a stale response is
 // dropped silently.
 let historyInflightToken = 0
+
+async function loadChannelGroups (): Promise<void> {
+    channelGroupsLoading.value = true
+    try {
+        const res = await graphqlClient.query({
+            query: LIST_GROUPS_QUERY,
+            variables: { orgUuid: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        channelGroups.value = res.data?.notificationChannelGroups || []
+    } catch (e: any) {
+        message.error(`Failed to load channel groups: ${extractError(e)}`)
+    } finally {
+        channelGroupsLoading.value = false
+    }
+}
+
+// ---- Channel group create / edit -----------------------------------------
+
+function openCreateGroup (): void {
+    groupForm.value = freshGroupForm()
+    groupModalError.value = ''
+    showGroupModal.value = true
+}
+
+function openEditGroup (row: ChannelGroupRow): void {
+    groupForm.value = {
+        uuid: row.uuid,
+        name: row.name,
+        channels: [...(row.channels || [])],
+    }
+    groupModalError.value = ''
+    showGroupModal.value = true
+}
+
+async function saveGroup (): Promise<void> {
+    groupModalError.value = ''
+    const f = groupForm.value
+    if (!f.name.trim() || f.channels.length === 0) {
+        groupModalError.value = 'Name and at least one channel are required.'
+        return
+    }
+    const input: any = {
+        uuid: f.uuid || undefined,
+        org: orgUuid.value,
+        name: f.name.trim(),
+        channels: f.channels,
+    }
+    savingGroup.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: UPSERT_GROUP_MUTATION,
+            variables: { input },
+        })
+        showGroupModal.value = false
+        message.success(f.uuid ? 'Group updated' : 'Group created')
+        await loadChannelGroups()
+    } catch (e: any) {
+        groupModalError.value = extractError(e)
+    } finally {
+        savingGroup.value = false
+    }
+}
+
+function confirmDeleteGroup (row: ChannelGroupRow): void {
+    dialog.warning({
+        title: `Delete channel group "${row.name}"?`,
+        content: 'Subscriptions that reference this group will silently lose this hop. Channels in the group are not affected.',
+        positiveText: 'Delete',
+        negativeText: 'Cancel',
+        onPositiveClick: async () => {
+            try {
+                await graphqlClient.mutate({
+                    mutation: DELETE_GROUP_MUTATION,
+                    variables: { uuid: row.uuid },
+                })
+                message.success('Group deleted')
+                await loadChannelGroups()
+            } catch (e: any) {
+                message.error(`Delete failed: ${extractError(e)}`)
+            }
+        },
+    })
+}
 
 async function loadDeliveries (): Promise<void> {
     const myToken = ++historyInflightToken
@@ -1132,6 +1356,7 @@ function openEditSubscription (row: SubscriptionRow): void {
             f.routes = routes.map((r: any) => ({
                 whenSeverityAtLeast: r.whenSeverityAtLeast || null,
                 channels: Array.isArray(r.channels) ? [...r.channels] : [],
+                channelGroups: Array.isArray(r.channelGroups) ? [...r.channelGroups] : [],
                 _raw: r,
             }))
         }
@@ -1165,12 +1390,14 @@ async function saveSubscription (): Promise<void> {
         subModalError.value = 'Name, at least one event type, and at least one route are required.'
         return
     }
-    // Every route must have at least one channel; backend rejects empty
-    // {channels, channelGroups} anyway, but catch it client-side for a
-    // cleaner error path.
-    const emptyRouteIdx = f.routes.findIndex(r => (r.channels || []).length === 0)
+    // Every route must have at least one channel or one group; backend
+    // rejects empty {channels, channelGroups} anyway, but catch it
+    // client-side for a cleaner error path.
+    const emptyRouteIdx = f.routes.findIndex(r =>
+        (r.channels || []).length === 0 && (r.channelGroups || []).length === 0
+    )
     if (emptyRouteIdx >= 0) {
-        subModalError.value = `Route ${emptyRouteIdx + 1} has no channels — pick at least one.`
+        subModalError.value = `Route ${emptyRouteIdx + 1} has no channels or groups — pick at least one.`
         return
     }
     // Build the filter input by overlaying the slice-2-modeled fields on
@@ -1197,6 +1424,7 @@ async function saveSubscription (): Promise<void> {
             ...(r._raw || {}),
             whenSeverityAtLeast: r.whenSeverityAtLeast,
             channels: r.channels,
+            channelGroups: r.channelGroups,
         })),
         dedupWindowMinutes: f.dedupWindowMinutes,
     }
@@ -1301,6 +1529,35 @@ const channelColumns = computed(() => [
                 h(NButton, {
                     size: 'tiny', secondary: true, type: 'error',
                     onClick: () => confirmDelete(row),
+                    disabled: !canWrite.value,
+                }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
+            ],
+        }),
+    },
+])
+
+const channelGroupColumns = computed(() => [
+    { title: 'Name', key: 'name' },
+    {
+        title: 'Channels', key: 'channels',
+        render: (row: ChannelGroupRow) => `${(row.channels || []).length} channel(s)`,
+    },
+    {
+        title: 'Last updated', key: 'lastUpdatedDate',
+        render: (row: ChannelGroupRow) => formatHistoryTimestamp(row.lastUpdatedDate),
+    },
+    {
+        title: 'Actions', key: 'actions',
+        render: (row: ChannelGroupRow) => h(NSpace, { size: 'small' }, {
+            default: () => [
+                h(NButton, {
+                    size: 'tiny', secondary: true,
+                    onClick: () => openEditGroup(row),
+                    disabled: !canWrite.value,
+                }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
+                h(NButton, {
+                    size: 'tiny', secondary: true, type: 'error',
+                    onClick: () => confirmDeleteGroup(row),
                     disabled: !canWrite.value,
                 }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
             ],
@@ -1442,11 +1699,17 @@ function extractError (e: any): string {
 
 onMounted(async () => {
     userPermission.value = commonFunctions.getUserPermission(orgUuid.value, myuser.value)?.org || ''
-    // Load channels, subscriptions, and the first page of delivery
-    // history in parallel. Subscription edit modal's channel picker
-    // degrades to an empty placeholder if opened before channels
-    // resolve — acceptable given the typical few-hundred-ms load.
-    await Promise.all([loadChannels(), loadSubscriptions(), loadDeliveries()])
+    // Load channels, channel groups, subscriptions, and the first
+    // page of delivery history in parallel. Subscription edit modal's
+    // pickers degrade to empty placeholders if opened before channels
+    // / groups resolve — acceptable given the typical few-hundred-ms
+    // load.
+    await Promise.all([
+        loadChannels(),
+        loadChannelGroups(),
+        loadSubscriptions(),
+        loadDeliveries(),
+    ])
 })
 </script>
 
