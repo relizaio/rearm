@@ -5,6 +5,28 @@
             <div class="page-subtitle">Security and operational events routed to your destinations of choice.</div>
         </div>
 
+        <!-- Quick Start banner. Surfaces only on an org with no channels
+             AND no subscriptions to avoid the "default subscription with
+             no channel = silent failure" anti-pattern (design doc §6.7). -->
+        <n-alert
+            v-if="canShowQuickStart"
+            class="quick-start-banner"
+            type="info"
+            :show-icon="false"
+        >
+            <template #header>
+                <span class="quick-start-title">Welcome to Notifications</span>
+            </template>
+            <div class="quick-start-body">
+                <div>
+                    Get from zero to a working subscription in three steps — your first channel, your first rule, then we land it in <strong>Preview</strong> mode so deliveries record in History without firing your real destination. Flip it to Active once you've verified.
+                </div>
+                <n-button type="primary" size="small" @click="openQuickStart">
+                    Start
+                </n-button>
+            </div>
+        </n-alert>
+
         <n-tabs v-model:value="activeTab" type="segment" animated @update:value="onTabChange">
             <n-tab-pane name="channels" tab="Channels">
                 <div class="tab-toolbar">
@@ -287,6 +309,117 @@
             </n-card>
         </n-modal>
 
+        <!-- Quick Start wizard modal -->
+        <n-modal v-model:show="showQuickStart" preset="dialog" :show-icon="false" :mask-closable="false">
+            <n-card
+                style="width: 640px"
+                size="huge"
+                :title="`Quick Start — step ${quickStartStep} of 3`"
+                :bordered="false"
+                role="dialog"
+                aria-modal="true"
+            >
+                <n-steps :current="quickStartStep" size="small" class="quick-start-steps">
+                    <n-step title="Channel" description="Where to send" />
+                    <n-step title="Subscription" description="What to send" />
+                    <n-step title="Done" description="Preview & verify" />
+                </n-steps>
+
+                <!-- Step 1: channel -->
+                <div v-if="quickStartStep === 1">
+                    <n-form :model="qsChannel">
+                        <n-space vertical size="large">
+                            <n-form-item label="Channel type">
+                                <n-select v-model:value="qsChannel.type" :options="qsChannelTypeOptions" />
+                            </n-form-item>
+                            <n-form-item label="Name">
+                                <n-input v-model:value="qsChannel.name" placeholder="e.g. sec-oncall-slack" />
+                            </n-form-item>
+                            <n-form-item v-if="qsChannel.type === 'SLACK'" label="Slack incoming webhook URL">
+                                <n-input v-model:value="qsChannel.url" placeholder="https://hooks.slack.com/services/..." />
+                            </n-form-item>
+                            <n-form-item v-if="qsChannel.type === 'MS_TEAMS'" label="Teams Workflows webhook URL">
+                                <n-input v-model:value="qsChannel.url" placeholder="https://...powerplatform.com/... or .../logic.azure.com/..." />
+                            </n-form-item>
+
+                            <n-alert v-if="quickStartError" type="error" :show-icon="false">{{ quickStartError }}</n-alert>
+
+                            <n-space>
+                                <n-button
+                                    type="primary"
+                                    :loading="quickStartSaving"
+                                    :disabled="!qsChannel.name.trim() || !qsChannel.url.trim()"
+                                    @click="quickStartCreateChannel"
+                                >
+                                    Save channel → next
+                                </n-button>
+                                <n-button @click="closeQuickStart">Cancel</n-button>
+                            </n-space>
+                        </n-space>
+                    </n-form>
+                </div>
+
+                <!-- Step 2: subscription -->
+                <div v-if="quickStartStep === 2">
+                    <n-form :model="qsSubscription">
+                        <n-space vertical size="large">
+                            <n-form-item label="Name">
+                                <n-input v-model:value="qsSubscription.name" placeholder="e.g. critical-vuln-oncall" />
+                            </n-form-item>
+                            <n-form-item label="Event types">
+                                <n-select
+                                    v-model:value="qsSubscription.eventTypes"
+                                    :options="eventTypeOptions"
+                                    multiple
+                                />
+                            </n-form-item>
+                            <n-form-item label="Minimum severity">
+                                <n-select
+                                    v-model:value="qsSubscription.severity"
+                                    :options="severityOptions"
+                                    placeholder="Any"
+                                    clearable
+                                />
+                            </n-form-item>
+                            <div class="muted-12">
+                                Routes to the channel you just created. The subscription will land in <strong>Preview</strong> mode — deliveries record in History but don't fire your real destination.
+                            </div>
+
+                            <n-alert v-if="quickStartError" type="error" :show-icon="false">{{ quickStartError }}</n-alert>
+
+                            <n-space>
+                                <n-button
+                                    type="primary"
+                                    :loading="quickStartSaving"
+                                    :disabled="!qsSubscription.name.trim() || qsSubscription.eventTypes.length === 0"
+                                    @click="quickStartCreateSubscription"
+                                >
+                                    Save subscription → next
+                                </n-button>
+                                <n-button @click="closeQuickStart">Cancel</n-button>
+                            </n-space>
+                        </n-space>
+                    </n-form>
+                </div>
+
+                <!-- Step 3: done -->
+                <div v-if="quickStartStep === 3">
+                    <n-space vertical size="large">
+                        <n-alert type="success" :show-icon="false">
+                            <strong>Done.</strong> Your subscription is in <strong>Preview</strong> mode. Matching deliveries land in History without firing the real destination.
+                        </n-alert>
+                        <div class="muted-12">
+                            Verify the right kinds of events show up in <strong>History</strong> (tagged <code>PREVIEW</code>). When you're confident, edit the subscription and flip the status to <strong>Active</strong> to start sending to your channel.
+                        </div>
+                        <n-space>
+                            <n-button type="primary" @click="quickStartGoToHistory">View History</n-button>
+                            <n-button @click="closeQuickStart">Close</n-button>
+                        </n-space>
+                    </n-space>
+                </div>
+            </n-card>
+        </n-modal>
+
         <!-- Channel group create/edit modal -->
         <n-modal v-model:show="showGroupModal" preset="dialog" :show-icon="false">
             <n-card
@@ -533,7 +666,8 @@ import { useStore } from 'vuex'
 import {
     NTabs, NTabPane, NDataTable, NButton, NIcon, NEmpty, NModal, NCard, NForm,
     NFormItem, NInput, NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag,
-    NRadioGroup, NRadioButton, NPagination, useDialog, useMessage
+    NRadioGroup, NRadioButton, NPagination, NSteps, NStep,
+    useDialog, useMessage
 } from 'naive-ui'
 import { CirclePlus, Trash, Edit as EditIcon, Refresh } from '@vicons/tabler'
 import gql from 'graphql-tag'
@@ -817,6 +951,61 @@ const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
 const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
 
+// Quick Start wizard state — see design doc §6.7. Lands a fresh org's
+// first channel + first subscription as a guided flow; the resulting
+// subscription is PREVIEW status so the operator can verify in History
+// before flipping to ACTIVE.
+const showQuickStart = ref<boolean>(false)
+const quickStartStep = ref<number>(1)
+const quickStartSaving = ref<boolean>(false)
+const quickStartError = ref<string>('')
+const quickStartChannelUuid = ref<string | null>(null)
+
+interface QuickStartChannel {
+    type: string
+    name: string
+    url: string
+}
+
+interface QuickStartSubscription {
+    name: string
+    eventTypes: string[]
+    severity: string | null
+}
+
+function freshQsChannel (): QuickStartChannel {
+    return { type: 'SLACK', name: '', url: '' }
+}
+
+function freshQsSubscription (): QuickStartSubscription {
+    return {
+        name: '',
+        eventTypes: ['NEW_VULN_AFFECTS_RELEASES'],
+        severity: 'HIGH',
+    }
+}
+
+const qsChannel = ref<QuickStartChannel>(freshQsChannel())
+const qsSubscription = ref<QuickStartSubscription>(freshQsSubscription())
+
+// Quick Start type picker is intentionally narrower than the full
+// channel form — Slack + Teams are the common starter destinations
+// (one URL, no other config). Sentinel (six fields) and Webhook
+// (auth-scheme decision) belong in the full Add Channel flow.
+const qsChannelTypeOptions = [
+    { label: 'Slack', value: 'SLACK' },
+    { label: 'Microsoft Teams', value: 'MS_TEAMS' },
+]
+
+const canShowQuickStart = computed<boolean>(() =>
+    canWrite.value
+    && !channelsLoading.value
+    && !subscriptionsLoading.value
+    && channels.value.length === 0
+    && subscriptions.value.length === 0
+    && !showQuickStart.value
+)
+
 // Channel groups state
 const channelGroups = ref<ChannelGroupRow[]>([])
 const channelGroupsLoading = ref<boolean>(false)
@@ -1019,6 +1208,110 @@ async function loadSubscriptions (): Promise<void> {
 // the newer state. The token guards apply-time so a stale response is
 // dropped silently.
 let historyInflightToken = 0
+
+// ---- Quick Start wizard --------------------------------------------------
+
+function openQuickStart (): void {
+    quickStartStep.value = 1
+    qsChannel.value = freshQsChannel()
+    qsSubscription.value = freshQsSubscription()
+    quickStartChannelUuid.value = null
+    quickStartError.value = ''
+    showQuickStart.value = true
+}
+
+function closeQuickStart (): void {
+    showQuickStart.value = false
+}
+
+async function quickStartCreateChannel (): Promise<void> {
+    quickStartError.value = ''
+    const c = qsChannel.value
+    if (!c.name.trim() || !c.url.trim()) {
+        quickStartError.value = 'Name and webhook URL are required.'
+        return
+    }
+    const input: any = {
+        org: orgUuid.value,
+        name: c.name.trim(),
+        type: c.type,
+        status: 'ENABLED',
+    }
+    if (c.type === 'SLACK') input.slackConfig = { webhookUrl: c.url }
+    if (c.type === 'MS_TEAMS') input.teamsConfig = { webhookUrl: c.url }
+    quickStartSaving.value = true
+    try {
+        const res = await graphqlClient.mutate({
+            mutation: UPSERT_CHANNEL_MUTATION,
+            variables: { input },
+        })
+        const created = res.data?.upsertNotificationChannel
+        if (!created?.uuid) {
+            quickStartError.value = 'Channel save returned no uuid.'
+            return
+        }
+        quickStartChannelUuid.value = created.uuid
+        // Auto-suggest a subscription name based on the channel name so
+        // step 2 doesn't start empty.
+        qsSubscription.value.name = `vulns-${c.name.trim()}`
+        await loadChannels()
+        quickStartStep.value = 2
+        quickStartError.value = ''
+    } catch (e: any) {
+        quickStartError.value = extractError(e)
+    } finally {
+        quickStartSaving.value = false
+    }
+}
+
+async function quickStartCreateSubscription (): Promise<void> {
+    quickStartError.value = ''
+    const s = qsSubscription.value
+    if (!s.name.trim() || s.eventTypes.length === 0) {
+        quickStartError.value = 'Name and at least one event type are required.'
+        return
+    }
+    if (!quickStartChannelUuid.value) {
+        quickStartError.value = 'Internal error: channel uuid lost between steps. Cancel and try again.'
+        return
+    }
+    const input: any = {
+        org: orgUuid.value,
+        name: s.name.trim(),
+        // Wizard subscriptions ALWAYS land in PREVIEW per design doc §6.7
+        // so the operator verifies via History before going live.
+        status: 'PREVIEW',
+        eventTypes: s.eventTypes,
+        filter: { mode: 'PRESET', celExpression: null },
+        routes: [{
+            whenSeverityAtLeast: s.severity,
+            channels: [quickStartChannelUuid.value],
+            channelGroups: [],
+        }],
+        dedupWindowMinutes: null,
+    }
+    quickStartSaving.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: UPSERT_SUBSCRIPTION_MUTATION,
+            variables: { input },
+        })
+        await loadSubscriptions()
+        quickStartStep.value = 3
+        quickStartError.value = ''
+    } catch (e: any) {
+        quickStartError.value = extractError(e)
+    } finally {
+        quickStartSaving.value = false
+    }
+}
+
+function quickStartGoToHistory (): void {
+    showQuickStart.value = false
+    activeTab.value = 'history'
+    onTabChange('history')
+    loadDeliveries()
+}
 
 async function loadChannelGroups (): Promise<void> {
     channelGroupsLoading.value = true
@@ -1739,6 +2032,16 @@ onMounted(async () => {
 }
 .tab-toolbar-info { font-size: 12.5px; color: var(--n-text-color-3, #888); }
 .muted-12 { font-size: 12px; color: var(--n-text-color-3, #888); }
+
+.quick-start-banner { margin-bottom: 16px; }
+.quick-start-title { font-weight: 600; }
+.quick-start-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+.quick-start-steps { margin-bottom: 16px; }
 
 .history-filters { margin-bottom: 12px; }
 .history-pagination { margin-top: 12px; display: flex; justify-content: flex-end; }
