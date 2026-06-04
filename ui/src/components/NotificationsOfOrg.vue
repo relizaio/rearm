@@ -75,7 +75,7 @@
                                 :options="deliveryStatusOptions"
                                 placeholder="Any"
                                 clearable
-                                @update:value="loadDeliveries"
+                                @update:value="applyHistoryFilters"
                             />
                         </n-form-item>
                     </n-gi>
@@ -86,7 +86,7 @@
                                 :options="deliveryOriginOptions"
                                 placeholder="Any"
                                 clearable
-                                @update:value="loadDeliveries"
+                                @update:value="applyHistoryFilters"
                             />
                         </n-form-item>
                     </n-gi>
@@ -97,7 +97,7 @@
                                 :options="channelFilterOptions"
                                 placeholder="Any"
                                 clearable
-                                @update:value="loadDeliveries"
+                                @update:value="applyHistoryFilters"
                             />
                         </n-form-item>
                     </n-gi>
@@ -111,7 +111,7 @@
                     :bordered="false"
                 />
 
-                <div class="history-pagination">
+                <div v-if="historyTotalCount > historyPageSize" class="history-pagination">
                     <n-pagination
                         v-model:page="historyPage"
                         :page-count="historyPageCount"
@@ -863,7 +863,15 @@ async function loadSubscriptions (): Promise<void> {
     }
 }
 
+// Monotonic in-flight token. ApolloClient with `fetchPolicy: network-only`
+// does NOT dedup or cancel concurrent identical queries, so rapidly
+// toggling a filter can race the older response in last and overwrite
+// the newer state. The token guards apply-time so a stale response is
+// dropped silently.
+let historyInflightToken = 0
+
 async function loadDeliveries (): Promise<void> {
+    const myToken = ++historyInflightToken
     deliveriesLoading.value = true
     try {
         const offset = (historyPage.value - 1) * historyPageSize.value
@@ -879,14 +887,24 @@ async function loadDeliveries (): Promise<void> {
             },
             fetchPolicy: 'network-only',
         })
+        if (myToken !== historyInflightToken) return  // stale response
         const page = res.data?.notificationDeliveries
         deliveries.value = page?.items || []
         historyTotalCount.value = page?.totalCount || 0
     } catch (e: any) {
+        if (myToken !== historyInflightToken) return  // stale failure
         message.error(`Failed to load history: ${extractError(e)}`)
     } finally {
-        deliveriesLoading.value = false
+        if (myToken === historyInflightToken) deliveriesLoading.value = false
     }
+}
+
+// Filter change must reset to page 1 — otherwise a user on page 3 of
+// an unfiltered list who applies a narrowing filter would request an
+// out-of-range offset and land on a phantom empty page.
+function applyHistoryFilters (): void {
+    historyPage.value = 1
+    loadDeliveries()
 }
 
 // ---- Create / Edit -------------------------------------------------------
@@ -1355,12 +1373,12 @@ function deliveryStatusTagType (status: string): 'success' | 'warning' | 'error'
     return 'default'
 }
 
+// Route through commonFunctions.dateDisplay so the History timestamps
+// stay in the en-CA locale convention used elsewhere in the UI
+// (ReleaseView etc.). The helper doesn't itself guard null, so we do.
 function formatHistoryTimestamp (s: string | null): string {
     if (!s) return '—'
-    // Avoid pulling in a date library for one column; rely on the
-    // browser's locale-aware string formatter. createdDate from the
-    // backend is ISO-8601 UTC.
-    try { return new Date(s).toLocaleString() } catch { return s }
+    try { return commonFunctions.dateDisplay(s) } catch { return s }
 }
 
 function truncate (s: string | null, n: number): string {
@@ -1391,13 +1409,18 @@ const deliveryColumns = computed(() => [
     },
     {
         title: 'Channel', key: 'channelUuid',
-        render: (row: DeliveryRow) => channelNameById.value[row.channelUuid] || truncate(row.channelUuid, 12),
+        render: (row: DeliveryRow) => channelNameById.value[row.channelUuid]
+            || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'),
     },
     {
         title: 'Subscription', key: 'subscriptionUuid',
-        render: (row: DeliveryRow) => row.subscriptionUuid
-            ? (subscriptionNameById.value[row.subscriptionUuid] || truncate(row.subscriptionUuid, 12))
-            : h('span', { class: 'muted-12' }, '(channel test)'),
+        render: (row: DeliveryRow) => {
+            if (!row.subscriptionUuid) {
+                return h('span', { class: 'muted-12' }, '(channel test)')
+            }
+            return subscriptionNameById.value[row.subscriptionUuid]
+                || h('span', { class: 'muted-12', title: row.subscriptionUuid }, '(deleted subscription)')
+        },
     },
     {
         title: 'Attempts', key: 'attemptCount',
