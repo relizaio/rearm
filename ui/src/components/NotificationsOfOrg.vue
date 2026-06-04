@@ -410,6 +410,11 @@ interface ChannelRow {
 interface SubscriptionRoute {
     whenSeverityAtLeast: string | null
     channels: string[]
+    // Carries the as-loaded route object on edit so fields the slice-2
+    // UI doesn't model yet (channelGroups, andEnvIn, andLifecycleIn,
+    // perspectives) survive an Edit → Save round-trip instead of being
+    // silently stripped. Empty on Create.
+    _raw?: Record<string, any>
 }
 
 interface SubscriptionRow {
@@ -565,6 +570,11 @@ interface SubscriptionForm {
     dedupWindowMinutes: number | null
     rateLimitMaxPerWindow: number | null
     rateLimitWindowMinutes: number | null
+    // Carries the as-loaded filter object on edit so `presetConfigJson`
+    // (and any other field the slice-2 UI doesn't model yet) survives an
+    // Edit → Save round-trip. Empty on Create. Same pattern as
+    // SubscriptionRoute._raw.
+    _rawFilter?: Record<string, any>
 }
 
 function freshRoute (): SubscriptionRoute {
@@ -915,12 +925,15 @@ function openEditSubscription (row: SubscriptionRow): void {
     f.dedupWindowMinutes = row.dedupWindowMinutes ?? null
     // Filter / routes / rateLimit ride as JSON-stringified blobs over the
     // wire (NotificationSubscriptionResult). Parse them back into the
-    // structured form shape.
+    // structured form shape AND stash the original blob on _raw / _rawFilter
+    // so unmodelled fields (channelGroups, andEnvIn, andLifecycleIn on
+    // routes; presetConfigJson on filter) survive an Edit → Save round-trip.
     try {
         const filter = row.filter ? JSON.parse(row.filter) : null
         if (filter) {
             f.filterMode = filter.mode || 'PRESET'
             f.celExpression = filter.celExpression || ''
+            f._rawFilter = filter
         }
     } catch { /* fall back to PRESET defaults */ }
     try {
@@ -929,6 +942,7 @@ function openEditSubscription (row: SubscriptionRow): void {
             f.routes = routes.map((r: any) => ({
                 whenSeverityAtLeast: r.whenSeverityAtLeast || null,
                 channels: Array.isArray(r.channels) ? [...r.channels] : [],
+                _raw: r,
             }))
         }
     } catch { /* fall back to one empty route */ }
@@ -969,19 +983,28 @@ async function saveSubscription (): Promise<void> {
         subModalError.value = `Route ${emptyRouteIdx + 1} has no channels — pick at least one.`
         return
     }
+    // Build the filter input by overlaying the slice-2-modeled fields on
+    // top of the original blob. This preserves `presetConfigJson` (set via
+    // the future preset-toggle UI or directly via API) instead of nulling
+    // it on every edit.
+    const filterInput: any = {
+        ...(f._rawFilter || {}),
+        mode: f.filterMode,
+        celExpression: f.filterMode === 'ADVANCED' ? f.celExpression : null,
+    }
     const input: any = {
         uuid: f.uuid || undefined,
         org: orgUuid.value,
         name: f.name.trim(),
         status: f.status,
         eventTypes: f.eventTypes,
-        filter: {
-            mode: f.filterMode,
-            // presetConfigJson stays empty for slice 2 — future slices add
-            // preset-toggle UI on top.
-            celExpression: f.filterMode === 'ADVANCED' ? f.celExpression : null,
-        },
+        filter: filterInput,
+        // Spread the original route's unmodelled fields (channelGroups,
+        // andEnvIn, andLifecycleIn, perspectives) so an Edit → Save
+        // round-trip doesn't silently strip them. The slice-2-modeled
+        // fields overlay last and win.
         routes: f.routes.map(r => ({
+            ...(r._raw || {}),
             whenSeverityAtLeast: r.whenSeverityAtLeast,
             channels: r.channels,
         })),
@@ -1128,8 +1151,7 @@ const subscriptionColumns = computed(() => [
                 h(NButton, {
                     size: 'tiny', secondary: true,
                     onClick: () => toggleSubscriptionStatus(row),
-                    disabled: !canWrite.value || row.status === 'PREVIEW',
-                    title: row.status === 'PREVIEW' ? 'Edit to leave Preview mode' : '',
+                    disabled: !canWrite.value,
                 }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
                 h(NButton, {
                     size: 'tiny', secondary: true, type: 'error',
@@ -1149,9 +1171,10 @@ function extractError (e: any): string {
 
 onMounted(async () => {
     userPermission.value = commonFunctions.getUserPermission(orgUuid.value, myuser.value)?.org || ''
-    // Load channels first — the subscription form's channel picker depends
-    // on it. Load subscriptions in parallel since the row render doesn't
-    // depend on channels.
+    // Load both in parallel. The subscription form's channel picker
+    // degrades to an empty placeholder if the user opens the modal
+    // before channels resolve, which is acceptable given the typical
+    // few-hundred-ms load.
     await Promise.all([loadChannels(), loadSubscriptions()])
 })
 </script>
