@@ -217,10 +217,9 @@ import {
     NTabs, NTabPane, NDataTable, NButton, NIcon, NEmpty, NModal, NCard, NForm,
     NFormItem, NInput, NSelect, NSpace, NAlert, NGrid, NGi, NTag, useDialog, useMessage
 } from 'naive-ui'
-import { CirclePlus, Trash } from '@vicons/tabler'
+import { CirclePlus, Trash, Edit as EditIcon } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
-import { Edit as EditIcon } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
 
 interface ChannelRow {
@@ -442,7 +441,14 @@ async function saveChannel (): Promise<void> {
     if (f.type === 'MS_TEAMS' && f.teams.webhookUrl) {
         input.teamsConfig = { webhookUrl: f.teams.webhookUrl }
     }
-    if (f.type === 'WEBHOOK') {
+    if (f.type === 'WEBHOOK' && (f.webhook.url || f.webhook.secret)) {
+        // Mirror the Slack/Teams gating: only send webhookConfig when
+        // the user actually filled something in. Otherwise the backend
+        // preserves both URL + auth scheme + secret as a unit. This
+        // protects against a future backend change that trusts a
+        // non-null authScheme independent of the URL — without it,
+        // every metadata-only edit would silently flip the channel
+        // to NONE auth.
         const cfg: any = { authScheme: f.webhook.authScheme }
         if (f.webhook.url) cfg.url = f.webhook.url
         if (f.webhook.secret) cfg.authToken = f.webhook.secret
@@ -557,12 +563,23 @@ async function pollForDelivery (eventUuid: string): Promise<void> {
                 const d = items[0]
                 testState.value.attempts = d.attemptCount || 0
                 testState.value.lastError = d.lastError || ''
-                if (d.status === 'SENT') {
+                if (d.status === 'SENT' || d.status === 'ACKED') {
                     testState.value.status = 'SENT'
                     return
                 }
-                if (d.status === 'FAILED' || d.status === 'PERMANENT_FAILURE') {
+                // Terminal failure states per NotificationDeliveryStatusEnum.
+                // RATE_LIMITED + EVAL_TIMEOUT are terminal for the dispatch
+                // path even though they have different operator semantics;
+                // surface them with the failure alert and lastError will
+                // carry the disambiguation (the worker writes a descriptive
+                // lastError when it short-circuits on these).
+                if (d.status === 'FAILED'
+                    || d.status === 'RATE_LIMITED'
+                    || d.status === 'EVAL_TIMEOUT') {
                     testState.value.status = 'FAILED'
+                    if (!testState.value.lastError) {
+                        testState.value.lastError = `Delivery ${d.status.toLowerCase().replace(/_/g, ' ')}`
+                    }
                     return
                 }
             }
@@ -622,9 +639,7 @@ const channelColumns = computed(() => [
 // ---- helpers -------------------------------------------------------------
 
 function extractError (e: any): string {
-    const gql = e?.graphQLErrors?.[0]?.message
-    if (gql) return gql
-    return e?.message || 'Unknown error'
+    return commonFunctions.parseGraphQLError(commonFunctions.extractGraphQLErrorMessage(e))
 }
 
 onMounted(async () => {
