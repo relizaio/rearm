@@ -2385,6 +2385,13 @@ onMounted(async () => {
         loadDeliveries(),
         loadInboxUnreadCount(),
     ])
+    // If the initial route lands directly on the Inbox tab (e.g. a
+    // bookmarked URL or a slash-style notification link), the lazy
+    // tab-activation hook on onTabChange doesn't fire — kick the load
+    // explicitly here.
+    if (activeTab.value === 'inbox') {
+        await loadInbox()
+    }
 })
 </script>
 
