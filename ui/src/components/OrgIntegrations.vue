@@ -122,6 +122,17 @@
                                 <span>Add another {{ card.name }}</span>
                             </button>
                         </template>
+
+                        <!-- Pro-only hint for messaging cards: the new
+                             notifications framework is a separate, security-
+                             focused destination surface. Gated on Pro so the
+                             OSS catalog stays the same. -->
+                        <div
+                            v-if="showCiFeatures && (card.id === 'SLACK' || card.id === 'MSTEAMS')"
+                            class="card-pro-hint"
+                        >
+                            Security alerts use a separate destination — manage in Notifications →
+                        </div>
                     </div>
                 </div>
             </template>
@@ -1132,6 +1143,13 @@ watch(() => props.orguuid, async () => {
     border-top: 1px dashed var(--line);
 }
 .muted-12 { font-size: 12px; color: var(--muted); }
+
+.card-pro-hint {
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.4;
+}
 
 /* ---- instance rows ------------------------------------------------------ */
 .instance-list {
