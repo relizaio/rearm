@@ -451,10 +451,29 @@ export function normalizeLicenses(licenses: any): any[] | undefined {
   if (!Array.isArray(licenses) || licenses.length === 0) return licenses;
 
   const converted = licenses.map((entry: any) => {
-    if (entry && typeof entry === 'object' && typeof entry.expression === 'string') {
-      const expr = entry.expression;
-      const fixedId = CDXSpdx.fixupSpdxId(expr) ?? CDXSpdx.fixupSpdxId(expr.replace(/\s+/g, '-'));
-      if (fixedId) return { license: { id: fixedId } };
+    if (entry && typeof entry === 'object') {
+      // A bare license expression that resolves to a single SPDX id -> {license:{id}}.
+      if (typeof entry.expression === 'string') {
+        const expr = entry.expression;
+        const fixedId = CDXSpdx.fixupSpdxId(expr) ?? CDXSpdx.fixupSpdxId(expr.replace(/\s+/g, '-'));
+        if (fixedId) return { license: { id: fixedId } };
+        return entry;
+      }
+      // license.id must be a recognized SPDX id — Dependency-Track strict-validates
+      // it against the SPDX enum, so a non-SPDX value (e.g. "LGPL", "Apache 2.0", a
+      // proprietary string) fails the whole BOM upload. Canonicalize the casing of a
+      // valid id; otherwise move the value to the freeform name field (unconstrained,
+      // always valid). Mirrors the backend CdxLicenseUtil emit-time guard.
+      const lic = entry.license;
+      if (lic && typeof lic === 'object' && typeof lic.id === 'string') {
+        const fixedId = CDXSpdx.fixupSpdxId(lic.id);
+        if (fixedId) {
+          const { name, ...rest } = lic;   // drop a conflicting name; a valid id wins
+          return { license: { ...rest, id: fixedId } };
+        }
+        const { id, ...rest } = lic;
+        return { license: { ...rest, name: typeof lic.name === 'string' && lic.name ? lic.name : lic.id } };
+      }
     }
     return entry;
   });

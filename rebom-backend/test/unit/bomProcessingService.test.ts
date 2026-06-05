@@ -572,6 +572,27 @@ describe('BOM Processing Service - Unit Tests', () => {
             ]);
         });
 
+        it('keeps a valid SPDX id (incl. deprecated) and canonicalizes its case', () => {
+            expect(BomProcessingService.normalizeLicenses([{ license: { id: 'Apache-2.0' } }]))
+                .toEqual([{ license: { id: 'Apache-2.0' } }]);
+            // deprecated but still in the SPDX/DTrack enum -> kept, not demoted
+            expect(BomProcessingService.normalizeLicenses([{ license: { id: 'GPL-3.0' } }]))
+                .toEqual([{ license: { id: 'GPL-3.0' } }]);
+            // mis-cased valid id -> canonical casing
+            expect(BomProcessingService.normalizeLicenses([{ license: { id: 'apache-2.0' } }]))
+                .toEqual([{ license: { id: 'Apache-2.0' } }]);
+        });
+
+        it('demotes a non-SPDX license id to a freeform name (DTrack enum guard)', () => {
+            expect(BomProcessingService.normalizeLicenses([{ license: { id: 'LGPL' } }]))
+                .toEqual([{ license: { name: 'LGPL' } }]);
+            expect(BomProcessingService.normalizeLicenses([{ license: { id: 'Apache 2.0' } }]))
+                .toEqual([{ license: { name: 'Apache 2.0' } }]);
+            // preserves other fields (e.g. url) when demoting
+            expect(BomProcessingService.normalizeLicenses([{ license: { id: 'MyCo-1.0', url: 'https://x/y' } }]))
+                .toEqual([{ license: { url: 'https://x/y', name: 'MyCo-1.0' } }]);
+        });
+
         it('walks components, services, and metadata.component recursively', () => {
             const bom: any = {
                 metadata: {
