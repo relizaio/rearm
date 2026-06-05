@@ -369,6 +369,11 @@
 
                         <n-alert v-if="modalError" type="error" :show-icon="false">
                             {{ modalError }}
+                            <template v-if="isConflictError(modalError)" #action>
+                                <n-button size="small" type="primary" @click="reloadAfterConflict('channel')">
+                                    Reload from server
+                                </n-button>
+                            </template>
                         </n-alert>
 
                         <n-space>
@@ -532,6 +537,11 @@
 
                         <n-alert v-if="groupModalError" type="error" :show-icon="false">
                             {{ groupModalError }}
+                            <template v-if="isConflictError(groupModalError)" #action>
+                                <n-button size="small" type="primary" @click="reloadAfterConflict('group')">
+                                    Reload from server
+                                </n-button>
+                            </template>
                         </n-alert>
 
                         <n-space>
@@ -697,6 +707,11 @@
 
                         <n-alert v-if="subModalError" type="error" :show-icon="false">
                             {{ subModalError }}
+                            <template v-if="isConflictError(subModalError)" #action>
+                                <n-button size="small" type="primary" @click="reloadAfterConflict('subscription')">
+                                    Reload from server
+                                </n-button>
+                            </template>
                         </n-alert>
 
                         <n-space>
@@ -767,6 +782,10 @@ interface ChannelRow {
     name: string
     type: string
     status: string
+    // Hibernate @Version-managed revision captured on Edit-load; sent
+    // back as expectedRevision on save so a concurrent admin edit gets
+    // rejected with a "Conflict:" error instead of silently winning.
+    revision: number
 }
 
 interface SubscriptionRoute {
@@ -794,6 +813,7 @@ interface ChannelGroupRow {
 
 interface ChannelGroupForm {
     uuid: string | null
+    expectedRevision: number | null
     name: string
     channels: string[]
 }
@@ -844,6 +864,8 @@ interface SubscriptionRow {
     routes: string | null         // JSON-stringified server-side
     dedupWindowMinutes: number | null
     rateLimit: string | null      // JSON-stringified server-side
+    // See ChannelRow.revision — same optimistic-locking gate.
+    revision: number
 }
 
 const route = useRoute()
@@ -949,6 +971,9 @@ const modalError = ref<string>('')
 
 interface ChannelForm {
     uuid: string | null
+    // Captured at Edit-load; null on Create. Sent as expectedRevision
+    // on the upsert so a concurrent admin edit gets a Conflict error.
+    expectedRevision: number | null
     name: string
     type: string | null
     status: string
@@ -968,6 +993,7 @@ interface ChannelForm {
 function freshForm (): ChannelForm {
     return {
         uuid: null,
+        expectedRevision: null,
         name: '',
         type: null,
         status: 'ENABLED',
@@ -1013,6 +1039,7 @@ const showTestModal = ref<boolean>(false)
 // Subscription form state
 interface SubscriptionForm {
     uuid: string | null
+    expectedRevision: number | null
     name: string
     status: string
     eventTypes: string[]
@@ -1034,12 +1061,13 @@ function freshRoute (): SubscriptionRoute {
 }
 
 function freshGroupForm (): ChannelGroupForm {
-    return { uuid: null, name: '', channels: [] }
+    return { uuid: null, expectedRevision: null, name: '', channels: [] }
 }
 
 function freshSubscriptionForm (): SubscriptionForm {
     return {
         uuid: null,
+        expectedRevision: null,
         name: '',
         status: 'ACTIVE',
         eventTypes: [],
@@ -1211,7 +1239,7 @@ const historyFilters = ref<{ status: string | null, origin: string | null, chann
 const LIST_CHANNELS_QUERY = gql`
     query notificationChannels($orgUuid: ID!) {
         notificationChannels(orgUuid: $orgUuid) {
-            uuid org resourceGroup name type status
+            uuid org resourceGroup name type status revision
         }
     }
 `
@@ -1219,7 +1247,7 @@ const LIST_CHANNELS_QUERY = gql`
 const UPSERT_CHANNEL_MUTATION = gql`
     mutation upsertNotificationChannel($input: NotificationChannelInput!) {
         upsertNotificationChannel(input: $input) {
-            uuid org resourceGroup name type status
+            uuid org resourceGroup name type status revision
         }
     }
 `
@@ -1362,7 +1390,7 @@ const LIST_SUBSCRIPTIONS_QUERY = gql`
     query notificationSubscriptions($orgUuid: ID!) {
         notificationSubscriptions(orgUuid: $orgUuid) {
             uuid org resourceGroup name status eventTypes
-            filter routes dedupWindowMinutes rateLimit
+            filter routes dedupWindowMinutes rateLimit revision
         }
     }
 `
@@ -1371,7 +1399,7 @@ const UPSERT_SUBSCRIPTION_MUTATION = gql`
     mutation upsertNotificationSubscription($input: NotificationSubscriptionInput!) {
         upsertNotificationSubscription(input: $input) {
             uuid org resourceGroup name status eventTypes
-            filter routes dedupWindowMinutes rateLimit
+            filter routes dedupWindowMinutes rateLimit revision
         }
     }
 `
@@ -1664,6 +1692,7 @@ function openCreateGroup (): void {
 function openEditGroup (row: ChannelGroupRow): void {
     groupForm.value = {
         uuid: row.uuid,
+        expectedRevision: row.revision,
         name: row.name,
         channels: [...(row.channels || [])],
     }
@@ -1680,6 +1709,7 @@ async function saveGroup (): Promise<void> {
     }
     const input: any = {
         uuid: f.uuid || undefined,
+        expectedRevision: f.expectedRevision,
         org: orgUuid.value,
         name: f.name.trim(),
         channels: f.channels,
@@ -1938,6 +1968,7 @@ function openEditChannel (row: ChannelRow): void {
     // user to re-enter only if they want to update the credential.
     const f = freshForm()
     f.uuid = row.uuid
+    f.expectedRevision = row.revision
     f.name = row.name
     f.type = row.type
     f.status = row.status
@@ -1955,6 +1986,10 @@ async function saveChannel (): Promise<void> {
     }
     const input: any = {
         uuid: f.uuid || undefined,
+        // Round-trip the revision captured on Edit-load. Null on Create
+        // (no row yet); backend treats null as "opt out of the check"
+        // for backwards-compat.
+        expectedRevision: f.expectedRevision,
         org: orgUuid.value,
         name: f.name.trim(),
         type: f.type,
@@ -2126,6 +2161,7 @@ function openCreateSubscription (): void {
 function openEditSubscription (row: SubscriptionRow): void {
     const f = freshSubscriptionForm()
     f.uuid = row.uuid
+    f.expectedRevision = row.revision
     f.name = row.name
     f.status = row.status
     f.eventTypes = [...(row.eventTypes || [])]
@@ -2204,6 +2240,7 @@ async function saveSubscription (): Promise<void> {
     }
     const input: any = {
         uuid: f.uuid || undefined,
+        expectedRevision: f.expectedRevision,
         org: orgUuid.value,
         name: f.name.trim(),
         status: f.status,
@@ -2562,6 +2599,28 @@ const deliveryColumns = computed(() => [
 
 function extractError (e: any): string {
     return commonFunctions.parseGraphQLError(commonFunctions.extractGraphQLErrorMessage(e))
+}
+
+/**
+ * Detect the backend's optimistic-lock conflict marker. The three upsert
+ * services throw a RelizaException with the "Conflict:" prefix when the
+ * expectedRevision in the input doesn't match the row's current revision.
+ * The save's modalError shows the message; callers also surface a
+ * "reload" affordance so the operator can refresh the form with the
+ * latest server state before retrying.
+ */
+function isConflictError (msg: string): boolean {
+    return typeof msg === 'string' && msg.startsWith('Conflict:')
+}
+
+async function reloadAfterConflict (kind: 'channel' | 'subscription' | 'group'): Promise<void> {
+    // Refresh the underlying list so the next Edit picks up the
+    // current revision. The modal stays open with the modalError still
+    // visible so the operator can see why their save was rejected;
+    // closing + reopening is their explicit choice.
+    if (kind === 'channel') await loadChannels()
+    else if (kind === 'subscription') await loadSubscriptions()
+    else if (kind === 'group') await loadChannelGroups()
 }
 
 onMounted(async () => {
