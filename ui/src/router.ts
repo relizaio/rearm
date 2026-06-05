@@ -155,6 +155,11 @@ const routes : any[] = [
         component: () => import('@/components/InstancesOfOrg.vue')
     },
     {
+        path: '/distributionOfOrg/:orguuid/:clientuuid?/:siteuuid?',
+        name: 'DistributionOfOrg',
+        component: () => import('@/components/DistributionOfOrg.vue')
+    },
+    {
         path: '/release/show/:uuid',
         name: 'ReleaseView',
         component: () => import('@/components/ReleaseView.vue')
