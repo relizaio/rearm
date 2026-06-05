@@ -25,7 +25,14 @@
  * That single rule covers both sides.
  */
 import { PackageURL } from 'packageurl-js';
+import type { Serialize } from '@cyclonedx/cyclonedx-library';
 import { logger } from '../../logger';
+
+// The CycloneDX JSON license shape (one array element): a union of
+// { license: { id, ... } } | { license: { name, ... } } | { expression }.
+// This is the library's own normalized-JSON type, so the licenses we pass
+// through structurally are typed exactly as the spec defines them.
+type CdxLicense = Serialize.JSON.Types.Normalized.License;
 
 export interface ParsedBomComponent {
 	canonicalPurl: string;
@@ -44,7 +51,7 @@ export interface ParsedBomComponent {
 	// through structurally (not flattened to strings) so the precise id/name/
 	// expression distinction is preserved and can be re-emitted to / matched by
 	// Dependency-Track. Always an array (possibly empty).
-	licenses: any[];
+	licenses: CdxLicense[];
 }
 
 export interface ParsedBomDependency {
@@ -109,10 +116,10 @@ export function canonicalizePurl(rawPurl: string | undefined | null): string | n
  * Only well-formed object entries are kept; the array is returned verbatim
  * otherwise so it can be re-emitted to Dependency-Track unchanged.
  */
-function extractLicenses(raw: { licenses?: any } | undefined): any[] {
+function extractLicenses(raw: { licenses?: any } | undefined): CdxLicense[] {
 	const arr = raw?.licenses;
 	if (!Array.isArray(arr)) return [];
-	return arr.filter((entry) => entry && typeof entry === 'object');
+	return arr.filter((entry): entry is CdxLicense => entry && typeof entry === 'object');
 }
 
 function toParsedComponent(
