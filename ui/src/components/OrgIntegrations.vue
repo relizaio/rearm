@@ -83,7 +83,6 @@
                                             <!-- DT admin actions — preserved from the old design. Role-gated. -->
                                             <template v-if="card.id === 'DEPENDENCYTRACK'">
                                                 <n-icon v-if="isOrgAdmin" class="instance-icon" size="20" title="Synchronize D-Track Projects" @click="syncDtrackProjects"><Refresh /></n-icon>
-                                                <n-icon v-if="isGlobalAdmin" class="instance-icon" size="20" title="Re-upload D-Track Projects" @click="refreshDtrackProjects"><ArrowUpload24Regular /></n-icon>
                                                 <n-icon v-if="isGlobalAdmin" class="instance-icon" size="20" title="Cleanup D-Track Projects" @click="cleanupDtrackProjects"><Clean /></n-icon>
                                                 <n-icon v-if="isGlobalAdmin" class="instance-icon" size="20" title="Re-cleanup D-Track Projects" @click="recleanupDtrackProjects"><DeleteDismiss24Regular /></n-icon>
                                             </template>
@@ -397,7 +396,7 @@ import {
     PlugConnected, ShieldCheck, LayoutGrid
 } from '@vicons/tabler'
 import { Clean } from '@vicons/carbon'
-import { ArrowUpload24Regular, DeleteDismiss24Regular } from '@vicons/fluent'
+import { DeleteDismiss24Regular } from '@vicons/fluent'
 import gql from 'graphql-tag'
 import { FetchPolicy } from '@apollo/client'
 import Swal from 'sweetalert2'
@@ -851,24 +850,6 @@ async function syncDtrackProjects() {
         }
     } catch (err: any) {
         notify('error', 'Sync Failed', err.message || 'Failed to sync.')
-    }
-}
-
-async function refreshDtrackProjects() {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation refreshDtrackProjects($orgUuid: ID!) { refreshDtrackProjects(orgUuid: $orgUuid) }`,
-            variables: { orgUuid: orguuid.value },
-            fetchPolicy: 'no-cache'
-        })
-        if (resp.data?.refreshDtrackProjects) {
-            notify('success', 'D-Track Projects Refresh', 'Successfully refreshed.')
-        } else {
-            notify('warning', 'D-Track Projects Refresh', 'Completed but returned false.')
-        }
-    } catch (err: any) {
-        notify('error', 'Refresh Failed', err.message || 'Failed to refresh.')
     }
 }
 

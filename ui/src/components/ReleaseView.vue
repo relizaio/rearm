@@ -4974,15 +4974,6 @@ function renderArtifactDtrackActions (row: any, els: any[]) {
                 }, () => h(UpCircleOutlined)))
         }
     }
-    if (row.metrics && row.metrics.dependencyTrackFullUri) {
-        els.push(h(NIcon,
-            {
-                title: 'Refetch Dependency-Track Metrics',
-                class: 'icons clickable',
-                size: 25,
-                onClick: () => refetchDependencyTrackMetrics(row.uuid)
-            }, () => h(Refresh)))
-    }
 }
 
 /**
@@ -5805,28 +5796,6 @@ const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
 
 function changelogRowKey(row: any) {
     return `${row.changeType}-${row.purl}`
-}
-
-async function refetchDependencyTrackMetrics (artifact: string) {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation refetchDependencyTrackMetrics($artifact: ID!) {
-                    refetchDependencyTrackMetrics(artifact: $artifact)
-                }
-                `,
-            variables: { artifact },
-            fetchPolicy: 'no-cache'
-        })
-        if (resp.data && resp.data.refetchDependencyTrackMetrics) {
-            notify('success', 'Metrics Refetched', 'Metrics refetched for the artifact from Dependency-Track.')
-            fetchRelease()
-        } else {
-            notify('error', 'Failed to Refetch Metrics', 'Could not refetch Dependency-Track metrics. Please try again later or contact support.')
-        }
-    } catch (e: any) {
-        notify('error', 'Failed to Refetch Metrics', e.message)
-    }
 }
 
 async function triggerEnrichment (artifact: string) {
