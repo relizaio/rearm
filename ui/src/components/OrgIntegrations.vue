@@ -83,8 +83,6 @@
                                             <!-- DT admin actions — preserved from the old design. Role-gated. -->
                                             <template v-if="card.id === 'DEPENDENCYTRACK'">
                                                 <n-icon v-if="isOrgAdmin" class="instance-icon" size="20" title="Synchronize D-Track Projects" @click="syncDtrackProjects"><Refresh /></n-icon>
-                                                <n-icon v-if="isGlobalAdmin" class="instance-icon" size="20" title="Cleanup D-Track Projects" @click="cleanupDtrackProjects"><Clean /></n-icon>
-                                                <n-icon v-if="isGlobalAdmin" class="instance-icon" size="20" title="Re-cleanup D-Track Projects" @click="recleanupDtrackProjects"><DeleteDismiss24Regular /></n-icon>
                                             </template>
                                             <n-icon v-if="card.id === 'BEAR'" class="instance-icon" size="20" title="Edit BEAR Integration" @click="openBearEditModal"><EditIcon /></n-icon>
                                             <n-icon
@@ -395,8 +393,6 @@ import {
     BrandGithub, BrandGitlab, BrandSlack,
     PlugConnected, ShieldCheck, LayoutGrid
 } from '@vicons/tabler'
-import { Clean } from '@vicons/carbon'
-import { DeleteDismiss24Regular } from '@vicons/fluent'
 import gql from 'graphql-tag'
 import { FetchPolicy } from '@apollo/client'
 import Swal from 'sweetalert2'
@@ -850,42 +846,6 @@ async function syncDtrackProjects() {
         }
     } catch (err: any) {
         notify('error', 'Sync Failed', err.message || 'Failed to sync.')
-    }
-}
-
-async function cleanupDtrackProjects() {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation cleanupDtrackProjects($orgUuid: ID!) { cleanupDtrackProjects(orgUuid: $orgUuid) }`,
-            variables: { orgUuid: orguuid.value },
-            fetchPolicy: 'no-cache'
-        })
-        if (resp.data?.cleanupDtrackProjects) {
-            notify('success', 'D-Track Projects Cleanup', 'Successfully cleaned up.')
-        } else {
-            notify('warning', 'D-Track Projects Cleanup', 'Completed but returned false.')
-        }
-    } catch (err: any) {
-        notify('error', 'Cleanup Failed', err.message || 'Failed to cleanup.')
-    }
-}
-
-async function recleanupDtrackProjects() {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation recleanupDtrackProjects($orgUuid: ID!) { recleanupDtrackProjects(orgUuid: $orgUuid) }`,
-            variables: { orgUuid: orguuid.value },
-            fetchPolicy: 'no-cache'
-        })
-        if (resp.data?.recleanupDtrackProjects) {
-            notify('success', 'D-Track Projects Re-cleanup', 'Successfully re-cleaned up.')
-        } else {
-            notify('warning', 'D-Track Projects Re-cleanup', 'Completed but returned false.')
-        }
-    } catch (err: any) {
-        notify('error', 'Re-cleanup Failed', err.message || 'Failed to re-cleanup.')
     }
 }
 
