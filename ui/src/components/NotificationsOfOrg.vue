@@ -108,7 +108,7 @@
                     </n-space>
                 </div>
 
-                <n-grid :cols="2" :x-gap="12" class="history-filters">
+                <n-grid :cols="3" :x-gap="12" class="history-filters">
                     <n-gi>
                         <n-form-item label="Show" :show-feedback="false">
                             <n-radio-group v-model:value="inboxUnreadOnly" @update:value="applyInboxFilters">
@@ -122,6 +122,17 @@
                             <n-select
                                 v-model:value="inboxStatusFilter"
                                 :options="deliveryStatusOptions"
+                                placeholder="Any"
+                                clearable
+                                @update:value="applyInboxFilters"
+                            />
+                        </n-form-item>
+                    </n-gi>
+                    <n-gi>
+                        <n-form-item label="Event type" :show-feedback="false">
+                            <n-select
+                                v-model:value="inboxEventTypeFilter"
+                                :options="eventTypeOptions"
                                 placeholder="Any"
                                 clearable
                                 @update:value="applyInboxFilters"
@@ -1215,6 +1226,7 @@ const inboxPageCount = computed<number>(() =>
 )
 const inboxUnreadOnly = ref<boolean>(true)
 const inboxStatusFilter = ref<string | null>(null)
+const inboxEventTypeFilter = ref<string | null>(null)
 const selectedInboxRows = ref<string[]>([])
 const inboxBulkLoading = ref<boolean>(false)
 const inboxMarkAllLoading = ref<boolean>(false)
@@ -1293,6 +1305,7 @@ const INBOX_QUERY = gql`
         $orgUuid: ID!,
         $unreadOnly: Boolean,
         $status: NotificationDeliveryStatusEnum,
+        $eventType: NotificationEventTypeEnum,
         $limit: Int,
         $offset: Int
     ) {
@@ -1300,6 +1313,7 @@ const INBOX_QUERY = gql`
             orgUuid: $orgUuid,
             unreadOnly: $unreadOnly,
             status: $status,
+            eventType: $eventType,
             limit: $limit,
             offset: $offset
         ) {
@@ -1333,7 +1347,7 @@ const MARK_UNREAD_MUTATION = gql`
 
 const MARK_ALL_READ_MUTATION = gql`
     mutation markAllNotificationsRead($orgUuid: ID!) {
-        markAllNotificationsRead(orgUuid: $orgUuid)
+        markAllNotificationsRead(orgUuid: $orgUuid) { count hasMore }
     }
 `
 
@@ -1765,6 +1779,7 @@ async function loadInbox (): Promise<void> {
                 orgUuid: orgUuid.value,
                 unreadOnly: inboxUnreadOnly.value,
                 status: inboxStatusFilter.value,
+                eventType: inboxEventTypeFilter.value,
                 limit: inboxPageSize.value,
                 offset,
             },
@@ -1892,8 +1907,20 @@ function markAllReadConfirm (): void {
                     mutation: MARK_ALL_READ_MUTATION,
                     variables: { orgUuid: orgUuid.value },
                 })
-                const n = res.data?.markAllNotificationsRead || 0
-                message.success(`Marked ${n} read`)
+                const result = res.data?.markAllNotificationsRead
+                const marked = result?.count || 0
+                const hasMore = result?.hasMore === true
+                if (hasMore) {
+                    // Backend hit the per-sweep cap; some unread remain.
+                    // Use warning so the operator sees the "re-run" hint
+                    // rather than a green "done" toast that hides the
+                    // remaining tail.
+                    message.warning(
+                        `Marked ${marked} read — cap reached; re-run to clear the rest.`,
+                    )
+                } else {
+                    message.success(`Marked ${marked} read`)
+                }
                 await loadInbox()
             } catch (e: any) {
                 message.error(`Mark all failed: ${extractError(e)}`)
