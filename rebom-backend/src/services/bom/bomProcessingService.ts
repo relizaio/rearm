@@ -667,8 +667,18 @@ export async function enrichCycloneDxBom(
 
 /**
  * Checks if BEAR enrichment is configured by looking up the integration in the DB.
+ *
+ * ENRICHMENT_PENDING_IF_NOT_CONFIGURED=true forces this to true as well, mirroring
+ * getInitialEnrichmentStatus: the flag means "treat enrichment as configured and
+ * pending" for environments where BEAR will be wired up later. The synthetic
+ * Dependency-Track gate then holds components back (they never enrich, so
+ * enriched_at is never stamped) instead of shipping them un-enriched — letting the
+ * gate be exercised before a real BEAR integration exists.
  */
 export async function isEnrichmentConfigured(org: string): Promise<boolean> {
+  if (process.env.ENRICHMENT_PENDING_IF_NOT_CONFIGURED === 'true') {
+    return true;
+  }
   const integration = await getBearIntegration(org);
   return integration.configured;
 }

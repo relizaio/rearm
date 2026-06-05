@@ -54,7 +54,8 @@ export {
   computeBomDigest,
   triggerEnrichment,
   computeBomDigestOnly,
-  computeEnrichedBomContent
+  computeEnrichedBomContent,
+  isEnrichmentConfigured
 } from './services/bom/bomProcessingService';
 export type { EnrichedBomProbeResult } from './services/bom/bomProcessingService';
 

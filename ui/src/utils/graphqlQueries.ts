@@ -22,6 +22,7 @@ const MULTI_RELEASE_GQL_DATA = `
         metrics {
             dependencyTrackFullUri
             dtrackSubmissionFailed
+            firstScanned
         }
     }
     status
@@ -131,6 +132,7 @@ const BRANCH_RELEASE_LIST_GQL_DATA = `
         metrics {
             dtrackSubmissionFailed
             dependencyTrackFullUri
+            firstScanned
         }
     }
 `
