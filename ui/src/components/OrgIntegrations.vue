@@ -126,12 +126,21 @@
                         <!-- Pro-only hint for messaging cards: the new
                              notifications framework is a separate, security-
                              focused destination surface. Gated on Pro so the
-                             OSS catalog stays the same. -->
+                             OSS catalog stays the same. RouterLink target
+                             (NotificationsOfOrg) only resolves once the
+                             notifications-impl branch lands — until then
+                             this PR's link 404s. See PR body for the
+                             merge-ordering note. -->
                         <div
                             v-if="showCiFeatures && (card.id === 'SLACK' || card.id === 'MSTEAMS')"
                             class="card-pro-hint"
                         >
-                            Security alerts use a separate destination — manage in Notifications →
+                            Security and vulnerability alerts use a separate destination —
+                            manage in
+                            <RouterLink :to="{ name: 'NotificationsOfOrg', params: { orguuid: props.orguuid } }">
+                                Notifications
+                            </RouterLink>
+                            →
                         </div>
                     </div>
                 </div>
