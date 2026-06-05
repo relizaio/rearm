@@ -1015,16 +1015,6 @@ function freshForm (): ChannelForm {
     }
 }
 
-// Optimistic-locking note. The three upsert paths in this file
-// (upsertNotificationChannel, upsertNotificationSubscription,
-// upsertNotificationChannelGroup) do NOT forward the `revision` value
-// from the loaded row. The backend entities use @Version, but the
-// GraphQL Input shapes don't currently expose an `expectedRevision`
-// field, so the UI can't gate save on it. Accepted as-is across all
-// three surfaces for consistency; a stale concurrent edit on the same
-// row is last-writer-wins. If multi-admin races become a real customer
-// concern, the fix is a coordinated schema change (add expectedRevision
-// to all three Input shapes) + a UI guard that surfaces the conflict.
 const channelForm = ref<ChannelForm>(freshForm())
 
 const sentinelPlaceholder = computed<string>(() =>
@@ -1789,7 +1779,14 @@ async function loadInbox (): Promise<void> {
         const page = res.data?.notificationInbox
         inboxItems.value = page?.items || []
         inboxTotalCount.value = page?.totalCount || 0
-        inboxUnreadCount.value = page?.unreadCount || 0
+        // Don't write inboxUnreadCount from page.unreadCount: that
+        // value is the filtered count (matches the page's status /
+        // eventType / unreadOnly), but the tab badge needs the
+        // org-wide unread total. Otherwise a status=FAILED filter
+        // would silently shrink the badge to "FAILED-only unread"
+        // and an admin with 100 unread items would see a 5 next to
+        // "Inbox". loadInboxUnreadCount fires alongside (below) so
+        // any server-side change is still picked up on every page.
         // Drop checked rows that aren't on the new page.
         const visible = new Set(inboxItems.value.map(r => r.uuid))
         selectedInboxRows.value = selectedInboxRows.value.filter(uuid => visible.has(uuid))
@@ -1799,6 +1796,10 @@ async function loadInbox (): Promise<void> {
     } finally {
         if (myToken === inboxInflightToken) inboxLoading.value = false
     }
+    // Refresh the unfiltered badge alongside every inbox reload so
+    // markAll / bulk-mark paths that loadInbox() at the end also
+    // pull a fresh badge — no scattered explicit calls needed.
+    loadInboxUnreadCount()
 }
 
 function applyInboxFilters (): void {
@@ -2658,17 +2659,17 @@ onMounted(async () => {
     // before channels / groups resolve — acceptable given the typical
     // few-hundred-ms load. Inbox tab body loads lazily on tab open.
     const initialIsInbox = activeTab.value === 'inbox'
-    // Skip the badge-only round-trip when the initial tab is Inbox —
-    // the subsequent loadInbox() pulls unreadCount inside its own
-    // response so the separate notificationUnreadCount call would
-    // double-spend on landing.
+    // loadInboxUnreadCount runs unconditionally now: loadInbox no longer
+    // writes inboxUnreadCount (page.unreadCount is filtered, badge must
+    // not be), so the badge needs its own org-wide query whether or not
+    // the inbox tab is the initial view.
     const eagerLoads: Array<Promise<void>> = [
         loadChannels(),
         loadChannelGroups(),
         loadSubscriptions(),
         loadDeliveries(),
+        loadInboxUnreadCount(),
     ]
-    if (!initialIsInbox) eagerLoads.push(loadInboxUnreadCount())
     await Promise.all(eagerLoads)
     // If the initial route lands directly on the Inbox tab (e.g. a
     // bookmarked URL or a slash-style notification link), the lazy
