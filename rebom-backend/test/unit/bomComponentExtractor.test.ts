@@ -30,6 +30,29 @@ describe('bomComponentExtractor.canonicalizePurl', () => {
 		const raw = 'pkg:npm/foo@1.0.0';
 		expect(canonicalizePurl(raw)).toBe('pkg:npm/foo@1.0.0');
 	});
+
+	it('preserves the required uuid qualifier for julia', () => {
+		const raw = 'pkg:julia/Dates@1.9.0?uuid=ade2ca70-3b73-5b8e-9b35-2c0d1c0e1f2a&os=linux';
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:julia/Dates@1.9.0?uuid=ade2ca70-3b73-5b8e-9b35-2c0d1c0e1f2a');
+	});
+
+	it('preserves the required tag_id qualifier for swid', () => {
+		const raw = 'pkg:swid/Acme/Enterprise%20Server@1.0.0?tag_id=75b8c285-fa7b-485b-b199-4745e3004d0d&arch=x64';
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:swid/Acme/Enterprise%20Server@1.0.0?tag_id=75b8c285-fa7b-485b-b199-4745e3004d0d');
+	});
+
+	it('preserves repository_url for oci and strips other qualifiers', () => {
+		const raw = 'pkg:oci/myapp@sha256%3Aabc?repository_url=ghcr.io%2Facme%2Fmyapp&tag=latest';
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:oci/myapp@sha256:abc?repository_url=ghcr.io%2Facme%2Fmyapp');
+	});
+
+	it('still strips qualifiers for types without a required qualifier', () => {
+		const raw = 'pkg:npm/foo@1.0.0?arch=any&os=linux';
+		expect(canonicalizePurl(raw)).toBe('pkg:npm/foo@1.0.0');
+	});
 });
 
 describe('bomComponentExtractor.parseBom', () => {
@@ -58,6 +81,54 @@ describe('bomComponentExtractor.parseBom', () => {
 		});
 	});
 
+	it('captures cpe and passes licenses through in exact CycloneDX shape', () => {
+		const bom = {
+			components: [
+				{
+					purl: 'pkg:npm/withmeta@1.0',
+					cpe: 'cpe:2.3:a:vendor:withmeta:1.0:*:*:*:*:*:*:*',
+					licenses: [
+						{ license: { id: 'MIT' } },
+						{ license: { name: 'Custom License' } },
+						{ expression: '(Apache-2.0 OR MIT)' },
+					],
+				},
+				{ purl: 'pkg:npm/bare@1.0' },
+				{ purl: 'pkg:npm/garbage@1.0', licenses: ['not-an-object', null] },
+			],
+		};
+		const got = parseBom(bom);
+		const withMeta = got.components.find((c) => c.canonicalPurl === 'pkg:npm/withmeta@1.0');
+		expect(withMeta?.cpe).toBe('cpe:2.3:a:vendor:withmeta:1.0:*:*:*:*:*:*:*');
+		// structural passthrough — id/name/expression distinction preserved
+		expect(withMeta?.licenses).toEqual([
+			{ license: { id: 'MIT' } },
+			{ license: { name: 'Custom License' } },
+			{ expression: '(Apache-2.0 OR MIT)' },
+		]);
+		const bare = got.components.find((c) => c.canonicalPurl === 'pkg:npm/bare@1.0');
+		expect(bare?.cpe).toBeNull();
+		expect(bare?.licenses).toEqual([]);
+		// non-object entries are dropped
+		const garbage = got.components.find((c) => c.canonicalPurl === 'pkg:npm/garbage@1.0');
+		expect(garbage?.licenses).toEqual([]);
+	});
+
+	it('carries cpe/licenses (structural) onto the synthesised root node', () => {
+		const bom = {
+			metadata: {
+				component: {
+					purl: 'pkg:oci/myapp@1.0.0',
+					cpe: 'cpe:2.3:a:acme:myapp:1.0.0:*:*:*:*:*:*:*',
+					licenses: [{ license: { id: 'Apache-2.0' } }],
+				},
+			},
+		};
+		const root = parseBom(bom).components.find((c) => c.isRoot);
+		expect(root?.cpe).toBe('cpe:2.3:a:acme:myapp:1.0.0:*:*:*:*:*:*:*');
+		expect(root?.licenses).toEqual([{ license: { id: 'Apache-2.0' } }]);
+	});
+
 	it('drops components without a purl but keeps the rest', () => {
 		const bom = {
 			components: [
@@ -68,6 +139,46 @@ describe('bomComponentExtractor.parseBom', () => {
 		const got = parseBom(bom);
 		expect(got.components).toHaveLength(1);
 		expect(got.components[0].canonicalPurl).toBe('pkg:npm/has-purl@1.0');
+	});
+
+	it('emits a CPE-canonical component when it has a cpe but no purl', () => {
+		const bom = {
+			components: [
+				{
+					type: 'application',
+					name: 'openssl',
+					version: '1.0.1',
+					cpe: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+				},
+			],
+		};
+		const got = parseBom(bom);
+		expect(got.components).toHaveLength(1);
+		expect(got.components[0]).toMatchObject({
+			canonicalPurl: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+			fullPurl: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+			cpe: 'cpe:2.3:a:openssl:openssl:1.0.1:*:*:*:*:*:*:*',
+			name: 'openssl',
+			version: '1.0.1',
+			isRoot: false,
+		});
+	});
+
+	it('still drops a component with neither purl nor cpe', () => {
+		const bom = { components: [{ name: 'device-only', version: '1.0' }] };
+		expect(parseBom(bom).components).toHaveLength(0);
+	});
+
+	it('prefers purl over cpe when a component has both', () => {
+		const bom = {
+			components: [
+				{ purl: 'pkg:npm/foo@1.0', cpe: 'cpe:2.3:a:vendor:foo:1.0:*:*:*:*:*:*:*' },
+			],
+		};
+		const got = parseBom(bom);
+		expect(got.components).toHaveLength(1);
+		expect(got.components[0].canonicalPurl).toBe('pkg:npm/foo@1.0');
+		expect(got.components[0].cpe).toBe('cpe:2.3:a:vendor:foo:1.0:*:*:*:*:*:*:*');
 	});
 
 	it('de-duplicates identical (canonical, full) pairs', () => {

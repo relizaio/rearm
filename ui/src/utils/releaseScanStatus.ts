@@ -107,5 +107,9 @@ function isBomDtrackPending (a: any): boolean {
     const m = a.metrics || {}
     if (m.dtrackSubmissionFailed) return false
     if (m.dependencyTrackFullUri) return false
+    // Synthetic-DTrack artifacts are scanned via a shared bucket project and so
+    // never carry their own dependencyTrackFullUri; once firstScanned is set the
+    // artifact has been scanned and is no longer awaiting submission.
+    if (m.firstScanned) return false
     return true
 }
