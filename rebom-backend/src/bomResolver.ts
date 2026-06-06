@@ -81,6 +81,11 @@ const resolvers = {
 			async (_: any, { bomContent }: { bomContent: { format: string; bom: any; org: string } }) =>
 				BomService.computeEnrichedBomContent(bomContent.format, bomContent.bom, bomContent.org),
 			'getEnrichedBomProbe'
+		),
+		isEnrichmentConfigured: withErrorHandling(
+			async (_: any, input: { org: string }): Promise<boolean> =>
+				BomService.isEnrichmentConfigured(input.org),
+			'isEnrichmentConfigured'
 		)
 	},
 	Mutation: {

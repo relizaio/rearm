@@ -1222,7 +1222,7 @@ import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
-import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
+import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
@@ -4964,13 +4964,6 @@ function renderArtifactDtrackActions (row: any, els: any[]) {
         els.push(h('a', {target: '_blank', href: dtrackLoginUrl}, dtrackElIcon))
     }
     if (row.type === 'BOM') {
-        els.push(h(NIcon,
-            {
-                title: 'Request Refresh of Dependency-Track Metrics',
-                class: 'icons clickable',
-                size: 25,
-                onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
-            }, () => h(SecurityScanOutlined)))
         if (userPermission.value === 'ADMIN') {
             els.push(h(NIcon,
                 {
@@ -4980,15 +4973,6 @@ function renderArtifactDtrackActions (row: any, els: any[]) {
                     onClick: () => triggerEnrichment(row.uuid)
                 }, () => h(UpCircleOutlined)))
         }
-    }
-    if (row.metrics && row.metrics.dependencyTrackFullUri) {
-        els.push(h(NIcon,
-            {
-                title: 'Refetch Dependency-Track Metrics',
-                class: 'icons clickable',
-                size: 25,
-                onClick: () => refetchDependencyTrackMetrics(row.uuid)
-            }, () => h(Refresh)))
     }
 }
 
@@ -5812,45 +5796,6 @@ const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
 
 function changelogRowKey(row: any) {
     return `${row.changeType}-${row.purl}`
-}
-
-async function refetchDependencyTrackMetrics (artifact: string) {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation refetchDependencyTrackMetrics($artifact: ID!) {
-                    refetchDependencyTrackMetrics(artifact: $artifact)
-                }
-                `,
-            variables: { artifact },
-            fetchPolicy: 'no-cache'
-        })
-        if (resp.data && resp.data.refetchDependencyTrackMetrics) {
-            notify('success', 'Metrics Refetched', 'Metrics refetched for the artifact from Dependency-Track.')
-            fetchRelease()
-        } else {
-            notify('error', 'Failed to Refetch Metrics', 'Could not refetch Dependency-Track metrics. Please try again later or contact support.')
-        }
-    } catch (e: any) {
-        notify('error', 'Failed to Refetch Metrics', e.message)
-    }
-}
-
-async function requestRefreshDependencyTrackMetrics (artifact: string) {
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-            mutation requestRefreshDependencyTrackMetrics($artifact: ID!) {
-                requestRefreshDependencyTrackMetrics(artifact: $artifact)
-            }
-            `,
-        variables: { artifact },
-        fetchPolicy: 'no-cache'
-    })
-    if (resp.data && resp.data.requestRefreshDependencyTrackMetrics) {
-        notify('success', 'Refresh Requested', 'Dependency-Track metrics refresh requested.')
-    } else {
-        notify('error', 'Failed to Request Refresh', 'Could not request refresh of Dependency-Track metrics. Please try again later or contact support.')
-    }
 }
 
 async function triggerEnrichment (artifact: string) {

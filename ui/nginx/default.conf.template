@@ -17,6 +17,21 @@ server {
         root   /usr/share/nginx/html;
         index  index.html index.htm;
         try_files $uri $uri/ /index.html;
+
+        # Security headers for the SPA shell + static assets. HSTS is intentionally
+        # NOT set here — TLS terminates at the Traefik ingress / upstream LB, which
+        # owns Strict-Transport-Security. The backend (/api, /graphql) and Keycloak
+        # (/kauth) emit their own headers, so these live only on the static app.
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        # CSP ships in Report-Only first so it can be validated in a browser before
+        # enforcing — switch the directive name to Content-Security-Policy to enforce.
+        # 'unsafe-eval' is required by Vega (vega/vega-lite compile expressions via
+        # Function); 'unsafe-inline' in style-src covers Vue's runtime-injected
+        # <style> blocks and inline style attributes; img-src allows data:/blob: for
+        # generated charts and client-side downloads.
+        add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" always;
     }
 
     location /v1 {
