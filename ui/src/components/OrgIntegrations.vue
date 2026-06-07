@@ -83,6 +83,7 @@
                                             <!-- DT admin actions — preserved from the old design. Role-gated. -->
                                             <template v-if="card.id === 'DEPENDENCYTRACK'">
                                                 <n-icon v-if="isOrgAdmin" class="instance-icon" size="20" title="Synchronize D-Track Projects" @click="syncDtrackProjects"><Refresh /></n-icon>
+                                                <n-icon v-if="isOrgAdmin" class="instance-icon" size="20" title="Force re-upload all data to D-Track (re-submits every project and re-analyses — heavy)" @click="forceReuploadDtrack"><CloudUpload /></n-icon>
                                             </template>
                                             <n-icon v-if="card.id === 'BEAR'" class="instance-icon" size="20" title="Edit BEAR Integration" @click="openBearEditModal"><EditIcon /></n-icon>
                                             <n-icon
@@ -409,7 +410,7 @@ import {
     NRadioGroup, NRadioButton, NSpace, NText, NDynamicInput, NUpload, NUploadTrigger
 } from 'naive-ui'
 import {
-    Edit as EditIcon, Trash, Refresh, CirclePlus,
+    Edit as EditIcon, Trash, Refresh, CirclePlus, CloudUpload,
     BrandGithub, BrandGitlab, BrandSlack,
     PlugConnected, ShieldCheck, LayoutGrid
 } from '@vicons/tabler'
@@ -866,6 +867,27 @@ async function syncDtrackProjects() {
         }
     } catch (err: any) {
         notify('error', 'Sync Failed', err.message || 'Failed to sync.')
+    }
+}
+
+async function forceReuploadDtrack() {
+    if (!window.confirm('Force re-upload ALL synthetic data to Dependency-Track? This re-submits every project and triggers a full re-analysis — heavier than a sync. Use for recovery only.')) {
+        return
+    }
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation forceReuploadDtrackData($orgUuid: ID!) { forceReuploadDtrackData(orgUuid: $orgUuid) }`,
+            variables: { orgUuid: orguuid.value },
+            fetchPolicy: 'no-cache'
+        })
+        if (resp.data?.forceReuploadDtrackData) {
+            notify('success', 'D-Track Force Re-upload', 'Re-upload started; re-analysis runs in the background.')
+        } else {
+            notify('warning', 'D-Track Force Re-upload', 'Completed but returned false.')
+        }
+    } catch (err: any) {
+        notify('error', 'Force Re-upload Failed', err.message || 'Failed to start re-upload.')
     }
 }
 
