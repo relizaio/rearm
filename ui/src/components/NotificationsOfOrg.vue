@@ -780,7 +780,11 @@
                         {{ inboxDrawerRow.description }}
                     </div>
 
-                    <n-descriptions :column="2" size="small" bordered label-placement="left">
+                    <!-- column=1 in this narrow drawer — column=2 wraps
+                         the labels mid-word ("Severit/y", "Chann/el", etc).
+                         A property-list reading top-to-bottom is more
+                         natural than a grid here. -->
+                    <n-descriptions :column="1" size="small" label-placement="left">
                         <n-descriptions-item label="Event">
                             <span v-if="inboxDrawerRow.eventType">
                                 {{ inboxDrawerRow.eventType.replace(/_/g, ' ').toLowerCase() }}
@@ -814,12 +818,19 @@
                     <!-- Structured payload view. Pretty-printed JSON for now;
                          richer per-event-type rendering (deep-link buttons,
                          affected-release table) lands with BD-3 actionable
-                         events in phase 4. -->
-                    <n-collapse v-if="inboxDrawerRow.payloadJson">
+                         events in phase 4.
+                         v-if keys off the COMPUTED parsed payload, not the
+                         raw string, so a malformed JSON falls through to
+                         the alert below instead of rendering the literal
+                         "null" inside the <pre>. -->
+                    <n-collapse v-if="inboxDrawerPayload">
                         <n-collapse-item title="Raw payload" name="payload">
                             <pre class="inbox-drawer-payload">{{ JSON.stringify(inboxDrawerPayload, null, 2) }}</pre>
                         </n-collapse-item>
                     </n-collapse>
+                    <n-alert v-else-if="inboxDrawerRow.payloadJson" type="warning" :show-icon="false" title="Malformed payload">
+                        The outbox event's payload couldn't be parsed as JSON. Raw text is logged server-side.
+                    </n-alert>
 
                     <n-space>
                         <n-button
@@ -1330,15 +1341,30 @@ async function markRowReadFromDrawer (): Promise<void> {
     if (!inboxDrawerRow.value) return
     await markRowRead(inboxDrawerRow.value)
     // Sync drawer's readAt so the buttons swap without a fresh fetch.
+    // Fallback: when Unread-only filter is active, markRowRead has
+    // already filtered the row OUT of inboxItems — find() returns
+    // undefined. Stamp readAt directly on the captured drawer row so
+    // the UI still flips Mark read → Mark unread.
     const fresh = inboxItems.value.find(r => r.uuid === inboxDrawerRow.value?.uuid)
-    if (fresh) inboxDrawerRow.value = fresh
+    if (fresh) {
+        inboxDrawerRow.value = fresh
+    } else {
+        inboxDrawerRow.value = { ...inboxDrawerRow.value, readAt: new Date().toISOString() }
+    }
 }
 
 async function markRowUnreadFromDrawer (): Promise<void> {
     if (!inboxDrawerRow.value) return
     await markRowUnread(inboxDrawerRow.value)
     const fresh = inboxItems.value.find(r => r.uuid === inboxDrawerRow.value?.uuid)
-    if (fresh) inboxDrawerRow.value = fresh
+    if (fresh) {
+        inboxDrawerRow.value = fresh
+    } else {
+        // Symmetric to mark-read: stamp readAt = null so the drawer
+        // immediately reflects the unread state even if the row got
+        // dropped from the current view.
+        inboxDrawerRow.value = { ...inboxDrawerRow.value, readAt: null }
+    }
 }
 
 // Delivery history state
@@ -2653,15 +2679,16 @@ const inboxColumns = computed(() => [
                 ? row.eventType.replace(/_/g, ' ').toLowerCase()
                 : '(no content)')
             const description = row.description
+            // <button type="button">, not <a href="#">. The cell is an
+            // action (open drawer), not navigation — anchor semantics
+            // would mis-announce as "link" to screen readers and the
+            // href="#" pattern is fragile.
             return h(
-                'a',
+                'button',
                 {
-                    href: '#',
+                    type: 'button',
                     class: 'inbox-message-link',
-                    onClick: (e: MouseEvent) => {
-                        e.preventDefault()
-                        openInboxRow(row)
-                    },
+                    onClick: () => openInboxRow(row),
                 },
                 {
                     default: () => [
@@ -2874,14 +2901,31 @@ onMounted(async () => {
 .route-remove-cell { display: flex; align-items: flex-end; }
 
 /* Inbox message column — Title (bold) + description (muted) stacked,
- * whole cell is the click target that opens the drawer. */
+ * whole cell is the click target that opens the drawer. Rendered as
+ * a button (a11y: announces as "button" not "link"); these resets
+ * make it visually indistinguishable from a plain block of text. */
 .inbox-message-link {
     display: block;
+    width: 100%;
     color: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
     text-decoration: none;
     cursor: pointer;
 }
-.inbox-message-link:hover .inbox-message-title { color: var(--primary); }
+.inbox-message-link:focus-visible {
+    outline: 2px solid var(--n-color-primary, #2080f0);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+/* naive-ui theme token (defined by n-config-provider) with a hard-coded
+ * fallback. `var(--primary)` would have been a no-op here — that token
+ * isn't defined globally in this app's CSS. */
+.inbox-message-link:hover .inbox-message-title { color: var(--n-color-primary, #2080f0); }
 .inbox-message-title { font-weight: 500; line-height: 1.3; }
 .inbox-message-desc { margin-top: 2px; line-height: 1.3; }
 
