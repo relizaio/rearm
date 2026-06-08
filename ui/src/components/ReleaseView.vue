@@ -698,7 +698,7 @@
                         </h3>
                         <n-data-table :data="updatedRelease.parentReleases" :columns="parentReleaseTableFields" :row-key="parentReleaseRowKey" />
                     </div>
-                    <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER' && updatedRelease.componentDetails.type !== 'PRODUCT'">
+                    <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER' && updatedRelease.componentDetails.type !== 'PRODUCT' && !isHardware">
                         <h3>Source Code Entries
                             <Icon v-if="isWritable && isUpdatable" class="clickable addIcon" size="25" title="Update Source Code Entry" @click="showReleaseAddProducesSce=true">
                                 <CirclePlus/>
@@ -717,7 +717,7 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <div v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
+                        <div v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isHardware">
                             <h3>Changes in SBOM Components
                                 <Icon v-if="isWritable" 
                                     class="clickable addIcon" 
@@ -827,7 +827,7 @@
                         </n-space>
                     </div>
                 </n-tab-pane>
-                <n-tab-pane name="pullRequests" :tab="`Pull Requests${pullRequests.length ? ' · ' + pullRequests.length : ''}`">
+                <n-tab-pane v-if="!isHardware" name="pullRequests" :tab="`Pull Requests${pullRequests.length ? ' · ' + pullRequests.length : ''}`">
                     <div class="container">
                         <p v-if="!pullRequests.length" class="dim">No pull requests reference any of this release's commits.</p>
                         <n-data-table v-else :data="pullRequests" :columns="pullRequestsTableFields" :row-key="(row) => row.uuid"/>
@@ -871,7 +871,7 @@
                         </ul>
                     </div>
                 </n-tab-pane>
-                <n-tab-pane name="sbomComponents" tab="SBOM Components">
+                <n-tab-pane v-if="!isHardware" name="sbomComponents" tab="SBOM Components">
                     <div class="container">
                         <n-space style="margin-bottom: 8px;" align="center">
                             <n-input
@@ -1653,6 +1653,7 @@ const givenApprovals: Ref<any> = ref({})
 
 const words: Ref<any> = ref({})
 const isComponent: Ref<boolean> = ref(true)
+const isHardware: Ref<boolean> = ref(false)
 const isLoading: Ref<boolean> = ref(true)
 const isProductRelease: Ref<boolean> = ref(false)
 const productArtifactsLoaded: Ref<boolean> = ref(false)
@@ -1730,6 +1731,7 @@ async function fetchRelease () {
     }
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
+    isHardware.value = (updatedRelease.value.componentDetails.nature === 'HARDWARE')
     const orgTerminology = myorg.value?.terminology
     const resolvedWords = commonFunctions.resolveWords(isComponent.value, orgTerminology)
     words.value = {
