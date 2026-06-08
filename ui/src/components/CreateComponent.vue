@@ -93,15 +93,6 @@
                     <span class="hintText">The component whose release carries the UDI-DI (hardware, or SaMD software).</span>
                 </n-form-item>
             </template>
-            <template v-if="myUser.installationType !== 'OSS' && component.nature === 'HARDWARE'">
-                <n-form-item label="Serialization">
-                    <n-select v-model:value="component.hardwareProfile.serializationPolicy"
-                        :options="[{label: 'Lot (quantity per record)', value: 'LOT'}, {label: 'Serial (one record per unit)', value: 'SERIAL'}]" />
-                </n-form-item>
-                <n-form-item label="Composite (bundles firmware)">
-                    <n-switch v-model:value="component.hardwareProfile.composite" />
-                </n-form-item>
-            </template>
             <n-form-item v-if="myUser.installationType !== 'OSS' && component.deviceClass !== 'NONE'" label="ReARM identifiers (UDI)">
                 <n-dynamic-input v-model:value="component.rearmIdentifiers" :on-create="onCreateRearmIdentifier">
                     <template #create-button-default>Add UDI identifier</template>
@@ -303,7 +294,6 @@ const onSubmitSuccess = async function () {
     }
     // Distribution module: only send profiles relevant to the chosen axes.
     if (component.value.deviceClass === 'NONE') component.value.medicalProfile = null
-    if (component.value.nature !== 'HARDWARE') component.value.hardwareProfile = null
     if (!component.value.rearmIdentifiers || !component.value.rearmIdentifiers.length) component.value.rearmIdentifiers = null
     const storeResp = await store.dispatch('createComponent', component.value)
     emit('componentCreated', storeResp.uuid)
@@ -342,7 +332,6 @@ const component = ref<any>({
     nature: 'SOFTWARE',
     deviceClass: 'NONE',
     medicalProfile: { issuingAgency: null, udiBearing: false },
-    hardwareProfile: { serializationPolicy: 'LOT', composite: false },
     rearmIdentifiers: []
 })
 
