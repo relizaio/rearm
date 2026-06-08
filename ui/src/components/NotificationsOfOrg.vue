@@ -768,6 +768,93 @@
                 </n-space>
             </n-card>
         </n-modal>
+
+        <!-- Inbox row drawer — opens on Message-cell click. Renders the
+             server-rendered title + description plus a structured view
+             over the outbox payload so the operator can deep-link into
+             affected releases / vulnerabilities without an extra hop. -->
+        <n-drawer v-model:show="inboxDrawerOpen" :width="560" placement="right">
+            <n-drawer-content v-if="inboxDrawerRow" :title="inboxDrawerRow.title || 'Notification'" closable>
+                <n-space vertical size="large">
+                    <div v-if="inboxDrawerRow.description" class="inbox-drawer-desc">
+                        {{ inboxDrawerRow.description }}
+                    </div>
+
+                    <!-- column=1 in this narrow drawer — column=2 wraps
+                         the labels mid-word ("Severit/y", "Chann/el", etc).
+                         A property-list reading top-to-bottom is more
+                         natural than a grid here. -->
+                    <n-descriptions :column="1" size="small" label-placement="left">
+                        <n-descriptions-item label="Event">
+                            <span v-if="inboxDrawerRow.eventType">
+                                {{ inboxDrawerRow.eventType.replace(/_/g, ' ').toLowerCase() }}
+                            </span>
+                            <span v-else class="muted-12">—</span>
+                        </n-descriptions-item>
+                        <n-descriptions-item label="Severity">
+                            <n-tag v-if="inboxDrawerRow.severity" :type="severityTagType(inboxDrawerRow.severity)" size="small">
+                                {{ inboxDrawerRow.severity }}
+                            </n-tag>
+                            <span v-else class="muted-12">—</span>
+                        </n-descriptions-item>
+                        <n-descriptions-item label="Status">
+                            <n-tag :type="deliveryStatusTagType(inboxDrawerRow.status)" size="small">{{ inboxDrawerRow.status }}</n-tag>
+                        </n-descriptions-item>
+                        <n-descriptions-item label="Channel">
+                            <span>{{ channelNameById[inboxDrawerRow.channelUuid] || '(deleted)' }}</span>
+                        </n-descriptions-item>
+                        <n-descriptions-item label="Delivered">
+                            {{ formatHistoryTimestamp(inboxDrawerRow.sentAt || inboxDrawerRow.createdDate) }}
+                        </n-descriptions-item>
+                        <n-descriptions-item label="Attempts">
+                            {{ inboxDrawerRow.attemptCount }}
+                        </n-descriptions-item>
+                    </n-descriptions>
+
+                    <n-alert v-if="inboxDrawerRow.lastError" type="warning" :show-icon="false" title="Last error">
+                        {{ inboxDrawerRow.lastError }}
+                    </n-alert>
+
+                    <!-- Structured payload view. Pretty-printed JSON for now;
+                         richer per-event-type rendering (deep-link buttons,
+                         affected-release table) lands with BD-3 actionable
+                         events in phase 4.
+                         v-if keys off the COMPUTED parsed payload, not the
+                         raw string, so a malformed JSON falls through to
+                         the alert below instead of rendering the literal
+                         "null" inside the <pre>. -->
+                    <n-collapse v-if="inboxDrawerPayload">
+                        <n-collapse-item title="Raw payload" name="payload">
+                            <pre class="inbox-drawer-payload">{{ JSON.stringify(inboxDrawerPayload, null, 2) }}</pre>
+                        </n-collapse-item>
+                    </n-collapse>
+                    <n-alert v-else-if="inboxDrawerRow.payloadJson" type="warning" :show-icon="false" title="Malformed payload">
+                        The outbox event's payload couldn't be parsed as JSON. Raw text is logged server-side.
+                    </n-alert>
+
+                    <n-space>
+                        <n-button
+                            v-if="!inboxDrawerRow.readAt"
+                            type="primary"
+                            :disabled="!canWrite"
+                            @click="markRowReadFromDrawer"
+                        >
+                            <template #icon><n-icon><Check /></n-icon></template>
+                            Mark read
+                        </n-button>
+                        <n-button
+                            v-else
+                            secondary
+                            :disabled="!canWrite"
+                            @click="markRowUnreadFromDrawer"
+                        >
+                            Mark unread
+                        </n-button>
+                        <n-button @click="inboxDrawerOpen = false">Close</n-button>
+                    </n-space>
+                </n-space>
+            </n-drawer-content>
+        </n-drawer>
     </div>
 </template>
 
@@ -779,6 +866,8 @@ import {
     NTabs, NTabPane, NDataTable, NButton, NIcon, NEmpty, NModal, NCard, NForm,
     NFormItem, NInput, NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag,
     NRadioGroup, NRadioButton, NPagination, NSteps, NStep,
+    NDrawer, NDrawerContent, NDescriptions, NDescriptionsItem,
+    NCollapse, NCollapseItem,
     useDialog, useMessage
 } from 'naive-ui'
 import { CirclePlus, Trash, Edit as EditIcon, Refresh, Check } from '@vicons/tabler'
@@ -862,6 +951,9 @@ interface InboxRow {
     readAt: string | null
     eventType: string | null
     severity: string | null
+    title: string | null
+    description: string | null
+    payloadJson: string | null
 }
 
 interface SubscriptionRow {
@@ -1221,6 +1313,60 @@ const selectedInboxRows = ref<string[]>([])
 const inboxBulkLoading = ref<boolean>(false)
 const inboxMarkAllLoading = ref<boolean>(false)
 
+// Inbox drawer state — opens when the user clicks a row's Message
+// cell. Carries the full title + description + parsed payload so the
+// drawer can render deep-links into the affected release / vulnerability.
+const inboxDrawerOpen = ref<boolean>(false)
+const inboxDrawerRow = ref<InboxRow | null>(null)
+const inboxDrawerPayload = computed<Record<string, unknown> | null>(() => {
+    const raw = inboxDrawerRow.value?.payloadJson
+    if (!raw) return null
+    try {
+        return JSON.parse(raw) as Record<string, unknown>
+    } catch {
+        return null
+    }
+})
+
+function openInboxRow (row: InboxRow): void {
+    inboxDrawerRow.value = row
+    inboxDrawerOpen.value = true
+    // Mark-read-on-open is intentionally NOT wired here — keep the
+    // explicit mark-read affordance as the user's choice. Drift from
+    // "opened it = read it" matches how the rest of ReARM (release
+    // promotions, approvals) treats explicit user signals as primary.
+}
+
+async function markRowReadFromDrawer (): Promise<void> {
+    if (!inboxDrawerRow.value) return
+    await markRowRead(inboxDrawerRow.value)
+    // Sync drawer's readAt so the buttons swap without a fresh fetch.
+    // Fallback: when Unread-only filter is active, markRowRead has
+    // already filtered the row OUT of inboxItems — find() returns
+    // undefined. Stamp readAt directly on the captured drawer row so
+    // the UI still flips Mark read → Mark unread.
+    const fresh = inboxItems.value.find(r => r.uuid === inboxDrawerRow.value?.uuid)
+    if (fresh) {
+        inboxDrawerRow.value = fresh
+    } else {
+        inboxDrawerRow.value = { ...inboxDrawerRow.value, readAt: new Date().toISOString() }
+    }
+}
+
+async function markRowUnreadFromDrawer (): Promise<void> {
+    if (!inboxDrawerRow.value) return
+    await markRowUnread(inboxDrawerRow.value)
+    const fresh = inboxItems.value.find(r => r.uuid === inboxDrawerRow.value?.uuid)
+    if (fresh) {
+        inboxDrawerRow.value = fresh
+    } else {
+        // Symmetric to mark-read: stamp readAt = null so the drawer
+        // immediately reflects the unread state even if the row got
+        // dropped from the current view.
+        inboxDrawerRow.value = { ...inboxDrawerRow.value, readAt: null }
+    }
+}
+
 // Delivery history state
 const deliveries = ref<DeliveryRow[]>([])
 const deliveriesLoading = ref<boolean>(false)
@@ -1311,6 +1457,7 @@ const INBOX_QUERY = gql`
                 uuid org outboxEventUuid subscriptionUuid channelUuid
                 status origin dedupKey attemptCount nextAttemptAt sentAt
                 lastError createdDate readAt eventType severity
+                title description payloadJson
             }
             totalCount unreadCount limit offset
         }
@@ -2522,10 +2669,37 @@ const inboxColumns = computed(() => [
         ),
     },
     {
-        title: 'Event', key: 'eventType',
-        render: (row: InboxRow) => row.eventType
-            ? truncate(row.eventType.replace(/_/g, ' ').toLowerCase(), 40)
-            : h('span', { class: 'muted-12' }, '—'),
+        title: 'Message', key: 'message',
+        render: (row: InboxRow) => {
+            // The Message cell is the click target that opens the inbox
+            // drawer. Title is bold; description sits below as muted
+            // helper text. Fallback to the eventType label when the
+            // server-rendered title is null (malformed payload path).
+            const titleText = row.title || (row.eventType
+                ? row.eventType.replace(/_/g, ' ').toLowerCase()
+                : '(no content)')
+            const description = row.description
+            // <button type="button">, not <a href="#">. The cell is an
+            // action (open drawer), not navigation — anchor semantics
+            // would mis-announce as "link" to screen readers and the
+            // href="#" pattern is fragile.
+            return h(
+                'button',
+                {
+                    type: 'button',
+                    class: 'inbox-message-link',
+                    onClick: () => openInboxRow(row),
+                },
+                {
+                    default: () => [
+                        h('div', { class: 'inbox-message-title' }, truncate(titleText, 80)),
+                        description
+                            ? h('div', { class: 'inbox-message-desc muted-12' }, truncate(description, 100))
+                            : null,
+                    ],
+                },
+            )
+        },
     },
     {
         title: 'Severity', key: 'severity',
@@ -2725,4 +2899,48 @@ onMounted(async () => {
 .routes-title { font-size: 13px; font-weight: 600; }
 .route-row + .route-row { margin-top: 6px; }
 .route-remove-cell { display: flex; align-items: flex-end; }
+
+/* Inbox message column — Title (bold) + description (muted) stacked,
+ * whole cell is the click target that opens the drawer. Rendered as
+ * a button (a11y: announces as "button" not "link"); these resets
+ * make it visually indistinguishable from a plain block of text. */
+.inbox-message-link {
+    display: block;
+    width: 100%;
+    color: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+.inbox-message-link:focus-visible {
+    outline: 2px solid var(--n-color-primary, #2080f0);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+/* naive-ui theme token (defined by n-config-provider) with a hard-coded
+ * fallback. `var(--primary)` would have been a no-op here — that token
+ * isn't defined globally in this app's CSS. */
+.inbox-message-link:hover .inbox-message-title { color: var(--n-color-primary, #2080f0); }
+.inbox-message-title { font-weight: 500; line-height: 1.3; }
+.inbox-message-desc { margin-top: 2px; line-height: 1.3; }
+
+/* Inbox drawer — payload viewer. Monospace + wrap-on-word so a
+ * deeply-nested JSON doesn't blow the drawer's horizontal extent. */
+.inbox-drawer-desc { font-size: 14px; line-height: 1.45; }
+.inbox-drawer-payload {
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    background: var(--code-bg, #f6f7f9);
+    padding: 8px 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
 </style>
