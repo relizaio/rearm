@@ -83,15 +83,20 @@
         <!-- Ship modal -->
         <n-modal v-model:show="showShipModal" preset="dialog" :show-icon="false" :title="terms.shipAction" style="width: 640px;">
             <n-form>
-                <n-form-item label="Feature set UUID">
-                    <n-input v-model:value="shipForm.featureSet" placeholder="UUID of the shipped feature set" @blur="resolveIdentity" />
+                <n-form-item label="Product">
+                    <n-select v-model:value="shipProductUuid" filterable :options="products" placeholder="Pick a product" @update:value="onShipProductChange" />
+                </n-form-item>
+                <n-form-item label="Feature set">
+                    <n-select v-model:value="shipForm.featureSet" filterable :options="featureSetOptions" :disabled="!shipProductUuid" placeholder="Pick a feature set" @update:value="onFeatureSetChange" />
                 </n-form-item>
                 <div v-if="resolvedIdentity" class="identityBox">
                     {{ terms.deviceIdentity }}:
                     <n-tag size="small" :type="resolvedIdentity.deviceClass === 'NONE' ? 'default' : 'info'">{{ resolvedIdentity.deviceClass }}</n-tag>
                     <span v-if="resolvedIdentity.udiDi"> &middot; UDI-DI: <code>{{ resolvedIdentity.udiDi }}</code></span>
                 </div>
-                <n-form-item label="Release UUID"><n-input v-model:value="shipForm.release" placeholder="UUID of the shipped release/version" /></n-form-item>
+                <n-form-item label="Release">
+                    <n-select v-model:value="shipForm.release" filterable :options="shipReleases" :disabled="!shipForm.featureSet" placeholder="Pick a release / version" />
+                </n-form-item>
                 <n-form-item label="Ship date"><n-input v-model:value="shipForm.shipDate" placeholder="YYYY-MM-DD (defaults to today)" /></n-form-item>
                 <n-form-item label="Quantity"><n-input-number v-model:value="shipForm.quantity" :min="1" /></n-form-item>
                 <n-form-item label="Batch identifiers">
@@ -121,8 +126,8 @@
                         </template>
                     </n-dynamic-input>
                 </n-form-item>
-                <n-form-item label="Expected release UUID">
-                    <n-input v-model:value="deviceForm.expectedRelease" placeholder="defaults to the shipment's release" />
+                <n-form-item label="Expected release">
+                    <n-select v-model:value="deviceForm.expectedRelease" filterable clearable :options="deviceReleases" placeholder="defaults to the shipment's release" />
                 </n-form-item>
                 <n-form-item label="Notes"><n-input v-model:value="deviceForm.notes" type="textarea" /></n-form-item>
             </n-form>
@@ -141,12 +146,12 @@
                 </p>
                 <n-divider>Expected version (plan)</n-divider>
                 <n-space size="small">
-                    <n-input v-model:value="planEdit" placeholder="expected release UUID" style="width: 360px;" />
+                    <n-select v-model:value="planEdit" filterable clearable :options="deviceReleases" placeholder="expected release" style="width: 360px;" />
                     <n-button v-if="isWritable" size="small" @click="saveDevicePlan">Update (field repair)</n-button>
                 </n-space>
                 <n-divider>{{ terms.actualReport }}</n-divider>
                 <n-space size="small" vertical>
-                    <n-input v-model:value="actualEdit.reportedRelease" placeholder="reported release UUID" />
+                    <n-select v-model:value="actualEdit.reportedRelease" filterable clearable :options="deviceReleases" placeholder="reported release (observed version)" />
                     <n-select v-model:value="actualEdit.source" :options="sourceOptions" style="width: 200px;" />
                     <n-button v-if="isWritable" size="small" @click="saveDeviceActual">Record {{ terms.actualReport.toLowerCase() }}</n-button>
                 </n-space>
@@ -218,6 +223,32 @@ const showDeviceModal = ref(false)
 const showDeviceDetail = ref(false)
 const resolvedIdentity: Ref<any> = ref(null)
 
+// Selector-driven pickers (Product -> Feature set -> Release), reusing the
+// component/branch/release resolution the product-release editor uses.
+const shipProductUuid: Ref<string> = ref('')
+const shipReleases: Ref<any[]> = ref([])
+const deviceReleases: Ref<any[]> = ref([])
+const products = computed(() => (store.getters.productsOfOrg(orguuid.value) || []).map((p: any) => ({ label: p.name, value: p.uuid })))
+const featureSetOptions = computed(() => (shipProductUuid.value ? (store.getters.branchesOfComponent(shipProductUuid.value) || []) : []).map((b: any) => ({ label: b.type ? `${b.name} [${b.type}]` : b.name, value: b.uuid })))
+
+async function loadReleasesForBranch (branchUuid: string): Promise<any[]> {
+    if (!branchUuid) return []
+    const resp: any = await graphqlClient.query({
+        query: gql`query distReleases($b: ID!, $n: Int) { releases(branchFilter: $b, numRecords: $n) { uuid version createdDate } }`,
+        variables: { b: branchUuid, n: 200 }, fetchPolicy: 'no-cache'
+    })
+    return (resp.data.releases || []).map((r: any) => ({ label: `${r.version} · ${new Date(r.createdDate).toLocaleDateString()}`, value: r.uuid }))
+}
+async function onShipProductChange (uuid: string) {
+    shipForm.featureSet = ''; shipForm.release = ''; shipReleases.value = []; resolvedIdentity.value = null
+    await store.dispatch('fetchBranches', { componentId: uuid, forceRefresh: false })
+}
+async function onFeatureSetChange (branchUuid: string) {
+    shipForm.featureSet = branchUuid; shipForm.release = ''
+    shipReleases.value = await loadReleasesForBranch(branchUuid)
+    await resolveIdentity()
+}
+
 const emptyContact = () => ({ address: '', phone: '', email: '' })
 const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contact: emptyContact(), notes: '' })
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
@@ -275,7 +306,12 @@ async function resolveIdentity () {
 // ---- selection ----
 function selectClient (uuid: string) { router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value, clientuuid: uuid } }) }
 function selectSite (uuid: string) { router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value, clientuuid: selectedClientUuid.value, siteuuid: uuid } }) }
-async function selectShipment (uuid: string) { selectedShipmentUuid.value = uuid; await loadDevices(uuid) }
+async function selectShipment (uuid: string) {
+    selectedShipmentUuid.value = uuid
+    await loadDevices(uuid)
+    const ship = shipments.value.find(s => s.uuid === uuid)
+    deviceReleases.value = ship ? await loadReleasesForBranch(ship.featureSet) : []
+}
 
 watch(() => route.params.clientuuid, async (v) => {
     selectedClientUuid.value = v ? v.toString() : ''
@@ -363,6 +399,7 @@ function cleanIds (ids: any[]) { return (ids || []).filter(i => i.idType && i.id
 function openShipModal () {
     shipForm.featureSet = ''; shipForm.release = ''; shipForm.shipDate = ''; shipForm.quantity = 1
     shipForm.identifiers = []; shipForm.manufactureDate = ''; shipForm.expiryDate = ''
+    shipProductUuid.value = ''; shipReleases.value = []
     resolvedIdentity.value = null; showShipModal.value = true
 }
 async function shipProduct () {
@@ -428,6 +465,7 @@ async function deleteDevice (d: any) {
 }
 
 onMounted(async () => {
+    store.dispatch('fetchProducts', orguuid.value)
     await loadClients()
     if (selectedClientUuid.value) await loadSites(selectedClientUuid.value)
     if (selectedSiteUuid.value) await loadShipments(selectedSiteUuid.value)
