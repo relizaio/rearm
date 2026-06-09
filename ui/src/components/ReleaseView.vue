@@ -871,6 +871,10 @@
                         </ul>
                     </div>
                 </n-tab-pane>
+                <n-tab-pane v-if="isHardware" name="hbomComponents" :tab="`HBOM Components${hbomComponents.length ? ' · ' + hbomComponents.length : ''}`">
+                    <n-input v-model:value="hbomFilter" placeholder="Filter by name / part number / manufacturer / board location" clearable style="max-width: 480px; margin-bottom: 8px;" />
+                    <n-data-table :columns="hbomColumns" :data="filteredHbom" :pagination="{ pageSize: 25 }" size="small" />
+                </n-tab-pane>
                 <n-tab-pane v-if="!isHardware" name="sbomComponents" tab="SBOM Components">
                     <div class="container">
                         <n-space style="margin-bottom: 8px;" align="center">
@@ -1654,6 +1658,34 @@ const givenApprovals: Ref<any> = ref({})
 const words: Ref<any> = ref({})
 const isComponent: Ref<boolean> = ref(true)
 const isHardware: Ref<boolean> = ref(false)
+const hbomComponents: Ref<any[]> = ref([])
+const hbomFilter = ref('')
+const filteredHbom = computed(() => {
+    const f = hbomFilter.value.toLowerCase()
+    if (!f) return hbomComponents.value
+    return hbomComponents.value.filter((c: any) =>
+        [c.name, (c.partNumbers || []).join(' '), c.manufacturer, c.boardLocation, c.version]
+            .filter(Boolean).join(' ').toLowerCase().includes(f))
+})
+const hbomColumns = [
+    { key: 'name', title: 'Component' },
+    { key: 'version', title: 'Version' },
+    { key: 'partNumbers', title: 'Part #', render: (r: any) => (r.partNumbers || []).join(', ') },
+    { key: 'manufacturer', title: 'Manufacturer' },
+    { key: 'boardLocation', title: 'Board loc' },
+    { key: 'deviceType', title: 'Pkg' },
+    { key: 'quantity', title: 'Qty' },
+    { key: 'type', title: 'Type' }
+]
+async function fetchHbomComponents (releaseUuid: string) {
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type name version partNumbers manufacturer boardLocation deviceType quantity isRoot } }`,
+            variables: { releaseUuid }, fetchPolicy: 'no-cache'
+        })
+        hbomComponents.value = resp.data.hbomComponentsOfRelease || []
+    } catch (e) { /* ignore */ }
+}
 const isLoading: Ref<boolean> = ref(true)
 const isProductRelease: Ref<boolean> = ref(false)
 const productArtifactsLoaded: Ref<boolean> = ref(false)
@@ -1732,6 +1764,7 @@ async function fetchRelease () {
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
     isHardware.value = (updatedRelease.value.componentDetails.nature === 'HARDWARE')
+    if (isHardware.value) fetchHbomComponents(updatedRelease.value.uuid)
     const orgTerminology = myorg.value?.terminology
     const resolvedWords = commonFunctions.resolveWords(isComponent.value, orgTerminology)
     words.value = {
