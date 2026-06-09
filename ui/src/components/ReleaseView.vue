@@ -946,8 +946,18 @@
                     </div>
                         </n-tab-pane>
                         <n-tab-pane name="hbomSub" :tab="`HBOM Components${hbomComponents.length ? ' · ' + hbomComponents.length : ''}`">
-                            <n-input v-model:value="hbomFilter" placeholder="Filter by name / part number / manufacturer / board location" clearable style="max-width: 480px; margin-bottom: 8px;" />
-                            <n-data-table :columns="hbomColumns" :data="filteredHbom" :pagination="{ pageSize: 25 }" size="small" />
+                            <n-space style="margin-bottom: 8px;" align="center">
+                                <n-input v-if="hbomViewMode === 'list'" v-model:value="hbomFilter" placeholder="Filter by name / part number / manufacturer / board location" clearable size="small" style="width: 480px;" />
+                                <n-radio-group v-model:value="hbomViewMode" size="small" @update:value="handleHbomViewModeChange">
+                                    <n-radio-button value="list" label="List" />
+                                    <n-radio-button value="tree" label="Tree" />
+                                </n-radio-group>
+                                <n-button v-if="hbomViewMode === 'tree'" size="small" @click="expandAllHbomNodes">Expand all</n-button>
+                                <n-button v-if="hbomViewMode === 'tree'" size="small" @click="collapseAllHbomNodes">Collapse all</n-button>
+                            </n-space>
+                            <n-data-table v-if="hbomViewMode === 'list'" :columns="hbomColumns" :data="filteredHbom" :pagination="{ pageSize: 25 }" size="small" />
+                            <div v-else-if="hbomTreeRoots.length === 0"><p>No hardware tree to display.</p></div>
+                            <div v-else class="sbom-tree-container"><HbomTreeView /></div>
                         </n-tab-pane>
                     </n-tabs>
                 </n-tab-pane>
@@ -1703,6 +1713,90 @@ const hbomColumns = [
         }
     }
 ]
+
+// ----- HBOM tree view (board -> parts), built from the flat rows via bom-ref/parentRef -----
+const hbomViewMode: Ref<'list' | 'tree'> = ref('list')
+const hbomExpandedNodes: Ref<Set<string>> = ref(new Set())
+// Group children by their parentRef (a parent's bom-ref).
+const hbomChildrenByRef: ComputedRef<Record<string, any[]>> = computed(() => {
+    const out: Record<string, any[]> = {}
+    for (const c of hbomComponents.value) {
+        const p = c.parentRef
+        if (p == null) continue
+        ;(out[p] = out[p] || []).push(c)
+    }
+    return out
+})
+const hbomRefSet: ComputedRef<Set<string>> = computed(() =>
+    new Set(hbomComponents.value.map((c: any) => c.bomRef).filter((r: any) => r != null)))
+// Roots: explicitly flagged, else nodes with no resolvable parent.
+const hbomTreeRoots: ComputedRef<any[]> = computed(() => {
+    const declared = hbomComponents.value.filter((c: any) => c.isRoot)
+    if (declared.length) return declared
+    return hbomComponents.value.filter((c: any) => c.parentRef == null || !hbomRefSet.value.has(c.parentRef))
+})
+function hbomChildrenOf (node: any): any[] {
+    return node.bomRef != null ? (hbomChildrenByRef.value[node.bomRef] || []) : []
+}
+function handleHbomViewModeChange (mode: 'list' | 'tree') {
+    hbomViewMode.value = mode
+    if (mode === 'tree' && hbomExpandedNodes.value.size === 0) {
+        hbomExpandedNodes.value = new Set(hbomTreeRoots.value.map((r: any) => r.uuid))
+    }
+}
+function toggleHbomNode (uuid: string) {
+    const next = new Set(hbomExpandedNodes.value)
+    if (next.has(uuid)) next.delete(uuid); else next.add(uuid)
+    hbomExpandedNodes.value = next
+}
+function expandAllHbomNodes () {
+    hbomExpandedNodes.value = new Set(hbomComponents.value.map((c: any) => c.uuid))
+}
+function collapseAllHbomNodes () {
+    hbomExpandedNodes.value = new Set()
+}
+function hbomNodeTooltip (node: any): any {
+    const facts: [string, any][] = [
+        ['Category', node.category], ['Subcategory', node.subcategory],
+        ['Part #', (node.partNumbers || []).join(', ') || null], ['Manufacturer', node.manufacturer],
+        ['Board loc', node.boardLocation], ['Pkg', node.deviceType], ['Qty', node.quantity],
+        ['Type', node.type], ['Description', node.description]
+    ].filter(([, v]) => v !== null && v !== undefined && v !== '') as [string, any][]
+    return h('div', facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)])))
+}
+function renderHbomTreeNode (node: any, ancestors: Set<string>): any {
+    const isCycle = node.bomRef != null && ancestors.has(node.bomRef)
+    const children: any[] = isCycle ? [] : hbomChildrenOf(node)
+    const expanded = hbomExpandedNodes.value.has(node.uuid)
+    const hasChildren = children.length > 0
+    const childAncestors = new Set(ancestors)
+    if (node.bomRef != null) childAncestors.add(node.bomRef)
+
+    const boxClasses = ['sbom-tree-box']
+    if (node.isRoot) boxClasses.push('is-root')
+    const label = node.category ? `${node.name || '(unnamed)'} · ${node.category}` : (node.name || '(unnamed)')
+
+    const selfRow = h('div', { class: 'sbom-tree-self' }, [
+        h(NTooltip, { trigger: 'hover', placement: 'right', style: 'max-width: 440px;' }, {
+            trigger: () => h('span', { class: boxClasses.join(' '), title: 'Hover for details' }, [label]),
+            default: () => hbomNodeTooltip(node)
+        }),
+        h('button', {
+            class: ['sbom-tree-expander', hasChildren ? '' : 'is-leaf'].join(' '),
+            disabled: !hasChildren,
+            onClick: hasChildren ? () => toggleHbomNode(node.uuid) : undefined
+        }, !hasChildren ? '·' : (expanded ? '−' : '+'))
+    ])
+
+    const childrenList = (expanded && hasChildren) ? h('div', { class: 'sbom-tree-children' },
+        children.map((c: any) => h('div', { class: 'sbom-tree-item', key: c.uuid }, [renderHbomTreeNode(c, childAncestors)]))
+    ) : null
+
+    return h('div', { class: 'sbom-tree-node' }, [selfRow, childrenList].filter(Boolean))
+}
+const HbomTreeView = () => h('div', { class: 'sbom-tree-root' },
+    hbomTreeRoots.value.map((r: any) => h('div', { class: 'sbom-tree-item is-root-item', key: r.uuid }, [renderHbomTreeNode(r, new Set())]))
+)
 async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean = false) {
     if (hbomLoaded.value && !forceRefresh) return
     try {
