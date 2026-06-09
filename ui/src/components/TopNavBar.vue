@@ -37,6 +37,9 @@
                 <span>
                     <router-link :to="{ name: 'profile'}"><n-icon class="clickable" title="Profile" size="20"><User /></n-icon></router-link>
                 </span>
+                <span>
+                    <NotificationInbox :orguuid="myorg.uuid" />
+                </span>
                 <span v-if="myUser.isGlobalAdmin && myUser.installationType !== 'OSS'">
                     <router-link :to="{ name: 'systemSettings'}"><n-icon class="clickable" title="Global Admin Settings" size="20"><Settings /></n-icon></router-link>
                 </span>
@@ -62,6 +65,7 @@ import { useRouter } from 'vue-router'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import constants from '@/utils/constants'
+import NotificationInbox from './NotificationInbox.vue'
 
 const isPlayground : boolean = false
 let version : string = ""
@@ -206,7 +210,7 @@ body {
     border-bottom-width: thin;
     border-bottom-color: #dfe4e5;
     display: grid;
-    grid-template-columns: 0.1fr 0.5fr 0.35fr 0.35fr 110px;
+    grid-template-columns: 0.1fr 0.5fr 0.35fr 0.35fr 145px;
     a {
         font-weight: bold;
         color: rgb(25, 25, 25);

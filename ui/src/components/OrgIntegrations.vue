@@ -16,6 +16,14 @@
                 <n-icon size="16" class="subtab-icon"><ShieldCheck /></n-icon>
                 <span>PR Validation</span>
             </button>
+            <button v-if="showCiFeatures" class="subtab-pill" :class="{ active: subTab === 'subscriptions' }" @click="switchSubTab('subscriptions')">
+                <n-icon size="16" class="subtab-icon"><Bell /></n-icon>
+                <span>Subscriptions</span>
+            </button>
+            <button v-if="showCiFeatures" class="subtab-pill" :class="{ active: subTab === 'channel-groups' }" @click="switchSubTab('channel-groups')">
+                <n-icon size="16" class="subtab-icon"><Users /></n-icon>
+                <span>Channel groups</span>
+            </button>
         </div>
 
         <!-- ============================== CATALOG ============================== -->
@@ -121,23 +129,18 @@
                             </button>
                         </template>
 
-                        <!-- Pro-only hint for messaging cards: the new
-                             notifications framework is a separate, security-
-                             focused destination surface. Gated on Pro so the
-                             OSS catalog stays the same. RouterLink target
-                             (NotificationsOfOrg) only resolves once the
-                             notifications-impl branch lands — until then
-                             this PR's link 404s. See PR body for the
-                             merge-ordering note. -->
+                        <!-- Pro-only hint for messaging cards: security and
+                             vulnerability alerts route through the
+                             Subscriptions sub-tab (same Integrations surface)
+                             rather than these base Slack/Teams credentials.
+                             Gated on Pro so the OSS catalog stays the same. -->
                         <div
                             v-if="showCiFeatures && (card.id === 'SLACK' || card.id === 'MSTEAMS')"
                             class="card-pro-hint"
                         >
                             Security and vulnerability alerts use a separate destination —
                             manage in
-                            <RouterLink :to="{ name: 'NotificationsOfOrg', params: { orguuid: props.orguuid } }">
-                                Notifications
-                            </RouterLink>
+                            <a class="pro-hint-link" @click="switchSubTab('subscriptions')">Subscriptions</a>
                             →
                         </div>
                     </div>
@@ -189,6 +192,34 @@
                 </div>
             </div>
             <OrgGlobalPrValidationRules :orgUuid="orguuid" :isWritable="isWritable" />
+        </div>
+
+        <!-- ============================== SUBSCRIPTIONS ============================== -->
+        <div v-if="subTab === 'subscriptions' && showCiFeatures" class="subscriptions-pane-wrap">
+            <div class="info-banner">
+                <n-icon size="20"><Bell /></n-icon>
+                <div>
+                    <div class="info-banner-title">Notification subscriptions</div>
+                    <div class="info-banner-body">
+                        Rules that route security and operational events to your messaging channels. Channels themselves are configured as Slack / Teams / Webhook / Sentinel integrations in the Catalog.
+                    </div>
+                </div>
+            </div>
+            <SubscriptionsOfOrg :orguuid="orguuid" :isWritable="isWritable" />
+        </div>
+
+        <!-- ============================== CHANNEL GROUPS ============================== -->
+        <div v-if="subTab === 'channel-groups' && showCiFeatures" class="channel-groups-pane-wrap">
+            <div class="info-banner">
+                <n-icon size="20"><Users /></n-icon>
+                <div>
+                    <div class="info-banner-title">Channel groups</div>
+                    <div class="info-banner-body">
+                        Named, cross-type collections of channels you can reference from a subscription route instead of repeating the same channel list.
+                    </div>
+                </div>
+            </div>
+            <ChannelGroupsOfOrg :orguuid="orguuid" :isWritable="isWritable" />
         </div>
 
         <!-- ================================= MODALS ================================= -->
@@ -412,7 +443,7 @@ import {
 import {
     Edit as EditIcon, Trash, Refresh, CirclePlus, CloudUpload,
     BrandGithub, BrandGitlab, BrandSlack,
-    PlugConnected, ShieldCheck, LayoutGrid
+    PlugConnected, ShieldCheck, LayoutGrid, Bell, Users
 } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import { FetchPolicy } from '@apollo/client'
@@ -421,6 +452,8 @@ import graphqlClient from '../utils/graphql'
 import commonFunctions from '../utils/commonFunctions'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
+import SubscriptionsOfOrg from './SubscriptionsOfOrg.vue'
+import ChannelGroupsOfOrg from './ChannelGroupsOfOrg.vue'
 import { useNotification, NotificationType } from 'naive-ui'
 
 const props = defineProps<{
@@ -445,7 +478,7 @@ const isGlobalAdmin = computed(() => props.isGlobalAdmin)
 const isWritable = computed(() => props.isWritable)
 
 // ---- Sub-tab state, URL-synced ---------------------------------------------
-type SubTab = 'catalog' | 'webhooks' | 'pr-validation'
+type SubTab = 'catalog' | 'webhooks' | 'pr-validation' | 'subscriptions' | 'channel-groups'
 const subTab = ref<SubTab>((route.query.integrationsTab as SubTab) || 'catalog')
 
 async function switchSubTab(t: SubTab) {
@@ -1122,6 +1155,12 @@ watch(() => props.orguuid, async () => {
     color: var(--muted);
     line-height: 1.4;
 }
+.pro-hint-link {
+    color: var(--n-color-primary, #2080f0);
+    cursor: pointer;
+    text-decoration: none;
+}
+.pro-hint-link:hover { text-decoration: underline; }
 
 /* ---- instance rows ------------------------------------------------------ */
 .instance-list {
