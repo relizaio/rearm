@@ -871,11 +871,9 @@
                         </ul>
                     </div>
                 </n-tab-pane>
-                <n-tab-pane v-if="isHardware" name="hbomComponents" :tab="`HBOM Components${hbomComponents.length ? ' · ' + hbomComponents.length : ''}`">
-                    <n-input v-model:value="hbomFilter" placeholder="Filter by name / part number / manufacturer / board location" clearable style="max-width: 480px; margin-bottom: 8px;" />
-                    <n-data-table :columns="hbomColumns" :data="filteredHbom" :pagination="{ pageSize: 25 }" size="small" />
-                </n-tab-pane>
-                <n-tab-pane v-if="!isHardware" name="sbomComponents" tab="SBOM Components">
+                <n-tab-pane name="bomComponents" tab="BOM Components">
+                    <n-tabs type="line" v-model:value="bomSubTab" @update:value="handleBomSubTabSwitch" animated>
+                        <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomComponents.length ? ' · ' + sbomComponents.length : ''}`">
                     <div class="container">
                         <n-space style="margin-bottom: 8px;" align="center">
                             <n-input
@@ -946,6 +944,12 @@
                             <p>Open this tab to load SBOM components.</p>
                         </div>
                     </div>
+                        </n-tab-pane>
+                        <n-tab-pane name="hbomSub" :tab="`HBOM Components${hbomComponents.length ? ' · ' + hbomComponents.length : ''}`">
+                            <n-input v-model:value="hbomFilter" placeholder="Filter by name / part number / manufacturer / board location" clearable style="max-width: 480px; margin-bottom: 8px;" />
+                            <n-data-table :columns="hbomColumns" :data="filteredHbom" :pagination="{ pageSize: 25 }" size="small" />
+                        </n-tab-pane>
+                    </n-tabs>
                 </n-tab-pane>
                 <n-tab-pane name="compare" tab="Compare">
                     <div class="container">
@@ -1660,6 +1664,8 @@ const words: Ref<any> = ref({})
 const isComponent: Ref<boolean> = ref(true)
 const isHardware: Ref<boolean> = ref(false)
 const hbomComponents: Ref<any[]> = ref([])
+const hbomLoaded: Ref<boolean> = ref(false)
+const bomSubTab: Ref<string> = ref('sbomSub')
 const hbomFilter = ref('')
 const filteredHbom = computed(() => {
     const f = hbomFilter.value.toLowerCase()
@@ -1678,14 +1684,21 @@ const hbomColumns = [
     { key: 'quantity', title: 'Qty' },
     { key: 'type', title: 'Type' }
 ]
-async function fetchHbomComponents (releaseUuid: string) {
+async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean = false) {
+    if (hbomLoaded.value && !forceRefresh) return
     try {
         const resp: any = await graphqlClient.query({
             query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type name version partNumbers manufacturer boardLocation deviceType quantity isRoot } }`,
             variables: { releaseUuid }, fetchPolicy: 'no-cache'
         })
         hbomComponents.value = resp.data.hbomComponentsOfRelease || []
+        hbomLoaded.value = true
     } catch (e) { /* ignore */ }
+}
+// Lazy-load whichever BOM sub-tab (SBOM / HBOM) the user opens.
+function handleBomSubTabSwitch (subTab: string) {
+    if (subTab === 'sbomSub') loadSbomComponents()
+    else if (subTab === 'hbomSub') fetchHbomComponents(updatedRelease.value.uuid)
 }
 const isLoading: Ref<boolean> = ref(true)
 const isProductRelease: Ref<boolean> = ref(false)
@@ -1765,6 +1778,8 @@ async function fetchRelease () {
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
     isHardware.value = (updatedRelease.value.componentDetails.nature === 'HARDWARE')
+    // Hardware releases default the BOM Components view to the HBOM sub-tab.
+    bomSubTab.value = isHardware.value ? 'hbomSub' : 'sbomSub'
     if (isHardware.value) fetchHbomComponents(updatedRelease.value.uuid)
     const orgTerminology = myorg.value?.terminology
     const resolvedWords = commonFunctions.resolveWords(isComponent.value, orgTerminology)
@@ -5967,8 +5982,8 @@ async function handleTabSwitch(tabName: string) {
         await Promise.all([loadUsers(), loadAcollections()])
     } else if (tabName === "underlyingArtifacts" && isProductRelease.value) {
         await fetchProductArtifacts()
-    } else if (tabName === "sbomComponents") {
-        await loadSbomComponents()
+    } else if (tabName === "bomComponents") {
+        handleBomSubTabSwitch(bomSubTab.value)
     } else if (tabName === "partOfProducts") {
         await fetchInProducts()
     } else if (tabName === "vex") {
