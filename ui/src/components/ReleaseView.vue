@@ -1101,6 +1101,7 @@
                 :inputOrgUuid="updatedRelease.orgDetails.uuid"
                 :inputRelease="updatedRelease.uuid"
                 :inputBranch="updatedRelease.branch"
+                :isHardware="isHardware"
                 @addDeliverable="addArtifact"
                 />
         </n-modal>
