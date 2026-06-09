@@ -203,7 +203,7 @@ import commonFunctions from '@/utils/commonFunctions'
 import {
     ChannelRow, InboxRow, deliveryStatusOptions, eventTypeOptions,
     LIST_CHANNELS_QUERY, deliveryStatusTagType, severityTagType,
-    formatHistoryTimestamp, truncate, extractError, buildNameMap
+    formatHistoryTimestamp, extractError, buildNameMap
 } from '@/utils/notificationsCommon'
 
 const props = defineProps<{
@@ -595,9 +595,9 @@ const inboxColumns = computed(() => [
                 },
                 {
                     default: () => [
-                        h('div', { class: 'inbox-message-title' }, truncate(titleText, 80)),
+                        h('div', { class: 'inbox-message-title' }, titleText),
                         description
-                            ? h('div', { class: 'inbox-message-desc muted-12' }, truncate(description, 100))
+                            ? h('div', { class: 'inbox-message-desc muted-12' }, description)
                             : null,
                     ],
                 },
@@ -707,8 +707,24 @@ onUnmounted(() => {
     border-radius: 2px;
 }
 .inbox-message-link:hover .inbox-message-title { color: var(--n-color-primary, #2080f0); }
-.inbox-message-title { font-weight: 500; line-height: 1.3; }
-.inbox-message-desc { margin-top: 2px; line-height: 1.3; }
+/* CSS ellipsis (not JS slicing): clips on the rendered glyph boundary so a
+ * multi-byte char / emoji at the cut point can't be split mid-surrogate. */
+.inbox-message-title {
+    font-weight: 500;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+.inbox-message-desc {
+    margin-top: 2px;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
 
 /* Inbox drawer — payload viewer. Monospace + wrap-on-word so a deeply-nested
  * JSON doesn't blow the drawer's horizontal extent. */
