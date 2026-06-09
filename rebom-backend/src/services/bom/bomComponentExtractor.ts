@@ -132,13 +132,16 @@ export function parseBom(bom: any): ParsedBom {
 
 	// Root from metadata.component — synthesised as a first-class node if it has a purl.
 	const rootMeta: any = bom?.metadata?.component;
-	if (rootMeta && typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
+	if (rootMeta && rootMeta.type !== 'device' && typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
 		pushComponent(toParsedComponent(rootMeta.purl, rootMeta, true), rootMeta['bom-ref']);
 	}
 
 	if (Array.isArray(bom.components)) {
 		for (const component of bom.components) {
 			if (!component || typeof component !== 'object') continue;
+			// `type: device` nodes are hardware — parseHbom owns them. Excluded here
+			// so a device that also carries a purl never double-counts into the SBOM.
+			if (component.type === 'device') continue;
 			const rawPurl = component.purl;
 			if (typeof rawPurl !== 'string' || rawPurl.length === 0) continue;
 			pushComponent(toParsedComponent(rawPurl, component, false), component['bom-ref']);
@@ -265,7 +268,9 @@ export function parseHbom(bom: any): ParsedHbom {
 		if (!c || typeof c !== 'object') return;
 		const type = typeof c.type === 'string' ? c.type : null;
 		const ref = typeof c['bom-ref'] === 'string' ? c['bom-ref'] : null;
-		if (type === 'device' || type === 'firmware') {
+		// HBOM = physical hardware only (`type: device`). Firmware is software and
+		// flows to the SBOM extractor when it carries a purl/cpe (dropped otherwise).
+		if (type === 'device') {
 			out.components.push({
 				bomRef: ref,
 				type,

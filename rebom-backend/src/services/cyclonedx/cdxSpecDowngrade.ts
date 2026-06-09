@@ -37,6 +37,28 @@ const SUPPORTED_DOWNGRADES: Record<string, string> = {
  * 1.7-only field, the validator error will tell us exactly what to strip;
  * revisit then.
  */
+/**
+ * Spec versions our processing + validation stack (cyclonedx-go,
+ * cyclonedx-core-java, cyclonedx-javascript-library) can handle — natively or
+ * via the downgrade above. Anything outside this set (e.g. the CycloneDX 2.0
+ * HBOM prototype, whose `specFormat`/`entities`/device shape no 1.x schema
+ * accepts) is stored raw + verbatim and parsed straight from the raw bytes,
+ * skipping processing/validation/augmentation until the libraries catch up.
+ */
+const PROCESSABLE_SPEC_VERSIONS = new Set<string>([
+    '1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7',
+]);
+
+/**
+ * Returns true when the given CycloneDX specVersion can go through the normal
+ * processing/validation/augmentation pipeline. False for spec versions our
+ * libraries don't yet understand (CDX 2.0+), which must be stored + parsed raw.
+ */
+export function isProcessableCycloneDxSpec(specVersion?: string): boolean {
+    if (!specVersion) return true; // legacy/missing — keep existing best-effort behaviour
+    return PROCESSABLE_SPEC_VERSIONS.has(specVersion);
+}
+
 export function downgradeCycloneDxSpecIfNeeded<T extends { specVersion?: string; $schema?: string }>(bom: T): T {
     if (!bom?.specVersion) return bom;
     const target = SUPPORTED_DOWNGRADES[bom.specVersion];

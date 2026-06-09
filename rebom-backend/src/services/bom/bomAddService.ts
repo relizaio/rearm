@@ -12,7 +12,7 @@ import {
   extractRepositoryNameFromBom
 } from '../oci';
 import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom } from './bomProcessingService';
-import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
+import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../cyclonedx/cdxSpecDowngrade';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { runQuery } from '../../utils';
@@ -107,10 +107,21 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // a recognised spec. The original bytes are still stored verbatim under the
   // `<uuid>-raw` OCI key below — once libraries catch up, that raw copy can
   // be re-augmented at the new spec.
-  const inputForProcessing = downgradeCycloneDxSpecIfNeeded(structuredClone(rawBom));
-  const processedBom = await processBomObj(inputForProcessing);
-
-  await validateBom(processedBom); // throws BomValidationError on failure
+  // CDX 2.0+ (e.g. HBOM prototype) can't go through the 1.x processing/validation
+  // stack — store the raw bytes verbatim and skip processing/validation. The raw
+  // copy is what gets stored under both keys below, so parseBom/parseHbom read the
+  // real 2.0 content. Re-process once the libraries support the new spec.
+  const processable = isProcessableCycloneDxSpec(rawBom?.specVersion);
+  let processedBom: any;
+  if (processable) {
+    const inputForProcessing = downgradeCycloneDxSpecIfNeeded(structuredClone(rawBom));
+    processedBom = await processBomObj(inputForProcessing);
+    await validateBom(processedBom); // throws BomValidationError on failure
+  } else {
+    logger.info({ specVersion: rawBom?.specVersion },
+      'CycloneDX spec not supported by processing/validation stack — storing raw verbatim, skipping processing/validation/augmentation');
+    processedBom = structuredClone(rawBom);
+  }
 
   // Step 2: Prepare metadata
   const rebomOptions: RebomOptions = bomInput.bomInput.rebomOptions ?? {};
@@ -123,7 +134,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   rebomOptions.enrichmentStatus = await getInitialEnrichmentStatus(bomInput.bomInput.org);
   
   let finalBom = processedBom;
-  if (AUGMENT_ON_STORAGE) {
+  if (AUGMENT_ON_STORAGE && processable) {
     logger.debug({ serialNumber: rebomOptions.serialNumber }, "Augmenting BOM with component context before storage");
     finalBom = augmentBomForStorage(processedBom, rebomOptions, new Date());
   }
@@ -274,10 +285,13 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     operation: queryText.startsWith('INSERT') ? 'INSERT' : 'UPDATE'
   }, "BOM record stored successfully");
   
-  // Trigger async enrichment (fire-and-forget)
-  enrichBomAsync(bomRecord.uuid, finalBom, bomInput.bomInput.org).catch(err => {
-    logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
-  });
+  // Trigger async enrichment (fire-and-forget). Skipped for specs the 1.x
+  // stack can't process — enrichment assumes purl-keyed 1.x component shape.
+  if (processable) {
+    enrichBomAsync(bomRecord.uuid, finalBom, bomInput.bomInput.org).catch(err => {
+      logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
+    });
+  }
   
   return bomRecord;
 }
