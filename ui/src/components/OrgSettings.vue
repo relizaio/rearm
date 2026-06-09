@@ -1065,8 +1065,15 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                     </n-form>
                 </div>
             </n-tab-pane>
-            <n-tab-pane name="downloadLog" tab="Download Log" v-if="isOrgAdmin">
-                <DownloadLogView />
+            <n-tab-pane name="audit" tab="Audit" v-if="isOrgAdmin">
+                <n-tabs type="segment" :value="auditSubTab" @update:value="handleAuditSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
+                    <n-tab-pane name="downloadLog" tab="Download Log">
+                        <DownloadLogView />
+                    </n-tab-pane>
+                    <n-tab-pane name="deliveryHistory" tab="Delivery History" v-if="myUser.installationType !== 'OSS'">
+                        <NotificationHistory :orguuid="orgResolved" />
+                    </n-tab-pane>
+                </n-tabs>
             </n-tab-pane>
         </n-tabs>
         <n-modal 
@@ -1138,6 +1145,7 @@ import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import DownloadLogView from './DownloadLogView.vue'
+import NotificationHistory from './NotificationHistory.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
@@ -1407,6 +1415,8 @@ const currentTab = ref(route.query.tab as string || defaultTab)
 // most common entry point. Approval Roles / Entries are configuration of
 // vocabulary used inside the policies.
 const policySubTab = ref(route.query.policyTab as string || 'approvalPoliciesInner')
+// Audit sub-tab: Download Log (all editions) + Delivery History (Pro).
+const auditSubTab = ref(route.query.auditTab as string || 'downloadLog')
 
 const approvalRoleFields: any[] = [
     {
@@ -4353,6 +4363,13 @@ async function handlePolicySubTabSwitch(tabName: string) {
     policySubTab.value = tabName
     await router.push({
         query: { ...route.query, policyTab: tabName }
+    })
+}
+
+async function handleAuditSubTabSwitch(tabName: string) {
+    auditSubTab.value = tabName
+    await router.push({
+        query: { ...route.query, auditTab: tabName }
     })
 }
 

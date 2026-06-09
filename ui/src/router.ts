@@ -140,9 +140,18 @@ const routes : any[] = [
         component: () => import('@/components/OrgSettings.vue')
     },
     {
+        // Notifications surfaces were folded into Org Settings in Phase 2c:
+        // subscriptions + channel groups became Integrations sub-tabs,
+        // delivery history moved under the Audit tab, and the inbox is now
+        // a nav-level drawer. Redirect the retired standalone route to the
+        // Integrations → Subscriptions pill so old bookmarks/links resolve.
         path: '/notificationsOfOrg/:orguuid',
         name: 'NotificationsOfOrg',
-        component: () => import('@/components/NotificationsOfOrg.vue')
+        redirect: (to) => ({
+            name: 'OrgSettings',
+            params: { orguuid: to.params.orguuid },
+            query: { tab: 'integrations', integrationsTab: 'subscriptions' },
+        }),
     },
     {
         path: '/instancesOfOrg/:orguuid',
