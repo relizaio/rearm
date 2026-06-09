@@ -95,7 +95,10 @@
                     <span v-if="resolvedIdentity.udiDi"> &middot; UDI-DI: <code>{{ resolvedIdentity.udiDi }}</code></span>
                 </div>
                 <n-form-item label="Release">
-                    <n-select v-model:value="shipForm.release" filterable :options="shipReleases" :disabled="!shipForm.featureSet" placeholder="Pick a release / version" />
+                    <n-select v-model:value="shipForm.release" filterable :options="shipReleases" :disabled="!shipForm.featureSet" placeholder="Pick a release / version" @update:value="onShipReleaseChange" />
+                </n-form-item>
+                <n-form-item v-if="shipDeliverables.length" label="Deliverable / lot">
+                    <n-select v-model:value="shipForm.deliverable" filterable clearable :options="shipDeliverables" placeholder="Optional — pick a shipped deliverable / lot" />
                 </n-form-item>
                 <n-form-item label="Ship date"><n-input v-model:value="shipForm.shipDate" placeholder="YYYY-MM-DD (defaults to today)" /></n-form-item>
                 <n-form-item label="Quantity"><n-input-number v-model:value="shipForm.quantity" :min="1" /></n-form-item>
@@ -227,6 +230,7 @@ const resolvedIdentity: Ref<any> = ref(null)
 // component/branch/release resolution the product-release editor uses.
 const shipProductUuid: Ref<string> = ref('')
 const shipReleases: Ref<any[]> = ref([])
+const shipDeliverables: Ref<any[]> = ref([])
 const deviceReleases: Ref<any[]> = ref([])
 const products = computed(() => (store.getters.productsOfOrg(orguuid.value) || []).map((p: any) => ({ label: p.name, value: p.uuid })))
 const featureSetOptions = computed(() => (shipProductUuid.value ? (store.getters.branchesOfComponent(shipProductUuid.value) || []) : []).map((b: any) => ({ label: b.type ? `${b.name} [${b.type}]` : b.name, value: b.uuid })))
@@ -244,15 +248,38 @@ async function onShipProductChange (uuid: string) {
     await store.dispatch('fetchBranches', { componentId: uuid, forceRefresh: false })
 }
 async function onFeatureSetChange (branchUuid: string) {
-    shipForm.featureSet = branchUuid; shipForm.release = ''
+    shipForm.featureSet = branchUuid; shipForm.release = ''; shipForm.deliverable = null; shipDeliverables.value = []
     shipReleases.value = await loadReleasesForBranch(branchUuid)
     await resolveIdentity()
+}
+async function onShipReleaseChange (releaseUuid: string) {
+    shipForm.deliverable = null; shipDeliverables.value = []
+    if (!releaseUuid) return
+    const resp: any = await graphqlClient.query({
+        query: gql`query relDeliverables($u: ID!) { release(releaseUuid: $u) { variantDetails { outboundDeliverableDetails { uuid displayIdentifier rearmIdentifiers { idType idValue } quantity } } } }`,
+        variables: { u: releaseUuid }, fetchPolicy: 'no-cache'
+    })
+    const variants = resp.data.release?.variantDetails || []
+    const seen = new Set<string>()
+    const opts: any[] = []
+    for (const v of variants) {
+        for (const d of (v.outboundDeliverableDetails || [])) {
+            if (!d || seen.has(d.uuid)) continue
+            seen.add(d.uuid)
+            const lot = (d.rearmIdentifiers || []).find((i: any) => i.idType === 'LOT')
+            const parts = [d.displayIdentifier || shortUuid(d.uuid)]
+            if (lot) parts.push(`lot ${lot.idValue}`)
+            if (d.quantity) parts.push(`×${d.quantity}`)
+            opts.push({ label: parts.join(' · '), value: d.uuid })
+        }
+    }
+    shipDeliverables.value = opts
 }
 
 const emptyContact = () => ({ address: '', phone: '', email: '' })
 const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contact: emptyContact(), notes: '' })
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
-const shipForm = reactive<any>({ featureSet: '', release: '', shipDate: '', quantity: 1, identifiers: [], manufactureDate: '', expiryDate: '' })
+const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: '', quantity: 1, identifiers: [], manufactureDate: '', expiryDate: '' })
 const deviceForm = reactive<any>({ identifiers: [], expectedRelease: '', notes: '' })
 
 const detailDevice: Ref<any> = ref(null)
@@ -272,7 +299,7 @@ const onCreateUnitId = () => ({ idType: 'SERIAL', idValue: '' })
 // ---- GraphQL ----
 const CLIENT_FIELDS = 'uuid org name domain contact { address phone email } notes'
 const SITE_FIELDS = 'uuid org client name contact { address phone email } notes'
-const SHIP_FIELDS = 'uuid org site featureSet release shipDate quantity manufactureDate expiryDate notes identifiers { idType idValue }'
+const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes identifiers { idType idValue }'
 const DEVICE_FIELDS = 'uuid org shippedProduct site versionDrift notes identifiers { idType idValue } plan { expectedRelease } actual { reportedRelease reportedAt source } tracking { receivedDate patientId disposition dispositionDate }'
 
 async function loadClients () {
@@ -397,14 +424,15 @@ async function deleteSite (s: any) {
 // ---- shipment ----
 function cleanIds (ids: any[]) { return (ids || []).filter(i => i.idType && i.idValue) }
 function openShipModal () {
-    shipForm.featureSet = ''; shipForm.release = ''; shipForm.shipDate = ''; shipForm.quantity = 1
+    shipForm.featureSet = ''; shipForm.release = ''; shipForm.deliverable = null; shipForm.shipDate = ''; shipForm.quantity = 1
     shipForm.identifiers = []; shipForm.manufactureDate = ''; shipForm.expiryDate = ''
-    shipProductUuid.value = ''; shipReleases.value = []
+    shipProductUuid.value = ''; shipReleases.value = []; shipDeliverables.value = []
     resolvedIdentity.value = null; showShipModal.value = true
 }
 async function shipProduct () {
     if (!shipForm.featureSet || !shipForm.release) { notify('warning', 'Missing', 'Feature set and release are required'); return }
     const input: any = { org: orguuid.value, site: selectedSiteUuid.value, featureSet: shipForm.featureSet, release: shipForm.release, quantity: shipForm.quantity, identifiers: cleanIds(shipForm.identifiers) }
+    if (shipForm.deliverable) input.deliverable = shipForm.deliverable
     if (shipForm.shipDate) input.shipDate = shipForm.shipDate
     if (shipForm.manufactureDate) input.manufactureDate = shipForm.manufactureDate
     if (shipForm.expiryDate) input.expiryDate = shipForm.expiryDate
