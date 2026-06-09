@@ -165,6 +165,11 @@ const routes : any[] = [
         component: () => import('@/components/ReleaseView.vue')
     },
     {
+        path: '/device/show/:deviceuuid',
+        name: 'DeviceView',
+        component: () => import('@/components/DeviceView.vue')
+    },
+    {
         path: '/release/:releaseUuid/sbomComponentGraph/:sbomComponentUuid?',
         name: 'SbomComponentGraph',
         component: () => import('@/components/ReleaseSbomComponentGraph.vue'),

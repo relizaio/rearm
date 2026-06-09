@@ -539,6 +539,7 @@ const DELIVERABLE_DETAIL_DATA = `
 const singleReleaseDataNoParent = `
     createdDate
     org
+    hardware
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}

@@ -372,6 +372,13 @@ const deviceColumns = computed(() => [
         render: (r: any) => r.versionDrift
             ? h(NTag, { size: 'small', type: 'warning' }, { default: () => 'DRIFT' })
             : (r.actual && r.actual.reportedRelease ? h(NTag, { size: 'small', type: 'success' }, { default: () => 'match' }) : h('span', { class: 'subtle' }, '—'))
+    },
+    {
+        key: 'twin', title: '',
+        render: (r: any) => h(NButton, {
+            size: 'tiny',
+            onClick: (e: Event) => { e.stopPropagation(); router.push({ name: 'DeviceView', params: { deviceuuid: r.uuid } }) }
+        }, { default: () => 'Open twin' })
     }
 ])
 

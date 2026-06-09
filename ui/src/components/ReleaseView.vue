@@ -1890,7 +1890,12 @@ async function fetchRelease () {
     }
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
-    isHardware.value = (updatedRelease.value.componentDetails.nature === 'HARDWARE')
+    // Backend-computed designation (true for hardware components AND product
+    // releases containing at least one hardware component); fall back to the
+    // component's own nature when the field is unavailable.
+    isHardware.value = updatedRelease.value.hardware != null
+        ? !!updatedRelease.value.hardware
+        : (updatedRelease.value.componentDetails.nature === 'HARDWARE')
     // Hardware releases default the BOM Components view to the HBOM sub-tab.
     bomSubTab.value = isHardware.value ? 'hbomSub' : 'sbomSub'
     if (isHardware.value) fetchHbomComponents(updatedRelease.value.uuid)
