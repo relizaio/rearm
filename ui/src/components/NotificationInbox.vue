@@ -218,12 +218,11 @@ const orgUuid = computed<string>(() => props.orguuid)
 const myuser = computed<any>(() => store.getters.myuser)
 // Inbox is all-editions, but mark-read/unread/bulk flows still gate on a
 // write-capable permission on the active org so a read-only member can
-// triage-view without mutating.
-const userPermission = computed<string>(() =>
-    commonFunctions.getUserPermission(orgUuid.value, myuser.value)?.org || ''
-)
+// triage-view without mutating. Route through the shared isWritable helper
+// (same as OrgSettings et al.) rather than hand-rolling the org-permission
+// check so the logic stays consistent.
 const canWrite = computed<boolean>(() =>
-    userPermission.value === 'ADMIN' || userPermission.value === 'READ_WRITE'
+    commonFunctions.isWritable(orgUuid.value, myuser.value, 'ORG')
 )
 
 const channels = ref<ChannelRow[]>([])

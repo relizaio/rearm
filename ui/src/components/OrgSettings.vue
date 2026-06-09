@@ -1410,7 +1410,20 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
 
 // Tab management with router integration
 const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
-const currentTab = ref(route.query.tab as string || defaultTab)
+// Top-level tabs are role/edition gated in the template, so a deep-link or
+// redirect can request a tab the current user can't see — leaving a blank
+// n-tabs body. (The retired /notificationsOfOrg route now redirects to
+// ?tab=integrations, and it was previously reachable by non-admin members.)
+// Clamp an inaccessible requested tab back to the user's accessible default.
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings']
+const proOnlyTabs = ['policies', 'committers', 'perspectives']
+function isTabAccessible (t: string): boolean {
+    if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
+    if (proOnlyTabs.includes(t) && myUser.value?.installationType === 'OSS') return false
+    return true
+}
+const requestedTab = (route.query.tab as string) || defaultTab
+const currentTab = ref(isTabAccessible(requestedTab) ? requestedTab : defaultTab)
 // Default Policies sub-tab is approvalPoliciesInner (Approval Policies) — the
 // most common entry point. Approval Roles / Entries are configuration of
 // vocabulary used inside the policies.
