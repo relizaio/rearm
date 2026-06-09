@@ -208,6 +208,8 @@ export interface ParsedHbomComponent {
 	name: string | null;
 	version: string | null;
 	description: string | null;
+	category: string | null; // classification.category (e.g. semiconductor)
+	subcategory: string | null; // classification.subcategory (e.g. voltage-regulator)
 	partNumbers: string[];
 	manufacturer: string | null;
 	boardLocation: string | null;
@@ -253,6 +255,17 @@ function manufacturerOf(c: any): string | null {
 	return null;
 }
 
+function classificationOf(c: any): { category: string | null; subcategory: string | null } {
+	const cl = c?.classification;
+	if (cl && typeof cl === 'object') {
+		return {
+			category: typeof cl.category === 'string' ? cl.category : null,
+			subcategory: typeof cl.subcategory === 'string' ? cl.subcategory : null,
+		};
+	}
+	return { category: null, subcategory: null };
+}
+
 function boardLocationOf(c: any): string | null {
 	if (typeof c.boardLocation === 'string') return c.boardLocation;
 	const ev = c?.evidence?.boardLocation;
@@ -277,6 +290,8 @@ export function parseHbom(bom: any): ParsedHbom {
 				name: typeof c.name === 'string' ? c.name : null,
 				version: typeof c.version === 'string' ? c.version : null,
 				description: typeof c.description === 'string' ? c.description : null,
+				category: classificationOf(c).category,
+				subcategory: classificationOf(c).subcategory,
 				partNumbers: extractPartNumbers(c),
 				manufacturer: manufacturerOf(c),
 				boardLocation: boardLocationOf(c),

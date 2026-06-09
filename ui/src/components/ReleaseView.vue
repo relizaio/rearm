@@ -1677,18 +1677,37 @@ const filteredHbom = computed(() => {
 const hbomColumns = [
     { key: 'name', title: 'Component' },
     { key: 'version', title: 'Version' },
+    { key: 'category', title: 'Category' },
+    { key: 'subcategory', title: 'Subcategory' },
     { key: 'partNumbers', title: 'Part #', render: (r: any) => (r.partNumbers || []).join(', ') },
     { key: 'manufacturer', title: 'Manufacturer' },
     { key: 'boardLocation', title: 'Board loc' },
     { key: 'deviceType', title: 'Pkg' },
     { key: 'quantity', title: 'Qty' },
-    { key: 'type', title: 'Type' }
+    {
+        key: 'info', title: 'Info',
+        render: (r: any) => {
+            const facts: [string, any][] = [
+                ['Type', r.type],
+                ['Description', r.description],
+                ['BOM ref', r.bomRef],
+                ['Parent ref', r.parentRef],
+                ['Root', r.isRoot ? 'yes' : null]
+            ]
+            const known = facts.filter(([, v]) => v !== null && v !== undefined && v !== '')
+            if (!known.length) return h('span', { class: 'subtle' }, '—')
+            return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 440px;' }, {
+                trigger: () => h(NIcon, { size: 18, style: 'cursor: pointer; vertical-align: middle; color: #909399;' }, { default: () => h(Info20Regular) }),
+                default: () => h('div', known.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)])))
+            })
+        }
+    }
 ]
 async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean = false) {
     if (hbomLoaded.value && !forceRefresh) return
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type name version partNumbers manufacturer boardLocation deviceType quantity isRoot } }`,
+            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot } }`,
             variables: { releaseUuid }, fetchPolicy: 'no-cache'
         })
         hbomComponents.value = resp.data.hbomComponentsOfRelease || []

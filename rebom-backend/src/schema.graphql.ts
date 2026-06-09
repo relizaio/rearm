@@ -168,6 +168,8 @@ const typeDefs = gql`
     name: String
     version: String
     description: String
+    category: String
+    subcategory: String
     partNumbers: [String]
     manufacturer: String
     boardLocation: String
