@@ -53,6 +53,11 @@ const resolvers = {
 				BomService.parseBomById(input.id, input.org),
 			'parseBomById'
 		),
+		parseHbomById: withErrorHandling(
+			async (_:any, input: { id: string, org: string }) =>
+				BomService.parseHbomById(input.id, input.org),
+			'parseHbomById'
+		),
 		bomDiff: async (_:any, input: any): Promise<Object> => DiffService.bomDiff(input.fromIds, input.toIds, input.org),
 		// Excel endpoints
 		bomByIdExcel: async (_:any, input: any): Promise<string> => {

@@ -191,3 +191,108 @@ export function parseBom(bom: any): ParsedBom {
 export function extractBomComponents(bom: any): ParsedBomComponent[] {
 	return parseBom(bom).components;
 }
+
+// ===== HBOM (hardware BOM) extraction =====
+// CycloneDX HBOM components are `type: device` (with nested `type: firmware`)
+// and have no purl — they are identified by part number + manufacturer +
+// board location. parseHbom flattens the board -> devices -> firmware tree
+// into one entry per hardware node, carrying the parent bom-ref so the
+// backend can rebuild the nesting.
+
+export interface ParsedHbomComponent {
+	bomRef: string | null;
+	type: string | null; // device | firmware
+	name: string | null;
+	version: string | null;
+	description: string | null;
+	partNumbers: string[];
+	manufacturer: string | null;
+	boardLocation: string | null;
+	deviceType: string | null; // DIP / QFN / SMD / PTH
+	quantity: number | null;
+	parentRef: string | null;
+	isRoot: boolean;
+}
+
+export interface ParsedHbom {
+	components: ParsedHbomComponent[];
+}
+
+function extractPartNumbers(c: any): string[] {
+	const out: string[] = [];
+	if (Array.isArray(c.identities)) {
+		for (const id of c.identities) {
+			if (Array.isArray(id?.partNumber)) {
+				for (const pn of id.partNumber) if (typeof pn === 'string') out.push(pn);
+			}
+		}
+	}
+	if (Array.isArray(c.identifiers)) {
+		for (const block of c.identifiers) {
+			const ids = block?.identities;
+			if (Array.isArray(ids)) {
+				for (const id of ids) {
+					if (id?.idType === 'PART_NUMBER' && typeof id?.idValue === 'string') out.push(id.idValue);
+				}
+			}
+		}
+	}
+	return Array.from(new Set(out));
+}
+
+function manufacturerOf(c: any): string | null {
+	if (Array.isArray(c.entities)) {
+		const m = c.entities.find((e: any) => e?.role === 'manufacturer' && typeof e?.name === 'string');
+		if (m) return m.name;
+		const any = c.entities.find((e: any) => typeof e?.name === 'string');
+		if (any) return any.name;
+	}
+	return null;
+}
+
+function boardLocationOf(c: any): string | null {
+	if (typeof c.boardLocation === 'string') return c.boardLocation;
+	const ev = c?.evidence?.boardLocation;
+	if (ev && typeof ev.designator === 'string') return ev.designator;
+	return null;
+}
+
+export function parseHbom(bom: any): ParsedHbom {
+	const out: ParsedHbom = { components: [] };
+	if (!bom || typeof bom !== 'object') return out;
+
+	const visit = (c: any, parentRef: string | null, isRoot: boolean) => {
+		if (!c || typeof c !== 'object') return;
+		const type = typeof c.type === 'string' ? c.type : null;
+		const ref = typeof c['bom-ref'] === 'string' ? c['bom-ref'] : null;
+		if (type === 'device' || type === 'firmware') {
+			out.components.push({
+				bomRef: ref,
+				type,
+				name: typeof c.name === 'string' ? c.name : null,
+				version: typeof c.version === 'string' ? c.version : null,
+				description: typeof c.description === 'string' ? c.description : null,
+				partNumbers: extractPartNumbers(c),
+				manufacturer: manufacturerOf(c),
+				boardLocation: boardLocationOf(c),
+				deviceType: typeof c.deviceType === 'string' ? c.deviceType : null,
+				quantity: typeof c.quantity === 'number' ? c.quantity : null,
+				parentRef,
+				isRoot,
+			});
+		}
+		// Recurse into nested components (firmware under devices, choice wrappers).
+		if (Array.isArray(c.components)) {
+			const childParent = ref ?? parentRef;
+			for (const child of c.components) visit(child, childParent, false);
+		}
+	};
+
+	const root = bom?.metadata?.component;
+	const rootRef = root && typeof root['bom-ref'] === 'string' ? root['bom-ref'] : null;
+	if (root) visit(root, null, true);
+	if (Array.isArray(bom.components)) {
+		for (const c of bom.components) visit(c, rootRef, false);
+	}
+	return out;
+}
