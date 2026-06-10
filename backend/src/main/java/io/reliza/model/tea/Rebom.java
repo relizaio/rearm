@@ -83,9 +83,26 @@ public class Rebom {
 
     /**
      * Parsed SBOM component as returned by rebom's parseBomById query.
-     * canonicalPurl is the purl with qualifiers + subpath stripped; fullPurl
-     * preserves the original purl exactly as it appeared in the BOM.
-     * isRoot is true for the node synthesised from bom.metadata.component.
+     * canonicalPurl is the purl with qualifiers + subpath stripped (required
+     * qualifiers preserved for julia/swid/oci); fullPurl preserves the original
+     * purl exactly as it appeared in the BOM. isRoot is true for the node
+     * synthesised from bom.metadata.component.
+     *
+     * cpe is the declared CPE coordinate (null when absent). licenses passes
+     * through declared licenses in the exact CycloneDX array shape (each item is
+     * {license:{id|name,...}} or {expression}); empty list when absent.
+     *
+     * NB: kept as the raw CDX array (not the typed org.cyclonedx LicenseChoice)
+     * because this record is deserialized from rebom's response by the app's
+     * Jackson 3 mapper, and the cyclonedx-core-java library is Jackson 2 — its
+     * LicenseChoice class-level @JsonDeserialize is invisible to Jackson 3, so a
+     * LicenseChoice field fails to deserialize from the array. The typed
+     * LicenseChoice is materialized only at the BOM-emit boundary via
+     * CdxLicenseUtil (which uses a Jackson 2 mapper).
+     *
+     * TODO: when rebom emits a richer {scheme,value} identities array (swid,
+     * swhid, omniborid, and identities for no-purl components), consume it here
+     * instead of synthesising identities backend-side from canonicalPurl + cpe.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ParsedBomComponent(
@@ -95,7 +112,9 @@ public class Rebom {
         String group,
         String name,
         String version,
-        Boolean isRoot
+        Boolean isRoot,
+        String cpe,
+        java.util.List<java.util.Map<String, Object>> licenses
     ) {}
 
     /**

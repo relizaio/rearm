@@ -323,6 +323,7 @@ public class RebomService {
                 parseBomById(id: $id, org: $org) {
                     components {
                         canonicalPurl fullPurl type group name version isRoot
+                        cpe licenses
                     }
                     dependencies {
                         sourceCanonicalPurl sourceFullPurl
@@ -490,7 +491,26 @@ public class RebomService {
         }
         return Utils.OM.convertValue(br, BomMeta.class);
     }
-    
+
+    /**
+     * Whether BEAR enrichment is configured for the org (rebom-side integration).
+     * Drives the synthetic Dependency-Track gate and the enrichment puller: a
+     * BEAR-configured org ships only enriched components and is drained by the
+     * puller; a non-BEAR org ships every matchable component immediately and is
+     * skipped by the puller.
+     */
+    public boolean isEnrichmentConfigured(UUID org) {
+        String query = """
+                query isEnrichmentConfigured ($org: ID!) {
+                    isEnrichmentConfigured(org: $org)
+                }""";
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        Object val = response != null ? response.get("isEnrichmentConfigured") : null;
+        return Boolean.TRUE.equals(val);
+    }
+
     public List<BomMeta> resolveBomMetas(UUID bomSerialNumber, UUID org) {
         String query = """
                 query bomMetaBySerialNumber ($serialNumber: ID!, $org: ID!) {

@@ -35,7 +35,6 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.ArtifactData.ArtifactType;
-import io.reliza.model.dto.SyncDtrackStatusResponseDto;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.ArtifactService;
@@ -284,22 +283,6 @@ public class ArtifactDataFetcher {
 	// }
 	
 	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "syncDtrackStatus")
-	public SyncDtrackStatusResponseDto syncDtrackStatus(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = UUID.fromString(orgUuidStr);
-		
-		var od = getOrganizationService.getOrganizationData(orgUuid);
-		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
-		
-		log.info("User {} initiated DTrack status sync for organization {}", oud.get().getUuid(), orgUuid);
-		
-		return artifactService.syncDtrackStatus(orgUuid);
-	}
-	
-	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "triggerEnrichment")
 	public EnrichmentTriggerResult triggerEnrichment(
 			@InputArgument("artifact") UUID artifactUuid) throws RelizaException {
@@ -321,22 +304,6 @@ public class ArtifactDataFetcher {
 		}
 		
 		return rebomService.triggerEnrichment(ad.getInternalBom().id(), ad.getOrg());
-	}
-
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "refetchDependencyTrackMetrics")
-	public boolean refetchDependencyTrackMetrics (
-			@InputArgument("artifact") UUID art) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		Optional<Artifact> oa = sharedArtifactService.getArtifact(art);
-		
-		RelizaObject ro = oa.isPresent() ? ArtifactData.dataFromRecord(oa.get()) : null;
-		var releases = sharedReleaseService.gatherReleasesForArtifact(art, ro.getOrg());
-		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
-		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.WRITE);
-
-		return artifactService.fetchDependencyTrackDataForArtifact(oa.get());
 	}
 
 	@Transactional

@@ -122,7 +122,7 @@ public class AgentSessionService {
 	 */
 	@Transactional
 	public AgentSessionData initialize(UUID orgUuid, UUID rootAgentUuid, UUID apiKeyUuid,
-			String clientSessionId, String title, UUID parentSessionUuid, WhoUpdated wu) throws RelizaException {
+			String clientSessionId, String title, UUID parentSessionUuid, UUID modelUuid, WhoUpdated wu) throws RelizaException {
 		if (orgUuid == null) throw new RelizaException("Session requires an org");
 		if (rootAgentUuid == null) throw new RelizaException("Session requires an agent");
 		AgentData agent = agentService.getAgentData(rootAgentUuid)
@@ -168,6 +168,11 @@ public class AgentSessionService {
 		seed.setTitle(title);
 		seed.setStatus(SessionStatus.OPEN);
 		seed.setParentSession(parentSessionUuid);
+		// Model is a property of the chat, not the durable agent. The
+		// caller resolved it from the agent's declared (model, version,
+		// vendor) triple; assertion stays at the data default DECLARED
+		// since the agent self-reported it.
+		seed.setModel(modelUuid);
 		ZonedDateTime now = ZonedDateTime.now();
 		seed.setStartedAt(now);
 		seed.setLastActivityAt(now);
@@ -231,7 +236,7 @@ public class AgentSessionService {
 	@Transactional
 	public AgentSessionData initialize(UUID orgUuid, UUID rootAgentUuid, UUID apiKeyUuid,
 			String clientSessionId, String title, WhoUpdated wu) throws RelizaException {
-		return initialize(orgUuid, rootAgentUuid, apiKeyUuid, clientSessionId, title, null, wu);
+		return initialize(orgUuid, rootAgentUuid, apiKeyUuid, clientSessionId, title, null, null, wu);
 	}
 
 	@Transactional

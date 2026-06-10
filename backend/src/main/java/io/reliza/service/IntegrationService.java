@@ -650,76 +650,6 @@ public class IntegrationService {
 		return new DependencyTrackUploadResult(projectId.toString(), token, projectName, projectVersion, fullDtrackUri);
 	}
 	
-	/**
-	 * Upload a new BOM to an existing Dependency Track project.
-	 * Used when updating an artifact that already has a DTrack project associated.
-	 */
-	public DependencyTrackUploadResult uploadBomToExistingDtrackProject(UUID orgUuid, UploadableBom bom, 
-			UUID existingProjectId, String projectName, String projectVersion) {
-		try {
-			return dtrackService.uploadBomToExistingProject(orgUuid, bom, existingProjectId, 
-				projectName, projectVersion);
-		} catch (RelizaException e) {
-			log.error("Error uploading BOM to existing Dependency Track project: " + existingProjectId, e);
-			throw new RuntimeException("Error uploading BOM to existing Dependency Track project: " + e.getMessage());
-		}
-	}
-	
-	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) throws RelizaException {
-		if (null == lastScanned) lastScanned = ZonedDateTime.now();
-		DependencyTrackIntegration dti = null;
-		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
-				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
-		if (oid.isPresent()) {
-			IntegrationData dtrackIntegration = oid.get();
-			try {
-				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
-				URI eventTokenUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/event/token/" + ad.getMetrics().getUploadToken());
-				var processingResp = dtrackWebClient
-						.get()
-						.uri(eventTokenUri)
-						.header("X-API-Key", apiToken)
-						.retrieve()
-						.toEntity(String.class)
-						.block();
-				@SuppressWarnings("unchecked")
-				Map<String, Object> processingRespMap = Utils.OM.readValue(processingResp.getBody(), Map.class);
-				Boolean isProcessing = (Boolean) processingRespMap.get("processing");
-				if (!isProcessing) {
-					dti = obtainDepdencyTrackProjectMetrics(dtrackIntegration.getUri(), apiToken, ad, lastScanned);
-					URI fullDtrackUri = URI.create(dtrackIntegration.getFrontendUri()
-							.toString() + "/projects/" + ad.getMetrics().getDependencyTrackProject());
-					dti.setDependencyTrackFullUri(fullDtrackUri);
-					dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
-					dti.setUploadToken(ad.getMetrics().getUploadToken());
-					dti.setUploadDate(ad.getMetrics().getUploadDate());
-					dti.setLastScanned(lastScanned);
-				}
-			} catch (Exception e) {
-				log.error("Exception processing status of artifact on dependency track with id = " + ad.getUuid(), e);
-				throw new RelizaException("Could not refetch Dependency Metrics for artifact id = " + ad.getUuid());
-			}
-		}
-		return dti;
-	}
-	
-	private DependencyTrackIntegration obtainDepdencyTrackProjectMetrics (URI dtrackBaseUri,
-			String apiToken, ArtifactData ad, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
-		String dtrackProject = ad.getMetrics().getDependencyTrackProject();
-		DependencyTrackIntegration dti = new DependencyTrackIntegration();
-		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
-				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), ad.getOrg(), lastScanned);
-		List<ViolationDto> violationDetails = fetchDependencyTrackViolationDetails(
-				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), ad.getOrg(), lastScanned);
-		dti.setVulnerabilityDetails(vulnerabilityDetails);
-		dti.setViolationDetails(violationDetails);
-		vulnAnalysisService.processReleaseMetricsDto(ad.getOrg(), ad.getOrg(), AnalysisScope.ORG, dti);
-		if (null == dti.getDependencyTrackProject()) dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
-		if (null == dti.getProjectName()) dti.setProjectName(ad.getMetrics().getProjectName());
-		if (null == dti.getProjectVersion()) dti.setProjectVersion(ad.getMetrics().getProjectVersion());
-		if (null == dti.getUploadDate()) dti.setUploadDate(ad.getMetrics().getUploadDate());
-		return dti;
-	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackResolvedLicenseRaw(String licenseId) {}
@@ -741,7 +671,13 @@ public class IntegrationService {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	private record DtrackComponentRaw(String purl, DtrackResolvedLicenseRaw resolvedLicense, String licenseExpression) {}
+	private record DtrackComponentRaw(String purl, String cpe, DtrackResolvedLicenseRaw resolvedLicense, String licenseExpression) {}
+
+	/** A fetched vulnerability paired with its component's CPE (null when absent). */
+	public record VulnWithCpe(VulnerabilityDto vuln, String cpe) {}
+
+	/** A fetched policy violation paired with its component's CPE (null when absent). */
+	public record ViolationWithCpe(ViolationDto violation, String cpe) {}
 	
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackAliasRaw(String cveId, String ghsaId, String uuid) {}
@@ -788,6 +724,17 @@ public class IntegrationService {
 	
 	protected List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
+		return fetchDependencyTrackVulnerabilityDetailsWithCpe(dtrackBaseUri, apiToken, dtrackProject,
+				artifactUuid, orgUuid, lastScanned).stream().map(VulnWithCpe::vuln).collect(java.util.stream.Collectors.toList());
+	}
+
+	/**
+	 * Same as {@link #fetchDependencyTrackVulnerabilityDetails} but pairs each
+	 * finding with its component's CPE so the synthetic-SBOM ingest can map
+	 * cpe-only (purl-less) findings back to their canonical component.
+	 */
+	public List<VulnWithCpe> fetchDependencyTrackVulnerabilityDetailsWithCpe(URI dtrackBaseUri,
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		// Use lastScanned (DTrack scan time) as attributedAt so findings are included in First Scanned VDR
@@ -803,8 +750,8 @@ public class IntegrationService {
 		Map<String, List<DtrackVulnRaw>> rowsByCanonical = new java.util.LinkedHashMap<>();
 		Map<String, Set<String>> aliasesByCanonical = new java.util.LinkedHashMap<>();
 
-		List<VulnerabilityDto> all = executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
-			List<VulnerabilityDto> pageResults = new ArrayList<>();
+		List<VulnWithCpe> all = executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
+			List<VulnWithCpe> pageResults = new ArrayList<>();
 			for (Object vd : rawPage) {
 				DtrackVulnRaw dvr = Utils.OM.convertValue(vd, DtrackVulnRaw.class);
 				Set<VulnerabilityAliasDto> aliases = new LinkedHashSet<>();
@@ -847,7 +794,7 @@ public class IntegrationService {
 					// resolve them from the new table at export time.
 					VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt,
 							null, null, null, null, null);
-					pageResults.add(vdto);
+					pageResults.add(new VulnWithCpe(vdto, c.cpe()));
 				});
 			}
 			return pageResults;
@@ -961,10 +908,20 @@ public class IntegrationService {
 	
 	protected List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
+		return fetchDependencyTrackViolationDetailsWithCpe(dtrackBaseUri, apiToken, dtrackProject,
+				artifactUuid, orgUuid, lastScanned).stream().map(ViolationWithCpe::violation).collect(java.util.stream.Collectors.toList());
+	}
+
+	/**
+	 * Same as {@link #fetchDependencyTrackViolationDetails} but pairs each
+	 * violation with its component's CPE (synthetic-SBOM ingest mapping).
+	 */
+	public List<ViolationWithCpe> fetchDependencyTrackViolationDetailsWithCpe(URI dtrackBaseUri,
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		final Set<FindingSourceDto> sources = Set.of(source);
-		
+
 		// Get ignore patterns from organization
 		OrganizationData.IgnoreViolation ignoreViolation = null;
 		Optional<OrganizationData> orgOpt = getOrganizationService.getOrganizationData(orgUuid);
@@ -975,19 +932,19 @@ public class IntegrationService {
 
 		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "",
 				CommonVariables.DTRACK_VIOLATIONS_PAGE_SIZE, rawPage -> {
-			List<ViolationDto> pageResults = new ArrayList<>();
+			List<ViolationWithCpe> pageResults = new ArrayList<>();
 			for (Object vd : rawPage) {
 				DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
 				// Decode URL-encoded @ symbol in purl from DTrack
 				String purl = dvr.component().purl() != null ? dvr.component().purl().replace("%40", "@") : null;
 				ViolationType violationType = dvr.type();
-				
+
 				// Check if this violation should be ignored based on purl regex patterns
 				if (shouldIgnoreViolation(purl, violationType, finalIgnoreViolation)) {
 					log.debug("Ignoring violation for purl {} of type {} based on org ignore patterns", purl, violationType);
 					continue;
 				}
-				
+
 				String licenseId;
 				if (null != dvr.component().resolvedLicense()) {
 					licenseId = dvr.component().resolvedLicense().licenseId();
@@ -998,7 +955,7 @@ public class IntegrationService {
 				}
 				ViolationDto vdto = new ViolationDto(purl, violationType,
 						licenseId, null, sources, null, null, lastScanned != null ? lastScanned : ZonedDateTime.now());
-				pageResults.add(vdto);
+				pageResults.add(new ViolationWithCpe(vdto, dvr.component().cpe()));
 			}
 			return pageResults;
 		});
@@ -1288,44 +1245,6 @@ public class IntegrationService {
 		return combined;
 	}
 	
-	
-	@Transactional
-	public boolean requestMetricsRefreshOnDependencyTrack (ArtifactData ad) {
-		sharedArtifactService.resetArtifactDtrackFailedState(ad.getUuid());
-		return dtrackService.requestMetricsRefresh(ad);
-	}
-	
-	/**
-	 * Upload BOM to DTrack and update related artifacts if project ID changes.
-	 * Handles both initial upload and resubmission scenarios.
-	 * 
-	 * @param orgUuid Organization UUID
-	 * @param bom BOM to upload (JsonNode or raw bytes)
-	 * @param projectName DTrack project name
-	 * @param projectVersion DTrack project version
-	 * @param oldProjectId Previous project ID (null for new artifacts)
-	 * @param updateArtifact Artifact to update with result (null to skip)
-	 * @return DependencyTrackUploadResult with project ID and token
-	 */
-	public DependencyTrackUploadResult uploadBomAndUpdateRelated(
-			UUID orgUuid,
-			UploadableBom bom,
-			String projectName,
-			String projectVersion,
-			String oldProjectId,
-			ArtifactData updateArtifact) {
-		try {
-			return dtrackService.uploadBomAndUpdateRelated(orgUuid, bom, projectName, 
-				projectVersion, oldProjectId, updateArtifact);
-		} catch (RelizaException e) {
-			log.error("Error uploading BOM to DTrack", e);
-			throw new RuntimeException("Error uploading BOM to DTrack: " + e.getMessage());
-		}
-	}
-	
-	private boolean resubmitArtifactToDependencyTrack(ArtifactData ad) {
-		return dtrackService.resubmitArtifact(ad);
-	}
 	
 	/**
 	 * Retrieve unsynced vulnerabilities from Dependency Track based on last sync time
@@ -1619,289 +1538,72 @@ public class IntegrationService {
 	}
 	
 	/**
-	 * Result of DTrack project cleanup operation
+	 * Result of one phase-out tick: how many legacy DTrack projects were deleted,
+	 * how many deletes failed (left for the next tick), and how many artifact rows
+	 * had their legacy reference cleared.
 	 */
-	public record DtrackProjectCleanupResult(
-		int projectsEvaluated,
-		int projectsDeleted,
-		int projectsFailed,
-		List<String> deletedProjectIds,
-		List<String> errors
-	) {}
-	
+	public record LegacyDtrackPhaseOutResult(int projectsDeleted, int projectsFailed, int artifactsCleared) {}
+
 	/**
-	 * Clean up DTrack projects that are only used by archived branches
-	 * 
-	 * @param orgUuid Organization UUID
-	 * @return Cleanup result summary
+	 * One tick of the legacy per-artifact DTrack project phase-out. Deletes up to
+	 * {@code batchLimit} unique legacy projects (globally, grouped per org so each
+	 * org's DTrack token is used) and, on a successful delete, clears the project
+	 * reference off the referring artifacts. A failed delete leaves the reference
+	 * in place so the project is retried next tick. See
+	 * {@code SchedulingService.scheduleLegacyDtrackProjectPhaseOut}.
 	 */
-	@Async
-	public void cleanupArchivedDtrackProjectsAsync(UUID orgUuid) {
-		cleanupArchivedDtrackProjects(orgUuid);
-	}
-	
-	// NOT @Transactional. The cleanup makes per-project HTTP DELETE calls
-	// to an external DT API inside its inner loop — holding an open
-	// Hibernate transaction across those network calls used to keep the
-	// persistence context alive for the entire per-org cleanup (often
-	// minutes), accumulating every Artifact entity loaded by
-	// markArtifactsWithDeletedProjects + their JSONB dirty-snapshots.
-	// That was an OOM contributor at ~03:28 UTC. The mark step now uses
-	// a single SQL UPDATE (no entity load), and the per-DT-call DB writes
-	// inside this loop already carry their own narrower @Transactional
-	// scopes where needed.
-	public DtrackProjectCleanupResult cleanupArchivedDtrackProjects(UUID orgUuid) {
-		log.info("[DTRACK-CLEANUP] Starting cleanup for org {}", orgUuid);
-		
-		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(
-			orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
-		
-		if (oid.isEmpty()) {
-			log.debug("[DTRACK-CLEANUP] No DTrack integration configured for org {}", orgUuid);
-			return new DtrackProjectCleanupResult(0, 0, 0, List.of(), List.of());
+	public LegacyDtrackPhaseOutResult phaseOutLegacyDtrackProjects(int batchLimit) {
+		List<Object[]> rows = artifactRepository.listLegacyDtrackProjectsForPhaseOut(batchLimit);
+		if (rows.isEmpty()) {
+			return new LegacyDtrackPhaseOutResult(0, 0, 0);
 		}
-		
-		IntegrationData dtrackIntegration = oid.get();
-		String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
-		
-		List<String> orphanedProjectIds = artifactService.findOrphanedDtrackProjects(orgUuid);
-		log.info("[DTRACK-CLEANUP] Found {} orphaned projects for org {}", orphanedProjectIds.size(), orgUuid);
-		
-		if (orphanedProjectIds.isEmpty()) {
-			return new DtrackProjectCleanupResult(0, 0, 0, List.of(), List.of());
+		// Group projects by org so we look up each org's DTrack token once.
+		Map<UUID, List<String>> projectsByOrg = new HashMap<>();
+		for (Object[] row : rows) {
+			String projectId = row[0] == null ? null : String.valueOf(row[0]);
+			String orgStr = row[1] == null ? null : String.valueOf(row[1]);
+			if (projectId == null || projectId.isBlank() || orgStr == null || orgStr.isBlank()) continue;
+			projectsByOrg.computeIfAbsent(UUID.fromString(orgStr), k -> new ArrayList<>()).add(projectId);
 		}
-		
-		// Mark all artifacts using these projects as deleted BEFORE deleting from DTrack
-		log.info("[DTRACK-CLEANUP] Marking artifacts for {} orphaned projects", orphanedProjectIds.size());
-		markArtifactsWithDeletedProjects(orgUuid, orphanedProjectIds);
-		
-		List<String> deletedProjects = new ArrayList<>();
-		List<String> errors = new ArrayList<>();
-		
-		// Delete projects one at a time
-		for (String projectId : orphanedProjectIds) {
-			try {
-				boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
-				if (deleted) {
-					deletedProjects.add(projectId);
-					log.info("[DTRACK-CLEANUP] Successfully deleted project {}", projectId);
-				} else {
-					log.warn("[DTRACK-CLEANUP] Failed to delete project {}", projectId);
-					errors.add("Failed to delete project " + projectId);
-				}
-			} catch (Exception ex) {
-				log.warn("[DTRACK-CLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
-				errors.add("Error deleting project " + projectId + ": " + ex.getMessage());
+
+		int deleted = 0, failed = 0, cleared = 0;
+		for (Map.Entry<UUID, List<String>> e : projectsByOrg.entrySet()) {
+			UUID orgUuid = e.getKey();
+			Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(
+					orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+			if (oid.isEmpty()) {
+				// Org dropped its DTrack integration; we can't delete the project. Leave
+				// the refs — harmless, and a re-added integration lets the next tick proceed.
+				log.debug("[DTRACK-PHASEOUT] No DTrack integration for org {}; skipping {} project(s)",
+						orgUuid, e.getValue().size());
+				continue;
 			}
-		}
-		
-		DtrackProjectCleanupResult result = new DtrackProjectCleanupResult(
-			orphanedProjectIds.size(),
-			deletedProjects.size(),
-			errors.size(),
-			deletedProjects,
-			errors
-		);
-		
-		log.info("[DTRACK-CLEANUP] Completed for org {}: evaluated={}, deleted={}, failed={}", 
-			orgUuid, result.projectsEvaluated(), result.projectsDeleted(), result.projectsFailed());
-		
-		return result;
-	}
-	
-	/**
-	 * Re-cleanup DTrack projects that were previously marked as deleted but may still exist in DTrack.
-	 * This is useful for retrying deletions that failed due to network issues or other transient errors.
-	 */
-	@Async
-	public void recleanupDtrackProjectsAsync(UUID orgUuid) {
-		log.info("[DTRACK-RECLEANUP] Starting recleanup for org {}", orgUuid);
-		
-		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(
-			orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
-		
-		if (oid.isEmpty()) {
-			log.debug("[DTRACK-RECLEANUP] No DTrack integration configured for org {}", orgUuid);
-			return;
-		}
-		
-		IntegrationData dtrackIntegration = oid.get();
-		String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
-		
-		List<String> deletedProjectIds = artifactService.findDeletedDtrackProjects(orgUuid);
-		log.info("[DTRACK-RECLEANUP] Found {} previously deleted projects for org {}", deletedProjectIds.size(), orgUuid);
-		
-		if (deletedProjectIds.isEmpty()) {
-			return;
-		}
-		
-		int successCount = 0;
-		int failCount = 0;
-		
-		for (String projectId : deletedProjectIds) {
-			try {
-				boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
-				if (deleted) {
-					successCount++;
-					log.info("[DTRACK-RECLEANUP] Successfully deleted project {}", projectId);
-				} else {
-					failCount++;
-					log.warn("[DTRACK-RECLEANUP] Failed to delete project {}", projectId);
-				}
-			} catch (Exception ex) {
-				failCount++;
-				log.warn("[DTRACK-RECLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
-			}
-		}
-		
-		log.info("[DTRACK-RECLEANUP] Completed for org {}: total={}, deleted={}, failed={}", 
-			orgUuid, deletedProjectIds.size(), successCount, failCount);
-	}
-	
-	/**
-	 * Result of a batch delete operation
-	 */
-	private record BatchDeleteResult(
-		boolean allSucceeded,
-		List<String> succeededProjects,
-		List<String> failedProjects
-	) {
-		boolean partialSuccess() {
-			return !succeededProjects.isEmpty() && !failedProjects.isEmpty();
-		}
-	}
-	
-	/**
-	 * Batch delete multiple projects from Dependency Track (v4.12+)
-	 * DTrack API limits batch size to 1000 projects per request
-	 */
-	private BatchDeleteResult deleteDtrackProjectsBatch(IntegrationData dtrackIntegration, String apiToken, List<String> projectIds) {
-		// DTrack API enforces max 1000 projects per batch
-		final int MAX_BATCH_SIZE = 100;
-		
-		if (projectIds.size() > MAX_BATCH_SIZE) {
-			log.info("[DTRACK-CLEANUP] Processing {} projects in chunks of {}", projectIds.size(), MAX_BATCH_SIZE);
-			
-			// Split into chunks and process each
-			List<String> allSucceeded = new ArrayList<>();
-			List<String> allFailed = new ArrayList<>();
-			
-			for (int i = 0; i < projectIds.size(); i += MAX_BATCH_SIZE) {
-				int end = Math.min(i + MAX_BATCH_SIZE, projectIds.size());
-				List<String> chunk = projectIds.subList(i, end);
-				
-				BatchDeleteResult chunkResult = deleteDtrackProjectsBatchInternal(dtrackIntegration, apiToken, chunk);
-				allSucceeded.addAll(chunkResult.succeededProjects());
-				allFailed.addAll(chunkResult.failedProjects());
-			}
-			
-			return new BatchDeleteResult(allFailed.isEmpty(), allSucceeded, allFailed);
-		}
-		
-		return deleteDtrackProjectsBatchInternal(dtrackIntegration, apiToken, projectIds);
-	}
-	
-	/**
-	 * Internal method to perform the actual batch delete API call
-	 * Returns which projects succeeded and which failed
-	 */
-	private BatchDeleteResult deleteDtrackProjectsBatchInternal(IntegrationData dtrackIntegration, String apiToken, List<String> projectIds) {
-		try {
-			URI batchDeleteUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/project/batchDelete");
-			
-			// DTrack batch delete expects POST method with Set<UUID>, not DELETE with List
-			Set<String> projectIdsSet = new HashSet<>(projectIds);
-			
-			var response = dtrackWebClient
-				.post()
-				.uri(batchDeleteUri)
-				.header("X-API-Key", apiToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.bodyValue(projectIdsSet)
-				.retrieve()
-				.toEntity(String.class)
-				.block();
-			
-			if (response != null && response.getStatusCode().is2xxSuccessful()) {
-				// All projects succeeded
-				return new BatchDeleteResult(true, new ArrayList<>(projectIds), List.of());
-			}
-			
-			return new BatchDeleteResult(false, List.of(), new ArrayList<>(projectIds));
-			
-		} catch (WebClientResponseException wcre) {
-			String responseBody = wcre.getResponseBodyAsString();
-			
-			if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
-				log.warn("[DTRACK-CLEANUP] Batch delete endpoint not found (404) - DTrack version < v4.12");
-				throw new UnsupportedOperationException("Batch delete endpoint not available (DTrack < v4.12)");
-			}
-			
-			// Parse error response to identify which projects failed
-			if (wcre.getStatusCode() == HttpStatus.BAD_REQUEST && responseBody != null && responseBody.contains("errors")) {
+			IntegrationData dtrackIntegration = oid.get();
+			String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+			for (String projectId : e.getValue()) {
 				try {
-					JsonNode errorJson = Utils.OM.readTree(responseBody);
-					JsonNode errorsNode = errorJson.get("errors");
-					
-					if (errorsNode != null && errorsNode.isObject()) {
-						List<String> actualFailures = new ArrayList<>();
-						
-						// Categorize errors: "Project not found" = already deleted (success), others = actual failures
-						errorsNode.properties().iterator().forEachRemaining(entry -> {
-							String projectId = entry.getKey();
-							String errorMessage = entry.getValue().asText();
-							
-							if (!"Project not found".equalsIgnoreCase(errorMessage)) {
-								actualFailures.add(projectId);
-								log.warn("[DTRACK-CLEANUP] Project {} failed with error: {}", projectId, errorMessage);
-							}
-						});
-						
-						// Calculate succeeded projects = all - actual failures (already-deleted count as success)
-						List<String> succeededProjectIds = new ArrayList<>(projectIds);
-						succeededProjectIds.removeAll(actualFailures);
-						
-						// Only return actual failures for retry, not already-deleted projects
-						return new BatchDeleteResult(actualFailures.isEmpty(), succeededProjectIds, actualFailures);
+					if (deleteDtrackProject(dtrackIntegration, apiToken, projectId)) {
+						deleted++;
+						cleared += artifactRepository.clearDtrackProjectRef(orgUuid.toString(), projectId);
+					} else {
+						failed++;
 					}
-				} catch (Exception parseEx) {
-					log.warn("[DTRACK-CLEANUP] Failed to parse batch delete error response: {}", parseEx.getMessage());
+				} catch (Exception ex) {
+					failed++;
+					log.warn("[DTRACK-PHASEOUT] Error phasing out project {} (org {}): {}",
+							projectId, orgUuid, ex.getMessage());
 				}
 			}
-			
-			log.error("[DTRACK-CLEANUP] Error batch deleting projects: {}", wcre.getMessage());
-			return new BatchDeleteResult(false, List.of(), new ArrayList<>(projectIds));
-		} catch (Exception e) {
-			log.error("[DTRACK-CLEANUP] Unexpected error batch deleting projects: {}", e.getMessage());
-			return new BatchDeleteResult(false, List.of(), new ArrayList<>(projectIds));
 		}
+		log.info("[DTRACK-PHASEOUT] tick complete: deleted={}, failed={}, artifacts_cleared={}",
+				deleted, failed, cleared);
+		return new LegacyDtrackPhaseOutResult(deleted, failed, cleared);
 	}
-	
-	/**
-	 * Mark all artifacts whose dtrack project matches one of {@code projectIds}
-	 * (scoped to {@code orgUuid}) with {@code metrics.dtrackProjectDeleted = true}.
-	 * Prevents deduplication from reusing already-deleted project IDs.
-	 *
-	 * <p>Single SQL UPDATE — no entity load, no Hibernate snapshot deep-copy
-	 * of the JSONB column, no per-row save round trip. Previous loop-based
-	 * implementation loaded every affected Artifact into the persistence
-	 * context and re-serialized its full metrics blob per save; on the
-	 * daily DT-cleanup cron over a multi-org sweep that produced enough
-	 * transient allocation to OOM the heap (observed 2026-05-23/24).
-	 */
-	private void markArtifactsWithDeletedProjects(UUID orgUuid, List<String> projectIds) {
-		if (projectIds == null || projectIds.isEmpty()) {
-			return;
-		}
-		int marked = artifactRepository.markArtifactsAsDtrackProjectDeleted(
-				orgUuid.toString(), projectIds);
-		log.info("[DTRACK-CLEANUP] Marked {} artifacts as having deleted DTrack projects", marked);
-	}
-	
+
 	/**
 	 * Delete a project from Dependency Track
 	 */
-	private boolean deleteDtrackProject(IntegrationData dtrackIntegration, String apiToken, String projectId) {
+	boolean deleteDtrackProject(IntegrationData dtrackIntegration, String apiToken, String projectId) {
 		try {
 			URI deleteUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/project/" + projectId);
 			log.debug("[DTRACK-CLEANUP] Calling individual delete API: {}", deleteUri);
