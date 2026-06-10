@@ -3336,7 +3336,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
 const users: Ref<any[]> = ref([])
 async function loadUsers() {
     const usersRaw = await store.dispatch('fetchUsers', orguuid.value)
-    users.value = usersRaw.map((ur: any) => {return {label: ur.name, value: ur.uuid}} )
+    users.value = usersRaw.map((ur: any) => {return {label: ur.name || ur.email, value: ur.uuid}} )
 }
 
 async function initLoad() {
