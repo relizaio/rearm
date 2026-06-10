@@ -103,7 +103,7 @@
                             placeholder='{"observed":[{"identifier":"registry/drone-fw:1.2","digest":"sha256:..."}]}  — or paste a k8s image list' />
                         <n-button size="small" type="primary" style="margin-top: 6px;" :loading="stateReportPending" @click="submitStateReport">Submit report</n-button>
                     </div>
-                    <n-data-table :columns="eventColumns" :data="softwareEvents" size="small" :pagination="{ pageSize: 15 }" />
+                    <n-data-table :columns="softwareEventColumns" :data="softwareEvents" size="small" :pagination="{ pageSize: 15 }" />
                 </n-space>
             </n-tab-pane>
             <n-tab-pane name="hardwareEvents" :tab="`Hardware Events${hardwareEvents.length ? ' · ' + hardwareEvents.length : ''}`">
@@ -337,6 +337,41 @@ const eventColumns = [
     { key: 'notes', title: 'Notes' }
 ]
 
+// Software Events: each OBSERVATION row is a full reconciled report.
+const softwareEventColumns = [
+    { key: 'date', title: 'Date', render: (r: any) => formatDateTime(r.date || r.createdDate) },
+    { key: 'source', title: 'Source', render: (r: any) => r.observation?.source || '—' },
+    {
+        key: 'report', title: 'Report',
+        render: (r: any) => {
+            const o = r.observation
+            if (!o) return h('span', { class: 'subtle' }, '—')
+            return h(NSpace, { size: 4 }, { default: () => [
+                h(NTag, { size: 'small', type: 'success' }, { default: () => `${o.matchedCount || 0} matched` }),
+                h(NTag, { size: 'small', type: (o.driftedCount || 0) > 0 ? 'warning' : 'default' }, { default: () => `${o.driftedCount || 0} drifted` }),
+                h(NTag, { size: 'small' }, { default: () => `${o.unknownCount || 0} unknown` })
+            ] })
+        }
+    },
+    {
+        key: 'details', title: 'Details',
+        render: (r: any) => {
+            const items = r.observation?.items || []
+            if (!items.length) return h('span', { class: 'subtle' }, '—')
+            return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 560px;' }, {
+                trigger: () => h(NIcon, { size: 16, style: 'color: #909399; cursor: pointer; vertical-align: middle;' }, { default: () => h(InfoCircle) }),
+                default: () => h('div', items.map((i: any) => h('div', { style: 'margin: 2px 0; font-family: monospace; font-size: 12px;' }, [
+                    `${i.identifier || '(digest only)'} · ${(i.digest || '').replace('sha256:', '').substring(0, 12)} → ${i.status}`,
+                    i.componentName ? ` — ${i.componentName}` : '',
+                    i.observedVersion ? ` ${i.observedVersion}` : '',
+                    i.expectedVersion && i.status === 'DRIFTED' ? ` (expected ${i.expectedVersion})` : ''
+                ])))
+            })
+        }
+    },
+    { key: 'notes', title: 'Notes' }
+]
+
 const DEVICE_FIELDS = `uuid org shippedProduct site notes versionDrift
     identifiers { idType idValue }
     plan { expectedRelease }
@@ -412,6 +447,8 @@ async function loadEvents () {
             query: gql`query deviceEventsOfDevice($deviceUuid: ID!) { deviceEventsOfDevice(deviceUuid: $deviceUuid) {
                 uuid eventType date createdDate hbomRef componentName purl notes
                 replacement { partNumber lot serial manufacturer }
+                observation { source matchedCount driftedCount unknownCount
+                    items { identifier digest status componentName observedVersion expectedVersion } }
             } }`,
             variables: { deviceUuid: deviceuuid.value }, fetchPolicy: 'no-cache'
         })
