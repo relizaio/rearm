@@ -1008,10 +1008,14 @@ const storeObject : any = {
                 // leadDetails/team/approvers are read-only derived; only leads (IDs)
                 // and contacts ({name, contact}) are writeable. Strip Apollo's
                 // __typename off contacts so the ComponentContactInput type matches.
-                leads: Array.isArray(component.leads) ? component.leads : [],
+                // Fall back to undefined (not []) when the field is absent: the
+                // server reads null as "leave unchanged", so a partially-loaded
+                // component can't accidentally clear leads/contacts the operator
+                // never touched. A real clear arrives as an actual empty array.
+                leads: Array.isArray(component.leads) ? component.leads : undefined,
                 contacts: Array.isArray(component.contacts)
                     ? component.contacts.map(({ name, contact }: any) => ({ name, contact }))
-                    : []
+                    : undefined
             }
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.ComponentMutate,
