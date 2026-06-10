@@ -1,6 +1,6 @@
 <template>
     <span class="inbox-nav-trigger">
-        <n-badge :value="inboxUnreadCount" :max="99" :show="inboxUnreadCount > 0">
+        <n-badge :value="navBadgeCount" :max="99" :show="navBadgeCount > 0">
             <n-icon class="clickable" title="Notifications" size="20" @click="openInboxDrawer">
                 <Bell />
             </n-icon>
@@ -12,6 +12,8 @@
              no round-trip cost. -->
         <n-drawer v-model:show="inboxListDrawerOpen" :width="760" placement="right">
             <n-drawer-content title="Notifications" closable>
+                <n-tabs v-model:value="drawerTab" type="line" animated>
+                <n-tab-pane name="inbox" tab="Inbox">
                 <div class="tab-toolbar">
                     <div class="tab-toolbar-info">
                         Your personal triage queue. Org-admins see every delivery; perspective-members see deliveries that touch a release in one of their perspectives.
@@ -95,6 +97,33 @@
                         @update:page="loadInbox"
                     />
                 </div>
+                </n-tab-pane>
+
+                <!-- Read-only "what needs my approval" view (Phase 3b).
+                     Keys off the caller's assigned approval roles server-side;
+                     a user with no approval roles sees an empty list. Acting
+                     on an approval still happens on the release page — this
+                     tab is the triage surface, the Version link is the hop. -->
+                <n-tab-pane name="approvals" :tab="approvalsTabLabel">
+                    <div class="tab-toolbar">
+                        <div class="tab-toolbar-info">
+                            Releases with an approval pending on one of your approval roles. Open the release to approve or disapprove.
+                        </div>
+                        <n-button size="small" @click="loadApprovals()">
+                            <template #icon><n-icon><Refresh /></n-icon></template>
+                            Refresh
+                        </n-button>
+                    </div>
+                    <n-data-table
+                        :data="approvalsItems"
+                        :columns="approvalsColumns"
+                        :loading="approvalsLoading"
+                        :single-line="false"
+                        :bordered="false"
+                        :row-key="(row) => row.releaseUuid"
+                    />
+                </n-tab-pane>
+                </n-tabs>
             </n-drawer-content>
         </n-drawer>
 
@@ -193,9 +222,10 @@ import {
     NDrawer, NDrawerContent, NDataTable, NButton, NIcon, NSpace, NGrid, NGi,
     NFormItem, NSelect, NRadioGroup, NRadioButton, NPagination, NTag,
     NDescriptions, NDescriptionsItem, NAlert, NCollapse, NCollapseItem,
-    NBadge, useDialog, useMessage
+    NBadge, NTabs, NTabPane, useDialog, useMessage
 } from 'naive-ui'
 import { Bell, Check, Refresh } from '@vicons/tabler'
+import { RouterLink } from 'vue-router'
 import { useStore } from 'vuex'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
@@ -229,6 +259,7 @@ const channels = ref<ChannelRow[]>([])
 const channelNameById = computed<Record<string, string>>(() => buildNameMap(channels.value))
 
 const inboxListDrawerOpen = ref<boolean>(false)
+const drawerTab = ref<string>('inbox')
 let inboxLoadedOnce = false
 
 const inboxItems = ref<InboxRow[]>([])
@@ -246,6 +277,44 @@ const inboxEventTypeFilter = ref<string | null>(null)
 const selectedInboxRows = ref<string[]>([])
 const inboxBulkLoading = ref<boolean>(false)
 const inboxMarkAllLoading = ref<boolean>(false)
+
+interface PendingApprovalEntry {
+    approvalEntryUuid: string
+    approvalName: string | null
+    pendingRoleIds: string[]
+}
+interface ReleasePendingApproval {
+    releaseUuid: string
+    version: string | null
+    componentUuid: string | null
+    componentName: string | null
+    componentType: string | null
+    lifecycle: string | null
+    pendingEntries: PendingApprovalEntry[]
+}
+
+const approvalsItems = ref<ReleasePendingApproval[]>([])
+const approvalsLoading = ref<boolean>(false)
+// A ref, not items.length: the badge poll uses a slim releaseUuid-only
+// query so it can refresh the count every minute without shipping full
+// rows; the full row load syncs it too.
+const approvalsCount = ref<number>(0)
+const approvalsTabLabel = computed<string>(() =>
+    approvalsCount.value > 0 ? `Needs my approval (${approvalsCount.value})` : 'Needs my approval'
+)
+// Org-level approval roles live on the store's org object; map id →
+// displayView so pendingRoleIds render as human-readable role names.
+// Bell badge = unread notifications + releases pending my approval, so a
+// pending approval is visible from anywhere in the app even when the user
+// has zero unread deliveries.
+const navBadgeCount = computed<number>(() => inboxUnreadCount.value + approvalsCount.value)
+const approvalRoleNameById = computed<Record<string, string>>(() => {
+    const org = store.getters.allOrganizations
+        .find((o: any) => o.uuid === orgUuid.value)
+    const map: Record<string, string> = {}
+    for (const r of org?.approvalRoles || []) map[r.id] = r.displayView
+    return map
+})
 
 const inboxDrawerOpen = ref<boolean>(false)
 const inboxDrawerRow = ref<InboxRow | null>(null)
@@ -311,6 +380,24 @@ const MARK_ALL_READ_MUTATION = gql`
     }
 `
 
+const RELEASES_NEEDING_MY_APPROVAL_QUERY = gql`
+    query releasesNeedingMyApproval($orgUuid: ID!) {
+        releasesNeedingMyApproval(orgUuid: $orgUuid) {
+            releaseUuid version componentUuid componentName componentType lifecycle
+            pendingEntries { approvalEntryUuid approvalName pendingRoleIds }
+        }
+    }
+`
+
+// Slim variant for the 60s badge poll — same field, releaseUuid-only
+// selection, so polling the count doesn't ship full rows + nested
+// entries org-wide every minute.
+const APPROVALS_COUNT_QUERY = gql`
+    query releasesNeedingMyApprovalCount($orgUuid: ID!) {
+        releasesNeedingMyApproval(orgUuid: $orgUuid) { releaseUuid }
+    }
+`
+
 async function loadChannels (): Promise<void> {
     try {
         const res = await graphqlClient.query({
@@ -326,12 +413,61 @@ async function loadChannels (): Promise<void> {
 
 function openInboxDrawer (): void {
     inboxListDrawerOpen.value = true
+    // Land on the tab that has something for the user: when there are no
+    // unread deliveries but the badge is lit by pending approvals, opening
+    // on an empty Inbox would look broken.
+    drawerTab.value = (inboxUnreadCount.value === 0 && approvalsCount.value > 0)
+        ? 'approvals' : 'inbox'
     // Lazy-load the body + channel name map the first time the drawer
     // opens so a user who never opens it pays no round-trip cost.
     if (!inboxLoadedOnce) {
         inboxLoadedOnce = true
         loadChannels()
         loadInbox()
+    }
+    // Approvals are part of the nav badge, so the poll keeps the count fresh
+    // in the background — but pull full rows on every open so the tab
+    // reflects an approval granted seconds ago rather than stale poll data.
+    loadApprovals()
+}
+
+// Same monotonic in-flight token pattern as loadInbox (see comment there):
+// shared between the full load and the slim count poll so an old-org or
+// out-of-order response can't overwrite newer state after an org switch.
+let approvalsInflightToken = 0
+
+async function loadApprovals (): Promise<void> {
+    const myToken = ++approvalsInflightToken
+    approvalsLoading.value = true
+    try {
+        const res = await graphqlClient.query({
+            query: RELEASES_NEEDING_MY_APPROVAL_QUERY,
+            variables: { orgUuid: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        if (myToken !== approvalsInflightToken) return
+        approvalsItems.value = res.data?.releasesNeedingMyApproval || []
+        approvalsCount.value = approvalsItems.value.length
+    } catch (e: any) {
+        if (myToken !== approvalsInflightToken) return
+        message.error(`Failed to load pending approvals: ${extractError(e)}`)
+    } finally {
+        if (myToken === approvalsInflightToken) approvalsLoading.value = false
+    }
+}
+
+async function loadApprovalsCount (): Promise<void> {
+    const myToken = ++approvalsInflightToken
+    try {
+        const res = await graphqlClient.query({
+            query: APPROVALS_COUNT_QUERY,
+            variables: { orgUuid: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        if (myToken !== approvalsInflightToken) return
+        approvalsCount.value = (res.data?.releasesNeedingMyApproval || []).length
+    } catch {
+        // Badge is decorative; failures are fine (matches loadInboxUnreadCount).
     }
 }
 
@@ -641,6 +777,54 @@ const inboxColumns = computed(() => [
     },
 ])
 
+// Deep-link navigation target sits behind the 760px drawer — close it on
+// click or the user lands on a page they can't see.
+function approvalLink (to: string, label: string) {
+    return h(
+        RouterLink as any,
+        { to, onClick: () => { inboxListDrawerOpen.value = false } },
+        () => label,
+    )
+}
+
+const approvalsColumns = computed(() => [
+    {
+        title: 'Component', key: 'componentName',
+        render: (row: ReleasePendingApproval) => {
+            if (!row.componentUuid) return h('span', { class: 'muted-12' }, row.componentName || '—')
+            const base = row.componentType === 'PRODUCT' ? 'productsOfOrg' : 'componentsOfOrg'
+            return approvalLink(`/${base}/${orgUuid.value}/${row.componentUuid}`,
+                row.componentName || row.componentUuid)
+        },
+    },
+    {
+        title: 'Release', key: 'version',
+        render: (row: ReleasePendingApproval) => approvalLink(
+            `/release/show/${row.releaseUuid}`, row.version || row.releaseUuid),
+    },
+    {
+        title: 'Lifecycle', key: 'lifecycle',
+        render: (row: ReleasePendingApproval) => row.lifecycle
+            ? h(NTag, { size: 'small' }, { default: () => row.lifecycle })
+            : h('span', { class: 'muted-12' }, '—'),
+    },
+    {
+        title: 'Pending approvals', key: 'pendingEntries',
+        render: (row: ReleasePendingApproval) => h(
+            'div',
+            (row.pendingEntries || []).map(entry => {
+                const roles = (entry.pendingRoleIds || [])
+                    .map(id => approvalRoleNameById.value[id] || id)
+                    .join(', ')
+                return h('div', { class: 'approval-entry-line' }, [
+                    h('span', { class: 'approval-entry-name' }, entry.approvalName || entry.approvalEntryUuid),
+                    roles ? h('span', { class: 'muted-12' }, ` — ${roles}`) : null,
+                ])
+            }),
+        ),
+    },
+])
+
 // Badge polling — refresh the org-wide unread count on a slow cadence so a
 // delivery that lands while the user sits on an unrelated page still bumps
 // the badge. 60s is gentle on the backend; the drawer's own loadInbox path
@@ -654,13 +838,24 @@ watch(orgUuid, () => {
     inboxItems.value = []
     inboxTotalCount.value = 0
     selectedInboxRows.value = []
-    if (orgUuid.value) loadInboxUnreadCount()
+    approvalsItems.value = []
+    approvalsCount.value = 0
+    if (orgUuid.value) {
+        loadInboxUnreadCount()
+        loadApprovalsCount()
+    }
 })
 
 onMounted(() => {
-    if (orgUuid.value) loadInboxUnreadCount()
+    if (orgUuid.value) {
+        loadInboxUnreadCount()
+        loadApprovalsCount()
+    }
     pollTimer = setInterval(() => {
-        if (orgUuid.value) loadInboxUnreadCount()
+        if (orgUuid.value) {
+            loadInboxUnreadCount()
+            loadApprovalsCount()
+        }
     }, 60000)
 })
 
@@ -683,6 +878,9 @@ onUnmounted(() => {
 .muted-12 { font-size: 12px; color: var(--n-text-color-3, #888); }
 .history-filters { margin-bottom: 12px; }
 .history-pagination { margin-top: 12px; display: flex; justify-content: flex-end; }
+
+.approval-entry-line { line-height: 1.4; }
+.approval-entry-name { font-weight: 500; }
 
 /* Inbox message column — Title (bold) + description (muted) stacked, whole
  * cell is the click target that opens the drawer. Rendered as a button

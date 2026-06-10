@@ -408,6 +408,69 @@
                                                 </div>
                                             </div>
                                         </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label>{{ words.componentFirstUpper }} Leads</label>
+                                            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                <n-select
+                                                    v-if="isWritable"
+                                                    v-model:value="updatedComponent.leads"
+                                                    multiple
+                                                    filterable
+                                                    clearable
+                                                    placeholder="Assign lead users"
+                                                    :options="users" />
+                                                <span v-else>
+                                                    {{ (updatedComponent.leadDetails || []).map((u) => u.name || u.email).join(', ') || 'None' }}
+                                                </span>
+                                                <span class="text-muted" style="margin-top: 4px;">
+                                                    Manually-designated leads for this {{ words.component }}.
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label>Stakeholder Contacts</label>
+                                            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                <n-dynamic-input
+                                                    v-if="isWritable"
+                                                    v-model:value="updatedComponent.contacts"
+                                                    :on-create="onCreateContact">
+                                                    <template #create-button-default>
+                                                        Add Contact
+                                                    </template>
+                                                    <template #default="{ value }">
+                                                        <n-input style="margin-right: 8px;" v-model:value="value.name" placeholder="Name" />
+                                                        <n-input v-model:value="value.contact" placeholder="Email / channel / phone" />
+                                                    </template>
+                                                </n-dynamic-input>
+                                                <span v-else>
+                                                    <span v-for="(c, i) in (updatedComponent.contacts || [])" :key="i">
+                                                        {{ i ? '; ' : '' }}{{ c.name }}{{ c.contact ? ' (' + c.contact + ')' : '' }}
+                                                    </span>
+                                                    <span v-if="!updatedComponent.contacts || !updatedComponent.contacts.length">None</span>
+                                                </span>
+                                                <span class="text-muted" style="margin-top: 4px;">
+                                                    Freeform contacts for stakeholders who are not registered ReARM users.
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label>Team (derived)</label>
+                                            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                <span>{{ (componentData.team || []).map((u) => u.name || u.email).join(', ') || 'None' }}</span>
+                                                <span class="text-muted" style="margin-top: 4px;">
+                                                    Org users with read/write access to this {{ words.component }} (inherited up the parent chain).
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
+                                            <label>Approvers (derived)</label>
+                                            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                <span>{{ (componentData.approvers || []).map((u) => u.name || u.email).join(', ') || 'None' }}</span>
+                                                <span class="text-muted" style="margin-top: 4px;">
+                                                    Org users holding an approval-role grant on this {{ words.component }}.
+                                                </span>
+                                            </div>
+                                        </div>
                                         <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
                                             <n-space>
                                                 <n-button type="success" @click="save">
@@ -1902,6 +1965,13 @@ function onCreateIdentifier () {
     }
 }
 
+function onCreateContact () {
+    return {
+        name: '',
+        contact: ''
+    }
+}
+
 const lifecycleOptions = constants.LifecycleOptions.map((lo: any) => {return {label: lo.label, value: lo.key}})
 
 const outputTriggerLifecycleOptions = constants.LifecycleValueOptions
@@ -2289,7 +2359,9 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         commonFunctions.stableStringify(updatedComponent.value.identifiers) !== commonFunctions.stableStringify(componentData.value.identifiers) ||
         (updatedComponent.value.sidPurlOverride || null) !== (componentData.value.sidPurlOverride || null) ||
         commonFunctions.stableStringify(updatedComponent.value.sidAuthoritySegments || []) !== commonFunctions.stableStringify(componentData.value.sidAuthoritySegments || []) ||
-        ((updatedComponent.value.isInternal || 'INTERNAL') !== (componentData.value.isInternal || 'INTERNAL'))
+        ((updatedComponent.value.isInternal || 'INTERNAL') !== (componentData.value.isInternal || 'INTERNAL')) ||
+        commonFunctions.stableStringify(updatedComponent.value.leads || []) !== commonFunctions.stableStringify(componentData.value.leads || []) ||
+        commonFunctions.stableStringify(updatedComponent.value.contacts || []) !== commonFunctions.stableStringify(componentData.value.contacts || [])
 })
 
 function resetCoreSettings() {
@@ -2309,6 +2381,8 @@ function resetCoreSettings() {
     updatedComponent.value.sidPurlOverride = componentData.value.sidPurlOverride
     updatedComponent.value.sidAuthoritySegments = commonFunctions.deepCopy(componentData.value.sidAuthoritySegments) || []
     updatedComponent.value.isInternal = componentData.value.isInternal
+    updatedComponent.value.leads = commonFunctions.deepCopy(componentData.value.leads) || []
+    updatedComponent.value.contacts = commonFunctions.deepCopy(componentData.value.contacts) || []
     
     // Reset marketing version enabled state
     marketingVersionEnabled.value = componentData.value.versionType === 'MARKETING'
@@ -3262,7 +3336,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
 const users: Ref<any[]> = ref([])
 async function loadUsers() {
     const usersRaw = await store.dispatch('fetchUsers', orguuid.value)
-    users.value = usersRaw.map((ur: any) => {return {label: ur.name, value: ur.uuid}} )
+    users.value = usersRaw.map((ur: any) => {return {label: ur.name || ur.email, value: ur.uuid}} )
 }
 
 async function initLoad() {
@@ -3286,6 +3360,7 @@ async function initLoad() {
         componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
     fetchVcsRepos()
+    loadUsers()
     if (updatedComponent.value.kind === 'HELM') {
         fetchSecretsIfAllowed()
     }
