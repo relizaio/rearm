@@ -9,7 +9,7 @@ ReARM can post to Microsoft Teams from **two separate features** — configure t
 - **Release notifications** — set up on **this page**, under `Organization Settings → Integrations` (the "Add MS Teams integration" steps below).
 - **Security & vulnerability alerts** (CVE / VEX / EPSS events, with filtering and routing) — set up under **Notifications → Channels** by adding an **MS Teams** channel and a subscription. *Not covered on this page.*
 
-Both use the same **Power Automate Workflows** webhook URL produced in the *Microsoft Teams Part* below — Microsoft's supported replacement for the now-retired Office 365 Connectors.
+Both use the **same kind** of **Power Automate Workflows** webhook URL — Microsoft's supported replacement for the now-retired Office 365 Connectors. Produce one URL per target channel using the *Microsoft Teams Part* steps below (if you want release notifications and security alerts to land in different channels, repeat the steps to create a Workflows webhook per channel).
 :::
 
 ::: warning Migrating from the legacy "Incoming Webhook" connector?
@@ -34,8 +34,12 @@ New setups need no migration — just follow the steps below.
 ## Microsoft Teams Part
 1. Create or choose an existing Channel in MS Teams where you would get notifications from ReARM.
 2. Click on ... on the right of the channel and select `Workflows`.
-3. Choose `Post to a channel when a webhook request is received` option.
-4. Rename you workflow to something meaningful, i.e. `ReARM Webhook Connector`, and click `Next`.
+3. In the Workflows search box, type `webhook`, then choose **`Send webhook alerts to a channel`** — the plain "to a channel" template. Do **not** pick the "from specific people to a channel" or "from people in an org to a channel" variants: those add sender allowlists and will silently reject ReARM's POSTs.
+
+   ::: tip Microsoft renames these templates periodically
+   If the exact name above isn't visible in your tenant's Workflows gallery, search for `webhook` and pick the closest **unfiltered** "to a channel" template (i.e. one without a "from …" qualifier). The previous name for this same template was `Post to a channel when a webhook request is received`.
+   :::
+4. Rename your workflow to something meaningful, i.e. `ReARM Webhook Connector`, and click `Next`.
 5. Click `Add workflow`.
 6. You will get the URI to post Webhooks on the next screen, copy it and note for the ReARM steps below.
 
