@@ -13,7 +13,7 @@
                     <h2 v-else style="margin: 0;">Device {{ primarySerial || shortUuid(device.uuid) }}</h2>
                     <n-tag v-if="expectedRelease?.hardware" size="small" type="info">hardware</n-tag>
                     <n-tag v-if="device.versionDrift" type="warning" size="small">version drift</n-tag>
-                    <n-tag v-else-if="device.observedState" type="success" size="small">in sync</n-tag>
+                    <n-tag v-else-if="observed && observed.items && observed.items.length" type="success" size="small">in sync</n-tag>
                     <n-tag v-if="deviceClass && deviceClass !== 'NONE'" size="small" type="info">{{ deviceClass }}</n-tag>
                 </n-space>
             </template>
@@ -55,7 +55,7 @@
         </n-card>
 
         <n-tabs v-if="device" type="segment" animated style="margin-top: 10px;">
-            <n-tab-pane name="software" tab="Software State">
+            <n-tab-pane name="software" tab="Software (SBOM)">
                 <n-space vertical size="small">
                     <div v-if="observed">
                         <n-space align="center" size="small">
@@ -70,9 +70,15 @@
                         <code>reportDeviceState</code> mutation, or post a report from the Software Events tab.</p>
                 </n-space>
             </n-tab-pane>
-            <n-tab-pane name="hardwareEvents" :tab="`Hardware Events${hardwareEvents.length ? ' · ' + hardwareEvents.length : ''}`">
-                <n-button v-if="isWritable" size="small" type="primary" style="margin-bottom: 8px;" @click="openEventModal">Record event</n-button>
-                <n-data-table :columns="eventColumns" :data="hardwareEvents" size="small" :pagination="{ pageSize: 15 }" />
+            <n-tab-pane name="hardware" :tab="`Hardware (HBOM)${installedCount ? ' · ' + installedCount : ''}`">
+                <n-space style="margin-bottom: 8px;" align="center">
+                    <n-input v-model:value="twinFilter" placeholder="Filter by name / part number / board location" clearable size="small" style="width: 420px;" />
+                    <n-tag v-if="replacedCount" type="warning" size="small">{{ replacedCount }} replaced</n-tag>
+                    <n-tag v-if="unresolvedCount" type="error" size="small">{{ unresolvedCount }} unresolved choice{{ unresolvedCount > 1 ? 's' : '' }}</n-tag>
+                    <n-switch v-model:value="showAlternates" size="small" />
+                    <span class="subtle">show approved alternates</span>
+                </n-space>
+                <n-data-table :columns="twinColumns" :data="filteredTwinHbom" :row-class-name="twinRowClass" :pagination="{ pageSize: 25 }" size="small" />
             </n-tab-pane>
             <n-tab-pane name="softwareEvents" :tab="`Software Events${softwareEvents.length ? ' · ' + softwareEvents.length : ''}`">
                 <n-space vertical size="small">
@@ -100,15 +106,9 @@
                     <n-data-table :columns="eventColumns" :data="softwareEvents" size="small" :pagination="{ pageSize: 15 }" />
                 </n-space>
             </n-tab-pane>
-            <n-tab-pane name="hardware" :tab="`Hardware (HBOM)${twinHbom.length ? ' · ' + twinHbom.length : ''}`">
-                <n-space style="margin-bottom: 8px;" align="center">
-                    <n-input v-model:value="twinFilter" placeholder="Filter by name / part number / board location" clearable size="small" style="width: 420px;" />
-                    <n-tag v-if="replacedCount" type="warning" size="small">{{ replacedCount }} replaced</n-tag>
-                    <n-tag v-if="unresolvedCount" type="error" size="small">{{ unresolvedCount }} unresolved choice{{ unresolvedCount > 1 ? 's' : '' }}</n-tag>
-                    <n-switch v-model:value="showAlternates" size="small" />
-                    <span class="subtle">show approved alternates</span>
-                </n-space>
-                <n-data-table :columns="twinColumns" :data="filteredTwinHbom" :row-class-name="twinRowClass" :pagination="{ pageSize: 25 }" size="small" />
+            <n-tab-pane name="hardwareEvents" :tab="`Hardware Events${hardwareEvents.length ? ' · ' + hardwareEvents.length : ''}`">
+                <n-button v-if="isWritable" size="small" type="primary" style="margin-bottom: 8px;" @click="openEventModal">Record event</n-button>
+                <n-data-table :columns="eventColumns" :data="hardwareEvents" size="small" :pagination="{ pageSize: 15 }" />
             </n-tab-pane>
             <n-tab-pane v-if="deviceClass === 'MEDICAL_TRACKED'" name="tracking" tab="Tracking (821)">
                 <n-space vertical size="small" style="max-width: 420px;">
@@ -216,6 +216,9 @@ const lotSelections = computed(() => {
 })
 function copyUuid () { navigator.clipboard.writeText(deviceuuid.value); notify('success', 'Copied', 'Device uuid copied to clipboard') }
 const replacedCount = computed(() => twinHbom.value.filter((r: any) => r.twinStatus === 'REPLACED').length)
+// What's physically on this unit: original + replaced nodes (alternates and
+// unresolved slot markers are not installed parts).
+const installedCount = computed(() => twinHbom.value.filter((r: any) => r.twinStatus === 'ORIGINAL' || r.twinStatus === 'REPLACED').length)
 const unresolvedCount = computed(() => twinHbom.value.filter((r: any) => r.twinStatus === 'UNRESOLVED_CHOICE').length)
 const showAlternates = ref(false)
 const filteredTwinHbom = computed(() => {
@@ -265,6 +268,7 @@ const observedColumns = [
 ]
 
 function twinRowClass (r: any): string {
+    if (r.eventType === 'FAILURE') return 'twin-failure-row'
     if (r.twinStatus === 'REPLACED') return 'twin-replaced-row'
     if (r.twinStatus === 'UNRESOLVED_CHOICE') return 'twin-unresolved-row'
     if (r.twinStatus === 'ALTERNATE') return 'twin-alternate-row'
@@ -289,6 +293,16 @@ const twinColumns = [
                 return h(NTooltip, { trigger: 'hover', placement: 'left' }, {
                     trigger: () => h(NTag, { size: 'small', type: 'error' }, { default: () => `UNRESOLVED [${r.component?.operator || 'XOR'}]` }),
                     default: () => 'This component-choice slot was never fixed for the unit\'s lot — resolve choices when producing/shipping the lot'
+                })
+            }
+            if (r.twinStatus !== 'REPLACED' && r.eventType) {
+                const tagType = r.eventType === 'FAILURE' ? 'error' : (r.eventType === 'REPAIR' ? 'info' : 'default')
+                return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+                    trigger: () => h(NTag, { size: 'small', type: tagType as any, style: 'cursor: pointer;' }, { default: () => r.eventType }),
+                    default: () => h('div', [
+                        h('div', { style: 'margin: 2px 0;' }, [h('strong', 'When: '), formatDateTime(r.eventDate)]),
+                        r.eventNotes ? h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Notes: '), r.eventNotes]) : null
+                    ].filter(Boolean))
                 })
             }
             if (r.twinStatus !== 'REPLACED') return h(NTag, { size: 'small' }, { default: () => 'original' })
@@ -382,7 +396,7 @@ async function loadTwinHbom () {
     try {
         const resp: any = await graphqlClient.query({
             query: gql`query deviceHbomComponents($deviceUuid: ID!) { deviceHbomComponents(deviceUuid: $deviceUuid) {
-                twinStatus eventDate eventNotes choiceRef
+                twinStatus eventType eventDate eventNotes choiceRef
                 replacement { partNumber lot serial manufacturer }
                 component { uuid bomRef type operator name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot }
             } }`,
@@ -551,5 +565,8 @@ onMounted(async () => {
 }
 :deep(.twin-alternate-row td) {
     opacity: 0.6;
+}
+:deep(.twin-failure-row td) {
+    background-color: rgba(208, 48, 80, 0.14) !important;
 }
 </style>

@@ -150,9 +150,6 @@
                         </template>
                     </n-dynamic-input>
                 </n-form-item>
-                <n-form-item label="Expected release">
-                    <n-select v-model:value="deviceForm.expectedRelease" filterable clearable :options="deviceReleases" placeholder="defaults to the shipment's release" />
-                </n-form-item>
                 <n-form-item label="Notes"><n-input v-model:value="deviceForm.notes" type="textarea" /></n-form-item>
             </n-form>
             <template #action><n-button type="primary" @click="saveDevice">Save</n-button></template>
@@ -309,7 +306,7 @@ function releaseLabel (u: string): string {
     const i = releaseInfoMap.value[u]
     return i ? `${i.productName} — ${i.fsName} — ${i.version}` : ''
 }
-const deviceForm = reactive<any>({ identifiers: [], expectedRelease: '', notes: '' })
+const deviceForm = reactive<any>({ identifiers: [], notes: '' })
 
 
 const notify = (type: NotificationType, title: string, content: string) =>
@@ -582,12 +579,14 @@ async function deleteShipment (r: any) {
 }
 
 // ---- device ----
-function openDeviceModal () { deviceForm.identifiers = [{ idType: 'SERIAL', idValue: '' }]; deviceForm.expectedRelease = ''; deviceForm.notes = ''; showDeviceModal.value = true }
+function openDeviceModal () { deviceForm.identifiers = [{ idType: 'SERIAL', idValue: '' }]; deviceForm.notes = ''; showDeviceModal.value = true }
 async function saveDevice () {
     const ids = cleanIds(deviceForm.identifiers)
     if (!ids.length) { notify('warning', 'Missing identifier', 'A device needs at least one unit identifier (e.g. SERIAL)'); return }
+    // expected release intentionally NOT set here — the unit inherits its
+    // shipment's release (service defaults the plan); field upgrades are
+    // recorded later from the device twin page.
     const input: any = { org: orguuid.value, shippedProduct: selectedShipmentUuid.value, identifiers: ids, notes: deviceForm.notes }
-    if (deviceForm.expectedRelease) input.plan = { expectedRelease: deviceForm.expectedRelease }
     try {
         await graphqlClient.mutate({ mutation: gql`mutation upsertDevice($input: DeviceInput!) { upsertDevice(input: $input) { uuid } }`, variables: { input } })
         showDeviceModal.value = false; notify('success', 'Saved', 'Device added'); await loadDevices(selectedShipmentUuid.value)
