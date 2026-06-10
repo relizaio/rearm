@@ -12,7 +12,7 @@
              no round-trip cost. -->
         <n-drawer v-model:show="inboxListDrawerOpen" :width="760" placement="right">
             <n-drawer-content title="Notifications" closable>
-                <n-tabs type="line" animated>
+                <n-tabs v-model:value="drawerTab" type="line" animated>
                 <n-tab-pane name="inbox" tab="Inbox">
                 <div class="tab-toolbar">
                     <div class="tab-toolbar-info">
@@ -259,6 +259,7 @@ const channels = ref<ChannelRow[]>([])
 const channelNameById = computed<Record<string, string>>(() => buildNameMap(channels.value))
 
 const inboxListDrawerOpen = ref<boolean>(false)
+const drawerTab = ref<string>('inbox')
 let inboxLoadedOnce = false
 
 const inboxItems = ref<InboxRow[]>([])
@@ -287,13 +288,17 @@ interface ReleasePendingApproval {
     version: string | null
     componentUuid: string | null
     componentName: string | null
+    componentType: string | null
     lifecycle: string | null
     pendingEntries: PendingApprovalEntry[]
 }
 
 const approvalsItems = ref<ReleasePendingApproval[]>([])
 const approvalsLoading = ref<boolean>(false)
-const approvalsCount = computed<number>(() => approvalsItems.value.length)
+// A ref, not items.length: the badge poll uses a slim releaseUuid-only
+// query so it can refresh the count every minute without shipping full
+// rows; the full row load syncs it too.
+const approvalsCount = ref<number>(0)
 const approvalsTabLabel = computed<string>(() =>
     approvalsCount.value > 0 ? `Needs my approval (${approvalsCount.value})` : 'Needs my approval'
 )
@@ -378,9 +383,18 @@ const MARK_ALL_READ_MUTATION = gql`
 const RELEASES_NEEDING_MY_APPROVAL_QUERY = gql`
     query releasesNeedingMyApproval($orgUuid: ID!) {
         releasesNeedingMyApproval(orgUuid: $orgUuid) {
-            releaseUuid version componentUuid componentName lifecycle
+            releaseUuid version componentUuid componentName componentType lifecycle
             pendingEntries { approvalEntryUuid approvalName pendingRoleIds }
         }
+    }
+`
+
+// Slim variant for the 60s badge poll — same field, releaseUuid-only
+// selection, so polling the count doesn't ship full rows + nested
+// entries org-wide every minute.
+const APPROVALS_COUNT_QUERY = gql`
+    query releasesNeedingMyApprovalCount($orgUuid: ID!) {
+        releasesNeedingMyApproval(orgUuid: $orgUuid) { releaseUuid }
     }
 `
 
@@ -399,6 +413,11 @@ async function loadChannels (): Promise<void> {
 
 function openInboxDrawer (): void {
     inboxListDrawerOpen.value = true
+    // Land on the tab that has something for the user: when there are no
+    // unread deliveries but the badge is lit by pending approvals, opening
+    // on an empty Inbox would look broken.
+    drawerTab.value = (inboxUnreadCount.value === 0 && approvalsCount.value > 0)
+        ? 'approvals' : 'inbox'
     // Lazy-load the body + channel name map the first time the drawer
     // opens so a user who never opens it pays no round-trip cost.
     if (!inboxLoadedOnce) {
@@ -406,13 +425,19 @@ function openInboxDrawer (): void {
         loadChannels()
         loadInbox()
     }
-    // Approvals are part of the nav badge, so the poll keeps them fresh in
-    // the background — but re-pull on every open so the tab reflects an
-    // approval granted seconds ago rather than up-to-60s-old poll data.
+    // Approvals are part of the nav badge, so the poll keeps the count fresh
+    // in the background — but pull full rows on every open so the tab
+    // reflects an approval granted seconds ago rather than stale poll data.
     loadApprovals()
 }
 
-async function loadApprovals (quiet = false): Promise<void> {
+// Same monotonic in-flight token pattern as loadInbox (see comment there):
+// shared between the full load and the slim count poll so an old-org or
+// out-of-order response can't overwrite newer state after an org switch.
+let approvalsInflightToken = 0
+
+async function loadApprovals (): Promise<void> {
+    const myToken = ++approvalsInflightToken
     approvalsLoading.value = true
     try {
         const res = await graphqlClient.query({
@@ -420,13 +445,29 @@ async function loadApprovals (quiet = false): Promise<void> {
             variables: { orgUuid: orgUuid.value },
             fetchPolicy: 'network-only',
         })
+        if (myToken !== approvalsInflightToken) return
         approvalsItems.value = res.data?.releasesNeedingMyApproval || []
+        approvalsCount.value = approvalsItems.value.length
     } catch (e: any) {
-        // The badge poll calls this quietly — a transient failure there
-        // shouldn't toast; the user-initiated Refresh path should.
-        if (!quiet) message.error(`Failed to load pending approvals: ${extractError(e)}`)
+        if (myToken !== approvalsInflightToken) return
+        message.error(`Failed to load pending approvals: ${extractError(e)}`)
     } finally {
-        approvalsLoading.value = false
+        if (myToken === approvalsInflightToken) approvalsLoading.value = false
+    }
+}
+
+async function loadApprovalsCount (): Promise<void> {
+    const myToken = ++approvalsInflightToken
+    try {
+        const res = await graphqlClient.query({
+            query: APPROVALS_COUNT_QUERY,
+            variables: { orgUuid: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        if (myToken !== approvalsInflightToken) return
+        approvalsCount.value = (res.data?.releasesNeedingMyApproval || []).length
+    } catch {
+        // Badge is decorative; failures are fine (matches loadInboxUnreadCount).
     }
 }
 
@@ -736,24 +777,30 @@ const inboxColumns = computed(() => [
     },
 ])
 
+// Deep-link navigation target sits behind the 760px drawer — close it on
+// click or the user lands on a page they can't see.
+function approvalLink (to: string, label: string) {
+    return h(
+        RouterLink as any,
+        { to, onClick: () => { inboxListDrawerOpen.value = false } },
+        () => label,
+    )
+}
+
 const approvalsColumns = computed(() => [
     {
         title: 'Component', key: 'componentName',
-        render: (row: ReleasePendingApproval) => row.componentUuid
-            ? h(
-                RouterLink as any,
-                { to: `/componentsOfOrg/${orgUuid.value}/${row.componentUuid}` },
-                () => row.componentName || row.componentUuid,
-            )
-            : h('span', { class: 'muted-12' }, row.componentName || '—'),
+        render: (row: ReleasePendingApproval) => {
+            if (!row.componentUuid) return h('span', { class: 'muted-12' }, row.componentName || '—')
+            const base = row.componentType === 'PRODUCT' ? 'productsOfOrg' : 'componentsOfOrg'
+            return approvalLink(`/${base}/${orgUuid.value}/${row.componentUuid}`,
+                row.componentName || row.componentUuid)
+        },
     },
     {
         title: 'Release', key: 'version',
-        render: (row: ReleasePendingApproval) => h(
-            RouterLink as any,
-            { to: `/release/show/${row.releaseUuid}` },
-            () => row.version || row.releaseUuid,
-        ),
+        render: (row: ReleasePendingApproval) => approvalLink(
+            `/release/show/${row.releaseUuid}`, row.version || row.releaseUuid),
     },
     {
         title: 'Lifecycle', key: 'lifecycle',
@@ -792,21 +839,22 @@ watch(orgUuid, () => {
     inboxTotalCount.value = 0
     selectedInboxRows.value = []
     approvalsItems.value = []
+    approvalsCount.value = 0
     if (orgUuid.value) {
         loadInboxUnreadCount()
-        loadApprovals(true)
+        loadApprovalsCount()
     }
 })
 
 onMounted(() => {
     if (orgUuid.value) {
         loadInboxUnreadCount()
-        loadApprovals(true)
+        loadApprovalsCount()
     }
     pollTimer = setInterval(() => {
         if (orgUuid.value) {
             loadInboxUnreadCount()
-            loadApprovals(true)
+            loadApprovalsCount()
         }
     }, 60000)
 })
