@@ -1004,7 +1004,14 @@ const storeObject : any = {
                 // INHERIT explicitly clears any prior override (server normalizes to null).
                 sidPurlOverride: component.sidPurlOverride || 'INHERIT',
                 sidAuthoritySegments: trimmedSegments,
-                isInternal: component.isInternal || null
+                isInternal: component.isInternal || null,
+                // leadDetails/team/approvers are read-only derived; only leads (IDs)
+                // and contacts ({name, contact}) are writeable. Strip Apollo's
+                // __typename off contacts so the ComponentContactInput type matches.
+                leads: Array.isArray(component.leads) ? component.leads : [],
+                contacts: Array.isArray(component.contacts)
+                    ? component.contacts.map(({ name, contact }: any) => ({ name, contact }))
+                    : []
             }
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.ComponentMutate,
