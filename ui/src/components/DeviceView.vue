@@ -3,7 +3,15 @@
         <n-card v-if="device" size="small">
             <template #header>
                 <n-space align="center">
-                    <h2 style="margin: 0;">Device {{ primarySerial || shortUuid(device.uuid) }}</h2>
+                    <h2 v-if="expectedRelease" style="margin: 0;">
+                        <router-link :to="{ name: 'ProductsOfOrg', params: { orguuid: orguuid, compuuid: expectedRelease.componentDetails?.uuid } }">{{ expectedRelease.componentDetails?.name }}</router-link>
+                        <span> — </span>
+                        <router-link :to="{ name: 'ProductsOfOrg', params: { orguuid: orguuid, compuuid: expectedRelease.componentDetails?.uuid, branchuuid: expectedRelease.branchDetails?.uuid } }">{{ expectedRelease.branchDetails?.name }}</router-link>
+                        <span> — </span>
+                        <router-link :to="{ name: 'ReleaseView', params: { uuid: expectedRelease.uuid } }">{{ expectedRelease.version }}</router-link>
+                    </h2>
+                    <h2 v-else style="margin: 0;">Device {{ primarySerial || shortUuid(device.uuid) }}</h2>
+                    <n-tag v-if="expectedRelease?.hardware" size="small" type="info">hardware</n-tag>
                     <n-tag v-if="device.versionDrift" type="warning" size="small">version drift</n-tag>
                     <n-tag v-else-if="device.observedState" type="success" size="small">in sync</n-tag>
                     <n-tag v-if="deviceClass && deviceClass !== 'NONE'" size="small" type="info">{{ deviceClass }}</n-tag>
@@ -17,17 +25,22 @@
                     </n-tag>
                     <span v-if="!device.identifiers || !device.identifiers.length" class="subtle">none</span>
                 </div>
-                <div v-if="expectedRelease">
-                    <strong>Product release: </strong>
-                    <router-link :to="{ name: 'ReleaseView', params: { uuid: expectedRelease.uuid } }">
-                        {{ expectedRelease.componentDetails?.name }} {{ expectedRelease.version }}
-                    </router-link>
-                    <n-tag v-if="expectedRelease.hardware" size="small" type="info" style="margin-left: 8px;">hardware</n-tag>
+                <div>
+                    <strong>Device uuid: </strong><code>{{ device.uuid }}</code>
+                    <n-icon size="15" style="cursor: pointer; vertical-align: middle; margin-left: 6px;" title="Copy device uuid" @click="copyUuid"><Copy /></n-icon>
                 </div>
                 <div v-if="shipment">
                     <strong>Shipment: </strong>{{ shortUuid(shipment.uuid) }}
                     <span v-if="shipment.shipDate"> · shipped {{ shipment.shipDate }}</span>
-                    <router-link :to="{ name: 'DistributionOfOrg', params: { orguuid: orguuid } }" style="margin-left: 8px;">open distribution</router-link>
+                    <n-tooltip v-if="lotSelections.length" trigger="hover" placement="right" style="max-width: 460px;">
+                        <template #trigger>
+                            <n-tag size="small" type="info" style="margin-left: 8px; cursor: pointer;">lot selections</n-tag>
+                        </template>
+                        <div>
+                            <div v-for="s in lotSelections" :key="s" style="margin: 2px 0;">{{ s }}</div>
+                        </div>
+                    </n-tooltip>
+                    <router-link :to="distributionLink" style="margin-left: 8px;">open distribution</router-link>
                 </div>
                 <div v-if="device.notes"><strong>Notes: </strong>{{ device.notes }}</div>
                 <n-space v-if="isWritable" size="small" align="center" style="margin-top: 4px;">
@@ -54,7 +67,15 @@
                         <n-data-table :columns="observedColumns" :data="observed.items || []" size="small" :pagination="{ pageSize: 15 }" style="margin-top: 8px;" />
                     </div>
                     <p v-else>No observed software state reported yet — agents phone home via the API-key
-                        <code>reportDeviceState</code> mutation, or post a report below.</p>
+                        <code>reportDeviceState</code> mutation, or post a report from the Software Events tab.</p>
+                </n-space>
+            </n-tab-pane>
+            <n-tab-pane name="hardwareEvents" :tab="`Hardware Events${hardwareEvents.length ? ' · ' + hardwareEvents.length : ''}`">
+                <n-button v-if="isWritable" size="small" type="primary" style="margin-bottom: 8px;" @click="openEventModal">Record event</n-button>
+                <n-data-table :columns="eventColumns" :data="hardwareEvents" size="small" :pagination="{ pageSize: 15 }" />
+            </n-tab-pane>
+            <n-tab-pane name="softwareEvents" :tab="`Software Events${softwareEvents.length ? ' · ' + softwareEvents.length : ''}`">
+                <n-space vertical size="small">
                     <div v-if="isWritable" style="max-width: 760px;">
                         <n-space align="center" size="small" style="margin-bottom: 4px;">
                             <strong>Report observed state (JSON)</strong>
@@ -76,6 +97,7 @@
                             placeholder='{"observed":[{"identifier":"registry/drone-fw:1.2","digest":"sha256:..."}]}  — or paste a k8s image list' />
                         <n-button size="small" type="primary" style="margin-top: 6px;" :loading="stateReportPending" @click="submitStateReport">Submit report</n-button>
                     </div>
+                    <n-data-table :columns="eventColumns" :data="softwareEvents" size="small" :pagination="{ pageSize: 15 }" />
                 </n-space>
             </n-tab-pane>
             <n-tab-pane name="hardware" :tab="`Hardware (HBOM)${twinHbom.length ? ' · ' + twinHbom.length : ''}`">
@@ -88,16 +110,12 @@
                 </n-space>
                 <n-data-table :columns="twinColumns" :data="filteredTwinHbom" :row-class-name="twinRowClass" :pagination="{ pageSize: 25 }" size="small" />
             </n-tab-pane>
-            <n-tab-pane name="events" :tab="`Events${events.length ? ' · ' + events.length : ''}`">
-                <n-button v-if="isWritable" size="small" type="primary" style="margin-bottom: 8px;" @click="openEventModal">Record event</n-button>
-                <n-data-table :columns="eventColumns" :data="events" size="small" :pagination="{ pageSize: 15 }" />
-            </n-tab-pane>
             <n-tab-pane v-if="deviceClass === 'MEDICAL_TRACKED'" name="tracking" tab="Tracking (821)">
                 <n-space vertical size="small" style="max-width: 420px;">
-                    <n-input v-model:value="trackingEdit.receivedDate" placeholder="received date YYYY-MM-DD" />
+                    <n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="trackingEdit.receivedDate" value-format="yyyy-MM-dd" placeholder="received date" />
                     <n-input v-model:value="trackingEdit.patientId" placeholder="patient / recipient ID" />
                     <n-select v-model:value="trackingEdit.disposition" :options="dispositionOptions" clearable placeholder="disposition" />
-                    <n-input v-model:value="trackingEdit.dispositionDate" placeholder="disposition date YYYY-MM-DD" />
+                    <n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="trackingEdit.dispositionDate" value-format="yyyy-MM-dd" placeholder="disposition date" />
                     <n-button v-if="isWritable" size="small" @click="saveTracking">Update tracking</n-button>
                 </n-space>
             </n-tab-pane>
@@ -112,7 +130,7 @@
                     <n-select v-model:value="eventForm.hbomRef" filterable clearable :options="hbomNodeOptions" placeholder="Pick the affected node (optional for software events)" />
                 </n-form-item>
                 <n-form-item label="Event date">
-                    <n-input v-model:value="eventForm.date" placeholder="YYYY-MM-DD (defaults to now)" />
+                    <n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="eventForm.date" value-format="yyyy-MM-dd" placeholder="defaults to now" />
                 </n-form-item>
                 <template v-if="eventForm.eventType === 'REPLACEMENT'">
                     <n-form-item v-if="pickedChoiceAlternates.length" label="Replace with (approved alternates for this slot)">
@@ -144,8 +162,8 @@ export default { name: 'DeviceView' }
 import { ref, Ref, computed, reactive, h, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
-import { InfoCircle } from '@vicons/tabler'
+import { NButton, NCard, NDataTable, NDatePicker, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
+import { Copy, InfoCircle } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -174,6 +192,29 @@ const primarySerial = computed(() => {
     const serial = ids.find((i: any) => i.idType === 'SERIAL') || ids[0]
     return serial ? serial.idValue : ''
 })
+// Twin event split: hardware events anchor to HBOM nodes (or carry hardware
+// event types); software events come from observations / purl anchors.
+const hardwareEvents = computed(() => events.value.filter((e: any) => e.hbomRef || (!e.purl && e.eventType !== 'OBSERVATION')))
+const softwareEvents = computed(() => events.value.filter((e: any) => e.purl || e.eventType === 'OBSERVATION'))
+const siteClient: Ref<string> = ref('')
+const distributionLink = computed(() => ({
+    name: 'DistributionOfOrg',
+    params: siteClient.value
+        ? { orguuid: orguuid.value, clientuuid: siteClient.value, siteuuid: device.value?.site }
+        : { orguuid: orguuid.value }
+}))
+// The lot's CDX #929 choice selections, rendered with resolved option names.
+const lotSelections = computed(() => {
+    const crs = shipment.value?.choiceResolutions || []
+    if (!crs.length) return []
+    const nameByRef: Record<string, string> = {}
+    for (const r of twinHbom.value) { if (r.component?.bomRef) nameByRef[r.component.bomRef] = r.component.name }
+    return crs.map((c: any) => {
+        const selected = (c.selectedRefs || []).map((ref: string) => nameByRef[ref] || ref)
+        return `${c.choiceRef}: ${selected.length ? selected.join(', ') : '(not populated)'}`
+    })
+})
+function copyUuid () { navigator.clipboard.writeText(deviceuuid.value); notify('success', 'Copied', 'Device uuid copied to clipboard') }
 const replacedCount = computed(() => twinHbom.value.filter((r: any) => r.twinStatus === 'REPLACED').length)
 const unresolvedCount = computed(() => twinHbom.value.filter((r: any) => r.twinStatus === 'UNRESOLVED_CHOICE').length)
 const showAlternates = ref(false)
@@ -302,16 +343,25 @@ async function loadShipmentAndRelease () {
     if (!device.value?.shippedProduct) return
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query shippedProduct($uuid: ID!) { shippedProduct(uuid: $uuid) { uuid org featureSet release shipDate quantity identifiers { idType idValue } } }`,
+            query: gql`query shippedProduct($uuid: ID!) { shippedProduct(uuid: $uuid) { uuid org featureSet release shipDate quantity identifiers { idType idValue } choiceResolutions { choiceRef selectedRefs } } }`,
             variables: { uuid: device.value.shippedProduct }, fetchPolicy: 'no-cache'
         })
         shipment.value = resp.data.shippedProduct
     } catch (e) { /* ignore */ }
+    if (device.value.site) {
+        try {
+            const resp: any = await graphqlClient.query({
+                query: gql`query site($uuid: ID!) { site(uuid: $uuid) { uuid client } }`,
+                variables: { uuid: device.value.site }, fetchPolicy: 'cache-first'
+            })
+            siteClient.value = resp.data.site?.client || ''
+        } catch (e) { /* ignore */ }
+    }
     const releaseUuid = device.value.plan?.expectedRelease || shipment.value?.release
     if (releaseUuid) {
         try {
             const resp: any = await graphqlClient.query({
-                query: gql`query release($uuid: ID!) { release(releaseUuid: $uuid) { uuid version hardware componentDetails { uuid name } } }`,
+                query: gql`query release($uuid: ID!) { release(releaseUuid: $uuid) { uuid version hardware componentDetails { uuid name } branchDetails { uuid name } } }`,
                 variables: { uuid: releaseUuid }, fetchPolicy: 'no-cache'
             })
             expectedRelease.value = resp.data.release
@@ -358,7 +408,7 @@ async function loadEvents () {
 // ----- Device management (moved here from the old Distribution device modal) -----
 const featureSetReleases: Ref<any[]> = ref([])
 const expectedReleaseEdit: Ref<string | null> = ref(null)
-const trackingEdit = reactive<any>({ receivedDate: '', patientId: '', disposition: null, dispositionDate: '' })
+const trackingEdit = reactive<any>({ receivedDate: null, patientId: '', disposition: null, dispositionDate: null })
 const dispositionOptions = ['SHIPPED', 'RECEIVED', 'RETURNED', 'EXPLANTED', 'DISPOSED', 'DONATED', 'LOST'].map(v => ({ label: v, value: v }))
 async function loadFeatureSetReleases () {
     if (!shipment.value?.featureSet) return
@@ -433,9 +483,9 @@ async function submitStateReport () {
 }
 
 const showEventModal = ref(false)
-const eventForm = reactive<any>({ eventType: 'FAILURE', hbomRef: null, date: '', notes: '', replacement: { partNumber: '', lot: '', serial: '', manufacturer: '' } })
+const eventForm = reactive<any>({ eventType: 'FAILURE', hbomRef: null, date: null, notes: '', replacement: { partNumber: '', lot: '', serial: '', manufacturer: '' } })
 function openEventModal () {
-    eventForm.eventType = 'FAILURE'; eventForm.hbomRef = null; eventForm.date = ''; eventForm.notes = ''
+    eventForm.eventType = 'FAILURE'; eventForm.hbomRef = null; eventForm.date = null; eventForm.notes = ''
     eventForm.replacement = { partNumber: '', lot: '', serial: '', manufacturer: '' }
     showEventModal.value = true
 }
@@ -477,10 +527,10 @@ onMounted(async () => {
     if (!device.value) return
     expectedReleaseEdit.value = device.value.plan?.expectedRelease || null
     const t = device.value.tracking || {}
-    trackingEdit.receivedDate = t.receivedDate || ''
+    trackingEdit.receivedDate = t.receivedDate || null
     trackingEdit.patientId = t.patientId || ''
     trackingEdit.disposition = t.disposition || null
-    trackingEdit.dispositionDate = t.dispositionDate || ''
+    trackingEdit.dispositionDate = t.dispositionDate || null
     await Promise.all([loadShipmentAndRelease(), loadTwinHbom(), loadEvents()])
     await loadFeatureSetReleases()
 })

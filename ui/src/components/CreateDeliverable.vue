@@ -35,7 +35,7 @@
             <template v-if="isHardware">
                 <n-form-item label="Lot number"><n-input v-model:value="hw.lot" placeholder="Batch / lot number" /></n-form-item>
                 <n-form-item label="Quantity"><n-input-number v-model:value="hw.quantity" :min="1" placeholder="Units in this lot" /></n-form-item>
-                <n-form-item label="Manufacture date"><n-input v-model:value="hw.manufactureDate" placeholder="YYYY-MM-DD" /></n-form-item>
+                <n-form-item label="Manufacture date"><n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="hw.manufactureDate" value-format="yyyy-MM-dd" /></n-form-item>
                 <n-form-item label="Manufacturer"><n-input v-model:value="hw.manufacturer" placeholder="Producing party" /></n-form-item>
                 <n-form-item label="Assembler"><n-input v-model:value="hw.assembler" placeholder="Assembly / contract manufacturer (optional)" /></n-form-item>
                 <n-form-item label="Country of origin"><n-input v-model:value="hw.originRegion" placeholder="ISO 3166, e.g. US-MA / DE" /></n-form-item>
@@ -125,7 +125,7 @@ export default {
 <script lang="ts" setup>
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
-import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NInputNumber, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload, NSpace } from 'naive-ui'
+import { FormInst, NButton, NDatePicker, NDynamicInput, NForm, NFormItem, NInput, NInputNumber, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload, NSpace } from 'naive-ui'
 import { ref, Ref } from 'vue'
 import { useStore } from 'vuex'
 import { Tag, DownloadLink} from '@/utils/commonTypes'
@@ -145,7 +145,7 @@ const props = defineProps<{
 const hw = ref({
     lot: '',
     quantity: null as number | null,
-    manufactureDate: '',
+    manufactureDate: null as string | null,
     manufacturer: '',
     assembler: '',
     originRegion: '',

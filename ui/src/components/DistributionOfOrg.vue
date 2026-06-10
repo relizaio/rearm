@@ -81,14 +81,17 @@
         </n-modal>
 
         <!-- Ship modal -->
-        <n-modal v-model:show="showShipModal" preset="dialog" :show-icon="false" :title="terms.shipAction" style="width: 640px;">
+        <n-modal v-model:show="showShipModal" preset="dialog" :show-icon="false" :title="editingShipmentUuid ? 'Edit Shipment' : terms.shipAction" style="width: 640px;">
             <n-form>
-                <n-form-item label="Product">
+                <n-form-item v-if="!editingShipmentUuid" label="Product">
                     <n-select v-model:value="shipProductUuid" filterable :options="products" placeholder="Pick a product" @update:value="onShipProductChange" />
                 </n-form-item>
-                <n-form-item label="Feature set">
+                <n-form-item v-if="!editingShipmentUuid" label="Feature set">
                     <n-select v-model:value="shipForm.featureSet" filterable :options="featureSetOptions" :disabled="!shipProductUuid" placeholder="Pick a feature set" @update:value="onFeatureSetChange" />
                 </n-form-item>
+                <div v-if="editingShipmentUuid" class="identityBox">
+                    Editing shipment of <strong>{{ releaseLabel(shipForm.release) || shortUuid(shipForm.release) }}</strong> — product / feature set are fixed; adjust release, dates, quantity, identifiers and choices.
+                </div>
                 <div v-if="resolvedIdentity" class="identityBox">
                     {{ terms.deviceIdentity }}:
                     <n-tag size="small" :type="resolvedIdentity.deviceClass === 'NONE' ? 'default' : 'info'">{{ resolvedIdentity.deviceClass }}</n-tag>
@@ -114,7 +117,7 @@
                             :placeholder="(cv.choice.operator || '').toUpperCase() === 'OPTIONAL' ? 'Optional — leave empty if not populated' : 'Required — pick the populated option'" />
                     </n-form-item>
                 </template>
-                <n-form-item label="Ship date"><n-input v-model:value="shipForm.shipDate" placeholder="YYYY-MM-DD (defaults to today)" /></n-form-item>
+                <n-form-item label="Ship date"><n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="shipForm.shipDate" value-format="yyyy-MM-dd" placeholder="defaults to today" /></n-form-item>
                 <n-form-item label="Quantity"><n-input-number v-model:value="shipForm.quantity" :min="1" /></n-form-item>
                 <n-form-item label="Batch identifiers">
                     <n-dynamic-input v-model:value="shipForm.identifiers" :on-create="onCreateBatchId">
@@ -125,14 +128,18 @@
                         </template>
                     </n-dynamic-input>
                 </n-form-item>
-                <n-form-item label="Manufacture date"><n-input v-model:value="shipForm.manufactureDate" placeholder="YYYY-MM-DD" /></n-form-item>
-                <n-form-item label="Expiry date"><n-input v-model:value="shipForm.expiryDate" placeholder="YYYY-MM-DD" /></n-form-item>
+                <n-form-item label="Manufacture date"><n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="shipForm.manufactureDate" value-format="yyyy-MM-dd" /></n-form-item>
+                <n-form-item label="Expiry date"><n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="shipForm.expiryDate" value-format="yyyy-MM-dd" /></n-form-item>
             </n-form>
-            <template #action><n-button type="primary" @click="shipProduct">{{ terms.shipAction }}</n-button></template>
+            <template #action><n-button type="primary" @click="shipProduct">{{ editingShipmentUuid ? 'Save changes' : terms.shipAction }}</n-button></template>
         </n-modal>
 
         <!-- Device add modal -->
         <n-modal v-model:show="showDeviceModal" preset="dialog" :show-icon="false" title="Add device" style="width: 560px;">
+            <div class="identityBox" v-if="selectedShipment">
+                Adding to {{ terms.shipment.toLowerCase() }} <strong>{{ releaseLabel(selectedShipment.release) || shortUuid(selectedShipment.release) }}</strong>
+                · shipped {{ selectedShipment.shipDate }} — the unit inherits this lot's component-choice selections.
+            </div>
             <n-form>
                 <n-form-item label="Unit identifiers">
                     <n-dynamic-input v-model:value="deviceForm.identifiers" :on-create="onCreateUnitId">
@@ -161,8 +168,8 @@ export default { name: 'DistributionOfOrg' }
 import { ref, Ref, computed, ComputedRef, reactive, h, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, useNotification, NotificationType } from 'naive-ui'
-import { CirclePlus, InfoCircle } from '@vicons/tabler'
+import { NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType } from 'naive-ui'
+import { CirclePlus, InfoCircle, Edit as EditIcon } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -279,7 +286,29 @@ async function onShipReleaseChange (releaseUuid: string) {
 const emptyContact = () => ({ address: '', phone: '', email: '' })
 const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contact: emptyContact(), notes: '' })
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
-const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: '', quantity: 1, identifiers: [], manufactureDate: '', expiryDate: '' })
+const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null })
+const editingShipmentUuid: Ref<string> = ref('')
+
+// Resolved display info per release uuid (product / feature set / version)
+// so shipment rows show names instead of uuids.
+const releaseInfoMap: Ref<Record<string, any>> = ref({})
+async function resolveReleaseInfos (releaseUuids: string[]) {
+    const missing = [...new Set(releaseUuids)].filter(u => u && !releaseInfoMap.value[u])
+    await Promise.all(missing.map(async (u) => {
+        try {
+            const resp: any = await graphqlClient.query({
+                query: gql`query relInfo($u: ID!) { release(releaseUuid: $u) { uuid version componentDetails { uuid name } branchDetails { uuid name } } }`,
+                variables: { u }, fetchPolicy: 'cache-first'
+            })
+            const r = resp.data.release
+            if (r) releaseInfoMap.value[u] = { version: r.version, productName: r.componentDetails?.name, productUuid: r.componentDetails?.uuid, fsName: r.branchDetails?.name, fsUuid: r.branchDetails?.uuid }
+        } catch (e) { /* ignore */ }
+    }))
+}
+function releaseLabel (u: string): string {
+    const i = releaseInfoMap.value[u]
+    return i ? `${i.productName} — ${i.fsName} — ${i.version}` : ''
+}
 const deviceForm = reactive<any>({ identifiers: [], expectedRelease: '', notes: '' })
 
 
@@ -295,7 +324,7 @@ const onCreateUnitId = () => ({ idType: 'SERIAL', idValue: '' })
 // ---- GraphQL ----
 const CLIENT_FIELDS = 'uuid org name domain contact { address phone email } notes'
 const SITE_FIELDS = 'uuid org client name contact { address phone email } notes'
-const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes identifiers { idType idValue }'
+const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes identifiers { idType idValue } choiceResolutions { choiceRef selectedRefs }'
 const DEVICE_FIELDS = 'uuid org shippedProduct site versionDrift notes identifiers { idType idValue } plan { expectedRelease } actual { reportedRelease reportedAt source } tracking { receivedDate patientId disposition dispositionDate }'
 
 async function loadClients () {
@@ -311,6 +340,7 @@ async function loadShipments (siteUuid: string) {
     if (!siteUuid) { shipments.value = []; return }
     const resp: any = await graphqlClient.query({ query: gql`query shippedProductsOfSite($siteUuid: ID!) { shippedProductsOfSite(siteUuid: $siteUuid) { ${SHIP_FIELDS} } }`, variables: { siteUuid }, fetchPolicy: 'no-cache' })
     shipments.value = resp.data.shippedProductsOfSite || []
+    resolveReleaseInfos(shipments.value.map((s: any) => s.release))
 }
 async function loadDevices (shipUuid: string) {
     if (!shipUuid) { devices.value = []; return }
@@ -355,16 +385,59 @@ const clientColumns = [
     { key: 'domain', title: 'Framing', render: (r: any) => h(NTag, { size: 'small' }, { default: () => r.domain || 'GENERIC' }) }
 ]
 const siteColumns = [{ key: 'name', title: 'Name' }]
-const shipmentColumns = [
+const shipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
-    { key: 'release', title: 'Release', render: (r: any) => shortUuid(r.release) },
+    {
+        key: 'release', title: 'Release',
+        render: (r: any) => {
+            const i = releaseInfoMap.value[r.release]
+            if (!i) return shortUuid(r.release)
+            const link = (text: string, to: any) => h('a', {
+                class: 'shipLink',
+                onClick: (e: Event) => { e.stopPropagation(); router.push(to) }
+            }, text)
+            return h('span', [
+                link(i.productName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid } }),
+                ' — ',
+                link(i.fsName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid, branchuuid: i.fsUuid } }),
+                ' — ',
+                link(i.version, { name: 'ReleaseView', params: { uuid: r.release } })
+            ])
+        }
+    },
     { key: 'quantity', title: 'Qty' },
-    { key: 'ids', title: 'Batch ids', render: (r: any) => summarizeIds(r.identifiers) }
-]
+    {
+        key: 'info', title: '',
+        render: (r: any) => {
+            const facts: [string, any][] = [
+                ['Batch ids', summarizeIds(r.identifiers)],
+                ['Manufactured', r.manufactureDate],
+                ['Expires', r.expiryDate],
+                ['Lot choices', (r.choiceResolutions || []).map((c: any) => `${c.choiceRef} → ${(c.selectedRefs || []).join(', ') || '(none)'}`).join('; ')],
+                ['Notes', r.notes]
+            ].filter(([, v]) => v !== null && v !== undefined && v !== '') as [string, any][]
+            return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 460px;' }, {
+                trigger: () => h(NIcon, { size: 16, style: 'color: #909399; vertical-align: middle;', onClick: (e: Event) => e.stopPropagation() }, { default: () => h(InfoCircle) }),
+                default: () => h('div', facts.length
+                    ? facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)]))
+                    : ['No batch identifiers or extra facts'])
+            })
+        }
+    },
+    ...(isWritable ? [{
+        key: 'edit', title: '',
+        render: (r: any) => h(NIcon, {
+            size: 16, style: 'cursor: pointer; vertical-align: middle;', title: 'Edit shipment',
+            onClick: (e: Event) => { e.stopPropagation(); openShipModal(r) }
+        }, { default: () => h(EditIcon) })
+    }] : [])
+])
 const deviceColumns = computed(() => [
     { key: 'ids', title: 'Unit ids', render: (r: any) => summarizeIds(r.identifiers) || h('span', { class: 'subtle' }, '—') },
     {
-        key: 'drift', title: terms.value.fieldState,
+        // Plan-vs-reported indicator: DRIFT when the unit's observed/reported
+        // state diverges from its expected release; match when it agrees.
+        key: 'drift', title: 'Drift',
         render: (r: any) => r.versionDrift
             ? h(NTag, { size: 'small', type: 'warning' }, { default: () => 'DRIFT' })
             : (r.actual && r.actual.reportedRelease ? h(NTag, { size: 'small', type: 'success' }, { default: () => 'match' }) : h('span', { class: 'subtle' }, '—'))
@@ -440,12 +513,30 @@ async function deleteSite (s: any) {
 
 // ---- shipment ----
 function cleanIds (ids: any[]) { return (ids || []).filter(i => i.idType && i.idValue) }
-function openShipModal () {
-    shipForm.featureSet = ''; shipForm.release = ''; shipForm.deliverable = null; shipForm.shipDate = ''; shipForm.quantity = 1
-    shipForm.identifiers = []; shipForm.manufactureDate = ''; shipForm.expiryDate = ''
+async function openShipModal (existing?: any) {
+    shipForm.featureSet = ''; shipForm.release = ''; shipForm.deliverable = null; shipForm.shipDate = null; shipForm.quantity = 1
+    shipForm.identifiers = []; shipForm.manufactureDate = null; shipForm.expiryDate = null
     shipProductUuid.value = ''; shipReleases.value = []; shipDeliverables.value = []
     shipChoices.value = []; Object.keys(shipChoiceSelections).forEach(k => delete shipChoiceSelections[k])
-    resolvedIdentity.value = null; showShipModal.value = true
+    resolvedIdentity.value = null
+    editingShipmentUuid.value = existing?.uuid || ''
+    if (existing) {
+        shipForm.featureSet = existing.featureSet
+        shipForm.release = existing.release
+        shipForm.deliverable = existing.deliverable || null
+        shipForm.shipDate = existing.shipDate || null
+        shipForm.quantity = existing.quantity || 1
+        shipForm.identifiers = (existing.identifiers || []).map((i: any) => ({ idType: i.idType, idValue: i.idValue }))
+        shipForm.manufactureDate = existing.manufactureDate || null
+        shipForm.expiryDate = existing.expiryDate || null
+        shipReleases.value = await loadReleasesForBranch(existing.featureSet)
+        await Promise.all([loadShipChoices(existing.release), resolveIdentity()])
+        for (const cr of (existing.choiceResolutions || [])) {
+            // XOR/OPTIONAL selects bind a single ref; AND slots are implicit
+            shipChoiceSelections[cr.choiceRef] = (cr.selectedRefs || [])[0] || null
+        }
+    }
+    showShipModal.value = true
 }
 async function shipProduct () {
     if (!shipForm.featureSet || !shipForm.release) { notify('warning', 'Missing', 'Feature set and release are required'); return }
@@ -471,8 +562,18 @@ async function shipProduct () {
     if (shipForm.manufactureDate) input.manufactureDate = shipForm.manufactureDate
     if (shipForm.expiryDate) input.expiryDate = shipForm.expiryDate
     try {
-        await graphqlClient.mutate({ mutation: gql`mutation shipProduct($input: ShipProductInput!) { shipProduct(input: $input) { uuid } }`, variables: { input } })
-        showShipModal.value = false; notify('success', 'Saved', `${terms.value.shipment} recorded`); await loadShipments(selectedSiteUuid.value)
+        if (editingShipmentUuid.value) {
+            await graphqlClient.mutate({
+                mutation: gql`mutation updateShippedProduct($uuid: ID!, $input: ShipProductInput!) { updateShippedProduct(uuid: $uuid, input: $input) { uuid } }`,
+                variables: { uuid: editingShipmentUuid.value, input }
+            })
+            notify('success', 'Saved', `${terms.value.shipment} updated`)
+        } else {
+            await graphqlClient.mutate({ mutation: gql`mutation shipProduct($input: ShipProductInput!) { shipProduct(input: $input) { uuid } }`, variables: { input } })
+            notify('success', 'Saved', `${terms.value.shipment} recorded`)
+        }
+        showShipModal.value = false; editingShipmentUuid.value = ''
+        await loadShipments(selectedSiteUuid.value)
     } catch (e: any) { notify('error', 'Failed', e.message || 'Could not record shipment') }
 }
 async function deleteShipment (r: any) {
@@ -481,9 +582,11 @@ async function deleteShipment (r: any) {
 }
 
 // ---- device ----
-function openDeviceModal () { deviceForm.identifiers = []; deviceForm.expectedRelease = ''; deviceForm.notes = ''; showDeviceModal.value = true }
+function openDeviceModal () { deviceForm.identifiers = [{ idType: 'SERIAL', idValue: '' }]; deviceForm.expectedRelease = ''; deviceForm.notes = ''; showDeviceModal.value = true }
 async function saveDevice () {
-    const input: any = { org: orguuid.value, shippedProduct: selectedShipmentUuid.value, identifiers: cleanIds(deviceForm.identifiers), notes: deviceForm.notes }
+    const ids = cleanIds(deviceForm.identifiers)
+    if (!ids.length) { notify('warning', 'Missing identifier', 'A device needs at least one unit identifier (e.g. SERIAL)'); return }
+    const input: any = { org: orguuid.value, shippedProduct: selectedShipmentUuid.value, identifiers: ids, notes: deviceForm.notes }
     if (deviceForm.expectedRelease) input.plan = { expectedRelease: deviceForm.expectedRelease }
     try {
         await graphqlClient.mutate({ mutation: gql`mutation upsertDevice($input: DeviceInput!) { upsertDevice(input: $input) { uuid } }`, variables: { input } })
@@ -509,4 +612,6 @@ onMounted(async () => {
 .icons { margin: 4px; vertical-align: middle; }
 .clickable { cursor: pointer; }
 :deep(.selectedRow td) { background-color: #f1f1f1 !important; }
+:deep(.shipLink) { color: #2080f0; cursor: pointer; }
+:deep(.shipLink:hover) { text-decoration: underline; }
 </style>
