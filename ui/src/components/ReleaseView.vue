@@ -955,7 +955,7 @@
                                 <n-button v-if="hbomViewMode === 'tree'" size="small" @click="expandAllHbomNodes">Expand all</n-button>
                                 <n-button v-if="hbomViewMode === 'tree'" size="small" @click="collapseAllHbomNodes">Collapse all</n-button>
                             </n-space>
-                            <n-data-table v-if="hbomViewMode === 'list'" :columns="hbomColumns" :data="filteredHbom" :pagination="{ pageSize: 25 }" size="small" />
+                            <n-data-table v-if="hbomViewMode === 'list'" :columns="hbomColumns" :data="hbomTableData" :row-key="(r: any) => r.uuid" :pagination="{ pageSize: 25 }" size="small" />
                             <div v-else-if="hbomTreeRoots.length === 0"><p>No hardware tree to display.</p></div>
                             <div v-else class="sbom-tree-container"><HbomTreeView /></div>
                         </n-tab-pane>
@@ -1684,8 +1684,33 @@ const filteredHbom = computed(() => {
         [c.name, (c.partNumbers || []).join(' '), c.manufacturer, c.boardLocation, c.version]
             .filter(Boolean).join(' ').toLowerCase().includes(f))
 })
+// List view: choice slots are expandable rows with their options as children.
+const hbomChoiceRefs = computed(() => new Set(
+    hbomComponents.value.filter((c: any) => c.type === 'component-choice' && c.bomRef).map((c: any) => c.bomRef)))
+const hbomTableData = computed(() => {
+    if (hbomFilter.value) return filteredHbom.value // flat rows while filtering
+    const choiceRefs = hbomChoiceRefs.value
+    const isChoiceOption = (c: any) => c.parentRef && choiceRefs.has(c.parentRef)
+    return hbomComponents.value
+        .filter((c: any) => !isChoiceOption(c))
+        .map((c: any) => {
+            if (c.type === 'component-choice' && c.bomRef) {
+                const children = hbomComponents.value.filter((o: any) => o.parentRef === c.bomRef)
+                if (children.length) return { ...c, children }
+            }
+            return c
+        })
+})
 const hbomColumns = [
-    { key: 'name', title: 'Component' },
+    {
+        key: 'name', title: 'Component',
+        render: (r: any) => r.type === 'component-choice'
+            ? h('span', [
+                h(NTag, { size: 'small', type: 'info', style: 'margin-right: 6px;' }, { default: () => `choice · ${r.operator || 'XOR'}` }),
+                r.name
+            ])
+            : r.name
+    },
     { key: 'version', title: 'Version' },
     { key: 'category', title: 'Category' },
     { key: 'subcategory', title: 'Subcategory' },
@@ -1760,11 +1785,31 @@ function hbomNodeTooltip (node: any): any {
         ['Category', node.category], ['Subcategory', node.subcategory],
         ['Part #', (node.partNumbers || []).join(', ') || null], ['Manufacturer', node.manufacturer],
         ['Board loc', node.boardLocation], ['Pkg', node.deviceType], ['Qty', node.quantity],
-        ['Type', node.type], ['Description', node.description]
+        ['Type', node.type], ['Operator', node.operator], ['Description', node.description]
     ].filter(([, v]) => v !== null && v !== undefined && v !== '') as [string, any][]
     return h('div', facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)])))
 }
 function renderHbomTreeNode (node: any, ancestors: Set<string>): any {
+    // CDX #929 choice slots render as ONE cell: slot facts + options inline,
+    // joined by an operator-appropriate separator (| = pick one, + = all, ? = optional).
+    if (node.type === 'component-choice') {
+        const options = hbomChildrenOf(node)
+        const op = (node.operator || 'XOR').toUpperCase()
+        const sep = op === 'AND' ? ' + ' : (op === 'OPTIONAL' ? ' ? ' : ' | ')
+        const slotFacts = `${node.name || '(choice)'}${node.boardLocation ? ' @ ' + node.boardLocation : ''}${node.quantity ? ' ×' + node.quantity : ''}`
+        return h('div', { class: 'sbom-tree-node' }, [
+            h('div', { class: 'sbom-tree-self' }, [
+                h(NTooltip, { trigger: 'hover', placement: 'right', style: 'max-width: 440px;' }, {
+                    trigger: () => h('span', { class: 'sbom-tree-box hbom-choice-box' }, [
+                        h(NTag, { size: 'small', type: 'info', style: 'margin-right: 6px;' }, { default: () => op }),
+                        `${slotFacts}: `,
+                        h('em', {}, options.map((o: any) => o.name).join(sep) || '(no options)')
+                    ]),
+                    default: () => hbomNodeTooltip(node)
+                })
+            ])
+        ])
+    }
     const isCycle = node.bomRef != null && ancestors.has(node.bomRef)
     const children: any[] = isCycle ? [] : hbomChildrenOf(node)
     const expanded = hbomExpandedNodes.value.has(node.uuid)
@@ -1801,7 +1846,7 @@ async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean =
     if (hbomLoaded.value && !forceRefresh) return
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot } }`,
+            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type operator name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot } }`,
             variables: { releaseUuid }, fetchPolicy: 'no-cache'
         })
         hbomComponents.value = resp.data.hbomComponentsOfRelease || []

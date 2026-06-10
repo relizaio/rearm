@@ -30,6 +30,14 @@
                     <router-link :to="{ name: 'DistributionOfOrg', params: { orguuid: orguuid } }" style="margin-left: 8px;">open distribution</router-link>
                 </div>
                 <div v-if="device.notes"><strong>Notes: </strong>{{ device.notes }}</div>
+                <n-space v-if="isWritable" size="small" align="center" style="margin-top: 4px;">
+                    <n-select v-model:value="expectedReleaseEdit" filterable clearable :options="featureSetReleases" placeholder="expected release" size="small" style="width: 300px;" />
+                    <n-button size="small" @click="saveExpectedRelease" title="Set the release this unit is expected to run (e.g. after a field upgrade)">Set expected release</n-button>
+                    <n-popconfirm @positive-click="deleteThisDevice">
+                        <template #trigger><n-button size="small" type="error">Delete device</n-button></template>
+                        Delete this device and its twin history?
+                    </n-popconfirm>
+                </n-space>
             </n-space>
         </n-card>
 
@@ -45,10 +53,28 @@
                         </n-space>
                         <n-data-table :columns="observedColumns" :data="observed.items || []" size="small" :pagination="{ pageSize: 15 }" style="margin-top: 8px;" />
                     </div>
-                    <div v-else>
-                        <p>No observed software state reported yet.</p>
-                        <p class="subtle">Agents phone home via the API-key mutation <code>reportDeviceState(report: { device: "{{ device.uuid }}", rawText: "&lt;k8s image list&gt;" })</code> —
-                            observed digests are reconciled against the expected release tree.</p>
+                    <p v-else>No observed software state reported yet — agents phone home via the API-key
+                        <code>reportDeviceState</code> mutation, or post a report below.</p>
+                    <div v-if="isWritable" style="max-width: 760px;">
+                        <n-space align="center" size="small" style="margin-bottom: 4px;">
+                            <strong>Report observed state (JSON)</strong>
+                            <n-tooltip trigger="hover" placement="right" style="max-width: 520px;">
+                                <template #trigger>
+                                    <n-icon size="16" style="color: #909399; cursor: pointer;"><InfoCircle /></n-icon>
+                                </template>
+                                <div>
+                                    <p style="margin: 2px 0;"><strong>Accepted shapes:</strong></p>
+                                    <p style="margin: 2px 0;">1. Object: <code>{"observed": [{"identifier": "registry/drone-fw:1.2", "digest": "sha256:&lt;64-hex&gt;"}], "rawText": "..."}</code></p>
+                                    <p style="margin: 2px 0;">2. Bare array of <code>{identifier, digest}</code> items (treated as <code>observed</code>)</p>
+                                    <p style="margin: 2px 0;">3. Plain text — one image per line, <code>name@sha256:&lt;digest&gt;</code> (e.g. a k8s image list; treated as <code>rawText</code>)</p>
+                                    <p style="margin: 2px 0;">Each digest is reconciled against the expected release tree → MATCHED / DRIFTED / FOREIGN_COMPONENT / UNKNOWN.</p>
+                                    <p style="margin: 2px 0;">Same payload as the programmatic API-key mutation <code>reportDeviceState</code>.</p>
+                                </div>
+                            </n-tooltip>
+                        </n-space>
+                        <n-input v-model:value="stateReportText" type="textarea" :rows="4"
+                            placeholder='{"observed":[{"identifier":"registry/drone-fw:1.2","digest":"sha256:..."}]}  — or paste a k8s image list' />
+                        <n-button size="small" type="primary" style="margin-top: 6px;" :loading="stateReportPending" @click="submitStateReport">Submit report</n-button>
                     </div>
                 </n-space>
             </n-tab-pane>
@@ -67,13 +93,13 @@
                 <n-data-table :columns="eventColumns" :data="events" size="small" :pagination="{ pageSize: 15 }" />
             </n-tab-pane>
             <n-tab-pane v-if="deviceClass === 'MEDICAL_TRACKED'" name="tracking" tab="Tracking (821)">
-                <n-space vertical size="small" v-if="device.tracking">
-                    <div><strong>Received: </strong>{{ device.tracking.receivedDate || '—' }}</div>
-                    <div><strong>Patient / recipient: </strong>{{ device.tracking.patientId || '—' }}</div>
-                    <div><strong>Disposition: </strong>{{ device.tracking.disposition || '—' }}
-                        <span v-if="device.tracking.dispositionDate"> ({{ device.tracking.dispositionDate }})</span></div>
+                <n-space vertical size="small" style="max-width: 420px;">
+                    <n-input v-model:value="trackingEdit.receivedDate" placeholder="received date YYYY-MM-DD" />
+                    <n-input v-model:value="trackingEdit.patientId" placeholder="patient / recipient ID" />
+                    <n-select v-model:value="trackingEdit.disposition" :options="dispositionOptions" clearable placeholder="disposition" />
+                    <n-input v-model:value="trackingEdit.dispositionDate" placeholder="disposition date YYYY-MM-DD" />
+                    <n-button v-if="isWritable" size="small" @click="saveTracking">Update tracking</n-button>
                 </n-space>
-                <p v-else>No tracking record yet. Manage 821 tracking from the Distribution page.</p>
             </n-tab-pane>
         </n-tabs>
 
@@ -117,13 +143,15 @@ export default { name: 'DeviceView' }
 <script lang="ts" setup>
 import { ref, Ref, computed, reactive, h, onMounted } from 'vue'
 import { useStore } from 'vuex'
-import { useRoute } from 'vue-router'
-import { NButton, NCard, NDataTable, NForm, NFormItem, NInput, NModal, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
+import { useRoute, useRouter } from 'vue-router'
+import { NButton, NCard, NDataTable, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
+import { InfoCircle } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 
 const route = useRoute()
+const router = useRouter()
 const store = useStore()
 const notification = useNotification()
 
@@ -327,6 +355,83 @@ async function loadEvents () {
     } catch (e) { /* ignore */ }
 }
 
+// ----- Device management (moved here from the old Distribution device modal) -----
+const featureSetReleases: Ref<any[]> = ref([])
+const expectedReleaseEdit: Ref<string | null> = ref(null)
+const trackingEdit = reactive<any>({ receivedDate: '', patientId: '', disposition: null, dispositionDate: '' })
+const dispositionOptions = ['SHIPPED', 'RECEIVED', 'RETURNED', 'EXPLANTED', 'DISPOSED', 'DONATED', 'LOST'].map(v => ({ label: v, value: v }))
+async function loadFeatureSetReleases () {
+    if (!shipment.value?.featureSet) return
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query rels($b: ID!, $n: Int) { releases(branchFilter: $b, numRecords: $n) { uuid version } }`,
+            variables: { b: shipment.value.featureSet, n: 200 }, fetchPolicy: 'no-cache'
+        })
+        featureSetReleases.value = (resp.data.releases || []).map((r: any) => ({ label: r.version, value: r.uuid }))
+    } catch (e) { /* ignore */ }
+}
+async function saveExpectedRelease () {
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`mutation updateDevicePlan($uuid: ID!, $r: ID) { updateDevicePlan(uuid: $uuid, expectedRelease: $r) { uuid } }`,
+            variables: { uuid: deviceuuid.value, r: expectedReleaseEdit.value || null }
+        })
+        notify('success', 'Saved', 'Expected release updated')
+        await loadDevice(); await Promise.all([loadShipmentAndRelease(), loadTwinHbom()])
+    } catch (err: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(err.message)) }
+}
+async function saveTracking () {
+    const input: any = {
+        receivedDate: trackingEdit.receivedDate || null,
+        patientId: trackingEdit.patientId || null,
+        disposition: trackingEdit.disposition,
+        dispositionDate: trackingEdit.dispositionDate || null
+    }
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`mutation updateDeviceTracking($uuid: ID!, $input: TrackingInput!) { updateDeviceTracking(uuid: $uuid, input: $input) { uuid } }`,
+            variables: { uuid: deviceuuid.value, input }
+        })
+        notify('success', 'Saved', 'Tracking updated'); await loadDevice()
+    } catch (err: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(err.message)) }
+}
+async function deleteThisDevice () {
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation deleteDevice($uuid: ID!) { deleteDevice(uuid: $uuid) }`, variables: { uuid: deviceuuid.value } })
+        notify('info', 'Deleted', 'Device deleted')
+        router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value } })
+    } catch (err: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(err.message)) }
+}
+
+// ----- Operator JSON state report (same payload as the programmatic phone-home) -----
+const stateReportText = ref('')
+const stateReportPending = ref(false)
+async function submitStateReport () {
+    const text = stateReportText.value.trim()
+    if (!text) { notify('warning', 'Empty', 'Paste a JSON report or an image list first'); return }
+    const report: any = { device: deviceuuid.value, source: 'MANUAL' }
+    try {
+        const parsed = JSON.parse(text)
+        if (Array.isArray(parsed)) report.observed = parsed
+        else { if (parsed.observed) report.observed = parsed.observed; if (parsed.rawText) report.rawText = parsed.rawText; if (parsed.source) report.source = parsed.source }
+    } catch {
+        report.rawText = text // plain text — e.g. a k8s image list
+    }
+    stateReportPending.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`mutation reportDeviceStateManual($report: DeviceStateReportInput!) { reportDeviceStateManual(report: $report) { uuid } }`,
+            variables: { report }
+        })
+        notify('success', 'Reported', 'Observed state reconciled')
+        stateReportText.value = ''
+        await loadDevice(); await loadEvents()
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+    stateReportPending.value = false
+}
+
 const showEventModal = ref(false)
 const eventForm = reactive<any>({ eventType: 'FAILURE', hbomRef: null, date: '', notes: '', replacement: { partNumber: '', lot: '', serial: '', manufacturer: '' } })
 function openEventModal () {
@@ -370,7 +475,14 @@ async function saveEvent () {
 onMounted(async () => {
     await loadDevice()
     if (!device.value) return
+    expectedReleaseEdit.value = device.value.plan?.expectedRelease || null
+    const t = device.value.tracking || {}
+    trackingEdit.receivedDate = t.receivedDate || ''
+    trackingEdit.patientId = t.patientId || ''
+    trackingEdit.disposition = t.disposition || null
+    trackingEdit.dispositionDate = t.dispositionDate || ''
     await Promise.all([loadShipmentAndRelease(), loadTwinHbom(), loadEvents()])
+    await loadFeatureSetReleases()
 })
 </script>
 

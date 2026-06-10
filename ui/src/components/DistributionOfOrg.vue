@@ -151,41 +151,6 @@
             <template #action><n-button type="primary" @click="saveDevice">Save</n-button></template>
         </n-modal>
 
-        <!-- Device detail (instance-like) modal -->
-        <n-modal v-model:show="showDeviceDetail" preset="card" :title="'Device'" style="width: 620px;">
-            <template v-if="detailDevice">
-                <div class="contactLine">{{ summarizeIds(detailDevice.identifiers) || '(no identifiers)' }}</div>
-                <p>
-                    <strong>{{ terms.fieldState }}:</strong>
-                    <n-tag v-if="detailDevice.versionDrift" size="small" type="warning">DRIFT</n-tag>
-                    <n-tag v-else-if="detailDevice.actual && detailDevice.actual.reportedRelease" size="small" type="success">match</n-tag>
-                    <span v-else class="subtle"> no report</span>
-                </p>
-                <n-divider>Expected version (plan)</n-divider>
-                <n-space size="small">
-                    <n-select v-model:value="planEdit" filterable clearable :options="deviceReleases" placeholder="expected release" style="width: 360px;" />
-                    <n-button v-if="isWritable" size="small" @click="saveDevicePlan">Update (field repair)</n-button>
-                </n-space>
-                <n-divider>{{ terms.actualReport }}</n-divider>
-                <n-space size="small" vertical>
-                    <n-select v-model:value="actualEdit.reportedRelease" filterable clearable :options="deviceReleases" placeholder="reported release (observed version)" />
-                    <n-select v-model:value="actualEdit.source" :options="sourceOptions" style="width: 200px;" />
-                    <n-button v-if="isWritable" size="small" @click="saveDeviceActual">Record {{ terms.actualReport.toLowerCase() }}</n-button>
-                </n-space>
-                <n-divider>Tracking (821 — tracked devices)</n-divider>
-                <n-space size="small" vertical>
-                    <n-input v-model:value="trackingEdit.patientId" placeholder="patient / recipient ID" />
-                    <n-select v-model:value="trackingEdit.disposition" :options="dispositionOptions" clearable placeholder="disposition" style="width: 220px;" />
-                    <n-input v-model:value="trackingEdit.dispositionDate" placeholder="disposition date YYYY-MM-DD" />
-                    <n-button v-if="isWritable" size="small" @click="saveDeviceTracking">Update tracking</n-button>
-                </n-space>
-                <n-divider />
-                <n-popconfirm v-if="isWritable" @positive-click="deleteDevice(detailDevice)">
-                    <template #trigger><n-button size="small" type="error">Delete device</n-button></template>
-                    Delete this device?
-                </n-popconfirm>
-            </template>
-        </n-modal>
     </div>
 </template>
 
@@ -196,8 +161,8 @@ export default { name: 'DistributionOfOrg' }
 import { ref, Ref, computed, ComputedRef, reactive, h, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NPopconfirm, NDivider, NDynamicInput, useNotification, NotificationType } from 'naive-ui'
-import { CirclePlus } from '@vicons/tabler'
+import { NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, useNotification, NotificationType } from 'naive-ui'
+import { CirclePlus, InfoCircle } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -230,14 +195,11 @@ const domainTagType = computed(() => selectedClient.value?.domain === 'DEFENSE' 
 
 const domainOptions = DISTRIBUTION_DOMAIN_OPTIONS
 const idTypeOptions = ['UDI', 'UDI_DI', 'UDI_PI', 'SERIAL', 'LOT'].map(v => ({ label: v.replace('_', '-'), value: v }))
-const dispositionOptions = ['SHIPPED', 'RECEIVED', 'RETURNED', 'EXPLANTED', 'DISPOSED', 'DONATED', 'LOST'].map(v => ({ label: v, value: v }))
-const sourceOptions = ['PHONE_HOME', 'MANUAL', 'SUPPORT_TICKET'].map(v => ({ label: v, value: v }))
 
 const showClientModal = ref(false)
 const showSiteModal = ref(false)
 const showShipModal = ref(false)
 const showDeviceModal = ref(false)
-const showDeviceDetail = ref(false)
 const resolvedIdentity: Ref<any> = ref(null)
 
 // Selector-driven pickers (Product -> Feature set -> Release), reusing the
@@ -320,10 +282,6 @@ const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), no
 const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: '', quantity: 1, identifiers: [], manufactureDate: '', expiryDate: '' })
 const deviceForm = reactive<any>({ identifiers: [], expectedRelease: '', notes: '' })
 
-const detailDevice: Ref<any> = ref(null)
-const planEdit = ref('')
-const actualEdit = reactive<any>({ reportedRelease: '', source: 'MANUAL' })
-const trackingEdit = reactive<any>({ patientId: '', disposition: null, dispositionDate: '' })
 
 const notify = (type: NotificationType, title: string, content: string) =>
     notification[type]({ content, meta: title, duration: 3500, keepAliveOnHover: true })
@@ -412,11 +370,25 @@ const deviceColumns = computed(() => [
             : (r.actual && r.actual.reportedRelease ? h(NTag, { size: 'small', type: 'success' }, { default: () => 'match' }) : h('span', { class: 'subtle' }, '—'))
     },
     {
-        key: 'twin', title: '',
-        render: (r: any) => h(NButton, {
-            size: 'tiny',
-            onClick: (e: Event) => { e.stopPropagation(); router.push({ name: 'DeviceView', params: { deviceuuid: r.uuid } }) }
-        }, { default: () => 'Open twin' })
+        key: 'info', title: '',
+        render: (r: any) => {
+            const relLabel = (u: string) => (deviceReleases.value.find((o: any) => o.value === u)?.label) || (u ? u.substring(0, 8) : null)
+            const facts: [string, any][] = [
+                ['Identifiers', summarizeIds(r.identifiers)],
+                ['Expected release', relLabel(r.plan?.expectedRelease)],
+                ['Reported release', relLabel(r.actual?.reportedRelease)],
+                ['Report source', r.actual?.source],
+                ['Drift', r.versionDrift ? 'yes' : 'no'],
+                ['Notes', r.notes]
+            ].filter(([, v]) => v !== null && v !== undefined && v !== '') as [string, any][]
+            return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+                trigger: () => h(NIcon, { size: 16, style: 'color: #909399; vertical-align: middle;', onClick: (e: Event) => e.stopPropagation() }, { default: () => h(InfoCircle) }),
+                default: () => h('div', [
+                    ...facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)])),
+                    h('div', { style: 'margin-top: 4px; font-style: italic;' }, 'Click the row to open the device twin')
+                ])
+            })
+        }
     }
 ])
 
@@ -426,7 +398,7 @@ const shipmentRowClass = (r: any) => r.uuid === selectedShipmentUuid.value ? 'se
 const clientRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => selectClient(r.uuid) })
 const siteRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => selectSite(r.uuid) })
 const shipmentRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => selectShipment(r.uuid) })
-const deviceRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => openDeviceDetail(r) })
+const deviceRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => router.push({ name: 'DeviceView', params: { deviceuuid: r.uuid } }) })
 
 // ---- client/site mutations ----
 function openClientModal (c?: any) {
@@ -517,41 +489,6 @@ async function saveDevice () {
         await graphqlClient.mutate({ mutation: gql`mutation upsertDevice($input: DeviceInput!) { upsertDevice(input: $input) { uuid } }`, variables: { input } })
         showDeviceModal.value = false; notify('success', 'Saved', 'Device added'); await loadDevices(selectedShipmentUuid.value)
     } catch (e: any) { notify('error', 'Failed', e.message || 'Could not add device') }
-}
-function openDeviceDetail (d: any) {
-    detailDevice.value = d
-    planEdit.value = d.plan?.expectedRelease || ''
-    actualEdit.reportedRelease = d.actual?.reportedRelease || ''
-    actualEdit.source = d.actual?.source || 'MANUAL'
-    trackingEdit.patientId = d.tracking?.patientId || ''
-    trackingEdit.disposition = d.tracking?.disposition || null
-    trackingEdit.dispositionDate = d.tracking?.dispositionDate || ''
-    showDeviceDetail.value = true
-}
-async function refreshDetail () {
-    await loadDevices(selectedShipmentUuid.value)
-    const fresh = devices.value.find(d => d.uuid === detailDevice.value?.uuid)
-    if (fresh) detailDevice.value = fresh
-}
-async function saveDevicePlan () {
-    await graphqlClient.mutate({ mutation: gql`mutation updateDevicePlan($uuid: ID!, $r: ID) { updateDevicePlan(uuid: $uuid, expectedRelease: $r) { uuid } }`, variables: { uuid: detailDevice.value.uuid, r: planEdit.value || null } })
-    notify('success', 'Saved', 'Expected version updated'); await refreshDetail()
-}
-async function saveDeviceActual () {
-    const input: any = { reportedRelease: actualEdit.reportedRelease, source: actualEdit.source, reportedAt: new Date().toISOString() }
-    await graphqlClient.mutate({ mutation: gql`mutation reportDeviceActual($uuid: ID!, $input: ActualReportInput!) { reportDeviceActual(uuid: $uuid, input: $input) { uuid } }`, variables: { uuid: detailDevice.value.uuid, input } })
-    notify('success', 'Saved', `${terms.value.actualReport} recorded`); await refreshDetail()
-}
-async function saveDeviceTracking () {
-    const input: any = { patientId: trackingEdit.patientId, disposition: trackingEdit.disposition, dispositionDate: trackingEdit.dispositionDate || null }
-    try {
-        await graphqlClient.mutate({ mutation: gql`mutation updateDeviceTracking($uuid: ID!, $input: TrackingInput!) { updateDeviceTracking(uuid: $uuid, input: $input) { uuid } }`, variables: { uuid: detailDevice.value.uuid, input } })
-        notify('success', 'Saved', 'Tracking updated'); await refreshDetail()
-    } catch (e: any) { notify('error', 'Failed', e.message || 'Tracking is only allowed for MEDICAL_TRACKED devices') }
-}
-async function deleteDevice (d: any) {
-    await graphqlClient.mutate({ mutation: gql`mutation deleteDevice($uuid: ID!) { deleteDevice(uuid: $uuid) }`, variables: { uuid: d.uuid } })
-    showDeviceDetail.value = false; notify('info', 'Deleted', 'Device deleted'); await loadDevices(selectedShipmentUuid.value)
 }
 
 onMounted(async () => {
