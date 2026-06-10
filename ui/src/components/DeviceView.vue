@@ -56,6 +56,9 @@
                 <n-space style="margin-bottom: 8px;" align="center">
                     <n-input v-model:value="twinFilter" placeholder="Filter by name / part number / board location" clearable size="small" style="width: 420px;" />
                     <n-tag v-if="replacedCount" type="warning" size="small">{{ replacedCount }} replaced</n-tag>
+                    <n-tag v-if="unresolvedCount" type="error" size="small">{{ unresolvedCount }} unresolved choice{{ unresolvedCount > 1 ? 's' : '' }}</n-tag>
+                    <n-switch v-model:value="showAlternates" size="small" />
+                    <span class="subtle">show approved alternates</span>
                 </n-space>
                 <n-data-table :columns="twinColumns" :data="filteredTwinHbom" :row-class-name="twinRowClass" :pagination="{ pageSize: 25 }" size="small" />
             </n-tab-pane>
@@ -86,6 +89,14 @@
                     <n-input v-model:value="eventForm.date" placeholder="YYYY-MM-DD (defaults to now)" />
                 </n-form-item>
                 <template v-if="eventForm.eventType === 'REPLACEMENT'">
+                    <n-form-item v-if="pickedChoiceAlternates.length" label="Replace with (approved alternates for this slot)">
+                        <n-space vertical size="small" style="width: 100%;">
+                            <span class="subtle" v-if="pickedNode">
+                                Choice slot{{ pickedNode.component.boardLocation ? ' @ ' + pickedNode.component.boardLocation : '' }}{{ pickedNode.component.quantity ? ' · qty ' + pickedNode.component.quantity : '' }} — pick from the approved options:
+                            </span>
+                            <n-select :value="null" :options="choiceAlternateOptions" placeholder="Pick an approved alternate to fill the fields below" @update:value="applyChoiceAlternate" />
+                        </n-space>
+                    </n-form-item>
                     <n-form-item label="Replacement part #"><n-input v-model:value="eventForm.replacement.partNumber" placeholder="Part number installed" /></n-form-item>
                     <n-form-item label="Replacement lot"><n-input v-model:value="eventForm.replacement.lot" placeholder="Lot of the installed part" /></n-form-item>
                     <n-form-item label="Replacement serial"><n-input v-model:value="eventForm.replacement.serial" placeholder="Serial of the installed part" /></n-form-item>
@@ -107,7 +118,7 @@ export default { name: 'DeviceView' }
 import { ref, Ref, computed, reactive, h, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { NButton, NCard, NDataTable, NForm, NFormItem, NInput, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
+import { NButton, NCard, NDataTable, NForm, NFormItem, NInput, NModal, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -136,21 +147,39 @@ const primarySerial = computed(() => {
     return serial ? serial.idValue : ''
 })
 const replacedCount = computed(() => twinHbom.value.filter((r: any) => r.twinStatus === 'REPLACED').length)
+const unresolvedCount = computed(() => twinHbom.value.filter((r: any) => r.twinStatus === 'UNRESOLVED_CHOICE').length)
+const showAlternates = ref(false)
 const filteredTwinHbom = computed(() => {
+    let rows = twinHbom.value
+    if (!showAlternates.value) rows = rows.filter((r: any) => r.twinStatus !== 'ALTERNATE')
     const f = twinFilter.value.toLowerCase()
-    if (!f) return twinHbom.value
-    return twinHbom.value.filter((r: any) => {
+    if (!f) return rows
+    return rows.filter((r: any) => {
         const c = r.component || {}
         return [c.name, (c.partNumbers || []).join(' '), c.boardLocation, c.manufacturer]
             .filter(Boolean).join(' ').toLowerCase().includes(f)
     })
 })
+// Event anchor picker: only nodes actually installed on this unit.
 const hbomNodeOptions = computed(() => twinHbom.value
-    .filter((r: any) => r.component?.bomRef)
+    .filter((r: any) => r.component?.bomRef && (r.twinStatus === 'ORIGINAL' || r.twinStatus === 'REPLACED'))
     .map((r: any) => ({
         label: `${r.component.name || r.component.bomRef}${r.component.boardLocation ? ' @ ' + r.component.boardLocation : ''}`,
         value: r.component.bomRef
     })))
+// Approved alternates for the picked node's choice slot (CDX #929): when the
+// damaged part sits in a component-choice, the repair flow presents the whole
+// slot (options + board location + quantity) instead of a single part.
+const pickedNode = computed(() => twinHbom.value.find((r: any) => r.component?.bomRef === eventForm.hbomRef))
+const pickedChoiceAlternates = computed(() => {
+    const choiceRef = pickedNode.value?.choiceRef
+    if (!choiceRef) return []
+    return twinHbom.value.filter((r: any) => r.choiceRef === choiceRef && r.component?.bomRef)
+})
+const choiceAlternateOptions = computed(() => pickedChoiceAlternates.value.map((r: any) => ({
+    label: `${r.component.name}${(r.component.partNumbers || []).length ? ' · ' + r.component.partNumbers.join(', ') : ''}${r.component.manufacturer ? ' · ' + r.component.manufacturer : ''}${r.twinStatus === 'ALTERNATE' ? '' : ' (currently installed)'}`,
+    value: r.component.bomRef
+})))
 
 const shortUuid = (u: string) => u ? u.substring(0, 8) : ''
 function formatDateTime (d: any): string { return d ? new Date(d).toLocaleString() : '—' }
@@ -166,7 +195,12 @@ const observedColumns = [
     { key: 'expectedVersion', title: 'Expected' }
 ]
 
-function twinRowClass (r: any): string { return r.twinStatus === 'REPLACED' ? 'twin-replaced-row' : '' }
+function twinRowClass (r: any): string {
+    if (r.twinStatus === 'REPLACED') return 'twin-replaced-row'
+    if (r.twinStatus === 'UNRESOLVED_CHOICE') return 'twin-unresolved-row'
+    if (r.twinStatus === 'ALTERNATE') return 'twin-alternate-row'
+    return ''
+}
 const twinColumns = [
     { key: 'name', title: 'Component', render: (r: any) => r.component?.name },
     { key: 'category', title: 'Category', render: (r: any) => r.component?.category },
@@ -176,6 +210,18 @@ const twinColumns = [
     {
         key: 'twinStatus', title: 'Twin',
         render: (r: any) => {
+            if (r.twinStatus === 'ALTERNATE') {
+                return h(NTooltip, { trigger: 'hover', placement: 'left' }, {
+                    trigger: () => h(NTag, { size: 'small', style: 'opacity: 0.65;' }, { default: () => 'alternate' }),
+                    default: () => 'Approved option of this choice slot — not selected for this unit\'s lot'
+                })
+            }
+            if (r.twinStatus === 'UNRESOLVED_CHOICE') {
+                return h(NTooltip, { trigger: 'hover', placement: 'left' }, {
+                    trigger: () => h(NTag, { size: 'small', type: 'error' }, { default: () => `UNRESOLVED [${r.component?.operator || 'XOR'}]` }),
+                    default: () => 'This component-choice slot was never fixed for the unit\'s lot — resolve choices when producing/shipping the lot'
+                })
+            }
             if (r.twinStatus !== 'REPLACED') return h(NTag, { size: 'small' }, { default: () => 'original' })
             const rep = r.replacement || {}
             const details = [
@@ -258,9 +304,9 @@ async function loadTwinHbom () {
     try {
         const resp: any = await graphqlClient.query({
             query: gql`query deviceHbomComponents($deviceUuid: ID!) { deviceHbomComponents(deviceUuid: $deviceUuid) {
-                twinStatus eventDate eventNotes
+                twinStatus eventDate eventNotes choiceRef
                 replacement { partNumber lot serial manufacturer }
-                component { uuid bomRef name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot }
+                component { uuid bomRef type operator name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot }
             } }`,
             variables: { deviceUuid: deviceuuid.value }, fetchPolicy: 'no-cache'
         })
@@ -287,6 +333,13 @@ function openEventModal () {
     eventForm.eventType = 'FAILURE'; eventForm.hbomRef = null; eventForm.date = ''; eventForm.notes = ''
     eventForm.replacement = { partNumber: '', lot: '', serial: '', manufacturer: '' }
     showEventModal.value = true
+}
+// Picking an approved alternate from the choice slot fills the replacement facts.
+function applyChoiceAlternate (bomRef: string) {
+    const alt = pickedChoiceAlternates.value.find((r: any) => r.component?.bomRef === bomRef)
+    if (!alt) return
+    eventForm.replacement.partNumber = (alt.component.partNumbers || [])[0] || alt.component.name || ''
+    eventForm.replacement.manufacturer = alt.component.manufacturer || ''
 }
 async function saveEvent () {
     const input: any = { device: deviceuuid.value, eventType: eventForm.eventType }
@@ -330,5 +383,11 @@ onMounted(async () => {
 .subtle { color: #909399; }
 :deep(.twin-replaced-row td) {
     background-color: rgba(240, 160, 32, 0.12) !important;
+}
+:deep(.twin-unresolved-row td) {
+    background-color: rgba(208, 48, 80, 0.10) !important;
+}
+:deep(.twin-alternate-row td) {
+    opacity: 0.6;
 }
 </style>

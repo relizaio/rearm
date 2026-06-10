@@ -400,58 +400,6 @@
       ]
     },
     {
-      "bom-ref": "u1-ldo-5v",
-      "type": "device",
-      "name": "LD1117S50TR",
-      "description": "5V fixed positive LDO regulator, 1.2V dropout, SOT-223 package",
-      "quantity": 1,
-      "classification": {
-        "category": "semiconductor",
-        "subcategory": "voltage-regulator",
-        "codes": [
-          {
-            "standard": "NAICS",
-            "value": "334413",
-            "description": "Semiconductor and Related Device Manufacturing"
-          }
-        ]
-      },
-      "identities": [
-        {
-          "role": "manufacturer",
-          "partNumber": [
-            "LD1117S50TR"
-          ]
-        }
-      ],
-      "entities": [
-        {
-          "role": "manufacturer",
-          "name": "STMicroelectronics",
-          "address": {
-            "city": "Geneva",
-            "country": "CH",
-            "isoCode": "CH-GE"
-          }
-        }
-      ],
-      "deviceType": "SMD",
-      "boardLocation": "U1",
-      "externalReferences": [
-        {
-          "type": "datasheet",
-          "url": "http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/CD00000544.pdf"
-        }
-      ],
-      "evidence": {
-        "boardLocation": {
-          "designator": "U1",
-          "layer": "top",
-          "subsystem": "Voltage_Reg"
-        }
-      }
-    },
-    {
       "bom-ref": "u3-ldo-3v3",
       "type": "device",
       "name": "LP2985-33DBVR",
@@ -1195,37 +1143,6 @@
       "boardLocation": "P1, P2, P3, P4"
     },
     {
-      "bom-ref": "icsp-headers",
-      "type": "device",
-      "name": "M20-9980346",
-      "description": "6-contact male straight two-part board connector. ICSP programming headers.",
-      "quantity": 2,
-      "classification": {
-        "category": "connector",
-        "subcategory": "pin-header"
-      },
-      "identities": [
-        {
-          "role": "manufacturer",
-          "partNumber": [
-            "M20-9980346"
-          ]
-        }
-      ],
-      "entities": [
-        {
-          "role": "manufacturer",
-          "name": "Harwin",
-          "address": {
-            "country": "GB",
-            "isoCode": "GB-HAM"
-          }
-        }
-      ],
-      "deviceType": "PTH",
-      "boardLocation": "ICSP1, ICSP2"
-    },
-    {
       "bom-ref": "remaining-passives",
       "type": "device",
       "name": "Additional Passive Components",
@@ -1350,15 +1267,22 @@
       "operator": "XOR",
       "components": [
         {
+          "bom-ref": "u1-ldo-5v",
           "type": "device",
           "name": "LD1117S50TR",
-          "description": "5V fixed positive LDO regulator, 1.2V dropout, SOT-223",
-          "entities": [
-            {
-              "role": "supplier",
-              "name": "STMicroelectronics"
-            }
-          ],
+          "description": "5V fixed positive LDO regulator, 1.2V dropout, SOT-223 package",
+          "quantity": 1,
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "voltage-regulator",
+            "codes": [
+              {
+                "standard": "NAICS",
+                "value": "334413",
+                "description": "Semiconductor and Related Device Manufacturing"
+              }
+            ]
+          },
           "identities": [
             {
               "role": "manufacturer",
@@ -1367,23 +1291,43 @@
               ]
             }
           ],
-          "properties": [
+          "entities": [
             {
-              "name": "cdx:device:sourcedPercentage",
-              "value": "70"
+              "role": "manufacturer",
+              "name": "STMicroelectronics",
+              "address": {
+                "city": "Geneva",
+                "country": "CH",
+                "isoCode": "CH-GE"
+              }
             }
-          ]
+          ],
+          "deviceType": "SMD",
+          "boardLocation": "U1",
+          "externalReferences": [
+            {
+              "type": "datasheet",
+              "url": "http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/CD00000544.pdf"
+            }
+          ],
+          "evidence": {
+            "boardLocation": {
+              "designator": "U1",
+              "layer": "top",
+              "subsystem": "Voltage_Reg"
+            }
+          }
         },
         {
           "type": "device",
+          "bom-ref": "u1-ldo-5v-alt",
           "name": "AMS1117-5.0",
-          "description": "5V fixed positive LDO regulator, 1.0V dropout, SOT-223. Pin-compatible alternate.",
-          "entities": [
-            {
-              "role": "supplier",
-              "name": "Advanced Monolithic Systems"
-            }
-          ],
+          "description": "5V fixed positive LDO regulator, 1.3V dropout, SOT-223 package \u2014 approved alternate for LD1117S50TR",
+          "quantity": 1,
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "voltage-regulator"
+          },
           "identities": [
             {
               "role": "manufacturer",
@@ -1392,14 +1336,24 @@
               ]
             }
           ],
-          "properties": [
+          "entities": [
             {
-              "name": "cdx:device:sourcedPercentage",
-              "value": "30"
+              "role": "manufacturer",
+              "name": "Advanced Monolithic Systems",
+              "address": {
+                "country": "US",
+                "isoCode": "US-CA"
+              }
             }
-          ]
+          ],
+          "deviceType": "SMD",
+          "boardLocation": "U1"
         }
-      ]
+      ],
+      "bom-ref": "choice-u1-ldo-5v",
+      "boardLocation": "U1",
+      "quantity": 1,
+      "description": "Multi-sourced 5V LDO slot at U1 \u2014 exactly one of the approved alternates is populated per lot."
     },
     {
       "type": "component-choice",
@@ -1408,14 +1362,14 @@
       "components": [
         {
           "type": "device",
+          "bom-ref": "icsp1-header",
           "name": "ICSP1 Header",
-          "description": "6-pin ICSP header for ATmega16U2 programming",
-          "entities": [
-            {
-              "role": "manufacturer",
-              "name": "Harwin"
-            }
-          ],
+          "description": "2x3 ICSP programming header (main MCU)",
+          "quantity": 1,
+          "classification": {
+            "category": "connector",
+            "subcategory": "pin-header"
+          },
           "identities": [
             {
               "role": "manufacturer",
@@ -1423,18 +1377,30 @@
                 "M20-9980346"
               ]
             }
-          ]
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Harwin",
+              "address": {
+                "country": "GB",
+                "isoCode": "GB-CAM"
+              }
+            }
+          ],
+          "deviceType": "PTH",
+          "boardLocation": "ICSP1"
         },
         {
           "type": "device",
+          "bom-ref": "icsp2-header",
           "name": "ICSP2 Header",
-          "description": "6-pin ICSP header for ATmega328P programming",
-          "entities": [
-            {
-              "role": "manufacturer",
-              "name": "Harwin"
-            }
-          ],
+          "description": "2x3 ICSP programming header (USB bridge MCU)",
+          "quantity": 1,
+          "classification": {
+            "category": "connector",
+            "subcategory": "pin-header"
+          },
           "identities": [
             {
               "role": "manufacturer",
@@ -1442,9 +1408,25 @@
                 "M20-9980346"
               ]
             }
-          ]
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Harwin",
+              "address": {
+                "country": "GB",
+                "isoCode": "GB-CAM"
+              }
+            }
+          ],
+          "deviceType": "PTH",
+          "boardLocation": "ICSP2"
         }
-      ]
+      ],
+      "bom-ref": "choice-icsp-headers",
+      "boardLocation": "ICSP1, ICSP2",
+      "quantity": 2,
+      "description": "ICSP header pair \u2014 both populated on every build."
     },
     {
       "type": "component-choice",
@@ -1453,10 +1435,22 @@
       "components": [
         {
           "type": "device",
+          "bom-ref": "jp2-debug-header",
           "name": "JP2 Debug Header",
-          "description": "2x2 pin header, not populated on standard builds (FOOTPRINT ONLY on schematic)"
+          "description": "2x2 debug/JP2 header \u2014 populated on debug builds only",
+          "quantity": 1,
+          "classification": {
+            "category": "connector",
+            "subcategory": "pin-header"
+          },
+          "deviceType": "PTH",
+          "boardLocation": "JP2"
         }
-      ]
+      ],
+      "bom-ref": "choice-jp2-debug",
+      "boardLocation": "JP2",
+      "quantity": 1,
+      "description": "Optional debug header \u2014 populated only for debug lots."
     }
   ],
   "dependencies": [
@@ -1465,7 +1459,7 @@
       "dependsOn": [
         "u5-atmega328p",
         "u4-atmega16u2",
-        "u1-ldo-5v",
+        "choice-u1-ldo-5v",
         "u3-ldo-3v3",
         "u2-comparator",
         "j1-usb",
@@ -1487,8 +1481,9 @@
         "varistors-esd",
         "sw1-reset",
         "headers-shield",
-        "icsp-headers",
-        "remaining-passives"
+        "choice-icsp-headers",
+        "remaining-passives",
+        "choice-jp2-debug"
       ]
     },
     {

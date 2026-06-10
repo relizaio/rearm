@@ -165,6 +165,7 @@ const typeDefs = gql`
   type HbomComponent {
     bomRef: String
     type: String
+    operator: String
     name: String
     version: String
     description: String

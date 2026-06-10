@@ -100,6 +100,20 @@
                 <n-form-item v-if="shipDeliverables.length" label="Deliverable / lot">
                     <n-select v-model:value="shipForm.deliverable" filterable clearable :options="shipDeliverables" placeholder="Optional — pick a shipped deliverable / lot" />
                 </n-form-item>
+                <template v-if="shipChoices.length">
+                    <n-divider style="margin: 6px 0;">Component choices (fixed per lot)</n-divider>
+                    <n-form-item v-for="cv in shipChoices" :key="cv.choice.bomRef"
+                        :label="`${cv.choice.name}${cv.choice.boardLocation ? ' @ ' + cv.choice.boardLocation : ''}${cv.choice.quantity ? ' × ' + cv.choice.quantity : ''} [${cv.choice.operator || 'XOR'}]`">
+                        <span v-if="(cv.choice.operator || 'XOR').toUpperCase() === 'AND'" class="subtle">
+                            All options installed: {{ cv.options.map((o: any) => o.name).join(', ') }}
+                        </span>
+                        <n-select v-else
+                            v-model:value="shipChoiceSelections[cv.choice.bomRef]"
+                            :clearable="(cv.choice.operator || '').toUpperCase() === 'OPTIONAL'"
+                            :options="choiceOptionSelect(cv)"
+                            :placeholder="(cv.choice.operator || '').toUpperCase() === 'OPTIONAL' ? 'Optional — leave empty if not populated' : 'Required — pick the populated option'" />
+                    </n-form-item>
+                </template>
                 <n-form-item label="Ship date"><n-input v-model:value="shipForm.shipDate" placeholder="YYYY-MM-DD (defaults to today)" /></n-form-item>
                 <n-form-item label="Quantity"><n-input-number v-model:value="shipForm.quantity" :min="1" /></n-form-item>
                 <n-form-item label="Batch identifiers">
@@ -252,9 +266,33 @@ async function onFeatureSetChange (branchUuid: string) {
     shipReleases.value = await loadReleasesForBranch(branchUuid)
     await resolveIdentity()
 }
+const shipChoices: Ref<any[]> = ref([])
+const shipChoiceSelections = reactive<Record<string, string | null>>({})
+function choiceOptionSelect (cv: any) {
+    return (cv.options || []).map((o: any) => ({
+        label: `${o.name}${(o.partNumbers || []).length ? ' · ' + o.partNumbers.join(', ') : ''}${o.manufacturer ? ' · ' + o.manufacturer : ''}`,
+        value: o.bomRef
+    }))
+}
+async function loadShipChoices (releaseUuid: string) {
+    shipChoices.value = []
+    Object.keys(shipChoiceSelections).forEach(k => delete shipChoiceSelections[k])
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query releaseComponentChoices($u: ID!) { releaseComponentChoices(releaseUuid: $u) {
+                choice { bomRef name operator boardLocation quantity }
+                options { bomRef name partNumbers manufacturer boardLocation quantity }
+            } }`,
+            variables: { u: releaseUuid }, fetchPolicy: 'no-cache'
+        })
+        shipChoices.value = (resp.data.releaseComponentChoices || []).filter((cv: any) => cv.choice?.bomRef)
+    } catch (e) { /* hardware-less releases simply have no choices */ }
+}
 async function onShipReleaseChange (releaseUuid: string) {
     shipForm.deliverable = null; shipDeliverables.value = []
+    shipChoices.value = []; Object.keys(shipChoiceSelections).forEach(k => delete shipChoiceSelections[k])
     if (!releaseUuid) return
+    loadShipChoices(releaseUuid)
     const resp: any = await graphqlClient.query({
         query: gql`query relDeliverables($u: ID!) { release(releaseUuid: $u) { variantDetails { outboundDeliverableDetails { uuid displayIdentifier rearmIdentifiers { idType idValue } quantity } } } }`,
         variables: { u: releaseUuid }, fetchPolicy: 'no-cache'
@@ -434,11 +472,28 @@ function openShipModal () {
     shipForm.featureSet = ''; shipForm.release = ''; shipForm.deliverable = null; shipForm.shipDate = ''; shipForm.quantity = 1
     shipForm.identifiers = []; shipForm.manufactureDate = ''; shipForm.expiryDate = ''
     shipProductUuid.value = ''; shipReleases.value = []; shipDeliverables.value = []
+    shipChoices.value = []; Object.keys(shipChoiceSelections).forEach(k => delete shipChoiceSelections[k])
     resolvedIdentity.value = null; showShipModal.value = true
 }
 async function shipProduct () {
     if (!shipForm.featureSet || !shipForm.release) { notify('warning', 'Missing', 'Feature set and release are required'); return }
     const input: any = { org: orguuid.value, site: selectedSiteUuid.value, featureSet: shipForm.featureSet, release: shipForm.release, quantity: shipForm.quantity, identifiers: cleanIds(shipForm.identifiers) }
+    if (shipChoices.value.length) {
+        const resolutions: any[] = []
+        for (const cv of shipChoices.value) {
+            const op = (cv.choice.operator || 'XOR').toUpperCase()
+            const sel = shipChoiceSelections[cv.choice.bomRef]
+            if (op === 'AND') {
+                resolutions.push({ choiceRef: cv.choice.bomRef, selectedRefs: (cv.options || []).map((o: any) => o.bomRef).filter(Boolean) })
+            } else if (op === 'OPTIONAL') {
+                resolutions.push({ choiceRef: cv.choice.bomRef, selectedRefs: sel ? [sel] : [] })
+            } else { // XOR
+                if (!sel) { notify('warning', 'Unresolved choice', `Pick the populated option for "${cv.choice.name}" — a produced lot fixes all component choices`); return }
+                resolutions.push({ choiceRef: cv.choice.bomRef, selectedRefs: [sel] })
+            }
+        }
+        input.choiceResolutions = resolutions
+    }
     if (shipForm.deliverable) input.deliverable = shipForm.deliverable
     if (shipForm.shipDate) input.shipDate = shipForm.shipDate
     if (shipForm.manufactureDate) input.manufactureDate = shipForm.manufactureDate

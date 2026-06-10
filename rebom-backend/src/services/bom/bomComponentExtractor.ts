@@ -204,7 +204,9 @@ export function extractBomComponents(bom: any): ParsedBomComponent[] {
 
 export interface ParsedHbomComponent {
 	bomRef: string | null;
-	type: string | null; // device | firmware
+	type: string | null; // device | component-choice
+	// CDX #929 choice operator (XOR / AND / OPTIONAL); null for plain devices.
+	operator: string | null;
 	name: string | null;
 	version: string | null;
 	description: string | null;
@@ -281,12 +283,15 @@ export function parseHbom(bom: any): ParsedHbom {
 		if (!c || typeof c !== 'object') return;
 		const type = typeof c.type === 'string' ? c.type : null;
 		const ref = typeof c['bom-ref'] === 'string' ? c['bom-ref'] : null;
-		// HBOM = physical hardware only (`type: device`). Firmware is software and
-		// flows to the SBOM extractor when it carries a purl/cpe (dropped otherwise).
-		if (type === 'device') {
+		// HBOM = physical hardware (`type: device`) plus CDX #929 choice slots
+		// (`type: component-choice`, whose options are nested device children).
+		// Firmware is software and flows to the SBOM extractor when it carries
+		// a purl/cpe (dropped otherwise).
+		if (type === 'device' || type === 'component-choice') {
 			out.components.push({
 				bomRef: ref,
 				type,
+				operator: typeof c.operator === 'string' ? c.operator : null,
 				name: typeof c.name === 'string' ? c.name : null,
 				version: typeof c.version === 'string' ? c.version : null,
 				description: typeof c.description === 'string' ? c.description : null,
