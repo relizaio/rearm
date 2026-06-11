@@ -309,7 +309,8 @@ const twinColumns = [
             const rep = r.replacement || {}
             const details = [
                 ['Replaced on', formatDateTime(r.eventDate)],
-                ['Part #', rep.partNumber], ['Lot', rep.lot], ['Serial', rep.serial],
+                ['Part #', rep.partNumber ? `${rep.partNumber}${rep.role ? ` [${String(rep.role).toLowerCase()}]` : ''}` : null],
+                ['Lot', rep.lot], ['Serial', rep.serial],
                 ['Manufacturer', rep.manufacturer], ['Notes', r.eventNotes]
             ].filter(([, v]) => v)
             return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
@@ -432,8 +433,8 @@ async function loadTwinHbom () {
         const resp: any = await graphqlClient.query({
             query: gql`query deviceHbomComponents($deviceUuid: ID!) { deviceHbomComponents(deviceUuid: $deviceUuid) {
                 twinStatus eventType eventDate eventNotes choiceRef
-                replacement { partNumber lot serial manufacturer }
-                component { uuid bomRef type operator name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot }
+                replacement { partNumber role lot serial manufacturer }
+                component { uuid bomRef type operator name version description category subcategory partNumbers manufacturer identities { role entityRef partNumbers } parties { roles name } boardLocation deviceType quantity parentRef isRoot }
             } }`,
             variables: { deviceUuid: deviceuuid.value }, fetchPolicy: 'no-cache'
         })
@@ -446,7 +447,7 @@ async function loadEvents () {
         const resp: any = await graphqlClient.query({
             query: gql`query deviceEventsOfDevice($deviceUuid: ID!) { deviceEventsOfDevice(deviceUuid: $deviceUuid) {
                 uuid eventType date createdDate hbomRef componentName purl notes
-                replacement { partNumber lot serial manufacturer }
+                replacement { partNumber role lot serial manufacturer }
                 observation { source matchedCount driftedCount unknownCount
                     items { identifier digest status componentName observedVersion expectedVersion } }
             } }`,
@@ -534,17 +535,22 @@ async function submitStateReport () {
 }
 
 const showEventModal = ref(false)
-const eventForm = reactive<any>({ eventType: 'FAILURE', hbomRef: null, date: null, notes: '', replacement: { partNumber: '', lot: '', serial: '', manufacturer: '' } })
+const eventForm = reactive<any>({ eventType: 'FAILURE', hbomRef: null, date: null, notes: '', replacement: { partNumber: '', role: null, lot: '', serial: '', manufacturer: '' } })
 function openEventModal () {
     eventForm.eventType = 'FAILURE'; eventForm.hbomRef = null; eventForm.date = null; eventForm.notes = ''
-    eventForm.replacement = { partNumber: '', lot: '', serial: '', manufacturer: '' }
+    eventForm.replacement = { partNumber: '', role: null, lot: '', serial: '', manufacturer: '' }
     showEventModal.value = true
 }
 // Picking an approved alternate from the choice slot fills the replacement facts.
 function applyChoiceAlternate (bomRef: string) {
     const alt = pickedChoiceAlternates.value.find((r: any) => r.component?.bomRef === bomRef)
     if (!alt) return
-    eventForm.replacement.partNumber = (alt.component.partNumbers || [])[0] || alt.component.name || ''
+    // Prefer the manufacturer-role identity so the recorded part number keeps
+    // its attribution (the same part can carry different numbers per role).
+    const ids = alt.component.identities || []
+    const mfgId = ids.find((i: any) => i.role === 'MANUFACTURER' && (i.partNumbers || []).length) || ids.find((i: any) => (i.partNumbers || []).length)
+    eventForm.replacement.partNumber = (mfgId?.partNumbers || [])[0] || alt.component.name || ''
+    eventForm.replacement.role = mfgId?.role || null
     eventForm.replacement.manufacturer = alt.component.manufacturer || ''
 }
 async function saveEvent () {

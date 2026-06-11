@@ -197,10 +197,30 @@ export function extractBomComponents(bom: any): ParsedBomComponent[] {
 
 // ===== HBOM (hardware BOM) extraction =====
 // CycloneDX HBOM components are `type: device` (with nested `type: firmware`)
-// and have no purl — they are identified by part number + manufacturer +
-// board location. parseHbom flattens the board -> devices -> firmware tree
-// into one entry per hardware node, carrying the parent bom-ref so the
-// backend can rebuild the nesting.
+// and have no purl — they are identified by role-scoped part numbers, parties
+// (manufacturer/supplier/...), and board location. parseHbom flattens the
+// board -> devices -> firmware tree into one entry per hardware node (carrying
+// the parent bom-ref so the backend can rebuild the nesting) while preserving
+// the CDX party/identity structure instead of collapsing it to single fields.
+
+// CDX 2.0 party (PR #930 names the component field `parties`; older drafts /
+// our fixtures used `entities` — accepted interchangeably on read). Roles are
+// normalized to ReARM's PartyRole enum names.
+export interface ParsedHbomParty {
+	bomRef: string | null;
+	roles: string[];
+	name: string | null;
+	address: any | null;
+	url: string | null;
+}
+
+// Role-scoped identity: the same physical component can carry different part
+// numbers per manufacturer/supplier — preserved instead of flattened.
+export interface ParsedHbomIdentity {
+	role: string | null;
+	entityRef: string | null;
+	partNumbers: string[];
+}
 
 export interface ParsedHbomComponent {
 	bomRef: string | null;
@@ -212,8 +232,8 @@ export interface ParsedHbomComponent {
 	description: string | null;
 	category: string | null; // classification.category (e.g. semiconductor)
 	subcategory: string | null; // classification.subcategory (e.g. voltage-regulator)
-	partNumbers: string[];
-	manufacturer: string | null;
+	parties: ParsedHbomParty[];
+	identities: ParsedHbomIdentity[];
 	boardLocation: string | null;
 	deviceType: string | null; // DIP / QFN / SMD / PTH
 	quantity: number | null;
@@ -225,36 +245,65 @@ export interface ParsedHbom {
 	components: ParsedHbomComponent[];
 }
 
-function extractPartNumbers(c: any): string[] {
-	const out: string[] = [];
+const PARTY_ROLES = new Set(['MANUFACTURER', 'ASSEMBLER', 'SUPPLIER', 'QUALITY_CONTROL', 'DISTRIBUTOR']);
+
+function normalizeRole(role: any): string | null {
+	if (typeof role !== 'string' || !role) return null;
+	const up = role.toUpperCase().replace(/[\s-]+/g, '_');
+	return PARTY_ROLES.has(up) ? up : 'OTHER';
+}
+
+function partiesOf(c: any): ParsedHbomParty[] {
+	const raw = Array.isArray(c.parties) ? c.parties : (Array.isArray(c.entities) ? c.entities : []);
+	const out: ParsedHbomParty[] = [];
+	for (const p of raw) {
+		if (!p || typeof p !== 'object') continue;
+		const roles: string[] = [];
+		if (Array.isArray(p.roles)) {
+			for (const r of p.roles) { const nr = normalizeRole(r); if (nr) roles.push(nr); }
+		} else {
+			const nr = normalizeRole(p.role);
+			if (nr) roles.push(nr);
+		}
+		out.push({
+			bomRef: typeof p['bom-ref'] === 'string' ? p['bom-ref'] : (typeof p.bomRef === 'string' ? p.bomRef : null),
+			roles,
+			name: typeof p.name === 'string' ? p.name : null,
+			address: p.address && typeof p.address === 'object' ? p.address : null,
+			url: typeof p.url === 'string' ? p.url : null,
+		});
+	}
+	return out;
+}
+
+function identitiesOf(c: any): ParsedHbomIdentity[] {
+	const out: ParsedHbomIdentity[] = [];
 	if (Array.isArray(c.identities)) {
 		for (const id of c.identities) {
-			if (Array.isArray(id?.partNumber)) {
-				for (const pn of id.partNumber) if (typeof pn === 'string') out.push(pn);
-			}
+			if (!id || typeof id !== 'object') continue;
+			const partNumbers = Array.isArray(id.partNumber)
+				? id.partNumber.filter((pn: any) => typeof pn === 'string')
+				: [];
+			out.push({
+				role: normalizeRole(id.role),
+				entityRef: typeof id['entity-ref'] === 'string' ? id['entity-ref'] : (typeof id.entityRef === 'string' ? id.entityRef : null),
+				partNumbers,
+			});
 		}
 	}
 	if (Array.isArray(c.identifiers)) {
 		for (const block of c.identifiers) {
 			const ids = block?.identities;
-			if (Array.isArray(ids)) {
-				for (const id of ids) {
-					if (id?.idType === 'PART_NUMBER' && typeof id?.idValue === 'string') out.push(id.idValue);
-				}
+			if (!Array.isArray(ids)) continue;
+			const partNumbers = ids
+				.filter((id: any) => id?.idType === 'PART_NUMBER' && typeof id?.idValue === 'string')
+				.map((id: any) => id.idValue);
+			if (partNumbers.length) {
+				out.push({ role: normalizeRole(block?.role), entityRef: null, partNumbers });
 			}
 		}
 	}
-	return Array.from(new Set(out));
-}
-
-function manufacturerOf(c: any): string | null {
-	if (Array.isArray(c.entities)) {
-		const m = c.entities.find((e: any) => e?.role === 'manufacturer' && typeof e?.name === 'string');
-		if (m) return m.name;
-		const any = c.entities.find((e: any) => typeof e?.name === 'string');
-		if (any) return any.name;
-	}
-	return null;
+	return out;
 }
 
 function classificationOf(c: any): { category: string | null; subcategory: string | null } {
@@ -297,8 +346,8 @@ export function parseHbom(bom: any): ParsedHbom {
 				description: typeof c.description === 'string' ? c.description : null,
 				category: classificationOf(c).category,
 				subcategory: classificationOf(c).subcategory,
-				partNumbers: extractPartNumbers(c),
-				manufacturer: manufacturerOf(c),
+				parties: partiesOf(c),
+				identities: identitiesOf(c),
 				boardLocation: boardLocationOf(c),
 				deviceType: typeof c.deviceType === 'string' ? c.deviceType : null,
 				quantity: typeof c.quantity === 'number' ? c.quantity : null,

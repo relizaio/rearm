@@ -1780,14 +1780,28 @@ function expandAllHbomNodes () {
 function collapseAllHbomNodes () {
     hbomExpandedNodes.value = new Set()
 }
+function partyLine (p: any): string {
+    const roles = (p.roles || []).join('/').toLowerCase()
+    const addr = p.address ? [p.address.city, p.address.region, p.address.country].filter(Boolean).join(', ') : ''
+    return `${p.name || '(unnamed)'}${roles ? ` [${roles}]` : ''}${addr ? ` — ${addr}` : ''}`
+}
+function identityLine (i: any): string {
+    return `${(i.partNumbers || []).join(', ')}${i.role ? ` [${i.role.toLowerCase()}]` : ''}`
+}
 function hbomNodeTooltip (node: any): any {
     const facts: [string, any][] = [
         ['Category', node.category], ['Subcategory', node.subcategory],
-        ['Part #', (node.partNumbers || []).join(', ') || null], ['Manufacturer', node.manufacturer],
         ['Board loc', node.boardLocation], ['Pkg', node.deviceType], ['Qty', node.quantity],
         ['Type', node.type], ['Operator', node.operator], ['Description', node.description]
     ].filter(([, v]) => v !== null && v !== undefined && v !== '') as [string, any][]
-    return h('div', facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)])))
+    const lines = facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)]))
+    for (const i of (node.identities || [])) {
+        lines.push(h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Part #: '), identityLine(i)]))
+    }
+    for (const p of (node.parties || [])) {
+        lines.push(h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Party: '), partyLine(p)]))
+    }
+    return h('div', lines)
 }
 function renderHbomTreeNode (node: any, ancestors: Set<string>): any {
     // CDX #929 choice slots render as ONE cell: slot facts + options inline,
@@ -1846,7 +1860,7 @@ async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean =
     if (hbomLoaded.value && !forceRefresh) return
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type operator name version description category subcategory partNumbers manufacturer boardLocation deviceType quantity parentRef isRoot } }`,
+            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type operator name version description category subcategory partNumbers manufacturer parties { roles name url address { city region country isoCode } } identities { role entityRef partNumbers } boardLocation deviceType quantity parentRef isRoot } }`,
             variables: { releaseUuid }, fetchPolicy: 'no-cache'
         })
         hbomComponents.value = resp.data.hbomComponentsOfRelease || []

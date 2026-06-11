@@ -162,6 +162,20 @@ const typeDefs = gql`
     dependencies: [BomDependency]!
   }
 
+  type HbomParty {
+    bomRef: String
+    roles: [String]
+    name: String
+    address: Object
+    url: String
+  }
+
+  type HbomIdentity {
+    role: String
+    entityRef: String
+    partNumbers: [String]
+  }
+
   type HbomComponent {
     bomRef: String
     type: String
@@ -171,8 +185,8 @@ const typeDefs = gql`
     description: String
     category: String
     subcategory: String
-    partNumbers: [String]
-    manufacturer: String
+    parties: [HbomParty]
+    identities: [HbomIdentity]
     boardLocation: String
     deviceType: String
     quantity: Int
