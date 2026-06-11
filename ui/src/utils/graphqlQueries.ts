@@ -661,13 +661,6 @@ const singleReleaseDataNoParent = `
             lastUpdatedBy
         }
     }
-    approvalRequests {
-        uuid
-        requestedBy
-        approvalEntries
-        requestedAt
-        resolvedAt
-    }
     updateEvents {
         rus
         rua
@@ -1146,13 +1139,6 @@ const singleReleaseProductNoParent = `
             lastUpdatedBy
         }
     }
-    approvalRequests {
-        uuid
-        requestedBy
-        approvalEntries
-        requestedAt
-        resolvedAt
-    }
     updateEvents {
         rus
         rua
@@ -1370,6 +1356,10 @@ mutation approveReleaseManual($release: ID!, $approvals: [ReleaseApprovalInput!]
     }
 }`
 
+// Pro-only surface (like the notification inbox queries): the mutation and
+// the approvalRequests field are absent from the OSS schema, so callers must
+// gate on installationType !== 'OSS' — never fold approvalRequests into the
+// shared release fragments above.
 const REQUEST_RELEASE_APPROVALS_GQL_MUTATE = gql`
 mutation requestReleaseApprovals($release: ID!, $approvalEntries: [ID!]) {
     requestReleaseApprovals(release: $release, approvalEntries: $approvalEntries) {
@@ -1378,6 +1368,20 @@ mutation requestReleaseApprovals($release: ID!, $approvalEntries: [ID!]) {
         approvalEntries
         requestedAt
         resolvedAt
+    }
+}`
+
+const RELEASE_APPROVAL_REQUESTS_GQL = gql`
+query releaseApprovalRequests($releaseID: ID!, $orgID: ID) {
+    release(releaseUuid: $releaseID, orgUuid: $orgID) {
+        uuid
+        approvalRequests {
+            uuid
+            requestedBy
+            approvalEntries
+            requestedAt
+            resolvedAt
+        }
     }
 }`
 
@@ -1534,6 +1538,7 @@ export default {
     UpdateArtifactTagsGqlMutate: UPDATE_ARTIFACT_TAGS_GQL_MUTATE,
     ApproveReleaseGqlMutate: APPROVE_RELEASE_GQL_MUTATE,
     RequestReleaseApprovalsGqlMutate: REQUEST_RELEASE_APPROVALS_GQL_MUTATE,
+    ReleaseApprovalRequestsGql: RELEASE_APPROVAL_REQUESTS_GQL,
     ComponentShortData: COMPONENT_SHORT_DATA,
     MarketingRelease: MARKETING_RELEASE_GQL_DATA,
     UserData: USER_GQL_DATA,

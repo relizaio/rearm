@@ -1729,7 +1729,12 @@ async function fetchRelease () {
         }, [])
     }
 
+    // Reset before the conditional reload so prev/next navigation onto a
+    // release without an approval policy doesn't show the old release's
+    // requests.
+    approvalRequestsList.value = []
     if (updatedRelease.value.componentDetails.approvalPolicyDetails) {
+        loadApprovalRequests()
         givenApprovals.value = computeGivenApprovalsFromRelease()
         approvalEntries.value = updatedRelease.value.componentDetails.approvalPolicyDetails.approvalEntryDetails
         approvalEntries.value.forEach(ae => {
@@ -2165,11 +2170,31 @@ async function approve(approvals: ApprovalInput[]) {
 }
 
 const requestApprovalsPending: Ref<boolean> = ref(false)
+const approvalRequestsList: Ref<any[]> = ref([])
 
-const openApprovalRequests: ComputedRef<any[]> = computed((): any[] => {
-    const requests = updatedRelease.value?.approvalRequests || []
-    return requests.filter((r: any) => !r.resolvedAt)
-})
+const openApprovalRequests: ComputedRef<any[]> = computed((): any[] =>
+    approvalRequestsList.value.filter((r: any) => !r.resolvedAt))
+
+// Approval requests are a Pro-only schema surface (absent from the OSS
+// schema), so they ride a separate gated query instead of the shared
+// release fragments. Fire-and-forget from fetchRelease — the matrix
+// renders without it.
+async function loadApprovalRequests () {
+    if (!myUser?.installationType || myUser.installationType === 'OSS') return
+    const requestedFor = releaseUuid.value
+    try {
+        const response = await graphqlClient.query({
+            query: graphqlQueries.ReleaseApprovalRequestsGql,
+            variables: { releaseID: requestedFor, orgID: props.orgprop },
+            fetchPolicy: 'no-cache'
+        })
+        // Drop stale responses if the user prev/next-navigated mid-flight.
+        if (requestedFor !== releaseUuid.value) return
+        approvalRequestsList.value = response.data?.release?.approvalRequests || []
+    } catch (e) {
+        console.warn('Failed to load approval requests for release', e)
+    }
+}
 
 function approvalEntryNameById (entryUuid: string): string {
     const ae = approvalEntries.value?.find((e: any) => e.uuid === entryUuid)
@@ -2187,7 +2212,7 @@ async function requestApprovals () {
                 release: updatedRelease.value.uuid
             }
         })
-        await fetchRelease()
+        await loadApprovalRequests()
         notify('success', 'Requested', 'Approval request sent to eligible approvers.')
     } catch (error: any) {
         Swal.fire(
