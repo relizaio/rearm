@@ -101,7 +101,7 @@ export const TYPE_LABELS: Record<string, string> = {
     EMAIL: 'Email',
 }
 
-// Email omitted until the Phase 9 dispatcher lands in rearm-core.
+// Email omitted — email channels are managed from the Integrations catalog card.
 export const typeOptions = [
     { label: 'Slack', value: 'SLACK' },
     { label: 'Microsoft Teams', value: 'MS_TEAMS' },

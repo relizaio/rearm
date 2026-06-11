@@ -322,7 +322,7 @@
                         <n-alert v-if="emailModalError" type="error" :show-icon="false">
                             {{ emailModalError }}
                             <template v-if="isConflictError(emailModalError)" #action>
-                                <n-button size="small" type="primary" @click="loadEmailChannels(false)">
+                                <n-button size="small" type="primary" @click="reloadEmailChannelFromServer">
                                     Reload from server
                                 </n-button>
                             </template>
@@ -1113,6 +1113,19 @@ async function saveEmailChannel() {
         emailModalError.value = extractError(err)
     } finally {
         emailSaveLoading.value = false
+    }
+}
+
+// Conflict recovery: re-seed the open form (incl. expectedRevision) from
+// the refreshed row, otherwise the next Save just conflicts again.
+async function reloadEmailChannelFromServer() {
+    await loadEmailChannels(false)
+    const fresh = emailChannels.value.find(c => c.uuid === emailForm.value.uuid)
+    if (fresh) {
+        openEditEmailChannel(fresh)
+    } else {
+        showEmailModal.value = false
+        notify('warning', 'Channel Removed', 'This channel no longer exists on the server.')
     }
 }
 
