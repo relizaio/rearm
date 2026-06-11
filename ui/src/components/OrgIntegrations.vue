@@ -66,8 +66,8 @@
                         <template v-if="!isCardConfigured(card)">
                             <div class="card-desc">{{ card.description }}</div>
                             <div class="card-foot">
-                                <span class="muted-12">Not configured</span>
-                                <n-button size="small" @click="openAddForCard(card)">
+                                <span class="muted-12">{{ card.proOnly && !showCiFeatures ? 'Available in ReARM Pro' : 'Not configured' }}</span>
+                                <n-button size="small" :disabled="card.proOnly && !showCiFeatures" @click="openAddForCard(card)">
                                     <template #icon><n-icon><CirclePlus /></n-icon></template>
                                     Add
                                 </n-button>
@@ -77,8 +77,35 @@
                         <!-- CONFIGURED state — instance rows -->
                         <template v-else>
                             <div class="instance-list">
+                                <!-- Email notification channels -->
+                                <template v-if="card.id === 'EMAIL'">
+                                    <div v-for="ch in emailChannels" :key="ch.uuid" class="instance-row">
+                                        <div class="instance-status"><span class="ddot" :class="ch.status === 'ENABLED' ? 'ok' : 'off'" /></div>
+                                        <div class="instance-body">
+                                            <div class="instance-name">{{ ch.name }}</div>
+                                            <div class="instance-meta">
+                                                <span class="instance-scope">{{ emailRecipientsSummary(ch) }}</span>
+                                            </div>
+                                            <div class="caps">
+                                                <span class="cap-chip">{{ digestChipLabel(ch) }}</span>
+                                                <span v-if="ch.status !== 'ENABLED'" class="cap-chip chip-muted">DISABLED</span>
+                                            </div>
+                                        </div>
+                                        <div class="instance-actions">
+                                            <n-icon
+                                                class="instance-icon"
+                                                size="20"
+                                                :title="ch.status === 'ENABLED' ? 'Disable channel (pauses sending, keeps configuration)' : 'Enable channel'"
+                                                @click="toggleEmailChannelStatus(ch)"
+                                            ><PlayerPause v-if="ch.status === 'ENABLED'" /><PlayerPlay v-else /></n-icon>
+                                            <n-icon class="instance-icon" size="20" title="Edit email channel" @click="openEditEmailChannel(ch)"><EditIcon /></n-icon>
+                                            <n-icon class="instance-icon danger" size="20" title="Delete email channel" @click="onDeleteEmailChannel(ch)"><Trash /></n-icon>
+                                        </div>
+                                    </div>
+                                </template>
+
                                 <!-- single-instance kinds (Slack/Teams/DT/BEAR) -->
-                                <template v-if="!card.multiInstance">
+                                <template v-else-if="!card.multiInstance">
                                     <div class="instance-row">
                                         <div class="instance-status"><span class="ddot ok" /></div>
                                         <div class="instance-body">
@@ -142,6 +169,14 @@
                             manage in
                             <a class="pro-hint-link" @click="switchSubTab('subscriptions')">Subscriptions</a>
                             →
+                        </div>
+                        <div
+                            v-if="showCiFeatures && card.id === 'EMAIL' && isCardConfigured(card)"
+                            class="card-pro-hint"
+                        >
+                            Emails are sent when a
+                            <a class="pro-hint-link" @click="switchSubTab('subscriptions')">subscription</a>
+                            routes events to this channel →
                         </div>
                     </div>
                 </div>
@@ -249,6 +284,54 @@
                     <n-space>
                         <n-button @click="onAddBaseIntegration('MSTEAMS')" type="success">Submit</n-button>
                         <n-button @click="resetCreateIntegrationObject" type="error">Reset</n-button>
+                    </n-space>
+                </n-form>
+            </n-card>
+        </n-modal>
+
+        <!-- Email notification channel ADD / EDIT -->
+        <n-modal v-model:show="showEmailModal" preset="dialog" :show-icon="false">
+            <n-card style="width: 640px" size="huge" :title="emailForm.uuid ? 'Edit Email channel' : 'Add Email channel'" :bordered="false" role="dialog" aria-modal="true">
+                <n-form :model="emailForm">
+                    <n-space vertical size="large">
+                        <n-form-item label="Name" :show-feedback="false">
+                            <n-input v-model:value="emailForm.name" required placeholder="e.g. Security team inbox" />
+                        </n-form-item>
+                        <n-form-item label="Recipients" :show-feedback="false">
+                            <n-dynamic-input v-model:value="emailForm.recipients" placeholder="name@example.com" :min="1" />
+                        </n-form-item>
+                        <n-form-item label="Delivery mode" :show-feedback="false">
+                            <n-radio-group v-model:value="emailForm.digestMode">
+                                <n-space vertical>
+                                    <n-radio value="ROLLING">
+                                        Digest (recommended) — batch routine notifications into at most one email per interval
+                                    </n-radio>
+                                    <n-radio value="IMMEDIATE">
+                                        Immediate — one email per event
+                                    </n-radio>
+                                </n-space>
+                            </n-radio-group>
+                        </n-form-item>
+                        <n-form-item v-if="emailForm.digestMode === 'ROLLING'" label="Digest interval" :show-feedback="false">
+                            <n-select v-model:value="emailForm.digestInterval" :options="digestIntervalOptions" />
+                        </n-form-item>
+                        <n-text depth="3" style="font-size: 12px;">
+                            Actionable emails (approval requests and resolutions) always send immediately, regardless of digest settings.
+                        </n-text>
+
+                        <n-alert v-if="emailModalError" type="error" :show-icon="false">
+                            {{ emailModalError }}
+                            <template v-if="isConflictError(emailModalError)" #action>
+                                <n-button size="small" type="primary" @click="loadEmailChannels(false)">
+                                    Reload from server
+                                </n-button>
+                            </template>
+                        </n-alert>
+
+                        <n-space>
+                            <n-button :loading="emailSaveLoading" @click="saveEmailChannel" type="success">Save</n-button>
+                            <n-button @click="showEmailModal = false" type="default">Cancel</n-button>
+                        </n-space>
                     </n-space>
                 </n-form>
             </n-card>
@@ -438,11 +521,12 @@ import { ref, computed, onMounted, Ref, ComputedRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
     NIcon, NButton, NCard, NModal, NForm, NFormItem, NInput, NCheckbox, NCheckboxGroup,
-    NRadioGroup, NRadioButton, NSpace, NText, NDynamicInput, NUpload, NUploadTrigger
+    NRadioGroup, NRadioButton, NRadio, NSelect, NAlert, NSpace, NText, NDynamicInput,
+    NUpload, NUploadTrigger
 } from 'naive-ui'
 import {
     Edit as EditIcon, Trash, Refresh, CirclePlus, CloudUpload,
-    BrandGithub, BrandGitlab, BrandSlack,
+    BrandGithub, BrandGitlab, BrandSlack, Mail, PlayerPlay, PlayerPause,
     PlugConnected, ShieldCheck, LayoutGrid, Bell, Users
 } from '@vicons/tabler'
 import gql from 'graphql-tag'
@@ -450,6 +534,7 @@ import { FetchPolicy } from '@apollo/client'
 import Swal from 'sweetalert2'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '../utils/commonFunctions'
+import { extractError, isConflictError } from '../utils/notificationsCommon'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
 import SubscriptionsOfOrg from './SubscriptionsOfOrg.vue'
@@ -522,13 +607,70 @@ const editCiIntegrationObject: Ref<any> = ref({
 })
 const editCiIntegrationLoading = ref(false)
 
+// ---- Email notification channels --------------------------------------------
+// Unlike the base Slack/Teams integrations above, email destinations are
+// notification channels (the same entities the Subscriptions and Channel
+// groups sub-tabs reference), so they go through the channel CRUD mutations
+// rather than createIntegration.
+interface EmailChannelRow {
+    uuid: string
+    name: string
+    status: string
+    revision: number
+    digestMode: string | null
+    digestInterval: string | null
+    emailRecipients: string[] | null
+}
+const emailChannels: Ref<EmailChannelRow[]> = ref([])
+
+const showEmailModal = ref(false)
+const emailSaveLoading = ref(false)
+const emailModalError = ref('')
+const emailForm = ref({
+    uuid: '',
+    expectedRevision: null as number | null,
+    name: '',
+    recipients: [] as string[],
+    digestMode: 'ROLLING',
+    digestInterval: 'PT24H'
+})
+
+// Backend accepts any ISO-8601 duration in PT5M..P7D; the UI offers presets.
+const digestIntervalOptions = [
+    { label: 'Every 5 minutes', value: 'PT5M' },
+    { label: 'Every 15 minutes', value: 'PT15M' },
+    { label: 'Hourly', value: 'PT1H' },
+    { label: 'Every 6 hours', value: 'PT6H' },
+    { label: 'Every 12 hours', value: 'PT12H' },
+    { label: 'Daily', value: 'PT24H' },
+    { label: 'Every 3 days', value: 'P3D' },
+    { label: 'Weekly', value: 'P7D' }
+]
+
+const DIGEST_INTERVAL_SHORT: Record<string, string> = {
+    PT5M: '5m', PT15M: '15m', PT1H: '1h', PT6H: '6h', PT12H: '12h', PT24H: '24h', P3D: '3d', P7D: '7d'
+}
+
+function digestChipLabel(ch: EmailChannelRow): string {
+    if (ch.digestMode === 'IMMEDIATE') return 'IMMEDIATE'
+    const iv = ch.digestInterval || 'PT24H'
+    return `DIGEST · ${DIGEST_INTERVAL_SHORT[iv] || iv}`
+}
+
+function emailRecipientsSummary(ch: EmailChannelRow): string {
+    const r = ch.emailRecipients || []
+    if (!r.length) return 'No recipients'
+    if (r.length <= 2) return r.join(', ')
+    return `${r[0]}, ${r[1]} +${r.length - 2} more`
+}
+
 // ---- Card config -----------------------------------------------------------
 // We keep the brand color + icon mapping co-located so it's easy to add
 // kinds later. iconComponent wins over logoMark — falls back to a monogram
 // when @vicons doesn't have a brand icon for the kind.
 type Category = 'messaging' | 'ci' | 'security'
 interface CardConfig {
-    id: 'SLACK' | 'MSTEAMS' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR'
+    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR'
     name: string
     vendor: string
     category: Category
@@ -537,12 +679,16 @@ interface CardConfig {
     logoMark?: string
     iconComponent?: any
     multiInstance: boolean
+    // Pro-only kinds still show in the OSS catalog, but with a "Pro"
+    // pill and a disabled Add button instead of being hidden.
+    proOnly?: boolean
 }
 
 const CARDS: CardConfig[] = [
     // Messaging
     { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Push release notifications to a Slack channel.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: false },
     { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Push release notifications to a Microsoft Teams channel.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: false },
+    { id: 'EMAIL', name: 'Email', vendor: 'ReARM', category: 'messaging', description: 'Send security and operational notifications to a list of email recipients, batched into periodic digest emails.', logoBg: '#2D8F4E', iconComponent: Mail, multiInstance: true, proOnly: true },
     // CI/CD & Source Control
     { id: 'GITHUB', name: 'GitHub', vendor: 'GitHub', category: 'ci', description: 'GitHub App for PR validation, inbound webhooks, and repository_dispatch.', logoBg: '#1F2328', iconComponent: BrandGithub, multiInstance: true },
     { id: 'GITLAB', name: 'GitLab', vendor: 'GitLab', category: 'ci', description: 'Trigger GitLab pipelines.', logoBg: '#FC6D26', iconComponent: BrandGitlab, multiInstance: true },
@@ -568,6 +714,7 @@ const visibleSections = computed(() => {
 // ---- Card status helpers ---------------------------------------------------
 function isCardConfigured(card: CardConfig): boolean {
     if (card.id === 'BEAR') return !!(bearIntegration.value && bearIntegration.value.configured)
+    if (card.id === 'EMAIL') return emailChannels.value.length > 0
     if (card.multiInstance) return ciInstancesForCard(card).length > 0
     return configuredIntegrations.value.includes(card.id)
 }
@@ -577,7 +724,12 @@ function ciInstancesForCard(card: CardConfig): any[] {
 }
 
 function cardStatusLabel(card: CardConfig): string {
+    if (card.proOnly && !showCiFeatures.value) return 'Pro'
     if (!isCardConfigured(card)) return 'Available'
+    if (card.id === 'EMAIL') {
+        const n = emailChannels.value.length
+        return n > 1 ? `${n} active` : 'Active'
+    }
     if (card.multiInstance) {
         const n = ciInstancesForCard(card).length
         return n > 1 ? `${n} active` : 'Active'
@@ -597,7 +749,8 @@ function singleInstanceLabel(card: CardConfig): string {
 const catalogActiveCount = computed(() => {
     let n = 0
     for (const c of CARDS) {
-        if (c.multiInstance) n += ciInstancesForCard(c).length
+        if (c.id === 'EMAIL') n += emailChannels.value.length
+        else if (c.multiInstance) n += ciInstancesForCard(c).length
         else if (isCardConfigured(c)) n += 1
     }
     return n
@@ -625,7 +778,9 @@ function kindLabel(t: string): string {
 
 // ---- Modal openers ---------------------------------------------------------
 function openAddForCard(card: CardConfig) {
+    if (card.proOnly && !showCiFeatures.value) return
     if (card.id === 'SLACK') { showSlackModal.value = true; return }
+    if (card.id === 'EMAIL') { openAddEmailChannel(); return }
     if (card.id === 'MSTEAMS') { showMsteamsModal.value = true; return }
     if (card.id === 'DEPENDENCYTRACK') { showDtModal.value = true; return }
     if (card.id === 'BEAR') { openBearAddModal(); return }
@@ -884,6 +1039,126 @@ async function deleteBearIntegration() {
     }
 }
 
+// ---- Email channel CRUD -----------------------------------------------------
+function openAddEmailChannel() {
+    emailForm.value = {
+        uuid: '', expectedRevision: null, name: '', recipients: [],
+        digestMode: 'ROLLING', digestInterval: 'PT24H'
+    }
+    emailModalError.value = ''
+    showEmailModal.value = true
+}
+
+function openEditEmailChannel(ch: EmailChannelRow) {
+    emailForm.value = {
+        uuid: ch.uuid,
+        expectedRevision: ch.revision,
+        name: ch.name,
+        recipients: [...(ch.emailRecipients || [])],
+        digestMode: ch.digestMode || 'ROLLING',
+        digestInterval: ch.digestInterval || 'PT24H'
+    }
+    emailModalError.value = ''
+    showEmailModal.value = true
+}
+
+async function saveEmailChannel() {
+    emailModalError.value = ''
+    const name = (emailForm.value.name || '').trim()
+    if (!name) {
+        emailModalError.value = 'Channel name is required.'
+        return
+    }
+    const recipients = emailForm.value.recipients
+        .map(r => (r || '').trim())
+        .filter(r => r.length > 0)
+    if (!recipients.length) {
+        emailModalError.value = 'At least one recipient address is required.'
+        return
+    }
+    const isEdit = !!emailForm.value.uuid
+    emailSaveLoading.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation upsertNotificationChannel($input: NotificationChannelInput!) {
+                    upsertNotificationChannel(input: $input) { uuid }
+                }`,
+            variables: {
+                input: {
+                    uuid: isEdit ? emailForm.value.uuid : null,
+                    expectedRevision: isEdit ? emailForm.value.expectedRevision : null,
+                    org: orguuid.value,
+                    name,
+                    type: 'EMAIL',
+                    emailConfig: {
+                        recipients,
+                        digestMode: emailForm.value.digestMode,
+                        // Null preserves the stored interval when switching to
+                        // IMMEDIATE, so it re-surfaces on a later flip back to
+                        // digest mode.
+                        digestInterval: emailForm.value.digestMode === 'ROLLING'
+                            ? emailForm.value.digestInterval : null
+                    }
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        showEmailModal.value = false
+        await loadEmailChannels(false)
+        notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `Email channel "${name}" saved.`)
+    } catch (err: any) {
+        emailModalError.value = extractError(err)
+    } finally {
+        emailSaveLoading.value = false
+    }
+}
+
+async function toggleEmailChannelStatus(ch: EmailChannelRow) {
+    const next = ch.status === 'ENABLED' ? 'DISABLED' : 'ENABLED'
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation setNotificationChannelStatus($uuid: ID!, $status: NotificationChannelStatusEnum!) {
+                    setNotificationChannelStatus(uuid: $uuid, status: $status) { uuid status }
+                }`,
+            variables: { uuid: ch.uuid, status: next },
+            fetchPolicy: 'no-cache'
+        })
+        await loadEmailChannels(false)
+        notify('success', next === 'ENABLED' ? 'Channel Enabled' : 'Channel Disabled',
+            `"${ch.name}" is now ${next === 'ENABLED' ? 'enabled' : 'disabled'}.`)
+    } catch (err: any) {
+        notify('error', 'Error', extractError(err))
+    }
+}
+
+async function onDeleteEmailChannel(ch: EmailChannelRow) {
+    const confirm = await Swal.fire({
+        title: `Delete email channel "${ch.name}"?`,
+        text: 'Subscriptions and channel groups referencing this channel will stop delivering to it. To pause sending without removing the channel, disable it instead.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, delete',
+        cancelButtonText: 'Cancel'
+    })
+    if (!confirm.isConfirmed) return
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation deleteNotificationChannel($uuid: ID!) {
+                    deleteNotificationChannel(uuid: $uuid)
+                }`,
+            variables: { uuid: ch.uuid },
+            fetchPolicy: 'no-cache'
+        })
+        await loadEmailChannels(false)
+        notify('success', 'Deleted', `Email channel "${ch.name}" removed.`)
+    } catch (err: any) {
+        notify('error', 'Error', extractError(err))
+    }
+}
+
 // ---- DT admin actions (preserved from old design) --------------------------
 async function syncDtrackProjects() {
     try {
@@ -964,6 +1239,30 @@ async function loadCiIntegrations(useCache: boolean) {
     }
 }
 
+async function loadEmailChannels(useCache: boolean) {
+    // Channel queries are a Pro surface — skip on OSS, where the card
+    // renders in its "Pro" state instead.
+    if (!showCiFeatures.value) return
+    const cachePolicy: FetchPolicy = useCache ? 'cache-first' : 'network-only'
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query notificationChannelsForCatalog($orgUuid: ID!) {
+                    notificationChannels(orgUuid: $orgUuid) {
+                        uuid name type status revision digestMode digestInterval emailRecipients
+                    }
+                }`,
+            variables: { orgUuid: orguuid.value },
+            fetchPolicy: cachePolicy
+        })
+        if (resp.data?.notificationChannels) {
+            emailChannels.value = resp.data.notificationChannels.filter((c: any) => c.type === 'EMAIL')
+        }
+    } catch (err) {
+        console.error(err)
+    }
+}
+
 async function loadBearIntegration() {
     try {
         const resp = await graphqlClient.query({
@@ -990,6 +1289,7 @@ onMounted(async () => {
     await Promise.all([
         loadConfiguredIntegrations(true),
         loadCiIntegrations(true),
+        loadEmailChannels(true),
         loadBearIntegration()
     ])
 })
@@ -998,6 +1298,7 @@ watch(() => props.orguuid, async () => {
     await Promise.all([
         loadConfiguredIntegrations(false),
         loadCiIntegrations(false),
+        loadEmailChannels(false),
         loadBearIntegration()
     ])
 })
@@ -1184,6 +1485,12 @@ watch(() => props.orguuid, async () => {
     display: inline-block;
     box-shadow: 0 0 0 3px var(--green-softer);
 }
+.ddot.off {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted-2);
+    display: inline-block;
+    box-shadow: 0 0 0 3px var(--chip);
+}
 .instance-body { flex: 1; min-width: 0; }
 .instance-name {
     font-size: 13.5px; font-weight: 500;
@@ -1204,6 +1511,11 @@ watch(() => props.orguuid, async () => {
     color: var(--green);
     padding: 2px 6px;
     border-radius: 4px;
+}
+.cap-chip.chip-muted {
+    background: var(--chip);
+    border-color: var(--line);
+    color: var(--muted);
 }
 .instance-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .instance-icon {
