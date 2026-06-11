@@ -1,4 +1,13 @@
 <template>
+    <div>
+        <!-- Fleet drift: units diverging from their authorized baseline, org-wide -->
+        <div v-if="fleetDrift.length" class="fleetDriftPanel">
+            <n-space align="center" size="small" style="margin-bottom: 6px;">
+                <n-tag type="warning" size="small">DRIFT</n-tag>
+                <strong>{{ fleetDrift.length }} unit{{ fleetDrift.length > 1 ? 's' : '' }} diverging from authorized configuration</strong>
+            </n-space>
+            <n-data-table :columns="fleetDriftColumns" :data="fleetDrift" size="small" :row-props="driftRowProps" :pagination="fleetDrift.length > 5 ? { pageSize: 5 } : false" />
+        </div>
     <div class="distWrapper">
         <!-- Clients column -->
         <div class="distColumn">
@@ -155,6 +164,7 @@
             <template #action><n-button type="primary" @click="saveDevice">Save</n-button></template>
         </n-modal>
 
+    </div>
     </div>
 </template>
 
@@ -593,8 +603,42 @@ async function saveDevice () {
     } catch (e: any) { notify('error', 'Failed', e.message || 'Could not add device') }
 }
 
+// ---- fleet drift (org-wide, single query) ----
+const fleetDrift: Ref<any[]> = ref([])
+async function loadFleetDrift () {
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query driftedDevicesOfOrg($orgUuid: ID!) { driftedDevicesOfOrg(orgUuid: $orgUuid) {
+                siteName clientName
+                device { uuid site identifiers { idType idValue } plan { expectedRelease } actual { reportedRelease } observedState { driftedCount } }
+            } }`,
+            variables: { orgUuid: orguuid.value }, fetchPolicy: 'no-cache'
+        })
+        fleetDrift.value = resp.data.driftedDevicesOfOrg || []
+    } catch (e) { /* backend without the query yet */ }
+}
+const fleetDriftColumns = [
+    { key: 'unit', title: 'Unit', render: (r: any) => summarizeIds(r.device?.identifiers) || shortUuid(r.device?.uuid) },
+    { key: 'client', title: 'Client', render: (r: any) => r.clientName || '—' },
+    { key: 'site', title: 'Site', render: (r: any) => r.siteName || '—' },
+    {
+        key: 'cause', title: 'Drift source',
+        render: (r: any) => {
+            const observed = (r.device?.observedState?.driftedCount || 0) > 0
+            const reported = r.device?.actual?.reportedRelease && r.device?.plan?.expectedRelease
+                && r.device.actual.reportedRelease !== r.device.plan.expectedRelease
+            const parts = []
+            if (observed) parts.push(`observed software (${r.device.observedState.driftedCount} item${r.device.observedState.driftedCount > 1 ? 's' : ''})`)
+            if (reported) parts.push('reported release')
+            return parts.join(' + ') || '—'
+        }
+    }
+]
+const driftRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => router.push({ name: 'DeviceView', params: { deviceuuid: r.device.uuid } }) })
+
 onMounted(async () => {
     store.dispatch('fetchProducts', orguuid.value)
+    loadFleetDrift()
     await loadClients()
     if (selectedClientUuid.value) await loadSites(selectedClientUuid.value)
     if (selectedSiteUuid.value) await loadShipments(selectedSiteUuid.value)
@@ -607,6 +651,7 @@ onMounted(async () => {
 .contactLine { font-size: 12px; color: #666; margin-bottom: 4px; }
 .placeholder { color: #999; padding-top: 24px; font-style: italic; }
 .subtle { color: #999; font-size: 12px; }
+.fleetDriftPanel { margin: 8px 1% 4px 1%; padding: 8px 10px; border: 1px solid #f0a020; border-radius: 6px; background: #fffaf0; }
 .identityBox { background: #f4f8fb; border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; font-size: 13px; }
 .icons { margin: 4px; vertical-align: middle; }
 .clickable { cursor: pointer; }
