@@ -56,7 +56,8 @@ export interface DeliveryRow {
     org: string
     outboxEventUuid: string
     subscriptionUuid: string | null
-    channelUuid: string
+    // Null for targeted (per-user) approval deliveries — no channel involved.
+    channelUuid: string | null
     status: string
     origin: string
     dedupKey: string | null
@@ -72,7 +73,8 @@ export interface InboxRow {
     org: string
     outboxEventUuid: string
     subscriptionUuid: string | null
-    channelUuid: string
+    // Null for targeted (per-user) approval deliveries — no channel involved.
+    channelUuid: string | null
     status: string
     origin: string
     dedupKey: string | null
@@ -123,6 +125,11 @@ export const eventTypeOptions = [
     { label: 'New vuln affects releases', value: 'NEW_VULN_AFFECTS_RELEASES' },
     { label: 'Vulnerability record updated', value: 'VULNERABILITY_RECORD_UPDATED' },
     { label: 'VEX state changed', value: 'VEX_STATE_CHANGED' },
+    { label: 'Release created', value: 'RELEASE_CREATED' },
+    { label: 'Release lifecycle changed', value: 'RELEASE_LIFECYCLE_CHANGED' },
+    { label: 'Release BOM diff', value: 'RELEASE_BOM_DIFF' },
+    { label: 'Approval requested', value: 'APPROVAL_REQUESTED' },
+    { label: 'Approval resolved', value: 'APPROVAL_RESOLVED' },
 ]
 
 export const severityOptions = [
