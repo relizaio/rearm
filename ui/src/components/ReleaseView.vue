@@ -1733,6 +1733,10 @@ async function fetchRelease () {
     // release without an approval policy doesn't keep the old release's
     // requests or matrix entries (a stale approvalEntries would keep the
     // Request Approvals button visible and fire a doomed mutation).
+    // Bump the seq too: if the new release has no policy, no fresh
+    // loadApprovalRequests() supersedes an in-flight one, whose late
+    // response would otherwise repopulate the old release's requests.
+    approvalRequestsLoadSeq++
     approvalRequestsList.value = []
     approvalEntries.value = []
     if (updatedRelease.value.componentDetails.approvalPolicyDetails) {
