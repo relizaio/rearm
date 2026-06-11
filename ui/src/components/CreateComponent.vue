@@ -93,8 +93,8 @@
                     <span class="hintText">The component whose release carries the UDI-DI (hardware, or SaMD software).</span>
                 </n-form-item>
             </template>
-            <n-form-item v-if="myUser.installationType !== 'OSS' && component.deviceClass !== 'NONE'" label="ReARM identifiers (UDI)">
-                <n-dynamic-input v-model:value="component.rearmIdentifiers" :on-create="onCreateRearmIdentifier">
+            <n-form-item v-if="myUser.installationType !== 'OSS' && component.deviceClass !== 'NONE'" label="Device identifiers (UDI)">
+                <n-dynamic-input v-model:value="udiIdentifiers" :on-create="onCreateUdiIdentifier">
                     <template #create-button-default>Add UDI identifier</template>
                     <template #default="{ value }">
                         <n-select style="width: 160px;" v-model:value="value.idType"
@@ -294,7 +294,10 @@ const onSubmitSuccess = async function () {
     }
     // Distribution module: only send profiles relevant to the chosen axes.
     if (component.value.deviceClass === 'NONE') component.value.medicalProfile = null
-    if (!component.value.rearmIdentifiers || !component.value.rearmIdentifiers.length) component.value.rearmIdentifiers = null
+    // UDI entries live in the same unified identifiers list as PURL/TEI/CPE.
+    const mergedIds = [...(component.value.identifiers || []), ...(udiIdentifiers.value || [])]
+        .filter((i: any) => i.idType && i.idValue)
+    component.value.identifiers = mergedIds
     const storeResp = await store.dispatch('createComponent', component.value)
     emit('componentCreated', storeResp.uuid)
     onReset()
@@ -314,6 +317,7 @@ const onReset = function () {
         marketingVersionSchema: '',
         identifiers: []
     }
+    udiIdentifiers.value = []
 }
 
 const component = ref<any>({
@@ -331,9 +335,11 @@ const component = ref<any>({
     // Distribution module — device classification.
     nature: 'SOFTWARE',
     deviceClass: 'NONE',
-    medicalProfile: { issuingAgency: null, udiBearing: false },
-    rearmIdentifiers: []
+    medicalProfile: { issuingAgency: null, udiBearing: false }
 })
+
+// Device-gated UDI entries, merged into component.identifiers on submit.
+const udiIdentifiers = ref<any[]>([])
 
 const orgTerminology = myorg.value?.terminology
 const resolvedWords = commonFunctions.resolveWords(!props.isProduct, orgTerminology)
@@ -407,7 +413,7 @@ function onCreateIdentifier () {
     }
 }
 
-function onCreateRearmIdentifier () {
+function onCreateUdiIdentifier () {
     return {
         idType: 'UDI_DI',
         idValue: ''

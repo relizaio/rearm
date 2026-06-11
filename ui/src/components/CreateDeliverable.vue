@@ -141,7 +141,7 @@ const props = defineProps<{
 }>()
 
 // Hardware-lot fields (only used when isHardware). Map to the deliverable's
-// rearmIdentifiers (LOT), quantity, and CDX-aligned hardwareMetadata.
+// a LOT entry in the unified identifiers, quantity, and CDX-aligned hardwareMetadata.
 const hw = ref({
     lot: '',
     quantity: null as number | null,
@@ -250,7 +250,7 @@ async function onSubmitSuccess () {
             ? { basis: hw.value.originBasis || null, origins: [{ region: hw.value.originRegion }] }
             : null
         payload.hardwareMetadata = { parties, origin, manufactureDate: hw.value.manufactureDate || null }
-        payload.rearmIdentifiers = hw.value.lot ? [{ idType: 'LOT', idValue: hw.value.lot }] : []
+        if (hw.value.lot) payload.identifiers = [...(payload.identifiers || []), { idType: 'LOT', idValue: hw.value.lot }]
         payload.quantity = hw.value.quantity || null
         delete payload.softwareMetadata
         delete payload.supportedOs

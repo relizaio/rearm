@@ -270,7 +270,7 @@ async function onShipReleaseChange (releaseUuid: string) {
     if (!releaseUuid) return
     loadShipChoices(releaseUuid)
     const resp: any = await graphqlClient.query({
-        query: gql`query relDeliverables($u: ID!) { release(releaseUuid: $u) { variantDetails { outboundDeliverableDetails { uuid displayIdentifier rearmIdentifiers { idType idValue } quantity } } } }`,
+        query: gql`query relDeliverables($u: ID!) { release(releaseUuid: $u) { variantDetails { outboundDeliverableDetails { uuid displayIdentifier identifiers { idType idValue } quantity } } } }`,
         variables: { u: releaseUuid }, fetchPolicy: 'no-cache'
     })
     const variants = resp.data.release?.variantDetails || []
@@ -280,7 +280,7 @@ async function onShipReleaseChange (releaseUuid: string) {
         for (const d of (v.outboundDeliverableDetails || [])) {
             if (!d || seen.has(d.uuid)) continue
             seen.add(d.uuid)
-            const lot = (d.rearmIdentifiers || []).find((i: any) => i.idType === 'LOT')
+            const lot = (d.identifiers || []).find((i: any) => i.idType === 'LOT')
             const parts = [d.displayIdentifier || shortUuid(d.uuid)]
             if (lot) parts.push(`lot ${lot.idValue}`)
             if (d.quantity) parts.push(`×${d.quantity}`)
