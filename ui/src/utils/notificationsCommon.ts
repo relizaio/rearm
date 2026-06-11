@@ -56,7 +56,8 @@ export interface DeliveryRow {
     org: string
     outboxEventUuid: string
     subscriptionUuid: string | null
-    channelUuid: string
+    // Null for targeted (per-user) approval deliveries — no channel involved.
+    channelUuid: string | null
     status: string
     origin: string
     dedupKey: string | null
@@ -72,7 +73,8 @@ export interface InboxRow {
     org: string
     outboxEventUuid: string
     subscriptionUuid: string | null
-    channelUuid: string
+    // Null for targeted (per-user) approval deliveries — no channel involved.
+    channelUuid: string | null
     status: string
     origin: string
     dedupKey: string | null

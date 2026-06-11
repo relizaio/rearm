@@ -159,7 +159,8 @@
                             <n-tag :type="deliveryStatusTagType(inboxDrawerRow.status)" size="small">{{ inboxDrawerRow.status }}</n-tag>
                         </n-descriptions-item>
                         <n-descriptions-item label="Channel">
-                            <span>{{ channelNameById[inboxDrawerRow.channelUuid] || '(deleted)' }}</span>
+                            <span v-if="!inboxDrawerRow.channelUuid" class="muted-12">Direct</span>
+                            <span v-else>{{ channelNameById[inboxDrawerRow.channelUuid] || '(deleted)' }}</span>
                         </n-descriptions-item>
                         <n-descriptions-item label="Delivered">
                             {{ formatHistoryTimestamp(inboxDrawerRow.sentAt || inboxDrawerRow.createdDate) }}
@@ -825,8 +826,12 @@ const inboxColumns = computed(() => [
     },
     {
         title: 'Channel', key: 'channelUuid',
-        render: (row: InboxRow) => channelNameById.value[row.channelUuid]
-            || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'),
+        // Null channel = Phase 4a targeted delivery (personal inbox copy,
+        // no transmission channel) — not a deleted channel.
+        render: (row: InboxRow) => (row.channelUuid
+            ? (channelNameById.value[row.channelUuid]
+                || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'))
+            : h('span', { class: 'muted-12' }, 'Direct')),
     },
     {
         title: 'Read', key: 'readAt',

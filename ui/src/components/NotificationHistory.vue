@@ -238,14 +238,20 @@ const deliveryColumns = computed(() => [
     },
     {
         title: 'Channel', key: 'channelUuid',
-        render: (row: DeliveryRow) => channelNameById.value[row.channelUuid]
-            || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'),
+        // Null channel = Phase 4a targeted delivery (personal inbox copy,
+        // no transmission channel) — not a deleted channel.
+        render: (row: DeliveryRow) => (row.channelUuid
+            ? (channelNameById.value[row.channelUuid]
+                || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'))
+            : h('span', { class: 'muted-12' }, 'Direct')),
     },
     {
         title: 'Subscription', key: 'subscriptionUuid',
         render: (row: DeliveryRow) => {
             if (!row.subscriptionUuid) {
-                return h('span', { class: 'muted-12' }, '(channel test)')
+                // Channel tests have a channel but no subscription; targeted
+                // approval deliveries have neither.
+                return h('span', { class: 'muted-12' }, row.channelUuid ? '(channel test)' : 'Direct')
             }
             return subscriptionNameById.value[row.subscriptionUuid]
                 || h('span', { class: 'muted-12', title: row.subscriptionUuid }, '(deleted subscription)')
