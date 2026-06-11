@@ -1041,8 +1041,10 @@ async function deleteBearIntegration() {
 
 // ---- Email channel CRUD -----------------------------------------------------
 function openAddEmailChannel() {
+    // Seed one empty recipient row — n-dynamic-input renders a bare
+    // "+ Create" button for an empty array, hiding the input field.
     emailForm.value = {
-        uuid: '', expectedRevision: null, name: '', recipients: [],
+        uuid: '', expectedRevision: null, name: '', recipients: [''],
         digestMode: 'ROLLING', digestInterval: 'PT24H'
     }
     emailModalError.value = ''
@@ -1054,7 +1056,7 @@ function openEditEmailChannel(ch: EmailChannelRow) {
         uuid: ch.uuid,
         expectedRevision: ch.revision,
         name: ch.name,
-        recipients: [...(ch.emailRecipients || [])],
+        recipients: ch.emailRecipients?.length ? [...ch.emailRecipients] : [''],
         digestMode: ch.digestMode || 'ROLLING',
         digestInterval: ch.digestInterval || 'PT24H'
     }
