@@ -38,7 +38,7 @@
                 <n-form-item label="Manufacture date"><n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="hw.manufactureDate" value-format="yyyy-MM-dd" /></n-form-item>
                 <n-form-item label="Manufacturer"><n-input v-model:value="hw.manufacturer" placeholder="Producing party" /></n-form-item>
                 <n-form-item label="Assembler"><n-input v-model:value="hw.assembler" placeholder="Assembly / contract manufacturer (optional)" /></n-form-item>
-                <n-form-item label="Country of origin"><n-input v-model:value="hw.originRegion" placeholder="ISO 3166, e.g. US-MA / DE" /></n-form-item>
+                <n-form-item label="Country of origin"><n-input v-model:value="hw.originCode" placeholder="ISO 3166, e.g. CA / US-MA" /></n-form-item>
                 <n-form-item label="Origin basis"><n-input v-model:value="hw.originBasis" placeholder="How origin was determined (e.g. number of parts), optional" /></n-form-item>
             </template>
             <n-form-item v-if="!isHardware"
@@ -148,7 +148,7 @@ const hw = ref({
     manufactureDate: null as string | null,
     manufacturer: '',
     assembler: '',
-    originRegion: '',
+    originCode: '',
     originBasis: ''
 })
 
@@ -246,8 +246,8 @@ async function onSubmitSuccess () {
         const parties: any[] = []
         if (hw.value.manufacturer) parties.push({ roles: ['MANUFACTURER'], name: hw.value.manufacturer })
         if (hw.value.assembler) parties.push({ roles: ['ASSEMBLER'], name: hw.value.assembler })
-        const origin = hw.value.originRegion
-            ? { basis: hw.value.originBasis || null, origins: [{ region: hw.value.originRegion }] }
+        const origin = hw.value.originCode
+            ? { basis: hw.value.originBasis || null, origins: [{ originCode: hw.value.originCode }] }
             : null
         payload.hardwareMetadata = { parties, origin, manufactureDate: hw.value.manufactureDate || null }
         if (hw.value.lot) payload.identifiers = [...(payload.identifiers || []), { idType: 'LOT', idValue: hw.value.lot }]
