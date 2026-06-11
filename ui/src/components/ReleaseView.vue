@@ -1730,9 +1730,11 @@ async function fetchRelease () {
     }
 
     // Reset before the conditional reload so prev/next navigation onto a
-    // release without an approval policy doesn't show the old release's
-    // requests.
+    // release without an approval policy doesn't keep the old release's
+    // requests or matrix entries (a stale approvalEntries would keep the
+    // Request Approvals button visible and fire a doomed mutation).
     approvalRequestsList.value = []
+    approvalEntries.value = []
     if (updatedRelease.value.componentDetails.approvalPolicyDetails) {
         loadApprovalRequests()
         givenApprovals.value = computeGivenApprovalsFromRelease()
@@ -2179,18 +2181,23 @@ const openApprovalRequests: ComputedRef<any[]> = computed((): any[] =>
 // schema), so they ride a separate gated query instead of the shared
 // release fragments. Fire-and-forget from fetchRelease — the matrix
 // renders without it.
+let approvalRequestsLoadSeq = 0
 async function loadApprovalRequests () {
     if (!myUser?.installationType || myUser.installationType === 'OSS') return
-    const requestedFor = releaseUuid.value
+    const seq = ++approvalRequestsLoadSeq
     try {
         const response = await graphqlClient.query({
             query: graphqlQueries.ReleaseApprovalRequestsGql,
-            variables: { releaseID: requestedFor, orgID: props.orgprop },
+            variables: { releaseID: releaseUuid.value, orgID: props.orgprop },
             fetchPolicy: 'no-cache'
         })
-        // Drop stale responses if the user prev/next-navigated mid-flight.
-        if (requestedFor !== releaseUuid.value) return
+        // Drop out-of-order responses (prev/next navigation mid-flight, or a
+        // post-mutation refresh overtaking the fetchRelease-triggered load).
+        if (seq !== approvalRequestsLoadSeq) return
         approvalRequestsList.value = response.data?.release?.approvalRequests || []
+        // requestedBy renders through resolveUserById, which needs the org's
+        // users — normally only loaded on History-tab switch.
+        if (approvalRequestsList.value.length && !users.value.length) loadUsers()
     } catch (e) {
         console.warn('Failed to load approval requests for release', e)
     }

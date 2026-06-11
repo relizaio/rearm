@@ -380,7 +380,9 @@ const approvalPayloadView = computed<ApprovalPayloadView | null>(() => {
         return {
             releaseUuid: p.release.releaseUuid,
             releaseLabel,
-            entryNames: (p.entries || []).map((e: any) => e.approvalEntryName || e.approvalEntryUuid),
+            entryNames: (p.entries || [])
+                .map((e: any) => e?.approvalEntryName || e?.approvalEntryUuid)
+                .filter(Boolean),
             actorLabel: 'Requested by',
             actor: formatActor(p.requestedByName, p.requestedByEmail),
             resolution: null,
