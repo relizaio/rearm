@@ -173,10 +173,36 @@
                         {{ inboxDrawerRow.lastError }}
                     </n-alert>
 
-                    <!-- Structured payload view. Pretty-printed JSON for now;
-                         richer per-event-type rendering (deep-link buttons,
-                         affected-release table) lands with BD-3 actionable
-                         events in phase 4.
+                    <!-- Actionable approval events (Phase 4b): typed summary
+                         with a release deep link so the operator can act
+                         without digging the uuid out of the raw payload.
+                         Navigation closes both drawers — the target page
+                         renders underneath them otherwise. -->
+                    <n-descriptions v-if="approvalPayloadView" :column="1" size="small" label-placement="left">
+                        <n-descriptions-item label="Release">
+                            <router-link
+                                :to="`/release/show/${approvalPayloadView.releaseUuid}`"
+                                @click="inboxDrawerOpen = false; inboxListDrawerOpen = false"
+                            >
+                                {{ approvalPayloadView.releaseLabel }}
+                            </router-link>
+                        </n-descriptions-item>
+                        <n-descriptions-item v-if="approvalPayloadView.entryNames.length" label="Approval entries">
+                            {{ approvalPayloadView.entryNames.join(', ') }}
+                        </n-descriptions-item>
+                        <n-descriptions-item :label="approvalPayloadView.actorLabel">
+                            {{ approvalPayloadView.actor }}
+                        </n-descriptions-item>
+                        <n-descriptions-item v-if="approvalPayloadView.resolution" label="Resolution">
+                            <n-tag :type="approvalPayloadView.resolution === 'APPROVED' ? 'success' : 'error'" size="small">
+                                {{ approvalPayloadView.resolution }}
+                            </n-tag>
+                        </n-descriptions-item>
+                    </n-descriptions>
+
+                    <!-- Structured payload view. Pretty-printed JSON as the
+                         generic fallback; approval events additionally get
+                         the typed summary above.
                          v-if keys off the COMPUTED parsed payload, not the
                          raw string, so a malformed JSON falls through to
                          the alert below instead of rendering the literal
@@ -326,6 +352,51 @@ const inboxDrawerPayload = computed<Record<string, unknown> | null>(() => {
     } catch {
         return null
     }
+})
+
+interface ApprovalPayloadView {
+    releaseUuid: string
+    releaseLabel: string
+    entryNames: string[]
+    actorLabel: string
+    actor: string
+    resolution: string | null
+}
+
+function formatActor (name?: string, email?: string): string {
+    if (name && email) return `${name} <${email}>`
+    return name || email || '—'
+}
+
+// Normalized view over ApprovalRequestedPayload / ApprovalResolvedPayload;
+// null for every other event type (those keep the raw-payload collapse only).
+const approvalPayloadView = computed<ApprovalPayloadView | null>(() => {
+    const row = inboxDrawerRow.value
+    const p: any = inboxDrawerPayload.value
+    if (!row || !p?.release?.releaseUuid) return null
+    const releaseLabel = [p.release.componentName, p.release.version || p.release.releaseUuid]
+        .filter(Boolean).join(' ')
+    if (row.eventType === 'APPROVAL_REQUESTED') {
+        return {
+            releaseUuid: p.release.releaseUuid,
+            releaseLabel,
+            entryNames: (p.entries || []).map((e: any) => e.approvalEntryName || e.approvalEntryUuid),
+            actorLabel: 'Requested by',
+            actor: formatActor(p.requestedByName, p.requestedByEmail),
+            resolution: null,
+        }
+    }
+    if (row.eventType === 'APPROVAL_RESOLVED') {
+        return {
+            releaseUuid: p.release.releaseUuid,
+            releaseLabel,
+            entryNames: [p.approvalEntryName || p.approvalEntryUuid].filter(Boolean),
+            actorLabel: 'Resolved by',
+            actor: formatActor(p.resolvedByName, p.resolvedByEmail),
+            resolution: p.resolution || null,
+        }
+    }
+    return null
 })
 
 const INBOX_QUERY = gql`

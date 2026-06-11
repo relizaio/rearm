@@ -807,6 +807,23 @@
                                 </div>
                             </template>
                         </div>
+                        <n-space v-if="isWritable && approvalEntries.length" style="margin-bottom: 10px;">
+                            <n-button @click="requestApprovals" :loading="requestApprovalsPending" :disabled="requestApprovalsPending" title="Notify everyone who can still approve this release">
+                                <template #icon>
+                                    <n-icon><Bell /></n-icon>
+                                </template>
+                                Request Approvals
+                            </n-button>
+                        </n-space>
+                        <div v-if="openApprovalRequests.length" style="margin-bottom: 10px;">
+                            <strong>Open Approval Requests:</strong>
+                            <ul style="margin: 5px 0;">
+                                <li v-for="req in openApprovalRequests" :key="req.uuid">
+                                    {{ new Date(req.requestedAt).toLocaleString('en-CA') }} — requested by {{ resolveUserById(req.requestedBy) }}
+                                    <template v-if="req.approvalEntries && req.approvalEntries.length"> — {{ req.approvalEntries.map(approvalEntryNameById).join(', ') }}</template>
+                                </li>
+                            </ul>
+                        </div>
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
                             <n-spin :show="approvalPending" small>
@@ -1219,7 +1236,7 @@ import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
+import { Bell, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
@@ -2145,6 +2162,42 @@ async function approve(approvals: ApprovalInput[]) {
     }).finally(() => {
         approvalPending.value = false
     })
+}
+
+const requestApprovalsPending: Ref<boolean> = ref(false)
+
+const openApprovalRequests: ComputedRef<any[]> = computed((): any[] => {
+    const requests = updatedRelease.value?.approvalRequests || []
+    return requests.filter((r: any) => !r.resolvedAt)
+})
+
+function approvalEntryNameById (entryUuid: string): string {
+    const ae = approvalEntries.value?.find((e: any) => e.uuid === entryUuid)
+    return ae ? ae.approvalName : entryUuid
+}
+
+// Omitting approvalEntries asks the backend to target every entry that is
+// still actionable; it errors if nothing is pending, which we surface as is.
+async function requestApprovals () {
+    requestApprovalsPending.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: graphqlQueries.RequestReleaseApprovalsGqlMutate,
+            variables: {
+                release: updatedRelease.value.uuid
+            }
+        })
+        await fetchRelease()
+        notify('success', 'Requested', 'Approval request sent to eligible approvers.')
+    } catch (error: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(error.message),
+            'error'
+        )
+    } finally {
+        requestApprovalsPending.value = false
+    }
 }
 
 const activeApprovalTypes: Ref<any> = ref({})
