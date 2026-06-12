@@ -114,6 +114,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, Ref, computed, watch, onMounted } from 'vue'
+import { useStore } from 'vuex'
 import { NIcon, NSpin, NSpace, NInputNumber, NSelect, NTooltip, useNotification } from 'naive-ui'
 import { ArrowExpand20Regular } from '@vicons/fluent'
 import { Refresh, CalendarTime } from '@vicons/tabler'
@@ -145,6 +146,7 @@ const props = withDefaults(defineProps<{
     componentType: null
 })
 
+const store = useStore()
 const notification = useNotification()
 const loading = ref(false)
 const releases: Ref<any[]> = ref([])
@@ -250,7 +252,8 @@ async function openVulnModal(rel: any, severityFilter: string, typeFilter: strin
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
             rel.uuid,
-            rel.org
+            rel.org,
+            store.getters.myuser?.installationType
         )
         vulnModalArtifacts.value = releaseData.artifacts
         vulnModalOrgUuid.value = releaseData.orgUuid
