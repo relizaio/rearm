@@ -171,9 +171,8 @@ const typeDefs = gql`
   }
 
   type HbomIdentityClaim {
-    scheme: String
-    customScheme: Object
-    value: String
+    idType: String
+    idValue: String
   }
 
   type HbomIdentifier {

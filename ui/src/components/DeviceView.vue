@@ -141,9 +141,15 @@
                             <n-select :value="null" :options="choiceAlternateOptions" placeholder="Pick an approved alternate to fill the fields below" @update:value="applyChoiceAlternate" />
                         </n-space>
                     </n-form-item>
-                    <n-form-item label="Replacement part #"><n-input v-model:value="eventForm.replacement.partNumber" placeholder="Part number installed" /></n-form-item>
-                    <n-form-item label="Replacement lot"><n-input v-model:value="eventForm.replacement.lot" placeholder="Lot of the installed part" /></n-form-item>
-                    <n-form-item label="Replacement serial"><n-input v-model:value="eventForm.replacement.serial" placeholder="Serial of the installed part" /></n-form-item>
+                    <n-form-item label="Installed part identifiers">
+                        <n-dynamic-input v-model:value="eventForm.replacement.identifiers" :on-create="onCreateReplacementIdentifier">
+                            <template #create-button-default>Add identifier (part #, lot, serial, ...)</template>
+                            <template #default="{ value }">
+                                <n-select style="width: 190px;" v-model:value="value.idType" :options="replacementIdTypeOptions" />
+                                <n-input type="text" v-model:value="value.idValue" placeholder="Identifier value" />
+                            </template>
+                        </n-dynamic-input>
+                    </n-form-item>
                     <n-form-item label="Replacement manufacturer"><n-input v-model:value="eventForm.replacement.manufacturer" placeholder="Manufacturer of the installed part" /></n-form-item>
                 </template>
                 <n-form-item label="Notes">
@@ -309,8 +315,7 @@ const twinColumns = [
             const rep = r.replacement || {}
             const details = [
                 ['Replaced on', formatDateTime(r.eventDate)],
-                ['Part #', rep.partNumber ? `${rep.partNumber}${rep.partNumberType ? ` [${String(rep.partNumberType).toLowerCase().replace(/_/g, '-')}]` : ''}` : null],
-                ['Lot', rep.lot], ['Serial', rep.serial],
+                ...((rep.identifiers || []).map((i: any) => [identifierTypeLabel(i.idType), i.idValue])),
                 ['Manufacturer', rep.manufacturer], ['Notes', r.eventNotes]
             ].filter(([, v]) => v)
             return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
@@ -331,8 +336,9 @@ const eventColumns = [
         key: 'replacement', title: 'Replacement',
         render: (r: any) => {
             const rep = r.replacement
-            if (!rep || (!rep.partNumber && !rep.lot && !rep.serial)) return '—'
-            return [rep.partNumber, rep.lot ? `lot ${rep.lot}` : null, rep.serial ? `sn ${rep.serial}` : null].filter(Boolean).join(' · ')
+            const ids = rep?.identifiers || []
+            if (!ids.length) return '—'
+            return ids.map((i: any) => labeledIdentifier(i)).join(' · ')
         }
     },
     { key: 'notes', title: 'Notes' }
@@ -433,7 +439,7 @@ async function loadTwinHbom () {
         const resp: any = await graphqlClient.query({
             query: gql`query deviceHbomComponents($deviceUuid: ID!) { deviceHbomComponents(deviceUuid: $deviceUuid) {
                 twinStatus eventType eventDate eventNotes choiceRef
-                replacement { partNumber partNumberType lot serial manufacturer }
+                replacement { identifiers { idType idValue } manufacturer }
                 component { uuid bomRef type operator name version description category subcategory partNumbers manufacturer identifiers { party identities { idType idValue } } parties { bomRef roles name } boardLocation deviceType quantity parentRef isRoot }
             } }`,
             variables: { deviceUuid: deviceuuid.value }, fetchPolicy: 'no-cache'
@@ -447,7 +453,7 @@ async function loadEvents () {
         const resp: any = await graphqlClient.query({
             query: gql`query deviceEventsOfDevice($deviceUuid: ID!) { deviceEventsOfDevice(deviceUuid: $deviceUuid) {
                 uuid eventType date createdDate hbomRef componentName purl notes
-                replacement { partNumber partNumberType lot serial manufacturer }
+                replacement { identifiers { idType idValue } manufacturer }
                 observation { source matchedCount driftedCount unknownCount
                     items { identifier digest status componentName observedVersion expectedVersion } }
             } }`,
@@ -535,22 +541,37 @@ async function submitStateReport () {
 }
 
 const showEventModal = ref(false)
-const eventForm = reactive<any>({ eventType: 'FAILURE', hbomRef: null, date: null, notes: '', replacement: { partNumber: '', partNumberType: null, lot: '', serial: '', manufacturer: '' } })
+const eventForm = reactive<any>({ eventType: 'FAILURE', hbomRef: null, date: null, notes: '', replacement: { identifiers: [], manufacturer: '' } })
+
+const replacementIdTypeOptions = ['MPN', 'PART_NUMBER', 'MODEL_NUMBER', 'SKU', 'LOT', 'SERIAL', 'UDI_DI', 'UDI_PI', 'ASSET_TAG', 'MAC_ADDRESS', 'IMEI']
+    .map((t) => ({ label: identifierTypeLabel(t), value: t }))
+function onCreateReplacementIdentifier () {
+    return { idType: 'MPN', idValue: '' }
+}
+function identifierTypeLabel (t: any): string {
+    return t ? String(t).toLowerCase().replace(/_/g, '-') : ''
+}
+function labeledIdentifier (i: any): string {
+    return `${identifierTypeLabel(i.idType)} ${i.idValue}`
+}
 function openEventModal () {
     eventForm.eventType = 'FAILURE'; eventForm.hbomRef = null; eventForm.date = null; eventForm.notes = ''
-    eventForm.replacement = { partNumber: '', partNumberType: null, lot: '', serial: '', manufacturer: '' }
+    eventForm.replacement = { identifiers: [], manufacturer: '' }
     showEventModal.value = true
 }
 // Picking an approved alternate from the choice slot fills the replacement facts.
 function applyChoiceAlternate (bomRef: string) {
     const alt = pickedChoiceAlternates.value.find((r: any) => r.component?.bomRef === bomRef)
     if (!alt) return
-    // Prefer the MPN claim so the recorded part number keeps its attribution
-    // (the same part can carry different numbers per asserting party).
-    const claims = (alt.component.identifiers || []).flatMap((idf: any) => idf.identities || [])
-    const claim = claims.find((c: any) => c.idType === 'MPN' && c.idValue) || claims.find((c: any) => c.idValue)
-    eventForm.replacement.partNumber = claim?.idValue || alt.component.name || ''
-    eventForm.replacement.partNumberType = claim?.idType || null
+    // Fill with the option's approved identity claims from the HBOM — the
+    // technician then appends the installed unit's LOT / SERIAL.
+    const seen = new Set<string>()
+    const claims = (alt.component.identifiers || [])
+        .flatMap((idf: any) => idf.identities || [])
+        .filter((c: any) => c?.idType && c?.idValue)
+        .filter((c: any) => { const k = `${c.idType}\u0000${c.idValue}`; if (seen.has(k)) return false; seen.add(k); return true })
+        .map((c: any) => ({ idType: c.idType, idValue: c.idValue }))
+    eventForm.replacement.identifiers = claims.length ? claims : [{ idType: 'MPN', idValue: alt.component.name || '' }]
     eventForm.replacement.manufacturer = alt.component.manufacturer || ''
 }
 async function saveEvent () {
@@ -563,7 +584,11 @@ async function saveEvent () {
     if (eventForm.date) input.date = new Date(eventForm.date).toISOString()
     if (eventForm.notes) input.notes = eventForm.notes
     if (eventForm.eventType === 'REPLACEMENT') {
-        const rep = Object.fromEntries(Object.entries(eventForm.replacement).filter(([, v]) => v))
+        const ids = (eventForm.replacement.identifiers || []).filter((i: any) => i.idType && i.idValue)
+            .map((i: any) => ({ idType: i.idType, idValue: i.idValue }))
+        const rep: any = {}
+        if (ids.length) rep.identifiers = ids
+        if (eventForm.replacement.manufacturer) rep.manufacturer = eventForm.replacement.manufacturer
         if (Object.keys(rep).length) input.replacement = rep
     }
     try {

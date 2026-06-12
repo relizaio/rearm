@@ -215,13 +215,14 @@ export interface ParsedHbomParty {
 }
 
 // CDX 2.0 identity model (spec PR #936): identifiers group identity claims by
-// the asserting party (bom-ref into parties); each claim is a typed scheme
-// (mpn / part-number / serial-number / ... or a custom {name, description})
-// paired with its value.
+// the asserting party (bom-ref into parties). Scheme tokens are normalized to
+// the backend's identifier-type names (mpn -> MPN, part-number -> PART_NUMBER,
+// serial-number -> SERIAL, ...) so claims deserialize directly server-side —
+// same approach as party roles. Custom {name, description} schemes are dropped
+// here; the raw BOM in storage still carries them.
 export interface ParsedHbomIdentityClaim {
-	scheme: string | null;
-	customScheme: { name: string; description?: string } | null;
-	value: string | null;
+	idType: string;
+	idValue: string;
 }
 
 export interface ParsedHbomIdentifier {
@@ -284,17 +285,22 @@ function partiesOf(c: any): ParsedHbomParty[] {
 	return out;
 }
 
+const IDENTITY_SCHEMES = new Set([
+	'PURL', 'CPE', 'SWID', 'SWHID', 'OMNIBORID', 'GTIN', 'GMN', 'MPN', 'PART_NUMBER',
+	'MODEL_NUMBER', 'SKU', 'SERIAL', 'ASSET_TAG', 'UDI_DI', 'UDI_PI', 'FCC_ID', 'IMEI', 'MAC_ADDRESS',
+]);
+
+function normalizeScheme(scheme: any): string | null {
+	if (typeof scheme !== 'string' || !scheme) return null;
+	if (scheme === 'serial-number') return 'SERIAL';
+	const up = scheme.toUpperCase().replace(/-/g, '_');
+	return IDENTITY_SCHEMES.has(up) ? up : null;
+}
+
 function claimOf(id: any): ParsedHbomIdentityClaim | null {
 	if (!id || typeof id !== 'object' || typeof id.value !== 'string') return null;
-	if (typeof id.scheme === 'string') return { scheme: id.scheme, customScheme: null, value: id.value };
-	if (id.scheme && typeof id.scheme === 'object' && typeof id.scheme.name === 'string') {
-		return {
-			scheme: null,
-			customScheme: { name: id.scheme.name, ...(typeof id.scheme.description === 'string' ? { description: id.scheme.description } : {}) },
-			value: id.value,
-		};
-	}
-	return null;
+	const idType = normalizeScheme(id.scheme);
+	return idType ? { idType, idValue: id.value } : null;
 }
 
 // bom-ref of the party carrying the given normalized role, when unambiguous.
@@ -324,9 +330,8 @@ function identifiersOf(c: any, parties: ParsedHbomParty[]): ParsedHbomIdentifier
 			const legacy = block.identities
 				.filter((id: any) => id?.idType === 'PART_NUMBER' && typeof id?.idValue === 'string')
 				.map((id: any) => ({
-					scheme: role === 'MANUFACTURER' ? 'mpn' : 'part-number',
-					customScheme: null,
-					value: id.idValue,
+					idType: role === 'MANUFACTURER' ? 'MPN' : 'PART_NUMBER',
+					idValue: id.idValue,
 				}));
 			if (legacy.length) {
 				const entityRef = typeof block.entity === 'string' ? block.entity : null;
@@ -346,9 +351,8 @@ function identifiersOf(c: any, parties: ParsedHbomParty[]): ParsedHbomIdentifier
 			const claims = id.partNumber
 				.filter((pn: any) => typeof pn === 'string')
 				.map((pn: string) => ({
-					scheme: role === 'MANUFACTURER' ? 'mpn' : 'part-number',
-					customScheme: null,
-					value: pn,
+					idType: role === 'MANUFACTURER' ? 'MPN' : 'PART_NUMBER',
+					idValue: pn,
 				}));
 			if (claims.length) out.push({ bomRef: null, party: partyRefByRole(parties, role), identities: claims });
 		}
