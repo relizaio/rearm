@@ -1335,7 +1335,7 @@ const orgBranchSuffixModeOptions = [
 
 const branchSuffixModeTooltip = [
     `${branchSuffixModeLabels.APPEND}: branches get a namespace suffix (e.g., 1.2.3-feat_login).`,
-    `${branchSuffixModeLabels.NO_APPEND}: no branch suffix; version conflicts resolved via -0, -1, -2...`,
+    `${branchSuffixModeLabels.NO_APPEND}: no branch suffix; on conflict the next version continues the component-wide sequence (0.1.0, 0.1.1 → 0.1.2); -0, -1, -2... only when no new version can be derived (e.g., pinned follow version).`,
     `${branchSuffixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the branch has a "follow version" dependency.`
 ].join('\n')
 

@@ -2640,7 +2640,7 @@ const branchSuffixModeTooltip = computed((): string => {
     return [
         `${branchSuffixModeLabels.INHERIT}: use the organization default.`,
         `${branchSuffixModeLabels.APPEND}: ${br.toLowerCase()}es get a namespace suffix (e.g., 1.2.3-feat_login).`,
-        `${branchSuffixModeLabels.NO_APPEND}: no ${br.toLowerCase()} suffix; version conflicts resolved via -0, -1, -2...`,
+        `${branchSuffixModeLabels.NO_APPEND}: no ${br.toLowerCase()} suffix; on conflict the next version continues the component-wide sequence (0.1.0, 0.1.1 → 0.1.2); -0, -1, -2... only when no new version can be derived (e.g., pinned follow version).`,
         `${branchSuffixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the ${br.toLowerCase()} has a "follow version" dependency.`
     ].join('\n')
 })
