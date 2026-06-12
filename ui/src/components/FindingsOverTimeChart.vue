@@ -69,6 +69,7 @@ import { NSkeleton, NEmpty, NModal, useNotification, NotificationType } from 'na
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
+import { kevFieldSelection } from '@/utils/kevService'
 import constants from '@/utils/constants'
 import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
@@ -196,8 +197,9 @@ const refreshAnalyticsForCurrentDate = () => {
     }
 }
 
-// Common GraphQL fields for findings queries
-const FINDINGS_FIELDS = `
+// Common GraphQL fields for findings queries; kevField is the Pro-only
+// knownExploited selection from kevFieldSelection ('' on OSS)
+const findingsFields = (kevField: string) => `
     vulnerabilityDetails {
         purl
         vulnId
@@ -205,6 +207,7 @@ const FINDINGS_FIELDS = `
         analysisState
         analysisDate
         attributedAt
+        ${kevField}
         aliases {
             type
             aliasId
@@ -383,6 +386,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
     if (!dateToUse) return
     
     findingsPerDayLoading.value = true
+    const FINDINGS_FIELDS = findingsFields(kevFieldSelection(myUser.value?.installationType))
     try {
         let response
         if (props.type === 'ORGANIZATION') {

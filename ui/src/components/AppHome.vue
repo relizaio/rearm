@@ -567,6 +567,7 @@ import ComponentBranchesTable from './ComponentBranchesTable.vue'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 import MostRecentReleasesWidget from './MostRecentReleasesWidget.vue'
 import { processMetricsData } from '@/utils/metrics'
+import { kevFieldSelection } from '@/utils/kevService'
 
 const store = useStore()
 const router = useRouter()
@@ -1264,6 +1265,7 @@ async function fetchMostVulnerableComponents () {
                                 analysisState
                                 analysisDate
                                 attributedAt
+                                ${kevFieldSelection(installationType.value)}
                                 aliases { type aliasId }
                                 sources {
                                     artifact

@@ -3,8 +3,13 @@
  *
  * Pro-only (like approvalRequests): the knownExploited field and the
  * kevRecordDetails query are absent from the OSS schema, so callers must
- * gate on installationType !== 'OSS' — never fold these fields into the
- * shared release/metrics fragments.
+ * gate on installationType !== 'OSS' — never fold these fields into
+ * shared static fragments. Two sanctioned patterns:
+ *  - a separate Pro-only mirror query (releaseKevFlags/artifactKevFlags
+ *    below) when the primary fetch is cheap or its fragments are shared;
+ *  - conditional inclusion via kevFieldSelection() when the selection set
+ *    is built per call and the underlying query is expensive to re-run
+ *    (changelog diffs, findingsPerDay, mostVulnerableComponentsPerOrg).
  */
 
 import gql from 'graphql-tag'
@@ -26,6 +31,16 @@ export interface KevRecordDetails {
 
 export function isProInstallation(installationType?: string): boolean {
     return !!installationType && installationType !== 'OSS'
+}
+
+/**
+ * GraphQL selection snippet for the Pro-only knownExploited field: the
+ * field name on Pro, empty string on OSS (or while installationType is
+ * still unknown), so OSS queries never reference a field their schema
+ * lacks. For interpolation into selection sets built per call.
+ */
+export function kevFieldSelection(installationType?: string): string {
+    return isProInstallation(installationType) ? 'knownExploited' : ''
 }
 
 const RELEASE_KEV_FLAGS_GQL = gql`

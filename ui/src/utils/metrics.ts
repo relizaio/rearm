@@ -20,7 +20,8 @@ export type DetailedMetric = {
   analysisState?: string
   analysisDate?: string
   attributedAt?: string
-  // Pro-only CISA KEV flag, stamped post-fetch by kevService.annotateKnownExploited
+  // Pro-only CISA KEV flag: stamped post-fetch by kevService.annotateKnownExploited,
+  // or carried straight from a Pro query via kevFieldSelection
   knownExploited?: boolean
 }
 
@@ -105,7 +106,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         fingerprint: '-',
         analysisState: vuln.analysisState,
         analysisDate: vuln.analysisDate,
-        attributedAt: vuln.attributedAt
+        attributedAt: vuln.attributedAt,
+        knownExploited: !!vuln.knownExploited
       })
     })
   }

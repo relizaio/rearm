@@ -51,6 +51,7 @@ export interface ReleaseVulnerabilityInfo {
     purl?: string
     severity?: string
     aliases?: { aliasId: string }[]
+    knownExploited?: boolean
 }
 
 /**
