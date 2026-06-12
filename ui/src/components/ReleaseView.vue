@@ -1785,8 +1785,20 @@ function partyLine (p: any): string {
     const addr = p.address ? [p.address.city, p.address.region, p.address.country].filter(Boolean).join(', ') : ''
     return `${p.name || '(unnamed)'}${roles ? ` [${roles}]` : ''}${addr ? ` — ${addr}` : ''}`
 }
-function identityLine (i: any): string {
-    return `${(i.partNumbers || []).join(', ')}${i.role ? ` [${i.role.toLowerCase()}]` : ''}`
+function identifierLines (node: any): string[] {
+    const partyName = (ref: string | null) => {
+        const p = (node.parties || []).find((pp: any) => pp.bomRef && pp.bomRef === ref)
+        return p?.name || null
+    }
+    const out: string[] = []
+    for (const idf of (node.identifiers || [])) {
+        const by = partyName(idf.party)
+        for (const c of (idf.identities || [])) {
+            if (!c?.idValue) continue
+            out.push(`${c.idValue}${c.idType ? ` [${String(c.idType).toLowerCase().replace(/_/g, '-')}]` : ''}${by ? ` — by ${by}` : ''}`)
+        }
+    }
+    return out
 }
 function hbomNodeTooltip (node: any): any {
     const facts: [string, any][] = [
@@ -1795,8 +1807,8 @@ function hbomNodeTooltip (node: any): any {
         ['Type', node.type], ['Operator', node.operator], ['Description', node.description]
     ].filter(([, v]) => v !== null && v !== undefined && v !== '') as [string, any][]
     const lines = facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)]))
-    for (const i of (node.identities || [])) {
-        lines.push(h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Part #: '), identityLine(i)]))
+    for (const idLine of identifierLines(node)) {
+        lines.push(h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Identity: '), idLine]))
     }
     for (const p of (node.parties || [])) {
         lines.push(h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Party: '), partyLine(p)]))
@@ -1860,7 +1872,7 @@ async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean =
     if (hbomLoaded.value && !forceRefresh) return
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type operator name version description category subcategory partNumbers manufacturer parties { roles name url address { city region country isoCode } } identities { role entityRef partNumbers } boardLocation deviceType quantity parentRef isRoot } }`,
+            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type operator name version description category subcategory partNumbers manufacturer parties { bomRef roles name url address { city region country isoCode } } identifiers { party identities { idType idValue } } boardLocation deviceType quantity parentRef isRoot } }`,
             variables: { releaseUuid }, fetchPolicy: 'no-cache'
         })
         hbomComponents.value = resp.data.hbomComponentsOfRelease || []

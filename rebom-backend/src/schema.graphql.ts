@@ -170,10 +170,16 @@ const typeDefs = gql`
     url: String
   }
 
-  type HbomIdentity {
-    role: String
-    entityRef: String
-    partNumbers: [String]
+  type HbomIdentityClaim {
+    scheme: String
+    customScheme: Object
+    value: String
+  }
+
+  type HbomIdentifier {
+    bomRef: String
+    party: String
+    identities: [HbomIdentityClaim]
   }
 
   type HbomComponent {
@@ -186,7 +192,7 @@ const typeDefs = gql`
     category: String
     subcategory: String
     parties: [HbomParty]
-    identities: [HbomIdentity]
+    identifiers: [HbomIdentifier]
     boardLocation: String
     deviceType: String
     quantity: Int

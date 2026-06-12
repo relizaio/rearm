@@ -16,84 +16,6 @@
         "algorithm": "SHA-256",
         "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
-      "identifiers": [
-        {
-          "bom-ref": "identity-1",
-          "entity": "entity-arduino-srl",
-          "identities": [
-            {
-              "idType": "PART_NUMBER",
-              "idValue": "A000066"
-            },
-            {
-              "idType": "PART_NUMBER",
-              "idValue": "B000066"
-            },
-            {
-              "idType": "SERIAL_NUMBER",
-              "idValue": "B000066"
-            }
-          ]
-        }
-      ],
-      "entities": [
-        {
-          "bom-ref": "entity-arduino-srl",
-          "role": "manufacturer",
-          "priority": 1,
-          "name": "Arduino S.r.l.",
-          "address": {
-            "streetAddress": "Via Andrea Appiani 25",
-            "city": "Monza",
-            "region": "MB",
-            "postalCode": "20900",
-            "country": "IT",
-            "isoCode": "IT-MB",
-            "coords": {
-              "latitude": 45.5845,
-              "longitude": 9.2744
-            }
-          },
-          "url": "https://www.arduino.cc",
-          "contact": [
-            {
-              "name": "Arduino Support",
-              "email": "support@arduino.cc"
-            }
-          ]
-        },
-        {
-          "bom-ref": "entity-arduino-cm",
-          "role": "manufacturer",
-          "priority": 2,
-          "name": "Smart Projects S.r.l.",
-          "address": {
-            "streetAddress": "Via Salvemini 9",
-            "city": "Scarmagno",
-            "region": "TO",
-            "postalCode": "10010",
-            "country": "IT",
-            "isoCode": "IT-TO",
-            "coords": {
-              "latitude": 45.389,
-              "longitude": 7.8382
-            }
-          }
-        },
-        {
-          "bom-ref": "entity-arduino-supplier",
-          "role": "supplier",
-          "name": "Arduino S.r.l.",
-          "address": {
-            "country": "IT",
-            "isoCode": "IT-MB",
-            "coords": {
-              "latitude": 45.5845,
-              "longitude": 9.2744
-            }
-          }
-        }
-      ],
       "classification": {
         "category": "microcontroller-development-board"
       },
@@ -150,7 +72,87 @@
           "value": 25,
           "unit": "g"
         }
-      }
+      },
+      "parties": [
+        {
+          "bom-ref": "entity-arduino-srl",
+          "roles": [
+            "manufacturer"
+          ],
+          "priority": 1,
+          "name": "Arduino S.r.l.",
+          "address": {
+            "streetAddress": "Via Andrea Appiani 25",
+            "city": "Monza",
+            "region": "MB",
+            "postalCode": "20900",
+            "country": "IT",
+            "isoCode": "IT-MB",
+            "coords": {
+              "latitude": 45.5845,
+              "longitude": 9.2744
+            }
+          },
+          "url": "https://www.arduino.cc",
+          "contact": [
+            {
+              "name": "Arduino Support",
+              "email": "support@arduino.cc"
+            }
+          ]
+        },
+        {
+          "bom-ref": "entity-arduino-cm",
+          "roles": [
+            "manufacturer"
+          ],
+          "priority": 2,
+          "name": "Smart Projects S.r.l.",
+          "address": {
+            "streetAddress": "Via Salvemini 9",
+            "city": "Scarmagno",
+            "region": "TO",
+            "postalCode": "10010",
+            "country": "IT",
+            "isoCode": "IT-TO",
+            "coords": {
+              "latitude": 45.389,
+              "longitude": 7.8382
+            }
+          }
+        },
+        {
+          "bom-ref": "entity-arduino-supplier",
+          "roles": [
+            "supplier"
+          ],
+          "name": "Arduino S.r.l.",
+          "address": {
+            "country": "IT",
+            "isoCode": "IT-MB",
+            "coords": {
+              "latitude": 45.5845,
+              "longitude": 9.2744
+            }
+          }
+        }
+      ],
+      "identifiers": [
+        {
+          "bom-ref": "identity-1",
+          "party": "entity-arduino-srl",
+          "identities": [
+            {
+              "scheme": "mpn",
+              "value": "A000066"
+            },
+            {
+              "scheme": "mpn",
+              "value": "B000066"
+            }
+          ]
+        }
+      ]
     },
     "manufacturer": {
       "locations": [
@@ -219,37 +221,6 @@
           }
         ]
       },
-      "identities": [
-        {
-          "role": "manufacturer",
-          "partNumber": [
-            "ATMEGA328P-PU"
-          ]
-        },
-        {
-          "role": "supplier",
-          "partNumber": [
-            "ATMEGA328P-PU"
-          ]
-        }
-      ],
-      "entities": [
-        {
-          "bom-ref": "entity-microchip",
-          "role": "manufacturer",
-          "name": "Microchip Technology (formerly Atmel)",
-          "address": {
-            "city": "Chandler",
-            "region": "AZ",
-            "country": "US",
-            "isoCode": "US-AZ",
-            "coords": {
-              "latitude": 33.2533,
-              "longitude": -111.8018
-            }
-          }
-        }
-      ],
       "uniqueIdentifier": {
         "algorithm": "SHA-256",
         "value": "abc123def456..."
@@ -290,6 +261,36 @@
           "name": "Arduino Uno Bootloader",
           "version": "optiboot_atmega328.hex",
           "description": "Optiboot bootloader pre-flashed on ATmega328P, occupies 0.5KB of 32KB flash"
+        }
+      ],
+      "parties": [
+        {
+          "bom-ref": "entity-microchip",
+          "roles": [
+            "manufacturer"
+          ],
+          "name": "Microchip Technology (formerly Atmel)",
+          "address": {
+            "city": "Chandler",
+            "region": "AZ",
+            "country": "US",
+            "isoCode": "US-AZ",
+            "coords": {
+              "latitude": 33.2533,
+              "longitude": -111.8018
+            }
+          }
+        }
+      ],
+      "identifiers": [
+        {
+          "party": "entity-microchip",
+          "identities": [
+            {
+              "scheme": "mpn",
+              "value": "ATMEGA328P-PU"
+            }
+          ]
         }
       ]
     },

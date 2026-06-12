@@ -197,7 +197,7 @@ export function extractBomComponents(bom: any): ParsedBomComponent[] {
 
 // ===== HBOM (hardware BOM) extraction =====
 // CycloneDX HBOM components are `type: device` (with nested `type: firmware`)
-// and have no purl — they are identified by role-scoped part numbers, parties
+// and have no purl — they are identified by party-asserted identity claims, parties
 // (manufacturer/supplier/...), and board location. parseHbom flattens the
 // board -> devices -> firmware tree into one entry per hardware node (carrying
 // the parent bom-ref so the backend can rebuild the nesting) while preserving
@@ -214,12 +214,20 @@ export interface ParsedHbomParty {
 	url: string | null;
 }
 
-// Role-scoped identity: the same physical component can carry different part
-// numbers per manufacturer/supplier — preserved instead of flattened.
-export interface ParsedHbomIdentity {
-	role: string | null;
-	entityRef: string | null;
-	partNumbers: string[];
+// CDX 2.0 identity model (spec PR #936): identifiers group identity claims by
+// the asserting party (bom-ref into parties); each claim is a typed scheme
+// (mpn / part-number / serial-number / ... or a custom {name, description})
+// paired with its value.
+export interface ParsedHbomIdentityClaim {
+	scheme: string | null;
+	customScheme: { name: string; description?: string } | null;
+	value: string | null;
+}
+
+export interface ParsedHbomIdentifier {
+	bomRef: string | null;
+	party: string | null;
+	identities: ParsedHbomIdentityClaim[];
 }
 
 export interface ParsedHbomComponent {
@@ -233,7 +241,7 @@ export interface ParsedHbomComponent {
 	category: string | null; // classification.category (e.g. semiconductor)
 	subcategory: string | null; // classification.subcategory (e.g. voltage-regulator)
 	parties: ParsedHbomParty[];
-	identities: ParsedHbomIdentity[];
+	identifiers: ParsedHbomIdentifier[];
 	boardLocation: string | null;
 	deviceType: string | null; // DIP / QFN / SMD / PTH
 	quantity: number | null;
@@ -276,31 +284,73 @@ function partiesOf(c: any): ParsedHbomParty[] {
 	return out;
 }
 
-function identitiesOf(c: any): ParsedHbomIdentity[] {
-	const out: ParsedHbomIdentity[] = [];
-	if (Array.isArray(c.identities)) {
-		for (const id of c.identities) {
-			if (!id || typeof id !== 'object') continue;
-			const partNumbers = Array.isArray(id.partNumber)
-				? id.partNumber.filter((pn: any) => typeof pn === 'string')
-				: [];
-			out.push({
-				role: normalizeRole(id.role),
-				entityRef: typeof id['entity-ref'] === 'string' ? id['entity-ref'] : (typeof id.entityRef === 'string' ? id.entityRef : null),
-				partNumbers,
-			});
-		}
+function claimOf(id: any): ParsedHbomIdentityClaim | null {
+	if (!id || typeof id !== 'object' || typeof id.value !== 'string') return null;
+	if (typeof id.scheme === 'string') return { scheme: id.scheme, customScheme: null, value: id.value };
+	if (id.scheme && typeof id.scheme === 'object' && typeof id.scheme.name === 'string') {
+		return {
+			scheme: null,
+			customScheme: { name: id.scheme.name, ...(typeof id.scheme.description === 'string' ? { description: id.scheme.description } : {}) },
+			value: id.value,
+		};
 	}
+	return null;
+}
+
+// bom-ref of the party carrying the given normalized role, when unambiguous.
+function partyRefByRole(parties: ParsedHbomParty[], role: string | null): string | null {
+	if (!role) return null;
+	const matches = parties.filter((p) => p.roles.includes(role) && p.bomRef);
+	return matches.length === 1 ? matches[0].bomRef : null;
+}
+
+function identifiersOf(c: any, parties: ParsedHbomParty[]): ParsedHbomIdentifier[] {
+	const out: ParsedHbomIdentifier[] = [];
 	if (Array.isArray(c.identifiers)) {
 		for (const block of c.identifiers) {
-			const ids = block?.identities;
-			if (!Array.isArray(ids)) continue;
-			const partNumbers = ids
-				.filter((id: any) => id?.idType === 'PART_NUMBER' && typeof id?.idValue === 'string')
-				.map((id: any) => id.idValue);
-			if (partNumbers.length) {
-				out.push({ role: normalizeRole(block?.role), entityRef: null, partNumbers });
+			if (!block || typeof block !== 'object' || !Array.isArray(block.identities)) continue;
+			// Spec PR #936 form: { party, identities: [{ scheme, value }] }.
+			const claims = block.identities.map(claimOf).filter((cl: any) => cl != null) as ParsedHbomIdentityClaim[];
+			if (claims.length) {
+				out.push({
+					bomRef: typeof block['bom-ref'] === 'string' ? block['bom-ref'] : null,
+					party: typeof block.party === 'string' ? block.party : null,
+					identities: claims,
+				});
+				continue;
 			}
+			// Legacy draft form: { role, identities: [{ idType: PART_NUMBER, idValue }] }.
+			const role = normalizeRole(block.role);
+			const legacy = block.identities
+				.filter((id: any) => id?.idType === 'PART_NUMBER' && typeof id?.idValue === 'string')
+				.map((id: any) => ({
+					scheme: role === 'MANUFACTURER' ? 'mpn' : 'part-number',
+					customScheme: null,
+					value: id.idValue,
+				}));
+			if (legacy.length) {
+				const entityRef = typeof block.entity === 'string' ? block.entity : null;
+				out.push({
+					bomRef: typeof block['bom-ref'] === 'string' ? block['bom-ref'] : null,
+					party: entityRef ?? partyRefByRole(parties, role),
+					identities: legacy,
+				});
+			}
+		}
+	}
+	// Legacy draft form: component-level identities [{ role, partNumber: [...] }].
+	if (Array.isArray(c.identities)) {
+		for (const id of c.identities) {
+			if (!id || typeof id !== 'object' || !Array.isArray(id.partNumber)) continue;
+			const role = normalizeRole(id.role);
+			const claims = id.partNumber
+				.filter((pn: any) => typeof pn === 'string')
+				.map((pn: string) => ({
+					scheme: role === 'MANUFACTURER' ? 'mpn' : 'part-number',
+					customScheme: null,
+					value: pn,
+				}));
+			if (claims.length) out.push({ bomRef: null, party: partyRefByRole(parties, role), identities: claims });
 		}
 	}
 	return out;
@@ -337,6 +387,7 @@ export function parseHbom(bom: any): ParsedHbom {
 		// Firmware is software and flows to the SBOM extractor when it carries
 		// a purl/cpe (dropped otherwise).
 		if (type === 'device' || type === 'component-choice') {
+			const parties = partiesOf(c);
 			out.components.push({
 				bomRef: ref,
 				type,
@@ -346,8 +397,8 @@ export function parseHbom(bom: any): ParsedHbom {
 				description: typeof c.description === 'string' ? c.description : null,
 				category: classificationOf(c).category,
 				subcategory: classificationOf(c).subcategory,
-				parties: partiesOf(c),
-				identities: identitiesOf(c),
+				parties,
+				identifiers: identifiersOf(c, parties),
 				boardLocation: boardLocationOf(c),
 				deviceType: typeof c.deviceType === 'string' ? c.deviceType : null,
 				quantity: typeof c.quantity === 'number' ? c.quantity : null,
