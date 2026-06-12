@@ -62,7 +62,7 @@
                                             :version="release.version"
                                             :lifecycle="release.lifecycle"
                                         />
-                                        <FindingChangesDisplay :finding-changes="release.findingChanges" />
+                                        <FindingChangesDisplay :finding-changes="release.findingChanges" :org-uuid="orgUuid" />
                                     </div>
                                 </div>
                             </div>
@@ -70,7 +70,7 @@
                         
                         <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedOrganizationChangelog'">
                             <p class="aggregation-note">Aggregated across all components</p>
-                            <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" />
+                            <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="orgUuid" />
                         </div>
                     </n-tab-pane>
                 </n-tabs>
@@ -141,7 +141,8 @@ const fetchChangelog = async () => {
             dateFrom,
             dateTo,
             aggregated: aggregationType.value as 'NONE' | 'AGGREGATED',
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            installationType: store.getters.myuser?.installationType
         }
                 
         const result = await fetchOrganizationChangelogByDate(params)

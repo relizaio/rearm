@@ -250,7 +250,7 @@
                             :branch-uuid="entry.branch.branchUuid"
                             :branch-name="entry.branch.branchName"
                         />
-                        <FindingChangesDisplay :finding-changes="entry.release.findingChanges" />
+                        <FindingChangesDisplay :finding-changes="entry.release.findingChanges" :org-uuid="changelog.orgUuid" />
                     </div>
                 </div>
 
@@ -274,7 +274,7 @@
                                     :branch-uuid="branch.branchUuid"
                                     :branch-name="branch.branchName"
                                 />
-                                <FindingChangesDisplay :finding-changes="release.findingChanges" />
+                                <FindingChangesDisplay :finding-changes="release.findingChanges" :org-uuid="changelog.orgUuid" />
                             </div>
                         </template>
                     </div>
@@ -283,7 +283,7 @@
                 <!-- AGGREGATED mode: Show top-level aggregated changes -->
                 <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                     <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
-                    <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" />
+                    <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" />
                 </div>
             </n-tab-pane>
         </n-tabs>
@@ -329,7 +329,8 @@ async function getComponentChangelog (org: string, aggregationType: string, comp
             org: org,
             aggregated: aggregationType as 'NONE' | 'AGGREGATED',
             dateFrom: dateFrom,
-            dateTo: dateTo
+            dateTo: dateTo,
+            installationType: store.getters.myuser?.installationType
         })
     }
     return null
@@ -341,7 +342,8 @@ async function getChangelog (org: string, aggregationType: string, release1?: st
             release1: release1,
             release2: release2,
             org: org,
-            aggregated: aggregationType as 'NONE' | 'AGGREGATED'
+            aggregated: aggregationType as 'NONE' | 'AGGREGATED',
+            installationType: store.getters.myuser?.installationType
         })
     }
     return null

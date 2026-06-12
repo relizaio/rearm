@@ -18,6 +18,7 @@
                         </n-tag>
                         <n-tag :type="getFindingTypeTagType(finding.type)" size="small">{{ finding.typeLabel }}</n-tag>
                         <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
+                        <n-tag v-if="finding.knownExploited" type="error" size="small" :bordered="false" class="kev-tag" title="CISA Known Exploited Vulnerability — click for details" @click="emit('kev-click', finding)">KEV</n-tag>
                         <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
                             <template #trigger>
                                 <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
@@ -60,6 +61,7 @@
                             </n-tag>
                             <n-tag :type="getFindingTypeTagType(finding.type)" size="small">{{ finding.typeLabel }}</n-tag>
                             <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
+                            <n-tag v-if="finding.knownExploited" type="error" size="small" :bordered="false" class="kev-tag" title="CISA Known Exploited Vulnerability — click for details" @click="emit('kev-click', finding)">KEV</n-tag>
                             <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
                                 <template #trigger>
                                     <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
@@ -108,6 +110,10 @@ const props = withDefaults(defineProps<Props>(), {
     description: undefined
 })
 
+const emit = defineEmits<{
+    (e: 'kev-click', finding: any): void
+}>()
+
 const showSuppressed = ref(false)
 
 const isSuppressed = (finding: any): boolean => {
@@ -154,6 +160,10 @@ const getAnalysisStateLabel = (state: string | null | undefined): string => {
     &:hover {
         opacity: 0.9;
     }
+}
+
+.kev-tag {
+    cursor: pointer;
 }
 
 .suppressed-section {
