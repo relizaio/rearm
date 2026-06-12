@@ -168,7 +168,7 @@ export default { name: 'DeviceView' }
 import { ref, Ref, computed, reactive, h, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NDatePicker, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
+import { NButton, NCard, NDataTable, NDatePicker, NDynamicInput, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, NTooltip, useNotification, NotificationType } from 'naive-ui'
 import { Copy, InfoCircle } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
