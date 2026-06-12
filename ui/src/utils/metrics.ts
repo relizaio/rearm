@@ -4,6 +4,7 @@ import { searchDtrackComponentByPurl } from '@/utils/dtrack'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
+import { resolveKevCveId } from '@/utils/kevService'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -19,6 +20,8 @@ export type DetailedMetric = {
   analysisState?: string
   analysisDate?: string
   attributedAt?: string
+  // Pro-only CISA KEV flag, stamped post-fetch by kevService.annotateKnownExploited
+  knownExploited?: boolean
 }
 
 // Helper function to create vulnerability links with confirmation dialog
@@ -164,6 +167,9 @@ export function buildVulnerabilityColumns(
     onPurlClick?: (purl: string) => void
     onEditFinding?: (row: any) => void
     onViewAnalysis?: (row: any) => void
+    // Opens the CISA KEV details modal for a KEV-flagged CVE (Pro only —
+    // rows only carry knownExploited when the caller annotated them)
+    onKevClick?: (cveId: string) => void
     initialSeverityFilter?: string
     initialTypeFilter?: string | string[]
     data?: any[]
@@ -304,7 +310,17 @@ export function buildVulnerabilityColumns(
       render: (row: any) => {
         const id = String(row.id || '')
         if (!id) return ''
-        return createVulnerabilityLink(h, id)
+        const idLink = createVulnerabilityLink(h, id)
+        if (!row.knownExploited) return idLink
+        const kevTag = h(NTag, {
+          type: 'error',
+          size: 'small',
+          bordered: false,
+          title: 'CISA Known Exploited Vulnerability — click for details',
+          style: options?.onKevClick ? 'cursor: pointer;' : '',
+          onClick: () => options?.onKevClick?.(resolveKevCveId(row))
+        }, { default: () => 'KEV' })
+        return h('div', { style: 'display: flex; align-items: center; gap: 6px; flex-wrap: wrap;' }, [idLink, kevTag])
       }
     },
     { title: 'PURL or Location', key: 'purl', width: 400, ellipsis: { tooltip: true }, render: makePurlRenderer() },

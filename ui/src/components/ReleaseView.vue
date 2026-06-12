@@ -1251,6 +1251,7 @@ import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { getReleaseScanStatus, isDtrackConfiguredForOrg } from '@/utils/releaseScanStatus'
 import { processMetricsData } from '@/utils/metrics'
+import { annotateKnownExploited, fetchArtifactKevVulnIds, isProInstallation } from '@/utils/kevService'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { PackageURL } from 'packageurl-js'
 
@@ -3132,9 +3133,10 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string, severi
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
             releaseUuid,
-            release.value.org
+            release.value.org,
+            myUser?.installationType
         )
-        
+
         // Update reactive values with the processed data (same as BranchView)
         currentReleaseArtifacts.value = releaseData.artifacts
         currentReleaseOrgUuid.value = releaseData.orgUuid
@@ -3157,8 +3159,11 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
     currentSeverityFilter.value = severityFilter
     currentTypeFilter.value = typeFilter
     loadingVulnerabilities.value = true
-    
+
     try {
+        const kevVulnIdsPromise = isProInstallation(myUser?.installationType)
+            ? fetchArtifactKevVulnIds(artifactUuid)
+            : Promise.resolve(new Set<string>())
         const response = await graphqlClient.query({
             query: gql`
                 query getArtifactDetails($artifactUuid: ID!) {
@@ -3252,7 +3257,9 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
         
         const artifact = response.data.artifact
         if (artifact && artifact.metrics) {
-            detailedVulnerabilitiesData.value = processMetricsData(artifact.metrics)
+            const processedMetrics = processMetricsData(artifact.metrics)
+            annotateKnownExploited(processedMetrics, await kevVulnIdsPromise)
+            detailedVulnerabilitiesData.value = processedMetrics
             currentArtifactDisplayId.value = artifact.displayIdentifier || ''
         }
     } catch (error) {
