@@ -97,7 +97,7 @@ export const TYPE_LABELS: Record<string, string> = {
     SLACK: 'Slack',
     WEBHOOK: 'Webhook',
     MS_TEAMS: 'MS Teams',
-    SENTINEL: 'Sentinel',
+    SENTINEL: 'Microsoft Sentinel',
     EMAIL: 'Email',
 }
 
@@ -106,7 +106,9 @@ export const typeOptions = [
     { label: 'Slack', value: 'SLACK' },
     { label: 'Microsoft Teams', value: 'MS_TEAMS' },
     { label: 'Generic Webhook', value: 'WEBHOOK' },
-    { label: 'Azure Sentinel', value: 'SENTINEL' },
+    // Ships to an Azure Log Analytics workspace — Sentinel is the usual
+    // consumer but any Log Analytics workspace works.
+    { label: 'Microsoft Sentinel (Azure Log Analytics)', value: 'SENTINEL' },
 ]
 
 export const webhookAuthOptions = [

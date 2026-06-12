@@ -236,7 +236,7 @@
                 <div>
                     <div class="info-banner-title">Notification subscriptions</div>
                     <div class="info-banner-body">
-                        Rules that route security and operational events to your messaging channels. Channels themselves are configured as Slack / Teams / Webhook / Sentinel integrations in the Catalog.
+                        Rules that route security and operational events to your messaging channels. Channels themselves are configured as Slack / Teams / Webhook / Microsoft Sentinel integrations in the Catalog.
                     </div>
                 </div>
             </div>
