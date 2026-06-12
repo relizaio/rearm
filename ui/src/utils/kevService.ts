@@ -114,19 +114,32 @@ export async function fetchArtifactKevVulnIds(artifactUuid: string): Promise<Set
     }
 }
 
-/** Full catalog entry for one CVE; null when not KEV-listed or on error. */
+/**
+ * Full catalog entry for one CVE; null means authoritatively not KEV-listed.
+ * Unlike the badge fetches this rethrows on transport/backend errors, so the
+ * modal can show an error state instead of a false "not listed" claim.
+ */
 export async function fetchKevRecordDetails(orgUuid: string, cveId: string): Promise<KevRecordDetails | null> {
-    try {
-        const response = await graphqlClient.query({
-            query: KEV_RECORD_DETAILS_GQL,
-            variables: { orgUuid, cveId },
-            fetchPolicy: 'no-cache'
-        })
-        return (response.data as any).kevRecordDetails || null
-    } catch (err) {
-        console.error('Error fetching KEV record details:', err)
-        return null
-    }
+    const response = await graphqlClient.query({
+        query: KEV_RECORD_DETAILS_GQL,
+        variables: { orgUuid, cveId },
+        fetchPolicy: 'no-cache'
+    })
+    return (response.data as any).kevRecordDetails || null
+}
+
+/**
+ * The catalog keys records by CVE id, but a finding's primary id may be a
+ * GHSA/other alias with the KEV CVE in its aliases. Prefer the row id when
+ * it is already a CVE, else the first CVE-prefixed alias.
+ */
+export function resolveKevCveId(row: any): string {
+    const id = String(row?.id || '')
+    if (id.startsWith('CVE-')) return id
+    const aliasCve = (Array.isArray(row?.aliases) ? row.aliases : [])
+        .map((a: any) => (typeof a === 'string' ? a : a?.aliasId))
+        .find((a: any) => typeof a === 'string' && a.startsWith('CVE-'))
+    return aliasCve || id
 }
 
 /** Stamps knownExploited on processed vulnerability rows (matched by id). */

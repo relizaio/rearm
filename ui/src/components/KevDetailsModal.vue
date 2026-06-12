@@ -75,6 +75,11 @@
                 </n-space>
             </div>
             <n-empty
+                v-else-if="loadError && !loading"
+                description="Failed to load CISA KEV catalog details. Please try again."
+                style="padding: 24px 0;"
+            />
+            <n-empty
                 v-else-if="!loading"
                 description="This vulnerability is not currently listed in the CISA KEV catalog."
                 style="padding: 24px 0;"
@@ -113,6 +118,7 @@ const isVisible = computed({
 })
 
 const loading = ref(false)
+const loadError = ref(false)
 const record = ref<KevRecordDetails | null>(null)
 
 const cisaCatalogUrl = computed(() =>
@@ -120,15 +126,25 @@ const cisaCatalogUrl = computed(() =>
 
 const osvUrl = computed(() => getFindingUrl(props.cveId))
 
-watch(() => props.show, async (shown) => {
+// Token guards against a stale in-flight response landing after the
+// modal was closed and reopened for a different CVE.
+let fetchToken = 0
+
+watch([() => props.show, () => props.cveId], async ([shown]) => {
     if (!shown) return
     record.value = null
+    loadError.value = false
     if (!props.orgUuid || !props.cveId) return
+    const token = ++fetchToken
     loading.value = true
     try {
-        record.value = await fetchKevRecordDetails(props.orgUuid, props.cveId)
+        const result = await fetchKevRecordDetails(props.orgUuid, props.cveId)
+        if (token === fetchToken) record.value = result
+    } catch (err) {
+        console.error('Error fetching KEV record details:', err)
+        if (token === fetchToken) loadError.value = true
     } finally {
-        loading.value = false
+        if (token === fetchToken) loading.value = false
     }
 })
 </script>

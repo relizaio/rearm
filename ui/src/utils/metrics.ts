@@ -4,6 +4,7 @@ import { searchDtrackComponentByPurl } from '@/utils/dtrack'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
+import { resolveKevCveId } from '@/utils/kevService'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -317,7 +318,7 @@ export function buildVulnerabilityColumns(
           bordered: false,
           title: 'CISA Known Exploited Vulnerability — click for details',
           style: options?.onKevClick ? 'cursor: pointer;' : '',
-          onClick: () => options?.onKevClick?.(id)
+          onClick: () => options?.onKevClick?.(resolveKevCveId(row))
         }, { default: () => 'KEV' })
         return h('div', { style: 'display: flex; align-items: center; gap: 6px; flex-wrap: wrap;' }, [idLink, kevTag])
       }
