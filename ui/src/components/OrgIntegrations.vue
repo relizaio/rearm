@@ -86,7 +86,7 @@
                                             <div v-if="card.id === 'EMAIL'" class="instance-meta">
                                                 <span class="instance-scope">{{ emailRecipientsSummary(ch) }}</span>
                                             </div>
-                                            <div class="caps">
+                                            <div v-if="card.id === 'EMAIL' || ch.status !== 'ENABLED'" class="caps">
                                                 <span v-if="card.id === 'EMAIL'" class="cap-chip">{{ digestChipLabel(ch) }}</span>
                                                 <span v-if="ch.status !== 'ENABLED'" class="cap-chip chip-muted">DISABLED</span>
                                             </div>
@@ -365,6 +365,13 @@
                             The stored endpoint and auth settings are encrypted and not displayed. They are stored together:
                             to change any of them, re-enter the endpoint URL and the auth settings.
                         </n-text>
+                        <n-alert
+                            v-if="webhookChForm.uuid && webhookChForm.url && webhookChForm.authScheme === 'NONE'"
+                            type="warning" :show-icon="false"
+                        >
+                            Re-entering the URL replaces the stored endpoint and auth together — saving with
+                            Authentication set to None removes any stored bearer token or HMAC secret.
+                        </n-alert>
 
                         <n-alert v-if="webhookChModalError" type="error" :show-icon="false">
                             {{ webhookChModalError }}
@@ -1290,14 +1297,16 @@ async function saveWebhookChannel() {
     const isEdit = !!webhookChForm.value.uuid
     const url = (webhookChForm.value.url || '').trim()
     const scheme = webhookChForm.value.authScheme
-    const token = (webhookChForm.value.authToken || '').trim()
+    // Token sent verbatim — secrets may be whitespace-significant; trim
+    // only for the blank-check.
+    const token = webhookChForm.value.authToken || ''
     let webhookConfig: any = null
     if (url) {
         if (!url.toLowerCase().startsWith('https://')) {
             webhookChModalError.value = 'Webhook URL must be HTTPS.'
             return
         }
-        if (scheme !== 'NONE' && !token) {
+        if (scheme !== 'NONE' && !token.trim()) {
             webhookChModalError.value = `Auth scheme ${scheme} requires a token.`
             return
         }
@@ -1305,7 +1314,7 @@ async function saveWebhookChannel() {
     } else if (!isEdit) {
         webhookChModalError.value = 'Endpoint URL is required.'
         return
-    } else if (scheme !== 'NONE' || token) {
+    } else if (scheme !== 'NONE') {
         webhookChModalError.value = 'To change the auth settings, re-enter the endpoint URL as well — endpoint and auth are stored (and replaced) together.'
         return
     }
@@ -1391,12 +1400,13 @@ async function saveSentinelChannel() {
     const fields = {
         tenantId: (f.tenantId || '').trim(),
         clientId: (f.clientId || '').trim(),
-        clientSecret: (f.clientSecret || '').trim(),
+        // Sent verbatim — secrets may be whitespace-significant.
+        clientSecret: f.clientSecret || '',
         dcrEndpoint: (f.dcrEndpoint || '').trim(),
         dcrImmutableId: (f.dcrImmutableId || '').trim(),
         streamName: (f.streamName || '').trim()
     }
-    const populated = Object.values(fields).filter(v => v.length > 0).length
+    const populated = Object.values(fields).filter(v => v.trim().length > 0).length
     let sentinelConfig: any = null
     if (populated === 6) {
         if (!fields.dcrEndpoint.toLowerCase().startsWith('https://')) {
