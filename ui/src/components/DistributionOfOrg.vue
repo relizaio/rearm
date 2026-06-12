@@ -27,8 +27,8 @@
                 <n-space size="small" style="margin: 4px 0;">
                     <n-button v-if="isWritable" size="tiny" @click="openClientModal(selectedClient)">Edit</n-button>
                     <n-popconfirm v-if="isWritable" @positive-click="deleteClient(selectedClient)">
-                        <template #trigger><n-button size="tiny" type="error">Delete</n-button></template>
-                        Delete client {{ selectedClient.name }} and all its sites?
+                        <template #trigger><n-button size="tiny" type="error">Archive</n-button></template>
+                        Archive client {{ selectedClient.name }} with all its sites, shipments, and devices?
                     </n-popconfirm>
                 </n-space>
                 <h4>Sites</h4>
@@ -46,8 +46,8 @@
                 <n-space size="small" style="margin: 4px 0;">
                     <n-button v-if="isWritable" size="tiny" @click="openSiteModal(selectedSite)">Edit</n-button>
                     <n-popconfirm v-if="isWritable" @positive-click="deleteSite(selectedSite)">
-                        <template #trigger><n-button size="tiny" type="error">Delete</n-button></template>
-                        Delete site {{ selectedSite.name }}?
+                        <template #trigger><n-button size="tiny" type="error">Archive</n-button></template>
+                        Archive site {{ selectedSite.name }} with its shipments and devices?
                     </n-popconfirm>
                 </n-space>
                 <h4>{{ terms.shipments }} <span class="subtle">({{ terms.installedBase }})</span></h4>
@@ -495,7 +495,7 @@ async function saveClient () {
 }
 async function deleteClient (c: any) {
     await graphqlClient.mutate({ mutation: gql`mutation deleteClient($uuid: ID!) { deleteClient(uuid: $uuid) }`, variables: { uuid: c.uuid } })
-    notify('info', 'Deleted', `Client ${c.name} deleted`)
+    notify('info', 'Archived', `Client ${c.name} archived`)
     if (selectedClientUuid.value === c.uuid) router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value } })
     await loadClients()
 }
@@ -513,7 +513,7 @@ async function saveSite () {
 }
 async function deleteSite (s: any) {
     await graphqlClient.mutate({ mutation: gql`mutation deleteSite($uuid: ID!) { deleteSite(uuid: $uuid) }`, variables: { uuid: s.uuid } })
-    notify('info', 'Deleted', `Site ${s.name} deleted`)
+    notify('info', 'Archived', `Site ${s.name} archived`)
     if (selectedSiteUuid.value === s.uuid) router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value, clientuuid: selectedClientUuid.value } })
     await loadSites(selectedClientUuid.value)
 }
@@ -582,10 +582,6 @@ async function shipProduct () {
         showShipModal.value = false; editingShipmentUuid.value = ''
         await loadShipments(selectedSiteUuid.value)
     } catch (e: any) { notify('error', 'Failed', e.message || 'Could not record shipment') }
-}
-async function deleteShipment (r: any) {
-    await graphqlClient.mutate({ mutation: gql`mutation deleteShippedProduct($uuid: ID!) { deleteShippedProduct(uuid: $uuid) }`, variables: { uuid: r.uuid } })
-    notify('info', 'Deleted', 'Record deleted'); await loadShipments(selectedSiteUuid.value)
 }
 
 // ---- device ----

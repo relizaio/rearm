@@ -47,8 +47,8 @@
                     <n-select v-model:value="expectedReleaseEdit" filterable clearable :options="featureSetReleases" placeholder="expected release" size="small" style="width: 300px;" />
                     <n-button size="small" @click="saveExpectedRelease" title="Set the release this unit is expected to run (e.g. after a field upgrade)">Set expected release</n-button>
                     <n-popconfirm @positive-click="deleteThisDevice">
-                        <template #trigger><n-button size="small" type="error">Delete device</n-button></template>
-                        Delete this device and its twin history?
+                        <template #trigger><n-button size="small" type="error">Archive device</n-button></template>
+                        Archive this device? Its twin history is preserved.
                     </n-popconfirm>
                 </n-space>
             </n-space>
@@ -506,7 +506,7 @@ async function saveTracking () {
 async function deleteThisDevice () {
     try {
         await graphqlClient.mutate({ mutation: gql`mutation deleteDevice($uuid: ID!) { deleteDevice(uuid: $uuid) }`, variables: { uuid: deviceuuid.value } })
-        notify('info', 'Deleted', 'Device deleted')
+        notify('info', 'Archived', 'Device archived')
         router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value } })
     } catch (err: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(err.message)) }
 }
