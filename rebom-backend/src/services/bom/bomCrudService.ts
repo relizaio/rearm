@@ -4,7 +4,7 @@ import { BomNotFoundError, BomDataIntegrityError } from '../../types/errors';
 import { BomMapper } from './bomMapper';
 import { logger } from '../../logger';
 import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse, fetchRawBomWithFallback } from '../oci';
-import { parseBom, ParsedBom, ParsedBomComponent } from './bomComponentExtractor';
+import { parseBom, ParsedBom, ParsedBomComponent, parseHbom, ParsedHbom } from './bomComponentExtractor';
 
 export async function findAllBoms(): Promise<BomDto[]> {
     const bomRecords = await BomRepository.findAllBoms();
@@ -65,6 +65,16 @@ export async function findBomObjectById(id: string, org: string): Promise<Object
 export async function parseBomById(id: string, org: string): Promise<ParsedBom> {
     const bom: any = await findBomObjectById(id, org);
     return parseBom(bom);
+}
+
+/**
+ * Return parsed HBOM (hardware BOM) components for a BOM identified by its UUID
+ * or serialNumber — the `type: device` / `type: firmware` nodes that the SBOM
+ * parser drops (no purl). Same fetch path as parseBomById.
+ */
+export async function parseHbomById(id: string, org: string): Promise<ParsedHbom> {
+    const bom: any = await findBomObjectById(id, org);
+    return parseHbom(bom);
 }
 
 export async function findBomMetasBySerialNumber(serialNumber: string, org: string): Promise<BomMetaDto[]> {

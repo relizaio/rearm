@@ -44,7 +44,7 @@ import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
-import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Robot } from '@vicons/tabler'
+import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Robot, Truck } from '@vicons/tabler'
 
 
 function renderIcon (icon: Component) {
@@ -163,6 +163,22 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
             key: 'instances',
             icon: renderIcon(CloudServerOutlined)
         },
+        // Distribution module is SAAS-only for now.
+        ...(myuser.installationType === 'SAAS' ? [{
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
+                            name: 'DistributionOfOrg',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'Distribution' }
+                ),
+            key: 'distribution',
+            icon: renderIcon(Truck)
+        }] : []),
         {
             label: () =>
                 h(
@@ -265,6 +281,7 @@ const routeToMenuKey: Record<string, string> = {
     'CommitterView': 'orgsettings',
     'InstancesOfOrg': 'instances',
     'Instance': 'instances',
+    'DistributionOfOrg': 'distribution',
     'SecretsOfOrg': 'secrets',
     'AnalyticsOfOrg': 'analytics',
     'VulnerabilityAnalysis': 'vulnerabilityAnalysis',

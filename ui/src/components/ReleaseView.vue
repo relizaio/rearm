@@ -698,7 +698,7 @@
                         </h3>
                         <n-data-table :data="updatedRelease.parentReleases" :columns="parentReleaseTableFields" :row-key="parentReleaseRowKey" />
                     </div>
-                    <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER' && updatedRelease.componentDetails.type !== 'PRODUCT'">
+                    <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER' && updatedRelease.componentDetails.type !== 'PRODUCT' && !isHardware">
                         <h3>Source Code Entries
                             <Icon v-if="isWritable && isUpdatable" class="clickable addIcon" size="25" title="Update Source Code Entry" @click="showReleaseAddProducesSce=true">
                                 <CirclePlus/>
@@ -717,7 +717,7 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <div v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
+                        <div v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isHardware">
                             <h3>Changes in SBOM Components
                                 <Icon v-if="isWritable" 
                                     class="clickable addIcon" 
@@ -844,7 +844,7 @@
                         </n-space>
                     </div>
                 </n-tab-pane>
-                <n-tab-pane name="pullRequests" :tab="`Pull Requests${pullRequests.length ? ' · ' + pullRequests.length : ''}`">
+                <n-tab-pane v-if="!isHardware" name="pullRequests" :tab="`Pull Requests${pullRequests.length ? ' · ' + pullRequests.length : ''}`">
                     <div class="container">
                         <p v-if="!pullRequests.length" class="dim">No pull requests reference any of this release's commits.</p>
                         <n-data-table v-else :data="pullRequests" :columns="pullRequestsTableFields" :row-key="(row) => row.uuid"/>
@@ -888,7 +888,9 @@
                         </ul>
                     </div>
                 </n-tab-pane>
-                <n-tab-pane name="sbomComponents" tab="SBOM Components">
+                <n-tab-pane name="bomComponents" tab="BOM Components">
+                    <n-tabs type="line" v-model:value="bomSubTab" @update:value="handleBomSubTabSwitch" animated>
+                        <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomComponents.length ? ' · ' + sbomComponents.length : ''}`">
                     <div class="container">
                         <n-space style="margin-bottom: 8px;" align="center">
                             <n-input
@@ -959,6 +961,22 @@
                             <p>Open this tab to load SBOM components.</p>
                         </div>
                     </div>
+                        </n-tab-pane>
+                        <n-tab-pane name="hbomSub" :tab="`HBOM Components${hbomComponents.length ? ' · ' + hbomComponents.length : ''}`">
+                            <n-space style="margin-bottom: 8px;" align="center">
+                                <n-input v-if="hbomViewMode === 'list'" v-model:value="hbomFilter" placeholder="Filter by name / part number / manufacturer / board location" clearable size="small" style="width: 480px;" />
+                                <n-radio-group v-model:value="hbomViewMode" size="small" @update:value="handleHbomViewModeChange">
+                                    <n-radio-button value="list" label="List" />
+                                    <n-radio-button value="tree" label="Tree" />
+                                </n-radio-group>
+                                <n-button v-if="hbomViewMode === 'tree'" size="small" @click="expandAllHbomNodes">Expand all</n-button>
+                                <n-button v-if="hbomViewMode === 'tree'" size="small" @click="collapseAllHbomNodes">Collapse all</n-button>
+                            </n-space>
+                            <n-data-table v-if="hbomViewMode === 'list'" :columns="hbomColumns" :data="hbomTableData" :row-key="(r: any) => r.uuid" :pagination="{ pageSize: 25 }" size="small" />
+                            <div v-else-if="hbomTreeRoots.length === 0"><p>No hardware tree to display.</p></div>
+                            <div v-else class="sbom-tree-container"><HbomTreeView /></div>
+                        </n-tab-pane>
+                    </n-tabs>
                 </n-tab-pane>
                 <n-tab-pane name="compare" tab="Compare">
                     <div class="container">
@@ -1114,6 +1132,7 @@
                 :inputOrgUuid="updatedRelease.orgDetails.uuid"
                 :inputRelease="updatedRelease.uuid"
                 :inputBranch="updatedRelease.branch"
+                :isHardware="isHardware"
                 @addDeliverable="addArtifact"
                 />
         </n-modal>
@@ -1671,6 +1690,218 @@ const givenApprovals: Ref<any> = ref({})
 
 const words: Ref<any> = ref({})
 const isComponent: Ref<boolean> = ref(true)
+const isHardware: Ref<boolean> = ref(false)
+const hbomComponents: Ref<any[]> = ref([])
+const hbomLoaded: Ref<boolean> = ref(false)
+const bomSubTab: Ref<string> = ref('sbomSub')
+const hbomFilter = ref('')
+const filteredHbom = computed(() => {
+    const f = hbomFilter.value.toLowerCase()
+    if (!f) return hbomComponents.value
+    return hbomComponents.value.filter((c: any) =>
+        [c.name, (c.partNumbers || []).join(' '), c.manufacturer, c.boardLocation, c.version]
+            .filter(Boolean).join(' ').toLowerCase().includes(f))
+})
+// List view: choice slots are expandable rows with their options as children.
+const hbomChoiceRefs = computed(() => new Set(
+    hbomComponents.value.filter((c: any) => c.type === 'component-choice' && c.bomRef).map((c: any) => c.bomRef)))
+const hbomTableData = computed(() => {
+    if (hbomFilter.value) return filteredHbom.value // flat rows while filtering
+    const choiceRefs = hbomChoiceRefs.value
+    const isChoiceOption = (c: any) => c.parentRef && choiceRefs.has(c.parentRef)
+    return hbomComponents.value
+        .filter((c: any) => !isChoiceOption(c))
+        .map((c: any) => {
+            if (c.type === 'component-choice' && c.bomRef) {
+                const children = hbomComponents.value.filter((o: any) => o.parentRef === c.bomRef)
+                if (children.length) return { ...c, children }
+            }
+            return c
+        })
+})
+const hbomColumns = [
+    {
+        key: 'name', title: 'Component',
+        render: (r: any) => r.type === 'component-choice'
+            ? h('span', [
+                h(NTag, { size: 'small', type: 'info', style: 'margin-right: 6px;' }, { default: () => `choice · ${r.operator || 'XOR'}` }),
+                r.name
+            ])
+            : r.name
+    },
+    { key: 'version', title: 'Version' },
+    { key: 'category', title: 'Category' },
+    { key: 'subcategory', title: 'Subcategory' },
+    { key: 'partNumbers', title: 'Part #', render: (r: any) => (r.partNumbers || []).join(', ') },
+    { key: 'manufacturer', title: 'Manufacturer' },
+    { key: 'boardLocation', title: 'Board loc' },
+    { key: 'deviceType', title: 'Pkg' },
+    { key: 'quantity', title: 'Qty' },
+    {
+        key: 'info', title: 'Info',
+        render: (r: any) => {
+            const facts: [string, any][] = [
+                ['Type', r.type],
+                ['Description', r.description],
+                ['BOM ref', r.bomRef],
+                ['Parent ref', r.parentRef],
+                ['Root', r.isRoot ? 'yes' : null]
+            ]
+            const known = facts.filter(([, v]) => v !== null && v !== undefined && v !== '')
+            if (!known.length) return h('span', { class: 'subtle' }, '—')
+            return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 440px;' }, {
+                trigger: () => h(NIcon, { size: 18, style: 'cursor: pointer; vertical-align: middle; color: #909399;' }, { default: () => h(Info20Regular) }),
+                default: () => h('div', known.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)])))
+            })
+        }
+    }
+]
+
+// ----- HBOM tree view (board -> parts), built from the flat rows via bom-ref/parentRef -----
+const hbomViewMode: Ref<'list' | 'tree'> = ref('list')
+const hbomExpandedNodes: Ref<Set<string>> = ref(new Set())
+// Group children by their parentRef (a parent's bom-ref).
+const hbomChildrenByRef: ComputedRef<Record<string, any[]>> = computed(() => {
+    const out: Record<string, any[]> = {}
+    for (const c of hbomComponents.value) {
+        const p = c.parentRef
+        if (p == null) continue
+        ;(out[p] = out[p] || []).push(c)
+    }
+    return out
+})
+const hbomRefSet: ComputedRef<Set<string>> = computed(() =>
+    new Set(hbomComponents.value.map((c: any) => c.bomRef).filter((r: any) => r != null)))
+// Roots: explicitly flagged, else nodes with no resolvable parent.
+const hbomTreeRoots: ComputedRef<any[]> = computed(() => {
+    const declared = hbomComponents.value.filter((c: any) => c.isRoot)
+    if (declared.length) return declared
+    return hbomComponents.value.filter((c: any) => c.parentRef == null || !hbomRefSet.value.has(c.parentRef))
+})
+function hbomChildrenOf (node: any): any[] {
+    return node.bomRef != null ? (hbomChildrenByRef.value[node.bomRef] || []) : []
+}
+function handleHbomViewModeChange (mode: 'list' | 'tree') {
+    hbomViewMode.value = mode
+    if (mode === 'tree' && hbomExpandedNodes.value.size === 0) {
+        hbomExpandedNodes.value = new Set(hbomTreeRoots.value.map((r: any) => r.uuid))
+    }
+}
+function toggleHbomNode (uuid: string) {
+    const next = new Set(hbomExpandedNodes.value)
+    if (next.has(uuid)) next.delete(uuid); else next.add(uuid)
+    hbomExpandedNodes.value = next
+}
+function expandAllHbomNodes () {
+    hbomExpandedNodes.value = new Set(hbomComponents.value.map((c: any) => c.uuid))
+}
+function collapseAllHbomNodes () {
+    hbomExpandedNodes.value = new Set()
+}
+function partyLine (p: any): string {
+    const roles = (p.roles || []).join('/').toLowerCase()
+    const addr = p.address ? [p.address.city, p.address.region, p.address.country].filter(Boolean).join(', ') : ''
+    return `${p.name || '(unnamed)'}${roles ? ` [${roles}]` : ''}${addr ? ` — ${addr}` : ''}`
+}
+function identifierLines (node: any): string[] {
+    const partyName = (ref: string | null) => {
+        const p = (node.parties || []).find((pp: any) => pp.bomRef && pp.bomRef === ref)
+        return p?.name || null
+    }
+    const out: string[] = []
+    for (const idf of (node.identifiers || [])) {
+        const by = partyName(idf.party)
+        for (const c of (idf.identities || [])) {
+            if (!c?.idValue) continue
+            out.push(`${c.idValue}${c.idType ? ` [${String(c.idType).toLowerCase().replace(/_/g, '-')}]` : ''}${by ? ` — by ${by}` : ''}`)
+        }
+    }
+    return out
+}
+function hbomNodeTooltip (node: any): any {
+    const facts: [string, any][] = [
+        ['Category', node.category], ['Subcategory', node.subcategory],
+        ['Board loc', node.boardLocation], ['Pkg', node.deviceType], ['Qty', node.quantity],
+        ['Type', node.type], ['Operator', node.operator], ['Description', node.description]
+    ].filter(([, v]) => v !== null && v !== undefined && v !== '') as [string, any][]
+    const lines = facts.map(([k, v]) => h('div', { style: 'margin: 2px 0;' }, [h('strong', `${k}: `), String(v)]))
+    for (const idLine of identifierLines(node)) {
+        lines.push(h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Identity: '), idLine]))
+    }
+    for (const p of (node.parties || [])) {
+        lines.push(h('div', { style: 'margin: 2px 0;' }, [h('strong', 'Party: '), partyLine(p)]))
+    }
+    return h('div', lines)
+}
+function renderHbomTreeNode (node: any, ancestors: Set<string>): any {
+    // CDX #929 choice slots render as ONE cell: slot facts + options inline,
+    // joined by an operator-appropriate separator (| = pick one, + = all, ? = optional).
+    if (node.type === 'component-choice') {
+        const options = hbomChildrenOf(node)
+        const op = (node.operator || 'XOR').toUpperCase()
+        const sep = op === 'AND' ? ' + ' : (op === 'OPTIONAL' ? ' ? ' : ' | ')
+        const slotFacts = `${node.name || '(choice)'}${node.boardLocation ? ' @ ' + node.boardLocation : ''}${node.quantity ? ' ×' + node.quantity : ''}`
+        return h('div', { class: 'sbom-tree-node' }, [
+            h('div', { class: 'sbom-tree-self' }, [
+                h(NTooltip, { trigger: 'hover', placement: 'right', style: 'max-width: 440px;' }, {
+                    trigger: () => h('span', { class: 'sbom-tree-box hbom-choice-box' }, [
+                        h(NTag, { size: 'small', type: 'info', style: 'margin-right: 6px;' }, { default: () => op }),
+                        `${slotFacts}: `,
+                        h('em', {}, options.map((o: any) => o.name).join(sep) || '(no options)')
+                    ]),
+                    default: () => hbomNodeTooltip(node)
+                })
+            ])
+        ])
+    }
+    const isCycle = node.bomRef != null && ancestors.has(node.bomRef)
+    const children: any[] = isCycle ? [] : hbomChildrenOf(node)
+    const expanded = hbomExpandedNodes.value.has(node.uuid)
+    const hasChildren = children.length > 0
+    const childAncestors = new Set(ancestors)
+    if (node.bomRef != null) childAncestors.add(node.bomRef)
+
+    const boxClasses = ['sbom-tree-box']
+    if (node.isRoot) boxClasses.push('is-root')
+    const label = node.category ? `${node.name || '(unnamed)'} · ${node.category}` : (node.name || '(unnamed)')
+
+    const selfRow = h('div', { class: 'sbom-tree-self' }, [
+        h(NTooltip, { trigger: 'hover', placement: 'right', style: 'max-width: 440px;' }, {
+            trigger: () => h('span', { class: boxClasses.join(' '), title: 'Hover for details' }, [label]),
+            default: () => hbomNodeTooltip(node)
+        }),
+        h('button', {
+            class: ['sbom-tree-expander', hasChildren ? '' : 'is-leaf'].join(' '),
+            disabled: !hasChildren,
+            onClick: hasChildren ? () => toggleHbomNode(node.uuid) : undefined
+        }, !hasChildren ? '·' : (expanded ? '−' : '+'))
+    ])
+
+    const childrenList = (expanded && hasChildren) ? h('div', { class: 'sbom-tree-children' },
+        children.map((c: any) => h('div', { class: 'sbom-tree-item', key: c.uuid }, [renderHbomTreeNode(c, childAncestors)]))
+    ) : null
+
+    return h('div', { class: 'sbom-tree-node' }, [selfRow, childrenList].filter(Boolean))
+}
+const HbomTreeView = () => h('div', { class: 'sbom-tree-root' },
+    hbomTreeRoots.value.map((r: any) => h('div', { class: 'sbom-tree-item is-root-item', key: r.uuid }, [renderHbomTreeNode(r, new Set())]))
+)
+async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean = false) {
+    if (hbomLoaded.value && !forceRefresh) return
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query hbomComponentsOfRelease($releaseUuid: ID!) { hbomComponentsOfRelease(releaseUuid: $releaseUuid) { uuid bomRef type operator name version description category subcategory partNumbers manufacturer parties { bomRef roles name url address { city region country isoCode } } identifiers { party identities { idType idValue } } boardLocation deviceType quantity parentRef isRoot } }`,
+            variables: { releaseUuid }, fetchPolicy: 'no-cache'
+        })
+        hbomComponents.value = resp.data.hbomComponentsOfRelease || []
+        hbomLoaded.value = true
+    } catch (e) { /* ignore */ }
+}
+// Lazy-load whichever BOM sub-tab (SBOM / HBOM) the user opens.
+function handleBomSubTabSwitch (subTab: string) {
+    if (subTab === 'sbomSub') loadSbomComponents()
+    else if (subTab === 'hbomSub') fetchHbomComponents(updatedRelease.value.uuid)
+}
 const isLoading: Ref<boolean> = ref(true)
 const isProductRelease: Ref<boolean> = ref(false)
 const productArtifactsLoaded: Ref<boolean> = ref(false)
@@ -1759,6 +1990,15 @@ async function fetchRelease () {
     }
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
+    // Backend-computed designation (true for hardware components AND product
+    // releases containing at least one hardware component); fall back to the
+    // component's own nature when the field is unavailable.
+    isHardware.value = updatedRelease.value.hardware != null
+        ? !!updatedRelease.value.hardware
+        : (updatedRelease.value.componentDetails.nature === 'HARDWARE')
+    // Hardware releases default the BOM Components view to the HBOM sub-tab.
+    bomSubTab.value = isHardware.value ? 'hbomSub' : 'sbomSub'
+    if (isHardware.value) fetchHbomComponents(updatedRelease.value.uuid)
     const orgTerminology = myorg.value?.terminology
     const resolvedWords = commonFunctions.resolveWords(isComponent.value, orgTerminology)
     words.value = {
@@ -5972,8 +6212,8 @@ async function handleTabSwitch(tabName: string) {
         await Promise.all([loadUsers(), loadAcollections()])
     } else if (tabName === "underlyingArtifacts" && isProductRelease.value) {
         await fetchProductArtifacts()
-    } else if (tabName === "sbomComponents") {
-        await loadSbomComponents()
+    } else if (tabName === "bomComponents") {
+        handleBomSubTabSwitch(bomSubTab.value)
     } else if (tabName === "partOfProducts") {
         await fetchInProducts()
     } else if (tabName === "vex") {

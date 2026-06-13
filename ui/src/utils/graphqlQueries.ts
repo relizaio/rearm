@@ -63,6 +63,7 @@ const MULTI_RELEASE_GQL_DATA = `
         uuid
         name
         type
+        nature
         resourceGroup
     }
     ticketDetails {
@@ -540,6 +541,7 @@ const DELIVERABLE_DETAIL_DATA = `
 const singleReleaseDataNoParent = `
     createdDate
     org
+    hardware
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}
@@ -626,6 +628,7 @@ const singleReleaseDataNoParent = `
         uuid
         name
         type
+        nature
         resourceGroup
         versionType
         approvalPolicyDetails {
@@ -796,6 +799,7 @@ const SINGLE_RELEASE_GQL_DATA_LIGHT = `
         uuid
         name
         type
+        nature
         resourceGroup
     }
     tags
@@ -943,6 +947,7 @@ const BRANCH_GQL_DATA = `
         uuid
         name
         type
+        nature
         resourceGroup
         versionType
     }
@@ -1104,6 +1109,7 @@ const singleReleaseProductNoParent = `
         uuid
         name
         type
+        nature
         resourceGroup
         versionType
         approvalPolicyDetails {

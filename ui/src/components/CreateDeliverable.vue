@@ -24,21 +24,31 @@
                         v-model:value="deliverable.group"
                         placeholder="Enter deliverable group if exists, i.e. Maven Group ID" />
             </n-form-item>
-            <n-form-item 
+            <n-form-item
                         path="type"
                         label="Deliverable CycloneDX Type">
                 <n-select
                         v-model:value="deliverable.type"
                         :options="constants.CdxTypes" />
             </n-form-item>
-            <n-form-item 
+            <!-- Hardware lot fields -->
+            <template v-if="isHardware">
+                <n-form-item label="Lot number"><n-input v-model:value="hw.lot" placeholder="Batch / lot number" /></n-form-item>
+                <n-form-item label="Quantity"><n-input-number v-model:value="hw.quantity" :min="1" placeholder="Units in this lot" /></n-form-item>
+                <n-form-item label="Manufacture date"><n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="hw.manufactureDate" value-format="yyyy-MM-dd" /></n-form-item>
+                <n-form-item label="Manufacturer"><n-input v-model:value="hw.manufacturer" placeholder="Producing party" /></n-form-item>
+                <n-form-item label="Assembler"><n-input v-model:value="hw.assembler" placeholder="Assembly / contract manufacturer (optional)" /></n-form-item>
+                <n-form-item label="Country of origin"><n-input v-model:value="hw.originCode" placeholder="ISO 3166, e.g. CA / US-MA" /></n-form-item>
+                <n-form-item label="Origin basis"><n-input v-model:value="hw.originBasis" placeholder="How origin was determined (e.g. number of parts), optional" /></n-form-item>
+            </template>
+            <n-form-item v-if="!isHardware"
                         path="packageType"
                         label="Deliverable Package Type">
                 <n-select
                         v-model:value="deliverable.softwareMetadata.packageType"
                         :options="constants.PackageTypes" />
             </n-form-item>
-            <n-form-item 
+            <n-form-item v-if="!isHardware"
                         path="supportedOs"
                         label="Supported Operating Systems">
                 <n-select
@@ -46,7 +56,7 @@
                         multiple
                         :options="constants.OperatingSystems" />
             </n-form-item>
-            <n-form-item 
+            <n-form-item v-if="!isHardware"
                         path="supportedCpuArchitectures"
                         label="Supported CPU Architectures">
                 <n-select
@@ -115,7 +125,7 @@ export default {
 <script lang="ts" setup>
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
-import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload, NSpace } from 'naive-ui'
+import { FormInst, NButton, NDatePicker, NDynamicInput, NForm, NFormItem, NInput, NInputNumber, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload, NSpace } from 'naive-ui'
 import { ref, Ref } from 'vue'
 import { useStore } from 'vuex'
 import { Tag, DownloadLink} from '@/utils/commonTypes'
@@ -126,8 +136,21 @@ import commonFunctions from '@/utils/commonFunctions'
 const props = defineProps<{
     inputBranch: string,
     inputOrgUuid: string,
-    inputRelease: string
+    inputRelease: string,
+    isHardware?: boolean
 }>()
+
+// Hardware-lot fields (only used when isHardware). Map to the deliverable's
+// a LOT entry in the unified identifiers, quantity, and CDX-aligned hardwareMetadata.
+const hw = ref({
+    lot: '',
+    quantity: null as number | null,
+    manufactureDate: null as string | null,
+    manufacturer: '',
+    assembler: '',
+    originCode: '',
+    originBasis: ''
+})
 
 const emit = defineEmits(['addDeliverable'])
 
@@ -218,6 +241,21 @@ async function onSubmit () {
 }
 
 async function onSubmitSuccess () {
+    const payload: any = { ...deliverable.value }
+    if (props.isHardware) {
+        const parties: any[] = []
+        if (hw.value.manufacturer) parties.push({ roles: ['MANUFACTURER'], name: hw.value.manufacturer })
+        if (hw.value.assembler) parties.push({ roles: ['ASSEMBLER'], name: hw.value.assembler })
+        const origin = hw.value.originCode
+            ? { basis: hw.value.originBasis || null, origins: [{ originCode: hw.value.originCode }] }
+            : null
+        payload.hardwareMetadata = { parties, origin, manufactureDate: hw.value.manufactureDate || null }
+        if (hw.value.lot) payload.identifiers = [...(payload.identifiers || []), { idType: 'LOT', idValue: hw.value.lot }]
+        payload.quantity = hw.value.quantity || null
+        delete payload.softwareMetadata
+        delete payload.supportedOs
+        delete payload.supportedCpuArchitectures
+    }
     try {
         await graphqlClient.mutate({
             mutation: gql`
@@ -227,7 +265,7 @@ async function onSubmitSuccess () {
             variables: {
                 deliverables: {
                     release: props.inputRelease,
-                    deliverables: [deliverable.value]
+                    deliverables: [payload]
                 }
             },
             fetchPolicy: 'no-cache'

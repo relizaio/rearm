@@ -16,6 +16,7 @@ const typeDefs = gql`
     bomBySerialNumberAndVersion(serialNumber: ID!, version: Int!, org: ID!, raw: Boolean): Object
     bomMetaBySerialNumber(serialNumber: ID!, org: ID!): [BomMeta]
     parseBomById(id: ID!, org: ID!): ParsedBom
+    parseHbomById(id: ID!, org: ID!): ParsedHbom
     bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
     parseSarifContent(sarifContent: String!): [Weakness]
     parseCycloneDxContent(vdrContent: String!): [Vulnerability]
@@ -162,6 +163,47 @@ const typeDefs = gql`
   type ParsedBom {
     components: [BomComponent]!
     dependencies: [BomDependency]!
+  }
+
+  type HbomParty {
+    bomRef: String
+    roles: [String]
+    name: String
+    address: Object
+    url: String
+  }
+
+  type HbomIdentityClaim {
+    idType: String
+    idValue: String
+  }
+
+  type HbomIdentifier {
+    bomRef: String
+    party: String
+    identities: [HbomIdentityClaim]
+  }
+
+  type HbomComponent {
+    bomRef: String
+    type: String
+    operator: String
+    name: String
+    version: String
+    description: String
+    category: String
+    subcategory: String
+    parties: [HbomParty]
+    identifiers: [HbomIdentifier]
+    boardLocation: String
+    deviceType: String
+    quantity: Int
+    parentRef: String
+    isRoot: Boolean
+  }
+
+  type ParsedHbom {
+    components: [HbomComponent]!
   }
 
   type Weakness {

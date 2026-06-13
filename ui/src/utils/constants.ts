@@ -173,7 +173,10 @@ const PERMISSION_FUNCTIONS: string[] = [
     // policy CRUD (saas). Org-wide and unique among functions in
     // that it is visible / grantable at ESSENTIAL_READ — agents
     // shouldn't need READ_WRITE just to initialize a session.
-    'AGENT'
+    'AGENT',
+    // Gates the Distribution module surface (clients, sites, shipments,
+    // devices, device events) for non-admin users and FREEFORM keys.
+    'DISTRIBUTION'
 ]
 // Functions that are grantable at the ESSENTIAL_READ permission type.
 // Most org-wide functions only make sense alongside READ_ONLY/READ_WRITE

@@ -74,6 +74,35 @@
                     </template>
                 </n-dynamic-input>
             </n-form-item>
+            <!-- Distribution module: device classification -->
+            <n-form-item v-if="myUser.installationType !== 'OSS'" label="Nature">
+                <n-select v-model:value="component.nature"
+                    :options="[{label: 'Software', value: 'SOFTWARE'}, {label: 'Hardware', value: 'HARDWARE'}]" />
+            </n-form-item>
+            <n-form-item v-if="myUser.installationType !== 'OSS'" label="Device class">
+                <n-select v-model:value="component.deviceClass"
+                    :options="[{label: 'Not a medical device', value: 'NONE'}, {label: 'Medical (untracked)', value: 'MEDICAL_UNTRACKED'}, {label: 'Medical (tracked / 821)', value: 'MEDICAL_TRACKED'}]" />
+            </n-form-item>
+            <template v-if="myUser.installationType !== 'OSS' && component.deviceClass !== 'NONE'">
+                <n-form-item label="Issuing agency">
+                    <n-select v-model:value="component.medicalProfile.issuingAgency" clearable
+                        :options="[{label: 'GS1', value: 'GS1'}, {label: 'HIBCC', value: 'HIBCC'}, {label: 'ICCBBA', value: 'ICCBBA'}]" />
+                </n-form-item>
+                <n-form-item label="UDI-bearing component">
+                    <n-switch v-model:value="component.medicalProfile.udiBearing" />
+                    <span class="hintText">The component whose release carries the UDI-DI (hardware, or SaMD software).</span>
+                </n-form-item>
+            </template>
+            <n-form-item v-if="myUser.installationType !== 'OSS' && component.deviceClass !== 'NONE'" label="Device identifiers (UDI)">
+                <n-dynamic-input v-model:value="udiIdentifiers" :on-create="onCreateUdiIdentifier">
+                    <template #create-button-default>Add UDI identifier</template>
+                    <template #default="{ value }">
+                        <n-select style="width: 160px;" v-model:value="value.idType"
+                            :options="[{label: 'UDI', value: 'UDI'}, {label: 'UDI-DI', value: 'UDI_DI'}, {label: 'UDI-PI', value: 'UDI_PI'}]" />
+                        <n-input type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
+                    </template>
+                </n-dynamic-input>
+            </n-form-item>
             <n-form-item    path="vcs"
                             v-if="!isProduct"
                             label="Select VCS Repo">
@@ -263,6 +292,12 @@ const onSubmitSuccess = async function () {
     if (component.value.featureBranchVersioning === 'custom_version') {
         component.value.featureBranchVersioning = customFeatureBranchVersioning.value
     }
+    // Distribution module: only send profiles relevant to the chosen axes.
+    if (component.value.deviceClass === 'NONE') component.value.medicalProfile = null
+    // UDI entries live in the same unified identifiers list as PURL/TEI/CPE.
+    const mergedIds = [...(component.value.identifiers || []), ...(udiIdentifiers.value || [])]
+        .filter((i: any) => i.idType && i.idValue)
+    component.value.identifiers = mergedIds
     const storeResp = await store.dispatch('createComponent', component.value)
     emit('componentCreated', storeResp.uuid)
     onReset()
@@ -282,9 +317,10 @@ const onReset = function () {
         marketingVersionSchema: '',
         identifiers: []
     }
+    udiIdentifiers.value = []
 }
 
-const component = ref({
+const component = ref<any>({
     defaultBranch: 'main',
     featureBranchVersioning: '',
     name: '',
@@ -295,8 +331,15 @@ const component = ref({
     versionSchema: '',
     versionType: 'DEV',
     marketingVersionSchema: '',
-    identifiers: []
+    identifiers: [],
+    // Distribution module — device classification.
+    nature: 'SOFTWARE',
+    deviceClass: 'NONE',
+    medicalProfile: { issuingAgency: null, udiBearing: false }
 })
+
+// Device-gated UDI entries, merged into component.identifiers on submit.
+const udiIdentifiers = ref<any[]>([])
 
 const orgTerminology = myorg.value?.terminology
 const resolvedWords = commonFunctions.resolveWords(!props.isProduct, orgTerminology)
@@ -366,6 +409,13 @@ const createdVcsRepo = async function (repoValue: string) {
 function onCreateIdentifier () {
     return {
         idType: '',
+        idValue: ''
+    }
+}
+
+function onCreateUdiIdentifier () {
+    return {
+        idType: 'UDI_DI',
         idValue: ''
     }
 }

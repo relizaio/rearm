@@ -208,7 +208,9 @@ export function parseBom(bom: any): ParsedBom {
 	// Root from metadata.component — synthesised as a first-class node if it has a
 	// purl, else a CPE-canonical node when it carries a cpe (purl > cpe).
 	const rootMeta: any = bom?.metadata?.component;
-	if (rootMeta && typeof rootMeta === 'object') {
+	// `type: device` roots are hardware — parseHbom owns them (see the
+	// components loop below for the same rule).
+	if (rootMeta && typeof rootMeta === 'object' && rootMeta.type !== 'device') {
 		if (typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
 			pushComponent(toParsedComponent(rootMeta.purl, rootMeta, true), rootMeta['bom-ref']);
 		} else {
@@ -219,6 +221,9 @@ export function parseBom(bom: any): ParsedBom {
 	if (Array.isArray(bom.components)) {
 		for (const component of bom.components) {
 			if (!component || typeof component !== 'object') continue;
+			// `type: device` nodes are hardware — parseHbom owns them. Excluded here
+			// so a device that also carries a purl never double-counts into the SBOM.
+			if (component.type === 'device') continue;
 			const rawPurl = component.purl;
 			if (typeof rawPurl === 'string' && rawPurl.length > 0) {
 				pushComponent(toParsedComponent(rawPurl, component, false), component['bom-ref']);
@@ -274,4 +279,235 @@ export function parseBom(bom: any): ParsedBom {
 /** @deprecated use {@link parseBom} — kept only to smooth older tests. */
 export function extractBomComponents(bom: any): ParsedBomComponent[] {
 	return parseBom(bom).components;
+}
+
+// ===== HBOM (hardware BOM) extraction =====
+// CycloneDX HBOM components are `type: device` (with nested `type: firmware`)
+// and have no purl — they are identified by party-asserted identity claims, parties
+// (manufacturer/supplier/...), and board location. parseHbom flattens the
+// board -> devices -> firmware tree into one entry per hardware node (carrying
+// the parent bom-ref so the backend can rebuild the nesting) while preserving
+// the CDX party/identity structure instead of collapsing it to single fields.
+
+// CDX 2.0 party (PR #930 names the component field `parties`; older drafts /
+// our fixtures used `entities` — accepted interchangeably on read). Roles are
+// normalized to ReARM's PartyRole enum names.
+export interface ParsedHbomParty {
+	bomRef: string | null;
+	roles: string[];
+	name: string | null;
+	address: any | null;
+	url: string | null;
+}
+
+// CDX 2.0 identity model (spec PR #936): identifiers group identity claims by
+// the asserting party (bom-ref into parties). Scheme tokens are normalized to
+// the backend's identifier-type names (mpn -> MPN, part-number -> PART_NUMBER,
+// serial-number -> SERIAL, ...) so claims deserialize directly server-side —
+// same approach as party roles. Custom {name, description} schemes are dropped
+// here; the raw BOM in storage still carries them.
+export interface ParsedHbomIdentityClaim {
+	idType: string;
+	idValue: string;
+}
+
+export interface ParsedHbomIdentifier {
+	bomRef: string | null;
+	party: string | null;
+	identities: ParsedHbomIdentityClaim[];
+}
+
+export interface ParsedHbomComponent {
+	bomRef: string | null;
+	type: string | null; // device | component-choice
+	// CDX #929 choice operator (XOR / AND / OPTIONAL); null for plain devices.
+	operator: string | null;
+	name: string | null;
+	version: string | null;
+	description: string | null;
+	category: string | null; // classification.category (e.g. semiconductor)
+	subcategory: string | null; // classification.subcategory (e.g. voltage-regulator)
+	parties: ParsedHbomParty[];
+	identifiers: ParsedHbomIdentifier[];
+	boardLocation: string | null;
+	deviceType: string | null; // DIP / QFN / SMD / PTH
+	quantity: number | null;
+	parentRef: string | null;
+	isRoot: boolean;
+}
+
+export interface ParsedHbom {
+	components: ParsedHbomComponent[];
+}
+
+const PARTY_ROLES = new Set(['MANUFACTURER', 'ASSEMBLER', 'SUPPLIER', 'QUALITY_CONTROL', 'DISTRIBUTOR']);
+
+function normalizeRole(role: any): string | null {
+	if (typeof role !== 'string' || !role) return null;
+	const up = role.toUpperCase().replace(/[\s-]+/g, '_');
+	return PARTY_ROLES.has(up) ? up : 'OTHER';
+}
+
+function partiesOf(c: any): ParsedHbomParty[] {
+	const raw = Array.isArray(c.parties) ? c.parties : (Array.isArray(c.entities) ? c.entities : []);
+	const out: ParsedHbomParty[] = [];
+	for (const p of raw) {
+		if (!p || typeof p !== 'object') continue;
+		const roles: string[] = [];
+		if (Array.isArray(p.roles)) {
+			for (const r of p.roles) { const nr = normalizeRole(r); if (nr) roles.push(nr); }
+		} else {
+			const nr = normalizeRole(p.role);
+			if (nr) roles.push(nr);
+		}
+		out.push({
+			bomRef: typeof p['bom-ref'] === 'string' ? p['bom-ref'] : (typeof p.bomRef === 'string' ? p.bomRef : null),
+			roles,
+			name: typeof p.name === 'string' ? p.name : null,
+			address: p.address && typeof p.address === 'object' ? p.address : null,
+			url: typeof p.url === 'string' ? p.url : null,
+		});
+	}
+	return out;
+}
+
+const IDENTITY_SCHEMES = new Set([
+	'PURL', 'CPE', 'SWID', 'SWHID', 'OMNIBORID', 'GTIN', 'GMN', 'MPN', 'PART_NUMBER',
+	'MODEL_NUMBER', 'SKU', 'SERIAL', 'ASSET_TAG', 'UDI_DI', 'UDI_PI', 'FCC_ID', 'IMEI', 'MAC_ADDRESS',
+]);
+
+function normalizeScheme(scheme: any): string | null {
+	if (typeof scheme !== 'string' || !scheme) return null;
+	if (scheme === 'serial-number') return 'SERIAL';
+	const up = scheme.toUpperCase().replace(/-/g, '_');
+	return IDENTITY_SCHEMES.has(up) ? up : null;
+}
+
+function claimOf(id: any): ParsedHbomIdentityClaim | null {
+	if (!id || typeof id !== 'object' || typeof id.value !== 'string') return null;
+	const idType = normalizeScheme(id.scheme);
+	return idType ? { idType, idValue: id.value } : null;
+}
+
+// bom-ref of the party carrying the given normalized role, when unambiguous.
+function partyRefByRole(parties: ParsedHbomParty[], role: string | null): string | null {
+	if (!role) return null;
+	const matches = parties.filter((p) => p.roles.includes(role) && p.bomRef);
+	return matches.length === 1 ? matches[0].bomRef : null;
+}
+
+function identifiersOf(c: any, parties: ParsedHbomParty[]): ParsedHbomIdentifier[] {
+	const out: ParsedHbomIdentifier[] = [];
+	if (Array.isArray(c.identifiers)) {
+		for (const block of c.identifiers) {
+			if (!block || typeof block !== 'object' || !Array.isArray(block.identities)) continue;
+			// Spec PR #936 form: { party, identities: [{ scheme, value }] }.
+			const claims = block.identities.map(claimOf).filter((cl: any) => cl != null) as ParsedHbomIdentityClaim[];
+			if (claims.length) {
+				out.push({
+					bomRef: typeof block['bom-ref'] === 'string' ? block['bom-ref'] : null,
+					party: typeof block.party === 'string' ? block.party : null,
+					identities: claims,
+				});
+				continue;
+			}
+			// Legacy draft form: { role, identities: [{ idType: PART_NUMBER, idValue }] }.
+			const role = normalizeRole(block.role);
+			const legacy = block.identities
+				.filter((id: any) => id?.idType === 'PART_NUMBER' && typeof id?.idValue === 'string')
+				.map((id: any) => ({
+					idType: role === 'MANUFACTURER' ? 'MPN' : 'PART_NUMBER',
+					idValue: id.idValue,
+				}));
+			if (legacy.length) {
+				const entityRef = typeof block.entity === 'string' ? block.entity : null;
+				out.push({
+					bomRef: typeof block['bom-ref'] === 'string' ? block['bom-ref'] : null,
+					party: entityRef ?? partyRefByRole(parties, role),
+					identities: legacy,
+				});
+			}
+		}
+	}
+	// Legacy draft form: component-level identities [{ role, partNumber: [...] }].
+	if (Array.isArray(c.identities)) {
+		for (const id of c.identities) {
+			if (!id || typeof id !== 'object' || !Array.isArray(id.partNumber)) continue;
+			const role = normalizeRole(id.role);
+			const claims = id.partNumber
+				.filter((pn: any) => typeof pn === 'string')
+				.map((pn: string) => ({
+					idType: role === 'MANUFACTURER' ? 'MPN' : 'PART_NUMBER',
+					idValue: pn,
+				}));
+			if (claims.length) out.push({ bomRef: null, party: partyRefByRole(parties, role), identities: claims });
+		}
+	}
+	return out;
+}
+
+function classificationOf(c: any): { category: string | null; subcategory: string | null } {
+	const cl = c?.classification;
+	if (cl && typeof cl === 'object') {
+		return {
+			category: typeof cl.category === 'string' ? cl.category : null,
+			subcategory: typeof cl.subcategory === 'string' ? cl.subcategory : null,
+		};
+	}
+	return { category: null, subcategory: null };
+}
+
+function boardLocationOf(c: any): string | null {
+	if (typeof c.boardLocation === 'string') return c.boardLocation;
+	const ev = c?.evidence?.boardLocation;
+	if (ev && typeof ev.designator === 'string') return ev.designator;
+	return null;
+}
+
+export function parseHbom(bom: any): ParsedHbom {
+	const out: ParsedHbom = { components: [] };
+	if (!bom || typeof bom !== 'object') return out;
+
+	const visit = (c: any, parentRef: string | null, isRoot: boolean) => {
+		if (!c || typeof c !== 'object') return;
+		const type = typeof c.type === 'string' ? c.type : null;
+		const ref = typeof c['bom-ref'] === 'string' ? c['bom-ref'] : null;
+		// HBOM = physical hardware (`type: device`) plus CDX #929 choice slots
+		// (`type: component-choice`, whose options are nested device children).
+		// Firmware is software and flows to the SBOM extractor when it carries
+		// a purl/cpe (dropped otherwise).
+		if (type === 'device' || type === 'component-choice') {
+			const parties = partiesOf(c);
+			out.components.push({
+				bomRef: ref,
+				type,
+				operator: typeof c.operator === 'string' ? c.operator : null,
+				name: typeof c.name === 'string' ? c.name : null,
+				version: typeof c.version === 'string' ? c.version : null,
+				description: typeof c.description === 'string' ? c.description : null,
+				category: classificationOf(c).category,
+				subcategory: classificationOf(c).subcategory,
+				parties,
+				identifiers: identifiersOf(c, parties),
+				boardLocation: boardLocationOf(c),
+				deviceType: typeof c.deviceType === 'string' ? c.deviceType : null,
+				quantity: typeof c.quantity === 'number' ? c.quantity : null,
+				parentRef,
+				isRoot,
+			});
+		}
+		// Recurse into nested components (firmware under devices, choice wrappers).
+		if (Array.isArray(c.components)) {
+			const childParent = ref ?? parentRef;
+			for (const child of c.components) visit(child, childParent, false);
+		}
+	};
+
+	const root = bom?.metadata?.component;
+	const rootRef = root && typeof root['bom-ref'] === 'string' ? root['bom-ref'] : null;
+	if (root) visit(root, null, true);
+	if (Array.isArray(bom.components)) {
+		for (const c of bom.components) visit(c, rootRef, false);
+	}
+	return out;
 }

@@ -1,0 +1,1503 @@
+{
+  "$schema": "http://cyclonedx.org/schema/2.0/",
+  "specFormat": "CycloneDX",
+  "specVersion": "2.0",
+  "serialNumber": "urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-03-31T12:00:00Z",
+    "component": {
+      "bom-ref": "arduino-uno-r3",
+      "type": "device",
+      "name": "Arduino Uno R3",
+      "version": "Rev3",
+      "description": "Open source microcontroller board based on the ATmega328P with 14 digital I/O pins, 6 analog inputs, a 16 MHz ceramic resonator, USB connection, power jack, ICSP header, and reset button.",
+      "uniqueIdentifier": {
+        "algorithm": "SHA-256",
+        "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "classification": {
+        "category": "microcontroller-development-board"
+      },
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.arduino.cc/hardware/uno-rev3/"
+        },
+        {
+          "type": "license",
+          "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+        },
+        {
+          "type": "website",
+          "url": "https://store-usa.arduino.cc/products/arduino-uno-rev3"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/arduino/ArduinoCore-avr"
+        }
+      ],
+      "certifications": [
+        {
+          "authority": "FCC",
+          "country": "US",
+          "id": "2AAYY-MEGA2560R3",
+          "url": "https://fccid.io/2AAYY-MEGA2560R3"
+        },
+        {
+          "authority": "CE",
+          "country": "EU"
+        },
+        {
+          "authority": "RCM",
+          "country": "AU"
+        },
+        {
+          "authority": "UKCA",
+          "country": "GB"
+        }
+      ],
+      "physicalProperties": {
+        "dimensions": {
+          "length": {
+            "value": 68.6,
+            "unit": "mm"
+          },
+          "width": {
+            "value": 53.4,
+            "unit": "mm"
+          }
+        },
+        "weight": {
+          "value": 25,
+          "unit": "g"
+        }
+      },
+      "parties": [
+        {
+          "bom-ref": "entity-arduino-srl",
+          "roles": [
+            "manufacturer"
+          ],
+          "priority": 1,
+          "name": "Arduino S.r.l.",
+          "address": {
+            "streetAddress": "Via Andrea Appiani 25",
+            "city": "Monza",
+            "region": "MB",
+            "postalCode": "20900",
+            "country": "IT",
+            "isoCode": "IT-MB",
+            "coords": {
+              "latitude": 45.5845,
+              "longitude": 9.2744
+            }
+          },
+          "url": "https://www.arduino.cc",
+          "contact": [
+            {
+              "name": "Arduino Support",
+              "email": "support@arduino.cc"
+            }
+          ]
+        },
+        {
+          "bom-ref": "entity-arduino-cm",
+          "roles": [
+            "manufacturer"
+          ],
+          "priority": 2,
+          "name": "Smart Projects S.r.l.",
+          "address": {
+            "streetAddress": "Via Salvemini 9",
+            "city": "Scarmagno",
+            "region": "TO",
+            "postalCode": "10010",
+            "country": "IT",
+            "isoCode": "IT-TO",
+            "coords": {
+              "latitude": 45.389,
+              "longitude": 7.8382
+            }
+          }
+        },
+        {
+          "bom-ref": "entity-arduino-supplier",
+          "roles": [
+            "supplier"
+          ],
+          "name": "Arduino S.r.l.",
+          "address": {
+            "country": "IT",
+            "isoCode": "IT-MB",
+            "coords": {
+              "latitude": 45.5845,
+              "longitude": 9.2744
+            }
+          }
+        }
+      ],
+      "identifiers": [
+        {
+          "bom-ref": "identity-1",
+          "party": "entity-arduino-srl",
+          "identities": [
+            {
+              "scheme": "mpn",
+              "value": "A000066"
+            },
+            {
+              "scheme": "mpn",
+              "value": "B000066"
+            }
+          ]
+        }
+      ]
+    },
+    "manufacturer": {
+      "locations": [
+        {
+          "name": "Primary Assembly Facility",
+          "priority": 1,
+          "address": {
+            "city": "Scarmagno",
+            "region": "TO",
+            "country": "IT",
+            "isoCode": "IT-TO",
+            "coords": {
+              "latitude": 45.389,
+              "longitude": 7.8382
+            }
+          }
+        },
+        {
+          "name": "Alternate Assembly Facility",
+          "priority": 2,
+          "address": {
+            "city": "Shenzhen",
+            "region": "GD",
+            "country": "CN",
+            "isoCode": "CN-GD",
+            "coords": {
+              "latitude": 22.5431,
+              "longitude": 114.0579
+            }
+          }
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "u5-atmega328p",
+      "type": "device",
+      "name": "ATmega328P",
+      "version": "Rev. E",
+      "description": "8-bit AVR microcontroller with 32KB flash, 2KB SRAM, 1KB EEPROM in 28-pin DIP package",
+      "aliases": [
+        "ATmega328P-PU",
+        "ATMEGA328P"
+      ],
+      "quantity": 1,
+      "classification": {
+        "category": "semiconductor",
+        "subcategory": "microcontroller",
+        "codes": [
+          {
+            "standard": "NAICS",
+            "value": "334413",
+            "description": "Semiconductor and Related Device Manufacturing"
+          },
+          {
+            "standard": "JEDEC",
+            "value": "MS-011",
+            "description": "28-lead PDIP package outline"
+          },
+          {
+            "standard": "HS",
+            "value": "8542.31",
+            "description": "Electronic integrated circuits: Processors and controllers",
+            "url": "https://www.trade.gov/harmonized-system-hs-codes"
+          }
+        ]
+      },
+      "uniqueIdentifier": {
+        "algorithm": "SHA-256",
+        "value": "abc123def456..."
+      },
+      "boardLocation": "U5",
+      "deviceType": "DIP",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://www.atmel.com/images/Atmel-8271-8-bit-AVR-Microcontroller-ATmega48A-48PA-88A-88PA-168A-168PA-328-328P_datasheet_Complete.pdf"
+        }
+      ],
+      "leadTime": {
+        "value": 16,
+        "unit": "weeks",
+        "range": {
+          "min": 12,
+          "max": 24
+        }
+      },
+      "evidence": {
+        "labels": [
+          {
+            "description": "Top marking on IC package",
+            "text": "ATMEGA328P\nPU\n1925\nARMEL"
+          }
+        ],
+        "boardLocation": {
+          "designator": "U5",
+          "layer": "top",
+          "subsystem": "328P_Sub"
+        }
+      },
+      "components": [
+        {
+          "bom-ref": "u5-firmware",
+          "type": "firmware",
+          "name": "Arduino Uno Bootloader",
+          "version": "optiboot_atmega328.hex",
+          "description": "Optiboot bootloader pre-flashed on ATmega328P, occupies 0.5KB of 32KB flash"
+        }
+      ],
+      "parties": [
+        {
+          "bom-ref": "entity-microchip",
+          "roles": [
+            "manufacturer"
+          ],
+          "name": "Microchip Technology (formerly Atmel)",
+          "address": {
+            "city": "Chandler",
+            "region": "AZ",
+            "country": "US",
+            "isoCode": "US-AZ",
+            "coords": {
+              "latitude": 33.2533,
+              "longitude": -111.8018
+            }
+          }
+        }
+      ],
+      "identifiers": [
+        {
+          "party": "entity-microchip",
+          "identities": [
+            {
+              "scheme": "mpn",
+              "value": "ATMEGA328P-PU"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bom-ref": "u4-atmega16u2",
+      "type": "device",
+      "name": "ATmega16U2",
+      "version": "Rev. C",
+      "description": "8-bit AVR microcontroller with USB, 16KB flash, used as USB to serial converter",
+      "aliases": [
+        "ATMEGA16U2-MU"
+      ],
+      "quantity": 1,
+      "classification": {
+        "category": "semiconductor",
+        "subcategory": "microcontroller",
+        "codes": [
+          {
+            "standard": "NAICS",
+            "value": "334413",
+            "description": "Semiconductor and Related Device Manufacturing"
+          }
+        ]
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "ATMEGA16U2-MU"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "bom-ref": "entity-microchip-2",
+          "role": "manufacturer",
+          "name": "Microchip Technology (formerly Atmel)",
+          "address": {
+            "country": "US",
+            "isoCode": "US-AZ"
+          }
+        },
+        {
+          "bom-ref": "entity-asm-pacific",
+          "role": "assembler",
+          "name": "ASE Group",
+          "address": {
+            "city": "Kaohsiung",
+            "country": "TW",
+            "isoCode": "TW-KHH",
+            "coords": {
+              "latitude": 22.6273,
+              "longitude": 120.3014
+            }
+          }
+        },
+        {
+          "bom-ref": "entity-asm-test",
+          "role": "qualityControl",
+          "name": "ASE Group Test Facility",
+          "address": {
+            "city": "Kaohsiung",
+            "country": "TW",
+            "isoCode": "TW-KHH",
+            "coords": {
+              "latitude": 22.6273,
+              "longitude": 120.3014
+            }
+          }
+        }
+      ],
+      "deviceType": "QFN",
+      "boardLocation": "U4",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://www.atmel.com/Images/doc7799.pdf"
+        }
+      ],
+      "leadTime": {
+        "value": 20,
+        "unit": "weeks",
+        "range": {
+          "min": 16,
+          "max": 30
+        }
+      },
+      "evidence": {
+        "labels": [
+          {
+            "description": "Package marking",
+            "text": "MEGA16U2\nMU\n2023"
+          }
+        ],
+        "boardLocation": {
+          "designator": "U4",
+          "layer": "top",
+          "subsystem": "16U2_Sub"
+        }
+      },
+      "components": [
+        {
+          "bom-ref": "u4-firmware",
+          "type": "firmware",
+          "name": "Arduino Uno USB Serial Firmware",
+          "version": "Arduino-usbserial-uno.hex"
+        }
+      ]
+    },
+    {
+      "bom-ref": "u3-ldo-3v3",
+      "type": "device",
+      "name": "LP2985-33DBVR",
+      "description": "3.3V fixed positive LDO regulator, 0.575V dropout, SOT-23-5 package",
+      "quantity": 1,
+      "classification": {
+        "category": "semiconductor",
+        "subcategory": "voltage-regulator"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "LP2985-33DBVR"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Texas Instruments",
+          "address": {
+            "city": "Dallas",
+            "region": "TX",
+            "country": "US",
+            "isoCode": "US-TX"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "U3",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://www.ti.com/lit/ds/symlink/lp2985-33.pdf"
+        }
+      ]
+    },
+    {
+      "bom-ref": "u2-comparator",
+      "type": "device",
+      "name": "LMV358IDGKR",
+      "description": "Dual op-amp, 7000uV offset max, 1MHz bandwidth, VSSOP-8 package",
+      "quantity": 1,
+      "classification": {
+        "category": "semiconductor",
+        "subcategory": "operational-amplifier"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "LMV358IDGKR"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Texas Instruments",
+          "address": {
+            "country": "US",
+            "isoCode": "US-TX"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "U2",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://www.ti.com/lit/ds/symlink/lmv358.pdf"
+        }
+      ]
+    },
+    {
+      "bom-ref": "j1-usb",
+      "type": "device",
+      "name": "USB Type-B Connector",
+      "description": "4-contact female right-angle USB Type-B connector, through-hole",
+      "quantity": 1,
+      "classification": {
+        "category": "connector",
+        "subcategory": "usb-connector"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "292304-1"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "TE Connectivity",
+          "address": {
+            "city": "Schaffhausen",
+            "country": "CH",
+            "isoCode": "CH-SH"
+          }
+        }
+      ],
+      "deviceType": "PTH",
+      "boardLocation": "J1",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://images.ihscontent.net/vipimages/VipMasterIC/IC/TYEL/TYELS17825/TYELS17825-1.pdf"
+        }
+      ]
+    },
+    {
+      "bom-ref": "con1-barrel-jack",
+      "type": "device",
+      "name": "DC Barrel Jack",
+      "description": "DC power connector, right angle, SMD",
+      "quantity": 1,
+      "classification": {
+        "category": "connector",
+        "subcategory": "power-connector"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "694106102"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Wurth Electronics",
+          "address": {
+            "country": "DE",
+            "isoCode": "DE-BW"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "CON1",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://katalog.we-online.de/em/datasheet/6941xx106102.pdf"
+        }
+      ]
+    },
+    {
+      "bom-ref": "x1-crystal-16mhz",
+      "type": "device",
+      "name": "FOXSLF/160-20",
+      "description": "16MHz parallel fundamental crystal oscillator, 30PPM, 20pF load, through-hole",
+      "quantity": 1,
+      "classification": {
+        "category": "passive",
+        "subcategory": "crystal-oscillator"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "FOXSLF/160-20"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Fox Electronics",
+          "address": {
+            "country": "US",
+            "isoCode": "US-FL"
+          }
+        }
+      ],
+      "deviceType": "PTH",
+      "boardLocation": "X1",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://www.foxonline.com/pdfs/hc49slf.pdf"
+        }
+      ]
+    },
+    {
+      "bom-ref": "x2-resonator-16mhz",
+      "type": "device",
+      "name": "CSTCE16M0V53-R0",
+      "description": "16MHz ceramic resonator with built-in capacitors, SMD",
+      "quantity": 1,
+      "classification": {
+        "category": "passive",
+        "subcategory": "ceramic-resonator"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "CSTCE16M0V53-R0"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Murata Manufacturing",
+          "address": {
+            "city": "Nagaokakyo",
+            "country": "JP",
+            "isoCode": "JP-26"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "X2",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://www.murata.com/~/media/webrenewal/support/library/catalog/products/timingdevice/ceralock/p16e.ashx"
+        }
+      ]
+    },
+    {
+      "bom-ref": "caps-bypass-0805",
+      "type": "device",
+      "name": "C0805C104K1RACAUTO",
+      "description": "Ceramic multilayer capacitor, 100V, X7R, 0.1uF, 0805 package, RoHS compliant",
+      "quantity": 6,
+      "classification": {
+        "category": "passive",
+        "subcategory": "capacitor",
+        "codes": [
+          {
+            "standard": "HS",
+            "value": "8532.24",
+            "description": "Ceramic dielectric fixed capacitors, multilayer"
+          }
+        ]
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "C0805C104K1RACAUTO"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Kemet (Yageo)",
+          "address": {
+            "city": "Simpsonville",
+            "region": "SC",
+            "country": "US",
+            "isoCode": "US-SC"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "C3, C4, C9, C11, C14, C15",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://images.ihscontent.net/vipimages/VipMasterIC/IC/KEME/KEMES10043/KEMES10043-1.pdf"
+        }
+      ],
+      "leadTime": {
+        "value": 8,
+        "unit": "weeks",
+        "range": {
+          "min": 4,
+          "max": 12
+        }
+      }
+    },
+    {
+      "bom-ref": "caps-electrolytic-47uf",
+      "type": "device",
+      "name": "MAL215371479E3",
+      "description": "Aluminum electrolytic capacitor, 50V, 47uF, polarized, SMD 5.0x5.0x5.3mm",
+      "quantity": 2,
+      "classification": {
+        "category": "passive",
+        "subcategory": "capacitor"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "MAL215371479E3"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Vishay Intertechnology",
+          "address": {
+            "country": "US",
+            "isoCode": "US-PA"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "C1, C2",
+      "properties": [
+        {
+          "name": "cdx:device:function",
+          "value": "LDO input/output filtering"
+        }
+      ]
+    },
+    {
+      "bom-ref": "resistors-510r",
+      "type": "device",
+      "name": "RC0805FR-07510RL",
+      "description": "Resistor, metal glaze/thick film, 0.125W, 1%, 100ppm, 510 ohm, 0805",
+      "quantity": 4,
+      "classification": {
+        "category": "passive",
+        "subcategory": "resistor"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "RC0805FR-07510RL"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Yageo Corporation",
+          "address": {
+            "city": "Taipei",
+            "country": "TW",
+            "isoCode": "TW-TPE"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "R1, R4, R10, R11"
+    },
+    {
+      "bom-ref": "resistors-10k",
+      "type": "device",
+      "name": "CRCW080510K0JNEA",
+      "description": "Resistor, metal glaze/thick film, 0.125W, 5%, 200ppm, 10K ohm, 0805",
+      "quantity": 4,
+      "classification": {
+        "category": "passive",
+        "subcategory": "resistor"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "CRCW080510K0JNEA"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Vishay Intertechnology",
+          "address": {
+            "country": "US",
+            "isoCode": "US-PA"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "R2, R3, R7, R16"
+    },
+    {
+      "bom-ref": "resistors-1k",
+      "type": "device",
+      "name": "CRCW08051K00JNEA",
+      "description": "Resistor, metal glaze/thick film, 0.125W, 5%, 200ppm, 1K ohm, 0805",
+      "quantity": 3,
+      "classification": {
+        "category": "passive",
+        "subcategory": "resistor"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "CRCW08051K00JNEA"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Vishay Intertechnology",
+          "address": {
+            "country": "US",
+            "isoCode": "US-PA"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "R12, R14, R15"
+    },
+    {
+      "bom-ref": "resistors-22r",
+      "type": "device",
+      "name": "RC0805JR-0722RL",
+      "description": "Resistor, 22 ohm, 5%, 1/8W, 0805. USB termination resistor, must match 5% tolerance.",
+      "quantity": 2,
+      "classification": {
+        "category": "passive",
+        "subcategory": "resistor"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "RC0805JR-0722RL"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Yageo Corporation",
+          "address": {
+            "country": "TW",
+            "isoCode": "TW-TPE"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "R5, R6"
+    },
+    {
+      "bom-ref": "leds-green",
+      "type": "device",
+      "name": "LG R971-KN-1",
+      "description": "Green LED, CHIPLED 570nm, 0805 package",
+      "quantity": 4,
+      "classification": {
+        "category": "optoelectronic",
+        "subcategory": "led"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "LG R971-KN-1"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "OSRAM Opto Semiconductors",
+          "address": {
+            "city": "Regensburg",
+            "country": "DE",
+            "isoCode": "DE-BY"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "D2, D3, D5, D6",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "http://www.osram-os.com/Graphics/XPic9/00078860_0.pdf"
+        }
+      ]
+    },
+    {
+      "bom-ref": "d1-protection-diode",
+      "type": "device",
+      "name": "MRA4007T3G",
+      "description": "1A, 1000V silicon signal diode for reverse voltage protection, SMA package",
+      "quantity": 1,
+      "classification": {
+        "category": "semiconductor",
+        "subcategory": "diode"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "MRA4007T3G"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "ON Semiconductor (onsemi)",
+          "address": {
+            "city": "Phoenix",
+            "region": "AZ",
+            "country": "US",
+            "isoCode": "US-AZ"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "D1"
+    },
+    {
+      "bom-ref": "diodes-signal",
+      "type": "device",
+      "name": "1N4148W-7-F",
+      "description": "General purpose diode, 100V, 300mA, SOD-123 package. ICSP reset voltage spike protection.",
+      "quantity": 2,
+      "classification": {
+        "category": "semiconductor",
+        "subcategory": "diode"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "1N4148W-7-F"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Diodes Incorporated",
+          "address": {
+            "city": "Plano",
+            "region": "TX",
+            "country": "US",
+            "isoCode": "US-TX"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "D4, D7"
+    },
+    {
+      "bom-ref": "q1-mosfet",
+      "type": "device",
+      "name": "FDN340P",
+      "description": "2000mA, 20V, P-channel MOSFET, SuperSOT-3 package. USBVCC power switching.",
+      "quantity": 1,
+      "classification": {
+        "category": "semiconductor",
+        "subcategory": "mosfet"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "FDN340P"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Fairchild Semiconductor (onsemi)",
+          "address": {
+            "country": "US",
+            "isoCode": "US-AZ"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "Q1",
+      "externalReferences": [
+        {
+          "type": "datasheet",
+          "url": "https://www.fairchildsemi.com/datasheets/FD/FDN340P.pdf"
+        }
+      ]
+    },
+    {
+      "bom-ref": "fb1-ferrite",
+      "type": "device",
+      "name": "BLM21PG221SN1D",
+      "description": "2A ferrite chip bead, 0805 package. USB power filtering.",
+      "quantity": 1,
+      "classification": {
+        "category": "passive",
+        "subcategory": "ferrite-bead"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "BLM21PG221SN1D"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Murata Manufacturing",
+          "address": {
+            "country": "JP",
+            "isoCode": "JP-26"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "FB1"
+    },
+    {
+      "bom-ref": "mf-ptc-fuse",
+      "type": "device",
+      "name": "MF-MSMF050-2",
+      "description": "500mA PTC resettable fuse on USBVCC",
+      "quantity": 1,
+      "classification": {
+        "category": "passive",
+        "subcategory": "fuse"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "MF-MSMF050-2"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Bourns Inc.",
+          "address": {
+            "city": "Riverside",
+            "region": "CA",
+            "country": "US",
+            "isoCode": "US-CA"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "MF-MSMF050-2"
+    },
+    {
+      "bom-ref": "varistors-esd",
+      "type": "device",
+      "name": "CG0603MLC-05E",
+      "description": "Voltage dependent resistor, 5V, 0603 package. USB ESD protection.",
+      "quantity": 2,
+      "classification": {
+        "category": "passive",
+        "subcategory": "varistor"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "CG0603MLC-05E"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Bourns Inc.",
+          "address": {
+            "country": "US",
+            "isoCode": "US-CA"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "VR1, VR2"
+    },
+    {
+      "bom-ref": "sw1-reset",
+      "type": "device",
+      "name": "EVQ-Q2U02W",
+      "description": "Tactile switch, SPST-NO, 0.02A 15V. Board reset pushbutton.",
+      "quantity": 1,
+      "classification": {
+        "category": "electromechanical",
+        "subcategory": "switch"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "EVQ-Q2U02W"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Panasonic",
+          "address": {
+            "city": "Osaka",
+            "country": "JP",
+            "isoCode": "JP-27"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "SW1"
+    },
+    {
+      "bom-ref": "headers-shield",
+      "type": "device",
+      "name": "Shield Header Set",
+      "description": "Female pin header connectors for Arduino shield compatibility: 2x 8-pos, 1x 6-pos, 1x 10-pos",
+      "quantity": 4,
+      "classification": {
+        "category": "connector",
+        "subcategory": "pin-header"
+      },
+      "identities": [
+        {
+          "role": "manufacturer",
+          "partNumber": [
+            "NPPC081KFXC-RC",
+            "NPPC061KFXC-RC",
+            "NPPC101KFXC-RC"
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "role": "manufacturer",
+          "name": "Sullins Connector Solutions",
+          "address": {
+            "country": "US",
+            "isoCode": "US-CA"
+          }
+        }
+      ],
+      "deviceType": "SMD",
+      "boardLocation": "P1, P2, P3, P4"
+    },
+    {
+      "bom-ref": "remaining-passives",
+      "type": "device",
+      "name": "Additional Passive Components",
+      "description": "Remaining passives: C5 (1uF Kemet), C6 (2.2uF TDK), C7/C8 (20pF Kemet), R8/R13 (0R Panasonic jumpers), R9/R17 (1M Vishay feedback resistors)",
+      "quantity": 8,
+      "components": [
+        {
+          "bom-ref": "c5-1uf",
+          "type": "device",
+          "name": "C0805C105K8RACAUTO",
+          "description": "1uF ceramic capacitor, 10V, X7R, 0805. 3V3 LDO input cap.",
+          "quantity": 1,
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "C0805C105K8RACAUTO"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Kemet (Yageo)"
+            }
+          ],
+          "boardLocation": "C5"
+        },
+        {
+          "bom-ref": "c6-2u2",
+          "type": "device",
+          "name": "C2012X7R1C225K125AB",
+          "description": "2.2uF ceramic capacitor, 16V, X7R, 0805. 3V3 LDO output cap. ESR must be 0.001 to 1 ohm.",
+          "quantity": 1,
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "C2012X7R1C225K125AB"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "TDK Corporation"
+            }
+          ],
+          "boardLocation": "C6"
+        },
+        {
+          "bom-ref": "c7c8-20pf",
+          "type": "device",
+          "name": "C0805C200G5GACTU",
+          "description": "20pF ceramic capacitor, 50V, 2%, NP0, 0805. ATMEGA16U2 crystal load caps. Must match tolerance.",
+          "quantity": 2,
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "C0805C200G5GACTU"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Kemet (Yageo)"
+            }
+          ],
+          "boardLocation": "C7, C8"
+        },
+        {
+          "bom-ref": "r8r13-0r",
+          "type": "device",
+          "name": "ERJ-6GEY0R00V",
+          "description": "0 ohm jumper resistor, 1/8W, 0805",
+          "quantity": 2,
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "ERJ-6GEY0R00V"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Panasonic"
+            }
+          ],
+          "boardLocation": "R8, R13"
+        },
+        {
+          "bom-ref": "r9r17-1m",
+          "type": "device",
+          "name": "CRCW08051M00FKEA",
+          "description": "1M ohm resistor, 1%, 1/8W, 0805. Crystal feedback resistors.",
+          "quantity": 2,
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "CRCW08051M00FKEA"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Vishay Intertechnology"
+            }
+          ],
+          "boardLocation": "R9, R17"
+        }
+      ]
+    },
+    {
+      "type": "component-choice",
+      "name": "5V LDO Regulator (Multi-Source)",
+      "operator": "XOR",
+      "components": [
+        {
+          "bom-ref": "u1-ldo-5v",
+          "type": "device",
+          "name": "LD1117S50TR",
+          "description": "5V fixed positive LDO regulator, 1.2V dropout, SOT-223 package",
+          "quantity": 1,
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "voltage-regulator",
+            "codes": [
+              {
+                "standard": "NAICS",
+                "value": "334413",
+                "description": "Semiconductor and Related Device Manufacturing"
+              }
+            ]
+          },
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "LD1117S50TR"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "STMicroelectronics",
+              "address": {
+                "city": "Geneva",
+                "country": "CH",
+                "isoCode": "CH-GE"
+              }
+            }
+          ],
+          "deviceType": "SMD",
+          "boardLocation": "U1",
+          "externalReferences": [
+            {
+              "type": "datasheet",
+              "url": "http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/CD00000544.pdf"
+            }
+          ],
+          "evidence": {
+            "boardLocation": {
+              "designator": "U1",
+              "layer": "top",
+              "subsystem": "Voltage_Reg"
+            }
+          }
+        },
+        {
+          "type": "device",
+          "bom-ref": "u1-ldo-5v-alt",
+          "name": "AMS1117-5.0",
+          "description": "5V fixed positive LDO regulator, 1.3V dropout, SOT-223 package \u2014 approved alternate for LD1117S50TR",
+          "quantity": 1,
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "voltage-regulator"
+          },
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "AMS1117-5.0"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Advanced Monolithic Systems",
+              "address": {
+                "country": "US",
+                "isoCode": "US-CA"
+              }
+            }
+          ],
+          "deviceType": "SMD",
+          "boardLocation": "U1"
+        }
+      ],
+      "bom-ref": "choice-u1-ldo-5v",
+      "boardLocation": "U1",
+      "quantity": 1,
+      "description": "Multi-sourced 5V LDO slot at U1 \u2014 exactly one of the approved alternates is populated per lot."
+    },
+    {
+      "type": "component-choice",
+      "name": "ICSP Header Pair",
+      "operator": "AND",
+      "components": [
+        {
+          "type": "device",
+          "bom-ref": "icsp1-header",
+          "name": "ICSP1 Header",
+          "description": "2x3 ICSP programming header (main MCU)",
+          "quantity": 1,
+          "classification": {
+            "category": "connector",
+            "subcategory": "pin-header"
+          },
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "M20-9980346"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Harwin",
+              "address": {
+                "country": "GB",
+                "isoCode": "GB-CAM"
+              }
+            }
+          ],
+          "deviceType": "PTH",
+          "boardLocation": "ICSP1"
+        },
+        {
+          "type": "device",
+          "bom-ref": "icsp2-header",
+          "name": "ICSP2 Header",
+          "description": "2x3 ICSP programming header (USB bridge MCU)",
+          "quantity": 1,
+          "classification": {
+            "category": "connector",
+            "subcategory": "pin-header"
+          },
+          "identities": [
+            {
+              "role": "manufacturer",
+              "partNumber": [
+                "M20-9980346"
+              ]
+            }
+          ],
+          "entities": [
+            {
+              "role": "manufacturer",
+              "name": "Harwin",
+              "address": {
+                "country": "GB",
+                "isoCode": "GB-CAM"
+              }
+            }
+          ],
+          "deviceType": "PTH",
+          "boardLocation": "ICSP2"
+        }
+      ],
+      "bom-ref": "choice-icsp-headers",
+      "boardLocation": "ICSP1, ICSP2",
+      "quantity": 2,
+      "description": "ICSP header pair \u2014 both populated on every build."
+    },
+    {
+      "type": "component-choice",
+      "name": "Debug/JP2 Header",
+      "operator": "OPTIONAL",
+      "components": [
+        {
+          "type": "device",
+          "bom-ref": "jp2-debug-header",
+          "name": "JP2 Debug Header",
+          "description": "2x2 debug/JP2 header \u2014 populated on debug builds only",
+          "quantity": 1,
+          "classification": {
+            "category": "connector",
+            "subcategory": "pin-header"
+          },
+          "deviceType": "PTH",
+          "boardLocation": "JP2"
+        }
+      ],
+      "bom-ref": "choice-jp2-debug",
+      "boardLocation": "JP2",
+      "quantity": 1,
+      "description": "Optional debug header \u2014 populated only for debug lots."
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "arduino-uno-r3",
+      "dependsOn": [
+        "u5-atmega328p",
+        "u4-atmega16u2",
+        "choice-u1-ldo-5v",
+        "u3-ldo-3v3",
+        "u2-comparator",
+        "j1-usb",
+        "con1-barrel-jack",
+        "x1-crystal-16mhz",
+        "x2-resonator-16mhz",
+        "caps-bypass-0805",
+        "caps-electrolytic-47uf",
+        "resistors-510r",
+        "resistors-10k",
+        "resistors-1k",
+        "resistors-22r",
+        "leds-green",
+        "d1-protection-diode",
+        "diodes-signal",
+        "q1-mosfet",
+        "fb1-ferrite",
+        "mf-ptc-fuse",
+        "varistors-esd",
+        "sw1-reset",
+        "headers-shield",
+        "choice-icsp-headers",
+        "remaining-passives",
+        "choice-jp2-debug"
+      ]
+    },
+    {
+      "ref": "u5-atmega328p",
+      "dependsOn": [
+        "u5-firmware"
+      ]
+    },
+    {
+      "ref": "u4-atmega16u2",
+      "dependsOn": [
+        "u4-firmware"
+      ]
+    }
+  ]
+}
