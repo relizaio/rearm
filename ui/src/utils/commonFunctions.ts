@@ -26,6 +26,7 @@ function translateFunctionName(fn: string): string {
         case 'DEVOPS_WRITE': return 'DevOps Write'
         case 'VERSION_FEATURESET': return 'Version Feature Set'
         case 'AGENT': return 'AI Agent'
+        case 'DISTRIBUTION': return 'Distribution'
         default: return fn
     }
 }
