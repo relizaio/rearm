@@ -228,31 +228,6 @@ class VariableQueries {
 	// values that Postgres can't cast, and one such row threw for the whole query,
 	// stalling the scheduler. Stripping the suffix keeps those legacy rows castable
 	// so they get picked up and rewritten with a clean Instant string (self-heal).
-	protected static final String LIST_INITIAL_ARTIFACT_UUIDS_PENDING_DEPENDENCY_TRACK = """
-			select uuid from rearm.artifacts a where a.metrics->>'lastScanned' is null
-			and a.metrics->>'uploadToken' is not null
-			and (a.metrics->>'dtrackFetchSkipUntil' is null
-				or split_part(a.metrics->>'dtrackFetchSkipUntil', '[', 1)::timestamptz < now())
-			order by a.record_data->>'createdDate' asc
-			limit :limit
-		""";
-	
-	protected static final String LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION = """
-			select * from rearm.artifacts a 
-			where a.record_data->>'org' = :orgUuidAsString
-			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
-			and a.record_data->>'type' = 'BOM'
-			and a.record_data->'internalBom'->>'id' is not null
-			and (a.metrics->>'dependencyTrackProject' is null 
-				or a.metrics->>'dependencyTrackProject' = '')
-			and (a.metrics->>'dtrackProjectDeleted' is null
-				or a.metrics->>'dtrackProjectDeleted' = 'false')
-			and (a.metrics->>'dtrackSubmissionFailed' is null
-				or a.metrics->>'dtrackSubmissionFailed' = 'false')
-			order by a.record_data->>'createdDate' desc
-			limit 20
-		""";
-
 	// DTrack dedup ordering: when multiple artifacts share a stored
 	// digest, prefer one that already has a dependencyTrackProject
 	// (so dedup picks the existing target instead of a sibling that's
@@ -265,125 +240,15 @@ class VariableQueries {
 	+ "                  and a.metrics->>'dependencyTrackProject' <> '' then 0 else 1 end) asc,"
 	+ "          a.record_data->>'createdDate' asc";
 	
-	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECTS = """
-			select * from rearm.artifacts a where a.metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
-		""";
-
-	// UUID-only sibling of FIND_ARTIFACTS_BY_DTRACK_PROJECTS. Used by
-	// callers (syncUnsyncedDependencyTrackData, findReleaseDatasByDtrackProjects)
-	// that only need the artifact identities — loading the full Artifact
-	// entity row fired Hibernate's snapshot deep-copy on the metrics JSONB
-	// column for every result, which contributed to the same heap-pressure
-	// pattern PR #92 / #94 closed elsewhere.
+	// UUID-only finder. Used by callers (findReleaseDatasByDtrackProjects) that
+	// only need the artifact identities — loading the full Artifact entity row
+	// fired Hibernate's snapshot deep-copy on the metrics JSONB column for every
+	// result, which contributed to the same heap-pressure pattern PR #92 / #94
+	// closed elsewhere.
 	protected static final String FIND_ARTIFACT_UUIDS_BY_DTRACK_PROJECTS = """
 			select a.uuid from rearm.artifacts a where a.metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
 		""";
 
-	// Stamps {"dtrackProjectDeleted": true} on the metrics JSONB of every
-	// artifact whose dependencyTrackProject matches one of the given ids
-	// for the given org. Used by IntegrationService.markArtifactsWithDeletedProjects
-	// in the daily DT-cleanup cron — pure SQL UPDATE so we don't load
-	// (or snapshot, or re-serialize) the artifact rows, which was a
-	// significant heap-pressure source. The org filter ensures cross-org
-	// project-id collisions (theoretical) can't bleed across tenants.
-	protected static final String MARK_ARTIFACTS_DTRACK_PROJECT_DELETED = """
-			update rearm.artifacts
-			set metrics = jsonb_set(metrics, '{dtrackProjectDeleted}', 'true'::jsonb)
-			where record_data->>'org' = :orgUuidAsString
-			  and metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
-		""";
-	
-	protected static final String LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG = """
-			select distinct a.metrics->>'dependencyTrackProject' as dtrack_project
-			from rearm.artifacts a 
-			where a.record_data->>'org' = :orgUuidAsString
-			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
-			and a.record_data->>'type' = 'BOM'
-			and a.record_data->'internalBom'->>'id' is not null
-			and a.metrics->>'dependencyTrackProject' is not null
-			and a.metrics->>'dependencyTrackProject' != ''
-			and (a.metrics->>'dtrackProjectDeleted' is null 
-				or a.metrics->>'dtrackProjectDeleted' = 'false')
-		""";
-	
-	protected static final String LIST_DISTINCT_DELETED_DTRACK_PROJECTS_BY_ORG = """
-			select distinct a.metrics->>'dependencyTrackProject' as dtrack_project
-			from rearm.artifacts a 
-			where a.record_data->>'org' = :orgUuidAsString
-			and a.metrics->>'dependencyTrackProject' is not null
-			and a.metrics->>'dependencyTrackProject' != ''
-			and a.metrics->>'dtrackProjectDeleted' = 'true'
-		""";
-	
-	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG = """
-			select * from rearm.artifacts a 
-			where a.record_data->>'org' = :orgUuidAsString
-			and a.metrics->>'dependencyTrackProject' = :dtrackProject
-			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
-			and a.record_data->>'type' = 'BOM'
-			and a.record_data->'internalBom'->>'id' is not null
-			order by a.metrics->>'uploadDate' desc nulls last
-		""";
-	
-	protected static final String LIST_ACTIVE_RELEASE_ARTIFACT_UUIDS = """
-			SELECT DISTINCT jsonb_array_elements_text(r.record_data->'artifacts') as artifact_uuid
-			FROM rearm.releases r
-			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE r.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'status' != 'ARCHIVED'
-			AND r.record_data->'artifacts' IS NOT NULL
-		""";
-
-	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_SOURCE_CODE_ENTRY = """
-			SELECT DISTINCT (art_elem->>'artifactUuid') AS artifact_uuid
-			FROM rearm.branches b
-			JOIN rearm.releases r ON r.record_data->>'branch' = b.uuid::text
-			JOIN rearm.source_code_entries sce ON sce.uuid::text = r.record_data->>'sourceCodeEntry'
-			CROSS JOIN LATERAL jsonb_array_elements(
-				CASE WHEN jsonb_typeof(sce.record_data->'artifacts') = 'array'
-					THEN sce.record_data->'artifacts' ELSE '[]'::jsonb END
-			) AS art_elem
-			WHERE b.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'status' != 'ARCHIVED'
-			AND r.record_data->>'sourceCodeEntry' IS NOT NULL
-		""";
-
-	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_COMMITS = """
-			SELECT DISTINCT (art_elem->>'artifactUuid') AS artifact_uuid
-			FROM rearm.branches b
-			JOIN rearm.releases r ON r.record_data->>'branch' = b.uuid::text
-			CROSS JOIN LATERAL jsonb_array_elements_text(
-				CASE WHEN jsonb_typeof(r.record_data->'commits') = 'array'
-					THEN r.record_data->'commits' ELSE '[]'::jsonb END
-			) AS commit_uuid
-			JOIN rearm.source_code_entries sce ON sce.uuid::text = commit_uuid
-			CROSS JOIN LATERAL jsonb_array_elements(
-				CASE WHEN jsonb_typeof(sce.record_data->'artifacts') = 'array'
-					THEN sce.record_data->'artifacts' ELSE '[]'::jsonb END
-			) AS art_elem
-			WHERE b.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'status' != 'ARCHIVED'
-		""";
-
-	protected static final String LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS = """
-			SELECT DISTINCT art AS artifact_uuid
-			FROM rearm.branches b
-			JOIN rearm.releases r ON r.record_data->>'branch' = b.uuid::text
-			JOIN rearm.variants v ON v.record_data->>'release' = r.uuid::text
-			CROSS JOIN LATERAL jsonb_array_elements_text(
-				CASE WHEN jsonb_typeof(v.record_data->'outboundDeliverables') = 'array'
-					THEN v.record_data->'outboundDeliverables' ELSE '[]'::jsonb END
-			) AS od
-			JOIN rearm.deliverables d ON d.uuid::text = od
-			CROSS JOIN LATERAL jsonb_array_elements_text(
-				CASE WHEN jsonb_typeof(d.record_data->'artifacts') = 'array'
-					THEN d.record_data->'artifacts' ELSE '[]'::jsonb END
-			) AS art
-			WHERE b.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'status' != 'ARCHIVED'
-		""";
-	
 	// UUID-only — caller (VulnAnalysisUpdateService) feeds the UUID
 	// straight to computeArtifactMetrics(uuid). Avoids materializing
 	// full Artifact rows (and their JSONB-snapshot deep copies) in the

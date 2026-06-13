@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.sql.DataSource;
@@ -31,10 +32,8 @@ public class SchedulingService {
      * Each task picks the {@value} oldest unprocessed rows; the next tick grabs the
      * next batch. ORDER BY clauses on each underlying query guarantee forward progress.
      *
-     * <p>Two tasks intentionally use different limits because they were already tuned:
-     * {@code submitPendingArtifactsToDependencyTrack} caps at 20 per-org in SQL, and
-     * {@code processPendingReconciles(50)} processes 50 sbom-component reconciles per
-     * tick — both kept as-is.
+     * <p>{@code processPendingReconciles(50)} intentionally uses a higher limit (50)
+     * because each row is a cheap dedupe and the operation is non-IO-bound.
      */
     private static final int SCHEDULER_TICK_BATCH_LIMIT = 20;
 
@@ -70,10 +69,20 @@ public class SchedulingService {
     @Autowired
     AgentSessionService agentSessionService;
 
+    @Autowired
+    SyntheticSbomService syntheticSbomService;
 
+
+    // Gates the every-3h legacy per-artifact DTrack project phase-out
+    // (deletes phased-out legacy projects on DTrack).
     @Value("${relizaprops.enableDtrackCleanupScheduler}")
     private boolean enableDtrackCleanupScheduler;
-    
+
+    // Number of legacy per-artifact DTrack projects phased out per tick. Kept low so
+    // the migration doesn't flood DTrack's deletion queue; the every-3h cadence still
+    // drains a meaningful volume over time.
+    private static final int LEGACY_PHASEOUT_BATCH = 50;
+
     private Boolean getLock (AdvisoryLockKey alk) {
         try {
             Connection conn = dataSource.getConnection();
@@ -147,22 +156,36 @@ public class SchedulingService {
 					// full minute, and the SBOM reconcile queue could back up
 					// indefinitely behind an unrelated upstream fault.
 
-					// submitPendingArtifactsToDependencyTrack caps per-org at 20 inside SQL
-					// (LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION) — already batch-bounded.
+					// Synthetic Dependency-Track is the only submission path. FRONT step: pull
+					// BEAR-enriched licenses into sbom_components (stamps enriched_at) so the submit
+					// gate can ship enriched components. No-op for non-BEAR orgs. Runs before submit
+					// so newly-enriched components are eligible this same tick. The legacy per-artifact
+					// submission is retired; its existing DTrack projects drain via
+					// scheduleLegacyDtrackProjectPhaseOut.
 					try {
-						artifactService.submitPendingArtifactsToDependencyTrack();
+						for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
+							sbomComponentService.pullEnrichmentForOrg(orgUuid);
+						}
 					} catch (Exception e) {
-						log.error("submitPendingArtifactsToDependencyTrack failed", e);
+						log.error("synthetic enrichment pull failed", e);
 					}
 
+					// Submit changed buckets (idempotent via content-hash), poll submitted
+					// buckets, fan findings out.
+					// TODO: at scale, gate submitOrg behind a per-org dirty marker to avoid the
+					// every-tick matchable scan; fine for now.
 					try {
-						artifactService.initialProcessArtifactsOnDependencyTrack(SCHEDULER_TICK_BATCH_LIMIT);
+						for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
+							syntheticSbomService.submitOrg(orgUuid);
+							syntheticSbomService.ingestOrgBuckets(orgUuid);
+							syntheticSbomService.fanOutOrg(orgUuid);
+						}
 					} catch (Exception e) {
-						log.error("initialProcessArtifactsOnDependencyTrack failed", e);
+						log.error("synthetic DTrack submit/ingest/fan-out failed", e);
 					}
 
-					try {
-						releaseService.computeMetricsForAllUnprocessedReleases(SCHEDULER_TICK_BATCH_LIMIT);
+						try {
+							releaseService.computeMetricsForAllUnprocessedReleases(SCHEDULER_TICK_BATCH_LIMIT);
 					} catch (Exception e) {
 						log.error("computeMetricsForAllUnprocessedReleases failed", e);
 					}
@@ -202,87 +225,71 @@ public class SchedulingService {
 		}
     }
     
-    @Scheduled(cron="0 50 21 * * *") // once daily at the end of day
-    public void syncDependencyTrackData () {
+    @Scheduled(cron="0 15 3 * * *") // once daily 3:15 AM — separated from other daily crons
+    public void scheduleSyntheticDtrackDailyResync() {
         try {
             Boolean lock = getLock(AdvisoryLockKey.SYNC_DEPENDENCY_TRACK_DATA);
-            log.debug("sync dependency track data lock acquired {}", lock);
-			if (lock) {
-				try {
-					// Get all organizations and sync dependency track data for each
-					var allOrgs = organizationService.listAllOrganizationData();
-					log.debug("Starting dependency track sync for {} organizations", allOrgs.size());
-					
-					int totalProcessed = 0;
-					for (var org : allOrgs) {
-						try {
-							int processed = artifactService.syncUnsyncedDependencyTrackData(org.getUuid());
-							totalProcessed += processed;
-							log.debug("Processed {} artifacts for org {}", processed, org.getUuid());
-						} catch (Exception e) {
-							log.error("Error syncing dependency track data for org {}: {}", org.getUuid(), e.getMessage(), e);
-						}
-					}
-					
-					log.info("Completed dependency track sync for all organizations. Total artifacts processed: {}", totalProcessed);
-				} catch (Exception e) {
-					log.error("Exception in syncing dependency track data", e);
-				} finally {
-					releaseLock(AdvisoryLockKey.SYNC_DEPENDENCY_TRACK_DATA);
-				}
-			}
-		} catch (Exception e) {
-			log.error("Sync dependency track data run failed with an error", e);
-		}
-    }
-    
-    @Scheduled(cron="0 0 3 * * *") // once daily 3:00 AM
-    public void scheduleDependencyTrackProjectCleanup() {
-        if (!enableDtrackCleanupScheduler) {
-            log.debug("DTrack project cleanup scheduler is disabled");
-            return;
-        }
-        
-        log.info("Initiating DTrack project cleanup scheduler");
-        try {
-            Boolean lock = getLock(AdvisoryLockKey.CLEANUP_DEPENDENCY_TRACK_PROJECTS);
-            log.debug("DTrack project cleanup lock acquired {}", lock);
-            
+            log.debug("synthetic DTrack daily resync lock acquired {}", lock);
             if (lock) {
                 try {
-                    log.info("Starting scheduled DTrack project cleanup");
-                    
-                    var allOrgs = organizationService.listAllOrganizationData();
-                    
-                    int totalDeleted = 0;
-                    int totalFailed = 0;
-                    
-                    for (var org : allOrgs) {
+                    // Re-pull findings for DTrack projects re-analysed since the last
+                    // successful resync (catches newly-published advisories on stable
+                    // component sets). Snapshot the cutoff before the run; advance it after.
+                    java.time.ZonedDateTime since = systemInfoService.getLastDtrackSync();
+                    if (since == null) since = java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC);
+                    java.time.ZonedDateTime runStart = java.time.ZonedDateTime.now();
+                    for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
                         try {
-                            var result = integrationService.cleanupArchivedDtrackProjects(org.getUuid());
-                            
-                            totalDeleted += result.projectsDeleted();
-                            totalFailed += result.projectsFailed();
-                            
-                            log.info("Cleaned up {} DTrack projects for org {}", 
-                                result.projectsDeleted(), org.getUuid());
-                            
+                            syntheticSbomService.resyncOrg(orgUuid, since);
                         } catch (Exception e) {
-                            log.error("Error cleaning up DTrack projects for org " + org.getUuid(), e);
+                            log.error("Synthetic DTrack resync failed for org {}", orgUuid, e);
                         }
                     }
-                    
-                    log.info("Completed DTrack project cleanup: deleted={}, failed={}", 
-                        totalDeleted, totalFailed);
-                    
+                    systemInfoService.setLastDtrackSync(runStart);
                 } catch (Exception e) {
-                    log.error("Exception in DTrack project cleanup", e);
+                    log.error("Exception in synthetic DTrack daily resync", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.SYNC_DEPENDENCY_TRACK_DATA);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Synthetic DTrack daily resync run failed with an error", e);
+        }
+    }
+
+    /**
+     * Gradual phase-out of the legacy per-artifact DTrack projects now that
+     * synthetic Dependency-Track is the only submission path. Each tick deletes up
+     * to {@value #LEGACY_PHASEOUT_BATCH} unique legacy projects on DTrack (globally,
+     * across orgs) and clears their references off the artifacts, so the old
+     * one-project-per-artifact sprawl drains without flooding DTrack's deletion
+     * queue. Runs every 3 hours under the cleanup advisory lock so no two replicas
+     * delete concurrently.
+     *
+     * <p>No coverage gate: synthetic submission/fan-out migrates artifacts to the
+     * bucket model far faster than this drains, so by the time a legacy project is
+     * removed its components are already covered by synthetic findings.
+     */
+    @Scheduled(cron="0 30 */3 * * *") // every 3 hours at HH:30
+    public void scheduleLegacyDtrackProjectPhaseOut() {
+        if (!enableDtrackCleanupScheduler) {
+            log.debug("Legacy DTrack project phase-out is disabled");
+            return;
+        }
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.CLEANUP_DEPENDENCY_TRACK_PROJECTS);
+            log.debug("legacy DTrack phase-out lock acquired {}", lock);
+            if (lock) {
+                try {
+                    integrationService.phaseOutLegacyDtrackProjects(LEGACY_PHASEOUT_BATCH);
+                } catch (Exception e) {
+                    log.error("Exception in legacy DTrack project phase-out", e);
                 } finally {
                     releaseLock(AdvisoryLockKey.CLEANUP_DEPENDENCY_TRACK_PROJECTS);
                 }
             }
         } catch (Exception e) {
-            log.error("DTrack project cleanup run failed with an error", e);
+            log.error("Legacy DTrack project phase-out run failed with an error", e);
         }
     }
 

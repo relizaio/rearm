@@ -6,6 +6,7 @@ package io.reliza.service;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,8 +14,10 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.TableName;
@@ -40,6 +43,17 @@ public class ModelOntologyService {
 
 	@Autowired
 	private AuditService auditService;
+
+	/**
+	 * Self-injection so {@link #findOrRegisterModel} can call the
+	 * REQUIRES_NEW {@link #registerModelIsolated} through Spring's proxy.
+	 * A direct {@code this.*} call bypasses AOP, so the insert would join
+	 * the caller's transaction — which is exactly the poisoned-transaction
+	 * trap this split avoids.
+	 */
+	@Autowired
+	@Lazy
+	private ModelOntologyService self;
 
 	private final ModelOntologyRepository repository;
 
@@ -69,6 +83,15 @@ public class ModelOntologyService {
 	 * first-init calls race; the loser catches the violation and
 	 * re-reads the winner. Subsequent calls do not mutate refinable
 	 * fields the user may have edited (publisher, description, etc.).
+	 *
+	 * <p>This runs as plain REQUIRED, so it joins any caller transaction
+	 * (e.g. session initialize). The actual INSERT is delegated to
+	 * {@link #registerModelIsolated} in its own REQUIRES_NEW transaction:
+	 * on a unique-constraint collision Postgres aborts the <em>inner</em>
+	 * transaction only, the caller's transaction stays clean, and the
+	 * recovery re-read below succeeds. Doing the insert inline would abort
+	 * the caller's transaction, leaving the re-read to fail with "current
+	 * transaction is aborted".
 	 */
 	@Transactional
 	public ModelOntologyData findOrRegisterModel(UUID orgUuid, String name, String version,
@@ -77,13 +100,46 @@ public class ModelOntologyService {
 		if (StringUtils.isBlank(name)) {
 			throw new RelizaException("ModelOntology requires a name on auto-registration");
 		}
-		String effectiveVersion = StringUtils.isNotBlank(version) ? version : ModelOntologyData.UNKNOWN_VERSION;
+		// Normalize the version at this single chokepoint. The V38 unique
+		// index keys on (org, lower(name), version) — name is already
+		// case-folded by the index and the lookup query, but version is
+		// verbatim in both, so "1m" vs "1M" minted duplicate rows. Trim +
+		// lowercase here so new rows collapse onto one key. Forward-only:
+		// it stops new dups but does not merge rows written before this.
+		String effectiveVersion = StringUtils.isNotBlank(version)
+				? version.trim().toLowerCase(Locale.ROOT)
+				: ModelOntologyData.UNKNOWN_VERSION;
 
 		Optional<ModelOntology> existing = repository.findByOrgNameVersion(
 				orgUuid.toString(), name, effectiveVersion);
 		if (existing.isPresent()) {
 			return ModelOntologyData.dataFromRecord(existing.get());
 		}
+		try {
+			return self.registerModelIsolated(orgUuid, name, effectiveVersion, publisher, wu);
+		} catch (DataIntegrityViolationException e) {
+			log.info("Concurrent ModelOntology auto-registration race for (org={}, name='{}', version='{}') — re-reading winner",
+					orgUuid, name, effectiveVersion);
+			return repository.findByOrgNameVersion(orgUuid.toString(), name, effectiveVersion)
+					.map(ModelOntologyData::dataFromRecord)
+					.orElseThrow(() -> new RelizaException(
+							"ModelOntology auto-registration race detected but no winning row found"));
+		}
+	}
+
+	/**
+	 * Insert a fresh ontology row in its <em>own</em> transaction.
+	 * REQUIRES_NEW so a unique-constraint collision on the V38 index rolls
+	 * back only this attempt — the caller's transaction is suspended and
+	 * untouched, letting {@link #findOrRegisterModel} recover via re-read.
+	 * Always invoked through {@code self} (the Spring proxy); a direct
+	 * {@code this.*} call would silently degrade to the caller's
+	 * transaction. {@code version} must already be normalized by the
+	 * caller — this method does not re-apply the single-chokepoint rule.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public ModelOntologyData registerModelIsolated(UUID orgUuid, String name, String effectiveVersion,
+			String publisher, WhoUpdated wu) throws RelizaException {
 		ModelOntologyData seed = new ModelOntologyData();
 		seed.setOrg(orgUuid);
 		seed.setName(name);
@@ -93,19 +149,10 @@ public class ModelOntologyService {
 
 		ModelOntology m = new ModelOntology();
 		Map<String, Object> recordData = Utils.dataToRecord(seed);
-		try {
-			ModelOntology saved = save(m, recordData, wu);
-			log.info("Auto-registered ModelOntology uuid={} name='{}' version='{}' org={}",
-					saved.getUuid(), name, effectiveVersion, orgUuid);
-			return ModelOntologyData.dataFromRecord(saved);
-		} catch (DataIntegrityViolationException e) {
-			log.info("Concurrent ModelOntology auto-registration race for (org={}, name='{}', version='{}') — re-reading winner",
-					orgUuid, name, effectiveVersion);
-			return repository.findByOrgNameVersion(orgUuid.toString(), name, effectiveVersion)
-					.map(ModelOntologyData::dataFromRecord)
-					.orElseThrow(() -> new RelizaException(
-							"ModelOntology auto-registration race detected but no winning row found"));
-		}
+		ModelOntology saved = save(m, recordData, wu);
+		log.info("Auto-registered ModelOntology uuid={} name='{}' version='{}' org={}",
+				saved.getUuid(), name, effectiveVersion, orgUuid);
+		return ModelOntologyData.dataFromRecord(saved);
 	}
 
 	/**

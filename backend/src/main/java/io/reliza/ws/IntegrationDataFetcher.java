@@ -40,6 +40,7 @@ import io.reliza.service.GetOrganizationService;
 import io.reliza.service.IntegrationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.RebomService;
+import io.reliza.service.SyntheticSbomService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -65,7 +66,10 @@ public class IntegrationDataFetcher {
 
 	@Autowired
 	private RebomService rebomService;
-	
+
+	@Autowired
+	private SyntheticSbomService syntheticSbomService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "configuredBaseIntegrations")
 	public Set<IntegrationType> getConfiguredBaseIntegrations (@InputArgument("org") UUID orgUuid) throws RelizaException {
@@ -119,21 +123,6 @@ public class IntegrationDataFetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "requestRefreshDependencyTrackMetrics")
-	public boolean requestRefreshDependencyTrackMetrics(
-			@InputArgument("artifact") UUID art) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		Optional<ArtifactData> oad = artifactService.getArtifactData(art);
-		
-		RelizaObject ro = oad.isPresent() ? oad.get() : null;
-		
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro.getOrg(), List.of(ro), CallType.ADMIN);
-		
-		return integrationService.requestMetricsRefreshOnDependencyTrack(oad.get());
-	}
-
-	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchDtrackComponentByPurlAndProjects")
 	public UUID searchDtrackComponentByPurlAndProjects(
 			@InputArgument("orgUuid") UUID orgUuid,
@@ -150,57 +139,6 @@ public class IntegrationDataFetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "refreshDtrackProjects")
-	public Boolean refreshDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		
-		// Verify user has admin access to the organization
-		var odRefresh = getOrganizationService.getOrganizationData(orgUuid);
-		RelizaObject roRefresh = odRefresh.isPresent() ? odRefresh.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roRefresh), CallType.ADMIN);
-		
-		log.info("User {} initiated DTrack project refresh for organization {}", oud.get().getUuid(), orgUuid);
-		
-		artifactService.refreshDtrackProjects(orgUuid);
-		return true;
-	}
-	
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "cleanupDtrackProjects")
-	public Boolean cleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		
-		// Verify user has admin access to the organization
-		var odCleanup = getOrganizationService.getOrganizationData(orgUuid);
-		RelizaObject roCleanup = odCleanup.isPresent() ? odCleanup.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roCleanup), CallType.ADMIN);
-		
-		log.info("User {} initiated DTrack project cleanup for organization {}", oud.get().getUuid(), orgUuid);
-		
-		integrationService.cleanupArchivedDtrackProjectsAsync(orgUuid);
-		return true;
-	}
-	
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "recleanupDtrackProjects")
-	public Boolean recleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		
-		// Verify user has admin access to the organization
-		var odRecleanup = getOrganizationService.getOrganizationData(orgUuid);
-		RelizaObject roRecleanup = odRecleanup.isPresent() ? odRecleanup.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roRecleanup), CallType.ADMIN);
-		
-		log.info("User {} initiated DTrack project recleanup for organization {}", oud.get().getUuid(), orgUuid);
-		
-		integrationService.recleanupDtrackProjectsAsync(orgUuid);
-		return true;
-	}
-	
-	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "syncDtrackProjects")
 	public Boolean syncDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
@@ -212,8 +150,10 @@ public class IntegrationDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSync), CallType.ADMIN);
 		
 		log.info("User {} initiated DTrack project sync for organization {}", oud.get().getUuid(), orgUuid);
-		
-		artifactService.syncUnsyncedDependencyTrackDataAsync(orgUuid);
+
+		// Synthetic Dependency-Track is the only path now: re-pull findings for the
+		// org's bucket projects that DTrack has re-analysed (full re-check) and fan out.
+		syntheticSbomService.resyncOrgManualAsync(orgUuid);
 		return true;
 	}
 	

@@ -322,7 +322,18 @@ public class SharedArtifactService {
 	protected Artifact updateArtifactDti(Artifact a, DependencyTrackIntegration dti, WhoUpdated wu) {
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
 		DependencyTrackIntegration existingDti = ad.getMetrics();
-		
+
+		// Idempotency: if the artifact is already scanned and the incoming findings
+		// match what's stored, skip the write entirely. The synthetic fan-out runs
+		// every minute over all covered artifacts; without this guard each tick
+		// re-saved every artifact's metrics (bumping lastScanned) and triggered a
+		// release metrics recompute — effectively rewriting everything every minute.
+		// Now we write only when findings actually change (or on first scan).
+		if (existingDti != null && existingDti.getFirstScanned() != null
+				&& findingsSignature(existingDti).equals(findingsSignature(dti))) {
+			return a;
+		}
+
 		if (existingDti != null) {
 			// Merge findings: keep only those in new dti, but preserve earlier attributedAt dates
 			existingDti.setAttributedAtFallback(a.getCreatedDate());
@@ -350,8 +361,33 @@ public class SharedArtifactService {
 		saveArtifactMetrics(a, existingDti);
 		return a;
 	}
-	
-	
+
+	/**
+	 * Stable identity signature of a DTI's findings — the set of vulnerability
+	 * (vulnId/severity/purl) and violation (purl/type) keys, order-independent and
+	 * excluding volatile fields (attributedAt, analysisDate). Two DTIs with the
+	 * same signature carry the same findings; used by {@link #updateArtifactDti}
+	 * to skip redundant rewrites. A new/removed CVE changes the signature, so real
+	 * changes (e.g. a newly-published advisory pulled in by the daily resync) still
+	 * propagate.
+	 */
+	static String findingsSignature(DependencyTrackIntegration dti) {
+		if (dti == null) return "";
+		java.util.TreeSet<String> vulns = new java.util.TreeSet<>();
+		if (dti.getVulnerabilityDetails() != null) {
+			for (var v : dti.getVulnerabilityDetails()) {
+				vulns.add(v.vulnId() + "\u0001" + v.severity() + "\u0001" + v.purl());
+			}
+		}
+		java.util.TreeSet<String> viols = new java.util.TreeSet<>();
+		if (dti.getViolationDetails() != null) {
+			for (var v : dti.getViolationDetails()) {
+				viols.add(v.purl() + "\u0001" + v.type());
+			}
+		}
+		return "v=" + vulns + ";p=" + viols;
+	}
+
 	@Transactional
 	protected void markArtifactDtrackFailed(UUID artifactUuid, String failureReason) {
 		Optional<Artifact> oa = getArtifact(artifactUuid);

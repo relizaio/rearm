@@ -807,6 +807,23 @@
                                 </div>
                             </template>
                         </div>
+                        <n-space v-if="isWritable && approvalEntries.length" style="margin-bottom: 10px;">
+                            <n-button @click="requestApprovals" :loading="requestApprovalsPending" :disabled="requestApprovalsPending" title="Notify everyone who can still approve this release">
+                                <template #icon>
+                                    <n-icon><Bell /></n-icon>
+                                </template>
+                                Request Approvals
+                            </n-button>
+                        </n-space>
+                        <div v-if="openApprovalRequests.length" style="margin-bottom: 10px;">
+                            <strong>Open Approval Requests:</strong>
+                            <ul style="margin: 5px 0;">
+                                <li v-for="req in openApprovalRequests" :key="req.uuid">
+                                    {{ new Date(req.requestedAt).toLocaleString('en-CA') }} — requested by {{ resolveUserById(req.requestedBy) }}
+                                    <template v-if="req.approvalEntries && req.approvalEntries.length"> — {{ req.approvalEntries.map(approvalEntryNameById).join(', ') }}</template>
+                                </li>
+                            </ul>
+                        </div>
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
                             <n-spin :show="approvalPending" small>
@@ -1238,10 +1255,10 @@ import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
+import { Bell, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
-import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
+import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
@@ -1253,6 +1270,7 @@ import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { getReleaseScanStatus, isDtrackConfiguredForOrg } from '@/utils/releaseScanStatus'
 import { processMetricsData } from '@/utils/metrics'
+import { annotateKnownExploited, fetchArtifactKevVulnIds, isProInstallation } from '@/utils/kevService'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { PackageURL } from 'packageurl-js'
 
@@ -1943,7 +1961,18 @@ async function fetchRelease () {
         }, [])
     }
 
+    // Reset before the conditional reload so prev/next navigation onto a
+    // release without an approval policy doesn't keep the old release's
+    // requests or matrix entries (a stale approvalEntries would keep the
+    // Request Approvals button visible and fire a doomed mutation).
+    // Bump the seq too: if the new release has no policy, no fresh
+    // loadApprovalRequests() supersedes an in-flight one, whose late
+    // response would otherwise repopulate the old release's requests.
+    approvalRequestsLoadSeq++
+    approvalRequestsList.value = []
+    approvalEntries.value = []
     if (updatedRelease.value.componentDetails.approvalPolicyDetails) {
+        loadApprovalRequests()
         givenApprovals.value = computeGivenApprovalsFromRelease()
         approvalEntries.value = updatedRelease.value.componentDetails.approvalPolicyDetails.approvalEntryDetails
         approvalEntries.value.forEach(ae => {
@@ -2385,6 +2414,67 @@ async function approve(approvals: ApprovalInput[]) {
     }).finally(() => {
         approvalPending.value = false
     })
+}
+
+const requestApprovalsPending: Ref<boolean> = ref(false)
+const approvalRequestsList: Ref<any[]> = ref([])
+
+const openApprovalRequests: ComputedRef<any[]> = computed((): any[] =>
+    approvalRequestsList.value.filter((r: any) => !r.resolvedAt))
+
+// Approval requests are a Pro-only schema surface (absent from the OSS
+// schema), so they ride a separate gated query instead of the shared
+// release fragments. Fire-and-forget from fetchRelease — the matrix
+// renders without it.
+let approvalRequestsLoadSeq = 0
+async function loadApprovalRequests () {
+    if (!myUser?.installationType || myUser.installationType === 'OSS') return
+    const seq = ++approvalRequestsLoadSeq
+    try {
+        const response = await graphqlClient.query({
+            query: graphqlQueries.ReleaseApprovalRequestsGql,
+            variables: { releaseID: releaseUuid.value, orgID: props.orgprop },
+            fetchPolicy: 'no-cache'
+        })
+        // Drop out-of-order responses (prev/next navigation mid-flight, or a
+        // post-mutation refresh overtaking the fetchRelease-triggered load).
+        if (seq !== approvalRequestsLoadSeq) return
+        approvalRequestsList.value = response.data?.release?.approvalRequests || []
+        // requestedBy renders through resolveUserById, which needs the org's
+        // users — normally only loaded on History-tab switch.
+        if (approvalRequestsList.value.length && !users.value.length) loadUsers()
+    } catch (e) {
+        console.warn('Failed to load approval requests for release', e)
+    }
+}
+
+function approvalEntryNameById (entryUuid: string): string {
+    const ae = approvalEntries.value?.find((e: any) => e.uuid === entryUuid)
+    return ae ? ae.approvalName : entryUuid
+}
+
+// Omitting approvalEntries asks the backend to target every entry that is
+// still actionable; it errors if nothing is pending, which we surface as is.
+async function requestApprovals () {
+    requestApprovalsPending.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: graphqlQueries.RequestReleaseApprovalsGqlMutate,
+            variables: {
+                release: updatedRelease.value.uuid
+            }
+        })
+        await loadApprovalRequests()
+        notify('success', 'Requested', 'Approval request sent to eligible approvers.')
+    } catch (error: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(error.message),
+            'error'
+        )
+    } finally {
+        requestApprovalsPending.value = false
+    }
 }
 
 const activeApprovalTypes: Ref<any> = ref({})
@@ -3283,9 +3373,10 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string, severi
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
             releaseUuid,
-            release.value.org
+            release.value.org,
+            myUser?.installationType
         )
-        
+
         // Update reactive values with the processed data (same as BranchView)
         currentReleaseArtifacts.value = releaseData.artifacts
         currentReleaseOrgUuid.value = releaseData.orgUuid
@@ -3308,8 +3399,11 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
     currentSeverityFilter.value = severityFilter
     currentTypeFilter.value = typeFilter
     loadingVulnerabilities.value = true
-    
+
     try {
+        const kevVulnIdsPromise = isProInstallation(myUser?.installationType)
+            ? fetchArtifactKevVulnIds(artifactUuid)
+            : Promise.resolve(new Set<string>())
         const response = await graphqlClient.query({
             query: gql`
                 query getArtifactDetails($artifactUuid: ID!) {
@@ -3403,7 +3497,9 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
         
         const artifact = response.data.artifact
         if (artifact && artifact.metrics) {
-            detailedVulnerabilitiesData.value = processMetricsData(artifact.metrics)
+            const processedMetrics = processMetricsData(artifact.metrics)
+            annotateKnownExploited(processedMetrics, await kevVulnIdsPromise)
+            detailedVulnerabilitiesData.value = processedMetrics
             currentArtifactDisplayId.value = artifact.displayIdentifier || ''
         }
     } catch (error) {
@@ -5204,13 +5300,6 @@ function renderArtifactDtrackActions (row: any, els: any[]) {
         els.push(h('a', {target: '_blank', href: dtrackLoginUrl}, dtrackElIcon))
     }
     if (row.type === 'BOM') {
-        els.push(h(NIcon,
-            {
-                title: 'Request Refresh of Dependency-Track Metrics',
-                class: 'icons clickable',
-                size: 25,
-                onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
-            }, () => h(SecurityScanOutlined)))
         if (userPermission.value === 'ADMIN') {
             els.push(h(NIcon,
                 {
@@ -5220,15 +5309,6 @@ function renderArtifactDtrackActions (row: any, els: any[]) {
                     onClick: () => triggerEnrichment(row.uuid)
                 }, () => h(UpCircleOutlined)))
         }
-    }
-    if (row.metrics && row.metrics.dependencyTrackFullUri) {
-        els.push(h(NIcon,
-            {
-                title: 'Refetch Dependency-Track Metrics',
-                class: 'icons clickable',
-                size: 25,
-                onClick: () => refetchDependencyTrackMetrics(row.uuid)
-            }, () => h(Refresh)))
     }
 }
 
@@ -6052,45 +6132,6 @@ const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
 
 function changelogRowKey(row: any) {
     return `${row.changeType}-${row.purl}`
-}
-
-async function refetchDependencyTrackMetrics (artifact: string) {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation refetchDependencyTrackMetrics($artifact: ID!) {
-                    refetchDependencyTrackMetrics(artifact: $artifact)
-                }
-                `,
-            variables: { artifact },
-            fetchPolicy: 'no-cache'
-        })
-        if (resp.data && resp.data.refetchDependencyTrackMetrics) {
-            notify('success', 'Metrics Refetched', 'Metrics refetched for the artifact from Dependency-Track.')
-            fetchRelease()
-        } else {
-            notify('error', 'Failed to Refetch Metrics', 'Could not refetch Dependency-Track metrics. Please try again later or contact support.')
-        }
-    } catch (e: any) {
-        notify('error', 'Failed to Refetch Metrics', e.message)
-    }
-}
-
-async function requestRefreshDependencyTrackMetrics (artifact: string) {
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-            mutation requestRefreshDependencyTrackMetrics($artifact: ID!) {
-                requestRefreshDependencyTrackMetrics(artifact: $artifact)
-            }
-            `,
-        variables: { artifact },
-        fetchPolicy: 'no-cache'
-    })
-    if (resp.data && resp.data.requestRefreshDependencyTrackMetrics) {
-        notify('success', 'Refresh Requested', 'Dependency-Track metrics refresh requested.')
-    } else {
-        notify('error', 'Failed to Request Refresh', 'Could not request refresh of Dependency-Track metrics. Please try again later or contact support.')
-    }
 }
 
 async function triggerEnrichment (artifact: string) {

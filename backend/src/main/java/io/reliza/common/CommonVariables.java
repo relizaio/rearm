@@ -47,10 +47,14 @@ public class CommonVariables {
 	// dtrackBufferSize cap in IntegrationService). See
 	// memory/dtrack-pagination-fix-stress.md for the full numbers.
 	public static final int DTRACK_DEFAULT_PAGE_SIZE = 2000;
-	// Violations are fetched with a smaller page than the default — the
-	// /api/v1/violation payload is heavier per record, so 50 keeps each
-	// page small while the per-page UUID extraction still avoids OOM.
-	public static final int DTRACK_VIOLATIONS_PAGE_SIZE = 50;
+	// Separate knob from the default so violations can be re-tuned
+	// independently. Was held at 50 while the /api/v1/violation rows still
+	// embedded the full BOM dependency graph per record
+	// (PolicyViolation.project.directDependencies), which made each row
+	// heavy. That redundancy is suppressed as of dtrack fork
+	// 4.14.2-reliza.3, so the per-violation row is back to ~KB-scale and
+	// this can match the default. See memory/dtrack-pagination-fix-stress.md.
+	public static final int DTRACK_VIOLATIONS_PAGE_SIZE = 2000;
 	
 	public static final String NAME_FIELD = "name";
 	public static final String DESCRIPTION_FIELD = "description";

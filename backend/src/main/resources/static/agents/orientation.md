@@ -197,31 +197,76 @@ Each `policyEvents[].policy` carries the policy's `cel` expression
 and `description` — use these to decide whether a failing/pending
 policy is recoverable on your side or needs operator action (§6).
 
-### 2.4 Enrol your signing key (first run, once per agent)
+### 2.4 Generate and enrol your signing key (first run, once per agent host)
 
 You sign commits with an SSH or GPG key. ReARM matches the signature
 against keys enrolled under your agent uuid; if no key is enrolled,
-commits land as `signature.state=UNVERIFIED` and the component-level
-signed-commits gate will reject the release.
+commits land as `signature.state=UNSIGNED` (or `UNKNOWN_KEY` if a
+signature is present but the verifier has no matching enrolled key)
+and the component-level signed-commits gate will reject the release.
 
-The agent enrols its **own** key — operators don't have to do this
-ahead of time:
+You **generate** the key yourself on the agent host and **self-enrol**
+the public half — operators don't provision keys ahead of time. The
+FREEFORM `AGENT` key carries an intentional carve-out that lets it
+attach a public key to its own bound-agent identity.
+
+**Step 0 — Bootstrap host-local signing material.** The remaining
+steps assume `~/.ssh/agent_signing_key` exists and git is configured
+to sign with it. On a fresh host neither is true, so do this first
+(idempotent — skip any line whose state is already what you want):
 
 ```bash
-# SSH key example. The principal goes in your allowed_signers entry
-# and must match what you set in git config's user.signingkey /
-# user.email when signing.
+# Generate an ed25519 keypair (no passphrase — must sign non-interactively).
+# The comment is informational; the verifier doesn't read it.
+ssh-keygen -t ed25519 -f ~/.ssh/agent_signing_key -N "" \
+  -C '<your.email@your-vendor.example>'
+
+# allowed_signers maps a principal email to the pubkey for SSH-signature
+# verification. The principal here MUST match the --identity passed to
+# `rearm agent enrollkey` below, and SHOULD match git's user.email so
+# `git log --show-signature` validates locally.
+mkdir -p ~/.config/git
+echo "<your.email@your-vendor.example> $(cat ~/.ssh/agent_signing_key.pub)" \
+  > ~/.config/git/allowed_signers
+
+# git globals: sign every commit by default with the ed25519 key.
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/agent_signing_key.pub
+git config --global gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers
+git config --global commit.gpgsign true
+```
+
+Pick **one** identity (typically a vendor-scoped email) and use it
+consistently across `allowed_signers`, git's `user.email`, and the
+`--identity` flag on `enrollkey`. Drift between them is the most
+common reason a freshly-bootstrapped host still lands commits as
+`UNKNOWN_KEY`.
+
+**Step 1 — Enrol the pubkey under your agent uuid**:
+
+```bash
 rearm agent enrollkey \
   --org '<orgUuid from REARM_API_ID>' \
   --agent '<agent uuid from init response>' \
   --format SSH \
   --pubkey-file ~/.ssh/agent_signing_key.pub \
-  --identity '<your.email@your-vendor.example>'
+  --identity '<the same email you used in allowed_signers and git user.email>'
 ```
 
 The fingerprint is auto-derived locally via `ssh-keygen -lf`
 (or `gpg --with-colons --show-keys` for `--format GPG`). Pass
 `--fingerprint` explicitly if the local tool isn't available.
+
+**Carve-out semantics.** The FREEFORM `AGENT` key resolves
+`enrollkey` against its own primary bound agent and ignores the
+`--agent` flag if it points at any other agent uuid the same key
+happens to be bound to. So if `init` registered a new Agent row
+because your `(name, model, model-version, vendor)` tuple drifted
+from a previous run's tuple, the new row can't have a key enrolled
+from the agent side — only operator-side admin can do that. **Pick
+the tuple once and reuse it on every session** to avoid sprawl. If
+you accidentally created a duplicate row, ask the operator to delete
+it via the controlling-ReARM admin UI.
 
 If a key is already enrolled and you're rotating it, enrol the new
 one and then revoke the old via the operator (CLI doesn't yet have

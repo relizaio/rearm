@@ -46,7 +46,8 @@
             </div>
             
             <FindingListSection title="New Findings" title-class="finding-new" key-prefix="new" :findings="newFindings" :rich-aliases="true"
-                :description="isOrgLevelView ? 'Findings that appear for the first time across the entire organization in this period.' : 'Findings introduced in this component for the first time in this period.'">
+                :description="isOrgLevelView ? 'Findings that appear for the first time across the entire organization in this period.' : 'Findings introduced in this component for the first time in this period.'"
+                @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getAppearedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -55,7 +56,8 @@
             </FindingListSection>
 
             <FindingListSection v-if="isOrgLevelView" title="Partially Resolved" title-class="finding-partial" key-prefix="partial" :findings="partiallyResolvedFindings" :rich-aliases="true"
-                description="Findings resolved in some components but still present in others within this period.">
+                description="Findings resolved in some components but still present in others within this period."
+                @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -64,7 +66,8 @@
             </FindingListSection>
 
             <FindingListSection v-if="isOrgLevelView" title="Inherited Technical Debt" title-class="finding-inherited" key-prefix="inherited" :findings="inheritedTechnicalDebtFindings" :rich-aliases="true"
-                description="Findings that existed before this period and remain unresolved — pre-existing technical debt carried across the entire date range.">
+                description="Findings that existed before this period and remain unresolved — pre-existing technical debt carried across the entire date range."
+                @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getInheritedDebtContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -73,7 +76,8 @@
             </FindingListSection>
 
             <FindingListSection v-if="!isOrgLevelView" title="Still Present" title-class="finding-present" key-prefix="present" :findings="stillPresentFindings" :rich-aliases="true"
-                description="Findings that existed before this period and remain unresolved in this component.">
+                description="Findings that existed before this period and remain unresolved in this component."
+                @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -82,13 +86,16 @@
             </FindingListSection>
 
             <FindingListSection :title="isOrgLevelView ? 'Fully Resolved' : 'Resolved'" title-class="finding-resolved" key-prefix="resolved" :findings="fullyResolvedFindings" :rich-aliases="true"
-                :description="isOrgLevelView ? 'Findings resolved across all affected components and no longer present anywhere in this period.' : 'Findings that were present before and are no longer detected in this component.'">
+                :description="isOrgLevelView ? 'Findings resolved across all affected components and no longer present anywhere in this period.' : 'Findings that were present before and are no longer detected in this component.'"
+                @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
                     </div>
                 </template>
             </FindingListSection>
+
+            <kev-details-modal v-model:show="showKevModal" :cve-id="kevModalCveId" :org-uuid="orgUuid || ''" />
         </div>
         <div v-else class="empty-state">
             <div class="summary-tags">
@@ -101,10 +108,12 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NTag, NTooltip } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
+import KevDetailsModal from '../KevDetailsModal.vue'
 import { getSeverityIndex } from '../../utils/findingUtils'
+import { resolveKevCveId } from '../../utils/kevService'
 import type { 
     FindingChangesWithAttribution,
     VulnerabilityWithAttribution,
@@ -116,11 +125,20 @@ import type {
 interface Props {
     findingChanges?: FindingChangesWithAttribution
     showAttribution?: boolean
+    orgUuid?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
     showAttribution: true
 })
+
+const showKevModal = ref(false)
+const kevModalCveId = ref('')
+
+function openKevModal(finding: any) {
+    kevModalCveId.value = resolveKevCveId({ id: finding.findingId, aliases: finding.aliases })
+    showKevModal.value = true
+}
 
 type AttributionSegment = {
     text: string
@@ -132,6 +150,7 @@ type NormalizedFinding = {
     affectedComponent: string
     severity?: string
     aliases?: Array<{ aliasId: string }>
+    knownExploited?: boolean
     type: 'VULN' | 'VIOLATION' | 'WEAKNESS'
     typeLabel: string
     appearedIn: any[]
@@ -157,6 +176,7 @@ const normalizeVulnerability = (vuln: VulnerabilityWithAttribution): NormalizedF
     affectedComponent: vuln.purl,
     severity: vuln.severity,
     aliases: vuln.aliases,
+    knownExploited: !!vuln.knownExploited,
     type: 'VULN',
     typeLabel: 'VULNERABILITY',
     appearedIn: vuln.appearedIn,

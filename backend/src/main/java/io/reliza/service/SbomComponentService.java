@@ -22,6 +22,7 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +39,7 @@ import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactSbomComponent;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ComponentIdentity;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.FlowControl;
 import io.reliza.model.Release;
@@ -114,6 +116,21 @@ public class SbomComponentService {
 
 	private static final int BASE_BACKOFF_SECONDS = 30;
 	private static final int MAX_BACKOFF_SECONDS = 3600;
+
+	// ===================================================================
+	// Enrichment puller tuning (see pullEnrichmentForOrg)
+	// ===================================================================
+	// How many BOMs we successfully pull enriched licenses from per org per tick.
+	// Each pull stamps every un-enriched component in that BOM, so this covers far
+	// more than 5 components.
+	private static final int ENRICHMENT_PULL_TARGET = 5;
+	// Upper bound on un-enriched candidate components fetched per org per tick.
+	// Generous so we can "add one more" past BOMs still PENDING and still reach
+	// the pull target.
+	private static final int ENRICHMENT_CANDIDATE_WINDOW = 200;
+	// Upper bound on distinct BOMs probed per org per tick — caps rebom round-trips
+	// even when the candidate window dedupes to many BOMs that are all PENDING.
+	private static final int ENRICHMENT_MAX_BOMS_PROBED = 25;
 
 	/**
 	 * Persistence-context flush + clear granularity for bulk inserts. Keeps the
@@ -263,7 +280,10 @@ private static int currentReconcileFailureCount(Release r) {
 			canonicalArtifactSet.add(canonicalArtifactUuid);
 
 			// Skip the parse if this canonical's component graph is already on disk.
-			// Artifact content is immutable, so cached rows are still valid.
+			// The artifact_sbom_components rows are content-addressed and immutable;
+			// BEAR enrichment never changes the component set, only licenses — which
+			// are pulled into sbom_components out-of-band by the enrichment puller,
+			// so a re-parse here is unnecessary.
 			if (artifactSbomComponentRepository.existsByCanonicalArtifactUuid(canonicalArtifactUuid)) {
 				continue;
 			}
@@ -305,6 +325,122 @@ private static int currentReconcileFailureCount(Release r) {
 			saveAllChunked(rows, releaseArtifactIndexRepository::saveAll);
 		}
 		markReleaseReconciled(releaseUuid);
+	}
+
+	// ===================================================================
+	// Enrichment puller — pulls BEAR-enriched licenses into sbom_components
+	// ===================================================================
+
+	/**
+	 * Pull BEAR-enriched licenses for an org's un-enriched matchable components,
+	 * stamping {@code sbom_components.enriched_at} so the synthetic Dependency-Track
+	 * gate can ship them. The front step of the every-minute synthetic tick.
+	 *
+	 * <p>Skips entirely for orgs without BEAR configured — their components ship
+	 * un-gated (see {@link SyntheticSbomService#submitOrg}) and would otherwise
+	 * churn here forever (enriched_at would never be set).
+	 *
+	 * <p>Picks the oldest un-enriched matchable components, dedupes them to the
+	 * BOMs that declare them, and probes rebom for each BOM's enrichment status.
+	 * COMPLETED → parse it and stamp every component it carries; PENDING / FAILED
+	 * (rebom's own scheduler retries those) / SKIPPED → skip and move to the next
+	 * BOM ("add one more") until {@value #ENRICHMENT_PULL_TARGET} BOMs are pulled
+	 * or candidates run out. Each pull stamps the whole BOM, so a single tick
+	 * covers far more than the target component count.
+	 */
+	public void pullEnrichmentForOrg(UUID orgUuid) {
+		if (orgUuid == null) return;
+		boolean bearConfigured;
+		try {
+			bearConfigured = rebomService.isEnrichmentConfigured(orgUuid);
+		} catch (Exception e) {
+			log.warn("Enrichment puller: unable to determine BEAR config for org {}: {}",
+					orgUuid, e.getMessage());
+			return;
+		}
+		if (!bearConfigured) return;
+
+		List<SbomComponent> candidates = sbomComponentRepository
+				.findUnenrichedMatchableByOrgOrdered(orgUuid.toString(), ENRICHMENT_CANDIDATE_WINDOW);
+		if (candidates.isEmpty()) return;
+
+		// Dedupe candidates to distinct BOMs, preserving oldest-first order, bounded.
+		Set<UUID> bomIds = new LinkedHashSet<>();
+		for (SbomComponent sc : candidates) {
+			if (bomIds.size() >= ENRICHMENT_MAX_BOMS_PROBED) break;
+			UUID bomId = resolveBomForComponent(orgUuid, sc.getUuid());
+			if (bomId != null) bomIds.add(bomId);
+		}
+
+		int pulls = 0;
+		for (UUID bomId : bomIds) {
+			if (pulls >= ENRICHMENT_PULL_TARGET) break;
+			try {
+				RebomService.BomMeta meta = rebomService.getBomMetadataById(bomId, orgUuid);
+				if (meta == null
+						|| meta.enrichmentStatus() != RebomService.EnrichmentStatus.COMPLETED) {
+					// PENDING / FAILED / SKIPPED — not ready; try the next BOM.
+					continue;
+				}
+				ParsedBom parsed = rebomService.parseBom(bomId, orgUuid);
+				if (parsed == null || parsed.components() == null) continue;
+				Map<String, List<Map<String, Object>>> licByCanonical = new LinkedHashMap<>();
+				for (ParsedBomComponent pc : parsed.components()) {
+					if (pc == null || pc.canonicalPurl() == null) continue;
+					licByCanonical.putIfAbsent(pc.canonicalPurl(), pc.licenses());
+				}
+				self.stampEnrichedLicenses(orgUuid, licByCanonical);
+				pulls++;
+			} catch (Exception e) {
+				log.warn("Enrichment pull failed for bom {} (org {}): {}",
+						bomId, orgUuid, e.getMessage());
+			}
+		}
+	}
+
+	/**
+	 * Resolve a representative BOM id for a canonical sbom_component: pick any
+	 * artifact that declares it, map to its canonical artifact, and read that
+	 * artifact's internal BOM id. Null when no such artifact / BOM exists.
+	 */
+	private UUID resolveBomForComponent(UUID orgUuid, UUID sbomComponentUuid) {
+		return artifactSbomComponentRepository
+				.findFirstByOrgAndSbomComponentUuid(orgUuid, sbomComponentUuid)
+				.map(ArtifactSbomComponent::getCanonicalArtifactUuid)
+				.flatMap(artifactService::getArtifactData)
+				.map(ad -> ad.getInternalBom() != null ? ad.getInternalBom().id() : null)
+				.orElse(null);
+	}
+
+	/**
+	 * Stamp enriched licenses + {@code enriched_at} for the components of one
+	 * COMPLETED BOM, in place (UPDATE, never delete+reinsert). Fill-once: a
+	 * component already enriched (by a prior pull of another BOM sharing it) is
+	 * left untouched, so we never re-stamp or overwrite.
+	 */
+	@Transactional
+	public void stampEnrichedLicenses(UUID orgUuid, Map<String, List<Map<String, Object>>> licByCanonical) {
+		if (licByCanonical == null || licByCanonical.isEmpty()) return;
+		List<String> canonicals = new ArrayList<>(licByCanonical.keySet());
+		for (SbomComponent sc :
+				sbomComponentRepository.findByOrgAndCanonicalPurlIn(orgUuid.toString(), canonicals)) {
+			// Fill-once: never re-stamp or overwrite an already-enriched component.
+			// TODO: revisit for skip-patterned components — one skipped during this
+			// BOM's enrichment keeps raw licenses but is still stamped here, so a
+			// later BOM that does enrich it won't update it (accepted limitation).
+			if (sc.getEnrichedAt() != null) continue;
+			List<Map<String, Object>> lic = licByCanonical.get(sc.getCanonicalPurl());
+			if (lic != null && !lic.isEmpty()) sc.setLicenses(lic);
+			ZonedDateTime now = ZonedDateTime.now();
+			sc.setEnrichedAt(now);
+			sc.setLastUpdatedDate(now);
+			try {
+				sbomComponentRepository.save(sc);
+			} catch (OptimisticLockingFailureException | DataIntegrityViolationException ex) {
+				// Lost a race with a concurrent writer (reconcile / another pull);
+				// the other write wins. Re-evaluated next tick if still un-enriched.
+			}
+		}
 	}
 
 	/**
@@ -995,7 +1131,8 @@ private static int currentReconcileFailureCount(Release r) {
 	// Canonical sbom_components upsert (unchanged from V25)
 	// ===================================================================
 
-	private Map<String, UUID> upsertSbomComponents(Collection<ComponentAggregation> aggs, UUID orgUuid) {
+	private Map<String, UUID> upsertSbomComponents(
+			Collection<ComponentAggregation> aggs, UUID orgUuid) {
 		List<String> canonicals = new ArrayList<>();
 		for (ComponentAggregation agg : aggs) canonicals.add(agg.sample.canonicalPurl());
 
@@ -1011,12 +1148,32 @@ private static int currentReconcileFailureCount(Release r) {
 			String canonical = agg.sample.canonicalPurl();
 			SbomComponent existing = existingByCanonical.get(canonical);
 			if (existing != null) {
+				boolean changed = false;
 				if (agg.isRoot && !isMarkedRoot(existing)) {
 					Map<String, Object> rec = existing.getRecordData() != null
 							? new HashMap<>(existing.getRecordData())
 							: new HashMap<>();
 					rec.put("isRoot", true);
 					existing.setRecordData(rec);
+					changed = true;
+				}
+				// Union any newly-asserted identities (e.g. a CPE a prior ingest
+				// lacked); only write when the set actually grew.
+				List<ComponentIdentity> mergedIds = mergeIdentities(
+						existing.getIdentities(), buildIdentities(canonical, agg.cpes));
+				if (mergedIds != null) { existing.setIdentities(mergedIds); changed = true; }
+				// Licenses: reconcile only fills when the row has none — it never
+				// overwrites. The enrichment puller is the sole writer of enriched
+				// licenses (alongside enriched_at), so a raw re-parse must not clobber
+				// a value the puller already set.
+				if (agg.getLicenses() != null && !agg.getLicenses().isEmpty()) {
+					boolean empty = existing.getLicenses() == null || existing.getLicenses().isEmpty();
+					if (empty) {
+						existing.setLicenses(agg.getLicenses());
+						changed = true;
+					}
+				}
+				if (changed) {
 					existing.setLastUpdatedDate(ZonedDateTime.now());
 					try { sbomComponentRepository.save(existing); }
 					catch (DataIntegrityViolationException ignored) {}
@@ -1051,7 +1208,73 @@ private static int currentReconcileFailureCount(Release r) {
 		if (agg.sample.version() != null) record.put("version", agg.sample.version());
 		if (agg.isRoot) record.put("isRoot", true);
 		sc.setRecordData(record);
+		sc.setIdentities(buildIdentities(agg.sample.canonicalPurl(), agg.cpes));
+		if (agg.getLicenses() != null && !agg.getLicenses().isEmpty()) {
+			sc.setLicenses(agg.getLicenses());
+		}
 		return sc;
+	}
+
+	/**
+	 * Assemble the flat {scheme,value} identity union for a canonical component:
+	 * the canonical primary identity (its scheme inferred from the prefix) plus
+	 * every distinct CPE. De-duped by {scheme,value}, insertion-ordered so the
+	 * primary stays first. Synthesised backend-side for now; will be replaced by
+	 * rebom's own identities array (see Rebom.ParsedBomComponent TODO).
+	 */
+	private static List<ComponentIdentity> buildIdentities(
+			String canonicalPurl, java.util.Collection<String> cpes) {
+		List<ComponentIdentity> out = new ArrayList<>();
+		java.util.Set<String> seen = new java.util.HashSet<>();
+		if (canonicalPurl != null && !canonicalPurl.isBlank()) {
+			addIdentity(out, seen, schemeOf(canonicalPurl), canonicalPurl);
+		}
+		if (cpes != null) {
+			for (String cpe : cpes) {
+				if (cpe != null && !cpe.isBlank()) addIdentity(out, seen, "cpe", cpe);
+			}
+		}
+		return out;
+	}
+
+	private static void addIdentity(List<ComponentIdentity> out,
+			java.util.Set<String> seen, String scheme, String value) {
+		String key = scheme + '\u0001' + value;
+		if (!seen.add(key)) return;
+		out.add(new ComponentIdentity(scheme, value));
+	}
+
+	/** Infer the identity scheme from a self-namespacing canonical identity. */
+	private static String schemeOf(String canonical) {
+		if (canonical.startsWith("pkg:")) return "purl";
+		if (canonical.startsWith("cpe:")) return "cpe";
+		if (canonical.startsWith("swid:")) return "swid";
+		if (canonical.startsWith("swhid:")) return "swhid";
+		if (canonical.startsWith("gitoid:")) return "omniborid";
+		if (canonical.startsWith("cdx:")) return "cdx";
+		return "purl";
+	}
+
+	/**
+	 * Union {@code incoming} identity entries into {@code existing} (de-dupe by
+	 * {scheme,value}), returning the merged list when it grew, or null when no
+	 * new identity was added (so callers can skip a no-op write).
+	 */
+	private static List<ComponentIdentity> mergeIdentities(
+			List<ComponentIdentity> existing, List<ComponentIdentity> incoming) {
+		if (incoming == null || incoming.isEmpty()) return null;
+		List<ComponentIdentity> merged = existing != null
+				? new ArrayList<>(existing) : new ArrayList<>();
+		java.util.Set<String> seen = new java.util.HashSet<>();
+		for (ComponentIdentity e : merged) {
+			seen.add(e.scheme() + '\u0001' + e.value());
+		}
+		boolean changed = false;
+		for (ComponentIdentity e : incoming) {
+			String key = e.scheme() + '\u0001' + e.value();
+			if (seen.add(key)) { merged.add(e); changed = true; }
+		}
+		return changed ? merged : null;
 	}
 
 	/**
@@ -1102,14 +1325,27 @@ private static int currentReconcileFailureCount(Release r) {
 		final ParsedBomComponent sample;
 		boolean isRoot;
 		private String exactPurl;
+		// Union of distinct CPE coordinates seen for this canonical across the
+		// BOM's components (NVD aliases / divergent assertions). Insertion-ordered
+		// so the first-seen CPE stays the primary on the synthetic component.
+		final java.util.LinkedHashSet<String> cpes = new java.util.LinkedHashSet<>();
+		// First non-empty declared licenses (exact CycloneDX shape), carried
+		// transiently for re-emission to Dependency-Track.
+		private List<Map<String, Object>> licenses;
 
 		ComponentAggregation(ParsedBomComponent sample) {
 			this.sample = sample;
 			this.isRoot = Boolean.TRUE.equals(sample.isRoot());
+			mergeSample(sample);
 		}
 
 		void mergeSample(ParsedBomComponent other) {
 			if (Boolean.TRUE.equals(other.isRoot())) this.isRoot = true;
+			if (other.cpe() != null && !other.cpe().isBlank()) this.cpes.add(other.cpe());
+			if ((this.licenses == null || this.licenses.isEmpty())
+					&& other.licenses() != null && !other.licenses().isEmpty()) {
+				this.licenses = other.licenses();
+			}
 		}
 
 		void setExactPurl(String purl) {
@@ -1117,6 +1353,8 @@ private static int currentReconcileFailureCount(Release r) {
 		}
 
 		String getExactPurl() { return exactPurl; }
+
+		List<Map<String, Object>> getLicenses() { return licenses; }
 	}
 
 	private record ParentKey(String sourceCanonical, String relationshipType) {}

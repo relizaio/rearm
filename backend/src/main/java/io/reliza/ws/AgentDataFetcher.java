@@ -31,6 +31,7 @@ import io.reliza.model.AgentIdentityCredential;
 import io.reliza.model.AgentIdentityData;
 import io.reliza.model.AgentSessionData;
 import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.ModelAssertionState;
 import io.reliza.model.ModelOntologyData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
@@ -341,6 +342,32 @@ public class AgentDataFetcher {
 		return pullRequestService.findByOrgAndAnyCommit(sd.getOrg(), sceUuids);
 	}
 
+	/**
+	 * Field resolver: Session.primaryModel resolves the session's model
+	 * pointer to the full ModelOntology row. Null on legacy sessions
+	 * written before per-session model tracking (model pointer is null).
+	 * No re-auth — the parent query already authorized.
+	 */
+	@DgsData(parentType = "Session", field = "primaryModel")
+	public ModelOntologyData sessionPrimaryModel(DgsDataFetchingEnvironment dfe) {
+		AgentSessionData sd = dfe.getSource();
+		if (sd == null || sd.getModel() == null) return null;
+		return modelOntologyService.getModelOntologyData(sd.getModel()).orElse(null);
+	}
+
+	/**
+	 * Field resolver: Session.modelAssertion — the trust level of
+	 * primaryModel. Defaults to DECLARED (the data field's default), so
+	 * legacy rows surface the honest value rather than null against the
+	 * non-null schema field.
+	 */
+	@DgsData(parentType = "Session", field = "modelAssertion")
+	public ModelAssertionState sessionModelAssertion(DgsDataFetchingEnvironment dfe) {
+		AgentSessionData sd = dfe.getSource();
+		if (sd == null || sd.getModelAssertion() == null) return ModelAssertionState.DECLARED;
+		return sd.getModelAssertion();
+	}
+
 	// ---------- Mutations ----------
 
 	@PreAuthorize("isAuthenticated()")
@@ -463,6 +490,7 @@ public class AgentDataFetcher {
 				(String) input.get("clientSessionId"),
 				(String) input.get("title"),
 				parentSessionUuid,
+				ontology.getUuid(),
 				ctx.wu);
 	}
 

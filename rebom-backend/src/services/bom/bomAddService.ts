@@ -116,11 +116,25 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   if (processable) {
     const inputForProcessing = downgradeCycloneDxSpecIfNeeded(structuredClone(rawBom));
     processedBom = await processBomObj(inputForProcessing);
-    await validateBom(processedBom); // throws BomValidationError on failure
   } else {
     logger.info({ specVersion: rawBom?.specVersion },
       'CycloneDX spec not supported by processing/validation stack — storing raw verbatim, skipping processing/validation/augmentation');
     processedBom = structuredClone(rawBom);
+  }
+
+  // serialNumber is the BOM's identity and must come from the producing tool —
+  // we do not mint one on our side (it keys deduplication / version lineage).
+  // Reject a BOM without one with a clear error instead of crashing downstream
+  // where BomRepository runs serialNumber.startsWith('urn:uuid:') on undefined.
+  if (processedBom && !processedBom.serialNumber) {
+    throw new BomValidationError(
+      'CycloneDX BOM is missing a serialNumber. A serialNumber (e.g. urn:uuid:...) is required; rebom does not generate one.',
+      { field: 'serialNumber', constraint: 'CycloneDX serialNumber is required', value: processedBom.serialNumber }
+    );
+  }
+
+  if (processable) {
+    await validateBom(processedBom); // throws BomValidationError on failure
   }
 
   // Step 2: Prepare metadata

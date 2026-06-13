@@ -341,10 +341,7 @@ type Mutation {
 	createWebhook(webhook: WebhookInput!): Webhook
 	updateWebhook(webhook: WebhookUpdateInput!): Webhook
 	deleteWebhook(uuid: ID!): Boolean
-	refetchDependencyTrackMetrics(artifact: ID!): Boolean
-	requestRefreshDependencyTrackMetrics(artifact: ID!): Boolean
-	syncDtrackStatus(orgUuid: ID!): SyncDtrackStatusResponse
-	
+
 	# cdx import
 	importCyclonedxComponents(orgUuid: ID!, cdxJson: String!): [ImportComponentResult]
 	
@@ -595,9 +592,6 @@ type Mutation {
 	triggerEnrichment(artifact: ID!): EnrichmentTriggerResult
 	
 	# DTrack
-	refreshDtrackProjects(orgUuid: ID!): Boolean
-	cleanupDtrackProjects(orgUuid: ID!): Boolean
-	recleanupDtrackProjects(orgUuid: ID!): Boolean
 	syncDtrackProjects(orgUuid: ID!): Boolean
 
 	# Instances
@@ -2030,11 +2024,6 @@ enum EnrichmentStatus {
 	COMPLETED
 	FAILED
 	SKIPPED
-}
-
-type SyncDtrackStatusResponse {
-	successCount: Int!
-	failedArtifactUuids: [ID]
 }
 
 type ImportComponentResult {
@@ -4613,7 +4602,7 @@ type Agent {
 	"""
 	effectiveDisplayName: String
 	"""ModelOntology row this agent runs."""
-	model: ModelOntology
+	model: ModelOntology @deprecated(reason: "Model is a property of the chat, not the durable agent. Read Session.primaryModel instead; this returns the agent's last-seen declared model as a transitional fallback.")
 	"""Optional dashboard glyph."""
 	iconKind: String
 	"""Optional dashboard accent colour (CSS hex)."""
@@ -4855,7 +4844,33 @@ type Session {
 	Null on first-time sessions.
 	"""
 	parentSession: ID
+	"""
+	The AI model this session ran. The model is a property of the chat,
+	not the durable agent — set from the agent's declared model on
+	initialize. Null on legacy sessions written before per-session model
+	tracking existed. Prefer this over the deprecated Agent.model.
+	"""
+	primaryModel: ModelOntology
+	"""
+	How much trust primaryModel carries. DECLARED = the agent self-
+	reported the model string (the only source today). RUNTIME_OBSERVED is
+	reserved for host-side hooks that read the model from the runtime's own
+	record; not yet emitted. The UI must not imply the model carries the
+	session signature's authority.
+	"""
+	modelAssertion: ModelAssertionState!
 	createdDate: DateTime
+}
+
+"""
+How much trust a session's recorded model carries — see
+Session.modelAssertion.
+"""
+enum ModelAssertionState {
+	"""Agent self-reported the model string via the CLI; trusted but unverified."""
+	DECLARED
+	"""Model read from the runtime's own record (e.g. Claude Code transcript). Reserved for Path-B hooks; not yet emitted."""
+	RUNTIME_OBSERVED
 }
 
 enum SessionStatus {

@@ -44,4 +44,64 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			@Param("orgUuidAsString") String orgUuidAsString,
 			@Param("name") String name,
 			@Param("version") String version);
+
+	/**
+	 * The matchable population for an org's synthetic Dependency-Track buckets:
+	 * canonical components keyed on a purl or cpe (the only schemes DTrack can
+	 * match advisories against). Ordered by canonical_purl so bucket membership
+	 * is deterministic across runs — the basis for the per-bucket content hash.
+	 *
+	 * <p>Used for orgs WITHOUT BEAR enrichment configured: there is no enrichment
+	 * to wait on, so every matchable component ships immediately.
+	 */
+	@Query(
+		value = """
+			SELECT sc.*
+			FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			AND (sc.canonical_purl LIKE 'pkg:%' OR sc.canonical_purl LIKE 'cpe:%')
+			ORDER BY sc.canonical_purl ASC
+		""",
+		nativeQuery = true)
+	List<SbomComponent> findMatchableByOrgOrdered(
+			@Param("orgUuidAsString") String orgUuidAsString);
+
+	/**
+	 * Matchable population for orgs WITH BEAR enrichment configured: only ship a
+	 * component once its enriched licenses have been pulled (enriched_at set), so
+	 * Dependency-Track always receives enriched licenses. Same deterministic order
+	 * as {@link #findMatchableByOrgOrdered}.
+	 */
+	@Query(
+		value = """
+			SELECT sc.*
+			FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			AND (sc.canonical_purl LIKE 'pkg:%' OR sc.canonical_purl LIKE 'cpe:%')
+			AND sc.enriched_at IS NOT NULL
+			ORDER BY sc.canonical_purl ASC
+		""",
+		nativeQuery = true)
+	List<SbomComponent> findEnrichedMatchableByOrgOrdered(
+			@Param("orgUuidAsString") String orgUuidAsString);
+
+	/**
+	 * Enrichment-puller candidates: un-enriched matchable components for an org,
+	 * oldest first, capped at {@code lim}. The puller resolves each to a BOM,
+	 * probes rebom, and on COMPLETED pulls enriched licenses for the whole BOM.
+	 */
+	@Query(
+		value = """
+			SELECT sc.*
+			FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			AND (sc.canonical_purl LIKE 'pkg:%' OR sc.canonical_purl LIKE 'cpe:%')
+			AND sc.enriched_at IS NULL
+			ORDER BY sc.created_date ASC
+			LIMIT :lim
+		""",
+		nativeQuery = true)
+	List<SbomComponent> findUnenrichedMatchableByOrgOrdered(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("lim") int lim);
 }

@@ -16,6 +16,8 @@
 
 ### ReARM CE stores and manages per release SBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts
 
+## Next ReARM Community Meeting: July 7, 2026, 12:00pm EDT, Register on [LinkedIn](https://www.linkedin.com/events/7470152088409231360) or [Meetup](https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/315184551).
+
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
 View ReARM CE Demo made for SecTor 2025 Arsenal on [YouTube](https://www.youtube.com/watch?v=PNGxlvV-EsM) (23 minutes).
@@ -87,7 +89,7 @@ Creators of ReARM are part of [active contributors](https://github.com/CycloneDX
 
 A lot of core ReARM ideas are shared as a part of the TEA workgroup with permissive Open Source licensing.
 
-ReARM currently supports most of TEA Beta 2 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
+ReARM currently supports most of TEA v 0.4.0 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
 
 ## Related Projects
 - ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots

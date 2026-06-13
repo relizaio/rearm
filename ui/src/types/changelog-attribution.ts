@@ -59,6 +59,7 @@ export interface VulnerabilityWithAttribution {
     purl: string
     severity: string
     aliases: Array<{ aliasId: string }>
+    knownExploited?: boolean
     resolvedIn: ComponentAttribution[]
     appearedIn: ComponentAttribution[]
     presentIn: ComponentAttribution[]

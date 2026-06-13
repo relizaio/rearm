@@ -25,7 +25,14 @@
  * That single rule covers both sides.
  */
 import { PackageURL } from 'packageurl-js';
+import type { Serialize } from '@cyclonedx/cyclonedx-library';
 import { logger } from '../../logger';
+
+// The CycloneDX JSON license shape (one array element): a union of
+// { license: { id, ... } } | { license: { name, ... } } | { expression }.
+// This is the library's own normalized-JSON type, so the licenses we pass
+// through structurally are typed exactly as the spec defines them.
+type CdxLicense = Serialize.JSON.Types.Normalized.License;
 
 export interface ParsedBomComponent {
 	canonicalPurl: string;
@@ -35,6 +42,16 @@ export interface ParsedBomComponent {
 	name: string | null;
 	version: string | null;
 	isRoot: boolean;
+	// cpe carried alongside the purl so downstream vuln matching can match on
+	// either coordinate (NVD/CPE-keyed advisories vs purl-keyed ones). null when
+	// the BOM declared no cpe for the component.
+	cpe: string | null;
+	// Declared licenses in EXACT CycloneDX shape: each item is
+	// { license: { id | name, text?, url?, ... } } or { expression }. Passed
+	// through structurally (not flattened to strings) so the precise id/name/
+	// expression distinction is preserved and can be re-emitted to / matched by
+	// Dependency-Track. Always an array (possibly empty).
+	licenses: CdxLicense[];
 }
 
 export interface ParsedBomDependency {
@@ -51,20 +68,39 @@ export interface ParsedBom {
 }
 
 /**
+ * purl types whose identity is incomplete without a specific qualifier — the
+ * purl-spec marks these `requirement: "required"` (julia/swid), plus oci where
+ * the registry must be preserved to disambiguate the image. Canonicalization
+ * keeps ONLY the listed qualifier for these types and strips everything else.
+ */
+const PRESERVED_QUALIFIERS: Record<string, string> = {
+	julia: 'uuid',
+	swid: 'tag_id',
+	oci: 'repository_url',
+};
+
+/**
  * Strip qualifiers and subpath from a purl, leaving the canonical
- * identity part: pkg:<type>/<namespace>/<name>@<version>. Returns null
- * if the input is missing or unparseable.
+ * identity part: pkg:<type>/<namespace>/<name>@<version>. For purl types in
+ * {@link PRESERVED_QUALIFIERS} the one required qualifier is retained (DTrack
+ * and OSV match on the qualifier-stripped purl, but these types lose identity
+ * without it). Returns null if the input is missing or unparseable.
  */
 export function canonicalizePurl(rawPurl: string | undefined | null): string | null {
 	if (!rawPurl) return null;
 	try {
 		const parsed = PackageURL.fromString(rawPurl);
+		const preserveKey = PRESERVED_QUALIFIERS[parsed.type];
+		let qualifiers: { [k: string]: string } | undefined = undefined;
+		if (preserveKey && parsed.qualifiers && (parsed.qualifiers as any)[preserveKey] != null) {
+			qualifiers = { [preserveKey]: String((parsed.qualifiers as any)[preserveKey]) };
+		}
 		const canonical = new PackageURL(
 			parsed.type,
 			parsed.namespace ?? undefined,
 			parsed.name,
 			parsed.version ?? undefined,
-			undefined,
+			qualifiers,
 			undefined
 		);
 		return canonical.toString();
@@ -74,9 +110,21 @@ export function canonicalizePurl(rawPurl: string | undefined | null): string | n
 	}
 }
 
+/**
+ * Pass a CycloneDX component.licenses array through structurally, preserving the
+ * exact shape (each item is { license: { id | name, ... } } or { expression }).
+ * Only well-formed object entries are kept; the array is returned verbatim
+ * otherwise so it can be re-emitted to Dependency-Track unchanged.
+ */
+function extractLicenses(raw: { licenses?: any } | undefined): CdxLicense[] {
+	const arr = raw?.licenses;
+	if (!Array.isArray(arr)) return [];
+	return arr.filter((entry): entry is CdxLicense => entry && typeof entry === 'object');
+}
+
 function toParsedComponent(
 	rawPurl: string,
-	fallback: { group?: any; name?: any; version?: any } | undefined,
+	fallback: { group?: any; name?: any; version?: any; cpe?: any; licenses?: any } | undefined,
 	isRoot: boolean
 ): ParsedBomComponent | null {
 	const canonicalPurl = canonicalizePurl(rawPurl);
@@ -100,6 +148,33 @@ function toParsedComponent(
 			parsed?.version ??
 			(typeof fallback?.version === 'string' ? fallback.version : null),
 		isRoot,
+		cpe: typeof fallback?.cpe === 'string' && fallback.cpe.length > 0 ? fallback.cpe : null,
+		licenses: extractLicenses(fallback),
+	};
+}
+
+/**
+ * Build a component from its CPE when it has no purl. The CPE string is already
+ * self-namespacing (`cpe:...`), so it serves directly as the canonical identity.
+ * Used only as the purl > cpe fallback — components with neither are dropped.
+ * Returns null when no usable CPE is present.
+ */
+function toCpeOnlyComponent(
+	component: { type?: any; group?: any; name?: any; version?: any; cpe?: any; licenses?: any } | undefined,
+	isRoot: boolean
+): ParsedBomComponent | null {
+	const cpe = typeof component?.cpe === 'string' && component.cpe.length > 0 ? component.cpe : null;
+	if (!cpe) return null;
+	return {
+		canonicalPurl: cpe,
+		fullPurl: cpe,
+		type: typeof component?.type === 'string' ? component.type : null,
+		group: typeof component?.group === 'string' ? component.group : null,
+		name: typeof component?.name === 'string' ? component.name : null,
+		version: typeof component?.version === 'string' ? component.version : null,
+		isRoot,
+		cpe,
+		licenses: extractLicenses(component),
 	};
 }
 
@@ -130,10 +205,17 @@ export function parseBom(bom: any): ParsedBom {
 		if (!refMap.has(pc.fullPurl)) refMap.set(pc.fullPurl, record);
 	};
 
-	// Root from metadata.component — synthesised as a first-class node if it has a purl.
+	// Root from metadata.component — synthesised as a first-class node if it has a
+	// purl, else a CPE-canonical node when it carries a cpe (purl > cpe).
 	const rootMeta: any = bom?.metadata?.component;
-	if (rootMeta && rootMeta.type !== 'device' && typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
-		pushComponent(toParsedComponent(rootMeta.purl, rootMeta, true), rootMeta['bom-ref']);
+	// `type: device` roots are hardware — parseHbom owns them (see the
+	// components loop below for the same rule).
+	if (rootMeta && typeof rootMeta === 'object' && rootMeta.type !== 'device') {
+		if (typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
+			pushComponent(toParsedComponent(rootMeta.purl, rootMeta, true), rootMeta['bom-ref']);
+		} else {
+			pushComponent(toCpeOnlyComponent(rootMeta, true), rootMeta['bom-ref']);
+		}
 	}
 
 	if (Array.isArray(bom.components)) {
@@ -143,8 +225,12 @@ export function parseBom(bom: any): ParsedBom {
 			// so a device that also carries a purl never double-counts into the SBOM.
 			if (component.type === 'device') continue;
 			const rawPurl = component.purl;
-			if (typeof rawPurl !== 'string' || rawPurl.length === 0) continue;
-			pushComponent(toParsedComponent(rawPurl, component, false), component['bom-ref']);
+			if (typeof rawPurl === 'string' && rawPurl.length > 0) {
+				pushComponent(toParsedComponent(rawPurl, component, false), component['bom-ref']);
+			} else {
+				// No purl — fall back to a CPE-canonical node (dropped if no cpe).
+				pushComponent(toCpeOnlyComponent(component, false), component['bom-ref']);
+			}
 		}
 	}
 

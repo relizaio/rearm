@@ -162,6 +162,29 @@ public class AgentSessionData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private UUID parentSession;
 
+	/**
+	 * The AI model this session ran, as a {@link ModelOntology} UUID. The
+	 * model is a property of the chat (this session), not of the durable
+	 * {@link Agent} row — a developer switches models per conversation and
+	 * reuses one agent. Set from the agent's declared model on
+	 * {@code sessionInitializeProgrammatic}; null on legacy rows written
+	 * before this field existed (read back as null via
+	 * {@code @JsonIgnoreProperties}). The deprecated {@link Agent#getModel()}
+	 * remains the fallback until the model is stripped off the agent row.
+	 */
+	@JsonProperty
+	private UUID model;
+
+	/**
+	 * Trust level of {@link #model}. {@code DECLARED} when the agent
+	 * self-reported the model string via the CLI (the only source today).
+	 * Defaults to {@code DECLARED} so legacy rows — which carried a
+	 * declared model on the agent — deserialize with the honest value
+	 * rather than null.
+	 */
+	@JsonProperty
+	private ModelAssertionState modelAssertion = ModelAssertionState.DECLARED;
+
 	public void addArtifact(UUID artifactUuid) {
 		if (this.artifacts == null) {
 			this.artifacts = new LinkedList<>();

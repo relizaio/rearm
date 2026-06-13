@@ -23,59 +23,53 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	List<Artifact> listArtifactsByOrg(String orgUuidAsString);
 	
 	@Query(
-			value = VariableQueries.LIST_INITIAL_ARTIFACT_UUIDS_PENDING_DEPENDENCY_TRACK,
-			nativeQuery = true)
-	List<UUID> listInitialArtifactUuidsPendingOnDependencyTrack(int limit);
-	
-	@Query(
-			value = VariableQueries.LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION,
-			nativeQuery = true)
-	List<Artifact> listArtifactsPendingDtrackSubmission(String orgUuidAsString);
-	
-	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_BY_STORED_DIGEST,
 			nativeQuery = true)
 	List<Artifact> findArtifactsByStoredDigest(String orgUuidAsString, String digest);
 	
 	@Query(
-			value = VariableQueries.FIND_ARTIFACTS_BY_DTRACK_PROJECTS,
-			nativeQuery = true)
-	List<Artifact> findArtifactsByDtrackProjects(List<String> dtrackProjectIds);
-
-	@Query(
 			value = VariableQueries.FIND_ARTIFACT_UUIDS_BY_DTRACK_PROJECTS,
 			nativeQuery = true)
 	List<UUID> findArtifactUuidsByDtrackProjects(List<String> dtrackProjectIds);
 
+	/**
+	 * Phase-out candidates: up to {@code lim} distinct legacy per-artifact DTrack
+	 * projects, globally across orgs, as {@code [projectId, orgUuid]} pairs. Only
+	 * {@code metrics.dependencyTrackProject} (legacy submission writes this; the
+	 * synthetic flow never does) and excludes any project that is a synthetic
+	 * bucket project, so we never delete our own buckets. Cleared rows drop out
+	 * naturally, so the batch self-advances tick over tick.
+	 */
+	@Query(value = """
+			SELECT DISTINCT a.metrics->>'dependencyTrackProject' AS project_id,
+			                a.record_data->>'org'               AS org_uuid
+			FROM rearm.artifacts a
+			WHERE a.metrics->>'dependencyTrackProject' IS NOT NULL
+			  AND a.metrics->>'dependencyTrackProject' <> ''
+			  AND NOT EXISTS (
+			        SELECT 1 FROM rearm.synthetic_dtrack_bucket b
+			        WHERE b.dtrack_project_uuid::text = a.metrics->>'dependencyTrackProject')
+			LIMIT :lim
+			""", nativeQuery = true)
+	List<Object[]> listLegacyDtrackProjectsForPhaseOut(@Param("lim") int lim);
+
+	/**
+	 * Remove the legacy DTrack reference ({@code dependencyTrackProject} +
+	 * {@code dependencyTrackFullUri}) from every artifact pointing at one phased-out
+	 * project. Leaves findings / lastScanned / firstScanned (now synthetic) intact.
+	 */
 	@Modifying
 	@Transactional
-	@Query(
-			value = VariableQueries.MARK_ARTIFACTS_DTRACK_PROJECT_DELETED,
-			nativeQuery = true)
-	int markArtifactsAsDtrackProjectDeleted(
+	@Query(value = """
+			UPDATE rearm.artifacts
+			SET metrics = (metrics - 'dependencyTrackProject' - 'dependencyTrackFullUri')
+			WHERE record_data->>'org' = :orgUuidAsString
+			  AND metrics->>'dependencyTrackProject' = :projectId
+			""", nativeQuery = true)
+	int clearDtrackProjectRef(
 			@Param("orgUuidAsString") String orgUuidAsString,
-			@Param("dtrackProjectIds") List<String> dtrackProjectIds);
-	
-	@Query(
-			value = VariableQueries.LIST_ACTIVE_RELEASE_ARTIFACT_UUIDS,
-			nativeQuery = true)
-	List<String> listActiveReleaseArtifactUuids(@Param("orgUuidAsString") String orgUuidAsString);
-	
-	@Query(
-			value = VariableQueries.LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_SOURCE_CODE_ENTRY,
-			nativeQuery = true)
-	List<String> listActiveSceArtifactUuidsViaSourceCodeEntry(@Param("orgUuidAsString") String orgUuidAsString);
-	
-	@Query(
-			value = VariableQueries.LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_COMMITS,
-			nativeQuery = true)
-	List<String> listActiveSceArtifactUuidsViaCommits(@Param("orgUuidAsString") String orgUuidAsString);
-	
-	@Query(
-			value = VariableQueries.LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS,
-			nativeQuery = true)
-	List<String> listActiveDeliverableArtifactUuids(@Param("orgUuidAsString") String orgUuidAsString);
-	
+			@Param("projectId") String projectId);
+
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VULNERABILITY,
 			nativeQuery = true)
@@ -91,21 +85,6 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			nativeQuery = true)
 	List<UUID> findArtifactsWithWeakness(String orgUuidAsString, String location, String findingId);
 	
-	@Query(
-			value = VariableQueries.LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG,
-			nativeQuery = true)
-	List<String> listDistinctDtrackProjectsByOrg(String orgUuidAsString);
-	
-	@Query(
-			value = VariableQueries.LIST_DISTINCT_DELETED_DTRACK_PROJECTS_BY_ORG,
-			nativeQuery = true)
-	List<String> listDistinctDeletedDtrackProjectsByOrg(String orgUuidAsString);
-	
-	@Query(
-			value = VariableQueries.FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG,
-			nativeQuery = true)
-	List<Artifact> findArtifactsByDtrackProjectAndOrg(String orgUuidAsString, String dtrackProject);
-
 	@Query(
 			value = VariableQueries.LIST_ARTIFACT_UUIDS_BY_COMPONENTS,
 			nativeQuery = true)

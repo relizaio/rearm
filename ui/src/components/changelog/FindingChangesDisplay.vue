@@ -9,8 +9,9 @@
                 </n-tag>
             </div>
             
-            <FindingListSection title="New Findings" title-class="finding-new" key-prefix="appeared" :findings="appearedFindings" />
-            <FindingListSection title="Resolved Findings" title-class="finding-resolved" key-prefix="resolved" :findings="resolvedFindings" />
+            <FindingListSection title="New Findings" title-class="finding-new" key-prefix="appeared" :findings="appearedFindings" @kev-click="openKevModal" />
+            <FindingListSection title="Resolved Findings" title-class="finding-resolved" key-prefix="resolved" :findings="resolvedFindings" @kev-click="openKevModal" />
+            <kev-details-modal v-model:show="showKevModal" :cve-id="kevModalCveId" :org-uuid="orgUuid || ''" />
         </div>
         <div v-else class="empty-state">
             <div class="summary-tags">
@@ -23,17 +24,28 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NTag } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
+import KevDetailsModal from '../KevDetailsModal.vue'
 import { getSeverityIndex } from '../../utils/findingUtils'
+import { resolveKevCveId } from '../../utils/kevService'
 import type { ReleaseFindingChanges } from '../../types/changelog-sealed'
 
 interface Props {
     findingChanges?: ReleaseFindingChanges
+    orgUuid?: string
 }
 
 const props = defineProps<Props>()
+
+const showKevModal = ref(false)
+const kevModalCveId = ref('')
+
+function openKevModal(finding: any) {
+    kevModalCveId.value = resolveKevCveId({ id: finding.findingId, aliases: finding.aliases })
+    showKevModal.value = true
+}
 
 const summary = computed(() => {
     if (!props.findingChanges) return null
@@ -61,7 +73,8 @@ const normalizeVuln = (v: any) => ({
     aliases: Array.isArray(v.aliases) ? v.aliases.map((a: any) => typeof a === 'string' ? a : a.aliasId) : [],
     type: 'VULN',
     typeLabel: 'VULNERABILITY',
-    analysisState: v.analysisState || null
+    analysisState: v.analysisState || null,
+    knownExploited: !!v.knownExploited
 })
 
 const normalizeViolation = (v: any) => ({
