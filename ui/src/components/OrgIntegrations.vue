@@ -77,17 +77,17 @@
                         <!-- CONFIGURED state — instance rows -->
                         <template v-else>
                             <div class="instance-list">
-                                <!-- Email notification channels -->
-                                <template v-if="card.id === 'EMAIL'">
-                                    <div v-for="ch in emailChannels" :key="ch.uuid" class="instance-row">
+                                <!-- Notification channels (Email / Webhook / Sentinel) -->
+                                <template v-if="isChannelCard(card)">
+                                    <div v-for="ch in channelRowsForCard(card)" :key="ch.uuid" class="instance-row">
                                         <div class="instance-status"><span class="ddot" :class="ch.status === 'ENABLED' ? 'ok' : 'off'" /></div>
                                         <div class="instance-body">
                                             <div class="instance-name">{{ ch.name }}</div>
-                                            <div class="instance-meta">
+                                            <div v-if="card.id === 'EMAIL'" class="instance-meta">
                                                 <span class="instance-scope">{{ emailRecipientsSummary(ch) }}</span>
                                             </div>
-                                            <div class="caps">
-                                                <span class="cap-chip">{{ digestChipLabel(ch) }}</span>
+                                            <div v-if="card.id === 'EMAIL' || ch.status !== 'ENABLED'" class="caps">
+                                                <span v-if="card.id === 'EMAIL'" class="cap-chip">{{ digestChipLabel(ch) }}</span>
                                                 <span v-if="ch.status !== 'ENABLED'" class="cap-chip chip-muted">DISABLED</span>
                                             </div>
                                         </div>
@@ -96,10 +96,10 @@
                                                 class="instance-icon"
                                                 size="20"
                                                 :title="ch.status === 'ENABLED' ? 'Disable channel (pauses sending, keeps configuration)' : 'Enable channel'"
-                                                @click="toggleEmailChannelStatus(ch)"
+                                                @click="toggleChannelStatus(ch)"
                                             ><PlayerPause v-if="ch.status === 'ENABLED'" /><PlayerPlay v-else /></n-icon>
-                                            <n-icon class="instance-icon" size="20" title="Edit email channel" @click="openEditEmailChannel(ch)"><EditIcon /></n-icon>
-                                            <n-icon class="instance-icon danger" size="20" title="Delete email channel" @click="onDeleteEmailChannel(ch)"><Trash /></n-icon>
+                                            <n-icon class="instance-icon" size="20" :title="`Edit ${card.name} channel`" @click="openEditChannelForCard(card, ch)"><EditIcon /></n-icon>
+                                            <n-icon class="instance-icon danger" size="20" :title="`Delete ${card.name} channel`" @click="onDeleteChannel(card, ch)"><Trash /></n-icon>
                                         </div>
                                     </div>
                                 </template>
@@ -171,12 +171,12 @@
                             →
                         </div>
                         <div
-                            v-if="showCiFeatures && card.id === 'EMAIL' && isCardConfigured(card)"
+                            v-if="showCiFeatures && isChannelCard(card) && isCardConfigured(card)"
                             class="card-pro-hint"
                         >
-                            Emails are sent when a
+                            Events are delivered when a
                             <a class="pro-hint-link" @click="switchSubTab('subscriptions')">subscription</a>
-                            routes events to this channel →
+                            routes them to this channel →
                         </div>
                     </div>
                 </div>
@@ -331,6 +331,113 @@
                         <n-space>
                             <n-button :loading="emailSaveLoading" @click="saveEmailChannel" type="success">Save</n-button>
                             <n-button @click="showEmailModal = false" type="default">Cancel</n-button>
+                        </n-space>
+                    </n-space>
+                </n-form>
+            </n-card>
+        </n-modal>
+
+        <!-- Webhook notification channel ADD / EDIT -->
+        <n-modal v-model:show="showWebhookChModal" preset="dialog" :show-icon="false">
+            <n-card style="width: 640px" size="huge" :title="webhookChForm.uuid ? 'Edit Webhook channel' : 'Add Webhook channel'" :bordered="false" role="dialog" aria-modal="true">
+                <n-form :model="webhookChForm">
+                    <n-space vertical size="large">
+                        <n-form-item label="Name" :show-feedback="false">
+                            <n-input v-model:value="webhookChForm.name" required placeholder="e.g. PagerDuty events" />
+                        </n-form-item>
+                        <n-form-item label="Endpoint URL" :show-feedback="false">
+                            <n-input
+                                v-model:value="webhookChForm.url"
+                                :placeholder="webhookChForm.uuid ? '(unchanged — leave blank to keep the current endpoint and auth)' : 'https://example.com/hooks/rearm'"
+                            />
+                        </n-form-item>
+                        <n-form-item label="Authentication" :show-feedback="false">
+                            <n-radio-group v-model:value="webhookChForm.authScheme">
+                                <n-space vertical>
+                                    <n-radio v-for="o in webhookAuthOptions" :key="o.value" :value="o.value">{{ o.label }}</n-radio>
+                                </n-space>
+                            </n-radio-group>
+                        </n-form-item>
+                        <n-form-item v-if="webhookChForm.authScheme !== 'NONE'" :label="webhookChForm.authScheme === 'BEARER' ? 'Bearer token' : 'HMAC shared secret'" :show-feedback="false">
+                            <n-input type="password" v-model:value="webhookChForm.authToken" :placeholder="webhookChForm.authScheme === 'BEARER' ? 'Enter bearer token' : 'Enter HMAC-SHA256 shared secret'" />
+                        </n-form-item>
+                        <n-text v-if="webhookChForm.uuid" depth="3" style="font-size: 12px;">
+                            The stored endpoint and auth settings are encrypted and not displayed. They are stored together:
+                            to change any of them, re-enter the endpoint URL and the auth settings.
+                        </n-text>
+                        <n-alert
+                            v-if="webhookChForm.uuid && webhookChForm.url && webhookChForm.authScheme === 'NONE'"
+                            type="warning" :show-icon="false"
+                        >
+                            Re-entering the URL replaces the stored endpoint and auth together — saving with
+                            Authentication set to None removes any stored bearer token or HMAC secret.
+                        </n-alert>
+
+                        <n-alert v-if="webhookChModalError" type="error" :show-icon="false">
+                            {{ webhookChModalError }}
+                            <template v-if="isConflictError(webhookChModalError)" #action>
+                                <n-button size="small" type="primary" @click="reloadWebhookChannelFromServer">
+                                    Reload from server
+                                </n-button>
+                            </template>
+                        </n-alert>
+
+                        <n-space>
+                            <n-button :loading="webhookChSaveLoading" @click="saveWebhookChannel" type="success">Save</n-button>
+                            <n-button @click="showWebhookChModal = false" type="default">Cancel</n-button>
+                        </n-space>
+                    </n-space>
+                </n-form>
+            </n-card>
+        </n-modal>
+
+        <!-- Microsoft Sentinel notification channel ADD / EDIT -->
+        <n-modal v-model:show="showSentinelModal" preset="dialog" :show-icon="false">
+            <n-card style="width: 640px" size="huge" :title="sentinelForm.uuid ? 'Edit Microsoft Sentinel channel' : 'Add Microsoft Sentinel channel'" :bordered="false" role="dialog" aria-modal="true">
+                <n-form :model="sentinelForm">
+                    <n-space vertical size="large">
+                        <n-form-item label="Name" :show-feedback="false">
+                            <n-input v-model:value="sentinelForm.name" required placeholder="e.g. SOC workspace" />
+                        </n-form-item>
+                        <n-text depth="3" style="font-size: 12px;">
+                            Service-principal credentials (client-credentials OAuth) plus Data Collection Rule routing for the
+                            Azure Logs Ingestion API.
+                            <template v-if="sentinelForm.uuid">
+                                Stored values are encrypted and not displayed — leave all six fields blank to keep them,
+                                or re-enter all six to replace them.
+                            </template>
+                        </n-text>
+                        <n-form-item label="Tenant ID" :show-feedback="false">
+                            <n-input v-model:value="sentinelForm.tenantId" :placeholder="sentinelForm.uuid ? '(unchanged)' : 'Azure AD tenant ID'" />
+                        </n-form-item>
+                        <n-form-item label="Client ID" :show-feedback="false">
+                            <n-input v-model:value="sentinelForm.clientId" :placeholder="sentinelForm.uuid ? '(unchanged)' : 'App registration (service principal) client ID'" />
+                        </n-form-item>
+                        <n-form-item label="Client secret" :show-feedback="false">
+                            <n-input type="password" v-model:value="sentinelForm.clientSecret" :placeholder="sentinelForm.uuid ? '(unchanged)' : 'Service principal client secret'" />
+                        </n-form-item>
+                        <n-form-item label="DCR endpoint" :show-feedback="false">
+                            <n-input v-model:value="sentinelForm.dcrEndpoint" :placeholder="sentinelForm.uuid ? '(unchanged)' : 'https://<dce>.<region>.ingest.monitor.azure.com'" />
+                        </n-form-item>
+                        <n-form-item label="DCR immutable ID" :show-feedback="false">
+                            <n-input v-model:value="sentinelForm.dcrImmutableId" :placeholder="sentinelForm.uuid ? '(unchanged)' : 'dcr-…'" />
+                        </n-form-item>
+                        <n-form-item label="Stream name" :show-feedback="false">
+                            <n-input v-model:value="sentinelForm.streamName" :placeholder="sentinelForm.uuid ? '(unchanged)' : 'Custom-…_CL'" />
+                        </n-form-item>
+
+                        <n-alert v-if="sentinelModalError" type="error" :show-icon="false">
+                            {{ sentinelModalError }}
+                            <template v-if="isConflictError(sentinelModalError)" #action>
+                                <n-button size="small" type="primary" @click="reloadSentinelChannelFromServer">
+                                    Reload from server
+                                </n-button>
+                            </template>
+                        </n-alert>
+
+                        <n-space>
+                            <n-button :loading="sentinelSaveLoading" @click="saveSentinelChannel" type="success">Save</n-button>
+                            <n-button @click="showSentinelModal = false" type="default">Cancel</n-button>
                         </n-space>
                     </n-space>
                 </n-form>
@@ -534,7 +641,7 @@ import { FetchPolicy } from '@apollo/client'
 import Swal from 'sweetalert2'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '../utils/commonFunctions'
-import { extractError, isConflictError } from '../utils/notificationsCommon'
+import { extractError, isConflictError, webhookAuthOptions } from '../utils/notificationsCommon'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
 import SubscriptionsOfOrg from './SubscriptionsOfOrg.vue'
@@ -607,21 +714,27 @@ const editCiIntegrationObject: Ref<any> = ref({
 })
 const editCiIntegrationLoading = ref(false)
 
-// ---- Email notification channels --------------------------------------------
-// Unlike the base Slack/Teams integrations above, email destinations are
+// ---- Notification channels (EMAIL / WEBHOOK / SENTINEL cards) ---------------
+// Unlike the base Slack/Teams integrations above, these destinations are
 // notification channels (the same entities the Subscriptions and Channel
 // groups sub-tabs reference), so they go through the channel CRUD mutations
-// rather than createIntegration.
-interface EmailChannelRow {
+// rather than createIntegration. The read surface only exposes config for
+// EMAIL (recipients + digest policy); webhook/sentinel credentials stay
+// encrypted server-side, so their instance rows show name + status only.
+interface ChannelCatalogRow {
     uuid: string
     name: string
+    type: string
     status: string
     revision: number
     digestMode: string | null
     digestInterval: string | null
     emailRecipients: string[] | null
 }
-const emailChannels: Ref<EmailChannelRow[]> = ref([])
+const notificationChannelRows: Ref<ChannelCatalogRow[]> = ref([])
+const emailChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'EMAIL'))
+const webhookChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'WEBHOOK'))
+const sentinelChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'SENTINEL'))
 
 const showEmailModal = ref(false)
 const emailSaveLoading = ref(false)
@@ -651,13 +764,13 @@ const DIGEST_INTERVAL_SHORT: Record<string, string> = {
     PT5M: '5m', PT15M: '15m', PT1H: '1h', PT6H: '6h', PT12H: '12h', PT24H: '24h', P3D: '3d', P7D: '7d'
 }
 
-function digestChipLabel(ch: EmailChannelRow): string {
+function digestChipLabel(ch: ChannelCatalogRow): string {
     if (ch.digestMode === 'IMMEDIATE') return 'IMMEDIATE'
     const iv = ch.digestInterval || 'PT24H'
     return `DIGEST · ${DIGEST_INTERVAL_SHORT[iv] || iv}`
 }
 
-function emailRecipientsSummary(ch: EmailChannelRow): string {
+function emailRecipientsSummary(ch: ChannelCatalogRow): string {
     const r = ch.emailRecipients || []
     if (!r.length) return 'No recipients'
     if (r.length <= 2) return r.join(', ')
@@ -670,7 +783,7 @@ function emailRecipientsSummary(ch: EmailChannelRow): string {
 // when @vicons doesn't have a brand icon for the kind.
 type Category = 'messaging' | 'ci' | 'security'
 interface CardConfig {
-    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR'
+    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'WEBHOOK' | 'SENTINEL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR'
     name: string
     vendor: string
     category: Category
@@ -689,6 +802,8 @@ const CARDS: CardConfig[] = [
     { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Push release notifications to a Slack channel.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: false },
     { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Push release notifications to a Microsoft Teams channel.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: false },
     { id: 'EMAIL', name: 'Email', vendor: 'ReARM', category: 'messaging', description: 'Send security and operational notifications to a list of email recipients, batched into periodic digest emails.', logoBg: '#2D8F4E', iconComponent: Mail, multiInstance: true, proOnly: true },
+    { id: 'WEBHOOK', name: 'Webhook', vendor: 'ReARM', category: 'messaging', description: 'POST notification events to any HTTPS endpoint — PagerDuty, Opsgenie, Splunk, or in-house receivers — with optional bearer-token or HMAC-SHA256 signing.', logoBg: '#37474F', iconComponent: PlugConnected, multiInstance: true, proOnly: true },
+    { id: 'SENTINEL', name: 'Microsoft Sentinel', vendor: 'Microsoft', category: 'messaging', description: 'Stream notification events to Microsoft Sentinel (Azure Log Analytics) via the Logs Ingestion API.', logoBg: '#0078D4', iconComponent: ShieldCheck, multiInstance: true, proOnly: true },
     // CI/CD & Source Control
     { id: 'GITHUB', name: 'GitHub', vendor: 'GitHub', category: 'ci', description: 'GitHub App for PR validation, inbound webhooks, and repository_dispatch.', logoBg: '#1F2328', iconComponent: BrandGithub, multiInstance: true },
     { id: 'GITLAB', name: 'GitLab', vendor: 'GitLab', category: 'ci', description: 'Trigger GitLab pipelines.', logoBg: '#FC6D26', iconComponent: BrandGitlab, multiInstance: true },
@@ -712,9 +827,17 @@ const visibleSections = computed(() => {
 })
 
 // ---- Card status helpers ---------------------------------------------------
+function isChannelCard(card: CardConfig): boolean {
+    return card.id === 'EMAIL' || card.id === 'WEBHOOK' || card.id === 'SENTINEL'
+}
+
+function channelRowsForCard(card: CardConfig): ChannelCatalogRow[] {
+    return notificationChannelRows.value.filter(c => c.type === card.id)
+}
+
 function isCardConfigured(card: CardConfig): boolean {
     if (card.id === 'BEAR') return !!(bearIntegration.value && bearIntegration.value.configured)
-    if (card.id === 'EMAIL') return emailChannels.value.length > 0
+    if (isChannelCard(card)) return channelRowsForCard(card).length > 0
     if (card.multiInstance) return ciInstancesForCard(card).length > 0
     return configuredIntegrations.value.includes(card.id)
 }
@@ -726,8 +849,8 @@ function ciInstancesForCard(card: CardConfig): any[] {
 function cardStatusLabel(card: CardConfig): string {
     if (card.proOnly && !showCiFeatures.value) return 'Pro'
     if (!isCardConfigured(card)) return 'Available'
-    if (card.id === 'EMAIL') {
-        const n = emailChannels.value.length
+    if (isChannelCard(card)) {
+        const n = channelRowsForCard(card).length
         return n > 1 ? `${n} active` : 'Active'
     }
     if (card.multiInstance) {
@@ -749,7 +872,7 @@ function singleInstanceLabel(card: CardConfig): string {
 const catalogActiveCount = computed(() => {
     let n = 0
     for (const c of CARDS) {
-        if (c.id === 'EMAIL') n += emailChannels.value.length
+        if (isChannelCard(c)) n += channelRowsForCard(c).length
         else if (c.multiInstance) n += ciInstancesForCard(c).length
         else if (isCardConfigured(c)) n += 1
     }
@@ -781,6 +904,8 @@ function openAddForCard(card: CardConfig) {
     if (card.proOnly && !showCiFeatures.value) return
     if (card.id === 'SLACK') { showSlackModal.value = true; return }
     if (card.id === 'EMAIL') { openAddEmailChannel(); return }
+    if (card.id === 'WEBHOOK') { openAddWebhookChannel(); return }
+    if (card.id === 'SENTINEL') { openAddSentinelChannel(); return }
     if (card.id === 'MSTEAMS') { showMsteamsModal.value = true; return }
     if (card.id === 'DEPENDENCYTRACK') { showDtModal.value = true; return }
     if (card.id === 'BEAR') { openBearAddModal(); return }
@@ -1051,7 +1176,7 @@ function openAddEmailChannel() {
     showEmailModal.value = true
 }
 
-function openEditEmailChannel(ch: EmailChannelRow) {
+function openEditEmailChannel(ch: ChannelCatalogRow) {
     emailForm.value = {
         uuid: ch.uuid,
         expectedRevision: ch.revision,
@@ -1107,7 +1232,7 @@ async function saveEmailChannel() {
             fetchPolicy: 'no-cache'
         })
         showEmailModal.value = false
-        await loadEmailChannels(false)
+        await loadNotificationChannels(false)
         notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `Email channel "${name}" saved.`)
     } catch (err: any) {
         emailModalError.value = extractError(err)
@@ -1119,7 +1244,7 @@ async function saveEmailChannel() {
 // Conflict recovery: re-seed the open form (incl. expectedRevision) from
 // the refreshed row, otherwise the next Save just conflicts again.
 async function reloadEmailChannelFromServer() {
-    await loadEmailChannels(false)
+    await loadNotificationChannels(false)
     const fresh = emailChannels.value.find(c => c.uuid === emailForm.value.uuid)
     if (fresh) {
         openEditEmailChannel(fresh)
@@ -1129,7 +1254,221 @@ async function reloadEmailChannelFromServer() {
     }
 }
 
-async function toggleEmailChannelStatus(ch: EmailChannelRow) {
+// ---- Webhook channel CRUD ----------------------------------------------------
+// The endpoint URL + auth settings are stored encrypted server-side and
+// never read back. On edit, leaving the URL blank sends webhookConfig: null,
+// which preserves the stored endpoint + auth as a whole ("rename without
+// re-typing"); entering a URL replaces the whole blob, so scheme + token
+// must be (re-)supplied alongside it.
+const showWebhookChModal = ref(false)
+const webhookChSaveLoading = ref(false)
+const webhookChModalError = ref('')
+const webhookChForm = ref({
+    uuid: '',
+    expectedRevision: null as number | null,
+    name: '',
+    url: '',
+    authScheme: 'NONE',
+    authToken: ''
+})
+
+function openAddWebhookChannel() {
+    webhookChForm.value = { uuid: '', expectedRevision: null, name: '', url: '', authScheme: 'NONE', authToken: '' }
+    webhookChModalError.value = ''
+    showWebhookChModal.value = true
+}
+
+function openEditWebhookChannel(ch: ChannelCatalogRow) {
+    webhookChForm.value = {
+        uuid: ch.uuid, expectedRevision: ch.revision, name: ch.name,
+        url: '', authScheme: 'NONE', authToken: ''
+    }
+    webhookChModalError.value = ''
+    showWebhookChModal.value = true
+}
+
+async function saveWebhookChannel() {
+    webhookChModalError.value = ''
+    const name = (webhookChForm.value.name || '').trim()
+    if (!name) {
+        webhookChModalError.value = 'Channel name is required.'
+        return
+    }
+    const isEdit = !!webhookChForm.value.uuid
+    const url = (webhookChForm.value.url || '').trim()
+    const scheme = webhookChForm.value.authScheme
+    // Token sent verbatim — secrets may be whitespace-significant; trim
+    // only for the blank-check.
+    const token = webhookChForm.value.authToken || ''
+    let webhookConfig: any = null
+    if (url) {
+        if (!url.toLowerCase().startsWith('https://')) {
+            webhookChModalError.value = 'Webhook URL must be HTTPS.'
+            return
+        }
+        if (scheme !== 'NONE' && !token.trim()) {
+            webhookChModalError.value = `Auth scheme ${scheme} requires a token.`
+            return
+        }
+        webhookConfig = { url, authScheme: scheme, authToken: scheme !== 'NONE' ? token : null }
+    } else if (!isEdit) {
+        webhookChModalError.value = 'Endpoint URL is required.'
+        return
+    } else if (scheme !== 'NONE') {
+        webhookChModalError.value = 'To change the auth settings, re-enter the endpoint URL as well — endpoint and auth are stored (and replaced) together.'
+        return
+    }
+    webhookChSaveLoading.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation upsertNotificationChannel($input: NotificationChannelInput!) {
+                    upsertNotificationChannel(input: $input) { uuid }
+                }`,
+            variables: {
+                input: {
+                    uuid: isEdit ? webhookChForm.value.uuid : null,
+                    expectedRevision: isEdit ? webhookChForm.value.expectedRevision : null,
+                    org: orguuid.value,
+                    name,
+                    type: 'WEBHOOK',
+                    webhookConfig
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        showWebhookChModal.value = false
+        await loadNotificationChannels(false)
+        notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `Webhook channel "${name}" saved.`)
+    } catch (err: any) {
+        webhookChModalError.value = extractError(err)
+    } finally {
+        webhookChSaveLoading.value = false
+    }
+}
+
+async function reloadWebhookChannelFromServer() {
+    await loadNotificationChannels(false)
+    const fresh = webhookChannels.value.find(c => c.uuid === webhookChForm.value.uuid)
+    if (fresh) {
+        openEditWebhookChannel(fresh)
+    } else {
+        showWebhookChModal.value = false
+        notify('warning', 'Channel Removed', 'This channel no longer exists on the server.')
+    }
+}
+
+// ---- Sentinel channel CRUD ---------------------------------------------------
+// All six fields are encrypted together as one blob server-side. On edit,
+// leaving all six blank preserves the stored credentials; the backend
+// rejects partial re-entry (all six or none).
+const showSentinelModal = ref(false)
+const sentinelSaveLoading = ref(false)
+const sentinelModalError = ref('')
+const emptySentinelFields = () => ({
+    tenantId: '', clientId: '', clientSecret: '',
+    dcrEndpoint: '', dcrImmutableId: '', streamName: ''
+})
+const sentinelForm = ref({
+    uuid: '',
+    expectedRevision: null as number | null,
+    name: '',
+    ...emptySentinelFields()
+})
+
+function openAddSentinelChannel() {
+    sentinelForm.value = { uuid: '', expectedRevision: null, name: '', ...emptySentinelFields() }
+    sentinelModalError.value = ''
+    showSentinelModal.value = true
+}
+
+function openEditSentinelChannel(ch: ChannelCatalogRow) {
+    sentinelForm.value = { uuid: ch.uuid, expectedRevision: ch.revision, name: ch.name, ...emptySentinelFields() }
+    sentinelModalError.value = ''
+    showSentinelModal.value = true
+}
+
+async function saveSentinelChannel() {
+    sentinelModalError.value = ''
+    const name = (sentinelForm.value.name || '').trim()
+    if (!name) {
+        sentinelModalError.value = 'Channel name is required.'
+        return
+    }
+    const isEdit = !!sentinelForm.value.uuid
+    const f = sentinelForm.value
+    const fields = {
+        tenantId: (f.tenantId || '').trim(),
+        clientId: (f.clientId || '').trim(),
+        // Sent verbatim — secrets may be whitespace-significant.
+        clientSecret: f.clientSecret || '',
+        dcrEndpoint: (f.dcrEndpoint || '').trim(),
+        dcrImmutableId: (f.dcrImmutableId || '').trim(),
+        streamName: (f.streamName || '').trim()
+    }
+    const populated = Object.values(fields).filter(v => v.trim().length > 0).length
+    let sentinelConfig: any = null
+    if (populated === 6) {
+        if (!fields.dcrEndpoint.toLowerCase().startsWith('https://')) {
+            sentinelModalError.value = 'DCR endpoint must be HTTPS.'
+            return
+        }
+        sentinelConfig = fields
+    } else if (populated > 0) {
+        sentinelModalError.value = 'Credentials are stored (and replaced) together — fill in all six fields, or leave all six blank to keep the current values.'
+        return
+    } else if (!isEdit) {
+        sentinelModalError.value = 'All six Sentinel connection fields are required.'
+        return
+    }
+    sentinelSaveLoading.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation upsertNotificationChannel($input: NotificationChannelInput!) {
+                    upsertNotificationChannel(input: $input) { uuid }
+                }`,
+            variables: {
+                input: {
+                    uuid: isEdit ? sentinelForm.value.uuid : null,
+                    expectedRevision: isEdit ? sentinelForm.value.expectedRevision : null,
+                    org: orguuid.value,
+                    name,
+                    type: 'SENTINEL',
+                    sentinelConfig
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        showSentinelModal.value = false
+        await loadNotificationChannels(false)
+        notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `Microsoft Sentinel channel "${name}" saved.`)
+    } catch (err: any) {
+        sentinelModalError.value = extractError(err)
+    } finally {
+        sentinelSaveLoading.value = false
+    }
+}
+
+async function reloadSentinelChannelFromServer() {
+    await loadNotificationChannels(false)
+    const fresh = sentinelChannels.value.find(c => c.uuid === sentinelForm.value.uuid)
+    if (fresh) {
+        openEditSentinelChannel(fresh)
+    } else {
+        showSentinelModal.value = false
+        notify('warning', 'Channel Removed', 'This channel no longer exists on the server.')
+    }
+}
+
+// ---- Shared channel actions (all three channel cards) ------------------------
+function openEditChannelForCard(card: CardConfig, ch: ChannelCatalogRow) {
+    if (card.id === 'EMAIL') openEditEmailChannel(ch)
+    else if (card.id === 'WEBHOOK') openEditWebhookChannel(ch)
+    else if (card.id === 'SENTINEL') openEditSentinelChannel(ch)
+}
+
+async function toggleChannelStatus(ch: ChannelCatalogRow) {
     const next = ch.status === 'ENABLED' ? 'DISABLED' : 'ENABLED'
     try {
         await graphqlClient.mutate({
@@ -1140,7 +1479,7 @@ async function toggleEmailChannelStatus(ch: EmailChannelRow) {
             variables: { uuid: ch.uuid, status: next },
             fetchPolicy: 'no-cache'
         })
-        await loadEmailChannels(false)
+        await loadNotificationChannels(false)
         notify('success', next === 'ENABLED' ? 'Channel Enabled' : 'Channel Disabled',
             `"${ch.name}" is now ${next === 'ENABLED' ? 'enabled' : 'disabled'}.`)
     } catch (err: any) {
@@ -1148,9 +1487,9 @@ async function toggleEmailChannelStatus(ch: EmailChannelRow) {
     }
 }
 
-async function onDeleteEmailChannel(ch: EmailChannelRow) {
+async function onDeleteChannel(card: CardConfig, ch: ChannelCatalogRow) {
     const confirm = await Swal.fire({
-        title: `Delete email channel "${ch.name}"?`,
+        title: `Delete ${card.name} channel "${ch.name}"?`,
         text: 'Subscriptions and channel groups referencing this channel will stop delivering to it. To pause sending without removing the channel, disable it instead.',
         icon: 'warning',
         showCancelButton: true,
@@ -1167,8 +1506,8 @@ async function onDeleteEmailChannel(ch: EmailChannelRow) {
             variables: { uuid: ch.uuid },
             fetchPolicy: 'no-cache'
         })
-        await loadEmailChannels(false)
-        notify('success', 'Deleted', `Email channel "${ch.name}" removed.`)
+        await loadNotificationChannels(false)
+        notify('success', 'Deleted', `${card.name} channel "${ch.name}" removed.`)
     } catch (err: any) {
         notify('error', 'Error', extractError(err))
     }
@@ -1254,9 +1593,9 @@ async function loadCiIntegrations(useCache: boolean) {
     }
 }
 
-async function loadEmailChannels(useCache: boolean) {
-    // Channel queries are a Pro surface — skip on OSS, where the card
-    // renders in its "Pro" state instead.
+async function loadNotificationChannels(useCache: boolean) {
+    // Channel queries are a Pro surface — skip on OSS, where the
+    // EMAIL / WEBHOOK / SENTINEL cards render in their "Pro" state instead.
     if (!showCiFeatures.value) return
     const cachePolicy: FetchPolicy = useCache ? 'cache-first' : 'network-only'
     try {
@@ -1271,7 +1610,7 @@ async function loadEmailChannels(useCache: boolean) {
             fetchPolicy: cachePolicy
         })
         if (resp.data?.notificationChannels) {
-            emailChannels.value = resp.data.notificationChannels.filter((c: any) => c.type === 'EMAIL')
+            notificationChannelRows.value = resp.data.notificationChannels
         }
     } catch (err) {
         console.error(err)
@@ -1304,7 +1643,7 @@ onMounted(async () => {
     await Promise.all([
         loadConfiguredIntegrations(true),
         loadCiIntegrations(true),
-        loadEmailChannels(true),
+        loadNotificationChannels(true),
         loadBearIntegration()
     ])
 })
@@ -1313,7 +1652,7 @@ watch(() => props.orguuid, async () => {
     await Promise.all([
         loadConfiguredIntegrations(false),
         loadCiIntegrations(false),
-        loadEmailChannels(false),
+        loadNotificationChannels(false),
         loadBearIntegration()
     ])
 })
