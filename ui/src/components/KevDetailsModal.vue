@@ -156,8 +156,8 @@ const primary = computed<KevSourceAssertion | null>(() => {
 const ransomware = computed(() => {
     switch (record.value?.ransomwareStatus) {
     case 'KNOWN': return { type: 'error' as const, label: 'Known' }
-    case 'UNKNOWN': return { type: 'default' as const, label: 'Not known' }
-    default: return { type: 'default' as const, label: 'Unknown' }
+    case 'UNKNOWN': return { type: 'default' as const, label: 'No known use' }
+    default: return { type: 'default' as const, label: 'Not reported' }
     }
 })
 
