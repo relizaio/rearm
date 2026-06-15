@@ -836,7 +836,16 @@ public class OssReleaseService {
 		}
 	}
 
-	/** Scheduler drain: process a batch of releases still pending auto-integration. */
+	/**
+	 * Scheduler drain: process a batch of releases still pending auto-integration.
+	 *
+	 * <p><b>Dormant on CE by design.</b> CE auto-integrates inline via the
+	 * {@code @Async autoIntegrateProducts} path on the release-save flow and
+	 * does not enqueue ({@code markAutoIntegrateRequested} is never called
+	 * here), so this drain finds no rows. The queued/claimed/backoff path is
+	 * present for shared-API parity and is Pro-activated; adopting the bounded
+	 * queue on CE is a separate change.
+	 */
 	public void processPendingAutoIntegrate(int batchLimit) {
 		for (UUID u : repository.findUuidsOfReleasesPendingAutoIntegrate(batchLimit)) {
 			try { processAutoIntegrateForRelease(u); }
