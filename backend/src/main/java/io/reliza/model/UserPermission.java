@@ -109,7 +109,12 @@ public class UserPermission {
 		// agent monitoring and policy admin are gated separately via
 		// the standard type tiers (no special function), since those
 		// callers aren't agents — they're managing them.
-		AGENT
+		AGENT,
+		// Gates the Distribution module surface (clients, sites,
+		// shipments, devices, device events) for non-admin users and
+		// FREEFORM keys, on top of the call-type tier. Org admins pass
+		// implicitly (org-scope ADMIN short-circuits function checks).
+		DISTRIBUTION
 		;
 
 		private PermissionFunction () {}

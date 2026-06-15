@@ -27,8 +27,8 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.OrganizationData;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.repositories.ReleaseLiteRepository;
 import io.reliza.repositories.ReleaseRepository;
@@ -84,12 +84,12 @@ public class SharedReleaseServiceSidTest {
 				teaPurl("pkg:maven/io.reliza/rearm-backend"))));
 		OrganizationData org = orgEnabledStrict("reliza.io");
 
-		List<TeaIdentifier> caller = List.of(teaCpe("cpe:2.3:a:reliza:rearm:25.04.5"));
+		List<RearmIdentifier> caller = List.of(teaCpe("cpe:2.3:a:reliza:rearm:25.04.5"));
 		var result = service.buildReleaseIdentifiers(cd, org, "25.04.5", null, caller);
 
-		List<TeaIdentifier> ids = result.identifiers();
+		List<RearmIdentifier> ids = result.identifiers();
 		assertEquals(2, ids.size(), "expected caller CPE + platform sid PURL only — no carryover maven PURL");
-		assertTrue(ids.stream().anyMatch(t -> t.getIdType() == TeaIdentifierType.CPE),
+		assertTrue(ids.stream().anyMatch(t -> t.getIdType() == RearmIdentifierType.CPE),
 				"caller CPE preserved");
 		assertTrue(ids.stream().anyMatch(t -> "pkg:sid/reliza.io/ReARM%20Backend@25.04.5".equals(t.getIdValue())),
 				"platform sid PURL appended");
@@ -107,10 +107,10 @@ public class SharedReleaseServiceSidTest {
 		OrganizationData org = orgWith(SidPurlMode.DISABLED, null);
 
 		// Tenant supplied a sid PURL directly — must pass through unchanged.
-		List<TeaIdentifier> caller = List.of(teaPurl("pkg:sid/foo.example.com/X@1.0"));
+		List<RearmIdentifier> caller = List.of(teaPurl("pkg:sid/foo.example.com/X@1.0"));
 		var result = service.buildReleaseIdentifiers(cd, org, "1.0", null, caller);
 
-		List<TeaIdentifier> ids = result.identifiers();
+		List<RearmIdentifier> ids = result.identifiers();
 		assertEquals(1, ids.size());
 		assertEquals("pkg:sid/foo.example.com/X@1.0", ids.get(0).getIdValue());
 		assertNull(result.sidComponentNameSnapshot(), "snapshot stays null when sid not platform-emitted");
@@ -130,7 +130,7 @@ public class SharedReleaseServiceSidTest {
 
 		var result = service.buildReleaseIdentifiers(cd, org, "9.22.0", null, null);
 
-		List<TeaIdentifier> ids = result.identifiers();
+		List<RearmIdentifier> ids = result.identifiers();
 		assertEquals(1, ids.size());
 		assertEquals("pkg:sid/flywaydb.org/flyway@9.22.0", ids.get(0).getIdValue(),
 				"vendor sid version-stamped via carryover (skipSid=false because resolver disabled this component)");
@@ -273,16 +273,16 @@ public class SharedReleaseServiceSidTest {
 		return od;
 	}
 
-	private static TeaIdentifier teaPurl(String value) {
-		TeaIdentifier ti = new TeaIdentifier();
-		ti.setIdType(TeaIdentifierType.PURL);
+	private static RearmIdentifier teaPurl(String value) {
+		RearmIdentifier ti = new RearmIdentifier();
+		ti.setIdType(RearmIdentifierType.PURL);
 		ti.setIdValue(value);
 		return ti;
 	}
 
-	private static TeaIdentifier teaCpe(String value) {
-		TeaIdentifier ti = new TeaIdentifier();
-		ti.setIdType(TeaIdentifierType.CPE);
+	private static RearmIdentifier teaCpe(String value) {
+		RearmIdentifier ti = new RearmIdentifier();
+		ti.setIdType(RearmIdentifierType.CPE);
 		ti.setIdValue(value);
 		return ti;
 	}

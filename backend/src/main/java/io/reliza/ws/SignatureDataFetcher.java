@@ -280,13 +280,14 @@ public class SignatureDataFetcher {
 	 * <ul>
 	 *   <li>{@code input.ownerType} must be {@code AGENT} — committers
 	 *       still require the JWT-authenticated {@code enrollSigningKey}.</li>
-	 *   <li>{@code input.ownerUuid} must be an Agent in {@code input.org}
-	 *       whose {@code agentIdentity} matches the {@link AgentIdentity}
-	 *       resolved from the calling FREEFORM key (via the
-	 *       {@code agent_identity_credentials} table — the key uuid is
-	 *       the credential value). This is what prevents an agent from
-	 *       enrolling a key onto another agent that happens to share
-	 *       the org.</li>
+	 *   <li>{@code input.ownerUuid} must be an Agent in the calling
+	 *       key's org (the org is never client-supplied — it's always the
+	 *       one the key resolves to) whose {@code agentIdentity} matches
+	 *       the {@link AgentIdentity} resolved from the calling FREEFORM
+	 *       key (via the {@code agent_identity_credentials} table — the
+	 *       key uuid is the credential value). This is what prevents an
+	 *       agent from enrolling a key onto another agent that happens to
+	 *       share the org.</li>
 	 *   <li>The calling key must carry {@code PermissionFunction.AGENT}
 	 *       at {@code ORGANIZATION} scope (the same check
 	 *       {@code sessionInitializeProgrammatic} runs).</li>
@@ -310,13 +311,9 @@ public class SignatureDataFetcher {
 		if (signingKey == null) throw new RelizaException("signingKey is required");
 		SigningKeyData seed = Utils.OM.convertValue(signingKey, SigningKeyData.class);
 
-		// Org sanity — the key's org wins; reject a payload trying to
-		// enrol against a different org than the key authorizes.
-		if (seed.getOrg() == null) {
-			seed.setOrg(orgUuid);
-		} else if (!orgUuid.equals(seed.getOrg())) {
-			throw new AccessDeniedException("input.org does not match the calling key's org");
-		}
+		// Org is never client-supplied here (AgentSigningKeyInput has no
+		// org field) — it's always the org the calling key resolves to.
+		seed.setOrg(orgUuid);
 
 		if (seed.getOwnerType() != SigningKeyOwnerType.AGENT) {
 			throw new AccessDeniedException("Programmatic enrolment is restricted to ownerType=AGENT");

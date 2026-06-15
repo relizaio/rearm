@@ -33,7 +33,6 @@ import io.reliza.common.Utils;
 import io.reliza.common.ValidationResult;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.VersionUtils;
@@ -182,12 +181,58 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		return new LinkedList<>(this.inboundDeliverables);
 	}
 	
+	/**
+	 * Unified identifier list (TEA-exportable PURL/CPE/TEI plus ReARM-internal
+	 * UDI/UDI-DI/UDI-PI/SERIAL/LOT). On a UDI-bearing release the UDI-DI is
+	 * minted per version/model; the software-version PI element also lives
+	 * here. Per-shipment PI (lot/serial/expiry) lives on ShippedProduct.
+	 */
 	@JsonProperty
-	private List<TeaIdentifier> identifiers = new LinkedList<>();
+	private List<RearmIdentifier> identifiers = new LinkedList<>();
 
-	public List<TeaIdentifier> getIdentifiers () {
+	public List<RearmIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);
 	}
+
+	/** GUDID submission workflow state for a UDI-bearing release's DI. */
+	public enum GudidStatus {
+		NOT_SUBMITTED,
+		SUBMITTED,
+		PUBLISHED;
+	}
+
+	/**
+	 * Version-specific GUDID descriptors for a UDI-bearing release, keyed by the
+	 * release's UDI-DI. Overrides the stable defaults inherited from
+	 * {@code ComponentData.MedicalProfile.gudidDefaults}. The AccessGUDID link is
+	 * computed from the DI, never stored.
+	 */
+	@lombok.Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class GudidRecord {
+		private String brandName;
+		private String versionModel;
+		private String gmdnCode;
+		private Boolean sterile;
+		private Boolean singleUse;
+		private Boolean mriSafety;
+	}
+
+	/** Version-specific GUDID record (UDI-bearing release only). */
+	@JsonProperty
+	private GudidRecord gudidRecord;
+
+	/** GUDID submission workflow state. */
+	@JsonProperty
+	private GudidStatus gudidStatus;
+
+	/** End-of-support date (§524B cyber-device support window). */
+	@JsonProperty
+	private java.time.LocalDate eos;
+
+	/** End-of-life date (§524B cyber-device support window). */
+	@JsonProperty
+	private java.time.LocalDate eol;
 
 	/**
 	 * Component name captured at first sid emission. Immutable thereafter — a later
@@ -204,7 +249,7 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	@JsonIgnore
 	public String getPreferredBomIdentifier() {
 		return SidPurlUtils.pickPreferredPurl(this.identifiers)
-				.map(TeaIdentifier::getIdValue)
+				.map(RearmIdentifier::getIdValue)
 				.orElseGet(() -> this.uuid != null ? this.uuid.toString() : null);
 	}
 
@@ -241,16 +286,40 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	
 	@JsonIgnore
 	private List<ReleaseApprovalEvent> approvalEvents = new LinkedList<>();
-	
+
 	@JsonIgnore
 	private List<ReleaseUpdateEvent> updateEvents = new LinkedList<>();
-	
+
+	/**
+	 * An explicit "please approve this release" request. Unlike
+	 * {@link #approvalEvents} (dedicated column), these live in plain
+	 * record_data — low cardinality, read together with the release.
+	 * {@code resolvedAt} is stamped once every requested entry reaches a
+	 * terminal state (satisfied or disapproved); null = still open.
+	 */
+	public record ReleaseApprovalRequest (UUID uuid, UUID requestedBy, List<UUID> approvalEntries,
+			ZonedDateTime requestedAt, ZonedDateTime resolvedAt) {
+		public ReleaseApprovalRequest {
+			// Compact ctor so a JSONB read of an older/partial shape
+			// normalizes the list — secondary ctors don't run on
+			// Jackson record deserialization.
+			if (null == approvalEntries) approvalEntries = List.of();
+		}
+	}
+
+	private List<ReleaseApprovalRequest> approvalRequests = new LinkedList<>();
+
 	public void addApprovalEvent (ReleaseApprovalEvent rae) {
 		this.approvalEvents.add(rae);
 	}
-	
+
 	public void addUpdateEvent (ReleaseUpdateEvent rue) {
 		this.updateEvents.add(rue);
+	}
+
+	public void addApprovalRequest (ReleaseApprovalRequest rar) {
+		if (null == this.approvalRequests) this.approvalRequests = new LinkedList<>();
+		this.approvalRequests.add(rar);
 	}
 
 	@JsonIgnore
@@ -306,6 +375,18 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		}
 		if (null != releaseDto.getIdentifiers()) {
 			rd.setIdentifiers(releaseDto.getIdentifiers());
+		}
+		if (null != releaseDto.getGudidRecord()) {
+			rd.setGudidRecord(releaseDto.getGudidRecord());
+		}
+		if (null != releaseDto.getGudidStatus()) {
+			rd.setGudidStatus(releaseDto.getGudidStatus());
+		}
+		if (null != releaseDto.getEos()) {
+			rd.setEos(releaseDto.getEos());
+		}
+		if (null != releaseDto.getEol()) {
+			rd.setEol(releaseDto.getEol());
 		}
 		if (null != releaseDto.getSidComponentName()) {
 			rd.setSidComponentName(releaseDto.getSidComponentName());

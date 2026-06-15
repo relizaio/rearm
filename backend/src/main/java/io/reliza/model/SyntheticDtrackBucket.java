@@ -23,12 +23,15 @@ import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 
 /**
  * Submission-state bookkeeping for the synthetic Dependency-Track flow: one row
- * per (org, bucket_index). Bucket membership is DERIVED from a deterministic
- * ordering of the org's matchable sbom_components — this row only records the
- * submission state, not the components themselves.
+ * per (org, bucket_index). Bucket membership is the set of matchable
+ * sbom_components whose sticky {@code syntheticBucketIndex} equals this row's
+ * {@code bucketIndex} — this row only records the submission state, not the
+ * components themselves.
  *
  * contentHash is sha256 over the sorted set of canonical_purls in the bucket;
- * a change means membership shifted and the bucket must be re-submitted.
+ * a change means a component was added to (or removed from) THIS bucket and it
+ * must be re-submitted. Because assignment is sticky, a change to one bucket
+ * never perturbs another.
  * refMap translates generated bom-refs (c0,c1,... — many-to-one when CPE
  * companions are emitted) back to canonical_purl. findings holds the
  * last-ingested vuln/violation payload keyed by canonical_purl, stored as

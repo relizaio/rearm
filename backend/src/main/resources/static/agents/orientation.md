@@ -1,7 +1,7 @@
 ---
-rearm_cli_min: 26.05.19
-rearm_cli_recommended: 26.05.19
-last_updated: 2026-05-28
+rearm_cli_min: 26.05.21
+rearm_cli_recommended: 26.05.21
+last_updated: 2026-06-07
 ---
 
 # ReARM agent orientation
@@ -81,17 +81,17 @@ Other permission shapes won't authorize session operations and you'll
 see `Not authorized` on every call. Report to the operator if that
 happens — you can't fix it from your side.
 
-### 1.2 Install the CLI — `26.05.19` exactly
+### 1.2 Install the CLI — `26.05.21` exactly
 
 The CLI is the only sanctioned programmatic surface (raw HTTP is
-WAF-blocked in many deployments). Use **`26.05.19`** — older versions
+WAF-blocked in many deployments). Use **`26.05.21`** — older versions
 lack the `rearm agent session ...` / `rearm agent enrollkey`
 subcommands and the release vulnerability/violation output this doc
 relies on.
 
 ```bash
 # Pick the right asset for your platform (see Linux x86_64 below)
-VERSION=26.05.19
+VERSION=26.05.21
 ASSET=rearm-${VERSION}-linux-amd64.zip
 curl -fsSL -O https://d7ge14utcyki8.cloudfront.net/rearm-download/${VERSION}/${ASSET}
 
@@ -101,24 +101,24 @@ sha256sum "${ASSET}"
 # Compare against the line for your platform in the table below.
 ```
 
-Hashes for `26.05.19` (verbatim from
-`https://d7ge14utcyki8.cloudfront.net/rearm-download/26.05.19/sha256sums.txt`):
+Hashes for `26.05.21` (verbatim from
+`https://d7ge14utcyki8.cloudfront.net/rearm-download/26.05.21/sha256sums.txt`):
 
 ```
-86aca7d26831ba2223f92474c0fb09df358ad1cb3d5900014fe01d37a65be62f  rearm-26.05.19-darwin-amd64.zip
-9acfe21f43b16d58f49da4d8f07325db018d0da37862b2e613db8cf043c38308  rearm-26.05.19-darwin-arm64.zip
-a58de1a83cc458247b9d5d8a4e2ce656b08b65751ca15dd57e67a1aecc870187  rearm-26.05.19-freebsd-386.zip
-639e3375fad9f22e223b2e361ea5d9a0f0609c21d11edf107f08857b274f593e  rearm-26.05.19-freebsd-amd64.zip
-3882c4bc67bb265fc3b2624499243661d716642e3a499cba5694012c04eef394  rearm-26.05.19-freebsd-arm.zip
-63b22ec64430e1f9396e02a022f597564c5c975d8f4c36a86eb2f6be550eaa23  rearm-26.05.19-linux-386.zip
-3b89e52b43b2ea4ff46fd243a435e07eb0420e19d80452c87cc7c8e52ee45901  rearm-26.05.19-linux-amd64.zip
-e464245a5c328a7a1256a25655df43fb24dfcf2600b17115c50d58f3144bff27  rearm-26.05.19-linux-arm.zip
-1371acff4d6bbe76aa31bccd24db0c1d6450016c8e4447d6c02ff6409afb08cb  rearm-26.05.19-linux-arm64.zip
-df5da80633fe048a0ef1a1accb69d0597f4936a3a91b6093c04079e9d01d6d4b  rearm-26.05.19-openbsd-386.zip
-4b1f91715c300de72ec70e343fb0b7acf84efb7780c5729dc0d76b4d60ebf548  rearm-26.05.19-openbsd-amd64.zip
-121bf114740bf012b6456e6c31ebd0733bcdc3eeaca3e7ba6179e5877783bc03  rearm-26.05.19-solaris-amd64.zip
-0be42938ddf2832a0aec75702145810168ba6f125588f86af4d38276da35a251  rearm-26.05.19-windows-386.zip
-92b5a19fe8956a30fc399c708ae51049e3e1c922cb529ae6170d10faa267acf2  rearm-26.05.19-windows-amd64.zip
+37e768d68f270f3efa6c01560d0a107931223512a7ef06f88ac1dad81d324acc  rearm-26.05.21-darwin-amd64.zip
+92f8835bb088878fe91467ea0081ef9442f2ca6af0bc201a6fb16f13009b83a8  rearm-26.05.21-darwin-arm64.zip
+b2d2d4ab71b2272aa38a74a65543024657150e001d844a3df7d42f56d6dfa680  rearm-26.05.21-freebsd-386.zip
+72db75b2be6680ea9b0fbd010d0861f0024b2f5f6f4978436498bf14fd494e30  rearm-26.05.21-freebsd-amd64.zip
+4d3430863de8e7401ce23d2ec3444fd997417518d6088b6a305c215925e183a5  rearm-26.05.21-freebsd-arm.zip
+0211fddbcfe183554236cd55f401f281abfbb0c17fcb9a9248fb0ec114b87ae1  rearm-26.05.21-linux-386.zip
+6fffb0f89b13f7e755d603e994124e928b390ae86ed125a987ab4c60b6d4990e  rearm-26.05.21-linux-amd64.zip
+ddbe645432914f811d034e42228d435de4cd86a147b26e495234a736da408bab  rearm-26.05.21-linux-arm.zip
+f31e3751ef0d811201e14e34f76899cc310b708ae294b5a23aadad0abdf7d730  rearm-26.05.21-linux-arm64.zip
+d2705757906454501a24bae36d171761160ee62310be3580b8eb184c00c2045f  rearm-26.05.21-openbsd-386.zip
+7adbb86bf9dae69e07b25820d74d011525609386513479f320e3d2d4d26f34a1  rearm-26.05.21-openbsd-amd64.zip
+f2bda6093e1e2c9685ec345a2da9a5d25fc15627ab52315f332ffc0585cfdd7b  rearm-26.05.21-solaris-amd64.zip
+985b41c5414092a6f3fc33a0e645c5b10ca1f8f68e79f3e3a0fabaf3841f9fba  rearm-26.05.21-windows-386.zip
+ea05e3b7a73e9122a959a8c8902b30aed038aa5e5a19915a8cb221f4c7a1ea49  rearm-26.05.21-windows-amd64.zip
 ```
 
 If the hash doesn't match, **stop**. Don't run an unverified binary.
@@ -246,27 +246,27 @@ common reason a freshly-bootstrapped host still lands commits as
 
 ```bash
 rearm agent enrollkey \
-  --org '<orgUuid from REARM_API_ID>' \
   --agent '<agent uuid from init response>' \
   --format SSH \
   --pubkey-file ~/.ssh/agent_signing_key.pub \
   --identity '<the same email you used in allowed_signers and git user.email>'
 ```
 
-The fingerprint is auto-derived locally via `ssh-keygen -lf`
-(or `gpg --with-colons --show-keys` for `--format GPG`). Pass
+There is no `--org` flag: the org is always the one your FREEFORM key
+resolves to, so it's taken from the key automatically. The fingerprint
+is auto-derived locally via `ssh-keygen -lf` (or
+`gpg --with-colons --show-keys` for `--format GPG`). Pass
 `--fingerprint` explicitly if the local tool isn't available.
 
-**Carve-out semantics.** The FREEFORM `AGENT` key resolves
-`enrollkey` against its own primary bound agent and ignores the
-`--agent` flag if it points at any other agent uuid the same key
-happens to be bound to. So if `init` registered a new Agent row
-because your `(name, model, model-version, vendor)` tuple drifted
-from a previous run's tuple, the new row can't have a key enrolled
-from the agent side — only operator-side admin can do that. **Pick
-the tuple once and reuse it on every session** to avoid sprawl. If
-you accidentally created a duplicate row, ask the operator to delete
-it via the controlling-ReARM admin UI.
+**Ownership rule.** `enrollkey` attaches the pubkey to exactly the
+agent named by `--agent`. The only constraint is that this agent must
+be owned by your calling FREEFORM key's identity — any agent the key
+created (including a fresh row from a new `(name, model,
+model-version, vendor)` tuple) can be enrolled. A key can never enrol
+onto an agent owned by a *different* identity. Drifting tuples still
+create extra Agent rows, so **pick the tuple once and reuse it on
+every session** to avoid sprawl; ask the operator to delete any
+duplicate row via the controlling-ReARM admin UI.
 
 If a key is already enrolled and you're rotating it, enrol the new
 one and then revoke the old via the operator (CLI doesn't yet have
@@ -849,7 +849,7 @@ rearm agent session touch <uuid>
 rearm agent session close <uuid>
 
 # --- signing-key self-enrolment (first run, once per agent) ---
-rearm agent enrollkey --org <orgUuid> --agent <agentUuid> --format SSH \
+rearm agent enrollkey --agent <agentUuid> --format SSH \
   --pubkey-file <path> --identity '<allowed_signers principal>'
 
 # --- artifacts on the session (when policies require) ---

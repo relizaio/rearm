@@ -41,8 +41,8 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.repositories.DeliverableRepository;
 import lombok.extern.slf4j.Slf4j;
 
@@ -150,7 +150,7 @@ public class DeliverableService {
 			deliverableDto.cleanLegacyDigests();
 			
 			String purl = SidPurlUtils.pickPreferredPurl(deliverableDto.getIdentifiers())
-					.map(TeaIdentifier::getIdValue).orElse(null);
+					.map(RearmIdentifier::getIdValue).orElse(null);
 			RebomOptions rebomOptions = new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), StripBom.FALSE, purl);
 			var artIds = artifactService.uploadListOfArtifacts(od, arts, rebomOptions, wu);
 			deliverableDto.setArtifacts(artIds);			

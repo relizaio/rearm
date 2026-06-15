@@ -29,12 +29,12 @@ public interface VersionAssignmentRepository extends CrudRepository<VersionAssig
 			value = VariableQueries.LATEST_VERSION_ASSIGNMENTS_WITH_BRANCH_SCHEMA_AND_LIMIT_BY_BRANCH,
 			nativeQuery = true)
 	List<VersionAssignment> findLatestVersionAssignmentsWithBranchSchemaAndLimitByBranch(UUID branchUuid, int limit, String schema, String versionType);
-	
+
 	@Query(
 			value = VariableQueries.LATEST_VERSION_ASSIGNMENTS_WITH_SCHEMA_AND_LIMIT_BY_COMPONENT,
 			nativeQuery = true)
 	List<VersionAssignment> findLatestVersionAssignmentsWithSchemaAndLimitByComponent(UUID componentUuid, int limit, String schema, String versionType);
-
+	
 	@Query(
 			value = VariableQueries.FIND_VERSION_ASSIGNMENT_BY_COMPONENT_AND_VERSION,
 			nativeQuery = true)

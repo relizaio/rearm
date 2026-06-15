@@ -5,6 +5,7 @@
 package io.reliza.model.dto;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -16,13 +17,17 @@ import io.reliza.common.CommonVariables.SidPurlOverride;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
+import io.reliza.model.ComponentData.ComponentNature;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ComponentData.FreeformContact;
+import io.reliza.model.ComponentData.DeviceClass;
 import io.reliza.model.ComponentData.GlobalInputEventRef;
+import io.reliza.model.ComponentData.MedicalProfile;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
+import io.reliza.model.RearmIdentifier;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
-import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -79,7 +84,14 @@ public class ComponentDto {
 	@JsonProperty
 	private List<GlobalInputEventRef> globalInputEventRefs;
 	@JsonProperty
-	private List<TeaIdentifier> identifiers;
+	private List<RearmIdentifier> identifiers;
+	/** Distribution module: device classification + profiles. */
+	@JsonProperty
+	private ComponentNature nature;
+	@JsonProperty
+	private DeviceClass deviceClass;
+	@JsonProperty
+	private MedicalProfile medicalProfile;
 	@JsonProperty
 	private String repoPath;
 	@JsonProperty
@@ -92,4 +104,8 @@ public class ComponentDto {
 	private List<String> sidAuthoritySegments;
 	@JsonProperty
 	private BelongsToOrganization isInternal;
+	@JsonProperty
+	private Set<UUID> leads;
+	@JsonProperty
+	private List<FreeformContact> contacts;
 }

@@ -29,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.SidPurlUtils;
-import io.reliza.common.CommonVariables.ReleaseEventType;
 import io.reliza.common.CommonVariables.SidPurlMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
@@ -47,8 +46,8 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ConditionGroup;
 import io.reliza.model.GenericReleaseData;
 import io.reliza.model.OrganizationData;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
@@ -73,7 +72,7 @@ import io.reliza.service.BranchService;
 import io.reliza.service.DependencyPatternService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetSourceCodeEntryService;
-import io.reliza.service.NotificationService;
+import io.reliza.service.ReleaseChangeHook;
 import io.reliza.dto.ChangelogRecords.CommitRecord;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.SbomComponentService;
@@ -92,8 +91,11 @@ import io.reliza.versioning.VersionUtils;
 @Service
 public class OssReleaseService {
 	
-	@Autowired
-	private NotificationService notificationService;
+	// New notifications path: release events flow through the shared outbox
+	// producer (ReleaseChangeHookImpl) for async fan-out, replacing the legacy
+	// inline NotificationService.processReleaseEvent dispatch.
+	@Autowired(required = false)
+	private ReleaseChangeHook releaseChangeHook;
 	
 	@Autowired
 	private AuditService auditService;
@@ -138,6 +140,15 @@ public class OssReleaseService {
 	@Autowired
 	@Lazy
 	private OssPullRequestAggregatorService pullRequestAggregatorService;
+
+	// Self-proxy so the per-feature-set @Transactional methods run through the
+	// Spring proxy (off-request workers have no ambient transaction).
+	@Autowired
+	@Lazy
+	private OssReleaseService self;
+
+	private static final int AUTO_INTEGRATE_BACKOFF_SECONDS = 120;
+	private static final int AUTO_INTEGRATE_LEASE_SECONDS = 600;
 
 	private final ReleaseRepository repository;
 	
@@ -465,7 +476,7 @@ public class OssReleaseService {
 					.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
 			var buildResult = sharedReleaseService.buildReleaseIdentifiers(cd, org, rd.getVersion(),
 					rd.getSidComponentName(), null);
-			List<TeaIdentifier> identifiers = buildResult.identifiers();
+			List<RearmIdentifier> identifiers = buildResult.identifiers();
 			if (null != identifiers && !identifiers.isEmpty()) {
 				rd.setIdentifiers(identifiers);
 				if (buildResult.sidComponentNameSnapshot() != null) {
@@ -679,13 +690,13 @@ public class OssReleaseService {
 	}
 
 	/** Collect {@code idValue}s for sid-typed PURL identifiers. Null-safe. */
-	private static Set<String> collectSidPurlValues(List<TeaIdentifier> identifiers) {
+	private static Set<String> collectSidPurlValues(List<RearmIdentifier> identifiers) {
 		if (identifiers == null || identifiers.isEmpty()) {
 			return Set.of();
 		}
 		return identifiers.stream()
-				.filter(ti -> ti != null && ti.getIdType() == TeaIdentifierType.PURL)
-				.map(TeaIdentifier::getIdValue)
+				.filter(ti -> ti != null && ti.getIdType() == RearmIdentifierType.PURL)
+				.map(RearmIdentifier::getIdValue)
 				.filter(SidPurlUtils::isSidPurl)
 				.collect(Collectors.toUnmodifiableSet());
 	}
@@ -693,14 +704,20 @@ public class OssReleaseService {
 	@Transactional
 	private void processReleaseLifecycleEvents (ReleaseData rData, ReleaseLifecycle curLifecycle, ReleaseLifecycle oldLifecycle) {
 		if (curLifecycle == ReleaseLifecycle.DRAFT && oldLifecycle != ReleaseLifecycle.DRAFT) {
-			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_DRAFTED);
+			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
 		} else if (curLifecycle == ReleaseLifecycle.CANCELLED) {
-			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_CANCELLED);
+			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
 		} else if (curLifecycle == ReleaseLifecycle.REJECTED) {
-			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_REJECTED);
+			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
 		} else if (curLifecycle == ReleaseLifecycle.ASSEMBLED) {
-			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_ASSEMBLED);
+			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
 			autoIntegrateProducts(rData);
+		}
+	}
+
+	private void notifyLifecycleChanged (ReleaseData rData, ReleaseLifecycle oldLifecycle, ReleaseLifecycle curLifecycle) {
+		if (releaseChangeHook != null) {
+			releaseChangeHook.onReleaseLifecycleChanged(rData, oldLifecycle, curLifecycle);
 		}
 	}
 	
@@ -732,10 +749,11 @@ public class OssReleaseService {
 		}
 	}
 
-	private void autoIntegrateProductsForRelease(ReleaseData rd, Set<UUID> processedFeatureSets) {
+	private boolean autoIntegrateProductsForRelease(ReleaseData rd, Set<UUID> processedFeatureSets) {
 		if (null == rd.getBranch()) {
-			return;
+			return true;
 		}
+		boolean allOk = true;
 
 		// PATH 1: Find feature sets with EXPLICIT dependency on this component+branch
 		List<BranchData> explicitFs = branchService.findFeatureSetDataByChildComponentBranch(
@@ -747,7 +765,12 @@ public class OssReleaseService {
 				continue;
 			}
 			if (fs.getAutoIntegrate() == AutoIntegrateState.ENABLED) {
-				autoIntegrateFeatureSetProduct(fs, rd);
+				try {
+					self.integrateFeatureSetTx(fs, rd);
+				} catch (Exception e) {
+					log.error("auto-integrate failed for feature set {} release {}", fs.getUuid(), rd.getUuid(), e);
+					allOk = false;
+				}
 				processedFeatureSets.add(fs.getUuid());
 			}
 		}
@@ -772,14 +795,79 @@ public class OssReleaseService {
 					// Pattern matched - trigger auto-integrate
 					// The effective dependencies will be resolved inside autoIntegrateFeatureSetProduct
 					// which will handle branch matching and other validation
-					autoIntegrateFeatureSetProduct(fs, rd);
+					try {
+						self.integrateFeatureSetTx(fs, rd);
+					} catch (Exception e) {
+						log.error("auto-integrate (pattern) failed for feature set {} release {}", fs.getUuid(), rd.getUuid(), e);
+						allOk = false;
+					}
 					processedFeatureSets.add(fs.getUuid());
 				}
 			}
 		}
+		return allOk;
 	}
 	
 	
+	/**
+	 * Drive product auto-integration for one queued release (off-request worker).
+	 * Claims the queued marker, integrates, then clears it on full success or
+	 * records a backoff failure so the scheduler retries idempotently (already-
+	 * integrated feature sets are skipped).
+	 */
+	public void processAutoIntegrateForRelease(UUID releaseUuid) {
+		if (self.claimAutoIntegrateTx(releaseUuid) == 0) {
+			log.debug("auto-integrate for release {} skipped — not queued or already claimed", releaseUuid);
+			return;
+		}
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		if (ord.isEmpty()) { self.clearAutoIntegrateMarkerTx(releaseUuid); return; }
+		boolean allOk;
+		try {
+			allOk = autoIntegrateProductsForRelease(ord.get(), new HashSet<>());
+		} catch (Exception e) {
+			log.error("auto-integrate drain failed for release {}", releaseUuid, e);
+			allOk = false;
+		}
+		if (allOk) {
+			self.clearAutoIntegrateMarkerTx(releaseUuid);
+		} else {
+			self.recordAutoIntegrateFailureTx(releaseUuid, AUTO_INTEGRATE_BACKOFF_SECONDS);
+		}
+	}
+
+	/** Scheduler drain: process a batch of releases still pending auto-integration. */
+	public void processPendingAutoIntegrate(int batchLimit) {
+		for (UUID u : repository.findUuidsOfReleasesPendingAutoIntegrate(batchLimit)) {
+			try { processAutoIntegrateForRelease(u); }
+			catch (Exception e) { log.error("pending auto-integrate failed for release {}", u, e); }
+		}
+	}
+
+	// The flow_control marker mutations are @Modifying writes that need an active
+	// transaction; off-request invocation contexts don't honour the repository's
+	// own @Transactional, so route them through these self-proxied methods.
+	@Transactional
+	public void clearAutoIntegrateMarkerTx(UUID releaseUuid) {
+		repository.clearAutoIntegrateRequested(releaseUuid);
+	}
+
+	@Transactional
+	public void recordAutoIntegrateFailureTx(UUID releaseUuid, int backoffSeconds) {
+		repository.recordAutoIntegrateFailure(releaseUuid, backoffSeconds);
+	}
+
+	@Transactional
+	public int claimAutoIntegrateTx(UUID releaseUuid) {
+		return repository.claimAutoIntegrate(releaseUuid, AUTO_INTEGRATE_LEASE_SECONDS);
+	}
+
+	/** One feature set in its OWN transaction so a single failure can't poison others. */
+	@Transactional
+	public void integrateFeatureSetTx(BranchData featureSet, ReleaseData triggeringRelease) {
+		autoIntegrateFeatureSetProduct(featureSet, triggeringRelease);
+	}
+
 	private void autoIntegrateFeatureSetProduct(BranchData featureSet, ReleaseData triggeringRelease) {
 		// Resolve effective dependencies (patterns + overrides + manual)
 		List<ChildComponent> effectiveDependencies = 
@@ -1361,13 +1449,13 @@ public class OssReleaseService {
 		if (releaseDto.getIdentifiers() == null) {
 			return;
 		}
-		List<TeaIdentifier> merged = new LinkedList<>(releaseDto.getIdentifiers());
-		merged.removeIf(ti -> ti != null && ti.getIdType() == TeaIdentifierType.PURL
+		List<RearmIdentifier> merged = new LinkedList<>(releaseDto.getIdentifiers());
+		merged.removeIf(ti -> ti != null && ti.getIdType() == RearmIdentifierType.PURL
 				&& SidPurlUtils.isSidPurl(ti.getIdValue()));
-		List<TeaIdentifier> existing = existingRd.getIdentifiers();
+		List<RearmIdentifier> existing = existingRd.getIdentifiers();
 		if (existing != null) {
 			existing.stream()
-					.filter(ti -> ti != null && ti.getIdType() == TeaIdentifierType.PURL
+					.filter(ti -> ti != null && ti.getIdType() == RearmIdentifierType.PURL
 							&& SidPurlUtils.isSidPurl(ti.getIdValue()))
 					.forEach(merged::add);
 		}
@@ -1557,10 +1645,11 @@ public class OssReleaseService {
 	}
 
 	private void handleNewReleaseNotifications(ReleaseData rData, BranchData bd) {
-		if (rData.getLifecycle() == ReleaseLifecycle.PENDING) {
-			notificationService.processReleaseEvent(rData, bd, ReleaseEventType.RELEASE_SCHEDULED);
-		} else {
-			notificationService.processReleaseEvent(rData, bd, ReleaseEventType.NEW_RELEASE);
+		// A PENDING release is a scheduled (future) release; everything else is
+		// a normal new release. The shared producer builds the payload itself,
+		// so the branch data is no longer needed here.
+		if (releaseChangeHook != null) {
+			releaseChangeHook.onReleaseCreated(rData, rData.getLifecycle() == ReleaseLifecycle.PENDING);
 		}
 	}
 

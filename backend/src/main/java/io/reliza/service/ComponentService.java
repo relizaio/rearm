@@ -464,6 +464,9 @@ public class ComponentService {
 				cd.setStatus(cdto.getStatus());
 			}
 			if (null != cdto.getIdentifiers()) cd.setIdentifiers(cdto.getIdentifiers());
+			if (null != cdto.getNature()) cd.setNature(cdto.getNature());
+			if (null != cdto.getDeviceClass()) cd.setDeviceClass(cdto.getDeviceClass());
+			if (null != cdto.getMedicalProfile()) cd.setMedicalProfile(cdto.getMedicalProfile());
 			if (null != cdto.getBranchSuffixMode()) {
 				// INHERIT clears the override (defers to org setting) — store as null for a cleaner record
 				cd.setBranchSuffixMode(cdto.getBranchSuffixMode() == io.reliza.common.CommonVariables.BranchSuffixMode.INHERIT
@@ -497,6 +500,11 @@ public class ComponentService {
 				cd.setSidAuthoritySegments(segments.isEmpty() ? null : segments);
 			}
 			if (null != cdto.getIsInternal()) cd.setIsInternal(cdto.getIsInternal());
+			if (null != cdto.getLeads()) cd.setLeads(cdto.getLeads());
+			// Contacts are operator free text rendered back into the team UI, so
+			// HTML-sanitize at this chokepoint (covers every updateComponent caller,
+			// not just the GraphQL boundary) before they hit the JSONB record.
+			if (null != cdto.getContacts()) cd.setContacts(ComponentData.sanitizeContacts(cdto.getContacts()));
 			// sidPurl collision check after all field mutations have been applied so the
 			// candidate {cd} reflects exactly what would be saved (name, sidPurlOverride,
 			// sidAuthoritySegments, isInternal). Pass cd.getUuid() as excludeUuid so the

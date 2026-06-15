@@ -16,4 +16,7 @@ public interface SyntheticDtrackBucketRepository extends CrudRepository<Syntheti
 	Optional<SyntheticDtrackBucket> findByOrgAndBucketIndex(UUID org, int bucketIndex);
 
 	List<SyntheticDtrackBucket> findByOrg(UUID org);
+
+	/** Idle-skip probe: true when the org has a bucket needing submit-retry. */
+	boolean existsByOrgAndIngestState(UUID org, SyntheticDtrackBucket.IngestState ingestState);
 }

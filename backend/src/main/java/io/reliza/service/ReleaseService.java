@@ -110,9 +110,9 @@ import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.dto.HistoricallyResolvedFinding;
 import io.reliza.model.tea.TeaChecksumType;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.TeaIdentifier;
+import io.reliza.model.RearmIdentifier;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.dao.DateCountDao;
 import io.reliza.versioning.VersionType;
@@ -721,7 +721,7 @@ public class ReleaseService {
 			bomComponent.setType(Type.APPLICATION);
 			bomComponent.setVersion(ord.get().getVersion());
 			SidPurlUtils.pickPreferredPurl(ord.get().getIdentifiers())
-					.map(TeaIdentifier::getIdValue)
+					.map(RearmIdentifier::getIdValue)
 					.ifPresent(bomComponent::setPurl);
 			Utils.augmentRootBomComponent(orgData.getName(), bomComponent);
 			Utils.setRearmBomMetadata(bom, bomComponent);
@@ -881,7 +881,7 @@ public class ReleaseService {
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
 			OrganizationData od = getOrganizationService.getOrganizationData(rd.getOrg()).get();
 			String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
-					.map(TeaIdentifier::getIdValue).orElse(null);
+					.map(RearmIdentifier::getIdValue).orElse(null);
 			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.ignoreDev(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE,"", "", purl, RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT);
 			rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());
 			
@@ -944,7 +944,7 @@ public class ReleaseService {
 					} else {
 						var od = getOrganizationService.getOrganizationData(rd.getOrg()).get();
 						String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
-								.map(TeaIdentifier::getIdValue).orElse(null);
+								.map(RearmIdentifier::getIdValue).orElse(null);
 						var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.ignoreDev(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE, "", "", purl);
 						UUID rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());
 						addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
@@ -1429,7 +1429,7 @@ public class ReleaseService {
 		}
 
 		String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
-				.map(TeaIdentifier::getIdValue).orElse(null);
+				.map(RearmIdentifier::getIdValue).orElse(null);
 
 		// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
 		List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
@@ -1482,7 +1482,7 @@ public class ReleaseService {
 			}
 			
 			String purl = SidPurlUtils.pickPreferredPurl(dd.getIdentifiers())
-					.map(TeaIdentifier::getIdValue).orElse(null);
+					.map(RearmIdentifier::getIdValue).orElse(null);
 			
 			// Extract digest from deliverable's software metadata
 			String hash = null;
@@ -1771,6 +1771,16 @@ public class ReleaseService {
 	 * inside the child release's createRelease tx, which propagates
 	 * through the same-class chain via thread-local.
 	 */
+	/** Scheduler drain of releases queued for product auto-integration. */
+	public void processPendingAutoIntegrate (int batchLimit) {
+		ossReleaseService.processPendingAutoIntegrate(batchLimit);
+	}
+
+	/** Drive product auto-integration for one queued release (off-request worker). */
+	public void processAutoIntegrateForRelease (UUID releaseUuid) {
+		ossReleaseService.processAutoIntegrateForRelease(releaseUuid);
+	}
+
 	@Transactional
 	public Optional<UUID> autoIntegrateFeatureSetOnDemand (BranchData bd) {
 		// check that status of this child project is not ignored
@@ -2651,7 +2661,7 @@ public class ReleaseService {
 		// Set purl only when the release actually carries one — getPreferredBomIdentifier
 		// falls back to the release UUID string, which isn't a valid PURL.
 		SidPurlUtils.pickPreferredPurl(releaseData.getIdentifiers())
-				.map(TeaIdentifier::getIdValue)
+				.map(RearmIdentifier::getIdValue)
 				.ifPresent(bomComponent::setPurl);
 		String orgName = orgData != null ? orgData.getName() : null;
 		Utils.augmentRootBomComponent(orgName, bomComponent);

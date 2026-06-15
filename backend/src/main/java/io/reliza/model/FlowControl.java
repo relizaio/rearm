@@ -5,6 +5,7 @@ package io.reliza.model;
 
 import java.io.Serializable;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
@@ -25,6 +26,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * minimal — an unused flow contributes no keys to the column.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+// Tolerate unknown keys so a release whose flow_control carries keys this
+// version doesn't model yet (e.g. a newer flow's marker, or pgjdbc's
+// PGobject {"type":"jsonb",...} envelope that hypersistence-utils can leak
+// on round-trip) still deserializes into the entity instead of throwing
+// UnrecognizedPropertyException at load and failing the whole findById.
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record FlowControl(
         // Timestamps are stored as ISO-8601 strings rather than ZonedDateTime
         // because hypersistence-utils JsonBinaryType uses its own ObjectMapper
@@ -44,5 +51,14 @@ public record FlowControl(
         // firstScanned-style: presence means "already evaluated", independent
         // of whether the diff was non-empty. Survives clearSbomReconcileRequested
         // (which strips only the sbomReconcile* keys).
-        String bomDiffNotifiedAt) implements Serializable {
+        String bomDiffNotifiedAt,
+        // Product auto-integration queue (mirrors the sbomReconcile* keys).
+        // Stamped by ReleaseRepository.markAutoIntegrateRequested when a
+        // release needs its dependent product feature sets auto-integrated,
+        // drained after-commit on the bounded autoIntegrateExecutor and by
+        // the per-minute scheduler. autoIntegrateSkipUntil holds the
+        // failure-backoff fence; autoIntegrateFailureCount the attempt count.
+        String autoIntegrateRequestedAt,
+        String autoIntegrateSkipUntil,
+        Integer autoIntegrateFailureCount) implements Serializable {
 }

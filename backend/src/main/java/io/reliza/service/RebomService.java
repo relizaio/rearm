@@ -342,6 +342,31 @@ public class RebomService {
     }
 
     /**
+     * Fetch parsed HBOM (hardware BOM) components — the device/firmware nodes
+     * the SBOM parser drops. Returns an empty list for a software-only BOM.
+     */
+    public io.reliza.model.tea.Rebom.ParsedHbom parseHbom(UUID bomSerialNumber, UUID org) {
+        String query = """
+            query parseHbomById ($id: ID!, $org: ID!) {
+                parseHbomById(id: $id, org: $org) {
+                    components {
+                        bomRef type operator name version description category subcategory
+                        parties { bomRef roles name address url }
+                        identifiers { bomRef party identities { idType idValue } }
+                        boardLocation deviceType quantity parentRef isRoot
+                    }
+                }
+            }""";
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("id", bomSerialNumber.toString());
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        Object raw = response.get("parseHbomById");
+        if (raw == null) return new io.reliza.model.tea.Rebom.ParsedHbom(List.of());
+        return Utils.OM.convertValue(raw, io.reliza.model.tea.Rebom.ParsedHbom.class);
+    }
+
+    /**
      * Find augmented BOM by serialNumber and specific version.
      * Used for downloading historical versions of augmented BOMs.
      */

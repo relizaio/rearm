@@ -73,6 +73,14 @@ public class SbomComponent implements Serializable, RelizaEntity {
 	@Column
 	private ZonedDateTime enrichedAt;
 
+	// Sticky synthetic-DTrack bucket assignment (null = not yet assigned). Set
+	// once when the component first becomes submittable and never changed, so a
+	// new/enriched component only ever re-submits ITS bucket — unlike the old
+	// positional slicing, where one insertion shifted every later bucket. See
+	// SyntheticSbomService.submitOrg.
+	@Column
+	private Integer syntheticBucketIndex;
+
 	@Override
 	public UUID getUuid() {
 		return uuid;
@@ -135,6 +143,16 @@ public class SbomComponent implements Serializable, RelizaEntity {
 		this.recordData = recordData;
 	}
 
+	/**
+	 * True when this is the BOM's own root/self component (synthesised from
+	 * {@code bom.metadata.component}) — the release's artifact, not a dependency.
+	 * Stored as a boolean flag inside {@link #recordData} (there is no dedicated
+	 * column), so it's exposed here rather than read ad-hoc at call sites.
+	 */
+	public boolean isRoot() {
+		return recordData != null && Boolean.TRUE.equals(recordData.get("isRoot"));
+	}
+
 	@Override
 	public int getSchemaVersion() {
 		return schemaVersion;
@@ -166,5 +184,13 @@ public class SbomComponent implements Serializable, RelizaEntity {
 
 	public void setEnrichedAt(ZonedDateTime enrichedAt) {
 		this.enrichedAt = enrichedAt;
+	}
+
+	public Integer getSyntheticBucketIndex() {
+		return syntheticBucketIndex;
+	}
+
+	public void setSyntheticBucketIndex(Integer syntheticBucketIndex) {
+		this.syntheticBucketIndex = syntheticBucketIndex;
 	}
 }

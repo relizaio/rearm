@@ -5,6 +5,7 @@
 
 package io.reliza.model;
 
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,9 +27,11 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.cdx.ExternalRef;
+import io.reliza.model.cdx.Origin;
+import io.reliza.model.cdx.Party;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.tea.Link;
-import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.VersionUtils;
 import lombok.Builder;
@@ -143,10 +146,34 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 			return clonedSdm;
 		}
 	}
-	
+
+	/**
+	 * CDX-aligned production facts for a hardware deliverable (a produced lot).
+	 * The party model (manufacturer/assembler/supplier) and origin round-trip
+	 * to/from a CycloneDX entity fragment; {@code extensions} preserves any CDX
+	 * field we don't model yet (the spec is still in flux). Model-level facts
+	 * (part composition, certifications) live in the release's HBOM, not here.
+	 */
+	@Data
+	@Builder
+	@lombok.NoArgsConstructor
+	@lombok.AllArgsConstructor
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class HardwareDeliverableMetadata {
+		private List<Party> parties;
+		/** Top-level country-of-origin / multi-source rollup (per-party origin lives on each Party). */
+		private Origin origin;
+		private LocalDate manufactureDate;
+		private List<ExternalRef> externalRefs;
+		/** Raw CDX passthrough for fields not yet modelled. */
+		private Map<String, Object> extensions;
+	}
+
 	private UUID uuid;
 	private String displayIdentifier;
-	private List<TeaIdentifier> identifiers = new ArrayList<>();
+	// Unified identifiers: TEA-exportable (PURL/CPE/TEI) plus ReARM-internal
+	// production identifiers (LOT, UDI-DI, SERIAL, ...) of a produced lot.
+	private List<RearmIdentifier> identifiers = new ArrayList<>();
 	private UUID org; // if branch uuid is specified, organization must match that of branch
 	@JsonProperty(CommonVariables.BRANCH_FIELD)
 	private UUID branch = null; // deliverable should belong to a project's branch for internal deliverables
@@ -172,7 +199,14 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 	
 	// for software deliverables only
 	private SoftwareDeliverableMetadata softwareMetadata;
-	
+
+	// for hardware deliverables only — CDX-aligned production facts (a lot)
+	private HardwareDeliverableMetadata hardwareMetadata;
+
+	// batch size for hardware lots; null for software. Distribution may
+	// reference this deliverable but quantities are not reconciled (v1).
+	private Integer quantity;
+
 	private List<UUID> artifacts = new ArrayList<>();
 
 	public CdxType getType() {
@@ -202,6 +236,10 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 		dd.setBranch(deliverableDto.getBranch());
 		if (null != deliverableDto.getSoftwareMetadata())
 			dd.setSoftwareMetadata(SoftwareDeliverableMetadata.clone(deliverableDto.getSoftwareMetadata()));
+		if (null != deliverableDto.getHardwareMetadata())
+			dd.setHardwareMetadata(deliverableDto.getHardwareMetadata());
+		if (null != deliverableDto.getQuantity())
+			dd.setQuantity(deliverableDto.getQuantity());
 		dd.setType(deliverableDto.getType());
 		
 		if (null != deliverableDto.getTags()) {

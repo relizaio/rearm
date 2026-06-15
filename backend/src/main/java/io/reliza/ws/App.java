@@ -10,6 +10,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -27,6 +28,13 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
@@ -101,6 +109,75 @@ public class App {
 				com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.NON_PRIVATE));
 	}
 
+	/**
+	 * JWT decoder for the resource server. Beyond Spring's defaults (signature via
+	 * jwk-set-uri, issuer + exp/nbf), this pins the token's authorized party
+	 * ({@code azp}) to an allowlist of trusted Keycloak clients (default
+	 * {@code login-app}). Without it, the resource server accepts ANY token the
+	 * realm signed — i.e. a token minted for a different client in the same realm
+	 * would be honoured (cross-client token replay). The allowlist is configurable
+	 * via {@code relizaprops.jwtAllowedAzp} (CSV) so additional first-party clients
+	 * can be added without a code change. Keys are loaded from jwk-set-uri (matching
+	 * the prior auto-config behaviour) rather than doing OIDC discovery against the
+	 * public issuer, which isn't reachable internally.
+	 */
+	@Bean
+	public JwtDecoder jwtDecoder(
+			@Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri,
+			@Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
+			@Value("${relizaprops.jwtAllowedAzp:login-app}") String allowedAzpCsv,
+			@Value("${relizaprops.jwtValidateAudience:false}") boolean validateAudience,
+			@Value("${relizaprops.jwtAudience:rearm-backend}") String audience) {
+		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+		java.util.Set<String> allowedAzp = parseCsvSet(allowedAzpCsv);
+		java.util.List<OAuth2TokenValidator<Jwt>> validators = new java.util.ArrayList<>();
+		validators.add(JwtValidators.createDefaultWithIssuer(issuerUri));
+		validators.add(buildAzpValidator(allowedAzp));
+		// Audience validation is OFF by default and must only be enabled once Keycloak
+		// is issuing tokens with this audience (the oidc-audience-mapper on login-app) —
+		// enabling it before the mapper is live would reject every token (lockout).
+		if (validateAudience) {
+			validators.add(buildAudienceValidator(audience));
+		}
+		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
+		log.info("JWT resource-server decoder configured (issuer={}, azp allowlist={}, validateAudience={}, audience={})",
+				issuerUri, allowedAzp, validateAudience, validateAudience ? audience : "n/a");
+		return decoder;
+	}
+
+	/** Parse a comma-separated value into a trimmed, non-empty set. */
+	static java.util.Set<String> parseCsvSet(String csv) {
+		java.util.Set<String> out = new java.util.HashSet<>();
+		if (csv != null) {
+			for (String s : csv.split(",")) {
+				String t = s.trim();
+				if (!t.isEmpty()) out.add(t);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Validator that requires the token's {@code azp} (authorized party — the client
+	 * the token was issued to) to be in {@code allowedAzp}. A missing/blank azp or a
+	 * value outside the allowlist fails validation.
+	 */
+	static OAuth2TokenValidator<Jwt> buildAzpValidator(java.util.Set<String> allowedAzp) {
+		return new JwtClaimValidator<String>("azp", azp -> azp != null && allowedAzp.contains(azp));
+	}
+
+	/**
+	 * Validator that requires the token's {@code aud} (audience) to contain
+	 * {@code expectedAudience} — i.e. the token was issued *for this API*. Requires
+	 * Keycloak to add the audience (the login-app oidc-audience-mapper); gated off by
+	 * default via {@code relizaprops.jwtValidateAudience} so it is only switched on
+	 * once the mapper is live.
+	 */
+	static OAuth2TokenValidator<Jwt> buildAudienceValidator(String expectedAudience) {
+		return new JwtClaimValidator<java.util.List<String>>("aud",
+				aud -> aud != null && aud.contains(expectedAudience));
+	}
+
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter) throws Exception {
 	  http
@@ -160,6 +237,28 @@ public class App {
 	@Bean
 	public ScheduledExecutorService scheduledExecutorService() {
 		return Executors.newSingleThreadScheduledExecutor();
+	}
+
+	/**
+	 * Dedicated, BOUNDED executor for after-commit product auto-integration.
+	 * Caps background-integration concurrency so it can never exhaust the
+	 * Hikari pool the way the old in-request, in-transaction path did
+	 * (each integration briefly needs up to 2 connections — its own tx plus
+	 * the REQUIRES_NEW version assignment). maxPoolSize small on purpose.
+	 * Queue overflow just discards the immediate attempt; the durable
+	 * flow_control marker + scheduler drain still guarantees the work runs.
+	 */
+	@Bean(name = "autoIntegrateExecutor")
+	public org.springframework.core.task.TaskExecutor autoIntegrateExecutor() {
+		org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor ex =
+				new org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor();
+		ex.setCorePoolSize(2);
+		ex.setMaxPoolSize(3);
+		ex.setQueueCapacity(2000);
+		ex.setThreadNamePrefix("auto-integrate-");
+		ex.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy());
+		ex.initialize();
+		return ex;
 	}
 
 }

@@ -5,6 +5,7 @@
 package io.reliza.model.dto;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -15,9 +16,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.model.ParentRelease;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.ReleaseData.GudidRecord;
+import io.reliza.model.ReleaseData.GudidStatus;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseStatus;
-import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -60,7 +63,20 @@ public class ReleaseDto {
 	private ReleaseLifecycle lifecycle;
 	
 	@JsonProperty
-	private List<TeaIdentifier> identifiers;
+	private List<RearmIdentifier> identifiers;
+
+	/** Version-specific GUDID record (UDI-bearing release). */
+	@JsonProperty
+	private GudidRecord gudidRecord;
+	/** GUDID submission workflow state. */
+	@JsonProperty
+	private GudidStatus gudidStatus;
+	/** End-of-support date (cyber-device support window). */
+	@JsonProperty
+	private LocalDate eos;
+	/** End-of-life date (cyber-device support window). */
+	@JsonProperty
+	private LocalDate eol;
 
 	/** System-controlled — set by the orchestrator on release create, immutable thereafter. */
 	@JsonProperty

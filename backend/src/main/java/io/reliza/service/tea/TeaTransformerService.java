@@ -53,6 +53,9 @@ import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaComponentRef;
 import io.reliza.model.tea.TeaComponentReleaseWithCollection;
 import io.reliza.model.tea.TeaDiscoveryInfo;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaProductRelease;
@@ -98,6 +101,30 @@ public class TeaTransformerService {
         this.relizaConfigProps = relizaConfigProps;
     }
     
+	/**
+	 * TEA-boundary filter: keep only identifiers whose type name exists in the
+	 * code-generated {@link TeaIdentifierType} (CPE/TEI/PURL/COMPLIANCE_DOCUMENT);
+	 * ReARM-internal types (UDI, UDI_DI, UDI_PI, SERIAL, LOT) never leave via TEA.
+	 */
+	public static List<TeaIdentifier> toTeaIdentifiers(List<RearmIdentifier> identifiers) {
+		List<TeaIdentifier> out = new LinkedList<>();
+		if (identifiers == null) return out;
+		for (RearmIdentifier ri : identifiers) {
+			if (ri == null || ri.getIdType() == null || ri.getIdValue() == null) continue;
+			TeaIdentifierType teaType;
+			try {
+				teaType = TeaIdentifierType.fromValue(ri.getIdType().name());
+			} catch (IllegalArgumentException e) {
+				continue;
+			}
+			TeaIdentifier ti = new TeaIdentifier();
+			ti.setIdType(teaType);
+			ti.setIdValue(ri.getIdValue());
+			out.add(ti);
+		}
+		return out;
+	}
+
 	public TeaProduct transformProductToTea(ComponentData rearmCD) {
 		if (rearmCD.getType() != ComponentType.PRODUCT) {
 			throw new RuntimeException("Wrong component type");
@@ -105,7 +132,7 @@ public class TeaTransformerService {
 		TeaProduct tp = new TeaProduct();
 		tp.setUuid(rearmCD.getUuid());
 		tp.setName(rearmCD.getName());
-		tp.setIdentifiers(rearmCD.getIdentifiers());
+		tp.setIdentifiers(toTeaIdentifiers(rearmCD.getIdentifiers()));
 		return tp;
 	}
 	
@@ -127,7 +154,7 @@ public class TeaTransformerService {
 		OffsetDateTime releaseDate = rd.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
 		tpr.setCreatedDate(releaseDate);
 		tpr.setReleaseDate(releaseDate); // TODO (consider using date when release set to shipped or assembled - potentially make configurable)
-		tpr.setIdentifiers(rd.getIdentifiers());
+		tpr.setIdentifiers(toTeaIdentifiers(rd.getIdentifiers()));
 		tpr.setPreRelease(false);
 		tpr.setProduct(productUuid);
 		tpr.setProductName(cd.getName());
@@ -150,7 +177,7 @@ public class TeaTransformerService {
 		TeaComponent tc = new TeaComponent();
 		tc.setUuid(rearmCD.getUuid());
 		tc.setName(rearmCD.getName());
-		tc.setIdentifiers(rearmCD.getIdentifiers());
+		tc.setIdentifiers(toTeaIdentifiers(rearmCD.getIdentifiers()));
 		return tc;
 	}
 	
@@ -162,7 +189,7 @@ public class TeaTransformerService {
 		OffsetDateTime releaseDate = rearmRD.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
 		tr.setReleaseDate(releaseDate); // TODO consider separate release date
 		tr.setCreatedDate(releaseDate);
-		tr.setIdentifiers(rearmRD.getIdentifiers());
+		tr.setIdentifiers(toTeaIdentifiers(rearmRD.getIdentifiers()));
 		ComponentData cd = getComponentService.getComponentData(rearmRD.getComponent()).get();
 		tr.setComponent(rearmRD.getComponent());
 		tr.setComponentName(cd.getName());
@@ -189,7 +216,7 @@ public class TeaTransformerService {
 	private TeaReleaseDistribution transformDeliverableToTeaDistribution (DeliverableData dd) {
 		TeaReleaseDistribution trd = new TeaReleaseDistribution();
 		trd.setDescription(dd.getNotes());
-		trd.setIdentifiers(dd.getIdentifiers());
+		trd.setIdentifiers(toTeaIdentifiers(dd.getIdentifiers()));
 		if (null != dd.getSoftwareMetadata()) {
 			var tcList = transformDigestRecordToTeaChecksum(dd.getSoftwareMetadata().getDigestRecords());
 			trd.setChecksums(tcList);
@@ -215,7 +242,7 @@ public class TeaTransformerService {
 	
 	public List<TeaDiscoveryInfo> performTeiDiscovery (String decodedTei) {
 		Set<UUID> foundReleases = new LinkedHashSet<>();
-		var releasesByTei = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, TeaIdentifierType.TEI, decodedTei); // TODO handle other orgs
+		var releasesByTei = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, RearmIdentifierType.TEI, decodedTei); // TODO handle other orgs
 		if (!releasesByTei.isEmpty()) foundReleases.addAll(releasesByTei.stream().map(x -> x.getUuid()).toList());
 		if (foundReleases.isEmpty()) {
 			String[] teiEls = decodedTei.split(":");
@@ -235,7 +262,7 @@ public class TeaTransformerService {
 					}
 				}
 				String purl = purlBuilder.toString();
-				var releasesByPurl = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, TeaIdentifierType.PURL, purl); // TODO handle other orgs
+				var releasesByPurl = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, RearmIdentifierType.PURL, purl); // TODO handle other orgs
 				if (!releasesByPurl.isEmpty()) foundReleases.addAll(releasesByPurl.stream().map(x -> x.getUuid()).toList());
 			}
 		}
@@ -499,12 +526,13 @@ public class TeaTransformerService {
 			OffsetDateTime ts = ue.date().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
 			TeaCleEvent ev = new TeaCleEvent(-1, TeaCleEventType.COMPONENT_RENAMED, ts, ts);
 			// Per spec 7.8 — `identifiers[]` carries the NEW identifiers for
-			// the component. ReARM's TeaIdentifierType doesn't include NAME
-			// (only CPE/TEI/PURL/COMPLIANCE_DOCUMENT), so we snapshot
-			// whatever identifiers are configured on the component at emit
-			// time and put the human-readable old→new name in description.
-			if (cd.getIdentifiers() != null && !cd.getIdentifiers().isEmpty()) {
-				ev.setIdentifiers(new ArrayList<>(cd.getIdentifiers()));
+			// the component. The TEA enum doesn't include NAME (only
+			// CPE/TEI/PURL/COMPLIANCE_DOCUMENT), so we snapshot the component's
+			// TEA-exportable identifiers at emit time and put the
+			// human-readable old→new name in description.
+			List<TeaIdentifier> renameIds = toTeaIdentifiers(cd.getIdentifiers());
+			if (!renameIds.isEmpty()) {
+				ev.setIdentifiers(renameIds);
 			}
 			if (StringUtils.isNotEmpty(ue.newValue())) {
 				ev.setDescription(StringUtils.isNotEmpty(ue.oldValue())
@@ -651,7 +679,7 @@ public class TeaTransformerService {
 	 *                    describes; may be null/empty (then the field is
 	 *                    emitted as an empty array)
 	 */
-	public tools.jackson.databind.JsonNode wrapAsCleDocument(TeaCle cle, java.util.List<io.reliza.model.tea.TeaIdentifier> identifiers) {
+	public tools.jackson.databind.JsonNode wrapAsCleDocument(TeaCle cle, java.util.List<RearmIdentifier> identifiers) {
 		tools.jackson.databind.node.ObjectNode root = io.reliza.common.Utils.OM.createObjectNode();
 		root.put("$schema", CLE_SCHEMA_URI);
 		// identifier field — spec accepts string OR array. Always array for
@@ -660,9 +688,7 @@ public class TeaTransformerService {
 		if (identifiers != null) {
 			for (var id : identifiers) {
 				if (id == null) continue;
-				if (id.getIdType() != null
-						&& "PURL".equalsIgnoreCase(id.getIdType().getValue())
-						&& id.getIdValue() != null) {
+				if (id.getIdType() == RearmIdentifierType.PURL && id.getIdValue() != null) {
 					idArr.add(id.getIdValue());
 				}
 			}

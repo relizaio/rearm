@@ -59,8 +59,8 @@ import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.CveSearchResultDto.BranchWithReleases;
 import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
 import io.reliza.repositories.MetricsAuditRepository;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.repositories.ReleaseLiteRepository;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.dto.ChangelogRecords.CommitRecord;
@@ -1012,7 +1012,7 @@ public class SharedReleaseService {
 
 	/** Output of {@link #buildReleaseIdentifiers}. The orchestrator does not mutate inputs. */
 	public record BuildIdentifiersResult(
-			List<TeaIdentifier> identifiers,
+			List<RearmIdentifier> identifiers,
 			String sidComponentNameSnapshot
 	) {}
 
@@ -1027,8 +1027,8 @@ public class SharedReleaseService {
 	 *   with invalid authority segments (would emit a malformed {@code pkg:sid//...}).
 	 */
 	public BuildIdentifiersResult buildReleaseIdentifiers(ComponentData cd, OrganizationData org, String version,
-			String existingSidComponentName, List<TeaIdentifier> callerProvided) throws RelizaException {
-		List<TeaIdentifier> result = (callerProvided != null && !callerProvided.isEmpty())
+			String existingSidComponentName, List<RearmIdentifier> callerProvided) throws RelizaException {
+		List<RearmIdentifier> result = (callerProvided != null && !callerProvided.isEmpty())
 				? new LinkedList<>(callerProvided)
 				: new LinkedList<>();
 
@@ -1049,14 +1049,14 @@ public class SharedReleaseService {
 
 		boolean callerEmpty = (callerProvided == null || callerProvided.isEmpty());
 		if (callerEmpty) {
-			Optional<TeaIdentifier> carry = deriveCarryoverPurl(cd, version, policy.enabled());
+			Optional<RearmIdentifier> carry = deriveCarryoverPurl(cd, version, policy.enabled());
 			carry.ifPresent(result::add);
 		}
 
 		return new BuildIdentifiersResult(result, snapshotToWrite);
 	}
 
-	private record SidIdentifierResult(TeaIdentifier identifier, String snapshotName) {}
+	private record SidIdentifierResult(RearmIdentifier identifier, String snapshotName) {}
 
 	/**
 	 * Version-stamp the component's first PURL into a release identifier.
@@ -1065,14 +1065,14 @@ public class SharedReleaseService {
 	 * how vendor-asserted sid identity rides through to releases of EXTERNAL components.
 	 * Returns empty (not throws) on failure so callers can decide.
 	 */
-	public Optional<TeaIdentifier> deriveCarryoverPurl(ComponentData cd, String version, boolean skipSid) {
+	public Optional<RearmIdentifier> deriveCarryoverPurl(ComponentData cd, String version, boolean skipSid) {
 		try {
-			List<TeaIdentifier> compIdentifiers = cd.getIdentifiers();
+			List<RearmIdentifier> compIdentifiers = cd.getIdentifiers();
 			if (compIdentifiers == null || compIdentifiers.isEmpty()) {
 				return Optional.empty();
 			}
-			Optional<TeaIdentifier> purlIdentifier = compIdentifiers.stream()
-					.filter(ti -> ti.getIdType() == TeaIdentifierType.PURL)
+			Optional<RearmIdentifier> purlIdentifier = compIdentifiers.stream()
+					.filter(ti -> ti.getIdType() == RearmIdentifierType.PURL)
 					.filter(ti -> !skipSid || !isSidPurlIdentifier(ti))
 					.findFirst();
 			if (purlIdentifier.isEmpty()) {
@@ -1080,8 +1080,8 @@ public class SharedReleaseService {
 			}
 			PackageURL purlObj = new PackageURL(purlIdentifier.get().getIdValue());
 			PackageURL versionedPurl = Utils.setVersionOnPurl(purlObj, version);
-			TeaIdentifier teaPurl = new TeaIdentifier();
-			teaPurl.setIdType(TeaIdentifierType.PURL);
+			RearmIdentifier teaPurl = new RearmIdentifier();
+			teaPurl.setIdType(RearmIdentifierType.PURL);
 			teaPurl.setIdValue(versionedPurl.canonicalize());
 			return Optional.of(teaPurl);
 		} catch (Exception e) {
@@ -1112,8 +1112,8 @@ public class SharedReleaseService {
 		String sidPurl = SidPurlUtils.buildSidPurl(policy.authoritySegments(), snapshotName, version,
 				/* qualifiers */ null, /* subpath */ null);
 
-		TeaIdentifier ti = new TeaIdentifier();
-		ti.setIdType(TeaIdentifierType.PURL);
+		RearmIdentifier ti = new RearmIdentifier();
+		ti.setIdType(RearmIdentifierType.PURL);
 		ti.setIdValue(sidPurl);
 		return new SidIdentifierResult(ti, snapshotName);
 	}
@@ -1122,8 +1122,8 @@ public class SharedReleaseService {
 	 * @return true iff the identifier is a PURL whose parsed type is {@code "sid"}.
 	 *   Delegates to {@link SidPurlUtils#isSidPurl(String)}.
 	 */
-	private static boolean isSidPurlIdentifier(TeaIdentifier ti) {
-		if (ti == null || ti.getIdType() != TeaIdentifierType.PURL) {
+	private static boolean isSidPurlIdentifier(RearmIdentifier ti) {
+		if (ti == null || ti.getIdType() != RearmIdentifierType.PURL) {
 			return false;
 		}
 		return SidPurlUtils.isSidPurl(ti.getIdValue());
@@ -1257,7 +1257,7 @@ public class SharedReleaseService {
 		return result;
 	}
 	
-	public List<ReleaseData> findReleasesByOrgAndIdentifier(UUID org, TeaIdentifierType idType, String idValue) {
+	public List<ReleaseData> findReleasesByOrgAndIdentifier(UUID org, RearmIdentifierType idType, String idValue) {
 		List<ReleaseData> rds = new LinkedList<>();
 		List<Release> releases = repository.findReleasesByOrgAndIdentifier(org.toString(), idType.name(), idValue);
 		if (!releases.isEmpty()) rds = releases.stream().map(ReleaseData::dataFromRecord).toList();

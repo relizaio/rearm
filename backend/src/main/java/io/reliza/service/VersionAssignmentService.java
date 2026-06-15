@@ -127,7 +127,7 @@ public class VersionAssignmentService {
 		}
 		return ova;
 	}
-	
+
 	// Note that this method doesn't check for duplicates and therefore may fail
 	public Optional<VersionAssignment> createNewVersionAssignment (UUID branchUuid, String version, UUID releaseUuid) {
 		return createNewVersionAssignment(branchUuid, version, releaseUuid, VersionTypeEnum.DEV);
@@ -329,12 +329,15 @@ public class VersionAssignmentService {
 		while (retries > 0) {
 			Optional<VersionAssignment> vaCheck = getVersionAssignment(pd.getUuid(), versionString, versionType);
 			if (vaCheck.isPresent()) {
+				// Re-fetch THIS branch's latest first so the retry derives from the
+				// freshest own-branch state (a concurrent same-branch mint is the
+				// common collision cause — bumping past it converges).
+				latestOva = getLatestVersionAssignmentOfBranch(bd.getUuid(), 10, projectSchema, branchSchema, versionType);
 				versionString = getVersionStringFromVaCheckRetry(latestOva, vaCheck, projectSchema, branchSchema, bd,
 					bumpAction, modifier, metadata, followedVersion, versionType);
 			} else {
 				break;
 			}
-			latestOva = getLatestVersionAssignmentOfBranch(bd.getUuid(), 10, projectSchema, branchSchema, versionType);
 			retries--;
 		}
 
@@ -379,21 +382,47 @@ public class VersionAssignmentService {
 		return versionString;
 	}
 
-	private String getVersionStringFromVaCheckRetry (Optional<VersionAssignment> latestOva, Optional<VersionAssignment> vaCheck, String projectSchema, String branchSchema, 
+	/**
+	 * Collision retry. Two distinct collision causes need two resolutions:
+	 *
+	 * <p>1. A concurrent mint on THIS branch — re-deriving from the branch's
+	 * freshly re-fetched own latest VA bumps past the rival.
+	 *
+	 * <p>2. A collision with ANOTHER branch of the same component. For
+	 * suffix-less setups (org/component Branch Suffix Mode NO_APPEND on
+	 * semver-like schemas) branches intentionally SHARE one component-wide
+	 * sequence — branch1 takes 0.1.0, branch2 takes 0.1.1, branch1's next is
+	 * 0.1.2 — so we escalate to the component-wide latest VA. This used to be
+	 * unguarded and corrupted Branch-element schemas: bumping a sibling
+	 * feature set's VA stamps the sibling's NAME into this branch's version
+	 * (observed in production: a feature set minting '26.06.x' /
+	 * sibling-prefixed versions), and once one foreign-prefixed VA lands on a
+	 * branch every subsequent bump perpetuates it.
+	 * {@link #constructVersionAssignmentStringSub} now drops any
+	 * foreign-branch-identified VA before deriving, so the escalation is only
+	 * taken where branch identity isn't embedded in the version; Branch-element
+	 * schemas fall back to own-name generation and ultimately the
+	 * "baseVersion-N" suffix fallback below.
+	 */
+	private String getVersionStringFromVaCheckRetry (Optional<VersionAssignment> latestOva, Optional<VersionAssignment> vaCheck, String projectSchema, String branchSchema,
 			BranchData bd, ActionEnum bumpAction, String modifier, String metadata, String followedVersion, VersionTypeEnum versionType) {
-			String versionString;
-			if (StringUtils.isNotEmpty(followedVersion)) {
-				versionString = constructVersionAssignmentStringSub(vaCheck, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
-			} else {
-				// obtain the latest version assignment for the projects
-				latestOva = getLatestVersionAssignmentOfProject(bd.getUuid(), bd.getComponent(), 10, projectSchema, versionType);
-				// if not found, try branch schema also
-				if (latestOva.isEmpty()) {
-					latestOva = getLatestVersionAssignmentOfProject(bd.getUuid(), bd.getComponent(), 10, branchSchema, versionType);
-				}
-				versionString = constructVersionAssignmentStringSub(latestOva, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
+			String collidingVersion = vaCheck.map(VersionAssignment::getVersion).orElse(null);
+			String fromOwnBranch = constructVersionAssignmentStringSub(latestOva, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
+			if (!fromOwnBranch.equals(collidingVersion)) {
+				return fromOwnBranch;
 			}
-			return versionString;
+			Optional<VersionAssignment> escalationOva;
+			if (StringUtils.isNotEmpty(followedVersion)) {
+				escalationOva = vaCheck;
+			} else {
+				// obtain the latest version assignment for the project
+				escalationOva = getLatestVersionAssignmentOfProject(bd.getUuid(), bd.getComponent(), 10, projectSchema, versionType);
+				// if not found, try branch schema also
+				if (escalationOva.isEmpty()) {
+					escalationOva = getLatestVersionAssignmentOfProject(bd.getUuid(), bd.getComponent(), 10, branchSchema, versionType);
+				}
+			}
+			return constructVersionAssignmentStringSub(escalationOva, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
 	}
 	
 	private String constructVersionAssignmentStringSub (Optional<VersionAssignment> latestOva, String projectSchema, String branchSchema, BranchData bd,
@@ -401,6 +430,16 @@ public class VersionAssignmentService {
 		Version v = null;
 		String namespace = computeNamespaceForBranch(branchSchema, bd);
 		ModifierPolicy modifierPolicy = resolveModifierPolicy(bd, branchSchema, namespace);
+		// Self-heal: if the branch's latest VA carries another branch's name in
+		// its Branch element (corruption seeded by the old component-wide
+		// collision retry), bumping it would perpetuate the foreign prefix
+		// forever. Treat such a VA as absent so the clean generation paths
+		// (follow pin / schema pin / branch-name generation) take over.
+		if (latestOva.isPresent() && isForeignBranchVersion(latestOva.get().getVersion(), branchSchema, bd, namespace)) {
+			log.warn("Ignoring foreign-branch latest version assignment '{}' on branch {} ('{}')",
+					latestOva.get().getVersion(), bd.getUuid(), bd.getName());
+			latestOva = Optional.empty();
+		}
 		if (StringUtils.isNotEmpty(followedVersion) && latestOva.isPresent() && VersionUtils.isVersionMatchingSchemaAndPin(branchSchema, followedVersion, latestOva.get().getVersion())) {
 			log.debug("followedVersion = " + followedVersion + ", latestOvaVersion = " + latestOva.get().getVersion());
 			v = Version.getVersionFromPinAndOldVersion(branchSchema, followedVersion, latestOva.get().getVersion(), bumpAction, namespace, modifierPolicy);
@@ -426,6 +465,34 @@ public class VersionAssignmentService {
 		}
 		v.setMetadata(metadata);
 		return v.constructVersionString();
+	}
+
+	/**
+	 * True when {@code version}'s Branch element (for schemas that have one)
+	 * names a DIFFERENT branch than {@code bd}. Conservative: returns false
+	 * when the schema has no Branch element, when the version doesn't parse,
+	 * or when the element matches either the branch's own (sanitised) name or
+	 * its custom namespace — only a positive, parseable mismatch is flagged.
+	 */
+	private boolean isForeignBranchVersion (String version, String branchSchema, BranchData bd, String namespace) {
+		if (StringUtils.isEmpty(branchSchema) || StringUtils.isEmpty(version)) return false;
+		if (!branchSchema.toLowerCase().contains("branch")) return false;
+		try {
+			String actualElement = Version.getVersion(version, branchSchema).getBranch();
+			if (StringUtils.isEmpty(actualElement)) return false;
+			// Round-trip this branch's own name through the library so we compare
+			// against the same sanitised form the library embeds in versions.
+			Version probe = Version.getVersion(branchSchema);
+			probe.setBranch(bd.getName());
+			String expectedElement = Version.getVersion(probe.constructVersionString(), branchSchema).getBranch();
+			if (actualElement.equalsIgnoreCase(expectedElement)) return false;
+			if (StringUtils.isNotEmpty(namespace) && actualElement.equalsIgnoreCase(namespace)) return false;
+			return true;
+		} catch (RuntimeException e) {
+			// unparseable against this schema — let the existing schema-match
+			// checks in the caller decide; don't flag as foreign here
+			return false;
+		}
 	}
 
 	/**

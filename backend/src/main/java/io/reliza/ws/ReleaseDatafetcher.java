@@ -93,8 +93,7 @@ import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
 import io.reliza.model.DownloadLogData.DownloadConfig;
 import io.reliza.model.DownloadLogData.DownloadSubjectType;
 import io.reliza.model.DownloadLogData.DownloadType;
@@ -1212,6 +1211,26 @@ public class ReleaseDatafetcher {
 		Boolean rebuildRelease = (Boolean) progReleaseInput.get("rebuildRelease");
 		boolean shouldRebuild = Boolean.TRUE.equals(rebuildRelease);
 		
+		// Distribution module: thread identifier / device-identity fields so the
+		// CLI / programmatic callers can ship UDI-DI, GUDID, and support dates.
+		if (progReleaseInput.containsKey("identifiers")) {
+			releaseDtoBuilder.identifiers(Utils.OM.convertValue(progReleaseInput.get("identifiers"),
+					new tools.jackson.core.type.TypeReference<java.util.List<io.reliza.model.RearmIdentifier>>() {}));
+		}
+		if (progReleaseInput.containsKey("gudidRecord")) {
+			releaseDtoBuilder.gudidRecord(Utils.OM.convertValue(progReleaseInput.get("gudidRecord"),
+					io.reliza.model.ReleaseData.GudidRecord.class));
+		}
+		if (progReleaseInput.containsKey("gudidStatus")) {
+			releaseDtoBuilder.gudidStatus(io.reliza.model.ReleaseData.GudidStatus.valueOf(
+					(String) progReleaseInput.get("gudidStatus")));
+		}
+		if (progReleaseInput.containsKey("eos")) {
+			releaseDtoBuilder.eos(java.time.LocalDate.parse((String) progReleaseInput.get("eos")));
+		}
+		if (progReleaseInput.containsKey("eol")) {
+			releaseDtoBuilder.eol(java.time.LocalDate.parse((String) progReleaseInput.get("eol")));
+		}
 		try {
 			releaseDtoBuilder.version(version)
 							.inboundDeliverables(inboundDeliverables)
@@ -1363,12 +1382,12 @@ public class ReleaseDatafetcher {
 			UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
 			DeliverableData dd = getDeliverableService.getDeliverableData(deliverableId).get();
 			purl = SidPurlUtils.pickPreferredPurl(dd.getIdentifiers())
-					.map(TeaIdentifier::getIdValue).orElse(null);
+					.map(RearmIdentifier::getIdValue).orElse(null);
 		} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
 			// TODO purl for sce
 		} else { // belongs to release
 			purl = SidPurlUtils.pickPreferredPurl(ord.get().getIdentifiers())
-					.map(TeaIdentifier::getIdValue).orElse(null);
+					.map(RearmIdentifier::getIdValue).orElse(null);
 		}
 
 		if (multipartFile != null) {
