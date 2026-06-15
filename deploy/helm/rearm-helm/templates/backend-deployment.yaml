@@ -20,6 +20,10 @@ spec:
         name: rearm-backend-pod
         servicehook: {{ .Release.Name }}-backend
     spec:
+      # Allow the old pod to drain in-flight requests on rollout/scale-down:
+      # preStop sleep (after endpoint removal) + graceful shutdown must fit
+      # inside this window.
+      terminationGracePeriodSeconds: {{ .Values.backend.terminationGracePeriodSeconds | default 45 }}
     {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -64,12 +68,18 @@ spec:
               value: {{ .Values.keycloak.issuer_uri }}
             - name: KEYCLOAK_SET_URI
               value: {{ .Values.keycloak.set_uri }}
+            - name: JWT_ALLOWED_AZP
+              value: {{ (.Values.keycloak.jwt).allowedAzp | default "login-app" | quote }}
+            - name: JWT_VALIDATE_AUDIENCE
+              value: {{ (.Values.keycloak.jwt).validateAudience | default false | quote }}
+            - name: JWT_AUDIENCE
+              value: {{ (.Values.keycloak.jwt).audience | default "rearm-backend" | quote }}
 {{- if not .Values.useDefaultSecrets}}
             - name: PG_PASS
               valueFrom:
                 secretKeyRef:
                   name: pgpassword
-                  key: postgresql-password
+                  key: postgres-password
             - name: RELIZAPROP_PASS
               valueFrom:
                 secretKeyRef:
@@ -100,6 +110,43 @@ spec:
             - name: http
               containerPort: 8086
               protocol: TCP
+          # /api/healthCheck runs a real DB query (fetches the external-proj
+          # org), so it returns OK only once Spring is up AND the DB is
+          # reachable — exactly what startup/readiness should mean.
+          # startupProbe covers slow boot (Flyway etc.); while it runs both
+          # readiness and liveness are suppressed.
+          startupProbe:
+            httpGet:
+              path: /api/healthCheck
+              port: http
+            periodSeconds: {{ .Values.backend.startupPeriodSeconds | default 5 }}
+            timeoutSeconds: 3
+            failureThreshold: {{ .Values.backend.startupFailureThreshold | default 60 }}
+          # Liveness is intentionally a tcpSocket check, NOT the DB-backed
+          # /api/healthCheck: liveness should only answer "is the JVM wedged?"
+          # A DB-coupled liveness probe would restart every replica on a
+          # transient DB blip (a restart storm that can't fix the DB).
+          # Generous failureThreshold so a long GC pause won't trip it.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: {{ .Values.backend.livenessPeriodSeconds | default 10 }}
+            timeoutSeconds: 3
+            failureThreshold: {{ .Values.backend.livenessFailureThreshold | default 6 }}
+          readinessProbe:
+            httpGet:
+              path: /api/healthCheck
+              port: http
+            periodSeconds: {{ .Values.backend.readinessPeriodSeconds | default 10 }}
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Sleep after the pod is removed from Service endpoints so
+              # in-flight/just-routed requests still hit it; SIGTERM (and
+              # Spring graceful shutdown) follow once this returns.
+              exec:
+                command: ["sh", "-c", "sleep {{ .Values.backend.preStopSleepSeconds | default 10 }}"]
           resources:
             {{- toYaml .Values.backendService.resources | nindent 12 }}
 

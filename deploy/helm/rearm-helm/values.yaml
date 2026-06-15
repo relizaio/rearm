@@ -43,18 +43,38 @@ max_upload_size_in_MB: 50
 backend:
   logFormatType: "plain"
   enableDtrackCleanupScheduler: false
+  # Probe + graceful-shutdown tuning. /api/healthCheck does a real DB query,
+  # so it only returns OK once Spring is up and the DB is reachable.
+  startupPeriodSeconds: 5
+  startupFailureThreshold: 60        # ~5 min budget for slow boot (Flyway, etc.)
+  readinessPeriodSeconds: 10
+  livenessPeriodSeconds: 10
+  livenessFailureThreshold: 6        # ~60s of unresponsiveness before restart (GC-pause tolerant); tcpSocket only, not DB-backed
+  preStopSleepSeconds: 10            # drain window after endpoint removal
+  terminationGracePeriodSeconds: 45  # >= preStopSleep + graceful drain (SHUTDOWN_TIMEOUT, 30s)
 
 keycloak:
   enabled: true
   postgresStorage: 4G
-  create_secret_in_chart: regular # regular, none, sealed; sealed supported by Reliza Hub
+  create_secret_in_chart: regular # regular, none, sealed
   sealed_secrets_scope: namespace-wide # namespace-wide, cluster-wide, strict
   strict_host: false
   issuer_uri: http://rearm.localhost
   set_uri: http://keycloak:9080
+  # Resource-server JWT validation (see keycloak/harden-login-app-client* docs).
+  jwt:
+    # CSV allowlist of client ids (token `azp`) the backend accepts.
+    allowedAzp: login-app
+    # Audience (aud) validation. Keep false until the login-app audience mapper
+    # is live on the realm (see the hardening guide); enabling it before then
+    # rejects every token.
+    validateAudience: false
+    audience: rearm-backend
   secrets:
     pgpassword: VKKlL0ZxfCjPWElRMjFpHg # change for prod use
     adminpassword: admin # change for prod use
+  logFormat: "default" # or json
+  logLevel: "info"
 
 backendService:
   type: ClusterIP
@@ -93,6 +113,16 @@ ociArtifactService:
 useTraefikLe: true
 traefikBehindLb: false
 leHost: rearm.localhost
+
+# HSTS (Strict-Transport-Security) is emitted by Traefik at the TLS edge, since
+# TLS terminates at the ingress (useTraefikLe) or an upstream LB (traefikBehindLb)
+# rather than the UI nginx. Non-TLS headers (CSP, X-Frame-Options, etc.) are set
+# on the UI nginx instead.
+hsts:
+  enabled: true
+  maxAge: 31536000
+  includeSubdomains: true
+  preload: false
 
 postgresql:
   image:

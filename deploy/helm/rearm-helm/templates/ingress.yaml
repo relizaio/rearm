@@ -32,6 +32,10 @@ spec:
     services:
     - name: {{ .Release.Name }}-ui-service
       port: {{ .Values.uiService.port }}
+{{- if .Values.hsts.enabled }}
+    middlewares:
+      - name: hsts-header
+{{- end }}
   tls:
     certResolver: le
 ---
@@ -59,4 +63,26 @@ spec:
     services:
     - name: {{ .Release.Name }}-ui-service
       port: {{ .Values.uiService.port }}
+{{- if .Values.hsts.enabled }}
+    middlewares:
+      - name: hsts-header
+{{- end }}
+{{- end}}
+{{- if .Values.hsts.enabled }}
+---
+# HSTS is emitted at the TLS edge (Traefik), not the UI nginx — nginx only sees
+# HTTP because TLS terminates here (certResolver le) or at an upstream LB
+# (traefikBehindLb). forceSTSHeader makes Traefik send the header even when it
+# sees the request as HTTP (the behind-LB case).
+apiVersion: {{ .Values.traefik_crd_api_version }}
+kind: Middleware
+metadata:
+  name: hsts-header
+  namespace: {{ .Values.namespace }}
+spec:
+  headers:
+    stsSeconds: {{ .Values.hsts.maxAge | int64 }}
+    stsIncludeSubdomains: {{ .Values.hsts.includeSubdomains }}
+    stsPreload: {{ .Values.hsts.preload }}
+    forceSTSHeader: true
 {{- end}}
