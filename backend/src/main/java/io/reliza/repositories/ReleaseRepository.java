@@ -420,6 +420,78 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void recordSbomReconcileFailure(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
 
+	// ---------------------------------------------------------------------
+	// Auto-integrate queue — same flow_control marker pattern as the SBOM
+	// reconcile queue above. Lets release-create mark a release as needing
+	// product feature-set auto-integration and have it run AFTER COMMIT on a
+	// bounded executor (off the request connection), with durable retry so a
+	// transient failure (e.g. DB pool pressure) self-heals instead of being
+	// silently dropped. No migration: flow_control is JSONB.
+	// ---------------------------------------------------------------------
+
+	/** First-write-wins marker; idempotent re-marks are no-ops while queued. */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{autoIntegrateRequestedAt}', to_jsonb(now()), true) "
+			+ "WHERE uuid = :uuid AND (flow_control->>'autoIntegrateRequestedAt') IS NULL", nativeQuery = true)
+	void markAutoIntegrateRequested(@Param("uuid") UUID uuid);
+
+	/**
+	 * Atomic claim of a queued auto-integrate. The immediate after-commit run
+	 * and the per-minute scheduler drain can otherwise pick up the SAME queued
+	 * release concurrently (the marker is only cleared at the end of a run) and
+	 * double-integrate it — observed as duplicate same-second product releases.
+	 * Sets the skip-until lease iff the release is queued and not already
+	 * leased; returns 0 when the claim is lost (or nothing is queued) so the
+	 * caller skips. A successful run clears all markers; a failed run replaces
+	 * the lease with the retry backoff; a crashed run leaves the lease to
+	 * expire, after which the scheduler retries.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{autoIntegrateSkipUntil}', "
+			+ "    to_jsonb((now() + (:leaseSeconds || ' seconds')::interval)::text), true) "
+			+ "WHERE uuid = :uuid AND (flow_control->>'autoIntegrateRequestedAt') IS NOT NULL "
+			+ "AND ((flow_control->>'autoIntegrateSkipUntil') IS NULL "
+			+ "     OR (flow_control->>'autoIntegrateSkipUntil')::timestamptz < now())", nativeQuery = true)
+	int claimAutoIntegrate(@Param("uuid") UUID uuid, @Param("leaseSeconds") int leaseSeconds);
+
+	/** Pending releases not in backoff, oldest-first. UUIDs only (heap guard). */
+	@Query(value = "SELECT uuid FROM rearm.releases r "
+			+ "WHERE r.flow_control->>'autoIntegrateRequestedAt' IS NOT NULL "
+			+ "AND (r.flow_control->>'autoIntegrateSkipUntil' IS NULL "
+			+ "     OR (r.flow_control->>'autoIntegrateSkipUntil')::timestamptz < now()) "
+			+ "ORDER BY (r.flow_control->>'autoIntegrateRequestedAt')::timestamptz ASC "
+			+ "LIMIT :batchLimit", nativeQuery = true)
+	List<UUID> findUuidsOfReleasesPendingAutoIntegrate(@Param("batchLimit") int batchLimit);
+
+	/** Clear the marker after every feature set integrated (or no-op). */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = NULLIF("
+			+ "    flow_control - 'autoIntegrateRequestedAt' - 'autoIntegrateSkipUntil' - 'autoIntegrateFailureCount', "
+			+ "    '{}'::jsonb) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	void clearAutoIntegrateRequested(@Param("uuid") UUID uuid);
+
+	/** Bump failure count + push next attempt out by skipSeconds; stays queued. */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set("
+			+ "    jsonb_set(coalesce(flow_control, '{}'::jsonb), "
+			+ "              '{autoIntegrateFailureCount}', "
+			+ "              to_jsonb(coalesce((flow_control->>'autoIntegrateFailureCount')::int, 0) + 1), "
+			+ "              true), "
+			+ "    '{autoIntegrateSkipUntil}', "
+			+ "    to_jsonb((now() + (:skipSeconds || ' seconds')::interval)::text), "
+			+ "    true) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	void recordAutoIntegrateFailure(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
+
 	/**
 	 * Stamp {@code sbom_schema_version} after a successful reconcile so the
 	 * catch-up scheduler can later identify releases still on an older

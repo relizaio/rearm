@@ -48,6 +48,7 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SbomComponentData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.ParsedBomComponent;
@@ -102,7 +103,10 @@ public class SbomComponentService {
 	@Autowired private GetDeliverableService getDeliverableService;
 	@Autowired private GetComponentService getComponentService;
 	@Autowired private VariantService variantService;
-	@Autowired private NotificationService notificationService;
+	// Phase 2b-2: BOM-diff now flows through the notification outbox via this
+	// hook (SAAS impl writes a RELEASE_BOM_DIFF event). CE build has no impl
+	// bean, so null-check before calling.
+	@Autowired(required = false) private ReleaseChangeHook releaseChangeHook;
 	// @Lazy: the post-reconcile pipeline calls back into AcollectionService for
 	// the snapshot resolve + changelog cache; lazy keeps startup wiring cycle-safe.
 	@Autowired @Lazy private AcollectionService acollectionService;
@@ -726,8 +730,8 @@ private static int currentReconcileFailureCount(Release r) {
 	 * selfDiff} (non-null — i.e. a populated baseline was available) is
 	 * required, so we don't burn the one-shot claim before a comparable
 	 * predecessor inventory exists; a later reconcile retries. The atomic
-	 * claim then fires {@link NotificationService#sendBomDiffAlert} (which
-	 * itself no-ops unless the diff has both additions and removals).
+	 * claim then fires {@link ReleaseChangeHook#onReleaseBomDiff} (whose
+	 * SAAS impl no-ops unless the diff has both additions and removals).
 	 */
 	private void maybeFireBomDiffNotification(ReleaseData rd, ArtifactChangelog selfDiff) {
 		if (selfDiff == null) return;
@@ -735,7 +739,7 @@ private static int currentReconcileFailureCount(Release r) {
 		if (lifecycle == null || lifecycle.ordinal() < ReleaseLifecycle.ASSEMBLED.ordinal()) return;
 		// Atomic one-shot claim: 0 rows affected => a prior reconcile already notified.
 		if (releaseRepository.claimBomDiffNotification(rd.getUuid()) == 0) return;
-		notificationService.sendBomDiffAlert(rd.getOrg(), rd, selfDiff);
+		if (releaseChangeHook != null) releaseChangeHook.onReleaseBomDiff(rd, selfDiff);
 	}
 
 	/**
@@ -812,10 +816,7 @@ private static int currentReconcileFailureCount(Release r) {
 			if (isMarkedRoot(sc)) continue;
 			String canonicalPurl = sc.getCanonicalPurl();
 			if (canonicalPurl == null) continue;
-			String version = null;
-			if (sc.getRecordData() != null && sc.getRecordData().get("version") != null) {
-				version = String.valueOf(sc.getRecordData().get("version"));
-			}
+			String version = SbomComponentData.dataFromRecord(sc).version();
 			out.put(canonicalPurl, new DiffComponent(canonicalPurl, version));
 		}
 		return out;
@@ -1193,21 +1194,17 @@ private static int currentReconcileFailureCount(Release r) {
 	}
 
 	private boolean isMarkedRoot(SbomComponent sc) {
-		Map<String, Object> rd = sc.getRecordData();
-		return rd != null && Boolean.TRUE.equals(rd.get("isRoot"));
+		return sc.isRoot();
 	}
 
 	private SbomComponent buildSbomComponent(ComponentAggregation agg, UUID orgUuid) {
 		SbomComponent sc = new SbomComponent();
 		sc.setOrg(orgUuid);
 		sc.setCanonicalPurl(agg.sample.canonicalPurl());
-		Map<String, Object> record = new HashMap<>();
-		if (agg.sample.type() != null) record.put("type", agg.sample.type());
-		if (agg.sample.group() != null) record.put("group", agg.sample.group());
-		if (agg.sample.name() != null) record.put("name", agg.sample.name());
-		if (agg.sample.version() != null) record.put("version", agg.sample.version());
-		if (agg.isRoot) record.put("isRoot", true);
-		sc.setRecordData(record);
+		SbomComponentData data = new SbomComponentData(
+				agg.sample.type(), agg.sample.group(), agg.sample.name(),
+				agg.sample.version(), agg.isRoot ? Boolean.TRUE : null);
+		sc.setRecordData(data.toRecordMap());
 		sc.setIdentities(buildIdentities(agg.sample.canonicalPurl(), agg.cpes));
 		if (agg.getLicenses() != null && !agg.getLicenses().isEmpty()) {
 			sc.setLicenses(agg.getLicenses());

@@ -92,8 +92,33 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty
 		private List<String> sidAuthoritySegments;
 
+		/**
+		 * How long notification rows (outbox events, deliveries and their
+		 * read marks) are kept before the daily retention sweep deletes
+		 * them. Nullable for the patch idiom; resolved via
+		 * {@link #getNotificationRetentionDaysOrDefault()}. Bounds enforced
+		 * at update time: the minimum keeps comfortably clear of the email
+		 * digest's maximum parking window (P7D) plus the delivery retry
+		 * curve, so the sweep can never delete a row that is still
+		 * scheduled to go out.
+		 */
+		@JsonProperty
+		private Integer notificationRetentionDays;
+
+		public static final int NOTIFICATION_RETENTION_DAYS_DEFAULT = 90;
+		public static final int NOTIFICATION_RETENTION_DAYS_MIN = 14;
+		public static final int NOTIFICATION_RETENTION_DAYS_MAX = 730;
+
 		public static Settings getDefault() {
 			return new Settings();
+		}
+
+		/**
+		 * @return the configured retention, or 90 days if unset.
+		 */
+		public int getNotificationRetentionDaysOrDefault() {
+			return notificationRetentionDays != null
+					? notificationRetentionDays : NOTIFICATION_RETENTION_DAYS_DEFAULT;
 		}
 
 		/**

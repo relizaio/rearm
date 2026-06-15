@@ -76,6 +76,16 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	List<UUID> findArtifactsWithVulnerability(String orgUuidAsString, String location, String findingId);
 
 	@Query(
+			value = VariableQueries.FIND_ARTIFACTS_WITH_VULN_ID,
+			nativeQuery = true)
+	List<UUID> findArtifactsWithVulnId(String orgUuidAsString, String vulnId);
+
+	@Query(
+			value = VariableQueries.FIND_VULN_PURLS_FOR_VULN_ID,
+			nativeQuery = true)
+	List<String> findVulnPurlsForVulnId(String orgUuidAsString, String vulnId);
+
+	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VIOLATION,
 			nativeQuery = true)
 	List<UUID> findArtifactsWithViolation(String orgUuidAsString, String location, String findingId);

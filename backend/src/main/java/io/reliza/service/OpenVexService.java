@@ -23,7 +23,7 @@ import io.reliza.common.SidPurlUtils;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VdrSnapshotType;
-import io.reliza.model.tea.TeaIdentifier;
+import io.reliza.model.RearmIdentifier;
 
 /**
  * Generates OpenVEX 0.2.0 documents for a release.
@@ -109,7 +109,7 @@ public class OpenVexService {
 		Bom vexBom = releaseService.buildCdxVexBom(releaseData, includeSuppressed, includeInTriage,
 				cutOffDate, snapshotType, snapshotValue);
 		String productPurl = SidPurlUtils.pickPreferredPurl(releaseData.getIdentifiers())
-				.map(TeaIdentifier::getIdValue)
+				.map(RearmIdentifier::getIdValue)
 				.orElse(null);
 		Map<String, Object> doc = buildOpenVexDocument(vexBom, releaseData.getUuid(), productPurl,
 				cutOffDate, snapshotType, snapshotValue, includeSuppressed, includeInTriage);

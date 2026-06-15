@@ -1012,7 +1012,8 @@ public class ArtifactService {
 		SpecVersion.CYCLONEDX_1_4,
 		SpecVersion.CYCLONEDX_1_5,
 		SpecVersion.CYCLONEDX_1_6,
-		SpecVersion.CYCLONEDX_1_7
+		SpecVersion.CYCLONEDX_1_7,
+		SpecVersion.CYCLONEDX_2_0
 	);
 	
 	private static final Set<SpecVersion> SPDX_SPEC_VERSIONS = Set.of(
@@ -1036,7 +1037,7 @@ public class ArtifactService {
 		
 		if (artifactDto.getBomFormat() == BomFormat.CYCLONEDX) {
 			if (specVersion == null || !CYCLONEDX_SPEC_VERSIONS.contains(specVersion)) {
-				throw new RelizaException("CycloneDX JSON BOM has unrecognized or missing spec version. Supported versions: 1.0-1.7");
+				throw new RelizaException("CycloneDX JSON BOM has unrecognized or missing spec version. Supported versions: 1.0-1.7, 2.0");
 			}
 		}
 		
@@ -1089,8 +1090,12 @@ public class ArtifactService {
 		try {
 			JsonNode root = Utils.OM.readTree(jsonContent);
 			
-			// Check for CycloneDX
-			if (root.has("bomFormat") && "CycloneDX".equalsIgnoreCase(root.get("bomFormat").asText())) {
+			// Check for CycloneDX. The format key is `bomFormat` through 1.x and
+			// was renamed `specFormat` in the 2.0 prototype — accept either.
+			boolean isCycloneDx =
+					(root.has("bomFormat") && "CycloneDX".equalsIgnoreCase(root.get("bomFormat").asText()))
+					|| (root.has("specFormat") && "CycloneDX".equalsIgnoreCase(root.get("specFormat").asText()));
+			if (isCycloneDx) {
 				String version = root.has("specVersion") ? root.get("specVersion").asText() : null;
 				if (version != null) {
 					return switch (version) {
@@ -1102,6 +1107,7 @@ public class ArtifactService {
 						case "1.5" -> SpecVersion.CYCLONEDX_1_5;
 						case "1.6" -> SpecVersion.CYCLONEDX_1_6;
 						case "1.7" -> SpecVersion.CYCLONEDX_1_7;
+						case "2.0" -> SpecVersion.CYCLONEDX_2_0;
 						default -> null;
 					};
 				}

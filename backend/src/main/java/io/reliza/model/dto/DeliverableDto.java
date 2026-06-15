@@ -21,10 +21,11 @@ import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.DeliverableData.CPUArchitecture;
+import io.reliza.model.DeliverableData.HardwareDeliverableMetadata;
 import io.reliza.model.DeliverableData.OS;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
+import io.reliza.model.RearmIdentifier;
 import io.reliza.model.tea.TeaChecksumType;
-import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -37,7 +38,7 @@ public class DeliverableDto {
 	@JsonProperty(CommonVariables.UUID_FIELD)
 	private UUID uuid;
 	private String displayIdentifier;
-	private List<TeaIdentifier> identifiers;
+	private List<RearmIdentifier> identifiers;
 	@JsonProperty(CommonVariables.ORGANIZATION_FIELD)
 	private UUID org; // if branch uuid is specified, organization should match that of branch
 	@JsonProperty(CommonVariables.BRANCH_FIELD)
@@ -59,7 +60,9 @@ public class DeliverableDto {
 	private StatusEnum status;
 	
 	private SoftwareDeliverableMetadata softwareMetadata;
-	
+	private HardwareDeliverableMetadata hardwareMetadata;
+	private Integer quantity;
+
 	private List<UUID> artifacts;
 	private BelongsToOrganization isInternal;
 	

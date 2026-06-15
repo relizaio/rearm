@@ -19,8 +19,8 @@ import org.junit.jupiter.api.Test;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 
 /**
  * Tests for {@code OssReleaseService.seedDtoWithExistingSidIdentity} — the helper that
@@ -62,15 +62,15 @@ public class OssReleaseServiceSeedSidTest {
 				"snapshot must mirror the existing release for the immutability check to pass");
 		assertNotNull(dto.getIdentifiers());
 		List<String> sidValues = dto.getIdentifiers().stream()
-				.filter(t -> t.getIdType() == TeaIdentifierType.PURL
+				.filter(t -> t.getIdType() == RearmIdentifierType.PURL
 						&& t.getIdValue() != null && t.getIdValue().startsWith("pkg:sid/"))
-				.map(TeaIdentifier::getIdValue)
+				.map(RearmIdentifier::getIdValue)
 				.collect(Collectors.toList());
 		assertEquals(List.of("pkg:sid/old.example.com/ReARM%20Backend@1.0"), sidValues,
 				"existing sid PURL must be re-attached to the dto so doUpdateRelease " +
 				"sees identical sid sets on both sides (D17 idempotent)");
 		assertTrue(dto.getIdentifiers().stream()
-				.anyMatch(t -> t.getIdType() == TeaIdentifierType.CPE),
+				.anyMatch(t -> t.getIdType() == RearmIdentifierType.CPE),
 				"caller's non-sid identifier (CPE) flows through unchanged");
 	}
 
@@ -87,9 +87,9 @@ public class OssReleaseServiceSeedSidTest {
 		invokeSeed(dto, existing);
 
 		List<String> sidValues = dto.getIdentifiers().stream()
-				.filter(t -> t.getIdType() == TeaIdentifierType.PURL
+				.filter(t -> t.getIdType() == RearmIdentifierType.PURL
 						&& t.getIdValue() != null && t.getIdValue().startsWith("pkg:sid/"))
-				.map(TeaIdentifier::getIdValue)
+				.map(RearmIdentifier::getIdValue)
 				.collect(Collectors.toList());
 		assertEquals(List.of("pkg:sid/legit.example.com/X@1.0"), sidValues,
 				"caller's spoofed sid must be dropped, existing sid re-attached");
@@ -125,7 +125,7 @@ public class OssReleaseServiceSeedSidTest {
 		m.invoke(null, dto, existing);
 	}
 
-	private static ReleaseData release(String snapshot, List<TeaIdentifier> identifiers) {
+	private static ReleaseData release(String snapshot, List<RearmIdentifier> identifiers) {
 		ReleaseData rd = new ReleaseData();
 		// ReleaseData.setUuid is private (audit-controlled). The seed helper doesn't
 		// reach for the uuid, so we leave it null in tests.
@@ -134,22 +134,22 @@ public class OssReleaseServiceSeedSidTest {
 		return rd;
 	}
 
-	private static ReleaseDto dtoOf(List<TeaIdentifier> identifiers) {
+	private static ReleaseDto dtoOf(List<RearmIdentifier> identifiers) {
 		return ReleaseDto.builder()
 				.identifiers(identifiers != null ? new LinkedList<>(identifiers) : null)
 				.build();
 	}
 
-	private static TeaIdentifier teaPurl(String value) {
-		TeaIdentifier ti = new TeaIdentifier();
-		ti.setIdType(TeaIdentifierType.PURL);
+	private static RearmIdentifier teaPurl(String value) {
+		RearmIdentifier ti = new RearmIdentifier();
+		ti.setIdType(RearmIdentifierType.PURL);
 		ti.setIdValue(value);
 		return ti;
 	}
 
-	private static TeaIdentifier teaCpe(String value) {
-		TeaIdentifier ti = new TeaIdentifier();
-		ti.setIdType(TeaIdentifierType.CPE);
+	private static RearmIdentifier teaCpe(String value) {
+		RearmIdentifier ti = new RearmIdentifier();
+		ti.setIdType(RearmIdentifierType.CPE);
 		ti.setIdValue(value);
 		return ti;
 	}

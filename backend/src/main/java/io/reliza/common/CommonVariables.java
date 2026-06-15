@@ -464,6 +464,11 @@ public class CommonVariables {
 		ARTIFACTS(CommonVariables.ARTIFACTS_FIELD),
 		AGENT_POLICIES("agent_policies"),
 		COMMITTERS("committers"),
+		CLIENTS("clients"),
+		SITES("sites"),
+		SHIPPED_PRODUCTS("shipped_products"),
+		DEVICES("devices"),
+		DEVICE_EVENTS("device_events"),
 		SIGNING_KEYS("signing_keys"),
 		SIGNATURE_VERIFICATIONS("signature_verifications"),
 		MODEL_ONTOLOGIES("model_ontologies"),
@@ -472,6 +477,11 @@ public class CommonVariables {
 		APPROVAL_MATRIX("approval_matrix"),
 		APPROVAL_ENTRY("approval_entries"),
 		APPROVAL_POLICY("approval_policies"),
+		NOTIFICATION_SUBSCRIPTION("notification_subscriptions"),
+		NOTIFICATION_CHANNEL("notification_channels"),
+		NOTIFICATION_CHANNEL_GROUP("notification_channel_groups"),
+		NOTIFICATION_OUTBOX_EVENT("notification_outbox_events"),
+		NOTIFICATION_READ("notification_reads"),
 		AUDIT("audit"),
 		BRANCHES("branches"),
 		CHANGES("changes"),
@@ -734,15 +744,6 @@ public class CommonVariables {
 		PUBLIC,
 		ORG_INTERNAL,
 		ADMIN_INVITATION
-	}
-	
-	public enum ReleaseEventType {
-		NEW_RELEASE,
-		RELEASE_CANCELLED,
-		RELEASE_REJECTED,
-		RELEASE_DRAFTED,
-		RELEASE_ASSEMBLED,
-		RELEASE_SCHEDULED;
 	}
 	
 	public enum RegistryBotPermissionType {

@@ -162,9 +162,17 @@ public class SchedulingService {
 					// so newly-enriched components are eligible this same tick. The legacy per-artifact
 					// submission is retired; its existing DTrack projects drain via
 					// scheduleLegacyDtrackProjectPhaseOut.
+					//
+					// Both enrichment-pull and submit are gated behind a cheap per-org dirty
+					// check (hasPendingSyntheticWork: two indexed EXISTS) so idle orgs skip the
+					// rebom config probe, the full matchable scan, and the per-bucket re-hash.
+					// ingest + fan-out always run: DTrack finishes asynchronously, so in-flight
+					// (SUBMITTED) buckets must be polled every tick regardless of dirtiness.
 					try {
 						for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
-							sbomComponentService.pullEnrichmentForOrg(orgUuid);
+							if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
+								sbomComponentService.pullEnrichmentForOrg(orgUuid);
+							}
 						}
 					} catch (Exception e) {
 						log.error("synthetic enrichment pull failed", e);
@@ -172,11 +180,11 @@ public class SchedulingService {
 
 					// Submit changed buckets (idempotent via content-hash), poll submitted
 					// buckets, fan findings out.
-					// TODO: at scale, gate submitOrg behind a per-org dirty marker to avoid the
-					// every-tick matchable scan; fine for now.
 					try {
 						for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
-							syntheticSbomService.submitOrg(orgUuid);
+							if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
+								syntheticSbomService.submitOrg(orgUuid);
+							}
 							syntheticSbomService.ingestOrgBuckets(orgUuid);
 							syntheticSbomService.fanOutOrg(orgUuid);
 						}
@@ -196,6 +204,15 @@ public class SchedulingService {
 						sbomComponentService.processPendingReconciles(50);
 					} catch (Exception e) {
 						log.error("processPendingReconciles failed", e);
+					}
+
+					// Retry releases whose after-commit product auto-integration didn't fully
+					// complete (e.g. transient DB-pool pressure). Idempotent; clears the
+					// flow_control marker on success.
+					try {
+						releaseService.processPendingAutoIntegrate(SCHEDULER_TICK_BATCH_LIMIT);
+					} catch (Exception e) {
+						log.error("processPendingAutoIntegrate failed", e);
 					}
 				} finally {
 					releaseLock(AdvisoryLockKey.RESOLVE_DEPENDENCY_TRACK_STATUS);

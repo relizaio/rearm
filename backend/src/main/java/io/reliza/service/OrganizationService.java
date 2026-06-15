@@ -655,6 +655,17 @@ public class OrganizationService {
 				settings.setVexComplianceFramework(settingsPatch.getVexComplianceFramework());
 			}
 
+			Integer retentionDays = settingsPatch.getNotificationRetentionDays();
+			if (retentionDays != null) {
+				if (retentionDays < OrganizationData.Settings.NOTIFICATION_RETENTION_DAYS_MIN
+						|| retentionDays > OrganizationData.Settings.NOTIFICATION_RETENTION_DAYS_MAX) {
+					throw new RelizaException("notificationRetentionDays must be between "
+							+ OrganizationData.Settings.NOTIFICATION_RETENTION_DAYS_MIN + " and "
+							+ OrganizationData.Settings.NOTIFICATION_RETENTION_DAYS_MAX + " days");
+				}
+				settings.setNotificationRetentionDays(retentionDays);
+			}
+
 			applySidPurlPatch(settings, settingsPatch);
 
 			od.setSettings(settings);

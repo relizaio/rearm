@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -47,6 +48,8 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.EventScope;
+import io.reliza.model.UserData;
+import io.reliza.model.UserData.OrgUserData;
 import io.reliza.model.dto.ReleaseInputEventDto;
 import io.reliza.model.dto.ReleaseOutputEventDto;
 import io.reliza.model.RelizaObject;
@@ -66,6 +69,7 @@ import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
+import io.reliza.service.ComponentTeamService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
@@ -90,7 +94,10 @@ public class ComponentDataFetcher {
 	
 	@Autowired
 	private GetComponentService getComponentService;
-	
+
+	@Autowired
+	private ComponentTeamService componentTeamService;
+
 	@Autowired
 	private BranchService branchService;
 	
@@ -638,8 +645,50 @@ public class ComponentDataFetcher {
 				}
 				vrd = vrdo.get();
 			}
-			
+
 		}
 		return vrd;
+	}
+
+	// team / approvers / leadDetails are sub-field resolvers on Component: they
+	// only ever fire for a ComponentData the caller was already authorized to
+	// load via the parent query (Query.component / componentDetails / components
+	// all gate on COMPONENT-scope auth), same trust model as effectiveLifecycle
+	// and vcsRepositoryDetails above. They surface org-user details (name/email)
+	// scoped to the component's own org via convertUserDataToOrgUserData, so an
+	// authorized org member sees only users already visible to them in that org.
+
+	@DgsData(parentType = "Component", field = "leadDetails")
+	public List<OrgUserData> leadDetails (DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		if (null == cd || null == cd.getLeads() || cd.getLeads().isEmpty()) return List.of();
+		return cd.getLeads().stream()
+				.map(leadUuid -> userService.getUserDataWithOrg(leadUuid, cd.getOrg()))
+				.filter(Optional::isPresent)
+				.map(Optional::get)
+				.map(ud -> UserData.convertUserDataToOrgUserData(ud, cd.getOrg()))
+				.filter(Objects::nonNull)
+				.toList();
+	}
+
+	@DgsData(parentType = "Component", field = "team")
+	public List<OrgUserData> team (DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		if (null == cd) return List.of();
+		return toOrgUserData(componentTeamService.deriveTeam(cd), cd.getOrg());
+	}
+
+	@DgsData(parentType = "Component", field = "approvers")
+	public List<OrgUserData> approvers (DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		if (null == cd) return List.of();
+		return toOrgUserData(componentTeamService.deriveApprovers(cd), cd.getOrg());
+	}
+
+	private static List<OrgUserData> toOrgUserData (List<UserData> uds, UUID org) {
+		return uds.stream()
+				.map(ud -> UserData.convertUserDataToOrgUserData(ud, org))
+				.filter(Objects::nonNull)
+				.toList();
 	}
 }

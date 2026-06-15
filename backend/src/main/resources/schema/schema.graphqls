@@ -55,6 +55,15 @@ type Query {
 	defaultApprovalRoles: [ApprovalRole]
 	approvalPoliciesOfOrg(orgUuid: ID!): [ApprovalPolicy]
 	approvalEntriesOfOrg(orgUuid: ID!): [ApprovalEntry]
+	"""
+	Read-only "what needs my approval" view: releases in the given org that are
+	awaiting the calling user's approval. A release is returned when its effective
+	approval policy has at least one unsatisfied requirement whose allowed roles
+	intersect an approval role the user holds (via a permission that covers the
+	release) and which the user has not yet voted on. Org admins are NOT auto-listed:
+	the view keys off assigned approval roles, not the admin override capability.
+	"""
+	releasesNeedingMyApproval(orgUuid: ID!): [ReleasePendingApproval!]
 	artifactReleases(artUuid: ID!): [Release]
 	artifactBomLatestVersion(artUuid: ID!): String
 	# Deliverables
@@ -292,6 +301,44 @@ type Query {
 	agentPolicy(uuid: ID!): AgentPolicy
 	agentPoliciesOfOrg(orgUuid: ID!): [AgentPolicy]
 
+	# Distribution module (SAAS-only): clients + sites.
+	client(uuid: ID!): Client
+	clientsOfOrg(orgUuid: ID!): [Client]
+	site(uuid: ID!): Site
+	sitesOfOrg(orgUuid: ID!): [Site]
+	sitesOfClient(clientUuid: ID!): [Site]
+
+	# Distribution module (SAAS-only): shipments / installed base.
+	shippedProduct(uuid: ID!): ShippedProduct
+	shippedProductsOfOrg(orgUuid: ID!): [ShippedProduct]
+	shippedProductsOfSite(siteUuid: ID!): [ShippedProduct]
+	shippedProductsOfFeatureSet(featureSetUuid: ID!, orgUuid: ID!): [ShippedProduct]
+	# Recall scope: every shipment of a release.
+	shippedProductsOfRelease(releaseUuid: ID!, orgUuid: ID!): [ShippedProduct]
+
+	# Per-device layer (optional, one level below a shipment).
+	device(uuid: ID!): Device
+	devicesOfShipment(shippedProductUuid: ID!): [Device]
+	devicesOfSite(siteUuid: ID!, orgUuid: ID!): [Device]
+
+	# Digital twin: field events + as-maintained hardware view of a unit.
+	deviceEventsOfDevice(deviceUuid: ID!): [DeviceEvent]
+	deviceHbomComponents(deviceUuid: ID!): [DeviceHbomComponent]
+
+	# Fleet drift in a single query: every unit in the org diverging from its
+	# authorized baseline, with the site/client it is fielded at.
+	driftedDevicesOfOrg(orgUuid: ID!): [FleetDriftEntry]
+
+	# Resolve a feature set's device identity (UDI-DI + regulatory class)
+	# from its single UDI-bearing constituent component.
+	featureSetDeviceIdentity(featureSetUuid: ID!, orgUuid: ID!): DeviceIdentity
+
+	# HBOM (hardware BOM) components of a release; parsed + cached on first read.
+	hbomComponentsOfRelease(releaseUuid: ID!): [HbomComponent]
+
+	# CDX #929 choice slots of a release tree (ship form + repair flow).
+	releaseComponentChoices(releaseUuid: ID!): [ComponentChoice]
+
 	# Committers + signing keys + signature verifications.
 	committer(uuid: ID!): Committer
 	committersOfOrg(orgUuid: ID!): [Committer]
@@ -300,6 +347,98 @@ type Query {
 	signingKeysOfOrg(orgUuid: ID!): [SigningKey]
 	signatureVerification(uuid: ID!): SignatureVerification
 	signatureVerificationsForSubject(subjectType: SignatureSubjectType!, subjectUuid: ID!): [SignatureVerification]
+
+	# Notifications framework — read surface (Phase 2e).
+	#
+	# All queries below are org-admin scoped. The data fetcher resolves
+	# the org from the entity uuid before authorizing, so a caller
+	# cannot guess uuids in another tenant.
+
+	# Single outbox event lookup — pairs with injectSyntheticEvent /
+	# testNotificationChannel mutations so the UI can poll for the
+	# event's row after the mutation returns.
+	notificationOutboxEvent(uuid: ID!): NotificationOutboxEventResult
+
+	# Single delivery row lookup.
+	notificationDelivery(uuid: ID!): NotificationDeliveryResult
+
+	# Paginated delivery listing with optional filters. Items are
+	# ordered newest-first by created_date.
+	#   eventUuid  — filter to deliveries for one outbox event
+	#   channelUuid — filter to deliveries for one channel
+	#   status     — typed enum filter; typos rejected at the GraphQL layer
+	#   origin     — typed enum filter; typos rejected at the GraphQL layer
+	notificationDeliveries(
+		orgUuid: ID!,
+		eventUuid: ID,
+		channelUuid: ID,
+		status: NotificationDeliveryStatusEnum,
+		origin: NotificationDeliveryOriginEnum,
+		limit: Int,
+		offset: Int): NotificationDeliveriesPage!
+
+	# Single subscription lookup. Returns null on miss.
+	notificationSubscription(uuid: ID!): NotificationSubscriptionResult
+
+	# List subscriptions for an org.
+	notificationSubscriptions(orgUuid: ID!): [NotificationSubscriptionResult!]!
+
+	# Single channel lookup. Encrypted secrets are stripped (see
+	# NotificationChannelResult). Returns null on miss.
+	notificationChannel(uuid: ID!): NotificationChannelResult
+
+	# List channels for an org. Encrypted secrets are stripped from
+	# the read surface.
+	notificationChannels(orgUuid: ID!): [NotificationChannelResult!]!
+
+	# Notifications framework — channel-group reads (Phase 13b).
+	#
+	# Single channel-group lookup. Returns null on miss. Org-admin
+	# authorized — the fetcher resolves org from the row before
+	# authorizing so a caller can't probe uuids across tenants.
+	notificationChannelGroup(uuid: ID!): NotificationChannelGroupResult
+
+	# List channel groups for an org. Channel-group membership lists
+	# (just UUIDs) ride along with the result so the UI can render the
+	# group's contents in one round-trip.
+	notificationChannelGroups(orgUuid: ID!): [NotificationChannelGroupResult!]!
+
+	# Notifications framework — Inbox MVP (Phase 14).
+	#
+	# Personal, visibility-filtered view of delivery rows:
+	#   - org-admin tier sees every delivery in the org
+	#   - perspective-member sees deliveries whose event payload's
+	#     affectedReleases[*].perspectives intersect the caller's
+	#     perspective membership
+	#   - non-admin without perspective membership sees nothing
+	#
+	# Distinct from notificationDeliveries (the org-admin audit log).
+	# This query is the "what's relevant to me" surface — visibility
+	# is enforced at the SQL layer (no fan-out of per-user rows).
+	#
+	# unreadOnly defaults to true so the typical badge-driven open
+	# lands on the unread queue without the operator needing to flip
+	# the filter.
+	notificationInbox(
+		orgUuid: ID!,
+		unreadOnly: Boolean,
+		status: NotificationDeliveryStatusEnum,
+		# Filter by the originating outbox event's type. Useful for
+		# high-volume orgs that want to triage NEW_VULN_AFFECTS_RELEASES
+		# separately from VULNERABILITY_RECORD_UPDATED or
+		# VEX_STATE_CHANGED. Null = match all event types.
+		eventType: NotificationEventTypeEnum,
+		limit: Int,
+		offset: Int): NotificationInboxPage!
+
+	# Count of unread deliveries the caller can see, for the inbox-tab
+	# badge. Same visibility filter as notificationInbox.
+	notificationUnreadCount(orgUuid: ID!): Int!
+
+	# CISA KEV catalog details for one CVE id (Phase 6a). The catalog is
+	# global (public CISA data, no org rows) — orgUuid is for
+	# authorization only. Returns null when the CVE is not KEV-listed.
+	kevRecordDetails(orgUuid: ID!, cveId: String!): KevRecordDetails
 }
 
 type Mutation {
@@ -420,6 +559,16 @@ type Mutation {
 	setOrgApiKey(orgUuid: ID!, apiType: ApiTypeEnum!, keyOrder: String, notes: String): ApiKeyForUser
 	updateRelease(release: ReleaseInput!): Release
 	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
+
+	"""
+	Record an approval request on a release and notify the users able to act
+	on it (APPROVAL_REQUESTED targeted notifications). `approvalEntries`
+	defaults to every entry of the release's effective approval policy;
+	entries already satisfied / disapproved or covered by an open request
+	are skipped. Errors if nothing actionable remains. Requires WRITE on
+	the release.
+	"""
+	requestReleaseApprovals(release: ID!, approvalEntries: [ID!]): ReleaseApprovalRequest
 
 	"""
 	Bulk-advance every release of a component whose lifecycle is
@@ -593,6 +742,9 @@ type Mutation {
 	
 	# DTrack
 	syncDtrackProjects(orgUuid: ID!): Boolean
+	# Admin-only force re-upload: re-submit every synthetic bucket to DTrack
+	# (existing project or a new one), triggering full re-analysis + re-ingest.
+	forceReuploadDtrackData(orgUuid: ID!): Boolean
 
 	# Instances
 	createInstance(orgUuid: ID!, name: String, instanceType: InstanceType, namespace: String, uri: String!, environment: String, clusterId: ID): Instance
@@ -716,6 +868,46 @@ type Mutation {
 	# their recorded policy uuid for forensic value.
 	deleteAgentPolicy(uuid: ID!): Boolean
 
+	# Distribution module (SAAS-only): client + site CRUD. Pass uuid to
+	# update. Deleting a client cascades to its sites (no DB FK).
+	upsertClient(input: ClientInput!): Client
+	"""Soft delete: archives the client, cascading to sites, shipments, and devices."""
+	deleteClient(uuid: ID!): Boolean
+	upsertSite(input: SiteInput!): Site
+	"""Soft delete: archives the site, cascading to shipments and devices."""
+	deleteSite(uuid: ID!): Boolean
+
+	# Distribution module (SAAS-only): shipments (batch). shipProduct is
+	# append-only (always a new row).
+	shipProduct(input: ShipProductInput!): ShippedProduct
+	"""Admin edit of an existing shipment (same input shape as shipProduct)."""
+	updateShippedProduct(uuid: ID!, input: ShipProductInput!): ShippedProduct
+	"""Soft delete: archives the shipment, cascading to its devices."""
+	deleteShippedProduct(uuid: ID!): Boolean
+
+	# Per-device layer. Phone-home (actual) and 821 disposition (tracking) are
+	# per-device. updateDevicePlan records a field-repair / version change.
+	upsertDevice(input: DeviceInput!): Device
+	reportDeviceActual(uuid: ID!, input: ActualReportInput!): Device
+	updateDeviceTracking(uuid: ID!, input: TrackingInput!): Device
+	updateDevicePlan(uuid: ID!, expectedRelease: ID): Device
+	"""Soft delete: archives the device."""
+	deleteDevice(uuid: ID!): Boolean
+
+	# Digital twin. addDeviceEvent records a field event (failure / repair /
+	# replacement / inspection) anchored to the release ontology (hbomRef / purl).
+	# reportDeviceState is the programmatic (API-key) phone-home: submit observed
+	# digests (or a raw k8s image list) and reconcile against the expected release.
+	addDeviceEvent(input: DeviceEventInput!): DeviceEvent
+	"""Soft delete: archives the event."""
+	deleteDeviceEvent(uuid: ID!): Boolean
+	reportDeviceState(report: DeviceStateReportInput!): Device
+	"""Operator-posted observed-state report (same payload as reportDeviceState, JWT auth)."""
+	reportDeviceStateManual(report: DeviceStateReportInput!): Device
+
+	# Rebuild a hardware release HBOM components from its BOM artifact.
+	reconcileReleaseHbomComponents(releaseUuid: ID!): Boolean
+
 	# Committer + signing-key management.
 	upsertCommitter(input: CommitterInput!): Committer
 	archiveCommitter(uuid: ID!): Committer
@@ -729,7 +921,7 @@ type Mutation {
 	# COMMITTER + AGENT owners with a JWT — this variant lets an agent
 	# bootstrap its own signing key on first run without needing the
 	# operator to do it ahead of time.
-	enrollSigningKeyProgrammatic(signingKey: SigningKeyInput!): SigningKey
+	enrollSigningKeyProgrammatic(signingKey: AgentSigningKeyInput!): SigningKey
 	revokeSigningKey(uuid: ID!): SigningKey
 	"""
 	Update the allowed_signers principal (identity) on an enrolled key.
@@ -738,6 +930,623 @@ type Mutation {
 	informational identity.
 	"""
 	updateSigningKeyIdentity(uuid: ID!, identity: String): SigningKey
+
+	# Notifications framework — synthetic event injection (Phase 2d).
+	#
+	# Write a curated synthetic event into the org's outbox so the rest
+	# of the pipeline (fan-out, channel dispatch, history) can be
+	# exercised end-to-end without waiting for a real CVE / VEX change.
+	# Operator-only — gated as ADMIN at ORGANIZATION scope. Returns the
+	# persisted outbox event for the caller to link to the resulting
+	# history rows (which land asynchronously on the next fan-out tick).
+	injectSyntheticEvent(orgUuid: ID!, template: SyntheticEventTemplateEnum!): NotificationOutboxEventResult!
+
+	# Notifications framework — channel test (Phase 2d).
+	#
+	# Inject a synthetic event tagged with the given channel as the
+	# direct test target. The fan-out worker skips subscription / CEL /
+	# severity-gate evaluation and writes a single delivery row addressed
+	# at this channel; the channel worker then dispatches the rendered
+	# payload to the real webhook. Used by the "Test channel" button to
+	# confirm a webhook is reachable + auth'd before relying on real
+	# event traffic. Org-admin only; the channel must belong to the
+	# caller's org.
+	testNotificationChannel(channelUuid: ID!): NotificationOutboxEventResult!
+
+	# Notifications framework — channel CRUD (Phase 3).
+	#
+	# Upsert is one mutation per the rearm convention (see
+	# upsertAgentPolicy, upsertCommitter). uuid null on the input = create;
+	# uuid present = update. webhookUrl null/blank on update preserves
+	# the existing encrypted value (rename without re-typing the URL).
+	# Slack URL prefix is enforced server-side at save time.
+	upsertNotificationChannel(input: NotificationChannelInput!): NotificationChannelResult!
+
+	# Status flip (ENABLED / DISABLED). Free-form transitions; the
+	# fan-out + dispatch workers already short-circuit on DISABLED so
+	# this is the kill-switch surface. No-op when status already matches.
+	setNotificationChannelStatus(uuid: ID!, status: NotificationChannelStatusEnum!): NotificationChannelResult!
+
+	# Hard delete. In-flight deliveries pointing at this channel get
+	# marked FAILED by the delivery worker (channel-no-longer-exists path).
+	# Soft-delete semantics are available via setNotificationChannelStatus(DISABLED).
+	deleteNotificationChannel(uuid: ID!): Boolean!
+
+	# Notifications framework — channel-group CRUD (Phase 13b).
+	#
+	# A channel group is a named, cross-type bundle of channels
+	# ("security-oncall" = Slack #sec + Teams #leadership + Email
+	# security@) referenceable from a subscription route. At fan-out
+	# the route's channelGroups list is resolved to member channel
+	# UUIDs and merged with the route's direct channels (dedup,
+	# first-seen order preserved). Each member channel still produces
+	# its own delivery row with independent retry / dedup / audit —
+	# the group is purely a naming layer.
+	#
+	# Upsert: uuid null = create; uuid present = update. Service-layer
+	# validation rejects empty channel lists, duplicate channel UUIDs,
+	# missing channel UUIDs, and cross-org channel membership.
+	# Cross-org reparent on update is also rejected.
+	upsertNotificationChannelGroup(input: NotificationChannelGroupInput!): NotificationChannelGroupResult!
+
+	# Hard delete. Subscriptions that referenced this group keep their
+	# reference UUID; the fan-out treats a missing group as "no members"
+	# and silently no-ops the group from the route's resolution. No
+	# cascade — operators may want to recreate a group with the same
+	# name and have existing references stay broken until manually
+	# repointed.
+	deleteNotificationChannelGroup(uuid: ID!): Boolean!
+
+	# Notifications framework — subscription CRUD (Phase 3).
+	#
+	# Upsert: uuid null = create, present = update. Service-layer
+	# validation enforces: CEL filter compiles + meets the safety caps,
+	# every route channel uuid exists in the same org, record_data
+	# stays under the 256 KB JSONB cap.
+	upsertNotificationSubscription(input: NotificationSubscriptionInput!): NotificationSubscriptionResult!
+
+	# Status flip (ACTIVE / DISABLED / PREVIEW). PREVIEW is the
+	# observe-only mode used during Quick Start verification; the
+	# fan-out worker's active-subscription query treats it like
+	# DISABLED for live traffic. No-op when status already matches.
+	setNotificationSubscriptionStatus(uuid: ID!, status: NotificationSubscriptionStatusEnum!): NotificationSubscriptionResult!
+
+	# Hard delete. Customers wanting reversible pause flip status to
+	# DISABLED instead.
+	deleteNotificationSubscription(uuid: ID!): Boolean!
+
+	# Notifications framework — Inbox MVP read-state (Phase 14).
+	#
+	# markNotificationRead: idempotent. A repeat call on the same
+	# (caller × delivery) is a no-op upsert; read_at anchors to the
+	# FIRST read so the inbox can show "you saw this 3 days ago"
+	# without drifting on every re-render. Authorization: the caller
+	# must be able to see this delivery under the inbox visibility
+	# filter (org-admin tier OR perspective-member with intersecting
+	# perspectives) — toggling read-state of a delivery you can't see
+	# is rejected, not silently succeeded.
+	markNotificationRead(deliveryUuid: ID!): NotificationInboxItem!
+
+	# markNotificationUnread: returns true when an existing read row
+	# was removed, false when the (caller × delivery) pair was already
+	# unread. Same visibility auth as markNotificationRead.
+	markNotificationUnread(deliveryUuid: ID!): Boolean!
+
+	# Mark every currently-visible-and-unread delivery in the org as
+	# read for the caller. Returns the count of newly-created read
+	# rows AND a hasMore flag — the backend caps a single sweep at
+	# 500 to bound the per-call work; the UI uses hasMore to decide
+	# whether to surface "re-run to clear the remaining" guidance.
+	# Bulk variant of markNotificationRead; same visibility scope
+	# (org-admin or perspective-member).
+	#
+	# Note: ignores notificationInbox's status / eventType / unreadOnly
+	# filters by design — "Mark all as read" is the user-facing
+	# kill-switch for the whole inbox-tab badge, not a scoped sweep.
+	# A future "Mark filtered as read" would land as a separate
+	# mutation that takes the same filter inputs as notificationInbox.
+	markAllNotificationsRead(orgUuid: ID!): MarkAllNotificationsReadResult!
+}
+
+# Curated synthetic event templates surfaced through the
+# injectSyntheticEvent mutation. The full set lives on
+# {@code SyntheticEventTemplates.Template}; each value here maps 1:1
+# to a constant in that enum.
+enum SyntheticEventTemplateEnum {
+	CRITICAL_VULN_SINGLE_SHIPPED_RELEASE
+	CRITICAL_KEV_VULN_THREE_RELEASES_IN_PAYLOAD
+	KEV_LISTED_DRAFT_RELEASE
+	SEVERITY_BUMP_MEDIUM_TO_CRITICAL
+	KEV_ADDED
+	VEX_RESOLVED_NOT_AFFECTED
+}
+
+# Returned by injectSyntheticEvent + testNotificationChannel + the
+# notificationOutboxEvent read query. The UI polls
+# notificationDeliveries(eventUuid: ...) keyed by uuid to show the
+# rendered output.
+type NotificationOutboxEventResult {
+	uuid: ID!
+	org: ID!
+	eventType: String!
+	status: String!
+	occurredAt: String!
+	origin: String!
+	dedupKey: String
+	# Non-null only for testNotificationChannel — the target channel.
+	channelTestTarget: ID
+}
+
+# Lifecycle status of a single delivery row. Promoted to a typed
+# GraphQL enum (Phase 2e layer-2) so filter args + output projections
+# share one declaration and a typo in either direction is rejected at
+# the parser instead of silently returning zero rows.
+enum NotificationDeliveryStatusEnum {
+	PENDING
+	SENT
+	FAILED
+	ACKED
+	# Rate limit hit at fan-out time — delivery row persisted for
+	# history but never dispatched.
+	RATE_LIMITED
+	# CEL evaluation aborted on the wall-clock budget; subscription
+	# circuit-breaker may auto-disable.
+	EVAL_TIMEOUT
+	# Customer-initiated channel test from the "send test event" UI button.
+	TEST
+	# Subscription is in PREVIEW mode; render captured for history,
+	# never dispatched.
+	PREVIEW
+	# Held in an EMAIL channel's rolling-cap digest window; flushed as
+	# one digest email when the window expires.
+	BATCHED
+}
+
+# Whether the delivery's originating outbox event was REAL traffic or
+# a SYNTHETIC injection (channel test / Quick Start verify / harness).
+enum NotificationDeliveryOriginEnum {
+	REAL
+	SYNTHETIC
+}
+
+# One delivery row — the result of fan-out picking a channel for an
+# event. Carries queue state (status, attemptCount, nextAttemptAt) for
+# the operator UI's "what's happening with my notifications" view.
+# subscriptionUuid is nullable for Phase 2d channel-test rows;
+# channelUuid is nullable for per-user targeted rows (approval-request
+# events), which bypass channel routing entirely.
+# nextAttemptAt is nullable to match the projector's null defense —
+# the DB column is non-null in practice, but the schema declaration
+# stays permissive so a hypothetical future row with a null value
+# wouldn't blow up the GraphQL layer.
+type NotificationDeliveryResult {
+	uuid: ID!
+	org: ID!
+	outboxEventUuid: ID!
+	subscriptionUuid: ID
+	channelUuid: ID
+	status: NotificationDeliveryStatusEnum!
+	origin: NotificationDeliveryOriginEnum!
+	dedupKey: String
+	attemptCount: Int!
+	nextAttemptAt: String
+	sentAt: String
+	lastError: String
+	createdDate: String!
+}
+
+type NotificationDeliveriesPage {
+	items: [NotificationDeliveryResult!]!
+	totalCount: Int!
+	limit: Int!
+	offset: Int!
+}
+
+# Phase 14 Inbox MVP item. Sibling to NotificationDeliveryResult — same
+# core delivery fields (uuid, status, attemptCount, etc.) plus the
+# per-caller read-state (readAt is null when unread for this user).
+# Maintained as a separate type rather than extending
+# NotificationDeliveryResult so the History view's projection
+# stays clean (History is org-scoped audit, not per-user).
+type NotificationInboxItem {
+	uuid: ID!
+	org: ID!
+	outboxEventUuid: ID!
+	subscriptionUuid: ID
+	# Nullable: per-user targeted rows (approval requests) have no channel.
+	channelUuid: ID
+	status: NotificationDeliveryStatusEnum!
+	origin: NotificationDeliveryOriginEnum!
+	dedupKey: String
+	attemptCount: Int!
+	nextAttemptAt: String
+	sentAt: String
+	lastError: String
+	createdDate: String!
+	# Null = unread for the calling user; non-null = ISO-8601 timestamp
+	# of when the caller first marked this delivery read. Subsequent
+	# re-reads are idempotent and do NOT advance this anchor — the
+	# inbox MVP needs a stable "first seen" cue.
+	readAt: String
+	# Event-type label from the originating outbox event. Lifted so the
+	# inbox row can render the event kind without a separate lookup.
+	eventType: NotificationEventTypeEnum
+	# Severity rolled up from the outbox event payload. NONE when the
+	# event type doesn't carry a severity (e.g. some VEX state changes).
+	severity: NotificationSeverityEnum
+	# Canonical human-rendered inbox text built server-side by
+	# NotificationInboxFormatter. Mirrors what a user would see at the
+	# top of their Slack / email notification but stays channel-agnostic.
+	# Either can be null when the event payload is malformed; the UI
+	# falls back to {eventType, severity} for a label-only row.
+	title: String
+	description: String
+	# The originating outbox event's recordData serialized as a JSON
+	# string. Lets the UI deep-link into the affected release /
+	# vulnerability without an extra round-trip. UI parses on demand —
+	# the schema doesn't enumerate per-event-type fields here so a new
+	# event type doesn't break the inbox query.
+	payloadJson: String
+}
+
+type NotificationInboxPage {
+	items: [NotificationInboxItem!]!
+	totalCount: Int!
+	# Subset of totalCount that is currently unread for the caller —
+	# convenient for the inbox-tab badge so the UI doesn't need a
+	# separate notificationUnreadCount round-trip when it's already
+	# rendering the page.
+	unreadCount: Int!
+	limit: Int!
+	offset: Int!
+}
+
+# Phase 14 Inbox MVP — markAllNotificationsRead result. See the
+# mutation's javadoc for the cap rationale and the count/hasMore
+# semantics.
+type MarkAllNotificationsReadResult {
+	count: Int!
+	hasMore: Boolean!
+}
+
+# Subscription summary. Complex nested config (filter, routes, rateLimit)
+# remains JSON-stringified through the read surface — Phase 3 introduces
+# typed *Input* shapes for writes, but the read side keeps the existing
+# string projection to avoid expanding the schema with parallel inner
+# types. A future phase can unify them.
+type NotificationSubscriptionResult {
+	uuid: ID!
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	status: NotificationSubscriptionStatusEnum!
+	eventTypes: [NotificationEventTypeEnum!]!
+	# JSON-stringified filter config: { mode, presetConfig, celExpression }.
+	filter: String
+	# JSON-stringified route table:
+	# [{ whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, channelGroups }].
+	# perspectives is the Phase 12 list of UUIDs gating the route — null/empty = no gate.
+	# channelGroups is the Phase 13b list of group UUIDs expanded to member channels at fan-out.
+	routes: String
+	dedupWindowMinutes: Int
+	# JSON-stringified rate limit config: { maxPerWindow, windowMinutes }. Nullable.
+	rateLimit: String
+	# Hibernate @Version-managed row revision. The UI captures this on
+	# Edit load and round-trips it as expectedRevision on the next save
+	# so a concurrent edit by another admin is rejected with a clear
+	# "this record was edited by another user — reload" error rather
+	# than silently overwriting their changes.
+	revision: Int!
+}
+
+# Channel summary. encryptedSecret is NEVER projected through this
+# read surface — webhook URLs / SMTP passwords are set-only.
+#
+# configData is intentionally omitted in Phase 2e. The blob can carry
+# Slack/Teams webhook URLs (when the customer chose to store them as
+# config rather than as the encrypted secret), and a webhook URL is
+# itself an auth credential — exposing it through an org-admin read
+# would let any admin lift production-channel URLs and post arbitrary
+# content. Phase 3 channel CRUD introduces typed input fields that
+# split credential-vs-display; the read surface stays conservative.
+type NotificationChannelResult {
+	uuid: ID!
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	type: NotificationChannelTypeEnum!
+	status: NotificationChannelStatusEnum!
+	# Row revision (bumped manually on each save — the underlying
+	# Integration row has no Hibernate @Version); round-tripped as
+	# expectedRevision on the next save to reject concurrent admin
+	# edits. See the NotificationSubscriptionResult.revision comment.
+	revision: Int!
+	# Effective email digest policy (EMAIL channels only; null for
+	# other types). Defaults applied: absent config reads back as
+	# ROLLING / PT24H. Not credentials — safe on the read surface,
+	# unlike configData (see type comment above).
+	digestMode: NotificationEmailDigestModeEnum
+	digestInterval: String
+	# Recipient inbox addresses (EMAIL channels only; null for other
+	# types). Display data, not credentials — the edit UI needs the
+	# current list to render. The configData embargo stays in force
+	# for every other type.
+	emailRecipients: [String!]
+}
+
+# Channel-group summary (Phase 13b). Pure-naming layer — no per-type
+# config, no secrets, no status. {@code channels} is the ordered list
+# of member channel UUIDs (each one points at a NotificationChannel
+# in the same org; cross-org membership is rejected at save time).
+# revision / createdDate / lastUpdatedDate ride along so the UI can
+# show "last edited by whom, when" without a second round-trip.
+type NotificationChannelGroupResult {
+	uuid: ID!
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	channels: [ID!]!
+	revision: Int!
+	createdDate: String
+	lastUpdatedDate: String
+}
+
+# ---------------------------------------------------------------------
+# Notifications framework — enums (promoted from String in Phase 3).
+# ---------------------------------------------------------------------
+
+# Channel destination types. Slack only in v1; Teams / SMTP / Sentinel
+# land in later phases.
+enum NotificationChannelTypeEnum {
+	SLACK
+	# Generic webhook (Phase 4). Customer-defined HTTPS endpoint with
+	# optional bearer-token or HMAC-SHA256 auth. Catches PagerDuty /
+	# Opsgenie / Splunk / in-house receivers without per-vendor work.
+	WEBHOOK
+	# Email recipient list (Phase 9). SMTP / SendGrid creds come from
+	# system config; per-channel state is just the recipient list.
+	EMAIL
+	# Microsoft Teams via Power Automate Workflows webhook (Phase 10).
+	# Adaptive Card v1.5 envelope; webhook URL is the auth credential.
+	MS_TEAMS
+	# Azure Sentinel via the Logs Ingestion API + DCR (Phase 11).
+	# Six-field SP-credential + DCR-routing secret; client-credentials
+	# OAuth bearer.
+	SENTINEL
+}
+
+# Authentication scheme for outbound WEBHOOK deliveries.
+#   NONE          — no auth header (URL secrecy + transport security only)
+#   BEARER        — Authorization: Bearer <token>
+#   HMAC_SHA256   — X-Reliza-Signature: sha256=<hex of HMAC over body>
+enum WebhookAuthSchemeEnum {
+	NONE
+	BEARER
+	HMAC_SHA256
+}
+
+# Channel lifecycle status. DISABLED short-circuits dispatch.
+enum NotificationChannelStatusEnum {
+	ENABLED
+	DISABLED
+}
+
+# Subscription lifecycle status. PREVIEW is observe-only (used during
+# Quick Start verification); the fan-out worker treats it as not-active
+# for live traffic.
+enum NotificationSubscriptionStatusEnum {
+	ACTIVE
+	DISABLED
+	PREVIEW
+}
+
+# Domain event types that can trigger notifications.
+enum NotificationEventTypeEnum {
+	NEW_VULN_AFFECTS_RELEASES
+	VULNERABILITY_RECORD_UPDATED
+	VEX_STATE_CHANGED
+	RELEASE_CREATED
+	RELEASE_LIFECYCLE_CHANGED
+	RELEASE_BOM_DIFF
+	APPROVAL_REQUESTED
+	APPROVAL_RESOLVED
+}
+
+# Vuln severity classification carried on event payloads + route gates.
+enum NotificationSeverityEnum {
+	CRITICAL
+	HIGH
+	MEDIUM
+	LOW
+	INFO
+	NONE
+}
+
+# CEL evaluation mode for subscription filters.
+enum NotificationEvaluationModeEnum {
+	PRESET
+	ADVANCED
+}
+
+# ---------------------------------------------------------------------
+# Notifications framework — write inputs (Phase 3).
+# ---------------------------------------------------------------------
+
+# Channel write input. uuid null = create; uuid present = update. The
+# per-type secret config lives in a nested input matching the channel
+# type — customer supplies the one matching `type` and the service
+# ignores the others. On update, leaving the matching config null
+# preserves the existing encrypted value ("rename without re-typing").
+input NotificationChannelInput {
+	uuid: ID
+	# Optimistic-locking gate. On update, the UI sends the revision
+	# value it captured at Edit-load time; the service rejects the
+	# save when the current DB row's revision is higher (a concurrent
+	# admin edit landed between load and save). Null on create or for
+	# callers opting out of the check.
+	expectedRevision: Int
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	type: NotificationChannelTypeEnum!
+	status: NotificationChannelStatusEnum
+	slackConfig: NotificationSlackChannelConfigInput
+	webhookConfig: NotificationWebhookChannelConfigInput
+	emailConfig: NotificationEmailChannelConfigInput
+	teamsConfig: NotificationTeamsChannelConfigInput
+	sentinelConfig: NotificationSentinelChannelConfigInput
+}
+
+# Azure Sentinel channel config (Phase 11). Six required fields:
+# the three SP-credential fields (tenantId, clientId, clientSecret)
+# acquire an Azure AD bearer token; the three DCR-routing fields
+# (dcrEndpoint, dcrImmutableId, streamName) target the Logs Ingestion
+# API. All six are serialized together as a SentinelChannelSecret blob
+# and encrypted at rest. On update, leaving the SP-credential fields
+# blank preserves the existing encrypted value.
+input NotificationSentinelChannelConfigInput {
+	tenantId: String
+	clientId: String
+	clientSecret: String
+	dcrEndpoint: String
+	dcrImmutableId: String
+	streamName: String
+}
+
+# MS Teams channel config (Phase 10). The webhook URL is the auth
+# credential — same shape as Slack. Validated at save and dispatch
+# against the Power Automate Workflows host suffixes (logic.azure.com
+# for the LogicApps-style URL and powerplatform.com for the newer
+# Power-Platform-environment URL Microsoft hands out).
+input NotificationTeamsChannelConfigInput {
+	webhookUrl: String
+}
+
+# Email-channel config (Phase 9; digest fields Phase 5). The "auth
+# credential" for email is the system's SMTP / SendGrid setup on
+# SystemInfoService; per-channel state is the recipient list plus the
+# digest policy. Stored unencrypted in the channel's parameters
+# (recipients aren't secret — they're inbox addresses on customer
+# infrastructure). Update semantics are per-field: null recipients
+# preserves the existing list (digest-only update); null digest fields
+# preserve the existing digest config. digestInterval is an ISO-8601
+# duration (e.g. "PT24H"), accepted range PT5M..P7D. Absent digest
+# config means rolling 24h digest (on by default); actionable events
+# (approval requests / resolutions) always send immediately.
+# Mid-window changes: switching digestMode to IMMEDIATE releases any
+# already-batched rows for individual delivery right away; changing
+# only digestInterval leaves the open batch's deadline as-is — the
+# new interval applies from the next window.
+input NotificationEmailChannelConfigInput {
+	recipients: [String!]
+	digestMode: NotificationEmailDigestModeEnum
+	digestInterval: String
+}
+
+# Email digest batching mode. ROLLING = at most one non-actionable
+# email per digestInterval; overflow is held and flushed as a single
+# digest email when the window expires. IMMEDIATE = no batching.
+enum NotificationEmailDigestModeEnum {
+	IMMEDIATE
+	ROLLING
+}
+
+# Slack-specific channel config. Only the incoming-webhook URL — the
+# URL itself is the auth credential.
+input NotificationSlackChannelConfigInput {
+	webhookUrl: String
+}
+
+# Channel-group write input (Phase 13b). uuid null = create; uuid
+# present = update. Every {@code channels} UUID must resolve to a
+# channel in the same {@code org}; duplicate UUIDs within the list
+# are rejected at save time. Empty {@code channels} list is also
+# rejected — a group with zero members would silently no-op every
+# route that referenced it.
+input NotificationChannelGroupInput {
+	uuid: ID
+	# Optimistic-locking gate. See NotificationChannelInput.expectedRevision.
+	expectedRevision: Int
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	channels: [ID!]!
+}
+
+# Generic webhook channel config (Phase 4). url is the customer
+# endpoint (required, must be HTTPS). authScheme picks how the
+# dispatcher signs each POST. authToken carries the bearer token or
+# HMAC shared secret — required when authScheme != NONE.
+input NotificationWebhookChannelConfigInput {
+	url: String
+	authScheme: WebhookAuthSchemeEnum
+	authToken: String
+}
+
+# Subscription write input. Mirrors the existing
+# NotificationSubscriptionData record 1:1; nested config is typed
+# rather than JSON-stringified because the write path needs schema-
+# level validation.
+input NotificationSubscriptionInput {
+	uuid: ID
+	# Optimistic-locking gate. See NotificationChannelInput.expectedRevision.
+	expectedRevision: Int
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	status: NotificationSubscriptionStatusEnum!
+	eventTypes: [NotificationEventTypeEnum!]!
+	filter: NotificationFilterInput
+	routes: [NotificationRouteInput!]!
+	dedupWindowMinutes: Int
+	rateLimit: NotificationRateLimitInput
+}
+
+input NotificationFilterInput {
+	mode: NotificationEvaluationModeEnum!
+	# Free-form preset state surfaced as a JSON string so the UI can
+	# evolve the preset toggles without a schema bump per field.
+	presetConfigJson: String
+	# CEL expression. Validated server-side via NotificationCelEvaluator.
+	celExpression: String
+}
+
+input NotificationRouteInput {
+	whenSeverityAtLeast: NotificationSeverityEnum
+	andEnvIn: [String!]
+	# Re-uses the existing release-lifecycle enum (declared elsewhere
+	# in this schema) so a customer using the same lifecycle name in
+	# a route as in a release stays consistent.
+	andLifecycleIn: [ReleaseLifecycleEnum!]
+	# Direct channel UUIDs the route delivers to. May be empty when
+	# channelGroups is non-empty — at least one of {channels, channelGroups}
+	# must resolve to a non-empty merged list at fan-out time, otherwise
+	# the route is logged + skipped.
+	channels: [ID!]!
+	# Phase 12 perspective scoping: limit this route's deliveries to
+	# events that touch a release in at least one of these perspectives.
+	# Empty / unset = no perspective gate (match anything). The route
+	# enrichment populates AffectedRelease.perspectives from the
+	# release's component, and the fan-out intersects against this list.
+	#
+	# Null vs. [] equivalence: DGS coerces a missing / explicit-null
+	# field to Java `null`; an explicit `[]` becomes an empty List.
+	# Both are treated as "no gate" by the gate logic
+	# (perspectiveGateMatches in NotificationFanOutService), so callers
+	# may pass either shape with identical effect.
+	perspectives: [ID!]
+	# Phase 13b channel-group expansion. UUIDs of NotificationChannelGroups
+	# whose member channels are merged with the route's direct {@code channels}
+	# list at fan-out time. Missing groups (deleted, never existed) are
+	# silently skipped; dedup is first-seen across {channels ⨁ groups}.
+	# Same null/[] equivalence as perspectives: both treated as "no group
+	# expansion."
+	channelGroups: [ID!]
+}
+
+input NotificationRateLimitInput {
+	maxPerWindow: Int
+	windowMinutes: Int
 }
 
 type EnrichmentTriggerResult {
@@ -767,10 +1576,36 @@ type Deliverable {
 	supportedOs: [OSEnum]
 	supportedCpuArchitectures: [CPUArchitectureEnum]
 	softwareMetadata: SoftwareMetadata
+	hardwareMetadata: HardwareMetadata
+	quantity: Int
 	artifacts: [ID]
 	artifactDetails: [Artifact]
 	identifiers: [Identifier]
 }
+
+# ===== Distribution / HBOM — CDX-aligned hardware deliverable metadata =====
+enum PartyRole { MANUFACTURER ASSEMBLER SUPPLIER QUALITY_CONTROL DISTRIBUTOR OTHER }
+
+type Coords { latitude: Float longitude: Float }
+input CoordsInput { latitude: Float longitude: Float }
+type Address { streetAddress: String city: String region: String postalCode: String country: String isoCode: String coords: Coords }
+input AddressInput { streetAddress: String city: String region: String postalCode: String country: String isoCode: String coords: CoordsInput }
+type PartyContact { name: String email: String phone: String }
+input PartyContactInput { name: String email: String phone: String }
+type OriginShare { originCode: String percentage: Float }
+input OriginShareInput { originCode: String percentage: Float }
+"""Country-of-origin + multi-source split (HBOM extension; emitted as a CDX property)."""
+type Origin { basis: String origins: [OriginShare] }
+input OriginInput { basis: String origins: [OriginShareInput] }
+type ExternalRef { type: String url: String comment: String }
+input ExternalRefInput { type: String url: String comment: String }
+"""A CDX-2.0 party (entity with roles), per spec PR #930."""
+type Party { roles: [PartyRole] bomRef: String priority: Int name: String address: Address contacts: [PartyContact] url: String origin: Origin }
+input PartyInput { roles: [PartyRole] bomRef: String priority: Int name: String address: AddressInput contacts: [PartyContactInput] url: String origin: OriginInput }
+"""CDX-aligned production facts for a hardware deliverable (a produced lot)."""
+type HardwareMetadata { parties: [Party] origin: Origin manufactureDate: String externalRefs: [ExternalRef] extensions: Object }
+input HardwareMetadataInput { parties: [PartyInput] origin: OriginInput manufactureDate: String externalRefs: [ExternalRefInput] extensions: Object }
+
 type SoftwareMetadata {
 	buildId: String
 	buildUri: String
@@ -827,6 +1662,10 @@ type Component {
 	releaseInputTriggers: [ReleaseInputEvent]
 	outputTriggers: [ReleaseOutputEvent]
 	identifiers: [Identifier]
+	# Distribution module: device classification + profiles + native identifiers.
+	nature: ComponentNature
+	deviceClass: DeviceClass
+	medicalProfile: MedicalProfile
 	repoPath: String
 	authentication: ComponentAuthentication
 	branchSuffixMode: BranchSuffixMode
@@ -848,6 +1687,29 @@ type Component {
 	Null when the component has no releases.
 	"""
 	effectiveLifecycle: ReleaseLifecycleEnum
+	"""Manually-assigned lead user UUIDs for this component/product."""
+	leads: [ID!]
+	"""Resolved org-user details for the manually-assigned leads."""
+	leadDetails: [OrgUserData!]
+	"""Freeform stakeholder contacts for non-registered users (HTML-sanitized on write)."""
+	contacts: [ComponentContact!]
+	"""
+	Derived team: org users holding a READ_WRITE-or-stronger COMPONENT-scoped
+	permission on this component. Falls back up the parent (product) chain when
+	the component itself has no direct members.
+	"""
+	team: [OrgUserData!]
+	"""
+	Derived approvers: org users whose COMPONENT-scoped permission on this
+	component carries one or more approval-role grants. Same parent fallback as team.
+	"""
+	approvers: [OrgUserData!]
+}
+
+"""A freeform stakeholder contact for someone who is not a registered ReARM user."""
+type ComponentContact {
+	name: String
+	contact: String
 }
 
 enum ComponentKind {
@@ -1037,6 +1899,11 @@ type Settings {
 	must be null/empty under DISABLED.
 	"""
 	sidAuthoritySegments: [String!]
+	"""
+	Retention window, in days, for the org's notification rows (outbox events,
+	deliveries, read marks). Null means the 90-day default.
+	"""
+	notificationRetentionDays: Int
 }
 
 """
@@ -1351,6 +2218,8 @@ type ReleaseVulnerabilityInfo {
 	severity: String
 	aliases: [VulnerabilityAlias!]
 	analysisState: AnalysisState
+	"True when this vulnerability (by CVE id or alias) is in the CISA KEV catalog"
+	knownExploited: Boolean
 }
 
 type ReleaseViolationInfo {
@@ -1420,10 +2289,28 @@ type VulnerabilityWithAttribution {
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
 	analysisState: AnalysisState
+	"True when this vulnerability (by CVE id or alias) is in the CISA KEV catalog"
+	knownExploited: Boolean
 }
 
 type VulnerabilityAlias {
 	aliasId: String!
+}
+
+# One CISA KEV catalog entry, mirrored verbatim from the public feed
+# (Phase 6a). Date fields stay feed-format strings (yyyy-MM-dd).
+type KevRecordDetails {
+	cveId: String!
+	vendorProject: String
+	product: String
+	vulnerabilityName: String
+	dateAdded: String
+	shortDescription: String
+	requiredAction: String
+	dueDate: String
+	knownRansomwareCampaignUse: Boolean
+	notes: String
+	cwes: [String!]
 }
 
 type ViolationWithAttribution {
@@ -1750,6 +2637,11 @@ type Release {
 	marketingVersion: String
 	status: Status
 	lifecycle: ReleaseLifecycleEnum
+	"""
+	Computed (Distribution): true when this release's component is HARDWARE, or —
+	for a product release — when at least one constituent component release is.
+	"""
+	hardware: Boolean
 	org: ID
 	orgDetails: Organization
 	component: ID
@@ -1785,10 +2677,15 @@ type Release {
 	tags: [TagRecord]
 	approvedEnvironments: [String]
 	approvalEvents: [ReleaseApprovalEvent]
+	approvalRequests: [ReleaseApprovalRequest]
 	variantDetails: [Variant]
 	updateEvents: [ReleaseUpdateEvent]
 	metrics: DependencyTrackMetrics
 	identifiers: [Identifier]
+	gudidRecord: GudidRecord
+	gudidStatus: GudidStatus
+	eos: String
+	eol: String
 	"""
 	Component name snapshot captured when a sid PURL was first emitted for this release (D6).
 	Immutable once set. Null on releases pre-dating sid enablement and on releases of
@@ -2212,6 +3109,43 @@ type ReleaseApprovalEvent {
 	comment: String
 }
 
+"""
+One release awaiting the calling user's approval, with the specific approval
+entries (and the roles within them the user can still cast) that are pending.
+Projection backing the read-only releasesNeedingMyApproval query.
+"""
+type ReleasePendingApproval {
+	releaseUuid: ID
+	version: String
+	componentUuid: ID
+	componentName: String
+	componentType: ComponentType
+	lifecycle: ReleaseLifecycleEnum
+	pendingEntries: [PendingApprovalEntry!]
+}
+
+"""One pending approval entry on a ReleasePendingApproval and the roles the
+calling user is still able to cast on it (roles they hold, that an unsatisfied
+requirement allows, and that they have not already voted)."""
+type PendingApprovalEntry {
+	approvalEntryUuid: ID
+	approvalName: String
+	pendingRoleIds: [String!]
+}
+
+"""
+One approval request recorded on a release (requestReleaseApprovals).
+`resolvedAt` is stamped when every requested entry has reached a terminal
+state (satisfied or disapproved); null while the request is open.
+"""
+type ReleaseApprovalRequest {
+	uuid: ID
+	requestedBy: ID
+	approvalEntries: [ID!]
+	requestedAt: DateTime
+	resolvedAt: DateTime
+}
+
 type ReleaseUpdateEvent {
 	rus: ReleaseUpdateScopeEnum
 	rua: ReleaseUpdateActionEnum
@@ -2483,6 +3417,8 @@ type Vulnerability {
 	analysisState: AnalysisState
 	analysisDate: DateTime
 	attributedAt: DateTime
+	"True when this vulnerability (by CVE id or alias) is in the CISA KEV catalog"
+	knownExploited: Boolean
 }
 
 type Violation {
@@ -2606,6 +3542,14 @@ input SettingsInput {
 	whitespace rejected.
 	"""
 	sidAuthoritySegments: [String!]
+	"""
+	Set the retention window, in days, for the org's notification rows
+	(outbox events, deliveries, read marks). Accepted range 14..730; the
+	minimum keeps clear of the email digest's maximum parking window plus
+	the delivery retry curve. Partial-patch idiom: null leaves the existing
+	value unchanged (90-day default applies when never set).
+	"""
+	notificationRetentionDays: Int
 }
 
 input PermissionInput {
@@ -2631,6 +3575,10 @@ input CreateComponentInput {
 	includeApi: Boolean
 	approvalPolicy: ID
 	identifiers: [IdentifierInput]
+	# Distribution module: device classification + profiles + native identifiers.
+	nature: ComponentNature
+	deviceClass: DeviceClass
+	medicalProfile: MedicalProfileInput
 	repoPath: String
 	branchSuffixMode: BranchSuffixMode
 	"""
@@ -2676,6 +3624,10 @@ input UpdateComponentInput {
 	outputTriggers: [ReleaseOutputEventInput]
 	globalInputEventRefs: [GlobalInputEventRefInput]
 	identifiers: [IdentifierInput]
+	# Distribution module: device classification + profiles + native identifiers.
+	nature: ComponentNature
+	deviceClass: DeviceClass
+	medicalProfile: MedicalProfileInput
 	repoPath: String
 	authentication: ComponentAuthenticationInput
 	branchSuffixMode: BranchSuffixMode
@@ -2693,6 +3645,15 @@ input UpdateComponentInput {
 	Update internal/external classification (D16). Null leaves the existing value unchanged.
 	"""
 	isInternal: BelongsToOrganization
+	"""Manually-assigned lead user UUIDs. Null leaves unchanged; empty list clears."""
+	leads: [ID!]
+	"""Freeform stakeholder contacts (HTML-sanitized server-side). Null leaves unchanged; empty list clears."""
+	contacts: [ComponentContactInput!]
+}
+
+input ComponentContactInput {
+	name: String
+	contact: String
 }
 
 input GlobalInputEventRefInput {
@@ -2773,6 +3734,10 @@ input ReleaseInput {
 	commits: [ID]
 	tags: [TagRecordInput]
 	identifiers: [IdentifierInput]
+	gudidRecord: GudidRecordInput
+	gudidStatus: GudidStatus
+	eos: String
+	eol: String
 	vcsUri: String
 	repoPath: String
 }
@@ -2799,6 +3764,8 @@ input DeliverableInput {
 	supportedOs: [OSEnum]
 	supportedCpuArchitectures: [CPUArchitectureEnum]
 	softwareMetadata: SoftwareMetadataInput
+	hardwareMetadata: HardwareMetadataInput
+	quantity: Int
 	artifacts: [ArtifactInput]
 	identifiers: [IdentifierInput]
 }
@@ -2958,6 +3925,10 @@ input ReleaseInputProg {
 	"""
 	sceArts: [ArtifactInput] @deprecated(reason: "Nest SCE artifacts under sourceCodeEntry.artifacts (or commits[i].artifacts); this top-level field is ignored by addReleaseProgrammatic.")
 	identifiers: [IdentifierInput]
+	gudidRecord: GudidRecordInput
+	gudidStatus: GudidStatus
+	eos: String
+	eol: String
 	vcsUri: String
 	repoPath: String
 	vcsDisplayName: String
@@ -3376,6 +4347,7 @@ enum PermissionFunction {
 	DEVOPS_WRITE
 	VERSION_FEATURESET
 	AGENT
+	DISTRIBUTION
 }
 
 enum SbomProbingStatus {
@@ -3792,6 +4764,27 @@ enum IdentifierType {
 	PURL
 	CPE
 	TEI
+	COMPLIANCE_DOCUMENT
+	# ReARM-internal types — filtered out at the TEA boundary
+	UDI
+	UDI_DI
+	UDI_PI
+	SERIAL
+	LOT
+	# CDX 2.0 identity schemes (spec PR #936)
+	SWID
+	SWHID
+	OMNIBORID
+	GTIN
+	GMN
+	MPN
+	PART_NUMBER
+	MODEL_NUMBER
+	SKU
+	ASSET_TAG
+	FCC_ID
+	IMEI
+	MAC_ADDRESS
 }
 
 enum TeaArtifactChecksumType {
@@ -4205,6 +5198,7 @@ enum SpecVersion {
 	CYCLONEDX_1_5
 	CYCLONEDX_1_6
 	CYCLONEDX_1_7
+	CYCLONEDX_2_0
 	# SPDX versions
 	SPDX_2_0
 	SPDX_2_1
@@ -4765,6 +5759,287 @@ input AgentPolicyInput {
 	enabled: Boolean
 }
 
+# ===== Distribution module (SAAS-only) — Client + Site =====
+
+"""Contact / establishment details (821 consignee-chain fields)."""
+type Contact {
+	address: String
+	phone: String
+	email: String
+}
+
+input ContactInput {
+	address: String
+	phone: String
+	email: String
+}
+
+"""Industry framing for a distribution; drives UI terminology per client."""
+enum DistributionDomain {
+	GENERIC
+	MEDICAL
+	DEFENSE
+}
+
+"""A customer / establishment that receives shipments. Parent of Site."""
+type Client {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	name: String
+	domain: DistributionDomain
+	contact: Contact
+	notes: String
+	createdDate: DateTime
+}
+
+input ClientInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	name: String!
+	domain: DistributionDomain
+	contact: ContactInput
+	notes: String
+}
+
+"""A physical location belonging to a Client. Flat child (no nesting)."""
+type Site {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	client: ID
+	name: String
+	contact: Contact
+	notes: String
+	createdDate: DateTime
+}
+
+input SiteInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	client: ID!
+	name: String!
+	contact: ContactInput
+	notes: String
+}
+
+"""821 disposition lifecycle of a shipped (tracked) unit."""
+enum Disposition {
+	SHIPPED
+	RECEIVED
+	RETURNED
+	EXPLANTED
+	DISPOSED
+	DONATED
+	LOST
+}
+
+"""Where an actual report came from."""
+enum ReportSource {
+	PHONE_HOME
+	MANUAL
+	SUPPORT_TICKET
+}
+
+"""821 tracking block — meaningful for MEDICAL_TRACKED devices only. Per-device."""
+type TrackingRecord {
+	receivedDate: String
+	patientId: String
+	disposition: Disposition
+	dispositionDate: String
+}
+
+input TrackingInput {
+	receivedDate: String
+	patientId: String
+	disposition: Disposition
+	dispositionDate: String
+}
+
+"""Phone-home / observed actual state (optional, expected-empty). Per-device."""
+type ActualReport {
+	reportedRelease: ID
+	reportedAt: DateTime
+	source: ReportSource
+}
+
+input ActualReportInput {
+	reportedRelease: ID
+	reportedAt: DateTime
+	source: ReportSource
+}
+
+"""
+An append-only, batch-level Distribution-module shipment record. Per-unit
+observed state (actual / tracking) lives on the optional Device child.
+"""
+type ShippedProduct {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	site: ID
+	featureSet: ID
+	release: ID
+	deliverable: ID
+	shipDate: String
+	quantity: Int
+	"""Batch-level production identifiers (LOT, UDI-DI, ...)."""
+	identifiers: [Identifier]
+	"""As-produced resolution of the release HBOM's CDX #929 choice slots."""
+	choiceResolutions: [ChoiceResolution]
+	manufactureDate: String
+	expiryDate: String
+	notes: String
+	createdDate: DateTime
+}
+
+input ShipProductInput {
+	org: ID!
+	site: ID!
+	featureSet: ID!
+	release: ID!
+	deliverable: ID
+	shipDate: String
+	quantity: Int
+	identifiers: [IdentifierInput]
+	choiceResolutions: [ChoiceResolutionInput]
+	manufactureDate: String
+	expiryDate: String
+	notes: String
+}
+
+"""Expected/asserted state of a device (defaults from its shipment's release)."""
+type DevicePlan {
+	expectedRelease: ID
+}
+
+input DevicePlanInput {
+	expectedRelease: ID
+}
+
+"""
+An individual fielded unit — the optional per-unit layer below a shipment.
+Instance-like: plan (expected version) vs actual (phone-home) + 821 tracking.
+"""
+type Device {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	shippedProduct: ID
+	site: ID
+	"""Unit-level identifiers (SERIAL, UDI, UDI-PI, ...)."""
+	identifiers: [Identifier]
+	plan: DevicePlan
+	actual: ActualReport
+	tracking: TrackingRecord
+	"""Latest reconciled software state (digital twin, software side)."""
+	observedState: ObservedState
+	notes: String
+	"""Computed: observed version diverges from the device's expected release."""
+	versionDrift: Boolean
+	createdDate: DateTime
+}
+
+input DeviceInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	shippedProduct: ID!
+	identifiers: [IdentifierInput]
+	plan: DevicePlanInput
+	notes: String
+}
+
+"""Physical-ness axis of a component (Distribution module)."""
+enum ComponentNature {
+	SOFTWARE
+	HARDWARE
+}
+
+"""UDI issuing agency (Distribution module)."""
+enum IssuingAgency {
+	GS1
+	HIBCC
+	ICCBBA
+}
+
+"""GUDID submission workflow state for a UDI-bearing release."""
+enum GudidStatus {
+	NOT_SUBMITTED
+	SUBMITTED
+	PUBLISHED
+}
+
+"""Stable GUDID descriptors carried at component level, inherited by releases."""
+type GudidDefaults {
+	brandName: String
+	companyName: String
+	gmdnCode: String
+}
+
+input GudidDefaultsInput {
+	brandName: String
+	companyName: String
+	gmdnCode: String
+}
+
+"""Version-specific GUDID record for a UDI-bearing release."""
+type GudidRecord {
+	brandName: String
+	versionModel: String
+	gmdnCode: String
+	sterile: Boolean
+	singleUse: Boolean
+	mriSafety: Boolean
+}
+
+input GudidRecordInput {
+	brandName: String
+	versionModel: String
+	gmdnCode: String
+	sterile: Boolean
+	singleUse: Boolean
+	mriSafety: Boolean
+}
+
+"""Regulatory metadata for a medical-device component."""
+type MedicalProfile {
+	issuingAgency: IssuingAgency
+	udiBearing: Boolean
+	gudidDefaults: GudidDefaults
+}
+
+input MedicalProfileInput {
+	issuingAgency: IssuingAgency
+	udiBearing: Boolean
+	gudidDefaults: GudidDefaultsInput
+}
+
+"""Regulatory classification of a component / device (Distribution module)."""
+enum DeviceClass {
+	NONE
+	MEDICAL_UNTRACKED
+	MEDICAL_TRACKED
+}
+
+"""
+Resolved device identity for a feature set: its effective UDI-DI and
+regulatory class, derived from the single UDI-bearing constituent component.
+"""
+type DeviceIdentity {
+	featureSet: ID
+	deviceClass: DeviceClass
+	udiBearingComponent: ID
+	udiBearingRelease: ID
+	udiDi: String
+}
+
 """
 Cross-cutting KPIs for the AI Agents dashboard header (mockup's
 four-card row).
@@ -5185,6 +6460,25 @@ input SigningKeyInput {
 }
 
 """
+Programmatic (FREEFORM-auth'd) variant of SigningKeyInput with no {@code org}
+field: the org is always the one the calling key resolves to, so accepting a
+client-supplied org is redundant and a footgun (a mismatched value previously
+surfaced as an opaque "Not authorized"). Used only by
+{@code enrollSigningKeyProgrammatic}.
+"""
+input AgentSigningKeyInput {
+	format: SignatureFormat!
+	ownerType: SigningKeyOwnerType!
+	ownerUuid: ID!
+	"""SHA256:... for SSH; long key id for GPG. Derived from pubKey when omitted."""
+	fingerprint: String
+	"""Optional override; defaults to the agent's identity where applicable."""
+	identity: String
+	"""Single-line SSH or ASCII-armoured GPG block."""
+	pubKey: String!
+}
+
+"""
 Verdict snapshot for a (subject, signature-artifact) pair. CEL reads
 the most-recent row via {@code commit.signature.*}.
 """
@@ -5249,3 +6543,179 @@ type SceSignature {
 	keyFingerprint: String
 }
 
+"""A parsed HBOM hardware node (device/firmware) attached to a release."""
+type HbomComponent {
+	uuid: ID
+	org: ID
+	release: ID
+	bomRef: String
+	type: String
+	"""CDX #929 choice operator (XOR / AND / OPTIONAL); null for plain devices."""
+	operator: String
+	name: String
+	version: String
+	description: String
+	category: String
+	subcategory: String
+	"""CDX 2.0 parties (manufacturer/supplier/... incl. address), spec PR #930."""
+	parties: [Party]
+	"""Party-asserted identity claims (CDX 2.0 identity model, spec PR #936)."""
+	identifiers: [ComponentIdentifier]
+	"""Derived: part-number-like claims (MPN/PART_NUMBER/...), deduped."""
+	partNumbers: [String]
+	"""Derived: first MANUFACTURER-role party's name."""
+	manufacturer: String
+	boardLocation: String
+	deviceType: String
+	quantity: Int
+	parentRef: String
+	isRoot: Boolean
+}
+
+"""Identity claims of an HBOM component grouped by asserting party (CDX 2.0, spec PR #936)."""
+type ComponentIdentifier {
+	bomRef: String
+	"""bom-ref of the Party making these identity assertions."""
+	party: String
+	identities: [Identifier]
+}
+
+# ===== Digital twin (Distribution) — field events + observed software state =====
+
+enum DeviceEventType {
+	FAILURE
+	REPAIR
+	REPLACEMENT
+	INSPECTION
+	OBSERVATION
+}
+
+"""The part installed by a REPLACEMENT event."""
+type ReplacementPart {
+	"""Typed identity of the installed part (MPN/PART_NUMBER/...) plus unit production identifiers (LOT, SERIAL)."""
+	identifiers: [Identifier]
+	manufacturer: String
+}
+
+input ReplacementPartInput {
+	identifiers: [IdentifierInput]
+	manufacturer: String
+}
+
+"""
+A field event on a fielded unit. Hardware events anchor to the release's HBOM
+ontology via hbomRef; software events via purl. Append-only.
+"""
+type DeviceEvent {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	device: ID
+	eventType: DeviceEventType
+	date: DateTime
+	hbomRef: String
+	componentName: String
+	purl: String
+	replacement: ReplacementPart
+	"""For OBSERVATION events: the full reconciled report (history; the device's observedState is latest-only)."""
+	observation: ObservedState
+	notes: String
+	createdDate: DateTime
+}
+
+input DeviceEventInput {
+	device: ID!
+	eventType: DeviceEventType!
+	date: DateTime
+	hbomRef: String
+	componentName: String
+	purl: String
+	replacement: ReplacementPartInput
+	notes: String
+}
+
+enum ObservedItemStatus {
+	MATCHED
+	DRIFTED
+	FOREIGN_COMPONENT
+	UNKNOWN
+}
+
+"""One reconciled observed item (e.g. a running container image digest)."""
+type ObservedItem {
+	identifier: String
+	digest: String
+	status: ObservedItemStatus
+	deliverable: ID
+	component: ID
+	componentName: String
+	observedRelease: ID
+	observedVersion: String
+	expectedRelease: ID
+	expectedVersion: String
+}
+
+"""Latest observed software state, reconciled against the expected release tree."""
+type ObservedState {
+	reportedAt: DateTime
+	source: ReportSource
+	items: [ObservedItem]
+	matchedCount: Int
+	driftedCount: Int
+	unknownCount: Int
+}
+
+input ObservedDigestInput {
+	identifier: String
+	digest: String!
+}
+
+"""
+Programmatic phone-home payload: observed digests (structured) and/or a raw
+text blob (e.g. a k8s image list) the backend extracts digests from.
+"""
+input DeviceStateReportInput {
+	device: ID!
+	source: ReportSource
+	observed: [ObservedDigestInput]
+	rawText: String
+}
+
+"""One HBOM node of a unit's as-maintained view (release HBOM + replacements)."""
+type DeviceHbomComponent {
+	component: HbomComponent
+	"""ORIGINAL | REPLACED | ALTERNATE | UNRESOLVED_CHOICE"""
+	twinStatus: String
+	"""Latest field event on this node (FAILURE / REPAIR / INSPECTION / REPLACEMENT); null when none."""
+	eventType: String
+	eventDate: DateTime
+	replacement: ReplacementPart
+	eventNotes: String
+	"""bom-ref of the CDX #929 choice slot this node belongs to (null otherwise)."""
+	choiceRef: String
+}
+
+"""A CDX #929 choice slot of a release tree, with its option nodes."""
+type ComponentChoice {
+	choice: HbomComponent
+	options: [HbomComponent]
+}
+
+"""One resolved choice slot of a produced lot (XOR: one ref; OPTIONAL: zero/one; AND: implicit)."""
+type ChoiceResolution {
+	choiceRef: String
+	selectedRefs: [String]
+}
+
+input ChoiceResolutionInput {
+	choiceRef: String!
+	selectedRefs: [String]
+}
+
+"""One fleet-drift hit: a unit diverging from its authorized baseline, and where it is fielded."""
+type FleetDriftEntry {
+	device: Device
+	siteName: String
+	clientName: String
+}

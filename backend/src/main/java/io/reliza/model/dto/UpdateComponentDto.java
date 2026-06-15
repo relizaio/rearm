@@ -21,8 +21,13 @@ import io.reliza.common.CommonVariables.SidPurlOverride;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
+import io.reliza.model.ComponentData.ComponentNature;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ComponentData.DeviceClass;
+import io.reliza.model.ComponentData.MedicalProfile;
 import io.reliza.model.ComponentData.EventType;
+import io.reliza.model.ComponentData.FreeformContact;
+import io.reliza.model.RearmIdentifier;
 import io.reliza.model.ComponentData.GlobalInputEventRef;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
@@ -30,7 +35,6 @@ import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
-import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -112,7 +116,14 @@ public class UpdateComponentDto {
 	@JsonProperty
 	private List<GlobalInputEventRef> globalInputEventRefs;
 	@JsonProperty
-	private List<TeaIdentifier> identifiers;
+	private List<RearmIdentifier> identifiers;
+	/** Distribution module: device classification + profiles. */
+	@JsonProperty
+	private ComponentNature nature;
+	@JsonProperty
+	private DeviceClass deviceClass;
+	@JsonProperty
+	private MedicalProfile medicalProfile;
 	@JsonProperty
 	private ComponentAuthentication authentication;
 
@@ -134,6 +145,14 @@ public class UpdateComponentDto {
 	/** Null = unchanged. */
 	@JsonProperty
 	private BelongsToOrganization isInternal;
+
+	/** Manually-assigned lead user UUIDs. Null = unchanged; empty list clears. */
+	@JsonProperty
+	private Set<UUID> leads;
+
+	/** Freeform stakeholder contacts (jsoup-sanitized server-side). Null = unchanged; empty list clears. */
+	@JsonProperty
+	private List<FreeformContact> contacts;
 
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
 			IntegrationType it) throws DatabindException, JacksonException {
@@ -199,11 +218,16 @@ public class UpdateComponentDto {
 								.outputTriggers(triggers)
 								.globalInputEventRefs(ucd.getGlobalInputEventRefs())
 								.identifiers(ucd.getIdentifiers())
+								.nature(ucd.getNature())
+								.deviceClass(ucd.getDeviceClass())
+								.medicalProfile(ucd.getMedicalProfile())
 								.authentication(ucd.getAuthentication())
 								.branchSuffixMode(ucd.getBranchSuffixMode())
 								.sidPurlOverride(ucd.getSidPurlOverride())
 								.sidAuthoritySegments(ucd.getSidAuthoritySegments())
 								.isInternal(ucd.getIsInternal())
+								.leads(ucd.getLeads())
+								.contacts(ucd.getContacts())
 								.build();
 		return cdto;
 	}
