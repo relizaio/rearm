@@ -16,9 +16,12 @@ import io.reliza.common.CommonVariables.SidPurlOverride;
 import io.reliza.model.ComponentData.DefaultBranchName;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
-import io.reliza.model.tea.TeaIdentifier;
+import io.reliza.model.RearmIdentifier;
 import io.reliza.model.ComponentData.ComponentKind;
+import io.reliza.model.ComponentData.ComponentNature;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ComponentData.DeviceClass;
+import io.reliza.model.ComponentData.MedicalProfile;
 import lombok.Builder;
 import lombok.Data;
 
@@ -49,8 +52,13 @@ public class CreateComponentDto {
 	private UUID parent;
 	private UUID approvalPolicy;
 	
-	private List<TeaIdentifier> identifiers;
-	
+	private List<RearmIdentifier> identifiers;
+
+	/** Distribution module: physical-ness, regulatory class, and device profiles. */
+	private ComponentNature nature;
+	private DeviceClass deviceClass;
+	private MedicalProfile medicalProfile;
+
 	private CreateVcsRepositoryDto vcsRepository; // to set repository
 	
 	private Boolean includeApi; // to create api key right away

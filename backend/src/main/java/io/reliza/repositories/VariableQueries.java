@@ -113,10 +113,13 @@ class VariableQueries {
 	protected static final String FIND_ALL_USERS_CREATED_AFTER_DATE = "select * from rearm.users u where"
 			+ " u.created_date > cast (:cutOffDate as timestamptz)";
 
-	protected static final String FIND_USERS_BY_PERMISSION_OBJECT = "select * from rearm.users WHERE EXISTS ("
-				+ " SELECT 1 FROM jsonb_array_elements(record_data->'permissions'->'permissions') p"
-				+ " WHERE p->>'object' = :objectId"
-			+ ")";
+	// jsonb @> containment (instead of an EXISTS jsonb_array_elements scan) so the
+	// jsonb_path_ops GIN index from V47 (idx_users_permission_objects) can serve it.
+	// `arr @> '[{"object":"<id>"}]'` matches any user whose permission array has an
+	// element containing object==:objectId — semantically equal to the prior scan.
+	protected static final String FIND_USERS_BY_PERMISSION_OBJECT = "select * from rearm.users u"
+			+ " WHERE u.record_data->'permissions'->'permissions'"
+			+ " @> jsonb_build_array(jsonb_build_object('object', cast(:objectId as text)))";
 	
 	
 	/** Audit **/
@@ -263,6 +266,35 @@ class VariableQueries {
 					WHERE vuln->>'purl' = :location
 					AND vuln->>'vulnId' = :findingId
 				)
+			""";
+
+	// Notifications fan-out enrichment (Phase 2c): given a vuln primary id,
+	// find every artifact in the org whose metrics carry it. Distinct from
+	// FIND_ARTIFACTS_WITH_VULNERABILITY above which requires a purl too —
+	// at fan-out time we know the vulnPrimaryId but not which purl(s) it
+	// landed against, since one CVE can affect multiple components in
+	// the same org.
+	protected static final String FIND_ARTIFACTS_WITH_VULN_ID = """
+			SELECT uuid FROM rearm.artifacts
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND metrics IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
+					WHERE vuln->>'vulnId' = :vulnId
+				)
+			""";
+
+	// Notifications fan-out enrichment (S-3): the distinct package purls a
+	// vuln landed against in the org, ordered for a deterministic pick when
+	// one CVE affects multiple packages.
+	protected static final String FIND_VULN_PURLS_FOR_VULN_ID = """
+			SELECT DISTINCT vuln->>'purl' FROM rearm.artifacts,
+				jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND metrics IS NOT NULL
+				AND vuln->>'vulnId' = :vulnId
+				AND vuln->>'purl' IS NOT NULL
+				ORDER BY 1
 			""";
 
 	protected static final String FIND_ARTIFACTS_WITH_VIOLATION = """

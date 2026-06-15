@@ -156,6 +156,23 @@ public class IntegrationDataFetcher {
 		syntheticSbomService.resyncOrgManualAsync(orgUuid);
 		return true;
 	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "forceReuploadDtrackData")
+	public Boolean forceReuploadDtrackData(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+
+		// Org admin only — re-uploading rebuilds DTrack projects and forces a full
+		// re-analysis (visible to everyone on the integration).
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
+
+		log.info("User {} initiated forced DTrack data re-upload for organization {}", oud.get().getUuid(), orgUuid);
+		syntheticSbomService.forceReuploadOrgAsync(orgUuid);
+		return true;
+	}
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getBearIntegration")

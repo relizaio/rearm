@@ -8,6 +8,7 @@ import java.security.MessageDigest;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import org.cyclonedx.Version;
@@ -36,11 +38,14 @@ import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.ArtifactCanonicalMap;
 import io.reliza.model.ArtifactSbomComponent;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.ComponentIdentity;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SbomComponentData;
 import io.reliza.model.SyntheticDtrackBucket;
 import io.reliza.model.SyntheticDtrackBucket.IngestState;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.repositories.ArtifactCanonicalMapRepository;
@@ -80,6 +85,7 @@ public class SyntheticSbomService {
 	@Autowired private DTrackService dTrackService;
 	@Autowired private RebomService rebomService;
 	@Autowired @Lazy private IntegrationService integrationService;
+	@Autowired @Lazy private VulnAnalysisService vulnAnalysisService;
 
 	// ===================================================================
 	// Per-org orchestration
@@ -127,6 +133,34 @@ public class SyntheticSbomService {
 	}
 
 	/**
+	 * Admin "force re-upload to DTrack" action: re-submit every synthetic bucket for
+	 * the org regardless of the content-hash idempotency check — into its existing
+	 * DTrack project, or a fresh one if the project is gone. DTrack then re-analyses
+	 * and the next ingest re-pulls findings in the current (alias-collapsed) shape,
+	 * migrating buckets stored before that fix. Heavier than {@link #resyncOrgManualAsync}
+	 * (full re-analysis + a brief SUBMITTED window where coverage drops) — for operator
+	 * recovery, not routine. Async so the GraphQL mutation returns immediately.
+	 */
+	@org.springframework.scheduling.annotation.Async
+	public void forceReuploadOrgAsync(UUID orgUuid) {
+		try {
+			submitOrg(orgUuid, true);
+		} catch (Exception e) {
+			log.error("Force re-upload (submit) failed for org {}", orgUuid, e);
+		}
+		try {
+			ingestOrgBuckets(orgUuid);
+		} catch (Exception e) {
+			log.error("Force re-upload (ingest) failed for org {}", orgUuid, e);
+		}
+		try {
+			fanOutOrg(orgUuid);
+		} catch (Exception e) {
+			log.error("Force re-upload (fan-out) failed for org {}", orgUuid, e);
+		}
+	}
+
+	/**
 	 * Re-pull findings for INGESTED buckets whose DTrack project has been
 	 * re-analysed since {@code since} (new advisories published against
 	 * already-scanned components — the time-varying findings that the legacy daily
@@ -148,7 +182,7 @@ public class SyntheticSbomService {
 			try {
 				SyntheticFindings findings = dTrackService.syntheticFetchFindings(
 						orgUuid, bucket.getDtrackProjectUuid());
-				Map<String, Object> newByCanonical = toFindingsByCanonical(findings, bucket.getRefMap());
+				Map<String, Object> newByCanonical = toFindingsByCanonical(orgUuid, findings, bucket.getRefMap());
 				if (newByCanonical.equals(bucket.getFindings())) continue; // no change
 				bucket.setFindings(newByCanonical);
 				bucket.setLastIngested(ZonedDateTime.now());
@@ -170,10 +204,46 @@ public class SyntheticSbomService {
 	// ===================================================================
 
 	/**
-	 * Slice the org's matchable components into buckets and (re)submit any whose
-	 * membership changed since last submission (content-hash mismatch).
+	 * Cheap idle-skip gate for the scheduler: true when the org has synthetic-DTrack
+	 * work this tick — a matchable component not yet assigned to a bucket (new or
+	 * just-enriched), or a bucket that failed to submit and needs retry. When false,
+	 * the scheduler skips {@code pullEnrichmentForOrg} + {@code submitOrg}, avoiding
+	 * the rebom config probe, the full matchable scan, and the per-bucket re-hash for
+	 * an idle org.
+	 *
+	 * <p>Two indexed {@code EXISTS} probes; bear-agnostic so the gate itself needs no
+	 * rebom call. It does NOT detect a deletion that shrinks a bucket without leaving
+	 * an unassigned row (rare — canonicals are sticky; self-heals on the next change).
+	 * {@code ingestOrgBuckets} and {@code fanOutOrg} still run every tick regardless,
+	 * so in-flight (SUBMITTED) buckets always advance to INGESTED.
+	 */
+	boolean hasPendingSyntheticWork(UUID orgUuid) {
+		return sbomComponentRepository.existsUnbucketedMatchableByOrg(orgUuid.toString())
+				|| bucketRepository.existsByOrgAndIngestState(orgUuid, IngestState.FAILED);
+	}
+
+	/**
+	 * Group the org's matchable components by their STICKY bucket assignment and
+	 * (re)submit any bucket whose membership changed since last submission
+	 * (content-hash mismatch).
+	 *
+	 * <p>Buckets are assigned per-component and never reshuffled (see
+	 * {@link #assignStickyBuckets}). A new or newly-enriched component only changes
+	 * the one bucket it lands in, so unrelated buckets keep their content hash and
+	 * are not re-sent to DTrack — unlike the prior positional slicing, where a
+	 * single insertion shifted every later component's position and re-submitted
+	 * every downstream bucket.
 	 */
 	void submitOrg(UUID orgUuid) {
+		submitOrg(orgUuid, false);
+	}
+
+	/**
+	 * @param force when true, re-upload every bucket to DTrack regardless of the
+	 *   content-hash idempotency check — used by the admin "force re-upload" action
+	 *   (re-submit each bucket into its existing project, or a new one if absent).
+	 */
+	void submitOrg(UUID orgUuid, boolean force) {
 		// Gate by BEAR config: a BEAR-configured org ships a component only once the
 		// enrichment puller has pulled its enriched licenses (enriched_at set), so
 		// DTrack receives enriched licenses. A non-BEAR org has no enrichment to wait
@@ -193,57 +263,137 @@ public class SyntheticSbomService {
 				: sbomComponentRepository.findMatchableByOrgOrdered(orgUuid.toString());
 		if (matchable.isEmpty()) return;
 
-		int bucketIndex = 0;
-		for (int start = 0; start < matchable.size(); start += BUCKET_SIZE, bucketIndex++) {
-			int end = Math.min(start + BUCKET_SIZE, matchable.size());
-			List<SbomComponent> slice = matchable.subList(start, end);
-			String contentHash = contentHash(slice);
+		// Assign any not-yet-bucketed components first-fit, then group by the
+		// persisted index. TreeMap so bucket order is deterministic.
+		assignStickyBuckets(orgUuid, matchable);
+		Map<Integer, List<SbomComponent>> byBucket = new TreeMap<>();
+		for (SbomComponent sc : matchable) {
+			Integer bi = sc.getSyntheticBucketIndex();
+			if (bi == null) continue; // assignment failed this tick; retry next
+			byBucket.computeIfAbsent(bi, k -> new ArrayList<>()).add(sc);
+		}
 
-			SyntheticDtrackBucket bucket = bucketRepository
-					.findByOrgAndBucketIndex(orgUuid, bucketIndex)
-					.orElseGet(() -> {
-						SyntheticDtrackBucket b = new SyntheticDtrackBucket();
-						b.setOrg(orgUuid);
-						b.setBucketIndex(0);
-						return b;
-					});
-			bucket.setBucketIndex(bucketIndex);
+		for (Map.Entry<Integer, List<SbomComponent>> e : byBucket.entrySet()) {
+			submitBucket(orgUuid, e.getKey(), e.getValue(), force);
+		}
 
-			// Idempotency: skip re-upload only when membership is unchanged AND the
-			// bucket already submitted/ingested successfully. PENDING/FAILED retry.
-			// Never hash the generated BOM JSON (metadata.timestamp churns).
-			if (contentHash.equals(bucket.getContentHash())
-					&& bucket.getDtrackProjectUuid() != null
-					&& (IngestState.SUBMITTED == bucket.getIngestState()
-						|| IngestState.INGESTED == bucket.getIngestState())) {
-				continue;
+		// A bucket whose every member was deleted (rare — canonicals are sticky)
+		// would otherwise keep contributing stale coverage in fan-out. Retire it.
+		retireEmptyBuckets(orgUuid, byBucket.keySet());
+	}
+
+	/**
+	 * Assign a sticky bucket index to every matchable component that lacks one,
+	 * first-fit into the lowest-indexed bucket with spare capacity (else a new
+	 * bucket). Existing assignments are never changed, so adding a component never
+	 * moves another. No-op (no DB writes) once everything is assigned — the common
+	 * steady-state path. Deterministic fill order (by canonical purl) so the very
+	 * first pass over a pre-existing org reproduces the old positional grouping,
+	 * avoiding a migration re-submit storm.
+	 */
+	private void assignStickyBuckets(UUID orgUuid, List<SbomComponent> matchable) {
+		List<SbomComponent> unassigned = new ArrayList<>();
+		Map<Integer, Integer> counts = new HashMap<>();
+		int maxIndex = -1;
+		for (SbomComponent sc : matchable) {
+			Integer bi = sc.getSyntheticBucketIndex();
+			if (bi == null) {
+				unassigned.add(sc);
+			} else {
+				counts.merge(bi, 1, Integer::sum);
+				if (bi > maxIndex) maxIndex = bi;
 			}
+		}
+		if (unassigned.isEmpty()) return;
+		unassigned.sort(Comparator.comparing(SbomComponent::getCanonicalPurl));
 
-			try {
-				Map<String, Object> refMap = new LinkedHashMap<>();
-				JsonNode bomJson = buildBom(orgUuid, slice, bucketIndex, refMap);
-				String projectName = "rearm-synthetic-" + orgUuid;
-				String projectVersion = "bucket-" + bucketIndex;
-				UUID projectId = bucket.getDtrackProjectUuid() != null
-						? bucket.getDtrackProjectUuid()
-						: dTrackService.syntheticGetOrCreateProject(orgUuid, projectName, projectVersion);
-				String token = dTrackService.syntheticUploadBom(
-						orgUuid, projectId, bomJson, projectName, projectVersion);
-
-				bucket.setDtrackProjectUuid(projectId);
-				bucket.setContentHash(contentHash);
-				bucket.setRefMap(refMap);
-				bucket.setIngestState(IngestState.SUBMITTED);
-				bucket.setLastSubmitted(ZonedDateTime.now());
-				bucket.setLastUpdatedDate(ZonedDateTime.now());
-				bucket.getRefMap().put("__token", token);
-				bucketRepository.save(bucket);
-			} catch (Exception e) {
-				log.error("Failed to submit synthetic bucket {} for org {}", bucketIndex, orgUuid, e);
-				bucket.setIngestState(IngestState.FAILED);
-				bucket.setLastUpdatedDate(ZonedDateTime.now());
-				bucketRepository.save(bucket);
+		int nextNewIndex = maxIndex + 1;
+		for (SbomComponent sc : unassigned) {
+			int target = -1;
+			for (int bi = 0; bi <= maxIndex; bi++) {
+				if (counts.getOrDefault(bi, 0) < BUCKET_SIZE) { target = bi; break; }
 			}
+			if (target < 0) { target = nextNewIndex++; maxIndex = target; }
+			sc.setSyntheticBucketIndex(target);
+			counts.merge(target, 1, Integer::sum);
+			sbomComponentRepository.save(sc);
+		}
+	}
+
+	/** (Re)submit a single bucket if its membership changed since last submission. */
+	private void submitBucket(UUID orgUuid, int bucketIndex, List<SbomComponent> members, boolean force) {
+		// Deterministic order so the content hash and emitted BOM are stable.
+		List<SbomComponent> slice = new ArrayList<>(members);
+		slice.sort(Comparator.comparing(SbomComponent::getCanonicalPurl));
+		String contentHash = contentHash(slice);
+
+		SyntheticDtrackBucket bucket = bucketRepository
+				.findByOrgAndBucketIndex(orgUuid, bucketIndex)
+				.orElseGet(() -> {
+					SyntheticDtrackBucket b = new SyntheticDtrackBucket();
+					b.setOrg(orgUuid);
+					b.setBucketIndex(bucketIndex);
+					return b;
+				});
+		bucket.setBucketIndex(bucketIndex);
+
+		// Idempotency: skip re-upload only when membership is unchanged AND the
+		// bucket already submitted/ingested successfully. PENDING/FAILED retry.
+		// Never hash the generated BOM JSON (metadata.timestamp churns).
+		// force=true (admin re-upload) bypasses this so every bucket is re-sent.
+		if (!force
+				&& contentHash.equals(bucket.getContentHash())
+				&& bucket.getDtrackProjectUuid() != null
+				&& (IngestState.SUBMITTED == bucket.getIngestState()
+					|| IngestState.INGESTED == bucket.getIngestState())) {
+			return;
+		}
+
+		try {
+			Map<String, Object> refMap = new LinkedHashMap<>();
+			JsonNode bomJson = buildBom(orgUuid, slice, bucketIndex, refMap);
+			String projectName = "rearm-synthetic-" + orgUuid;
+			String projectVersion = "bucket-" + bucketIndex;
+			UUID projectId = bucket.getDtrackProjectUuid() != null
+					? bucket.getDtrackProjectUuid()
+					: dTrackService.syntheticGetOrCreateProject(orgUuid, projectName, projectVersion);
+			String token = dTrackService.syntheticUploadBom(
+					orgUuid, projectId, bomJson, projectName, projectVersion);
+
+			bucket.setDtrackProjectUuid(projectId);
+			bucket.setContentHash(contentHash);
+			bucket.setRefMap(refMap);
+			bucket.setIngestState(IngestState.SUBMITTED);
+			bucket.setLastSubmitted(ZonedDateTime.now());
+			bucket.setLastUpdatedDate(ZonedDateTime.now());
+			bucket.getRefMap().put("__token", token);
+			bucketRepository.save(bucket);
+		} catch (Exception e) {
+			log.error("Failed to submit synthetic bucket {} for org {}", bucketIndex, orgUuid, e);
+			bucket.setIngestState(IngestState.FAILED);
+			bucket.setLastUpdatedDate(ZonedDateTime.now());
+			bucketRepository.save(bucket);
+		}
+	}
+
+	/**
+	 * Clear coverage for buckets that no longer have any matchable members so
+	 * fan-out stops counting their stale purls as scanned. Cheap: only writes the
+	 * buckets that still carry stale state.
+	 */
+	private void retireEmptyBuckets(UUID orgUuid, Set<Integer> liveIndices) {
+		for (SyntheticDtrackBucket b : bucketRepository.findByOrg(orgUuid)) {
+			if (liveIndices.contains(b.getBucketIndex())) continue;
+			boolean alreadyEmpty = (b.getRefMap() == null || b.getRefMap().isEmpty())
+					&& (b.getFindings() == null || b.getFindings().isEmpty())
+					&& b.getContentHash() == null;
+			if (alreadyEmpty) continue;
+			b.setRefMap(new LinkedHashMap<>());
+			b.setFindings(new LinkedHashMap<>());
+			b.setContentHash(null);
+			b.setIngestState(IngestState.PENDING);
+			b.setLastUpdatedDate(ZonedDateTime.now());
+			bucketRepository.save(b);
 		}
 	}
 
@@ -291,9 +441,9 @@ public class SyntheticSbomService {
 			comp.setType(Component.Type.LIBRARY);
 			comp.setBomRef("c" + i++);
 			comp.setName(nameOf(sc, canonical));
-			Map<String, Object> rd = sc.getRecordData();
-			if (rd != null && rd.get("group") != null) comp.setGroup(String.valueOf(rd.get("group")));
-			if (rd != null && rd.get("version") != null) comp.setVersion(String.valueOf(rd.get("version")));
+			SbomComponentData scd = SbomComponentData.dataFromRecord(sc);
+			if (scd.group() != null) comp.setGroup(scd.group());
+			if (scd.version() != null) comp.setVersion(scd.version());
 			if (canonical.startsWith("pkg:")) {
 				comp.setPurl(canonical);
 				identityToCanonical.put(canonical, canonical);
@@ -334,8 +484,8 @@ public class SyntheticSbomService {
 	}
 
 	private String nameOf(SbomComponent sc, String canonical) {
-		Map<String, Object> rd = sc.getRecordData();
-		return rd != null && rd.get("name") != null ? String.valueOf(rd.get("name")) : canonical;
+		String name = SbomComponentData.dataFromRecord(sc).name();
+		return name != null ? name : canonical;
 	}
 
 	/**
@@ -374,7 +524,7 @@ public class SyntheticSbomService {
 				}
 				SyntheticFindings findings = dTrackService.syntheticFetchFindings(
 						orgUuid, bucket.getDtrackProjectUuid());
-				bucket.setFindings(toFindingsByCanonical(findings, bucket.getRefMap()));
+				bucket.setFindings(toFindingsByCanonical(orgUuid, findings, bucket.getRefMap()));
 				bucket.setIngestState(IngestState.INGESTED);
 				bucket.setLastIngested(ZonedDateTime.now());
 				bucket.setLastUpdatedDate(ZonedDateTime.now());
@@ -397,7 +547,7 @@ public class SyntheticSbomService {
 	 * components and CPE companions are attributed, not dropped.
 	 */
 	private Map<String, Object> toFindingsByCanonical(
-			SyntheticFindings findings, Map<String, Object> identityMap) {
+			UUID orgUuid, SyntheticFindings findings, Map<String, Object> identityMap) {
 		Map<String, Object> byCanonical = new LinkedHashMap<>();
 		if (findings.vulns() != null) {
 			for (IntegrationService.VulnWithCpe vc : findings.vulns()) {
@@ -415,7 +565,60 @@ public class SyntheticSbomService {
 						.add(Utils.OM.convertValue(vc.violation(), LinkedHashMap.class));
 			}
 		}
+		// Collapse alias-duplicate findings per canonical through the SAME mechanism
+		// the artifact metrics use — VulnAnalysisService.processReleaseMetricsDto at
+		// ORG scope (exactly what ArtifactService.computeArtifactMetrics runs). This
+		// applies BOTH the DTrack-provided aliases AND org-wide vulnerability-analysis
+		// records (which can add aliases / override severity), then re-organizes — so
+		// the stored bucket findings end up in the same collapsed+enriched shape the
+		// artifact write produces. Without matching it exactly, the idempotency guard
+		// (findingsSignature) would keep missing and rewrite the artifact every tick,
+		// churning release rollups. Reuse (not duplicate) the single enrichment path.
+		for (Object entry : byCanonical.values()) {
+			try {
+				organizeCanonicalFindings(orgUuid, (Map<String, Object>) entry);
+			} catch (Exception e) {
+				// Never let a malformed finding break the whole bucket's ingest —
+				// keep that canonical's raw findings rather than dropping coverage.
+				log.warn("Alias-merge of bucket findings failed for a canonical, keeping raw: {}", e.getMessage());
+			}
+		}
 		return byCanonical;
+	}
+
+	/**
+	 * Alias-merge one canonical's findings in place via the shared
+	 * {@link ReleaseMetricsDto#computeMetricsFromFacts()} path, round-tripping the
+	 * stored JSON maps through the typed DTOs. Per-canonical so alias grouping never
+	 * crosses components (aliases of an advisory always share the component).
+	 */
+	@SuppressWarnings("unchecked")
+	private void organizeCanonicalFindings(UUID orgUuid, Map<String, Object> entry) {
+		ReleaseMetricsDto tmp = new ReleaseMetricsDto();
+		List<Object> vmaps = (List<Object>) entry.get("vulns");
+		if (vmaps != null && !vmaps.isEmpty()) {
+			List<VulnerabilityDto> vulns = new ArrayList<>(vmaps.size());
+			for (Object m : vmaps) vulns.add(Utils.OM.convertValue(m, VulnerabilityDto.class));
+			tmp.setVulnerabilityDetails(vulns);
+		}
+		List<Object> viomaps = (List<Object>) entry.get("violations");
+		if (viomaps != null && !viomaps.isEmpty()) {
+			List<ViolationDto> viols = new ArrayList<>(viomaps.size());
+			for (Object m : viomaps) viols.add(Utils.OM.convertValue(m, ViolationDto.class));
+			tmp.setViolationDetails(viols);
+		}
+		// ORG-scope enrichment + alias-organize, identical to computeArtifactMetrics.
+		vulnAnalysisService.processReleaseMetricsDto(orgUuid, orgUuid, AnalysisScope.ORG, tmp);
+		if (tmp.getVulnerabilityDetails() != null) {
+			List<Object> out = new ArrayList<>(tmp.getVulnerabilityDetails().size());
+			for (VulnerabilityDto v : tmp.getVulnerabilityDetails()) out.add(Utils.OM.convertValue(v, LinkedHashMap.class));
+			entry.put("vulns", out);
+		}
+		if (tmp.getViolationDetails() != null) {
+			List<Object> out = new ArrayList<>(tmp.getViolationDetails().size());
+			for (ViolationDto v : tmp.getViolationDetails()) out.add(Utils.OM.convertValue(v, LinkedHashMap.class));
+			entry.put("violations", out);
+		}
 	}
 
 	/** Map a finding's purl-or-cpe coordinate to its canonical via the identity map. */
@@ -481,9 +684,14 @@ public class SyntheticSbomService {
 			Set<UUID> compUuids = new HashSet<>();
 			for (ArtifactSbomComponent asc : ascs) compUuids.add(asc.getSbomComponentUuid());
 
-			// This artifact's matchable component purls.
+			// This artifact's matchable component purls. Root/self components are
+			// excluded: they're the app itself (not a dependency), are never
+			// submitted to synthetic DTrack, and BEAR never enriches them — so
+			// requiring their coverage would block the artifact on "scan pending"
+			// forever (mirrors the root exclusion in the matchable repo queries).
 			Set<String> matchablePurls = new HashSet<>();
 			for (SbomComponent sc : sbomComponentRepository.findAllById(compUuids)) {
+				if (sc.isRoot()) continue;
 				String p = sc.getCanonicalPurl();
 				if (p != null && (p.startsWith("pkg:") || p.startsWith("cpe:"))) matchablePurls.add(p);
 			}

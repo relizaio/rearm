@@ -4,10 +4,12 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -38,7 +40,10 @@ import io.reliza.model.SbomComponent;
 import io.reliza.model.SyntheticDtrackBucket;
 import io.reliza.model.SyntheticDtrackBucket.IngestState;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasType;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.repositories.ArtifactCanonicalMapRepository;
 import io.reliza.repositories.ArtifactSbomComponentRepository;
 import io.reliza.repositories.SbomComponentRepository;
@@ -59,8 +64,20 @@ class SyntheticSbomServiceTest {
 	@Mock private DTrackService dTrackService;
 	@Mock private RebomService rebomService;
 	@Mock private IntegrationService integrationService;
+	@Mock private VulnAnalysisService vulnAnalysisService;
 
 	@InjectMocks private SyntheticSbomService service;
+
+	// Simulate the real enrichment with no org analysis records: organize aliases
+	// only (what processReleaseMetricsDto reduces to when nothing matches in the DB).
+	@org.junit.jupiter.api.BeforeEach
+	void stubVulnAnalysis() {
+		lenient().doAnswer(inv -> {
+			io.reliza.model.dto.ReleaseMetricsDto m = inv.getArgument(3);
+			m.computeMetricsFromFacts();
+			return null;
+		}).when(vulnAnalysisService).processReleaseMetricsDto(any(), any(), any(), any());
+	}
 
 	private final UUID ORG = UUID.randomUUID();
 	private final UUID PROJ = UUID.randomUUID();
@@ -156,6 +173,55 @@ class SyntheticSbomServiceTest {
 	}
 
 	@Test
+	void newLowSortingComponentReSubmitsOnlyItsOwnBucket() throws Exception {
+		// Sticky bucketing: a component keeps its bucket for life, so adding one
+		// must not perturb already-full buckets. With the old positional slicing a
+		// new low-sorting component shifted every later component and re-submitted
+		// every downstream bucket; here only the new component's bucket uploads.
+		wireBucketStore();
+		when(rebomService.isEnrichmentConfigured(ORG)).thenReturn(false);
+
+		// First submit: exactly BUCKET_SIZE components fill bucket 0.
+		List<SbomComponent> initial = comps(SyntheticSbomService.BUCKET_SIZE);
+		// Second submit: same (now-assigned) objects + one new component whose purl
+		// sorts ahead of every existing one ("a..." < "c...").
+		List<SbomComponent> withNew = new ArrayList<>(initial);
+		withNew.add(comp("pkg:npm/aaa@1.0"));
+		when(sbomComponentRepository.findMatchableByOrgOrdered(ORG.toString()))
+				.thenReturn(initial, withNew);
+		when(dTrackService.syntheticGetOrCreateProject(eq(ORG), any(), any())).thenReturn(PROJ);
+		when(dTrackService.syntheticUploadBom(eq(ORG), eq(PROJ), any(), any(), any())).thenReturn("tok");
+
+		service.submitOrg(ORG); // bucket 0 uploaded
+		service.submitOrg(ORG); // bucket 0 unchanged -> skip; new comp -> bucket 1 uploaded
+
+		// Two uploads total (bucket 0 once, bucket 1 once) — NOT three (no bucket-0
+		// re-upload). The old positional scheme would have re-hashed bucket 0.
+		verify(dTrackService, times(2)).syntheticUploadBom(eq(ORG), eq(PROJ), any(), any(), any());
+	}
+
+	@Test
+	void hasPendingSyntheticWork_trueWhenUnbucketedComponentExists() {
+		when(sbomComponentRepository.existsUnbucketedMatchableByOrg(ORG.toString())).thenReturn(true);
+		// short-circuits before the bucket probe
+		assertTrue(service.hasPendingSyntheticWork(ORG));
+	}
+
+	@Test
+	void hasPendingSyntheticWork_trueWhenFailedBucketExists() {
+		when(sbomComponentRepository.existsUnbucketedMatchableByOrg(ORG.toString())).thenReturn(false);
+		when(bucketRepository.existsByOrgAndIngestState(ORG, IngestState.FAILED)).thenReturn(true);
+		assertTrue(service.hasPendingSyntheticWork(ORG));
+	}
+
+	@Test
+	void hasPendingSyntheticWork_falseWhenIdle() {
+		when(sbomComponentRepository.existsUnbucketedMatchableByOrg(ORG.toString())).thenReturn(false);
+		when(bucketRepository.existsByOrgAndIngestState(ORG, IngestState.FAILED)).thenReturn(false);
+		assertFalse(service.hasPendingSyntheticWork(ORG));
+	}
+
+	@Test
 	void ingestMapsPurlAndCpeFindingsToCanonicalAndDropsUnmappable() throws Exception {
 		// A purl-canonical component with one extra CPE companion: the identity
 		// map carries purl->canonical and the companion cpe->canonical.
@@ -199,6 +265,41 @@ class SyntheticSbomServiceTest {
 		Map<String, Object> entry = (Map<String, Object>) findings.get(canonical);
 		assertEquals(2, ((List<?>) entry.get("vulns")).size());
 		assertEquals(1, ((List<?>) entry.get("violations")).size());
+	}
+
+	@Test
+	void ingestAliasMergesDuplicateVulns() throws Exception {
+		// DTrack returns the same advisory twice — once as its CVE id, once as its
+		// GHSA alias — both for the same component. Ingest must collapse them to one
+		// (via the shared organizeVulnerabilitiesWithAliases), else the artifact write
+		// (which collapses) never matches the raw bucket findings and churns forever.
+		String canonical = "pkg:npm/ws@8.18.3";
+		java.util.Set<VulnerabilityAliasDto> aliases = java.util.Set.of(
+				new VulnerabilityAliasDto(VulnerabilityAliasType.CVE, "CVE-1"),
+				new VulnerabilityAliasDto(VulnerabilityAliasType.GHSA, "GHSA-X"));
+		VulnerabilityDto cve = new VulnerabilityDto(canonical, "CVE-1", VulnerabilitySeverity.HIGH,
+				aliases, null, null, null, null, null, null, null, null, null, null);
+		VulnerabilityDto ghsa = new VulnerabilityDto(canonical, "GHSA-X", VulnerabilitySeverity.MEDIUM,
+				aliases, null, null, null, null, null, null, null, null, null, null);
+		SyntheticDtrackBucket b = new SyntheticDtrackBucket();
+		b.setOrg(ORG);
+		b.setBucketIndex(0);
+		b.setDtrackProjectUuid(PROJ);
+		b.setIngestState(IngestState.SUBMITTED);
+		b.getRefMap().put("__token", "tok");
+		b.getRefMap().put(canonical, canonical);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		when(dTrackService.syntheticIsTokenProcessing(ORG, "tok")).thenReturn(false);
+		when(dTrackService.syntheticFetchFindings(ORG, PROJ)).thenReturn(new SyntheticFindings(
+				List.of(new VulnWithCpe(cve, null), new VulnWithCpe(ghsa, null)), List.of()));
+
+		service.ingestOrgBuckets(ORG);
+
+		ArgumentCaptor<SyntheticDtrackBucket> cap = ArgumentCaptor.forClass(SyntheticDtrackBucket.class);
+		verify(bucketRepository).save(cap.capture());
+		@SuppressWarnings("unchecked")
+		Map<String, Object> entry = (Map<String, Object>) cap.getValue().getFindings().get(canonical);
+		assertEquals(1, ((List<?>) entry.get("vulns")).size());
 	}
 
 	@Test
@@ -392,6 +493,36 @@ class SyntheticSbomServiceTest {
 		service.fanOutOrg(ORG);
 
 		verify(sharedArtifactService, never()).updateArtifactDti(any(), any(), any());
+	}
+
+	@Test
+	void fanOutMarksArtifactWhenOnlyUncoveredComponentIsRoot() throws Exception {
+		// The release's own root/self component is never submitted to DTrack and BEAR
+		// never enriches it, so it is excluded from the coverage requirement. With the
+		// real dependency covered, the artifact must STILL be marked scanned even
+		// though the (uncovered) root component is also on it.
+		UUID dep = UUID.randomUUID(), root = UUID.randomUUID(),
+				canonicalArtifact = UUID.randomUUID(), artifact = UUID.randomUUID();
+		String depPurl = "pkg:npm/dep@1.0", rootPurl = "pkg:generic/app@1.0";
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(ingestedBucket(new HashMap<>(), depPurl)));
+		SbomComponent depC = new SbomComponent(); depC.setUuid(dep); depC.setOrg(ORG); depC.setCanonicalPurl(depPurl);
+		SbomComponent rootC = new SbomComponent(); rootC.setUuid(root); rootC.setOrg(ORG); rootC.setCanonicalPurl(rootPurl);
+		Map<String, Object> rootRd = new HashMap<>(); rootRd.put("isRoot", true); rootC.setRecordData(rootRd);
+		when(sbomComponentRepository.findByOrgAndCanonicalPurlIn(eq(ORG.toString()), any())).thenReturn(List.of(depC));
+		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(depC, rootC));
+		when(artifactSbomComponentRepository.findDistinctCanonicalArtifactUuidsByOrgAndSbomComponentUuidIn(eq(ORG), any()))
+				.thenReturn(List.of(canonicalArtifact));
+		ArtifactSbomComponent aDep = mock(ArtifactSbomComponent.class); when(aDep.getSbomComponentUuid()).thenReturn(dep);
+		ArtifactSbomComponent aRoot = mock(ArtifactSbomComponent.class); when(aRoot.getSbomComponentUuid()).thenReturn(root);
+		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(aDep, aRoot));
+		ArtifactCanonicalMap acm = mock(ArtifactCanonicalMap.class); when(acm.getArtifactUuid()).thenReturn(artifact);
+		when(artifactCanonicalMapRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(acm));
+		when(sharedArtifactService.getArtifact(artifact)).thenReturn(Optional.of(mock(Artifact.class)));
+
+		service.fanOutOrg(ORG);
+
+		// root excluded from coverage -> the single real dep is covered -> marked scanned
+		verify(sharedArtifactService).updateArtifactDti(any(), any(), any());
 	}
 
 	/** A bucket in INGESTED state whose ref_map covers the given canonical purls. */

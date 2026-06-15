@@ -20,8 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
 
 import io.reliza.exceptions.RelizaException;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 
 /** Pure-function tests for {@link SidPurlUtils}. No Spring context. */
 public class SidPurlUtilsTest {
@@ -245,32 +245,32 @@ public class SidPurlUtilsTest {
 
 		@Test
 		void noPurlIdentifiers_emptyOptional() {
-			TeaIdentifier cpe = idOf(TeaIdentifierType.CPE, "cpe:2.3:a:acme:foo:1.0");
+			RearmIdentifier cpe = idOf(RearmIdentifierType.CPE, "cpe:2.3:a:acme:foo:1.0");
 			assertTrue(SidPurlUtils.pickPreferredPurl(List.of(cpe)).isEmpty());
 		}
 
 		@Test
 		void singlePurl_returnsThat() {
-			TeaIdentifier maven = idOf(TeaIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(maven));
+			RearmIdentifier maven = idOf(RearmIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(maven));
 			assertTrue(picked.isPresent());
 			assertSame(maven, picked.get());
 		}
 
 		@Test
 		void sidWinsOverMaven() {
-			TeaIdentifier maven = idOf(TeaIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
-			TeaIdentifier sid = idOf(TeaIdentifierType.PURL, "pkg:sid/acme.com/Foo@1.0");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(maven, sid));
+			RearmIdentifier maven = idOf(RearmIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
+			RearmIdentifier sid = idOf(RearmIdentifierType.PURL, "pkg:sid/acme.com/Foo@1.0");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(maven, sid));
 			assertTrue(picked.isPresent());
 			assertEquals(sid.getIdValue(), picked.get().getIdValue());
 		}
 
 		@Test
 		void sidWinsRegardlessOfInsertionOrder() {
-			TeaIdentifier sid = idOf(TeaIdentifierType.PURL, "pkg:sid/acme.com/Foo@1.0");
-			TeaIdentifier maven = idOf(TeaIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(sid, maven));
+			RearmIdentifier sid = idOf(RearmIdentifierType.PURL, "pkg:sid/acme.com/Foo@1.0");
+			RearmIdentifier maven = idOf(RearmIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(sid, maven));
 			assertTrue(picked.isPresent());
 			assertEquals(sid.getIdValue(), picked.get().getIdValue());
 		}
@@ -278,9 +278,9 @@ public class SidPurlUtilsTest {
 		@Test
 		void nonSidTier_lexicographicSmallestWins() {
 			// Within the non-sid tier, deterministic by lexicographic idValue (D4).
-			TeaIdentifier npm = idOf(TeaIdentifierType.PURL, "pkg:npm/foo@1.0");
-			TeaIdentifier maven = idOf(TeaIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(npm, maven));
+			RearmIdentifier npm = idOf(RearmIdentifierType.PURL, "pkg:npm/foo@1.0");
+			RearmIdentifier maven = idOf(RearmIdentifierType.PURL, "pkg:maven/com.example/foo@1.0");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(npm, maven));
 			assertTrue(picked.isPresent());
 			assertEquals("pkg:maven/com.example/foo@1.0", picked.get().getIdValue());
 		}
@@ -288,9 +288,9 @@ public class SidPurlUtilsTest {
 		@Test
 		void malformedPurl_doesNotThrow_tiersLast() {
 			// Single bad tenant-supplied identifier must not break BOM emission.
-			TeaIdentifier malformed = idOf(TeaIdentifierType.PURL, "not-a-purl");
-			TeaIdentifier maven = idOf(TeaIdentifierType.PURL, "pkg:maven/x/y@1");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(malformed, maven));
+			RearmIdentifier malformed = idOf(RearmIdentifierType.PURL, "not-a-purl");
+			RearmIdentifier maven = idOf(RearmIdentifierType.PURL, "pkg:maven/x/y@1");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(malformed, maven));
 			assertTrue(picked.isPresent());
 			assertEquals("pkg:maven/x/y@1", picked.get().getIdValue());
 		}
@@ -299,24 +299,24 @@ public class SidPurlUtilsTest {
 		void onlyMalformedPurl_returnsThat() {
 			// All-malformed list still returns one (lowest tier rather than empty), so
 			// the picker doesn't silently drop user-supplied identifiers.
-			TeaIdentifier malformed = idOf(TeaIdentifierType.PURL, "not-a-purl");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(malformed));
+			RearmIdentifier malformed = idOf(RearmIdentifierType.PURL, "not-a-purl");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(malformed));
 			assertTrue(picked.isPresent());
 		}
 
 		@Test
 		void mixedTypes_purlOnlyConsidered() {
-			TeaIdentifier cpe = idOf(TeaIdentifierType.CPE, "cpe:2.3:a:acme:foo:1.0");
-			TeaIdentifier sid = idOf(TeaIdentifierType.PURL, "pkg:sid/acme.com/Foo@1.0");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(cpe, sid));
+			RearmIdentifier cpe = idOf(RearmIdentifierType.CPE, "cpe:2.3:a:acme:foo:1.0");
+			RearmIdentifier sid = idOf(RearmIdentifierType.PURL, "pkg:sid/acme.com/Foo@1.0");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(List.of(cpe, sid));
 			assertTrue(picked.isPresent());
 			assertEquals(sid.getIdValue(), picked.get().getIdValue());
 		}
 
 		@Test
 		void nullElementInList_skipped() {
-			TeaIdentifier maven = idOf(TeaIdentifierType.PURL, "pkg:maven/x/y@1");
-			Optional<TeaIdentifier> picked = SidPurlUtils.pickPreferredPurl(java.util.Arrays.asList(null, maven));
+			RearmIdentifier maven = idOf(RearmIdentifierType.PURL, "pkg:maven/x/y@1");
+			Optional<RearmIdentifier> picked = SidPurlUtils.pickPreferredPurl(java.util.Arrays.asList(null, maven));
 			assertTrue(picked.isPresent());
 			assertSame(maven, picked.get());
 		}
@@ -324,8 +324,8 @@ public class SidPurlUtilsTest {
 
 	// --- helpers ---
 
-	private static TeaIdentifier idOf(TeaIdentifierType type, String value) {
-		TeaIdentifier ti = new TeaIdentifier();
+	private static RearmIdentifier idOf(RearmIdentifierType type, String value) {
+		RearmIdentifier ti = new RearmIdentifier();
 		ti.setIdType(type);
 		ti.setIdValue(value);
 		return ti;

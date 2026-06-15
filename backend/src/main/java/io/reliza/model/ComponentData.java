@@ -5,11 +5,17 @@
 package io.reliza.model;
 
 import java.time.ZonedDateTime;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.StringUtils;
+import org.jsoup.Jsoup;
+import org.jsoup.safety.Safelist;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonAlias;
@@ -27,7 +33,6 @@ import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.dto.CreateComponentDto;
-import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.versioning.VersionType;
 import lombok.Builder;
 import lombok.Data;
@@ -39,6 +44,30 @@ import lombok.EqualsAndHashCode;
 public class ComponentData extends RelizaDataParent implements RelizaObject {
 	
 	public record ComponentAuthentication (String login, String password, RearmCDAuthType type) {}
+
+	/**
+	 * A freeform stakeholder contact for someone who is not a registered
+	 * ReARM user (e.g. an external owner reachable only by email/Slack handle).
+	 * Both fields are operator-supplied free text and are HTML-sanitized via
+	 * {@link #sanitizeContacts} before they are persisted, since they are
+	 * rendered back into the component/product team UI.
+	 */
+	public record FreeformContact (String name, String contact) {}
+
+	/**
+	 * Returns a sanitized copy of {@code contacts} with each field run through
+	 * jsoup {@code Safelist.basic()} (the same safelist the rest of the
+	 * component-update path uses for operator-supplied text). Null input
+	 * yields null; null individual fields are preserved as null.
+	 */
+	public static List<FreeformContact> sanitizeContacts (List<FreeformContact> contacts) {
+		if (null == contacts) return null;
+		return contacts.stream()
+				.map(c -> new FreeformContact(
+						StringUtils.isEmpty(c.name()) ? c.name() : Jsoup.clean(c.name(), Safelist.basic()),
+						StringUtils.isEmpty(c.contact()) ? c.contact() : Jsoup.clean(c.contact(), Safelist.basic())))
+				.collect(Collectors.toList());
+	}
 	
 	public enum RearmCDAuthType {
 		NOCREDS,
@@ -56,7 +85,70 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		HELM,
 		GENERIC;
 	}
-	
+
+	/**
+	 * Physical-ness axis, orthogonal to {@link ComponentKind} and
+	 * {@link DeviceClass}. Drives manual/declarative releases (hardware has no
+	 * CI build), quantity relevance, and physical-attribute applicability.
+	 * Defaults to SOFTWARE for back-compat with legacy rows.
+	 */
+	public enum ComponentNature {
+		SOFTWARE,
+		HARDWARE;
+	}
+
+	/**
+	 * Regulatory profile axis. Orthogonal to nature on purpose: SaMD
+	 * (software-only medical device) is SOFTWARE + MEDICAL_TRACKED and needs
+	 * UDI/GUDID just like an implant. Lives on the component (a component is or
+	 * isn't a medical device — that doesn't change version to version);
+	 * DI/GUDID specifics are per-release. Defaults to NONE.
+	 */
+	public enum DeviceClass {
+		NONE,
+		MEDICAL_UNTRACKED,
+		MEDICAL_TRACKED;
+	}
+
+	/** UDI issuing agency — assigned at labeler level, stable across versions. */
+	public enum IssuingAgency {
+		GS1,
+		HIBCC,
+		ICCBBA;
+	}
+
+	/**
+	 * Regulatory metadata for a medical-device component. Present iff
+	 * {@code deviceClass != NONE}. Stable, component-level fields that releases
+	 * inherit; version-specific GUDID descriptors live on the release.
+	 */
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class MedicalProfile {
+		private IssuingAgency issuingAgency;
+		/**
+		 * Marks this component as the UDI-DI carrier. The UDI-bearing release is
+		 * hardware if a hardware component is present in the feature set, else
+		 * the SaMD software component. Exactly one per medical feature set
+		 * (V1: not enforced; user instruction).
+		 */
+		private boolean udiBearing;
+		/** Stable GUDID descriptors releases inherit and may override. */
+		private GudidDefaults gudidDefaults;
+	}
+
+	/**
+	 * Stable, rarely-changing GUDID descriptors carried at component level and
+	 * inherited by releases (which override version-specific ones).
+	 */
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class GudidDefaults {
+		private String brandName;
+		private String companyName;
+		private String gmdnCode;
+	}
+
 	public enum DefaultBranchName {
 		MAIN,
 		MASTER;
@@ -310,14 +402,35 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	private ComponentKind kind = ComponentKind.GENERIC;
 	@JsonProperty
 	private UUID resourceGroup = CommonVariables.DEFAULT_RESOURCE_GROUP;
-	
+
+	/** Physical-ness axis. Defaults to SOFTWARE for legacy rows. */
+	@JsonProperty
+	private ComponentNature nature = ComponentNature.SOFTWARE;
+	/** Regulatory axis. Defaults to NONE for legacy rows. */
+	@JsonProperty
+	private DeviceClass deviceClass = DeviceClass.NONE;
+	/** Present iff deviceClass != NONE. */
+	@JsonProperty
+	private MedicalProfile medicalProfile;
 	/**
 	 * Used to specify default helm values file
 	 */
 	@JsonProperty
 	private String defaultConfig;
 	
-	// TODO: add project manager and project team
+	/**
+	 * Manually-assigned leads for this component/product (registered-user
+	 * UUIDs). The wider Team and Approvers are derived live from permissions
+	 * (not stored here); only the hand-picked leads + freeform {@link #contacts}
+	 * are persisted on the component. Empty (never null) by default.
+	 */
+	@JsonProperty
+	private Set<UUID> leads = new LinkedHashSet<>();
+
+	/** Freeform stakeholder contacts for non-registered users; sanitized on write. */
+	@JsonProperty
+	private List<FreeformContact> contacts = new LinkedList<>();
+
 	@JsonProperty
 	private VisibilitySetting visibilitySetting = VisibilitySetting.ORG_INTERNAL;
 	
@@ -330,8 +443,12 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private List<GlobalInputEventRef> globalInputEventRefs;
 	
+	/**
+	 * Unified identifier list: TEA-exportable types (PURL/CPE/TEI) plus
+	 * ReARM-internal ones (UDI/UDI-DI/UDI-PI/SERIAL/LOT).
+	 */
 	@JsonProperty
-	private List<TeaIdentifier> identifiers = new LinkedList<>();
+	private List<RearmIdentifier> identifiers = new LinkedList<>();
 	
 	/**
 	 * Repository path for monorepo component disambiguation
@@ -402,7 +519,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	@com.fasterxml.jackson.annotation.JsonIgnore
 	private boolean effectiveLifecycleCached;
 
-	public List<TeaIdentifier> getIdentifiers () {
+	public List<RearmIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);
 	}
 
@@ -436,6 +553,9 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		// isInternal defaults to INTERNAL on create when the caller doesn't supply it,
 		// so today's behavior is preserved for clients that don't know about the field.
 		cd.setIsInternal(cpd.getIsInternal() != null ? cpd.getIsInternal() : BelongsToOrganization.INTERNAL);
+		if (null != cpd.getNature()) cd.setNature(cpd.getNature());
+		if (null != cpd.getDeviceClass()) cd.setDeviceClass(cpd.getDeviceClass());
+		if (null != cpd.getMedicalProfile()) cd.setMedicalProfile(cpd.getMedicalProfile());
 		return cd;
 	}
 	

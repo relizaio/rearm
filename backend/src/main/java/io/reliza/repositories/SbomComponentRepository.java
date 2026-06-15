@@ -53,6 +53,14 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 	 *
 	 * <p>Used for orgs WITHOUT BEAR enrichment configured: there is no enrichment
 	 * to wait on, so every matchable component ships immediately.
+	 *
+	 * <p>Root/self components ({@code record_data.isRoot = true} — the release's own
+	 * artifact coordinate, synthesised from {@code bom.metadata.component}) are
+	 * excluded here and in the enriched / enrichment-candidate variants below. They
+	 * are the app itself, not third-party dependencies to scan; BEAR never enriches
+	 * them, so in a BEAR-gated org they would otherwise stay un-enriched forever,
+	 * never ship, and permanently block their artifact's synthetic-DTrack coverage
+	 * (the SBOM would sit on "scan pending").
 	 */
 	@Query(
 		value = """
@@ -60,6 +68,7 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			FROM rearm.sbom_components sc
 			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
 			AND (sc.canonical_purl LIKE 'pkg:%' OR sc.canonical_purl LIKE 'cpe:%')
+			AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
 			ORDER BY sc.canonical_purl ASC
 		""",
 		nativeQuery = true)
@@ -78,6 +87,7 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			FROM rearm.sbom_components sc
 			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
 			AND (sc.canonical_purl LIKE 'pkg:%' OR sc.canonical_purl LIKE 'cpe:%')
+			AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
 			AND sc.enriched_at IS NOT NULL
 			ORDER BY sc.canonical_purl ASC
 		""",
@@ -96,6 +106,7 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			FROM rearm.sbom_components sc
 			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
 			AND (sc.canonical_purl LIKE 'pkg:%' OR sc.canonical_purl LIKE 'cpe:%')
+			AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
 			AND sc.enriched_at IS NULL
 			ORDER BY sc.created_date ASC
 			LIMIT :lim
@@ -104,4 +115,25 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 	List<SbomComponent> findUnenrichedMatchableByOrgOrdered(
 			@Param("orgUuidAsString") String orgUuidAsString,
 			@Param("lim") int lim);
+
+	/**
+	 * Cheap idle-skip probe for the synthetic-DTrack scheduler: true when the org
+	 * has a matchable component not yet assigned to a bucket (a new or
+	 * just-enriched component that {@code submitOrg} still needs to bucket and
+	 * ship). Backed by the partial {@code sbom_components_unbucketed_idx}, so it's
+	 * an empty-index hit in steady state. Bear-agnostic by design — see
+	 * {@code SyntheticSbomService.hasPendingSyntheticWork}.
+	 */
+	@Query(
+		value = """
+			SELECT EXISTS(
+				SELECT 1
+				FROM rearm.sbom_components sc
+				WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+				AND (sc.canonical_purl LIKE 'pkg:%' OR sc.canonical_purl LIKE 'cpe:%')
+				AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
+				AND sc.synthetic_bucket_index IS NULL)
+		""",
+		nativeQuery = true)
+	boolean existsUnbucketedMatchableByOrg(@Param("orgUuidAsString") String orgUuidAsString);
 }

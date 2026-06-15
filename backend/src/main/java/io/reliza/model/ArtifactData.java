@@ -121,6 +121,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		CYCLONEDX_1_5,
 		CYCLONEDX_1_6,
 		CYCLONEDX_1_7,
+		CYCLONEDX_2_0,
 		// SPDX versions
 		SPDX_2_0,
 		SPDX_2_1,

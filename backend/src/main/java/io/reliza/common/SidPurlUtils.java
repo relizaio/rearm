@@ -14,8 +14,8 @@ import com.github.packageurl.PackageURL;
 import com.github.packageurl.PackageURLBuilder;
 
 import io.reliza.exceptions.RelizaException;
-import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 
 /**
  * Utilities for sid (Software IDentification) PURL handling — input validation
@@ -60,14 +60,14 @@ public final class SidPurlUtils {
 	 * compare). Identifier lists are tiny in practice — this matters only for
 	 * predictability, not raw throughput.
 	 */
-	public static Optional<TeaIdentifier> pickPreferredPurl(List<TeaIdentifier> identifiers) {
+	public static Optional<RearmIdentifier> pickPreferredPurl(List<RearmIdentifier> identifiers) {
 		if (identifiers == null || identifiers.isEmpty()) {
 			return Optional.empty();
 		}
-		TeaIdentifier best = null;
+		RearmIdentifier best = null;
 		int bestTier = Integer.MAX_VALUE;
-		for (TeaIdentifier ti : identifiers) {
-			if (ti == null || ti.getIdType() != TeaIdentifierType.PURL || ti.getIdValue() == null) {
+		for (RearmIdentifier ti : identifiers) {
+			if (ti == null || ti.getIdType() != RearmIdentifierType.PURL || ti.getIdValue() == null) {
 				continue;
 			}
 			int tier = tierOf(ti);
@@ -84,7 +84,7 @@ public final class SidPurlUtils {
 	}
 
 	/** Tier helper for {@link #pickPreferredPurl}: 0 = sid, 1 = other valid PURL, 2 = malformed. */
-	private static int tierOf(TeaIdentifier ti) {
+	private static int tierOf(RearmIdentifier ti) {
 		try {
 			PackageURL parsed = new PackageURL(ti.getIdValue());
 			return SID_TYPE.equalsIgnoreCase(parsed.getType()) ? 0 : 1;

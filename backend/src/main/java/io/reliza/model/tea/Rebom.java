@@ -139,4 +139,30 @@ public class Rebom {
         java.util.List<ParsedBomDependency> dependencies
     ) {}
 
+    /** One hardware node from rebom's parseHbomById query (type device/firmware). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ParsedHbomComponent(
+        String bomRef,
+        String type,
+        String operator,
+        String name,
+        String version,
+        String description,
+        String category,
+        String subcategory,
+        java.util.List<io.reliza.model.cdx.Party> parties,
+        java.util.List<io.reliza.model.cdx.ComponentIdentifier> identifiers,
+        String boardLocation,
+        String deviceType,
+        Integer quantity,
+        String parentRef,
+        Boolean isRoot
+    ) {}
+
+    /** Combined response of rebom's parseHbomById query. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ParsedHbom(
+        java.util.List<ParsedHbomComponent> components
+    ) {}
+
 }

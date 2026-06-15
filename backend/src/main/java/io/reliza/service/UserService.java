@@ -203,6 +203,18 @@ public class UserService {
 				.map(UserData::dataFromRecord)
 				.collect(Collectors.toList());
 	}
+
+	/**
+	 * Returns every user holding any permission whose {@code object} equals the
+	 * given UUID (a native JSONB scan over each user's permission array). The
+	 * caller is responsible for narrowing by scope / type / approvals — this only
+	 * does the inverse object→users lookup that the {@code Permissions} model has
+	 * no forward index for. Used by {@link ComponentTeamService} to derive a
+	 * component's team and approvers.
+	 */
+	public List<UserData> getUsersByPermissionObject (UUID objectUuid) {
+		return transformUserToUserData(repository.findUsersByPermissionObject(objectUuid.toString()));
+	}
 	
 	//TODO: disallow duplicate email registrations
 	public User createUser (String name, String email, boolean isVerifiedEmail, Collection<UUID> orgs, 
