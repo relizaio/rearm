@@ -12,6 +12,16 @@ server:
     include-message: always
 
 spring:
+  task:
+    scheduling:
+      pool:
+        # @Scheduled jobs share one TaskScheduler thread pool. The default size
+        # is 1, which serializes all scheduled work onto a single thread — a slow
+        # job (e.g. the per-minute synthetic-DTrack drain doing rebom/DTrack I/O
+        # across orgs) then head-of-line-blocks unrelated jobs like the release
+        # metrics rollup and the notification dispatchers. Give them room to run
+        # concurrently. Env-overridable for ops tuning.
+        size: ${SCHEDULER_POOL_SIZE:3}
   lifecycle:
     # Max time to wait for in-flight requests to finish during graceful
     # shutdown. Keep under the pod terminationGracePeriodSeconds (preStop
@@ -98,6 +108,15 @@ logging:
 #              BasicBinder: TRACE
     
 relizaprops:
+  # CSV allowlist of Keycloak client ids (token `azp`) accepted by the resource
+  # server. Binds JWTs to known first-party clients; a token minted for any other
+  # client in the same realm is rejected. Default: the SPA login client.
+  jwtAllowedAzp: ${JWT_ALLOWED_AZP:login-app}
+  # Audience (aud) validation. OFF by default — only enable once Keycloak issues
+  # tokens carrying this audience (the login-app oidc-audience-mapper); enabling it
+  # before the mapper is live rejects every token.
+  jwtValidateAudience: ${JWT_VALIDATE_AUDIENCE:false}
+  jwtAudience: ${JWT_AUDIENCE:rearm-backend}
   protocol: ${PROJECT_PROTOCOL:http}
   baseuri: ${PROJECT_PROTOCOL:http}://${PROJECT_HOST:localhost:3000}
   rebom:
