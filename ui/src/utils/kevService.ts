@@ -15,8 +15,18 @@
 import gql from 'graphql-tag'
 import graphqlClient from './graphql'
 
-export interface KevRecordDetails {
-    cveId: string
+export type KevRansomwareStatus = 'KNOWN' | 'UNKNOWN' | 'UNSPECIFIED'
+
+export interface KevRansomwareCampaign {
+    name: string
+    url?: string
+}
+
+/** One source's assertion. revokedDate set = the source withdrew the
+ *  listing (the CVE still counts as KEV; shown as a note). */
+export interface KevSourceAssertion {
+    source: string
+    revokedDate?: string
     vendorProject?: string
     product?: string
     vulnerabilityName?: string
@@ -24,9 +34,16 @@ export interface KevRecordDetails {
     shortDescription?: string
     requiredAction?: string
     dueDate?: string
-    knownRansomwareCampaignUse?: boolean
+    ransomwareStatus?: KevRansomwareStatus
+    ransomwareCampaigns?: KevRansomwareCampaign[]
     notes?: string
     cwes?: string[]
+}
+
+export interface KevRecordDetails {
+    cveId: string
+    ransomwareStatus?: KevRansomwareStatus
+    assertions: KevSourceAssertion[]
 }
 
 export function isProInstallation(installationType?: string): boolean {
@@ -73,16 +90,22 @@ const KEV_RECORD_DETAILS_GQL = gql`
 query kevRecordDetails($orgUuid: ID!, $cveId: String!) {
     kevRecordDetails(orgUuid: $orgUuid, cveId: $cveId) {
         cveId
-        vendorProject
-        product
-        vulnerabilityName
-        dateAdded
-        shortDescription
-        requiredAction
-        dueDate
-        knownRansomwareCampaignUse
-        notes
-        cwes
+        ransomwareStatus
+        assertions {
+            source
+            revokedDate
+            vendorProject
+            product
+            vulnerabilityName
+            dateAdded
+            shortDescription
+            requiredAction
+            dueDate
+            ransomwareStatus
+            ransomwareCampaigns { name url }
+            notes
+            cwes
+        }
     }
 }`
 

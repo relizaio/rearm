@@ -8,35 +8,58 @@
         <template #header>
             <n-space align="center" :size="8">
                 <n-tag type="error" size="small" :bordered="false">KEV</n-tag>
-                <span>CISA Known Exploited Vulnerability: {{ cveId }}</span>
+                <span>Known Exploited Vulnerability: {{ cveId }}</span>
             </n-space>
         </template>
         <n-spin :show="loading">
-            <div v-if="record">
+            <div v-if="record && primary">
                 <n-descriptions label-placement="left" :column="1" bordered size="small">
-                    <n-descriptions-item v-if="record.vulnerabilityName" label="Name">
-                        {{ record.vulnerabilityName }}
+                    <n-descriptions-item v-if="primary.vulnerabilityName" label="Name">
+                        {{ primary.vulnerabilityName }}
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.vendorProject" label="Vendor / Project">
-                        {{ record.vendorProject }}
+                    <n-descriptions-item v-if="primary.vendorProject" label="Vendor / Project">
+                        {{ primary.vendorProject }}
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.product" label="Product">
-                        {{ record.product }}
+                    <n-descriptions-item v-if="primary.product" label="Product">
+                        {{ primary.product }}
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.dateAdded" label="Added to KEV">
-                        {{ record.dateAdded }}
+                    <n-descriptions-item v-if="primary.dateAdded" label="Added to KEV">
+                        {{ primary.dateAdded }}
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.dueDate" label="Remediation due (FCEB)">
-                        {{ record.dueDate }}
+                    <n-descriptions-item v-if="primary.dueDate" label="Remediation due (FCEB)">
+                        {{ primary.dueDate }}
                     </n-descriptions-item>
                     <n-descriptions-item label="Ransomware campaign use">
-                        <n-tag :type="record.knownRansomwareCampaignUse ? 'error' : 'default'" size="small" :bordered="false">
-                            {{ record.knownRansomwareCampaignUse ? 'Known' : 'Unknown' }}
-                        </n-tag>
+                        <n-space align="center" :size="6">
+                            <n-tag :type="ransomware.type" size="small" :bordered="false">{{ ransomware.label }}</n-tag>
+                            <template v-for="c in campaigns" :key="c.name">
+                                <a
+                                    v-if="c.url"
+                                    :href="c.url"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    @click.prevent="openExternalLink(c.url)"
+                                >{{ c.name }}</a>
+                                <span v-else>{{ c.name }}</span>
+                            </template>
+                        </n-space>
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.cwes && record.cwes.length > 0" label="CWEs">
+                    <n-descriptions-item label="Reported by">
+                        <n-space :size="6" align="center">
+                            <template v-for="a in record.assertions" :key="a.source">
+                                <n-tag
+                                    :type="a.revokedDate ? 'warning' : 'success'"
+                                    size="small"
+                                    :bordered="false"
+                                >
+                                    {{ a.source }}{{ a.revokedDate ? ` · revoked ${formatDate(a.revokedDate)}` : '' }}
+                                </n-tag>
+                            </template>
+                        </n-space>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="primary.cwes && primary.cwes.length > 0" label="CWEs">
                         <n-space :size="4">
-                            <template v-for="cwe in record.cwes" :key="cwe">
+                            <template v-for="cwe in primary.cwes" :key="cwe">
                                 <a
                                     v-if="getFindingUrl(cwe)"
                                     :href="getFindingUrl(cwe)!"
@@ -48,18 +71,19 @@
                             </template>
                         </n-space>
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.shortDescription" label="Description">
-                        {{ record.shortDescription }}
+                    <n-descriptions-item v-if="primary.shortDescription" label="Description">
+                        {{ primary.shortDescription }}
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.requiredAction" label="Required action">
-                        {{ record.requiredAction }}
+                    <n-descriptions-item v-if="primary.requiredAction" label="Required action">
+                        {{ primary.requiredAction }}
                     </n-descriptions-item>
-                    <n-descriptions-item v-if="record.notes" label="Notes">
-                        {{ record.notes }}
+                    <n-descriptions-item v-if="primary.notes" label="Notes">
+                        {{ primary.notes }}
                     </n-descriptions-item>
                 </n-descriptions>
                 <n-space style="margin-top: 12px;" :size="16">
                     <a
+                        v-if="hasCisa"
                         :href="cisaCatalogUrl"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -76,12 +100,12 @@
             </div>
             <n-empty
                 v-else-if="loadError && !loading"
-                description="Failed to load CISA KEV catalog details. Please try again."
+                description="Failed to load KEV catalog details. Please try again."
                 style="padding: 24px 0;"
             />
             <n-empty
                 v-else-if="!loading"
-                description="This vulnerability is not currently listed in the CISA KEV catalog."
+                description="This vulnerability is not currently listed as known-exploited by any source."
                 style="padding: 24px 0;"
             />
         </n-spin>
@@ -97,7 +121,7 @@ export default {
 <script lang="ts" setup>
 import { computed, ref, watch } from 'vue'
 import { NModal, NSpin, NSpace, NTag, NDescriptions, NDescriptionsItem, NEmpty } from 'naive-ui'
-import { fetchKevRecordDetails, KevRecordDetails } from '@/utils/kevService'
+import { fetchKevRecordDetails, KevRecordDetails, KevSourceAssertion } from '@/utils/kevService'
 import { getFindingUrl, openExternalLink } from '@/utils/findingUtils'
 
 interface Props {
@@ -121,10 +145,34 @@ const loading = ref(false)
 const loadError = ref(false)
 const record = ref<KevRecordDetails | null>(null)
 
+// Descriptive fields come from the first active assertion (else the first
+// of any), since several sources may describe the same CVE.
+const primary = computed<KevSourceAssertion | null>(() => {
+    const list = record.value?.assertions || []
+    if (list.length === 0) return null
+    return list.find(a => !a.revokedDate) || list[0]
+})
+
+const ransomware = computed(() => {
+    switch (record.value?.ransomwareStatus) {
+    case 'KNOWN': return { type: 'error' as const, label: 'Known' }
+    case 'UNKNOWN': return { type: 'default' as const, label: 'No known use' }
+    default: return { type: 'default' as const, label: 'Not reported' }
+    }
+})
+
+const campaigns = computed(() => primary.value?.ransomwareCampaigns || [])
+
+const hasCisa = computed(() => (record.value?.assertions || []).some(a => a.source === 'CISA'))
+
 const cisaCatalogUrl = computed(() =>
     `https://www.cisa.gov/known-exploited-vulnerabilities-catalog?search_api_fulltext=${encodeURIComponent(props.cveId)}`)
 
 const osvUrl = computed(() => getFindingUrl(props.cveId))
+
+function formatDate(iso: string): string {
+    return iso.length >= 10 ? iso.slice(0, 10) : iso
+}
 
 // Token guards against a stale in-flight response landing after the
 // modal was closed and reopened for a different CVE.
