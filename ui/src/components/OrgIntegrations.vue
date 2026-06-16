@@ -121,11 +121,12 @@
                                                 <n-icon v-if="isOrgAdmin" class="instance-icon" size="20" title="Force re-upload all data to D-Track (re-submits every project and re-analyses — heavy)" @click="forceReuploadDtrack"><CloudUpload /></n-icon>
                                             </template>
                                             <n-icon v-if="card.id === 'BEAR'" class="instance-icon" size="20" title="Edit BEAR Integration" @click="openBearEditModal"><EditIcon /></n-icon>
+                                            <n-icon v-if="card.id === 'VULNCHECK'" class="instance-icon" size="20" title="Replace VulnCheck API token" @click="openVulncheckModal"><EditIcon /></n-icon>
                                             <n-icon
                                                 class="instance-icon danger"
                                                 size="20"
                                                 :title="`Delete ${card.name} integration`"
-                                                @click="card.id === 'BEAR' ? deleteBearIntegration() : onDeleteBaseInstance(card)"
+                                                @click="card.id === 'BEAR' ? deleteBearIntegration() : card.id === 'VULNCHECK' ? deleteVulncheckToken() : onDeleteBaseInstance(card)"
                                             ><Trash /></n-icon>
                                         </div>
                                     </div>
@@ -491,6 +492,26 @@
             </n-card>
         </n-modal>
 
+        <!-- VulnCheck KEV token (instance-level, global admin) -->
+        <n-modal v-model:show="showVulncheckModal" preset="dialog" :show-icon="false">
+            <n-card style="width: 600px" size="huge" :title="vulncheckConfigured ? 'Replace VulnCheck API token' : 'Configure VulnCheck KEV'" :bordered="false" role="dialog" aria-modal="true">
+                <n-form>
+                    <div class="muted-12" style="margin-bottom: 12px">
+                        Paste a VulnCheck API token to enable the VulnCheck Known Exploited Vulnerabilities catalog as a KEV source. Get a free token at
+                        <a href="https://vulncheck.com" target="_blank" rel="noopener noreferrer">vulncheck.com</a>.
+                        The token is stored encrypted and applies to the whole instance.
+                    </div>
+                    <n-form-item label="VulnCheck API token">
+                        <n-input type="password" v-model:value="vulncheckForm.token" show-password-on="click" placeholder="vulncheck_..." />
+                    </n-form-item>
+                    <n-space>
+                        <n-button @click="onSetVulncheckToken" type="success" :disabled="!vulncheckForm.token">Submit</n-button>
+                        <n-button @click="showVulncheckModal = false" type="error">Cancel</n-button>
+                    </n-space>
+                </n-form>
+            </n-card>
+        </n-modal>
+
         <!-- CI Integration ADD (GitHub / GitLab / Jenkins / ADO) -->
         <n-modal v-if="showCiFeatures" v-model:show="showCiAddModal" preset="dialog" :show-icon="false" style="width: 90%">
             <n-card style="max-width: 800px; width: 100%" size="huge" :title="addModalTitle" :bordered="false" role="dialog" aria-modal="true">
@@ -683,6 +704,7 @@ async function switchSubTab(t: SubTab) {
 const configuredIntegrations: Ref<string[]> = ref([])
 const ciIntegrations: Ref<any[]> = ref([])
 const bearIntegration: Ref<any> = ref(null)
+const vulncheckConfigured = ref(false)
 
 const createIntegrationObject: Ref<any> = ref({
     org: orguuid.value,
@@ -701,6 +723,9 @@ const bearForm = ref({
     skipPatterns: [] as string[],
     updateSkipPatternsOnly: true
 })
+
+const showVulncheckModal = ref(false)
+const vulncheckForm = ref({ token: '' })
 
 const showSlackModal = ref(false)
 const showMsteamsModal = ref(false)
@@ -783,7 +808,7 @@ function emailRecipientsSummary(ch: ChannelCatalogRow): string {
 // when @vicons doesn't have a brand icon for the kind.
 type Category = 'messaging' | 'ci' | 'security'
 interface CardConfig {
-    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'WEBHOOK' | 'SENTINEL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR'
+    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'WEBHOOK' | 'SENTINEL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR' | 'VULNCHECK'
     name: string
     vendor: string
     category: Category
@@ -795,6 +820,9 @@ interface CardConfig {
     // Pro-only kinds still show in the OSS catalog, but with a "Pro"
     // pill and a disabled Add button instead of being hidden.
     proOnly?: boolean
+    // Instance-level config (an encrypted key on SystemInfo, not an
+    // org integration). Hidden from non-global-admins entirely.
+    globalAdminOnly?: boolean
 }
 
 const CARDS: CardConfig[] = [
@@ -811,7 +839,8 @@ const CARDS: CardConfig[] = [
     { id: 'ADO', name: 'Azure DevOps', vendor: 'Microsoft', category: 'ci', description: 'Trigger Azure DevOps pipelines.', logoBg: '#0078D4', logoMark: 'AZ', multiInstance: true },
     // Security & Compliance
     { id: 'DEPENDENCYTRACK', name: 'Dependency-Track', vendor: 'OWASP', category: 'security', description: 'Push SBOMs and pull vulnerability + policy findings.', logoBg: '#1B4E72', logoMark: 'DT', multiInstance: false },
-    { id: 'BEAR', name: 'BEAR', vendor: 'Reliza', category: 'security', description: 'BOM enrichment service.', logoBg: '#22332B', logoMark: 'BR', multiInstance: false }
+    { id: 'BEAR', name: 'BEAR', vendor: 'Reliza', category: 'security', description: 'BOM enrichment service.', logoBg: '#22332B', logoMark: 'BR', multiInstance: false },
+    { id: 'VULNCHECK', name: 'VulnCheck KEV', vendor: 'VulnCheck', category: 'security', description: 'Add VulnCheck\'s Known Exploited Vulnerabilities catalog (a CISA-plus KEV source) as a signal. Requires a free VulnCheck API token, configured once for the whole instance.', logoBg: '#5B2A86', logoMark: 'VC', multiInstance: false, globalAdminOnly: true }
 ]
 
 const SECTIONS = [
@@ -823,7 +852,8 @@ const SECTIONS = [
 const visibleSections = computed(() => {
     return SECTIONS
         .filter(s => s.id !== 'ci' || showCiFeatures.value)
-        .map(s => ({ ...s, cards: CARDS.filter(c => c.category === s.id) }))
+        .map(s => ({ ...s, cards: CARDS.filter(c => c.category === s.id && (!c.globalAdminOnly || isGlobalAdmin.value)) }))
+        .filter(s => s.cards.length > 0)
 })
 
 // ---- Card status helpers ---------------------------------------------------
@@ -836,6 +866,7 @@ function channelRowsForCard(card: CardConfig): ChannelCatalogRow[] {
 }
 
 function isCardConfigured(card: CardConfig): boolean {
+    if (card.id === 'VULNCHECK') return vulncheckConfigured.value
     if (card.id === 'BEAR') return !!(bearIntegration.value && bearIntegration.value.configured)
     if (isChannelCard(card)) return channelRowsForCard(card).length > 0
     if (card.multiInstance) return ciInstancesForCard(card).length > 0
@@ -909,6 +940,7 @@ function openAddForCard(card: CardConfig) {
     if (card.id === 'MSTEAMS') { showMsteamsModal.value = true; return }
     if (card.id === 'DEPENDENCYTRACK') { showDtModal.value = true; return }
     if (card.id === 'BEAR') { openBearAddModal(); return }
+    if (card.id === 'VULNCHECK') { openVulncheckModal(); return }
     // CI types
     resetCreateIntegrationObject()
     createIntegrationObject.value.type = card.id
@@ -1161,6 +1193,62 @@ async function deleteBearIntegration() {
         notify('success', 'Deleted', 'BEAR integration removed.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+// ---- VulnCheck KEV token (instance-level, GLOBAL_ADMIN) ---------------------
+function openVulncheckModal() {
+    vulncheckForm.value = { token: '' }
+    showVulncheckModal.value = true
+}
+
+async function onSetVulncheckToken() {
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation setVulnCheckKevToken($token: String) { setVulnCheckKevToken(token: $token) }`,
+            variables: { token: vulncheckForm.value.token }
+        })
+        vulncheckConfigured.value = true
+        showVulncheckModal.value = false
+        vulncheckForm.value.token = ''
+        notify('success', 'Success', 'VulnCheck KEV token saved.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+async function deleteVulncheckToken() {
+    const confirm = await Swal.fire({
+        title: 'Remove VulnCheck KEV token?',
+        text: 'This disables the VulnCheck KEV source for the whole instance.',
+        icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes, remove it'
+    })
+    if (!confirm.isConfirmed) return
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation setVulnCheckKevToken($token: String) { setVulnCheckKevToken(token: $token) }`,
+            variables: { token: '' }
+        })
+        vulncheckConfigured.value = false
+        notify('success', 'Deleted', 'VulnCheck KEV token removed.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+async function loadVulncheckStatus() {
+    if (!isGlobalAdmin.value) return
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query getSystemInfoIsSet { getSystemInfoIsSet { vulncheckKevConfigured } }`,
+            fetchPolicy: 'network-only'
+        })
+        vulncheckConfigured.value = !!resp.data?.getSystemInfoIsSet?.vulncheckKevConfigured
+    } catch (err) {
+        console.error(err)
     }
 }
 
@@ -1644,7 +1732,8 @@ onMounted(async () => {
         loadConfiguredIntegrations(true),
         loadCiIntegrations(true),
         loadNotificationChannels(true),
-        loadBearIntegration()
+        loadBearIntegration(),
+        loadVulncheckStatus()
     ])
 })
 
@@ -1653,7 +1742,8 @@ watch(() => props.orguuid, async () => {
         loadConfiguredIntegrations(false),
         loadCiIntegrations(false),
         loadNotificationChannels(false),
-        loadBearIntegration()
+        loadBearIntegration(),
+        loadVulncheckStatus()
     ])
 })
 </script>
