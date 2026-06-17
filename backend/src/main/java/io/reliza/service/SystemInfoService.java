@@ -124,6 +124,23 @@ public class SystemInfoService {
 		saveSystemInfo(sysInfo, sd);
 	}
 	
+	public String getVulncheckKevToken(){
+		var sysInfo = findSystemInfo();
+		String encToken = sysInfo.getVulncheckKevToken();
+		String decToken = null;
+		if(StringUtils.isNotEmpty(encToken))
+			decToken = encryptionService.decrypt(encToken);
+		return decToken;
+	}
+
+	@Transactional
+	public void setVulncheckKevToken(String token){
+		SystemInfo sysInfo =  this.repository.findSystemInfo();
+		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
+		sd.setVulncheckKevToken(StringUtils.isNotEmpty(token) ? encryptionService.encrypt(token) : null);
+		saveSystemInfo(sysInfo, sd);
+	}
+
 	@Transactional
 	public void setDefaultOrg (UUID defaultOrg) {
 		SystemInfo sysInfo =  this.repository.findSystemInfo();
@@ -191,11 +208,12 @@ public class SystemInfoService {
 		return findSystemInfo().isSystemSealed();
 	}
 
-	public static record SystemInfoDto (Boolean emailDetailsSet, UUID defaultOrg) {}
+	public static record SystemInfoDto (Boolean emailDetailsSet, UUID defaultOrg, Boolean vulncheckKevConfigured) {}
 
 	public SystemInfoDto getSystemInfoIsSet(){
 		var sysInfo = findSystemInfo();
-		return new SystemInfoDto(sysInfo.getEmailSendType() != EmailSendType.UNSET, sysInfo.getDefaultOrg());
+		return new SystemInfoDto(sysInfo.getEmailSendType() != EmailSendType.UNSET, sysInfo.getDefaultOrg(),
+				StringUtils.isNotEmpty(sysInfo.getVulncheckKevToken()));
 	}
 	
 	public SystemInfoData getSystemInfoData() {

@@ -698,7 +698,8 @@ public class VulnAnalysisService {
 				// rearm.vulnerability_records (V33). Drop here so re-enrichment
 				// doesn't carry the legacy per-finding bloat forward into newly
 				// written metrics blobs.
-				null, null, null, null, null);
+				null, null, null, null, null,
+					vulnerability.knownExploited());
 		}
 
 		// No DB analysis found - compute primary state from sources if available
@@ -720,7 +721,8 @@ public class VulnAnalysisService {
 				// rearm.vulnerability_records (V33). Drop here so re-enrichment
 				// doesn't carry the legacy per-finding bloat forward into newly
 				// written metrics blobs.
-				null, null, null, null, null);
+				null, null, null, null, null,
+					vulnerability.knownExploited());
 		}
 
 		return vulnerability; // No analysis found anywhere

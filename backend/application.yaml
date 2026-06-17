@@ -16,7 +16,7 @@ spring:
     scheduling:
       pool:
         # @Scheduled jobs share one TaskScheduler thread pool. The default size
-        # is 1, which serializes all scheduled work onto a single thread — a slow
+        # is 1, which serializes all scheduled work onto a single thread -- a slow
         # job (e.g. the per-minute synthetic-DTrack drain doing rebom/DTrack I/O
         # across orgs) then head-of-line-blocks unrelated jobs like the release
         # metrics rollup and the notification dispatchers. Give them room to run
@@ -112,7 +112,7 @@ relizaprops:
   # server. Binds JWTs to known first-party clients; a token minted for any other
   # client in the same realm is rejected. Default: the SPA login client.
   jwtAllowedAzp: ${JWT_ALLOWED_AZP:login-app}
-  # Audience (aud) validation. OFF by default — only enable once Keycloak issues
+  # Audience (aud) validation. OFF by default -- only enable once Keycloak issues
   # tokens carrying this audience (the login-app oidc-audience-mapper); enabling it
   # before the mapper is live rejects every token.
   jwtValidateAudience: ${JWT_VALIDATE_AUDIENCE:false}

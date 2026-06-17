@@ -855,6 +855,31 @@ class VariableQueries {
 				)
 			""";
 
+	// Same as FIND_RELEASES_WITH_VULNERABILITY but with NO location/purl
+	// predicate — matches a CVE in any package location. Used by the KEV
+	// live re-gate fan-out: when a CVE newly enters the KEV catalog, every
+	// release that ships it (regardless of which purl carries it) must have
+	// its metrics recomputed so kevCount/the gate re-fires.
+	// KEV re-gate: match the CVE as a finding's primary id OR one of its
+	// aliases (KEV resolution is alias-aware — a release is KEV if the listed
+	// CVE is an alias even when the primary id is a GHSA/OSV id). Location is
+	// intentionally not predicated (the CVE may sit in any package).
+	protected static final String FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION = """
+			SELECT uuid FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND metrics IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
+					WHERE vuln->>'vulnId' = :findingId
+					   OR EXISTS (
+						SELECT 1 FROM jsonb_array_elements(
+							CASE WHEN jsonb_typeof(vuln->'aliases') = 'array'
+								THEN vuln->'aliases' ELSE '[]'::jsonb END) AS al
+						WHERE al->>'aliasId' = :findingId
+					)
+				)
+			""";
+
 	protected static final String FIND_RELEASES_WITH_VIOLATION = """
 			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString

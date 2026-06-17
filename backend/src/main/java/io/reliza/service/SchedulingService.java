@@ -18,6 +18,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.AdvisoryLockKey;
+import io.reliza.service.kev.KevCatalogSyncService;
 import io.reliza.service.oss.OssAnalyticsMetricsService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -71,6 +72,9 @@ public class SchedulingService {
 
     @Autowired
     SyntheticSbomService syntheticSbomService;
+
+    @Autowired
+    KevCatalogSyncService kevCatalogSyncService;
 
 
     // Gates the every-3h legacy per-artifact DTrack project phase-out
@@ -380,6 +384,39 @@ public class SchedulingService {
             }
         } catch (Exception e) {
             log.error("agent-session autoclose sweep failed with an error", e);
+        }
+    }
+
+    /**
+     * Daily KEV catalog sync. Interval-based (fixedDelay) rather than a fixed
+     * cron so a fleet of replicas restarted together doesn't synchronise their
+     * fetches on one wall-clock minute; the advisory lock dedupes whichever
+     * replica ticks first. The 2-minute initial delay keeps the fetch and
+     * first reconcile out of pod startup (and out of {@code @SpringBootTest}
+     * context spins, which run these schedulers). Both knobs are properties
+     * so a deployment can shorten them for verification without a code change.
+     */
+    @Scheduled(
+            fixedDelayString = "${relizaprops.kevSyncInterval:PT24H}",
+            initialDelayString = "${relizaprops.kevSyncInitialDelay:PT2M}")
+    public void syncKevCatalog() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.SYNC_KEV_CATALOG);
+            log.debug("KEV catalog sync lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    int added = kevCatalogSyncService.syncCatalog();
+                    if (added > 0) {
+                        log.info("KEV catalog sync: {} newly listed CVE(s)", added);
+                    }
+                } catch (Exception e) {
+                    log.error("Exception during KEV catalog sync", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.SYNC_KEV_CATALOG);
+                }
+            }
+        } catch (Exception e) {
+            log.error("KEV catalog sync run failed with an error", e);
         }
     }
 

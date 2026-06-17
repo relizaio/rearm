@@ -37,6 +37,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	@JsonProperty private Integer medium = 0;
 	@JsonProperty private Integer low = 0;
 	@JsonProperty private Integer unassigned = 0;
+	@JsonProperty private int kevCount = 0;
 	@JsonProperty private Integer vulnerabilities = 0;
 	@JsonProperty private Integer vulnerableComponents = 0;
 	@JsonProperty private Integer components = 0;
@@ -182,7 +183,21 @@ public class ReleaseMetricsDto implements Cloneable {
 	 */
 	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity,
 		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt,
-		String description, Set<String> cwes, Set<VulnerabilityReferenceDto> references, ZonedDateTime published, ZonedDateTime updated) {}
+		String description, Set<String> cwes, Set<VulnerabilityReferenceDto> references, ZonedDateTime published, ZonedDateTime updated,
+		Boolean knownExploited) {
+
+		/**
+		 * Returns a copy of this finding with {@code knownExploited} replaced. Used by
+		 * the metrics-compute path ({@code ReleaseMetricsComputeService}) to stamp the
+		 * KEV probe result onto immutable findings before {@code computeMetricsFromFacts}
+		 * tallies {@code kevCount}.
+		 */
+		public VulnerabilityDto withKnownExploited(Boolean knownExploited) {
+			return new VulnerabilityDto(purl, vulnId, severity, aliases, sources, severities,
+				analysisState, analysisDate, attributedAt, description, cwes, references,
+				published, updated, knownExploited);
+		}
+	}
 
 	/**
 	 * We use weaknessDto to store findngs from SARIF parsing
@@ -227,6 +242,7 @@ public class ReleaseMetricsDto implements Cloneable {
              Objects.equals(this.medium, otherRmd.medium) &&
              Objects.equals(this.low, otherRmd.low) &&
              Objects.equals(this.unassigned, otherRmd.unassigned) &&
+             this.kevCount == otherRmd.kevCount &&
              Objects.equals(this.vulnerabilities, otherRmd.vulnerabilities) &&
              Objects.equals(this.vulnerableComponents, otherRmd.vulnerableComponents) &&
              Objects.equals(this.components, otherRmd.components) &&
@@ -272,7 +288,7 @@ public class ReleaseMetricsDto implements Cloneable {
   	@Override
   	public int hashCode() {
   	    return Objects.hash(
-  	        critical, high, medium, low, unassigned, vulnerabilities,
+  	        critical, high, medium, low, unassigned, kevCount, vulnerabilities,
   	        vulnerableComponents, components, suppressed, findingsTotal,
   	        findingsAudited, findingsUnaudited, inheritedRiskScore,
   	        policyViolationsFail, policyViolationsWarn, policyViolationsInfo,
@@ -302,7 +318,8 @@ public class ReleaseMetricsDto implements Cloneable {
   		int mediumVulns = 0;
   		int lowVulns = 0;
   		int unassignedVulns = 0;
-  		
+  		int kevVulns = 0;
+
   		for (var x: violationDetails) {
 			// Skip findings with FALSE_POSITIVE, NOT_AFFECTED, or RESOLVED analysis state (non-affecting)
 			if (x.analysisState() == AnalysisState.FALSE_POSITIVE
@@ -332,6 +349,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					|| x.analysisState() == AnalysisState.RESOLVED) {
 				continue;
 			}
+  			if (Boolean.TRUE.equals(x.knownExploited())) {
+  				++kevVulns;
+  			}
   			switch (x.severity()) {
   			case CRITICAL:
   				++criticalVulns;
@@ -388,7 +408,8 @@ public class ReleaseMetricsDto implements Cloneable {
   		this.medium = mediumVulns;
   		this.low = lowVulns;
   		this.unassigned = unassignedVulns;
-  		
+  		this.kevCount = kevVulns;
+
   		this.policyViolationsSecurityTotal = securityViolations;
   		this.policyViolationsLicenseTotal = licenseViolations;
   		this.policyViolationsOperationalTotal = operationalViolations;
@@ -457,7 +478,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					updatedVulnerabilities.add(new VulnerabilityDto(
 						newVuln.purl(), newVuln.vulnId(), newVuln.severity(), newVuln.aliases(),
 						newVuln.sources(), newVuln.severities(), newVuln.analysisState(), newVuln.analysisDate(), earlierDate,
-						newVuln.description(), newVuln.cwes(), newVuln.references(), newVuln.published(), newVuln.updated()
+						newVuln.description(), newVuln.cwes(), newVuln.references(), newVuln.published(), newVuln.updated(),
+						newVuln.knownExploited()
 					));
 				} else {
 					// New vulnerability - use as-is
@@ -562,7 +584,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					updatedVulnerabilities.add(new VulnerabilityDto(
 						vuln.purl(), vuln.vulnId(), vuln.severity(), vuln.aliases(),
 						vuln.sources(), vuln.severities(), vuln.analysisState(), vuln.analysisDate(), fallbackDate,
-						null, null, null, null, null
+						null, null, null, null, null,
+						vuln.knownExploited()
 					));
 				} else {
 					updatedVulnerabilities.add(vuln);
@@ -650,7 +673,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					vuln.analysisDate(),
 					vuln.attributedAt(),
 					// description / cwes / references / published / updated → vulnerability_records
-					null, null, null, null, null
+					null, null, null, null, null,
+					vuln.knownExploited()
 				);
 				enrichedVulnerabilities.add(enrichedVuln);
 			}
@@ -808,7 +832,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.analysisState(),
 					existing.analysisDate(),
 					selectEarlierDate(existing.attributedAt(), x.attributedAt()),
-					null, null, null, null, null
+					null, null, null, null, null,
+					mergeKnownExploited(existing.knownExploited(), x.knownExploited())
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -817,7 +842,19 @@ public class ReleaseMetricsDto implements Cloneable {
 		});
 		return new LinkedList<>(vulnMap.values());
 	}
-	
+
+	/**
+	 * OR-merge of the KEV flag across two alias-equivalent / same-key findings:
+	 * once any contributing finding is KEV-listed the merged finding is KEV.
+	 * Returns null only when both inputs are null (probe never ran), so a null
+	 * stays a "not yet stamped" sentinel rather than a false negative.
+	 */
+	private static Boolean mergeKnownExploited(Boolean a, Boolean b) {
+		if (Boolean.TRUE.equals(a) || Boolean.TRUE.equals(b)) return Boolean.TRUE;
+		if (a == null && b == null) return null;
+		return Boolean.FALSE;
+	}
+
 	private String getViolationKey (ViolationDto violationDto) {
 		return violationDto.purl() + (violationDto.type() != null ? violationDto.type().name() : "");
 	}
@@ -1018,7 +1055,8 @@ public class ReleaseMetricsDto implements Cloneable {
 				// Return with cleaned aliases and recalculated severity if needed
 				if (singleVuln.aliases() == null || cleanedAliases.size() != singleVuln.aliases().size() || bestSeverity != singleVuln.severity()) {
 					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt(),
-							singleVuln.description(), singleVuln.cwes(), singleVuln.references(), singleVuln.published(), singleVuln.updated());
+							singleVuln.description(), singleVuln.cwes(), singleVuln.references(), singleVuln.published(), singleVuln.updated(),
+							singleVuln.knownExploited());
 				} else {
 					return singleVuln;
 				}
@@ -1033,7 +1071,8 @@ public class ReleaseMetricsDto implements Cloneable {
 			}
 			
 			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt(),
-					singleVuln.description(), singleVuln.cwes(), singleVuln.references(), singleVuln.published(), singleVuln.updated());
+					singleVuln.description(), singleVuln.cwes(), singleVuln.references(), singleVuln.published(), singleVuln.updated(),
+					singleVuln.knownExploited());
 		}
 		
 		// Collect all unique identifiers and find the best primary ID (CVE preferred)
@@ -1090,8 +1129,10 @@ public class ReleaseMetricsDto implements Cloneable {
 		// Use analysis state and date from the selected base vulnerability
 		// Select earliest attributedAt from all merged vulnerabilities
 		ZonedDateTime earliestAttributedAt = null;
+		Boolean mergedKnownExploited = null;
 		for (VulnerabilityDto vuln : vulnerabilities) {
 			earliestAttributedAt = selectEarlierDate(earliestAttributedAt, vuln.attributedAt());
+			mergedKnownExploited = mergeKnownExploited(mergedKnownExploited, vuln.knownExploited());
 		}
 
 		// description / cwes / references / published / updated migrated to
@@ -1099,7 +1140,7 @@ public class ReleaseMetricsDto implements Cloneable {
 		// alias-equivalent vulns here — the canonical row in the new table
 		// already merges across sources by primaryVulnId / aliases.
 		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt,
-				null, null, null, null, null);
+				null, null, null, null, null, mergedKnownExploited);
 	}
 	
 	/**

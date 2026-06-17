@@ -249,7 +249,10 @@ public class SourceCodeEntryService {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public SourceCodeEntry createSourceCodeEntry (SceDto sceDto, WhoUpdated wu) {
 		SourceCodeEntry sce = new SourceCodeEntry();
-		VcsRepositoryData vrd = vcsRepositoryService.getVcsRepositoryData(sceDto.getVcs()).get(); //must exist - TODO error handling
+		// No VCS read here: on the auto-create path (branch had no linked
+		// VCS at addrelease time and the input supplied uri + type), the row
+		// referenced by sceDto.vcs was inserted by the caller's outer tx
+		// and is not yet visible to this REQUIRES_NEW tx.
 		// resolve organization via branch
 		Optional<BranchData> bdOpt = branchService.getBranchData(sceDto.getBranch());
 		if (bdOpt.isPresent()) {

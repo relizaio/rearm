@@ -233,7 +233,7 @@ public class ReleaseServiceCdxVexTransformTest {
 					purl, vulnId,
 					VulnerabilitySeverity.HIGH,
 					Set.of(), Set.of(), Set.of(),
-					null, null, null, null, null, null, null, null);
+					null, null, null, null, null, null, null, null, null);
 		return new HistoricallyResolvedFinding(
 				vd, resolvingReleaseUuid, resolvingVersion,
 				ZonedDateTime.parse(resolvingIso8601));

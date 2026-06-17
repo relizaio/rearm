@@ -793,7 +793,7 @@ public class IntegrationService {
 					// vuln id)) and are nulled here. VDR / openvex exporters
 					// resolve them from the new table at export time.
 					VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt,
-							null, null, null, null, null);
+							null, null, null, null, null, null);
 					pageResults.add(new VulnWithCpe(vdto, c.cpe()));
 				});
 			}

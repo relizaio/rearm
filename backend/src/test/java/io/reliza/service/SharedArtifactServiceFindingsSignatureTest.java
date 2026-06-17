@@ -23,7 +23,7 @@ class SharedArtifactServiceFindingsSignatureTest {
 
 	private static VulnerabilityDto vuln(String vulnId, ZonedDateTime attributedAt) {
 		return new VulnerabilityDto("pkg:npm/x@1.0", vulnId, null, null, null, null, null,
-				null, attributedAt, null, null, null, null, null);
+				null, attributedAt, null, null, null, null, null, null);
 	}
 
 	private static DependencyTrackIntegration dtiWith(List<VulnerabilityDto> vulns) {

@@ -69,6 +69,17 @@ public class AdminDataFetcher {
 		return systemInfoService.getSystemInfoIsSet();
 	}
 	
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setVulnCheckKevToken")
+	public Boolean setVulnCheckKevToken(@InputArgument("token") String token) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
+		systemInfoService.setVulncheckKevToken(token);
+		return true;
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "finalizeAllReleases")
 	public Boolean finalizeAllReleases() throws RelizaException {
