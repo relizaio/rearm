@@ -4,8 +4,11 @@
 
 package io.reliza.service;
 
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,6 +65,47 @@ public class VulnAnalysisUpdateService {
 		}
 	}
 	
+	/**
+	 * Live KEV re-gate fan-out. Called by the KEV catalog sync (after the
+	 * reconcile transaction commits) when a CVE newly enters the catalog:
+	 * KEV status is time-varying independent of any scan, so a release that
+	 * already ships {@code cveId} would otherwise keep a stale
+	 * {@code kevCount}/gate verdict until its next scan. For each affected
+	 * org we find every release carrying the CVE in any location, dedupe the
+	 * union, and recompute each release's metrics (which re-stamps
+	 * {@code knownExploited}/{@code kevCount} and re-fires the gate via the
+	 * metrics-change path). Per-release try/catch so one bad release never
+	 * aborts the fan-out.
+	 *
+	 * <p>Runs {@code @Async} — must be invoked through the Spring proxy
+	 * (cross-bean call from the sync), never as a same-class self-call.
+	 */
+	@Async
+	public void recomputeReleasesForNewlyKev(String cveId, Collection<UUID> affectedOrgs) {
+		if (cveId == null || affectedOrgs == null || affectedOrgs.isEmpty()) {
+			return;
+		}
+		Set<UUID> releaseUuids = new LinkedHashSet<>();
+		for (UUID org : affectedOrgs) {
+			if (org == null) continue;
+			try {
+				releaseUuids.addAll(
+						sharedReleaseService.findReleaseUuidsWithVulnerabilityAnyLocation(org, cveId));
+			} catch (Exception e) {
+				log.error("Error finding releases for newly-KEV CVE {} in org {}", cveId, org, e);
+			}
+		}
+		log.info("KEV re-gate: {} carries newly-KEV CVE {} across {} org(s); recomputing metrics",
+				releaseUuids.size(), cveId, affectedOrgs.size());
+		for (UUID releaseUuid : releaseUuids) {
+			try {
+				releaseService.computeReleaseMetrics(releaseUuid, false);
+			} catch (Exception e) {
+				log.error("Error recomputing metrics for release {} on newly-KEV CVE {}", releaseUuid, cveId, e);
+			}
+		}
+	}
+
 	/**
 	 * Process org-wide updates - affects both artifacts and releases
 	 */

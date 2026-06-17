@@ -278,9 +278,9 @@ class SyntheticSbomServiceTest {
 				new VulnerabilityAliasDto(VulnerabilityAliasType.CVE, "CVE-1"),
 				new VulnerabilityAliasDto(VulnerabilityAliasType.GHSA, "GHSA-X"));
 		VulnerabilityDto cve = new VulnerabilityDto(canonical, "CVE-1", VulnerabilitySeverity.HIGH,
-				aliases, null, null, null, null, null, null, null, null, null, null);
+				aliases, null, null, null, null, null, null, null, null, null, null, null);
 		VulnerabilityDto ghsa = new VulnerabilityDto(canonical, "GHSA-X", VulnerabilitySeverity.MEDIUM,
-				aliases, null, null, null, null, null, null, null, null, null, null);
+				aliases, null, null, null, null, null, null, null, null, null, null, null);
 		SyntheticDtrackBucket b = new SyntheticDtrackBucket();
 		b.setOrg(ORG);
 		b.setBucketIndex(0);
@@ -536,7 +536,7 @@ class SyntheticSbomServiceTest {
 
 	private static VulnerabilityDto vuln(String purl, String vulnId) {
 		return new VulnerabilityDto(purl, vulnId, null, null, null, null, null, null, null,
-				null, null, null, null, null);
+				null, null, null, null, null, null);
 	}
 
 	private static ComponentIdentity idEntry(String scheme, String value) {

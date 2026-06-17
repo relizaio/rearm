@@ -54,6 +54,7 @@ public class SystemInfoData extends RelizaDataParent{
 	private UUID defaultOrg;
 	private ZonedDateTime lastDtrackSync;
 	private AzureCreds azureCredentials;
+	private String vulncheckKevToken;
 	private String license;
 	private ZonedDateTime licenseStartDate;
 	private ZonedDateTime licenseEndDate;

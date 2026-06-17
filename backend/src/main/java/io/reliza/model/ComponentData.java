@@ -279,6 +279,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
     	MEDIUM_VULNS,
     	LOW_VULNS,
     	UNASSIGNED_VULNS,
+    	KEV_VULNS,
     	SECURITY_VIOLATIONS,
     	OPERATIONAL_VIOLATIONS,
     	LICENSE_VIOLATIONS

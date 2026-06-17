@@ -457,6 +457,7 @@ type Mutation {
 	finalizeAllReleases: Boolean
 	createOrganization(name: String!): Organization
 	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
+	setVulnCheckKevToken(token: String): Boolean
 	setDefaultOrganization(organization: ID!): Boolean
 	inactivateUser(userUuid: ID!): User
 	reactivateUser(userUuid: ID!): User
@@ -1748,6 +1749,7 @@ type SystemInfoIsSet {
 	emailDetailsSet: Boolean
 	defaultOrg: ID
 	defaultOrgDetails: Organization
+	vulncheckKevConfigured: Boolean
 }
 
 type Organization {
@@ -2297,10 +2299,36 @@ type VulnerabilityAlias {
 	aliasId: String!
 }
 
-# One CISA KEV catalog entry, mirrored verbatim from the public feed
-# (Phase 6a). Date fields stay feed-format strings (yyyy-MM-dd).
+# Whether a source reports a vulnerability as used in known ransomware
+# campaigns. Three-state so "source says no" (UNKNOWN) and "source is
+# silent" (UNSPECIFIED) stay distinct.
+enum KevRansomwareStatus {
+	KNOWN
+	UNKNOWN
+	UNSPECIFIED
+}
+
+# A named ransomware campaign (with optional reference URL). Empty for CISA,
+# which supplies no campaign names; populated by richer sources.
+type KevRansomwareCampaign {
+	name: String!
+	url: String
+}
+
+# KEV detail for one CVE: the aggregated ransomware status plus every
+# source's assertion (active and revoked).
 type KevRecordDetails {
 	cveId: String!
+	ransomwareStatus: KevRansomwareStatus
+	assertions: [KevSourceAssertion!]!
+}
+
+# One source's assertion that a CVE is known-exploited. revokedDate set means
+# the source withdrew the listing — the CVE still counts as KEV, the date is
+# shown as a note. Date fields stay feed-format strings (yyyy-MM-dd).
+type KevSourceAssertion {
+	source: String!
+	revokedDate: String
 	vendorProject: String
 	product: String
 	vulnerabilityName: String
@@ -2308,7 +2336,8 @@ type KevRecordDetails {
 	shortDescription: String
 	requiredAction: String
 	dueDate: String
-	knownRansomwareCampaignUse: Boolean
+	ransomwareStatus: KevRansomwareStatus
+	ransomwareCampaigns: [KevRansomwareCampaign!]
 	notes: String
 	cwes: [String!]
 }
@@ -4499,6 +4528,7 @@ enum MetricsType {
 	MEDIUM_VULNS
 	LOW_VULNS
 	UNASSIGNED_VULNS
+	KEV_VULNS
 	SECURITY_VIOLATIONS
 	OPERATIONAL_VIOLATIONS
 	LICENSE_VIOLATIONS

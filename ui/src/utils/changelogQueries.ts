@@ -7,11 +7,9 @@ import graphqlClient from './graphql'
 import { ComponentChangelog, OrganizationChangelog } from '../types/changelog-sealed'
 import { kevFieldSelection } from './kevService'
 
-// Fragments selecting vulnerability findings are functions of the Pro-only
-// knownExploited selection (kevFieldSelection: '' on OSS), so the flag rides
-// the main changelog query on Pro instead of re-running the expensive
-// changelog computation through a mirror query. This file stays store-free:
-// callers pass installationType in.
+// Fragments selecting vulnerability findings interpolate kevFieldSelection so
+// the knownExploited flag rides the main changelog query (cheaper than a
+// mirror query on top of the already-expensive changelog computation).
 
 // ========== GraphQL Field Fragments ==========
 

@@ -4,7 +4,11 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -20,6 +24,8 @@ import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.repositories.ReleaseRepository;
 
 /**
@@ -45,6 +51,9 @@ public class ReleaseMetricsComputeService {
 
 	@Autowired
 	private VulnAnalysisService vulnAnalysisService;
+
+	@Autowired
+	private KevAssertionService kevAssertionService;
 
 	@Transactional
 	public Optional<Release> getReleaseWriteLocked(UUID uuid) {
@@ -109,6 +118,11 @@ public class ReleaseMetricsComputeService {
 			ReleaseMetricsDto rolledUp = rollUpProductReleaseMetrics(rd);
 			rmd.mergeWithByContent(rolledUp);
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, rmd);
+			// Stamp KEV membership onto each finding, then re-derive kevCount.
+			// Done after all merges + vuln-analysis so the probe sees the final
+			// alias-organized vulnerabilityDetails. This is the authoritative
+			// KEV stamp for the persisted metrics.
+			stampKnownExploited(rmd);
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
 			// Merge artifact firstScanned into whatever rollUpProductReleaseMetrics contributed.
@@ -202,6 +216,7 @@ public class ReleaseMetricsComputeService {
 			ReleaseMetricsDto originalMetrics = rd.getMetrics();
 			ReleaseMetricsDto clonedMetrics = originalMetrics.clone();
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, clonedMetrics);
+			stampKnownExploited(clonedMetrics);
 			if (!clonedMetrics.equals(originalMetrics)) {
 				rd.setMetrics(clonedMetrics);
 				sharedReleaseService.saveReleaseMetrics(r, clonedMetrics);
@@ -211,6 +226,73 @@ public class ReleaseMetricsComputeService {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Batch-resolves KEV membership across every finding on {@code rmd} and
+	 * rewrites each {@link VulnerabilityDto} with the probe result, then
+	 * re-derives {@code kevCount} via {@code computeMetricsFromFacts()}.
+	 *
+	 * <p>One {@link KevAssertionService#filterKnownExploited} round trip for the
+	 * whole release: candidate CVE ids (the primary id plus every CVE-shaped
+	 * alias, normalized) are unioned across all findings, probed once, then a
+	 * per-finding membership check stamps {@code knownExploited}. Mirrors the
+	 * read-time batching in {@code KevDataFetcher}. Records are immutable, so we
+	 * rebuild the list via {@link VulnerabilityDto#withKnownExploited}.
+	 *
+	 * <p>Guard: if no finding carries a CVE-shaped candidate id (e.g. a release
+	 * with only GHSA/OSV findings), the probe is skipped entirely — every
+	 * finding is stamped {@code FALSE} without a DB call.
+	 */
+	private void stampKnownExploited(ReleaseMetricsDto rmd) {
+		List<VulnerabilityDto> findings = rmd.getVulnerabilityDetails();
+		if (findings == null || findings.isEmpty()) {
+			rmd.computeMetricsFromFacts();
+			return;
+		}
+		Set<String> allCandidates = new LinkedHashSet<>();
+		for (VulnerabilityDto vuln : findings) {
+			allCandidates.addAll(candidateCveIds(vuln));
+		}
+		Set<String> listed;
+		if (allCandidates.isEmpty()) {
+			// No CVE-shaped ids anywhere: nothing can match the KEV catalog.
+			listed = Set.of();
+		} else {
+			listed = kevAssertionService.filterKnownExploited(allCandidates);
+		}
+		List<VulnerabilityDto> stamped = new ArrayList<>(findings.size());
+		for (VulnerabilityDto vuln : findings) {
+			boolean kev = false;
+			for (String candidate : candidateCveIds(vuln)) {
+				if (listed.contains(candidate)) {
+					kev = true;
+					break;
+				}
+			}
+			stamped.add(vuln.withKnownExploited(kev));
+		}
+		rmd.setVulnerabilityDetails(stamped);
+		// Re-derive kevCount (and the other tallies) from the freshly stamped findings.
+		rmd.computeMetricsFromFacts();
+	}
+
+	/**
+	 * Candidate CVE ids for one finding: normalized primary id plus each
+	 * normalized CVE-shaped alias. Non-CVE ids normalize to null and are
+	 * dropped, mirroring {@code KevDataFetcher.resolveKnownExploited}.
+	 */
+	private static Set<String> candidateCveIds(VulnerabilityDto vuln) {
+		Set<String> candidates = new LinkedHashSet<>();
+		String primary = KevAssertionService.normalizeCveId(vuln.vulnId());
+		if (primary != null) candidates.add(primary);
+		if (vuln.aliases() != null) {
+			for (VulnerabilityAliasDto alias : vuln.aliases()) {
+				String normalized = alias != null ? KevAssertionService.normalizeCveId(alias.aliasId()) : null;
+				if (normalized != null) candidates.add(normalized);
+			}
+		}
+		return candidates;
 	}
 
 	/**

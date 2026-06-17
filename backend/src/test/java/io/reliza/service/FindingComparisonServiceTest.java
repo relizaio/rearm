@@ -59,7 +59,7 @@ public class FindingComparisonServiceTest {
                 purl, vulnId, VulnerabilitySeverity.HIGH,
                 Set.of(), Set.of(), Set.of(),
                 null, null, null,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     private static ReleaseMetricsDto metricsWith(VulnerabilityDto... vulns) {

@@ -1274,6 +1274,16 @@ public class SharedReleaseService {
 		return repository.findReleasesWithVulnerability(org.toString(), location, findingId);
 	}
 
+	/**
+	 * UUIDs of releases in {@code org} whose metrics carry {@code findingId}
+	 * (a CVE id) in ANY package location. Drives the KEV live re-gate
+	 * fan-out, where the triggering CVE has no single location and every
+	 * release that ships it must be recomputed.
+	 */
+	public List<UUID> findReleaseUuidsWithVulnerabilityAnyLocation(UUID org, String findingId) {
+		return repository.findReleasesWithVulnerabilityAnyLocation(org.toString(), findingId);
+	}
+
 	public List<UUID> findReleaseUuidsWithViolation(UUID org, String location, String findingId) {
 		return repository.findReleasesWithViolation(org.toString(), location, findingId);
 	}

@@ -15,6 +15,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import io.reliza.model.AnalysisState;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityReferenceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
@@ -44,7 +45,7 @@ public class ReleaseMetricsDtoMergeTest {
 			Set<VulnerabilityReferenceDto> refs, ZonedDateTime published, ZonedDateTime updated) {
 		return new VulnerabilityDto(PURL, vulnId, VulnerabilitySeverity.HIGH,
 				Set.of(), Set.of(), Set.of(), null, null, null,
-				description, cwes, refs, published, updated);
+				description, cwes, refs, published, updated, null);
 	}
 
 	private static ReleaseMetricsDto mergeViaPublicSurface(VulnerabilityDto first, VulnerabilityDto second) {
@@ -123,10 +124,10 @@ public class ReleaseMetricsDtoMergeTest {
 				new ReleaseMetricsDto.VulnerabilityAliasDto(ReleaseMetricsDto.VulnerabilityAliasType.CVE, "CVE-2099-9999"));
 		VulnerabilityDto cveSide = new VulnerabilityDto(PURL, "CVE-2099-9999", VulnerabilitySeverity.HIGH,
 				aliasA, Set.of(), Set.of(), null, null, null,
-				null, Set.of("CWE-79"), null, null, null);
+				null, Set.of("CWE-79"), null, null, null, null);
 		VulnerabilityDto ghsaSide = new VulnerabilityDto(PURL, "GHSA-shared", VulnerabilitySeverity.HIGH,
 				aliasB, Set.of(), Set.of(), null, null, null,
-				null, Set.of("CWE-22"), null, null, null);
+				null, Set.of("CWE-22"), null, null, null, null);
 
 		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
 		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(cveSide, ghsaSide)));
@@ -141,5 +142,52 @@ public class ReleaseMetricsDtoMergeTest {
 		// row uses them as the lookup key.
 		assertTrue(collapsed.aliases().stream().anyMatch(a -> "GHSA-shared".equals(a.aliasId())),
 				"GHSA alias must survive collapse");
+	}
+
+	/**
+	 * Builds a finding with an explicit severity, knownExploited flag, and
+	 * analysis state. Distinct purls keep alias-organization from collapsing
+	 * the findings so each one is tallied independently.
+	 */
+	private static VulnerabilityDto kevVuln(String purl, String vulnId, VulnerabilitySeverity sev,
+			Boolean knownExploited, AnalysisState analysisState) {
+		return new VulnerabilityDto(purl, vulnId, sev,
+				Set.of(), Set.of(), Set.of(), analysisState, null, null,
+				null, null, null, null, null, knownExploited);
+	}
+
+	@Test
+	void computeMetricsFromFactsCountsKevFindings() {
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				// counted: knownExploited TRUE, affecting
+				kevVuln("pkg:npm/a@1", "CVE-2099-1001", VulnerabilitySeverity.CRITICAL, Boolean.TRUE, null),
+				kevVuln("pkg:npm/b@1", "CVE-2099-1002", VulnerabilitySeverity.HIGH, Boolean.TRUE, null),
+				// not counted: knownExploited FALSE
+				kevVuln("pkg:npm/c@1", "CVE-2099-1003", VulnerabilitySeverity.HIGH, Boolean.FALSE, null),
+				// not counted: knownExploited null (probe never stamped)
+				kevVuln("pkg:npm/d@1", "CVE-2099-1004", VulnerabilitySeverity.MEDIUM, null, null),
+				// not counted: knownExploited TRUE but NOT_AFFECTED (non-affecting state)
+				kevVuln("pkg:npm/e@1", "CVE-2099-1005", VulnerabilitySeverity.CRITICAL, Boolean.TRUE,
+						AnalysisState.NOT_AFFECTED)
+		)));
+
+		rmd.computeMetricsFromFacts();
+
+		assertEquals(2, rmd.getKevCount(),
+				"kevCount must count only affecting findings whose knownExploited is TRUE");
+	}
+
+	@Test
+	void computeMetricsFromFactsKevCountZeroWhenNoneExploited() {
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				kevVuln("pkg:npm/a@1", "CVE-2099-2001", VulnerabilitySeverity.CRITICAL, Boolean.FALSE, null),
+				kevVuln("pkg:npm/b@1", "GHSA-xxxx", VulnerabilitySeverity.HIGH, null, null)
+		)));
+
+		rmd.computeMetricsFromFacts();
+
+		assertEquals(0, rmd.getKevCount(), "kevCount must be 0 when no finding is KEV-listed");
 	}
 }

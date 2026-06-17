@@ -718,13 +718,14 @@ public class RebomService {
                     (String) v.get("purl"),
                     vulnId,
                     severity,
-                    new LinkedHashSet<>(),
+                    new LinkedHashSet<ReleaseMetricsDto.VulnerabilityAliasDto>(),
                     Set.of(source),
                     Set.of(severitySource),
                     null,
                     null,
                     null,
-                    null, null, null, null, null
+                    null, null, null, null, null,
+                    null
                 );
             })
             .toList();
