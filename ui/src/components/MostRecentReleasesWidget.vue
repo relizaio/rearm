@@ -252,8 +252,7 @@ async function openVulnModal(rel: any, severityFilter: string, typeFilter: strin
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
             rel.uuid,
-            rel.org,
-            store.getters.myuser?.installationType
+            rel.org
         )
         vulnModalArtifacts.value = releaseData.artifacts
         vulnModalOrgUuid.value = releaseData.orgUuid

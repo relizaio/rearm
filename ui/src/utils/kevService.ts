@@ -2,11 +2,9 @@
  * KEV (Known Exploited Vulnerabilities) read surface.
  *
  * CE-available as of the KEV CE-activation slice. The knownExploited field
- * and the kevRecordDetails query are now part of the shared schema, so the
- * isProInstallation / kevFieldSelection helpers no longer have to gate on
- * installationType — they unconditionally return the Pro-style value.
- * Callers stay structurally the same; a future cleanup pass can remove the
- * helpers and inline the constants.
+ * and the kevRecordDetails query are part of the shared schema; callers
+ * inline the 'knownExploited' field name and unconditionally fetch the
+ * KEV flag (no installationType gate).
  */
 
 import gql from 'graphql-tag'
@@ -41,14 +39,6 @@ export interface KevRecordDetails {
     cveId: string
     ransomwareStatus?: KevRansomwareStatus
     assertions: KevSourceAssertion[]
-}
-
-export function isProInstallation(installationType?: string): boolean {
-    return true
-}
-
-export function kevFieldSelection(installationType?: string): string {
-    return 'knownExploited'
 }
 
 const RELEASE_KEV_FLAGS_GQL = gql`
