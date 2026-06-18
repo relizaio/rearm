@@ -329,8 +329,7 @@ async function getComponentChangelog (org: string, aggregationType: string, comp
             org: org,
             aggregated: aggregationType as 'NONE' | 'AGGREGATED',
             dateFrom: dateFrom,
-            dateTo: dateTo,
-            installationType: store.getters.myuser?.installationType
+            dateTo: dateTo
         })
     }
     return null
@@ -342,8 +341,7 @@ async function getChangelog (org: string, aggregationType: string, release1?: st
             release1: release1,
             release2: release2,
             org: org,
-            aggregated: aggregationType as 'NONE' | 'AGGREGATED',
-            installationType: store.getters.myuser?.installationType
+            aggregated: aggregationType as 'NONE' | 'AGGREGATED'
         })
     }
     return null

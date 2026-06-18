@@ -2127,8 +2127,7 @@ async function viewDetailedVulnerabilitiesForRelease(releaseRow: any, severityFi
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
             releaseRow.uuid,
-            branchData.value.org,
-            myUser?.installationType
+            branchData.value.org
         )
         
         // Update reactive values with the processed data

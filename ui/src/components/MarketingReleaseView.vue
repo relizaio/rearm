@@ -240,8 +240,7 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string, severi
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
             releaseUuid,
-            marketingRelease.value.org,
-            myUser?.installationType
+            marketingRelease.value.org
         )
         vulnModalArtifacts.value = releaseData.artifacts
         vulnModalOrgUuid.value = releaseData.orgUuid

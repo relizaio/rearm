@@ -21,7 +21,7 @@ export type DetailedMetric = {
   analysisDate?: string
   attributedAt?: string
   // CISA KEV flag: stamped post-fetch by kevService.annotateKnownExploited,
-  // or carried straight from the main query via kevFieldSelection
+  // or carried straight from the main query via the inline knownExploited field.
   knownExploited?: boolean
 }
 

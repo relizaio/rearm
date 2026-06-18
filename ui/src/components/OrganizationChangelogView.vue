@@ -141,8 +141,7 @@ const fetchChangelog = async () => {
             dateFrom,
             dateTo,
             aggregated: aggregationType.value as 'NONE' | 'AGGREGATED',
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            installationType: store.getters.myuser?.installationType
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }
                 
         const result = await fetchOrganizationChangelogByDate(params)

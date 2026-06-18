@@ -5,11 +5,10 @@
 import { gql } from '@apollo/client/core'
 import graphqlClient from './graphql'
 import { ComponentChangelog, OrganizationChangelog } from '../types/changelog-sealed'
-import { kevFieldSelection } from './kevService'
 
-// Fragments selecting vulnerability findings interpolate kevFieldSelection so
-// the knownExploited flag rides the main changelog query (cheaper than a
-// mirror query on top of the already-expensive changelog computation).
+// Fragments selecting vulnerability findings inline the knownExploited field
+// so the KEV flag rides the main changelog query (cheaper than a mirror
+// query on top of the already-expensive changelog computation).
 
 // ========== GraphQL Field Fragments ==========
 
@@ -42,7 +41,7 @@ const RELEASE_SBOM_CHANGES_FRAGMENT = `
     }
 `
 
-const releaseFindingChangesFragment = (kevField: string) => `
+const RELEASE_FINDING_CHANGES_FRAGMENT = `
     appearedCount
     resolvedCount
     appearedVulnerabilities {
@@ -53,7 +52,7 @@ const releaseFindingChangesFragment = (kevField: string) => `
             aliasId
         }
         analysisState
-        ${kevField}
+        knownExploited
     }
     resolvedVulnerabilities {
         vulnId
@@ -63,7 +62,7 @@ const releaseFindingChangesFragment = (kevField: string) => `
             aliasId
         }
         analysisState
-        ${kevField}
+        knownExploited
     }
     appearedViolations {
         type
@@ -91,7 +90,7 @@ const releaseFindingChangesFragment = (kevField: string) => `
     }
 `
 
-const noneReleaseChangesFragment = (kevField: string) => `
+const NONE_RELEASE_CHANGES_FRAGMENT = `
     releaseUuid
     version
     lifecycle
@@ -103,7 +102,7 @@ const noneReleaseChangesFragment = (kevField: string) => `
         ${RELEASE_SBOM_CHANGES_FRAGMENT}
     }
     findingChanges {
-        ${releaseFindingChangesFragment(kevField)}
+        ${RELEASE_FINDING_CHANGES_FRAGMENT}
     }
 `
 
@@ -151,7 +150,7 @@ const SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
     }
 `
 
-const findingChangesWithAttributionFragment = (kevField: string) => `
+const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
     totalAppeared
     totalResolved
     vulnerabilities {
@@ -161,7 +160,7 @@ const findingChangesWithAttributionFragment = (kevField: string) => `
         aliases {
             aliasId
         }
-        ${kevField}
+        knownExploited
         isNetAppeared
         isNetResolved
         isStillPresent
@@ -225,18 +224,18 @@ const findingChangesWithAttributionFragment = (kevField: string) => `
 
 // ========== Shared Component Changelog Fragments ==========
 
-const noneBranchChangesFragment = (kevField: string) => `
+const NONE_BRANCH_CHANGES_FRAGMENT = `
     branchUuid
     branchName
     componentUuid
     componentName
     changeType
     releases {
-        ${noneReleaseChangesFragment(kevField)}
+        ${NONE_RELEASE_CHANGES_FRAGMENT}
     }
 `
 
-const noneChangelogFields = (kevField: string) => `
+const NONE_CHANGELOG_FIELDS = `
     componentUuid
     componentName
     orgUuid
@@ -247,11 +246,11 @@ const noneChangelogFields = (kevField: string) => `
         ${RELEASE_INFO_FRAGMENT}
     }
     branches {
-        ${noneBranchChangesFragment(kevField)}
+        ${NONE_BRANCH_CHANGES_FRAGMENT}
     }
 `
 
-const noneProductChangelogFields = (kevField: string) => `
+const NONE_PRODUCT_CHANGELOG_FIELDS = `
     componentUuid
     componentName
     orgUuid
@@ -267,12 +266,12 @@ const noneProductChangelogFields = (kevField: string) => `
         lifecycle
         createdDate
         branches {
-            ${noneBranchChangesFragment(kevField)}
+            ${NONE_BRANCH_CHANGES_FRAGMENT}
         }
     }
 `
 
-const aggregatedChangelogFields = (kevField: string) => `
+const AGGREGATED_CHANGELOG_FIELDS = `
     componentUuid
     componentName
     orgUuid
@@ -300,7 +299,7 @@ const aggregatedChangelogFields = (kevField: string) => `
         ${SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
     }
     findingChanges {
-        ${findingChangesWithAttributionFragment(kevField)}
+        ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
     }
 `
 
@@ -315,9 +314,7 @@ export async function fetchComponentChangelog(params: {
     org: string
     aggregated: 'NONE' | 'AGGREGATED'
     timeZone?: string
-    installationType?: string
 }): Promise<ComponentChangelog> {
-    const kevField = kevFieldSelection(params.installationType)
     const response = await graphqlClient.query({
         query: gql`
             query FetchComponentChangelog(
@@ -336,13 +333,13 @@ export async function fetchComponentChangelog(params: {
                 ) {
                     __typename
                     ... on NoneChangelog {
-                        ${noneChangelogFields(kevField)}
+                        ${NONE_CHANGELOG_FIELDS}
                     }
                     ... on NoneProductChangelog {
-                        ${noneProductChangelogFields(kevField)}
+                        ${NONE_PRODUCT_CHANGELOG_FIELDS}
                     }
                     ... on AggregatedChangelog {
-                        ${aggregatedChangelogFields(kevField)}
+                        ${AGGREGATED_CHANGELOG_FIELDS}
                     }
                 }
             }
@@ -371,9 +368,7 @@ export async function fetchComponentChangelogByDate(params: {
     timeZone?: string
     dateFrom: string
     dateTo: string
-    installationType?: string
 }): Promise<ComponentChangelog> {
-    const kevField = kevFieldSelection(params.installationType)
     const response = await graphqlClient.query({
         query: gql`
             query FetchComponentChangelogByDate(
@@ -396,13 +391,13 @@ export async function fetchComponentChangelogByDate(params: {
                 ) {
                     __typename
                     ... on NoneChangelog {
-                        ${noneChangelogFields(kevField)}
+                        ${NONE_CHANGELOG_FIELDS}
                     }
                     ... on NoneProductChangelog {
-                        ${noneProductChangelogFields(kevField)}
+                        ${NONE_PRODUCT_CHANGELOG_FIELDS}
                     }
                     ... on AggregatedChangelog {
-                        ${aggregatedChangelogFields(kevField)}
+                        ${AGGREGATED_CHANGELOG_FIELDS}
                     }
                 }
             }
@@ -432,9 +427,7 @@ export async function fetchOrganizationChangelogByDate(params: {
     dateTo: string
     aggregated: 'NONE' | 'AGGREGATED'
     timeZone?: string
-    installationType?: string
 }): Promise<OrganizationChangelog> {
-    const kevField = kevFieldSelection(params.installationType)
     const response = await graphqlClient.query({
         query: gql`
             query FetchOrganizationChangelogByDate(
@@ -461,7 +454,7 @@ export async function fetchOrganizationChangelogByDate(params: {
                         components {
                             __typename
                             ... on NoneChangelog {
-                                ${noneChangelogFields(kevField)}
+                                ${NONE_CHANGELOG_FIELDS}
                             }
                         }
                     }
@@ -472,14 +465,14 @@ export async function fetchOrganizationChangelogByDate(params: {
                         components {
                             __typename
                             ... on AggregatedChangelog {
-                                ${aggregatedChangelogFields(kevField)}
+                                ${AGGREGATED_CHANGELOG_FIELDS}
                             }
                         }
                         sbomChanges {
                             ${SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
                         }
                         findingChanges {
-                            ${findingChangesWithAttributionFragment(kevField)}
+                            ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
                         }
                     }
                 }

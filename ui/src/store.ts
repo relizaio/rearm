@@ -1784,8 +1784,7 @@ const storeObject : any = {
                 release2: params.release2,
                 org: params.org,
                 aggregated: params.aggregated || 'AGGREGATED',
-                timeZone: params.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-                installationType: context.getters.myuser?.installationType
+                timeZone: params.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone
             })
         },
         async updateRelease (context: any, release: any) {

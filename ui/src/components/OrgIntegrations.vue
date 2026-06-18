@@ -121,12 +121,12 @@
                                                 <n-icon v-if="isOrgAdmin" class="instance-icon" size="20" title="Force re-upload all data to D-Track (re-submits every project and re-analyses — heavy)" @click="forceReuploadDtrack"><CloudUpload /></n-icon>
                                             </template>
                                             <n-icon v-if="card.id === 'BEAR'" class="instance-icon" size="20" title="Edit BEAR Integration" @click="openBearEditModal"><EditIcon /></n-icon>
-                                            <n-icon v-if="card.id === 'VULNCHECK'" class="instance-icon" size="20" title="Replace VulnCheck API token" @click="openVulncheckModal"><EditIcon /></n-icon>
+                                            <n-icon v-if="card.id === 'VULNCHECK_KEV'" class="instance-icon" size="20" title="Replace VulnCheck API token" @click="openVulncheckModal"><EditIcon /></n-icon>
                                             <n-icon
                                                 class="instance-icon danger"
                                                 size="20"
                                                 :title="`Delete ${card.name} integration`"
-                                                @click="card.id === 'BEAR' ? deleteBearIntegration() : card.id === 'VULNCHECK' ? deleteVulncheckToken() : onDeleteBaseInstance(card)"
+                                                @click="onDeleteSingleInstance(card)"
                                             ><Trash /></n-icon>
                                         </div>
                                     </div>
@@ -492,14 +492,14 @@
             </n-card>
         </n-modal>
 
-        <!-- VulnCheck KEV token (instance-level, global admin) -->
+        <!-- VulnCheck KEV token (per-org, ORG_ADMIN) -->
         <n-modal v-model:show="showVulncheckModal" preset="dialog" :show-icon="false">
-            <n-card style="width: 600px" size="huge" :title="vulncheckConfigured ? 'Replace VulnCheck API token' : 'Configure VulnCheck KEV'" :bordered="false" role="dialog" aria-modal="true">
+            <n-card style="width: 600px" size="huge" :title="isVulnCheckKevConfigured ? 'Replace VulnCheck API token' : 'Configure VulnCheck KEV'" :bordered="false" role="dialog" aria-modal="true">
                 <n-form>
                     <div class="muted-12" style="margin-bottom: 12px">
-                        Paste a VulnCheck API token to enable the VulnCheck Known Exploited Vulnerabilities catalog as a KEV source. Get a free token at
+                        Paste a VulnCheck API token to enable the VulnCheck Known Exploited Vulnerabilities catalog as a per-org KEV source. Get a free token at
                         <a href="https://vulncheck.com" target="_blank" rel="noopener noreferrer">vulncheck.com</a>.
-                        The token is stored encrypted and applies to the whole instance.
+                        The token is stored encrypted on this organization's integration row.
                     </div>
                     <n-form-item label="VulnCheck API token">
                         <n-input type="password" v-model:value="vulncheckForm.token" show-password-on="click" placeholder="vulncheck_..." />
@@ -687,7 +687,6 @@ const notify = (type: NotificationType, title: string, content: string) => {
 const showCiFeatures = computed(() => props.installationType !== 'OSS')
 const orguuid = computed(() => props.orguuid)
 const isOrgAdmin = computed(() => props.isOrgAdmin)
-const isGlobalAdmin = computed(() => props.isGlobalAdmin)
 const isWritable = computed(() => props.isWritable)
 
 // ---- Sub-tab state, URL-synced ---------------------------------------------
@@ -704,7 +703,6 @@ async function switchSubTab(t: SubTab) {
 const configuredIntegrations: Ref<string[]> = ref([])
 const ciIntegrations: Ref<any[]> = ref([])
 const bearIntegration: Ref<any> = ref(null)
-const vulncheckConfigured = ref(false)
 
 const createIntegrationObject: Ref<any> = ref({
     org: orguuid.value,
@@ -808,7 +806,7 @@ function emailRecipientsSummary(ch: ChannelCatalogRow): string {
 // when @vicons doesn't have a brand icon for the kind.
 type Category = 'messaging' | 'ci' | 'security'
 interface CardConfig {
-    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'WEBHOOK' | 'SENTINEL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR' | 'VULNCHECK'
+    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'WEBHOOK' | 'SENTINEL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR' | 'CISA_KEV' | 'VULNCHECK_KEV'
     name: string
     vendor: string
     category: Category
@@ -820,9 +818,6 @@ interface CardConfig {
     // Pro-only kinds still show in the OSS catalog, but with a "Pro"
     // pill and a disabled Add button instead of being hidden.
     proOnly?: boolean
-    // Instance-level config (an encrypted key on SystemInfo, not an
-    // org integration). Hidden from non-global-admins entirely.
-    globalAdminOnly?: boolean
 }
 
 const CARDS: CardConfig[] = [
@@ -840,7 +835,8 @@ const CARDS: CardConfig[] = [
     // Security & Compliance
     { id: 'DEPENDENCYTRACK', name: 'Dependency-Track', vendor: 'OWASP', category: 'security', description: 'Push SBOMs and pull vulnerability + policy findings.', logoBg: '#1B4E72', logoMark: 'DT', multiInstance: false },
     { id: 'BEAR', name: 'BEAR', vendor: 'Reliza', category: 'security', description: 'BOM enrichment service.', logoBg: '#22332B', logoMark: 'BR', multiInstance: false },
-    { id: 'VULNCHECK', name: 'VulnCheck KEV', vendor: 'VulnCheck', category: 'security', description: 'Add VulnCheck\'s Known Exploited Vulnerabilities catalog (a CISA-plus KEV source) as a signal. Requires a free VulnCheck API token, configured once for the whole instance.', logoBg: '#5B2A86', logoMark: 'VC', multiInstance: false, globalAdminOnly: true }
+    { id: 'CISA_KEV', name: 'CISA KEV', vendor: 'CISA', category: 'security', description: 'CISA Known Exploited Vulnerabilities catalog. Public feed, no credential needed. Enabled by default; toggle off to stop syncing.', logoBg: '#0B5394', logoMark: 'CK', multiInstance: false },
+    { id: 'VULNCHECK_KEV', name: 'VulnCheck KEV', vendor: 'VulnCheck', category: 'security', description: 'Add VulnCheck\'s Known Exploited Vulnerabilities catalog (a CISA-plus KEV source) as a per-org signal. Requires a free VulnCheck API token (per org).', logoBg: '#5B2A86', logoMark: 'VC', multiInstance: false }
 ]
 
 const SECTIONS = [
@@ -852,7 +848,7 @@ const SECTIONS = [
 const visibleSections = computed(() => {
     return SECTIONS
         .filter(s => s.id !== 'ci' || showCiFeatures.value)
-        .map(s => ({ ...s, cards: CARDS.filter(c => c.category === s.id && (!c.globalAdminOnly || isGlobalAdmin.value)) }))
+        .map(s => ({ ...s, cards: CARDS.filter(c => c.category === s.id) }))
         .filter(s => s.cards.length > 0)
 })
 
@@ -866,12 +862,18 @@ function channelRowsForCard(card: CardConfig): ChannelCatalogRow[] {
 }
 
 function isCardConfigured(card: CardConfig): boolean {
-    if (card.id === 'VULNCHECK') return vulncheckConfigured.value
+    // KEV cards: a configuredBaseIntegrations row in enabled state means
+    // "active". CISA is default-on (migration backfills every org), so it
+    // is normally true. VulnCheck flips true once setVulnCheckKevTokenForOrg
+    // saves a token + creates / enables the per-org integration row.
     if (card.id === 'BEAR') return !!(bearIntegration.value && bearIntegration.value.configured)
     if (isChannelCard(card)) return channelRowsForCard(card).length > 0
     if (card.multiInstance) return ciInstancesForCard(card).length > 0
     return configuredIntegrations.value.includes(card.id)
 }
+
+// Convenience derived flag — used by the VulnCheck modal title (replace vs configure).
+const isVulnCheckKevConfigured = computed(() => configuredIntegrations.value.includes('VULNCHECK_KEV'))
 
 function ciInstancesForCard(card: CardConfig): any[] {
     return ciIntegrations.value.filter((i: any) => i.type === card.id)
@@ -940,7 +942,8 @@ function openAddForCard(card: CardConfig) {
     if (card.id === 'MSTEAMS') { showMsteamsModal.value = true; return }
     if (card.id === 'DEPENDENCYTRACK') { showDtModal.value = true; return }
     if (card.id === 'BEAR') { openBearAddModal(); return }
-    if (card.id === 'VULNCHECK') { openVulncheckModal(); return }
+    if (card.id === 'CISA_KEV') { confirmToggleCisaKev(); return }
+    if (card.id === 'VULNCHECK_KEV') { openVulncheckModal(); return }
     // CI types
     resetCreateIntegrationObject()
     createIntegrationObject.value.type = card.id
@@ -1196,7 +1199,11 @@ async function deleteBearIntegration() {
     }
 }
 
-// ---- VulnCheck KEV token (instance-level, GLOBAL_ADMIN) ---------------------
+// ---- KEV catalog sources (per-org, ORG_ADMIN) -------------------------------
+// VulnCheck KEV is a token-bearing integration: setVulnCheckKevTokenForOrg
+// creates / updates the per-org row; passing an empty string clears the token
+// and disables the row (backend contract). CISA KEV needs no credential, so
+// it uses the simpler enable/disableKevSource mutations.
 function openVulncheckModal() {
     vulncheckForm.value = { token: '' }
     showVulncheckModal.value = true
@@ -1206,13 +1213,15 @@ async function onSetVulncheckToken() {
     try {
         await graphqlClient.mutate({
             mutation: gql`
-                mutation setVulnCheckKevToken($token: String) { setVulnCheckKevToken(token: $token) }`,
-            variables: { token: vulncheckForm.value.token }
+                mutation setVulnCheckKevTokenForOrg($org: ID!, $token: String) {
+                    setVulnCheckKevTokenForOrg(orgUuid: $org, token: $token)
+                }`,
+            variables: { org: orguuid.value, token: vulncheckForm.value.token }
         })
-        vulncheckConfigured.value = true
         showVulncheckModal.value = false
         vulncheckForm.value.token = ''
-        notify('success', 'Success', 'VulnCheck KEV token saved.')
+        await loadConfiguredIntegrations(false)
+        notify('success', 'Success', 'VulnCheck KEV token saved. First sync will run shortly.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
@@ -1221,35 +1230,68 @@ async function onSetVulncheckToken() {
 async function deleteVulncheckToken() {
     const confirm = await Swal.fire({
         title: 'Remove VulnCheck KEV token?',
-        text: 'This disables the VulnCheck KEV source for the whole instance.',
+        text: 'This disables the VulnCheck KEV source for this organization.',
         icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes, remove it'
     })
     if (!confirm.isConfirmed) return
     try {
         await graphqlClient.mutate({
             mutation: gql`
-                mutation setVulnCheckKevToken($token: String) { setVulnCheckKevToken(token: $token) }`,
-            variables: { token: '' }
+                mutation setVulnCheckKevTokenForOrg($org: ID!, $token: String) {
+                    setVulnCheckKevTokenForOrg(orgUuid: $org, token: $token)
+                }`,
+            variables: { org: orguuid.value, token: '' }
         })
-        vulncheckConfigured.value = false
+        await loadConfiguredIntegrations(false)
         notify('success', 'Deleted', 'VulnCheck KEV token removed.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
 }
 
-async function loadVulncheckStatus() {
-    if (!isGlobalAdmin.value) return
+async function confirmToggleCisaKev() {
+    const enabled = configuredIntegrations.value.includes('CISA_KEV')
+    const confirm = await Swal.fire({
+        title: enabled ? 'Disable CISA KEV for this organization?' : 'Enable CISA KEV for this organization?',
+        text: enabled
+            ? 'KEV assertions sourced from CISA will stop syncing. Existing data is removed.'
+            : 'CISA KEV will start syncing for this organization. The first sync runs in the background.',
+        icon: 'question', showCancelButton: true,
+        confirmButtonText: enabled ? 'Disable' : 'Enable'
+    })
+    if (!confirm.isConfirmed) return
+    await toggleKevSource('CISA_KEV', !enabled)
+}
+
+async function toggleKevSource(source: 'CISA_KEV' | 'VULNCHECK_KEV', enable: boolean) {
     try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query getSystemInfoIsSet { getSystemInfoIsSet { vulncheckKevConfigured } }`,
-            fetchPolicy: 'network-only'
+        await graphqlClient.mutate({
+            mutation: enable
+                ? gql`
+                    mutation enableKevSource($org: ID!, $source: IntegrationType!) {
+                        enableKevSource(orgUuid: $org, source: $source)
+                    }`
+                : gql`
+                    mutation disableKevSource($org: ID!, $source: IntegrationType!) {
+                        disableKevSource(orgUuid: $org, source: $source)
+                    }`,
+            variables: { org: orguuid.value, source }
         })
-        vulncheckConfigured.value = !!resp.data?.getSystemInfoIsSet?.vulncheckKevConfigured
-    } catch (err) {
-        console.error(err)
+        await loadConfiguredIntegrations(false)
+        notify('success', enable ? 'Enabled' : 'Disabled', `${source === 'CISA_KEV' ? 'CISA KEV' : 'VulnCheck KEV'} ${enable ? 'enabled' : 'disabled'} for this organization.`)
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
+}
+
+// Trash-icon dispatcher for the single-instance row. Routes BEAR + the two
+// KEV cards through their dedicated mutations; everything else falls back to
+// the generic deleteBaseIntegration path.
+function onDeleteSingleInstance(card: CardConfig) {
+    if (card.id === 'BEAR') return deleteBearIntegration()
+    if (card.id === 'VULNCHECK_KEV') return deleteVulncheckToken()
+    if (card.id === 'CISA_KEV') return confirmToggleCisaKev()
+    return onDeleteBaseInstance(card)
 }
 
 // ---- Email channel CRUD -----------------------------------------------------
@@ -1732,8 +1774,7 @@ onMounted(async () => {
         loadConfiguredIntegrations(true),
         loadCiIntegrations(true),
         loadNotificationChannels(true),
-        loadBearIntegration(),
-        loadVulncheckStatus()
+        loadBearIntegration()
     ])
 })
 
@@ -1742,8 +1783,7 @@ watch(() => props.orguuid, async () => {
         loadConfiguredIntegrations(false),
         loadCiIntegrations(false),
         loadNotificationChannels(false),
-        loadBearIntegration(),
-        loadVulncheckStatus()
+        loadBearIntegration()
     ])
 })
 </script>
