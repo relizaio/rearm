@@ -112,7 +112,7 @@ spec:
               protocol: TCP
           # /api/healthCheck runs a real DB query (fetches the external-proj
           # org), so it returns OK only once Spring is up AND the DB is
-          # reachable — exactly what startup/readiness should mean.
+          # reachable â€” exactly what startup/readiness should mean.
           # startupProbe covers slow boot (Flyway etc.); while it runs both
           # readiness and liveness are suppressed.
           startupProbe:
