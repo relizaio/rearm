@@ -124,22 +124,10 @@ public class SystemInfoService {
 		saveSystemInfo(sysInfo, sd);
 	}
 	
-	public String getVulncheckKevToken(){
-		var sysInfo = findSystemInfo();
-		String encToken = sysInfo.getVulncheckKevToken();
-		String decToken = null;
-		if(StringUtils.isNotEmpty(encToken))
-			decToken = encryptionService.decrypt(encToken);
-		return decToken;
-	}
-
-	@Transactional
-	public void setVulncheckKevToken(String token){
-		SystemInfo sysInfo =  this.repository.findSystemInfo();
-		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
-		sd.setVulncheckKevToken(StringUtils.isNotEmpty(token) ? encryptionService.encrypt(token) : null);
-		saveSystemInfo(sysInfo, sd);
-	}
+	// VulnCheck token getter/setter on SystemInfo removed in V54 KEV per-org
+	// refactor; per-org tokens now live on VULNCHECK_KEV Integration rows
+	// (encrypted via the same EncryptionService, looked up by the per-org
+	// KevCatalogSyncService.syncOrgSourceAsync entry point).
 
 	@Transactional
 	public void setDefaultOrg (UUID defaultOrg) {
@@ -208,12 +196,13 @@ public class SystemInfoService {
 		return findSystemInfo().isSystemSealed();
 	}
 
-	public static record SystemInfoDto (Boolean emailDetailsSet, UUID defaultOrg, Boolean vulncheckKevConfigured) {}
+	// vulncheckKevConfigured dropped from SystemInfoDto in V54 (per-org now;
+	// surfaced through the org's Integration catalog cards instead).
+	public static record SystemInfoDto (Boolean emailDetailsSet, UUID defaultOrg) {}
 
 	public SystemInfoDto getSystemInfoIsSet(){
 		var sysInfo = findSystemInfo();
-		return new SystemInfoDto(sysInfo.getEmailSendType() != EmailSendType.UNSET, sysInfo.getDefaultOrg(),
-				StringUtils.isNotEmpty(sysInfo.getVulncheckKevToken()));
+		return new SystemInfoDto(sysInfo.getEmailSendType() != EmailSendType.UNSET, sysInfo.getDefaultOrg());
 	}
 	
 	public SystemInfoData getSystemInfoData() {

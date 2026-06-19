@@ -69,16 +69,10 @@ public class AdminDataFetcher {
 		return systemInfoService.getSystemInfoIsSet();
 	}
 	
-	@Transactional
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "setVulnCheckKevToken")
-	public Boolean setVulnCheckKevToken(@InputArgument("token") String token) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
-		systemInfoService.setVulncheckKevToken(token);
-		return true;
-	}
+	// Global setVulnCheckKevToken mutation removed in V54 KEV per-org
+	// refactor. Use the org-scoped IntegrationDataFetcher.setVulnCheckKevToken
+	// (org-admin scope) instead — the token now lives on a per-org
+	// VULNCHECK_KEV Integration row.
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "finalizeAllReleases")

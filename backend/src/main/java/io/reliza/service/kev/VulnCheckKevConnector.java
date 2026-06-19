@@ -20,15 +20,16 @@ import io.reliza.common.Utils;
 import io.reliza.model.KevAssertionData;
 import io.reliza.model.KevRansomwareStatus;
 import io.reliza.model.KevSource;
-import io.reliza.service.SystemInfoService;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * VulnCheck Community KEV connector: a CISA-plus source (~3x the CISA
  * catalog) reached via the v3 index API with a Bearer token. Token-gated —
- * with no token configured on {@link SystemInfoService} the connector is a
- * no-op, so the source is simply absent until a global admin configures a
- * (free, registration-only) token via the Integrations admin card.
+ * the per-org token is the {@code credential} argument to
+ * {@link #fetchCatalog(String)}; an absent or blank credential turns the
+ * connector into a no-op for that org, so the source is simply absent
+ * until an org admin configures a (free, registration-only) token through
+ * the Integrations catalog card.
  *
  * <p>The API is paginated and each entry's {@code cve} is an ARRAY (one
  * entry may cover several CVEs), so we page through and emit one
@@ -48,16 +49,13 @@ public class VulnCheckKevConnector implements KevSourceConnector {
 	// Runaway guard; with PAGE_LIMIT=1000 the ~5k-entry catalog is ~5 pages.
 	private static final int MAX_PAGES = 50;
 
-	private final SystemInfoService systemInfoService;
 	private final String baseUrl;
 	// Non-final so tests can substitute an ExchangeFunction-stubbed client.
 	private WebClient webClient;
 
 	public VulnCheckKevConnector(
-			SystemInfoService systemInfoService,
 			@Value("${relizaprops.vulncheckKevUrl:https://api.vulncheck.com/v3/index/vulncheck-kev}")
 			String baseUrl) {
-		this.systemInfoService = systemInfoService;
 		this.baseUrl = baseUrl;
 		ExchangeStrategies strategies = ExchangeStrategies.builder()
 				.codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(32 * 1024 * 1024))
@@ -85,12 +83,12 @@ public class VulnCheckKevConnector implements KevSourceConnector {
 	}
 
 	@Override
-	public List<KevAssertionData> fetchCatalog() {
-		String token = systemInfoService.getVulncheckKevToken();
-		if (StringUtils.isBlank(token)) {
-			log.debug("VulnCheck KEV token not configured — VulnCheck source inactive");
+	public List<KevAssertionData> fetchCatalog(String credential) {
+		if (StringUtils.isBlank(credential)) {
+			log.debug("VulnCheck KEV credential not provided — VulnCheck source inactive for this org");
 			return List.of();
 		}
+		String token = credential;
 		List<KevAssertionData> all = new ArrayList<>();
 		int page = 1;
 		int totalPages = 1;

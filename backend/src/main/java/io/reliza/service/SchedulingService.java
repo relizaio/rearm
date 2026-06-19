@@ -395,6 +395,13 @@ public class SchedulingService {
      * first reconcile out of pod startup (and out of {@code @SpringBootTest}
      * context spins, which run these schedulers). Both knobs are properties
      * so a deployment can shorten them for verification without a code change.
+     *
+     * <p>CE counterpart of the Pro {@code SaasSchedulingService.syncKevCatalog}
+     * (saas/ is not mirrored to CE). Per the V54 per-org refactor, the shared
+     * {@code KevCatalogSyncService.syncCatalog()} now iterates every org with
+     * an enabled KEV integration; CE's singleton org gets its CISA_KEV row from
+     * the V54 backfill. Holds the {@code SYNC_KEV_CATALOG} advisory lock as the
+     * sync's caller contract requires.
      */
     @Scheduled(
             fixedDelayString = "${relizaprops.kevSyncInterval:PT24H}",

@@ -3,19 +3,10 @@
 */
 package io.reliza.ws;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 
-import org.dataloader.BatchLoader;
-import org.dataloader.DataLoader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,19 +15,15 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
-import com.netflix.graphql.dgs.DgsDataLoader;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.dto.ChangelogRecords.ReleaseVulnerabilityInfo;
 import io.reliza.dto.KevRecordDetails;
-import io.reliza.dto.VulnerabilityWithAttribution;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
-import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
@@ -47,21 +34,20 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * GraphQL surface for KEV data.
  *
- * <p>Child resolvers add {@code knownExploited} to the three vulnerability
+ * <p>Child resolvers serve {@code knownExploited} on the three vulnerability
  * read types ({@code Vulnerability}, {@code ReleaseVulnerabilityInfo},
- * {@code VulnerabilityWithAttribution}). They ride the parent query's
- * authorization — the parent fetchers already org-scope their results, and
- * KEV listing itself is public data, so no per-field auth check is needed.
+ * {@code VulnerabilityWithAttribution}) from the value stamped on the
+ * parent record by {@code ReleaseMetricsComputeService}. In V54 KEV moved
+ * to per-org assertions and the parent assembly paths don't carry an
+ * orgUuid into the field resolver, so a per-request fresh-probe is no
+ * longer feasible at this layer; metrics compute runs immediately after
+ * a per-org KEV sync via {@code KevCatalogSyncService.triggerKevReGate},
+ * so the stamped value stays close to fresh.
  *
- * <p>A release page renders hundreds of vulnerability rows; the
- * {@code kevListedLoader} batch loader collapses them into one
- * {@code IN}-probe against {@code kev_assertions} per request instead of a
- * query per row. Rows with no CVE-shaped id (pure GHSA/OSV findings)
- * short-circuit to {@code false} without touching the loader.
- *
- * <p>{@code kevRecordDetails} (org-authorized, READ) returns the per-source
- * assertion detail for the UI's CVE-details surface; null when no source
- * has ever listed the CVE.
+ * <p>{@code kevRecordDetails(orgUuid, cveId)} (org-authorized, READ)
+ * returns the per-source assertion detail for the UI's CVE-details
+ * surface, scoped to one org; null when no source in that org has ever
+ * listed the CVE.
  */
 @Slf4j
 @DgsComponent
@@ -79,77 +65,30 @@ public class KevDataFetcher {
 	@Autowired
 	private KevAssertionService kevAssertionService;
 
-	/**
-	 * Batch key: the candidate CVE ids (primary + aliases, already
-	 * normalized) of one vulnerability row. A record so identical rows across
-	 * the page dedupe in the loader cache.
-	 */
-	public record KevProbeKey(Set<String> cveIds) {}
-
-	@DgsDataLoader(name = "kevListedLoader")
-	public class KevListedBatchLoader implements BatchLoader<KevProbeKey, Boolean> {
-
-		@Autowired
-		private KevAssertionService dataLoaderKevAssertionService;
-
-		@Override
-		public CompletionStage<List<Boolean>> load(List<KevProbeKey> keys) {
-			Set<String> union = new HashSet<>();
-			for (KevProbeKey key : keys) union.addAll(key.cveIds());
-			Set<String> listed;
-			try {
-				listed = dataLoaderKevAssertionService.filterKnownExploited(union);
-			} catch (Exception e) {
-				log.error("Error probing KEV assertions for {} candidate ids", union.size(), e);
-				listed = Set.of();
-			}
-			List<Boolean> results = new ArrayList<>(keys.size());
-			for (KevProbeKey key : keys) {
-				boolean hit = false;
-				for (String id : key.cveIds()) {
-					if (listed.contains(id)) {
-						hit = true;
-						break;
-					}
-				}
-				results.add(hit);
-			}
-			return CompletableFuture.completedFuture(results);
-		}
-	}
-
 	@DgsData(parentType = "Vulnerability", field = "knownExploited")
-	public CompletableFuture<Boolean> knownExploitedOfVulnerability(DgsDataFetchingEnvironment dfe) {
+	public Boolean knownExploitedOfVulnerability(DgsDataFetchingEnvironment dfe) {
 		VulnerabilityDto vuln = dfe.getSource();
-		return resolveKnownExploited(dfe, vuln.vulnId(), vuln.aliases());
+		return Boolean.TRUE.equals(vuln.knownExploited());
 	}
 
+	// V54 NOTE: ReleaseVulnerabilityInfo (changelog) and
+	// VulnerabilityWithAttribution (attribution) don't carry a stamped
+	// knownExploited; a fresh per-org probe at this layer would need
+	// orgUuid threaded through their assembly path. Followup ticket:
+	// thread orgUuid into the changelog + attribution assemblers and
+	// stamp knownExploited at construction (same pattern as
+	// VulnerabilityDto in ReleaseMetricsComputeService.recomputeKevFlags).
+	// For now, those surfaces show knownExploited = false; the primary
+	// release-findings + vulnerability-analysis surfaces (which DO go
+	// through metrics compute) remain correct.
 	@DgsData(parentType = "ReleaseVulnerabilityInfo", field = "knownExploited")
-	public CompletableFuture<Boolean> knownExploitedOfReleaseVulnerabilityInfo(DgsDataFetchingEnvironment dfe) {
-		ReleaseVulnerabilityInfo vuln = dfe.getSource();
-		return resolveKnownExploited(dfe, vuln.vulnId(), vuln.aliases());
+	public Boolean knownExploitedOfReleaseVulnerabilityInfo(DgsDataFetchingEnvironment dfe) {
+		return Boolean.FALSE;
 	}
 
 	@DgsData(parentType = "VulnerabilityWithAttribution", field = "knownExploited")
-	public CompletableFuture<Boolean> knownExploitedOfVulnerabilityWithAttribution(DgsDataFetchingEnvironment dfe) {
-		VulnerabilityWithAttribution vuln = dfe.getSource();
-		return resolveKnownExploited(dfe, vuln.vulnId(), vuln.aliases());
-	}
-
-	private CompletableFuture<Boolean> resolveKnownExploited(DgsDataFetchingEnvironment dfe,
-			String vulnId, Set<VulnerabilityAliasDto> aliases) {
-		Set<String> candidates = new LinkedHashSet<>();
-		String primary = KevAssertionService.normalizeCveId(vulnId);
-		if (primary != null) candidates.add(primary);
-		if (aliases != null) {
-			for (VulnerabilityAliasDto alias : aliases) {
-				String normalized = alias != null ? KevAssertionService.normalizeCveId(alias.aliasId()) : null;
-				if (normalized != null) candidates.add(normalized);
-			}
-		}
-		if (candidates.isEmpty()) return CompletableFuture.completedFuture(Boolean.FALSE);
-		DataLoader<KevProbeKey, Boolean> dataLoader = dfe.getDataLoader("kevListedLoader");
-		return dataLoader.load(new KevProbeKey(candidates));
+	public Boolean knownExploitedOfVulnerabilityWithAttribution(DgsDataFetchingEnvironment dfe) {
+		return Boolean.FALSE;
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -167,6 +106,6 @@ public class KevDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(
 				oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION,
 				orgUuid, Collections.singletonList(ro), CallType.READ);
-		return kevAssertionService.getKevDetails(cveId).orElse(null);
+		return kevAssertionService.getKevDetails(orgUuid, cveId).orElse(null);
 	}
 }

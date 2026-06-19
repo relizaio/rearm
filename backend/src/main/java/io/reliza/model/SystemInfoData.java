@@ -54,7 +54,8 @@ public class SystemInfoData extends RelizaDataParent{
 	private UUID defaultOrg;
 	private ZonedDateTime lastDtrackSync;
 	private AzureCreds azureCredentials;
-	private String vulncheckKevToken;
+	// vulncheckKevToken (instance-global) removed in V54 KEV per-org refactor;
+	// per-org VulnCheck tokens now live on VULNCHECK_KEV Integration rows.
 	private String license;
 	private ZonedDateTime licenseStartDate;
 	private ZonedDateTime licenseEndDate;

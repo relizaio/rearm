@@ -1098,8 +1098,22 @@ class VariableQueries {
 	protected static final String LIST_INTEGRATIONS_BY_ORG = "select * from rearm.integrations a where a.record_data->>'org' = :orgUuidAsString";
 
 	protected static final String LIST_ORGS_WITH_DTRACK_INTEGRATION = """
-			select distinct a.record_data->>'org' as org_uuid from rearm.integrations a 
+			select distinct a.record_data->>'org' as org_uuid from rearm.integrations a
 			where a.record_data->>'type' = 'DEPENDENCYTRACK'
+			and a.record_data->>'identifier' = 'base'
+		""";
+
+	/**
+	 * Per-org KEV sync orchestration (V54): list enabled integrations of one
+	 * type across all orgs. KevCatalogSyncService iterates the result and
+	 * dispatches one fetch + reconcile per row (per-org credential resolved
+	 * from the integration's encrypted secret for VULNCHECK_KEV; ignored for
+	 * CISA_KEV's public feed).
+	 */
+	protected static final String LIST_ENABLED_INTEGRATIONS_BY_TYPE = """
+			select * from rearm.integrations a
+			where a.record_data->>'type' = :typeAsString
+			and coalesce(a.record_data->>'isEnabled', 'true') = 'true'
 			and a.record_data->>'identifier' = 'base'
 		""";
 

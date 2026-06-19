@@ -121,8 +121,9 @@ public class ReleaseMetricsComputeService {
 			// Stamp KEV membership onto each finding, then re-derive kevCount.
 			// Done after all merges + vuln-analysis so the probe sees the final
 			// alias-organized vulnerabilityDetails. This is the authoritative
-			// KEV stamp for the persisted metrics.
-			stampKnownExploited(rmd);
+			// KEV stamp for the persisted metrics. orgUuid scopes the probe to
+			// this org's kev_assertions (V54 per-org refactor).
+			stampKnownExploited(rd.getOrg(), rmd);
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
 			// Merge artifact firstScanned into whatever rollUpProductReleaseMetrics contributed.
@@ -216,7 +217,7 @@ public class ReleaseMetricsComputeService {
 			ReleaseMetricsDto originalMetrics = rd.getMetrics();
 			ReleaseMetricsDto clonedMetrics = originalMetrics.clone();
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, clonedMetrics);
-			stampKnownExploited(clonedMetrics);
+			stampKnownExploited(rd.getOrg(), clonedMetrics);
 			if (!clonedMetrics.equals(originalMetrics)) {
 				rd.setMetrics(clonedMetrics);
 				sharedReleaseService.saveReleaseMetrics(r, clonedMetrics);
@@ -244,7 +245,7 @@ public class ReleaseMetricsComputeService {
 	 * with only GHSA/OSV findings), the probe is skipped entirely — every
 	 * finding is stamped {@code FALSE} without a DB call.
 	 */
-	private void stampKnownExploited(ReleaseMetricsDto rmd) {
+	private void stampKnownExploited(java.util.UUID orgUuid, ReleaseMetricsDto rmd) {
 		List<VulnerabilityDto> findings = rmd.getVulnerabilityDetails();
 		if (findings == null || findings.isEmpty()) {
 			rmd.computeMetricsFromFacts();
@@ -255,11 +256,12 @@ public class ReleaseMetricsComputeService {
 			allCandidates.addAll(candidateCveIds(vuln));
 		}
 		Set<String> listed;
-		if (allCandidates.isEmpty()) {
-			// No CVE-shaped ids anywhere: nothing can match the KEV catalog.
+		if (orgUuid == null || allCandidates.isEmpty()) {
+			// No org context or no CVE-shaped ids: nothing can match the
+			// per-org KEV catalog.
 			listed = Set.of();
 		} else {
-			listed = kevAssertionService.filterKnownExploited(allCandidates);
+			listed = kevAssertionService.filterKnownExploited(orgUuid, allCandidates);
 		}
 		List<VulnerabilityDto> stamped = new ArrayList<>(findings.size());
 		for (VulnerabilityDto vuln : findings) {

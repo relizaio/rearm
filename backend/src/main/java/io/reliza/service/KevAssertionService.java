@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,17 +29,17 @@ import io.reliza.repositories.KevAssertionRepository;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Read + write surface for the global {@link KevAssertion} store. Reads
- * serve the {@code knownExploited} GraphQL surface and the per-source
- * detail view; the single write path is {@link #applyCatalog}, called by
- * {@code KevCatalogSyncService} once per source with a freshly fetched
- * full catalog.
+ * Read + write surface for the per-org {@link KevAssertion} store (V54
+ * refactor). Reads serve the {@code knownExploited} GraphQL surface and
+ * the per-source detail view, both scoped to one org; the single write
+ * path is {@link #applyCatalog}, called by {@code KevCatalogSyncService}
+ * once per (org, source) with a freshly fetched full catalog.
  *
- * <p>Soft delete: a source dropping a CVE marks the row revoked, never
- * deletes it. Read surfaces still treat any asserted CVE (even
- * all-revoked) as known-exploited — the membership probe deliberately
- * ignores {@code revoked_date} — so a truncated or tampered feed cannot
- * blank the KEV list.
+ * <p>Soft delete: a source dropping a CVE in this org marks the row
+ * revoked, never deletes it. Read surfaces still treat any asserted CVE
+ * (even all-revoked within the org) as known-exploited — the membership
+ * probe deliberately ignores {@code revoked_date} — so a truncated or
+ * tampered feed cannot blank an org's KEV list.
  */
 @Slf4j
 @Service
@@ -47,11 +48,13 @@ public class KevAssertionService {
 	@Autowired
 	private KevAssertionRepository repository;
 
-	/** The full per-source detail for one CVE; empty when no source ever asserted it. */
-	public Optional<KevRecordDetails> getKevDetails(String cveId) {
+	/** The full per-source detail for one CVE in one org; empty when no
+	 *  source in this org ever asserted it. */
+	public Optional<KevRecordDetails> getKevDetails(UUID orgUuid, String cveId) {
+		if (orgUuid == null) return Optional.empty();
 		String normalized = normalizeCveId(cveId);
 		if (normalized == null) return Optional.empty();
-		List<KevAssertion> rows = repository.findByCveIdOrderBySourceAsc(normalized);
+		List<KevAssertion> rows = repository.findByOrgIdAndCveIdOrderBySourceAsc(orgUuid, normalized);
 		if (rows.isEmpty()) return Optional.empty();
 
 		List<KevSourceAssertion> assertions = new ArrayList<>(rows.size());
@@ -80,28 +83,33 @@ public class KevAssertionService {
 	}
 
 	/**
-	 * Bulk membership probe: of the candidate ids passed in, which are
-	 * KEV-listed by any source? Non-CVE ids (GHSA etc.) are filtered out
-	 * before the query — assertions are keyed by CVE id only. One round trip.
+	 * Bulk membership probe within one org: of the candidate ids passed in,
+	 * which are KEV-listed by any of THIS ORG's configured sources? Non-CVE
+	 * ids (GHSA etc.) are filtered out before the query — assertions are
+	 * keyed by CVE id only. One round trip.
 	 */
-	public Set<String> filterKnownExploited(Collection<String> candidateIds) {
-		if (candidateIds == null || candidateIds.isEmpty()) return Set.of();
+	public Set<String> filterKnownExploited(UUID orgUuid, Collection<String> candidateIds) {
+		if (orgUuid == null || candidateIds == null || candidateIds.isEmpty()) return Set.of();
 		Set<String> cveIds = new HashSet<>();
 		for (String id : candidateIds) {
 			String normalized = normalizeCveId(id);
 			if (normalized != null) cveIds.add(normalized);
 		}
 		if (cveIds.isEmpty()) return Set.of();
-		return new HashSet<>(repository.findExistingCveIds(cveIds));
+		return new HashSet<>(repository.findExistingCveIdsForOrg(orgUuid, cveIds));
 	}
 
-	/** True when any of the candidate ids is KEV-listed. */
-	public boolean isAnyKnownExploited(Collection<String> candidateIds) {
-		return !filterKnownExploited(candidateIds).isEmpty();
+	/** True when any of the candidate ids is KEV-listed in this org. */
+	public boolean isAnyKnownExploited(UUID orgUuid, Collection<String> candidateIds) {
+		return !filterKnownExploited(orgUuid, candidateIds).isEmpty();
 	}
 
-	public long countRecords() {
-		return repository.count();
+	/** Count of assertion rows in one org — drives the bootstrap-silent
+	 *  decision in {@code KevCatalogSyncService}: an org with zero rows is
+	 *  on its first sync and skips the KEV_ADDED event pass. */
+	public long countRecordsForOrg(UUID orgUuid) {
+		if (orgUuid == null) return 0L;
+		return repository.countByOrgId(orgUuid);
 	}
 
 	/**
@@ -116,29 +124,30 @@ public class KevAssertionService {
 	}
 
 	/**
-	 * Outcome of one source's catalog reconciliation. {@code newlyKevCveIds}
-	 * are CVEs that had no prior assertion from any source — the only ones
-	 * that drive KEV_ADDED events (once KEV, always KEV: re-adds and extra
-	 * sources don't re-notify).
+	 * Outcome of one (org, source) catalog reconciliation. {@code newlyKevCveIds}
+	 * are CVEs that had no prior assertion in THIS ORG from any source — the
+	 * only ones that drive KEV_ADDED events (once KEV-in-org, always
+	 * KEV-in-org: re-adds and extra sources within the same org don't re-notify).
 	 */
 	public record KevCatalogApplyOutcome(List<String> newlyKevCveIds, int updated,
 			int revived, int revoked, int total) {}
 
 	/**
-	 * Reconcile one source's full catalog: insert new assertions, rewrite
+	 * Reconcile one (org, source) catalog: insert new assertions, rewrite
 	 * changed ones (JSONB map comparison), un-revoke any that reappeared, and
-	 * soft-delete (stamp {@code revoked_date}) this source's rows that are no
-	 * longer published. The caller guarantees {@code entries} is a complete,
-	 * sanity-checked catalog — an empty or truncated fetch must be rejected
-	 * upstream.
+	 * soft-delete (stamp {@code revoked_date}) this org+source's rows that
+	 * are no longer published. The caller guarantees {@code entries} is a
+	 * complete, sanity-checked catalog — an empty or truncated fetch must
+	 * be rejected upstream.
 	 */
 	@Transactional
-	public KevCatalogApplyOutcome applyCatalog(KevSource source, List<KevAssertionData> entries) {
-		Map<String, KevAssertion> existingForSource = new HashMap<>();
-		for (KevAssertion ka : repository.findBySource(source)) {
-			existingForSource.put(ka.getCveId(), ka);
+	public KevCatalogApplyOutcome applyCatalog(UUID orgUuid, KevSource source, List<KevAssertionData> entries) {
+		if (orgUuid == null) throw new IllegalArgumentException("orgUuid is required");
+		Map<String, KevAssertion> existingForOrgSource = new HashMap<>();
+		for (KevAssertion ka : repository.findByOrgIdAndSource(orgUuid, source)) {
+			existingForOrgSource.put(ka.getCveId(), ka);
 		}
-		Set<String> assertedAnySource = new HashSet<>(repository.findAllDistinctCveIds());
+		Set<String> assertedAnySourceInOrg = new HashSet<>(repository.findAllDistinctCveIdsForOrg(orgUuid));
 
 		List<String> newlyKev = new ArrayList<>();
 		int updated = 0;
@@ -152,16 +161,17 @@ public class KevAssertionService {
 			if (cveId == null || !seen.add(cveId)) continue;
 			entry.setCveId(cveId);
 			Map<String, Object> nextData = entry.toRecordData();
-			KevAssertion existing = existingForSource.get(cveId);
+			KevAssertion existing = existingForOrgSource.get(cveId);
 			if (existing == null) {
 				KevAssertion ka = new KevAssertion();
+				ka.setOrgId(orgUuid);
 				ka.setSource(source);
 				ka.setCveId(cveId);
 				ka.setCreatedDate(now);
 				ka.setLastUpdatedDate(now);
 				ka.setRecordData(nextData);
 				toSave.add(ka);
-				if (!assertedAnySource.contains(cveId)) newlyKev.add(cveId);
+				if (!assertedAnySourceInOrg.contains(cveId)) newlyKev.add(cveId);
 			} else {
 				boolean wasRevoked = existing.getRevokedDate() != null;
 				// Byte-stable map comparison: holds for CISA's flat scalars +
@@ -185,7 +195,7 @@ public class KevAssertionService {
 		if (!toSave.isEmpty()) repository.saveAll(toSave);
 
 		List<KevAssertion> toRevoke = new ArrayList<>();
-		for (KevAssertion existing : existingForSource.values()) {
+		for (KevAssertion existing : existingForOrgSource.values()) {
 			if (!seen.contains(existing.getCveId()) && existing.getRevokedDate() == null) {
 				existing.setRevokedDate(now);
 				existing.setLastUpdatedDate(now);
@@ -195,8 +205,8 @@ public class KevAssertionService {
 		if (!toRevoke.isEmpty()) repository.saveAll(toRevoke);
 
 		if (!newlyKev.isEmpty() || updated > 0 || revived > 0 || !toRevoke.isEmpty()) {
-			log.info("KEV catalog reconciled for {}: {} new, {} updated, {} revived, {} revoked, {} total",
-					source, newlyKev.size(), updated, revived, toRevoke.size(), seen.size());
+			log.info("KEV catalog reconciled for org {} source {}: {} new, {} updated, {} revived, {} revoked, {} total",
+					orgUuid, source, newlyKev.size(), updated, revived, toRevoke.size(), seen.size());
 		}
 		return new KevCatalogApplyOutcome(newlyKev, updated, revived, toRevoke.size(), seen.size());
 	}
