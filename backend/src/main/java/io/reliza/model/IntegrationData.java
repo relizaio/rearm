@@ -49,7 +49,16 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 		// non-destination types (DEPENDENCYTRACK/GITHUB/…) at its gate.
 		EMAIL,
 		WEBHOOK,
-		SENTINEL;
+		SENTINEL,
+		// KEV catalog sources (V54 per-org refactor). CISA_KEV has no
+		// credentials (public feed) and is auto-created enabled per org;
+		// VULNCHECK_KEV stores the per-org VulnCheck API token in
+		// {@link IntegrationData#secret} (encrypted via EncryptionService,
+		// same path as DEPENDENCYTRACK). Sync orchestration in
+		// KevCatalogSyncService iterates enabled integrations of these
+		// two types per org.
+		CISA_KEV,
+		VULNCHECK_KEV;
 
 		private IntegrationType () {}
 	}

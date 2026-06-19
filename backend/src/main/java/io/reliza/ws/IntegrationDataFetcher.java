@@ -43,6 +43,7 @@ import io.reliza.service.RebomService;
 import io.reliza.service.SyntheticSbomService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.UserService;
+import io.reliza.service.kev.KevCatalogSyncService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -69,6 +70,9 @@ public class IntegrationDataFetcher {
 
 	@Autowired
 	private SyntheticSbomService syntheticSbomService;
+
+	@Autowired
+	private KevCatalogSyncService kevCatalogSyncService;
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "configuredBaseIntegrations")
@@ -239,5 +243,83 @@ public class IntegrationDataFetcher {
 		log.info("User {} deleting BEAR integration for organization {}", oud.get().getUuid(), orgUuid);
 		
 		return rebomService.deleteBearIntegration(orgUuid);
+	}
+
+	// --- KEV per-org integration mutations (V54 refactor) ---------------
+	// All three are org-admin scope on the target org. CISA_KEV is created
+	// enabled by the migration backfill + new-org hook, so the UI typically
+	// only toggles enable/disable for CISA. VULNCHECK_KEV is opt-in via
+	// setVulnCheckKevTokenForOrg, which lazily creates the integration row
+	// and fires an immediate async first sync so the org admin sees data
+	// within ~one connector pass instead of waiting for the next scheduler
+	// tick.
+
+	private static void requireKevType(IntegrationType type) throws RelizaException {
+		if (type != IntegrationType.CISA_KEV && type != IntegrationType.VULNCHECK_KEV) {
+			throw new RelizaException("source must be CISA_KEV or VULNCHECK_KEV, was " + type);
+		}
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "enableKevSource")
+	public Boolean enableKevSource(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("source") IntegrationType source) throws RelizaException {
+		requireKevType(source);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
+		integrationService.upsertKevIntegration(orgUuid, source, true, null,
+				WhoUpdated.getWhoUpdated(oud.get()));
+		// Fire an immediate async sync so first enable picks up the catalog
+		// on the next event-loop pass instead of waiting for the next tick.
+		kevCatalogSyncService.syncOrgSourceAsync(orgUuid, source);
+		return true;
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "disableKevSource")
+	public Boolean disableKevSource(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("source") IntegrationType source) throws RelizaException {
+		requireKevType(source);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
+		integrationService.upsertKevIntegration(orgUuid, source, false, null,
+				WhoUpdated.getWhoUpdated(oud.get()));
+		return true;
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setVulnCheckKevTokenForOrg")
+	public Boolean setVulnCheckKevTokenForOrg(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("token") String token) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
+		// Token semantics:
+		//   null     → don't change secret (preserve existing); only ensures the
+		//              integration exists in its current enabled state
+		//   ""       → clear secret; integration stays but VulnCheck won't fetch
+		//   non-empty→ set secret + enable
+		String rawTokenArg = (token == null) ? null : token;
+		boolean enabled = token != null && !token.isEmpty();
+		integrationService.upsertKevIntegration(orgUuid, IntegrationType.VULNCHECK_KEV,
+				enabled, rawTokenArg, WhoUpdated.getWhoUpdated(oud.get()));
+		if (enabled) {
+			kevCatalogSyncService.syncOrgSourceAsync(orgUuid, IntegrationType.VULNCHECK_KEV);
+		}
+		return true;
 	}
 }

@@ -22,18 +22,21 @@ import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 
 /**
  * One assertion that a {@link KevSource} reports {@code cveId} as known to
- * be exploited. GLOBAL — no org column; the catalogs are public,
- * instance-wide data, and org-scoped surfaces join by {@code cve_id} at
- * read time.
+ * be exploited, scoped to a single org (V54 per-org refactor). The token
+ * to fetch the catalog (where applicable, e.g. VulnCheck) lives on the
+ * matching per-org {@code Integration} row.
  *
- * <p>Unique on {@code (source, cve_id)}: each source asserts a CVE at most
- * once, and multiple sources asserting the same CVE produce multiple rows.
+ * <p>Unique on {@code (org_id, source, cve_id)}: each (org, source) pair
+ * asserts a CVE at most once; one org's CISA + VulnCheck assertions for the
+ * same CVE produce two rows; two orgs that both source from CISA produce
+ * two rows (deliberate duplication for clean isolation — the user accepted
+ * the trade for SaaS multi-tenant correctness).
  *
  * <p>{@code revokedDate} is the soft-delete marker — set when a source
- * stops reporting the CVE, never deleted. A CVE with any assertion (even
- * revoked) still reads as known-exploited; the revocation is surfaced as a
- * note. The full per-source entry lives in {@code recordData} as
- * {@link KevAssertionData}.
+ * stops reporting the CVE within an org, never deleted. A CVE with any
+ * assertion (even revoked) in this org still reads as known-exploited; the
+ * revocation is surfaced as a note. The full per-source entry lives in
+ * {@code recordData} as {@link KevAssertionData}.
  *
  * <p>{@link Version} on {@code revision}: Hibernate owns the increment.
  */
@@ -57,6 +60,9 @@ public class KevAssertion implements Serializable, RelizaEntity {
 
 	@Column(nullable = false)
 	private ZonedDateTime lastUpdatedDate = ZonedDateTime.now();
+
+	@Column(nullable = false, name = "org_id")
+	private UUID orgId;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
@@ -112,6 +118,14 @@ public class KevAssertion implements Serializable, RelizaEntity {
 
 	public void setLastUpdatedDate(ZonedDateTime lastUpdatedDate) {
 		this.lastUpdatedDate = lastUpdatedDate;
+	}
+
+	public UUID getOrgId() {
+		return orgId;
+	}
+
+	public void setOrgId(UUID orgId) {
+		this.orgId = orgId;
 	}
 
 	public KevSource getSource() {

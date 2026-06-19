@@ -66,7 +66,8 @@ public class CisaKevConnector implements KevSourceConnector {
 	}
 
 	@Override
-	public List<KevAssertionData> fetchCatalog() {
+	public List<KevAssertionData> fetchCatalog(String credential) {
+		// Public feed — no auth, credential is ignored.
 		try {
 			String body = webClient.get()
 					// URI.create: pass the configured URL byte-for-byte, no template re-encoding

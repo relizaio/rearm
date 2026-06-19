@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import static org.mockito.Mockito.when;
 import java.lang.reflect.Field;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,16 +40,21 @@ import io.reliza.service.KevAssertionService.KevCatalogApplyOutcome;
 
 /**
  * Unit tests for {@link KevAssertionService}. Mock-based: pin the CVE-id
- * normalization contract, the membership probe's pre-filter, the per-source
- * reconcile arithmetic (insert / rewrite-on-diff / skip-unchanged / dedup),
- * the soft-delete and revive semantics, the genuinely-new-KEV detection
- * across sources, and the detail aggregation. Native queries run against a
- * live DB in the integration suite.
+ * normalization contract, the per-org membership probe's pre-filter, the
+ * per-source reconcile arithmetic (insert / rewrite-on-diff / skip-unchanged
+ * / dedup), the soft-delete and revive semantics, the genuinely-new-KEV
+ * detection across sources within ONE org, and the detail aggregation.
+ *
+ * <p>Per-org (V54) refactor: every read + write path takes a {@code UUID
+ * orgUuid}; new-KEV detection compares against THIS ORG's prior assertions
+ * only — the same CVE asserted in another org is independent.
+ * Native queries run against a live DB in the integration suite.
  */
 class KevAssertionServiceTest {
 
 	private KevAssertionRepository repository;
 	private KevAssertionService service;
+	private UUID orgUuid;
 
 	@BeforeEach
 	void wireMocks() throws Exception {
@@ -56,8 +63,9 @@ class KevAssertionServiceTest {
 		Field f = KevAssertionService.class.getDeclaredField("repository");
 		f.setAccessible(true);
 		f.set(service, repository);
-		// default: nothing pre-existing across sources
-		when(repository.findAllDistinctCveIds()).thenReturn(List.of());
+		orgUuid = UUID.randomUUID();
+		// default: nothing pre-existing across sources within this org
+		when(repository.findAllDistinctCveIdsForOrg(any(UUID.class))).thenReturn(List.of());
 	}
 
 	// ---------- normalizeCveId ----------
@@ -79,38 +87,50 @@ class KevAssertionServiceTest {
 
 	@Test
 	void filterPreFiltersNonCveIdsBeforeQuerying() {
-		when(repository.findExistingCveIds(anyCollection())).thenReturn(List.of("CVE-2021-44228"));
+		when(repository.findExistingCveIdsForOrg(eq(orgUuid), anyCollection()))
+				.thenReturn(List.of("CVE-2021-44228"));
 
-		Set<String> listed = service.filterKnownExploited(
+		Set<String> listed = service.filterKnownExploited(orgUuid,
 				List.of("cve-2021-44228", "GHSA-aaaa-bbbb-cccc", "CVE-2020-0001"));
 
 		assertEquals(Set.of("CVE-2021-44228"), listed);
-		verify(repository).findExistingCveIds(any());
+		verify(repository).findExistingCveIdsForOrg(eq(orgUuid), any());
 	}
 
 	@Test
 	void filterShortCircuitsWhenNoCveShapedIds() {
-		assertEquals(Set.of(), service.filterKnownExploited(List.of("GHSA-x", "OSV-y")));
-		assertEquals(Set.of(), service.filterKnownExploited(List.of()));
-		assertEquals(Set.of(), service.filterKnownExploited(null));
-		verify(repository, never()).findExistingCveIds(anyCollection());
+		assertEquals(Set.of(), service.filterKnownExploited(orgUuid, List.of("GHSA-x", "OSV-y")));
+		assertEquals(Set.of(), service.filterKnownExploited(orgUuid, List.of()));
+		assertEquals(Set.of(), service.filterKnownExploited(orgUuid, null));
+		assertEquals(Set.of(), service.filterKnownExploited(null, List.of("CVE-X")));
+		verify(repository, never()).findExistingCveIdsForOrg(any(UUID.class), anyCollection());
 	}
 
 	@Test
 	void isAnyKnownExploitedReflectsProbe() {
-		when(repository.findExistingCveIds(anyCollection())).thenReturn(List.of());
-		assertFalse(service.isAnyKnownExploited(List.of("CVE-2020-0001")));
-		when(repository.findExistingCveIds(anyCollection())).thenReturn(List.of("CVE-2020-0001"));
-		assertTrue(service.isAnyKnownExploited(List.of("CVE-2020-0001")));
+		when(repository.findExistingCveIdsForOrg(eq(orgUuid), anyCollection())).thenReturn(List.of());
+		assertFalse(service.isAnyKnownExploited(orgUuid, List.of("CVE-2020-0001")));
+		when(repository.findExistingCveIdsForOrg(eq(orgUuid), anyCollection()))
+				.thenReturn(List.of("CVE-2020-0001"));
+		assertTrue(service.isAnyKnownExploited(orgUuid, List.of("CVE-2020-0001")));
+	}
+
+	// ---------- countRecordsForOrg ----------
+
+	@Test
+	void countRecordsForOrgDelegatesToRepository() {
+		when(repository.countByOrgId(orgUuid)).thenReturn(42L);
+		assertEquals(42L, service.countRecordsForOrg(orgUuid));
+		assertEquals(0L, service.countRecordsForOrg(null));
 	}
 
 	// ---------- applyCatalog: inserts + new-KEV detection ----------
 
 	@Test
 	void applyInsertsNewEntriesAndFlagsThemNewKev() {
-		when(repository.findBySource(KevSource.CISA)).thenReturn(List.of());
+		when(repository.findByOrgIdAndSource(orgUuid, KevSource.CISA)).thenReturn(List.of());
 
-		KevCatalogApplyOutcome outcome = service.applyCatalog(KevSource.CISA,
+		KevCatalogApplyOutcome outcome = service.applyCatalog(orgUuid, KevSource.CISA,
 				List.of(entry("CVE-2021-44228"), entry("CVE-2023-1234")));
 
 		assertEquals(List.of("CVE-2021-44228", "CVE-2023-1234"), outcome.newlyKevCveIds());
@@ -122,16 +142,26 @@ class KevAssertionServiceTest {
 	}
 
 	@Test
-	void newKevDetectionIgnoresCvesAlreadyAssertedByAnotherSource() {
-		when(repository.findBySource(KevSource.CISA)).thenReturn(List.of());
-		// CVE-EXISTING is already asserted (by some other source) — not "new KEV"
-		when(repository.findAllDistinctCveIds()).thenReturn(List.of("CVE-EXISTING"));
+	void applyCatalogRequiresOrgUuid() {
+		try {
+			service.applyCatalog(null, KevSource.CISA, List.of(entry("CVE-2021-44228")));
+		} catch (IllegalArgumentException e) {
+			return;
+		}
+		throw new AssertionError("expected IllegalArgumentException when orgUuid is null");
+	}
 
-		KevCatalogApplyOutcome outcome = service.applyCatalog(KevSource.CISA,
+	@Test
+	void newKevDetectionIgnoresCvesAlreadyAssertedByAnotherSourceInSameOrg() {
+		when(repository.findByOrgIdAndSource(orgUuid, KevSource.CISA)).thenReturn(List.of());
+		// CVE-EXISTING is already asserted (by some other source) in THIS org — not "new KEV"
+		when(repository.findAllDistinctCveIdsForOrg(orgUuid)).thenReturn(List.of("CVE-EXISTING"));
+
+		KevCatalogApplyOutcome outcome = service.applyCatalog(orgUuid, KevSource.CISA,
 				List.of(entry("CVE-EXISTING"), entry("CVE-NEW")));
 
 		assertEquals(List.of("CVE-NEW"), outcome.newlyKevCveIds());
-		// both rows still inserted for CISA
+		// both rows still inserted for CISA in this org
 		assertEquals(2, captureSaved().size());
 	}
 
@@ -141,11 +171,12 @@ class KevAssertionServiceTest {
 	void applyRewritesChangedAndSkipsUnchanged() {
 		KevAssertionData unchanged = entry("CVE-2020-0001");
 		KevAssertionData changed = entry("CVE-2020-0002");
-		when(repository.findBySource(KevSource.CISA)).thenReturn(List.of(
+		when(repository.findByOrgIdAndSource(orgUuid, KevSource.CISA)).thenReturn(List.of(
 				existing("CVE-2020-0001", unchanged.toRecordData(), null),
 				existing("CVE-2020-0002", entry("CVE-2020-0002", "old required action").toRecordData(), null)));
 
-		KevCatalogApplyOutcome outcome = service.applyCatalog(KevSource.CISA, List.of(unchanged, changed));
+		KevCatalogApplyOutcome outcome = service.applyCatalog(orgUuid, KevSource.CISA,
+				List.of(unchanged, changed));
 
 		assertEquals(List.of(), outcome.newlyKevCveIds());
 		assertEquals(1, outcome.updated());
@@ -160,11 +191,11 @@ class KevAssertionServiceTest {
 
 	@Test
 	void applySoftDeletesEntriesMissingFromFeedInsteadOfDeleting() {
-		when(repository.findBySource(KevSource.CISA)).thenReturn(List.of(
+		when(repository.findByOrgIdAndSource(orgUuid, KevSource.CISA)).thenReturn(List.of(
 				existing("CVE-2020-0001", entry("CVE-2020-0001").toRecordData(), null),
 				existing("CVE-2019-9999", entry("CVE-2019-9999").toRecordData(), null)));
 
-		KevCatalogApplyOutcome outcome = service.applyCatalog(KevSource.CISA,
+		KevCatalogApplyOutcome outcome = service.applyCatalog(orgUuid, KevSource.CISA,
 				List.of(entry("CVE-2020-0001")));
 
 		assertEquals(1, outcome.revoked());
@@ -177,10 +208,10 @@ class KevAssertionServiceTest {
 	@Test
 	void applyRevivesAReappearedRevokedEntry() {
 		KevAssertionData data = entry("CVE-2020-0001");
-		when(repository.findBySource(KevSource.CISA)).thenReturn(List.of(
+		when(repository.findByOrgIdAndSource(orgUuid, KevSource.CISA)).thenReturn(List.of(
 				existing("CVE-2020-0001", data.toRecordData(), ZonedDateTime.now().minusDays(3))));
 
-		KevCatalogApplyOutcome outcome = service.applyCatalog(KevSource.CISA, List.of(data));
+		KevCatalogApplyOutcome outcome = service.applyCatalog(orgUuid, KevSource.CISA, List.of(data));
 
 		assertEquals(1, outcome.revived());
 		assertEquals(0, outcome.updated());
@@ -192,9 +223,9 @@ class KevAssertionServiceTest {
 
 	@Test
 	void applyDedupesAndNormalizesFeedEntries() {
-		when(repository.findBySource(KevSource.CISA)).thenReturn(List.of());
+		when(repository.findByOrgIdAndSource(orgUuid, KevSource.CISA)).thenReturn(List.of());
 
-		KevCatalogApplyOutcome outcome = service.applyCatalog(KevSource.CISA, List.of(
+		KevCatalogApplyOutcome outcome = service.applyCatalog(orgUuid, KevSource.CISA, List.of(
 				entry("cve-2021-44228"), // lowercase — normalized
 				entry("CVE-2021-44228"), // duplicate — dropped
 				entry("not-a-cve")));    // non-CVE — dropped
@@ -217,10 +248,10 @@ class KevAssertionServiceTest {
 		KevAssertion withdrawn = existing("CVE-2021-44228", unspecified.toRecordData(), revoked);
 		withdrawn.setSource(KevSource.CISA);
 
-		when(repository.findByCveIdOrderBySourceAsc("CVE-2021-44228"))
+		when(repository.findByOrgIdAndCveIdOrderBySourceAsc(orgUuid, "CVE-2021-44228"))
 				.thenReturn(List.of(active, withdrawn));
 
-		Optional<KevRecordDetails> details = service.getKevDetails("cve-2021-44228");
+		Optional<KevRecordDetails> details = service.getKevDetails(orgUuid, "cve-2021-44228");
 
 		assertTrue(details.isPresent());
 		assertEquals("CVE-2021-44228", details.get().cveId());
@@ -232,9 +263,11 @@ class KevAssertionServiceTest {
 
 	@Test
 	void detailsEmptyWhenNoAssertions() {
-		when(repository.findByCveIdOrderBySourceAsc("CVE-0000-0000")).thenReturn(List.of());
-		assertTrue(service.getKevDetails("CVE-0000-0000").isEmpty());
-		assertTrue(service.getKevDetails("not-a-cve").isEmpty());
+		when(repository.findByOrgIdAndCveIdOrderBySourceAsc(eq(orgUuid), eq("CVE-0000-0000")))
+				.thenReturn(List.of());
+		assertTrue(service.getKevDetails(orgUuid, "CVE-0000-0000").isEmpty());
+		assertTrue(service.getKevDetails(orgUuid, "not-a-cve").isEmpty());
+		assertTrue(service.getKevDetails(null, "CVE-2021-44228").isEmpty());
 	}
 
 	// ---------- helpers ----------

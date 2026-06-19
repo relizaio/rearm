@@ -5,8 +5,6 @@ package io.reliza.service.kev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -24,15 +22,17 @@ import org.springframework.web.reactive.function.client.WebClient;
 import io.reliza.model.KevAssertionData;
 import io.reliza.model.KevRansomwareStatus;
 import io.reliza.model.KevSource;
-import io.reliza.service.SystemInfoService;
 import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for {@link VulnCheckKevConnector}: HTTP substituted with an
- * {@link ExchangeFunction} stub. Pins token-gating (no token = no-op),
- * pagination (page through {@code _meta.total_pages}), the {@code cve}-array
- * fan-out (one assertion per CVE), the ransomware enum mapping + ISO-date
- * slicing, and the fail-closed contract.
+ * {@link ExchangeFunction} stub. Pins token-gating (no/blank credential
+ * = no-op), pagination (page through {@code _meta.total_pages}), the
+ * {@code cve}-array fan-out (one assertion per CVE), the ransomware enum
+ * mapping + ISO-date slicing, and the fail-closed contract.
+ *
+ * <p>V54: connector no longer reads the token from {@code SystemInfoService};
+ * the per-org credential is passed to {@code fetchCatalog(credential)}.
  */
 class VulnCheckKevConnectorTest {
 
@@ -54,10 +54,8 @@ class VulnCheckKevConnectorTest {
 			]}
 			""";
 
-	private VulnCheckKevConnector newConnector(String token, ExchangeFunction exchange) throws Exception {
-		SystemInfoService sis = mock(SystemInfoService.class);
-		when(sis.getVulncheckKevToken()).thenReturn(token);
-		VulnCheckKevConnector c = new VulnCheckKevConnector(sis, "https://vc.test/v3/index/vulncheck-kev");
+	private VulnCheckKevConnector newConnector(ExchangeFunction exchange) throws Exception {
+		VulnCheckKevConnector c = new VulnCheckKevConnector("https://vc.test/v3/index/vulncheck-kev");
 		WebClient stub = WebClient.builder().exchangeFunction(exchange).build();
 		Field f = VulnCheckKevConnector.class.getDeclaredField("webClient");
 		f.setAccessible(true);
@@ -74,21 +72,22 @@ class VulnCheckKevConnectorTest {
 
 	@Test
 	void sourceIsVulnCheck() throws Exception {
-		assertEquals(KevSource.VULNCHECK, newConnector("tok", req -> json(PAGE1)).source());
+		assertEquals(KevSource.VULNCHECK, newConnector(req -> json(PAGE1)).source());
 	}
 
 	@Test
 	void blankTokenIsNoOp() throws Exception {
-		VulnCheckKevConnector c = newConnector("", req -> {
+		VulnCheckKevConnector c = newConnector(req -> {
 			throw new AssertionError("must not fetch without a token");
 		});
-		assertTrue(c.fetchCatalog().isEmpty());
+		assertTrue(c.fetchCatalog("").isEmpty());
+		assertTrue(c.fetchCatalog(null).isEmpty());
 	}
 
 	@Test
 	void paginatesAndFansOutCveArray() throws Exception {
 		ExchangeFunction ex = req -> req.url().toString().contains("page=1") ? json(PAGE1) : json(PAGE2);
-		List<KevAssertionData> entries = newConnector("tok", ex).fetchCatalog();
+		List<KevAssertionData> entries = newConnector(ex).fetchCatalog("tok");
 
 		// 2 CVEs from the page-1 entry's array + 1 from page-2 = 3 assertions.
 		assertEquals(3, entries.size());
@@ -109,13 +108,13 @@ class VulnCheckKevConnectorTest {
 
 	@Test
 	void fetchErrorReturnsEmpty() throws Exception {
-		assertTrue(newConnector("tok", req -> Mono.error(new RuntimeException("connection refused")))
-				.fetchCatalog().isEmpty());
+		assertTrue(newConnector(req -> Mono.error(new RuntimeException("connection refused")))
+				.fetchCatalog("tok").isEmpty());
 	}
 
 	@Test
 	void emptyDataReturnsEmpty() throws Exception {
-		assertTrue(newConnector("tok", req -> json("{\"_meta\":{\"total_pages\":1},\"data\":[]}"))
-				.fetchCatalog().isEmpty());
+		assertTrue(newConnector(req -> json("{\"_meta\":{\"total_pages\":1},\"data\":[]}"))
+				.fetchCatalog("tok").isEmpty());
 	}
 }

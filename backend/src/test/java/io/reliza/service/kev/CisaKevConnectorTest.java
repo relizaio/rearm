@@ -101,7 +101,7 @@ class CisaKevConnectorTest {
 
 	@Test
 	void parsesFeedAndMapsRansomwareToThreeStateEnum() throws Exception {
-		List<KevAssertionData> entries = withFeed(FEED_JSON).fetchCatalog();
+		List<KevAssertionData> entries = withFeed(FEED_JSON).fetchCatalog(null);
 
 		assertEquals(3, entries.size());
 		KevAssertionData first = entries.get(0);
@@ -119,16 +119,16 @@ class CisaKevConnectorTest {
 	@Test
 	void fetchFailureReturnsEmptyList() throws Exception {
 		assertTrue(newConnector(req -> Mono.error(new RuntimeException("connection refused")))
-				.fetchCatalog().isEmpty());
+				.fetchCatalog(null).isEmpty());
 	}
 
 	@Test
 	void malformedJsonReturnsEmptyList() throws Exception {
-		assertTrue(withFeed("<html>maintenance</html>").fetchCatalog().isEmpty());
+		assertTrue(withFeed("<html>maintenance</html>").fetchCatalog(null).isEmpty());
 	}
 
 	@Test
 	void emptyCatalogReturnsEmptyList() throws Exception {
-		assertTrue(withFeed("{\"catalogVersion\":\"x\",\"vulnerabilities\":[]}").fetchCatalog().isEmpty());
+		assertTrue(withFeed("{\"catalogVersion\":\"x\",\"vulnerabilities\":[]}").fetchCatalog(null).isEmpty());
 	}
 }

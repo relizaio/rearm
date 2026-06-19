@@ -457,7 +457,8 @@ type Mutation {
 	finalizeAllReleases: Boolean
 	createOrganization(name: String!): Organization
 	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
-	setVulnCheckKevToken(token: String): Boolean
+	# Global setVulnCheckKevToken removed in V54 KEV per-org refactor;
+	# use setVulnCheckKevTokenForOrg(orgUuid, token) below (org-admin scope).
 	setDefaultOrganization(organization: ID!): Boolean
 	inactivateUser(userUuid: ID!): User
 	reactivateUser(userUuid: ID!): User
@@ -476,6 +477,17 @@ type Mutation {
 	# entry still points at this integration — those have to be cleaned
 	# up first so the integration delete doesn't silently break them.
 	deleteCiIntegration(uuid: ID!): Boolean
+
+	# KEV per-org integration management (V54 refactor). All three are
+	# org-admin authorized on the target org. CISA_KEV is auto-created
+	# enabled when an org is provisioned (migration backfill + new-org
+	# hook), so the UI typically only calls enableKevSource/disableKevSource
+	# for CISA. VULNCHECK_KEV is opt-in: the org admin sets a token via
+	# setVulnCheckKevTokenForOrg, which lazily creates the integration row
+	# (enabled) and fires an immediate async first sync.
+	enableKevSource(orgUuid: ID!, source: IntegrationType!): Boolean
+	disableKevSource(orgUuid: ID!, source: IntegrationType!): Boolean
+	setVulnCheckKevTokenForOrg(orgUuid: ID!, token: String): Boolean
 
 	# webhooks (inbound)
 	createWebhook(webhook: WebhookInput!): Webhook
@@ -1749,7 +1761,8 @@ type SystemInfoIsSet {
 	emailDetailsSet: Boolean
 	defaultOrg: ID
 	defaultOrgDetails: Organization
-	vulncheckKevConfigured: Boolean
+	# vulncheckKevConfigured dropped in V54 KEV per-org refactor; surfaced
+	# per-org via the Integrations Catalog cards on Organization Settings.
 }
 
 type Organization {
@@ -4669,6 +4682,13 @@ enum IntegrationType {
 	SLACK
 	MSTEAMS
 	DEPENDENCYTRACK
+	# KEV catalog sources (V54 per-org refactor). Must stay in sync with the
+	# Java IntegrationType enum: enableKevSource/disableKevSource take these as
+	# an input arg and configuredBaseIntegrations returns them as output, so a
+	# missing value here breaks both coercion (enable/disable) and output
+	# serialization (every org has a CISA_KEV row after the V54 backfill).
+	CISA_KEV
+	VULNCHECK_KEV
 }
 
 # Capabilities a GITHUB integration is wired up to perform. Picked at

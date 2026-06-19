@@ -285,6 +285,44 @@ public class IntegrationService {
 			.collect(Collectors.toList());
 	}
 	
+	/**
+	 * KEV per-org integration upsert (V54). Creates the {@code (org, type,
+	 * "base")} integration row if missing, otherwise patches the existing
+	 * row. {@code isEnabled} replaces the flag; {@code rawToken} (PLAINTEXT
+	 * — encrypted here) replaces the secret when non-null, leaves it
+	 * untouched when null. Pass {@code rawToken = ""} to explicitly clear
+	 * the secret. {@code type} must be {@code CISA_KEV} or
+	 * {@code VULNCHECK_KEV}.
+	 */
+	@Transactional
+	public IntegrationData upsertKevIntegration(UUID orgUuid, IntegrationType type,
+			boolean isEnabled, String rawToken, WhoUpdated wu) {
+		if (type != IntegrationType.CISA_KEV && type != IntegrationType.VULNCHECK_KEV) {
+			throw new IllegalArgumentException("upsertKevIntegration: type must be CISA_KEV or VULNCHECK_KEV, was " + type);
+		}
+		String identifier = CommonVariables.BASE_INTEGRATION_IDENTIFIER;
+		Optional<Integration> existing = repository.findIntegrationByOrgTypeIdentifier(
+				orgUuid.toString(), type.name(), identifier);
+		Integration i = existing.orElseGet(Integration::new);
+		IntegrationData id = existing.isPresent()
+				? IntegrationData.dataFromRecord(existing.get())
+				: new IntegrationData();
+		if (!existing.isPresent()) {
+			id.setOrg(orgUuid);
+			id.setType(type);
+			id.setIdentifier(identifier);
+		}
+		id.setIsEnabled(isEnabled);
+		if (rawToken != null) {
+			id.setSecret(rawToken.isEmpty() ? null : encryptionService.encrypt(rawToken));
+		}
+		saveIntegration(i, Utils.dataToRecord(id), wu);
+		// Re-read so the returned object has the uuid stamped by saveIntegration
+		// (existing case kept it; new case generated one).
+		IntegrationData out = IntegrationData.dataFromRecord(i);
+		return out;
+	}
+
 	@Transactional
 	public Integration createIntegration (String identifier, UUID organization, IntegrationType type,
 			URI uri, String secret, String schedule, URI frontendUri, WhoUpdated wu) {
