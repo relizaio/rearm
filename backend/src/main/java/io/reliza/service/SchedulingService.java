@@ -388,20 +388,20 @@ public class SchedulingService {
     }
 
     /**
-     * Daily KEV catalog sync. Interval-based (fixedDelay) rather than a fixed
+     * Daily KEV catalog sync (Phase 6a). Interval-based rather than a fixed
      * cron so a fleet of replicas restarted together doesn't synchronise their
      * fetches on one wall-clock minute; the advisory lock dedupes whichever
      * replica ticks first. The 2-minute initial delay keeps the fetch and
      * first reconcile out of pod startup (and out of {@code @SpringBootTest}
-     * context spins, which run these schedulers). Both knobs are properties
-     * so a deployment can shorten them for verification without a code change.
+     * context spins, which run these schedulers). Both knobs are properties so
+     * the sandbox can shorten them for verification without a code change.
      *
-     * <p>CE counterpart of the Pro {@code SaasSchedulingService.syncKevCatalog}
-     * (saas/ is not mirrored to CE). Per the V54 per-org refactor, the shared
-     * {@code KevCatalogSyncService.syncCatalog()} now iterates every org with
-     * an enabled KEV integration; CE's singleton org gets its CISA_KEV row from
-     * the V54 backfill. Holds the {@code SYNC_KEV_CATALOG} advisory lock as the
-     * sync's caller contract requires.
+     * <p>Lives in the shared scheduler (not {@code saas/}) because per the V54
+     * per-org refactor KEV is a both-editions feature: the shared
+     * {@code KevCatalogSyncService.syncCatalog()} iterates every org with an
+     * enabled KEV integration, and CE installs mirror this class directly. The
+     * sync's caller contract is to hold the {@code SYNC_KEV_CATALOG} advisory
+     * lock, which this does.
      */
     @Scheduled(
             fixedDelayString = "${relizaprops.kevSyncInterval:PT24H}",
