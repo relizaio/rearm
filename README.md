@@ -12,7 +12,7 @@
 [![Discord](https://img.shields.io/discord/757425726143201370.svg?color=%237289da&label=Discord&logo=discord&logoColor=%237289da)](https://discord.gg/UTxjBf9juQ)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-blue.svg?logo=LinkedIn)](https://www.linkedin.com/company/relizaio/)
 
-# ReARM - Release Governance Platform for the Agentic Era - Community Edition
+# ReARM - Release Governance Platform - Community Edition
 
 #### ReARM CE governs your releases at agentic speed. It tells you what each product is made of, its exact security posture.
 
