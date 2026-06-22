@@ -14,7 +14,9 @@
 
 # ReARM - Release Governance Platform for the Agentic Era - Community Edition
 
-### ReARM CE stores and manages per release SBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts
+#### ReARM CE governs your releases at agentic speed. It tells you what each product is made of, its exact security posture.
+
+#### ReARM CE stores and manages per-release SBOMs, HBOMs, other xBOMs, other Metadata, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts.
 
 ## Next ReARM Community Meeting: July 7, 2026, 12:00pm EDT, Register on [LinkedIn](https://www.linkedin.com/events/7470152088409231360) or [Meetup](https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/315184551).
 
