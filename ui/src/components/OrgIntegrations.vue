@@ -67,7 +67,23 @@
                             <div class="card-desc">{{ card.description }}</div>
                             <div class="card-foot">
                                 <span class="muted-12">{{ cardFootHint(card) }}</span>
-                                <n-button size="small" :disabled="card.proOnly && !showCiFeatures" @click="openAddForCard(card)">
+                                <!-- externalConfig kinds (SendGrid) are configured on a
+                                     global-admin-only page. Keep the card discoverable for
+                                     everyone, but for non-global-admins render the action
+                                     informational (disabled + tooltip) so it can't dead-end
+                                     them on a blank /sysSettings body. -->
+                                <n-tooltip v-if="card.externalConfig && !isGlobalAdmin" trigger="hover">
+                                    <template #trigger>
+                                        <span class="card-foot-action">
+                                            <n-button size="small" disabled>
+                                                <template #icon><n-icon><CirclePlus /></n-icon></template>
+                                                Configure
+                                            </n-button>
+                                        </span>
+                                    </template>
+                                    Configured by an instance administrator in System Settings
+                                </n-tooltip>
+                                <n-button v-else size="small" :disabled="card.proOnly && !showCiFeatures" @click="openAddForCard(card)">
                                     <template #icon><n-icon><CirclePlus /></n-icon></template>
                                     {{ card.externalConfig ? 'Configure' : 'Add' }}
                                 </n-button>
@@ -657,7 +673,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
     NIcon, NButton, NCard, NModal, NForm, NFormItem, NInput, NCheckbox, NCheckboxGroup,
     NRadioGroup, NRadioButton, NRadio, NSelect, NAlert, NSpace, NText, NDynamicInput,
-    NUpload, NUploadTrigger
+    NUpload, NUploadTrigger, NTooltip
 } from 'naive-ui'
 import {
     Edit as EditIcon, Trash, Refresh, CirclePlus, CloudUpload,
@@ -694,6 +710,7 @@ const notify = (type: NotificationType, title: string, content: string) => {
 const showCiFeatures = computed(() => props.installationType !== 'OSS')
 const orguuid = computed(() => props.orguuid)
 const isOrgAdmin = computed(() => props.isOrgAdmin)
+const isGlobalAdmin = computed(() => props.isGlobalAdmin)
 const isWritable = computed(() => props.isWritable)
 
 // ---- Sub-tab state, URL-synced ---------------------------------------------
@@ -915,6 +932,12 @@ function cardStatusLabel(card: CardConfig): string {
 
 function cardStatusClass(card: CardConfig): string {
     return isCardConfigured(card) ? 'pill-success' : 'pill-neutral'
+}
+
+// Display name for a card kind, sourced from CARDS so user-facing copy
+// (e.g. channel toasts) tracks the card label and can't drift from it.
+function cardName(id: CardConfig['id']): string {
+    return CARDS.find(c => c.id === id)?.name || id
 }
 
 // Footer hint for the AVAILABLE state. externalConfig kinds (SendGrid) are
@@ -1502,7 +1525,7 @@ async function saveWebhookChannel() {
         })
         showWebhookChModal.value = false
         await loadNotificationChannels(false)
-        notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `Webhook channel "${name}" saved.`)
+        notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `${cardName('WEBHOOK')} channel "${name}" saved.`)
     } catch (err: any) {
         webhookChModalError.value = extractError(err)
     } finally {
