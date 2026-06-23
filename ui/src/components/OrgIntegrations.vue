@@ -347,7 +347,7 @@
 
         <!-- Webhook notification channel ADD / EDIT -->
         <n-modal v-model:show="showWebhookChModal" preset="dialog" :show-icon="false">
-            <n-card style="width: 640px" size="huge" :title="webhookChForm.uuid ? 'Edit Webhook channel' : 'Add Webhook channel'" :bordered="false" role="dialog" aria-modal="true">
+            <n-card style="width: 640px" size="huge" :title="webhookChForm.uuid ? 'Edit Notification Webhook channel' : 'Add Notification Webhook channel'" :bordered="false" role="dialog" aria-modal="true">
                 <n-form :model="webhookChForm">
                     <n-space vertical size="large">
                         <n-form-item label="Name" :show-feedback="false">
