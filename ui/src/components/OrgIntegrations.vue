@@ -66,10 +66,10 @@
                         <template v-if="!isCardConfigured(card)">
                             <div class="card-desc">{{ card.description }}</div>
                             <div class="card-foot">
-                                <span class="muted-12">{{ card.proOnly && !showCiFeatures ? 'Available in ReARM Pro' : 'Not configured' }}</span>
+                                <span class="muted-12">{{ cardFootHint(card) }}</span>
                                 <n-button size="small" :disabled="card.proOnly && !showCiFeatures" @click="openAddForCard(card)">
                                     <template #icon><n-icon><CirclePlus /></n-icon></template>
-                                    Add
+                                    {{ card.externalConfig ? 'Configure' : 'Add' }}
                                 </n-button>
                             </div>
                         </template>
@@ -189,9 +189,11 @@
             <div class="info-banner">
                 <n-icon size="20"><ShieldCheck /></n-icon>
                 <div>
-                    <div class="info-banner-title">Inbound webhooks</div>
+                    <div class="info-banner-title">Inbound PR webhooks</div>
                     <div class="info-banner-body">
-                        Each webhook is bound to a CI integration with the <span class="cap-chip">WEBHOOK</span> capability.
+                        Inbound endpoints that receive pull-request events from your SCM — distinct from the outbound
+                        Notification Webhook channel in the Catalog. Each is bound to a CI integration with the
+                        <span class="cap-chip">WEBHOOK</span> capability.
                         <template v-if="webhookCapableInstances.length">
                             Available:
                             <strong v-for="(n, i) in webhookCapableInstances" :key="n">
@@ -318,6 +320,11 @@
                         </n-form-item>
                         <n-text depth="3" style="font-size: 12px;">
                             Actionable emails (approval requests and resolutions) always send immediately, regardless of digest settings.
+                        </n-text>
+                        <n-text depth="3" style="font-size: 12px;">
+                            This channel only controls recipients and digest batching. The email provider that actually
+                            delivers these messages (SMTP or SendGrid) is configured instance-wide by an administrator
+                            in System Settings → Email Sending Configuration.
                         </n-text>
 
                         <n-alert v-if="emailModalError" type="error" :show-icon="false">
@@ -529,13 +536,13 @@
                         <n-form-item
                             v-if="createIntegrationObject.type === 'GITHUB'"
                             label="Capabilities"
-                            description="What this GitHub App is wired up to do. PR_VALIDATE: post check-runs / PR comments. WEBHOOK: receive inbound pull_request events. WORKFLOW_DISPATCH: trigger repository_dispatch."
+                            description="What this GitHub App is wired up to do. PR_VALIDATE: post check-runs / PR comments. WEBHOOK (PR Webhook): receive inbound pull_request events. WORKFLOW_DISPATCH: trigger repository_dispatch."
                         >
                             <n-checkbox-group v-model:value="createIntegrationObject.capabilities">
                                 <n-space>
                                     <n-checkbox value="WORKFLOW_DISPATCH" label="Workflow Dispatch" />
                                     <n-checkbox value="PR_VALIDATE" label="PR Validate" />
-                                    <n-checkbox value="WEBHOOK" label="Webhook (inbound)" />
+                                    <n-checkbox value="WEBHOOK" label="PR Webhook (inbound)" />
                                 </n-space>
                             </n-checkbox-group>
                         </n-form-item>
@@ -625,7 +632,7 @@
                                 <n-space>
                                     <n-checkbox value="WORKFLOW_DISPATCH" label="Workflow Dispatch" />
                                     <n-checkbox value="PR_VALIDATE" label="PR Validate" />
-                                    <n-checkbox value="WEBHOOK" label="Webhook (inbound)" />
+                                    <n-checkbox value="WEBHOOK" label="PR Webhook (inbound)" />
                                 </n-space>
                             </n-checkbox-group>
                         </n-form-item>
@@ -806,7 +813,7 @@ function emailRecipientsSummary(ch: ChannelCatalogRow): string {
 // when @vicons doesn't have a brand icon for the kind.
 type Category = 'messaging' | 'ci' | 'security'
 interface CardConfig {
-    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'WEBHOOK' | 'SENTINEL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR' | 'CISA_KEV' | 'VULNCHECK_KEV'
+    id: 'SLACK' | 'MSTEAMS' | 'EMAIL' | 'SENDGRID' | 'WEBHOOK' | 'SENTINEL' | 'GITHUB' | 'GITLAB' | 'JENKINS' | 'ADO' | 'DEPENDENCYTRACK' | 'BEAR' | 'CISA_KEV' | 'VULNCHECK_KEV'
     name: string
     vendor: string
     category: Category
@@ -818,14 +825,27 @@ interface CardConfig {
     // Pro-only kinds still show in the OSS catalog, but with a "Pro"
     // pill and a disabled Add button instead of being hidden.
     proOnly?: boolean
+    // Instance-wide config that lives outside this per-org surface (e.g.
+    // SendGrid, configured in System Settings). The card's action routes
+    // to that page instead of opening a per-org modal, and its footer
+    // hint says where it is configured rather than "Not configured".
+    externalConfig?: boolean
 }
 
 const CARDS: CardConfig[] = [
     // Messaging
     { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Push release notifications to a Slack channel.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: false },
     { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Push release notifications to a Microsoft Teams channel.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: false },
-    { id: 'EMAIL', name: 'Email', vendor: 'ReARM', category: 'messaging', description: 'Send security and operational notifications to a list of email recipients, batched into periodic digest emails.', logoBg: '#2D8F4E', iconComponent: Mail, multiInstance: true, proOnly: true },
-    { id: 'WEBHOOK', name: 'Webhook', vendor: 'ReARM', category: 'messaging', description: 'POST notification events to any HTTPS endpoint — PagerDuty, Opsgenie, Splunk, or in-house receivers — with optional bearer-token or HMAC-SHA256 signing.', logoBg: '#37474F', iconComponent: PlugConnected, multiInstance: true, proOnly: true },
+    { id: 'EMAIL', name: 'Email', vendor: 'Reliza', category: 'messaging', description: 'Send security and operational notifications to a list of email recipients, batched into periodic digest emails.', logoBg: '#2D8F4E', iconComponent: Mail, multiInstance: true, proOnly: true },
+    // SendGrid is not a per-org notification channel — it is the
+    // instance-wide email delivery provider (EmailSendType.SENDGRID),
+    // configured in System Settings → Email Sending Configuration. The
+    // card surfaces it in the catalog for discoverability; its Configure
+    // action routes to that system page instead of opening a per-org
+    // channel modal. The Email card above is the per-org recipient/digest
+    // channel that rides on top of whichever provider this configures.
+    { id: 'SENDGRID', name: 'SendGrid', vendor: 'Twilio SendGrid', category: 'messaging', description: 'Instance-wide email delivery provider used to send Email channel notifications and account emails. Configured in System Settings.', logoBg: '#1A82E2', logoMark: 'SG', multiInstance: false, externalConfig: true },
+    { id: 'WEBHOOK', name: 'Notification Webhook', vendor: 'Reliza', category: 'messaging', description: 'POST notification events to any HTTPS endpoint — PagerDuty, Opsgenie, Splunk, or in-house receivers — with optional bearer-token or HMAC-SHA256 signing.', logoBg: '#37474F', iconComponent: PlugConnected, multiInstance: true, proOnly: true },
     { id: 'SENTINEL', name: 'Microsoft Sentinel', vendor: 'Microsoft', category: 'messaging', description: 'Stream notification events to Microsoft Sentinel (Azure Log Analytics) via the Logs Ingestion API.', logoBg: '#0078D4', iconComponent: ShieldCheck, multiInstance: true, proOnly: true },
     // CI/CD & Source Control
     { id: 'GITHUB', name: 'GitHub', vendor: 'GitHub', category: 'ci', description: 'GitHub App for PR validation, inbound webhooks, and repository_dispatch.', logoBg: '#1F2328', iconComponent: BrandGithub, multiInstance: true },
@@ -897,6 +917,15 @@ function cardStatusClass(card: CardConfig): string {
     return isCardConfigured(card) ? 'pill-success' : 'pill-neutral'
 }
 
+// Footer hint for the AVAILABLE state. externalConfig kinds (SendGrid) are
+// configured on another page, so "Not configured" would be misleading —
+// point to where the setting actually lives instead.
+function cardFootHint(card: CardConfig): string {
+    if (card.externalConfig) return 'Set in System Settings'
+    if (card.proOnly && !showCiFeatures.value) return 'Available in ReARM Pro'
+    return 'Not configured'
+}
+
 function singleInstanceLabel(card: CardConfig): string {
     if (card.id === 'BEAR') return 'Configured'
     return 'Configured'
@@ -937,6 +966,10 @@ function openAddForCard(card: CardConfig) {
     if (card.proOnly && !showCiFeatures.value) return
     if (card.id === 'SLACK') { showSlackModal.value = true; return }
     if (card.id === 'EMAIL') { openAddEmailChannel(); return }
+    // SendGrid is instance-wide config, not a per-org channel — send the
+    // user to System Settings → Email Sending Configuration (global-admin
+    // gated on that page) rather than opening a local modal.
+    if (card.id === 'SENDGRID') { router.push({ name: 'systemSettings' }); return }
     if (card.id === 'WEBHOOK') { openAddWebhookChannel(); return }
     if (card.id === 'SENTINEL') { openAddSentinelChannel(); return }
     if (card.id === 'MSTEAMS') { showMsteamsModal.value = true; return }
