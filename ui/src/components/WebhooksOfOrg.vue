@@ -68,7 +68,7 @@
                     <n-form-item label="GitHub App integration (optional)"
                         description="Optional organizational association — clear it for a standalone webhook. Inbound delivery is unaffected either way; posting back to GitHub is configured on PR-validation rules.">
                         <n-select v-model:value="webhookToEdit.integration" clearable
-                            :options="webhookCapableIntegrationOptions"
+                            :options="editIntegrationOptions"
                             placeholder="Standalone (no integration)" />
                     </n-form-item>
                     <n-form-item label="Status">
@@ -145,6 +145,20 @@ const webhookCapableIntegrationOptions = computed(() => {
     return effectiveCiIntegrations.value
         .filter((ci: any) => ci.type === 'GITHUB' && (ci.capabilities || []).includes('WEBHOOK'))
         .map((ci: any) => ({ label: `${ci.note || ci.identifier} (${ci.uuid.substring(0, 8)})`, value: ci.uuid }))
+})
+
+// Options for the EDIT picker. If the webhook is currently linked to an
+// integration that's no longer WEBHOOK-capable (capability removed after the
+// link was made), it won't be in webhookCapableIntegrationOptions and the
+// picker would render blank — hiding what it's actually linked to. Inject a
+// synthetic, disabled entry so the current link stays visible (and labelled).
+const editIntegrationOptions = computed(() => {
+    const opts = [...webhookCapableIntegrationOptions.value]
+    const cur = webhookToEdit.value?.integration
+    if (cur && !opts.some((o: any) => o.value === cur)) {
+        opts.unshift({ label: `${integrationLabel(cur)} (capability removed)`, value: cur, disabled: true })
+    }
+    return opts
 })
 
 const SLUG_REGEX = /^[a-z0-9]([a-z0-9-]{2,61}[a-z0-9])?$/
