@@ -552,7 +552,7 @@
                         <n-form-item
                             v-if="createIntegrationObject.type === 'GITHUB'"
                             label="Capabilities"
-                            description="What this GitHub App is wired up to do. PR_VALIDATE: post check-runs / PR comments. WEBHOOK (PR Webhook): receive inbound pull_request events. WORKFLOW_DISPATCH: trigger repository_dispatch."
+                            description="What this GitHub App is wired up to do. PR_VALIDATE: post check-runs / PR comments — requires the App private key and App ID below. WEBHOOK (PR Webhook): receive inbound pull_request events. WORKFLOW_DISPATCH: trigger repository_dispatch."
                         >
                             <n-checkbox-group v-model:value="createIntegrationObject.capabilities">
                                 <n-space>
@@ -738,6 +738,17 @@ const createIntegrationObject: Ref<any> = ref({
 
 const secretInputMode = ref<'paste' | 'upload'>('upload')
 const uploadedSecretFileName = ref('')
+
+// Both Upload and Paste write the same createIntegrationObject.secret. When the
+// user toggles between them, clear the secret AND the uploaded-file label so a
+// stale "Loaded: <file>" line can never mask an emptied value. This is the exact
+// interaction that produced the customer's empty App key: upload a .pem, switch
+// to Paste, clear the textarea, switch back to Upload (the old filename label
+// stayed, hiding the now-empty secret), then Save.
+watch(secretInputMode, () => {
+    createIntegrationObject.value.secret = ''
+    uploadedSecretFileName.value = ''
+})
 
 const bearForm = ref({
     uri: '',
@@ -1087,6 +1098,24 @@ async function onAddBaseIntegration(type: string) {
 }
 
 async function addCiIntegration() {
+    // Hard stop on a blank GitHub App private key or App ID. Both fields are
+    // always shown and required for a GitHub integration; saving without either
+    // yields a silently broken PR channel (no check-runs / comments) -- the
+    // customer's empty-key incident (the App ID is the JWT issuer). Mirrors the
+    // backend #230 validation so the user gets an immediate, clear error instead
+    // of a server round-trip.
+    if (createIntegrationObject.value.type === 'GITHUB') {
+        if (!(createIntegrationObject.value.secret || '').trim()) {
+            notify('error', 'GitHub App private key required',
+                'Upload the .pem or paste the GitHub App private key before saving.')
+            return
+        }
+        if (!String(createIntegrationObject.value.schedule ?? '').trim()) {
+            notify('error', 'GitHub App ID required',
+                'Enter the GitHub Application ID before saving.')
+            return
+        }
+    }
     try {
         const resp = await graphqlClient.mutate({
             mutation: gql`
