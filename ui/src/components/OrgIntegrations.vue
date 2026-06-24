@@ -652,6 +652,51 @@
                                 </n-space>
                             </n-checkbox-group>
                         </n-form-item>
+                        <!-- GitHub credential replacement (BEAR-style): default to
+                             capabilities-only so the key isn't re-entered on every edit;
+                             uncheck to reveal the key + App ID replacement fields. -->
+                        <template v-if="editCiIntegrationObject.type === 'GITHUB'">
+                            <n-form-item label="Credentials">
+                                <n-checkbox v-model:checked="editCiIntegrationObject.updateCapabilitiesOnly">
+                                    Update capabilities only (keep the current App private key &amp; App ID)
+                                </n-checkbox>
+                            </n-form-item>
+                            <n-form-item
+                                v-if="!editCiIntegrationObject.updateCapabilitiesOnly"
+                                label="New GitHub Private Key"
+                                description="Replaces the stored key. Paste the .pem, upload the file, or paste a DER base64 blob."
+                            >
+                                <n-space vertical style="width: 100%;">
+                                    <n-radio-group v-model:value="editSecretInputMode" name="editGithubSecretInputMode">
+                                        <n-radio-button label="Upload .pem" value="upload" />
+                                        <n-radio-button label="Paste" value="paste" />
+                                    </n-radio-group>
+                                    <n-input
+                                        v-if="editSecretInputMode === 'paste'"
+                                        type="textarea"
+                                        v-model:value="editCiIntegrationObject.secret"
+                                        :autosize="{ minRows: 6, maxRows: 18 }"
+                                        style="width: 100%; font-family: monospace; font-size: 12px;"
+                                        placeholder="Paste the contents of the .pem file (-----BEGIN RSA PRIVATE KEY----- ...) or DER base64."
+                                    />
+                                    <n-upload v-else :default-upload="false" :max="1" accept=".pem,.txt,.key,application/x-pem-file" :show-file-list="false" @change="onEditSecretFileChange">
+                                        <n-upload-trigger #="{ handleClick }" abstract>
+                                            <n-button @click="handleClick">Choose .pem file</n-button>
+                                        </n-upload-trigger>
+                                    </n-upload>
+                                    <n-text v-if="editSecretInputMode === 'upload' && editUploadedSecretFileName" depth="3" style="font-size: 12px;">
+                                        Loaded: {{ editUploadedSecretFileName }} ({{ editCiIntegrationObject.secret.length }} chars)
+                                    </n-text>
+                                </n-space>
+                            </n-form-item>
+                            <n-form-item
+                                v-if="!editCiIntegrationObject.updateCapabilitiesOnly"
+                                label="GitHub Application ID"
+                                description="Leave blank to keep the current App ID."
+                            >
+                                <n-input type="number" v-model:value="editCiIntegrationObject.schedule" placeholder="Enter GitHub Application ID" />
+                            </n-form-item>
+                        </template>
                         <n-text depth="3" style="font-size: 13px;">
                             To add or modify the inbound webhook (slug, secret) attached to this integration,
                             use the Webhooks sub-tab.
@@ -768,9 +813,18 @@ const showCiAddModal = ref(false)
 const showCiEditModal = ref(false)
 
 const editCiIntegrationObject: Ref<any> = ref({
-    uuid: '', type: '', note: '', capabilities: [] as string[]
+    uuid: '', type: '', note: '', capabilities: [] as string[],
+    updateCapabilitiesOnly: true, secret: '', schedule: ''
 })
 const editCiIntegrationLoading = ref(false)
+// Edit-modal key replacement uses its own input-mode/filename state (separate
+// from the create form) plus the same toggle-clears-stale-value safety.
+const editSecretInputMode = ref<'paste' | 'upload'>('upload')
+const editUploadedSecretFileName = ref('')
+watch(editSecretInputMode, () => {
+    editCiIntegrationObject.value.secret = ''
+    editUploadedSecretFileName.value = ''
+})
 
 // ---- Notification channels (EMAIL / WEBHOOK / SENTINEL cards) ---------------
 // Unlike the base Slack/Teams integrations above, these destinations are
@@ -1035,8 +1089,13 @@ function openBearEditModal() {
 function openEditCiIntegrationModal(row: any) {
     editCiIntegrationObject.value = {
         uuid: row.uuid, type: row.type, note: row.note,
-        capabilities: [...(row.capabilities || [])]
+        capabilities: [...(row.capabilities || [])],
+        // Default to capabilities-only so the user isn't forced to re-enter the
+        // App key on every edit; unchecking reveals the replacement fields.
+        updateCapabilitiesOnly: true, secret: '', schedule: ''
     }
+    editSecretInputMode.value = 'upload'
+    editUploadedSecretFileName.value = ''
     showCiEditModal.value = true
 }
 
@@ -1072,6 +1131,14 @@ async function onSecretFileChange(options: any) {
     if (fileInfo && fileInfo.file) {
         createIntegrationObject.value.secret = await fileInfo.file.text()
         uploadedSecretFileName.value = fileInfo.file.name || fileInfo.name || ''
+    }
+}
+
+async function onEditSecretFileChange(options: any) {
+    const fileInfo = options.file
+    if (fileInfo && fileInfo.file) {
+        editCiIntegrationObject.value.secret = await fileInfo.file.text()
+        editUploadedSecretFileName.value = fileInfo.file.name || fileInfo.name || ''
     }
 }
 
@@ -1135,8 +1202,31 @@ async function addCiIntegration() {
 }
 
 async function saveEditCiIntegration() {
+    const replacingCreds = editCiIntegrationObject.value.type === 'GITHUB'
+        && !editCiIntegrationObject.value.updateCapabilitiesOnly
+    if (replacingCreds && !(editCiIntegrationObject.value.secret || '').trim()) {
+        notify('error', 'GitHub App private key required',
+            'Upload the .pem or paste the GitHub App private key, or re-check "Update capabilities only".')
+        return
+    }
     editCiIntegrationLoading.value = true
     try {
+        // Replace credentials first so the subsequent capabilities update validates
+        // against the new key (e.g. when adding PR_VALIDATE in the same save).
+        if (replacingCreds) {
+            await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateGithubAppCredentials($uuid: ID!, $privateKey: String!, $appId: String) {
+                        updateGithubAppCredentials(uuid: $uuid, privateKey: $privateKey, appId: $appId) { uuid }
+                    }`,
+                variables: {
+                    uuid: editCiIntegrationObject.value.uuid,
+                    privateKey: editCiIntegrationObject.value.secret,
+                    appId: String(editCiIntegrationObject.value.schedule ?? '').trim() || null
+                },
+                fetchPolicy: 'no-cache'
+            })
+        }
         await graphqlClient.mutate({
             mutation: gql`
                 mutation updateIntegrationCapabilities($uuid: ID!, $capabilities: [IntegrationCapability!]!) {
@@ -1150,9 +1240,10 @@ async function saveEditCiIntegration() {
         })
         showCiEditModal.value = false
         await loadCiIntegrations(false)
-        notify('success', 'Integration Updated', 'Capabilities saved.')
+        notify('success', 'Integration Updated',
+            replacingCreds ? 'Credentials and capabilities saved.' : 'Capabilities saved.')
     } catch (e: any) {
-        notify('error', 'Failed to save integration', e?.message || String(e))
+        notify('error', 'Failed to save integration', commonFunctions.parseGraphQLError(e?.message) || e?.message || String(e))
     } finally {
         editCiIntegrationLoading.value = false
     }
