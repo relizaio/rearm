@@ -2,24 +2,24 @@
     <div>
         <h5>Webhooks (inbound)</h5>
         <p style="color: #666; font-size: 13px; margin-top: 0;">
-            Receive GitHub <code>pull_request</code> events directly so PR state in ReARM stays in sync with GitHub
-            without waiting for the next CI run. Each webhook is bound to a GitHub integration that has the
-            <strong>Webhook</strong> capability.
+            Receive GitHub <code>pull_request</code> events at a per-org URL so PR state in ReARM stays in sync with
+            GitHub without waiting for the next CI run. Each webhook verifies deliveries with its own HMAC secret.
+            Linking a webhook to a GitHub App integration is <strong>optional</strong> — it's an organizational
+            association only; a standalone webhook delivers exactly the same. (Posting PR comments or checks back to
+            GitHub is configured separately on <strong>PR-validation rules</strong>, not here.)
         </p>
         <n-data-table :data="webhooks" :columns="webhookFields" :single-line="false" />
-        <n-button v-if="hasWebhookCapableIntegration" @click="onCreateOpen" style="margin-top: 8px;">Add Webhook</n-button>
-        <n-text v-else depth="3" style="display: block; margin-top: 8px;">
-            No GitHub integrations with the WEBHOOK capability — add one above first.
-        </n-text>
+        <n-button @click="onCreateOpen" style="margin-top: 8px;">Add Webhook</n-button>
 
         <!-- Create modal -->
         <n-modal v-model:show="showCreateModal" preset="dialog" :show-icon="false">
             <n-card style="width: 700px" size="huge" title="Create Webhook" :borderd="false" role="dialog" aria-modal="true">
                 <n-form :model="webhookToCreate" :rules="createRules" ref="createFormRef">
-                    <n-form-item label="Integration" path="integration"
-                        description="Pick a GitHub integration with the Webhook capability.">
-                        <n-select v-model:value="webhookToCreate.integration"
-                            :options="webhookCapableIntegrationOptions" placeholder="Select integration" />
+                    <n-form-item label="GitHub App integration (optional)" path="integration"
+                        description="Optional. Associate this webhook with a GitHub App integration for organization only. Inbound PR events are received and verified using this webhook's own secret either way — the link is not required for delivery. Posting PR comments/checks back to GitHub is configured separately on PR-validation rules.">
+                        <n-select v-model:value="webhookToCreate.integration" clearable
+                            :options="webhookCapableIntegrationOptions"
+                            placeholder="Leave empty for a standalone webhook" />
                     </n-form-item>
                     <n-form-item label="Slug" path="slug"
                         description="Lowercase a-z, 0-9, and hyphens. 4–63 chars, no leading/trailing hyphen. Becomes part of the public webhook URL.">
@@ -64,6 +64,12 @@
                     </n-form-item>
                     <n-form-item label="Webhook URL">
                         <n-input :value="previewUrl(webhookToEdit.slug)" readonly />
+                    </n-form-item>
+                    <n-form-item label="GitHub App integration (optional)"
+                        description="Optional organizational association — clear it for a standalone webhook. Inbound delivery is unaffected either way; posting back to GitHub is configured on PR-validation rules.">
+                        <n-select v-model:value="webhookToEdit.integration" clearable
+                            :options="editIntegrationOptions"
+                            placeholder="Standalone (no integration)" />
                     </n-form-item>
                     <n-form-item label="Status">
                         <n-radio-group v-model:value="webhookToEdit.status">
@@ -140,13 +146,25 @@ const webhookCapableIntegrationOptions = computed(() => {
         .filter((ci: any) => ci.type === 'GITHUB' && (ci.capabilities || []).includes('WEBHOOK'))
         .map((ci: any) => ({ label: `${ci.note || ci.identifier} (${ci.uuid.substring(0, 8)})`, value: ci.uuid }))
 })
-const hasWebhookCapableIntegration = computed(() => webhookCapableIntegrationOptions.value.length > 0)
+
+// Options for the EDIT picker. If the webhook is currently linked to an
+// integration that's no longer WEBHOOK-capable (capability removed after the
+// link was made), it won't be in webhookCapableIntegrationOptions and the
+// picker would render blank — hiding what it's actually linked to. Inject a
+// synthetic, disabled entry so the current link stays visible (and labelled).
+const editIntegrationOptions = computed(() => {
+    const opts = [...webhookCapableIntegrationOptions.value]
+    const cur = webhookToEdit.value?.integration
+    if (cur && !opts.some((o: any) => o.value === cur)) {
+        opts.unshift({ label: `${integrationLabel(cur)} (capability removed)`, value: cur, disabled: true })
+    }
+    return opts
+})
 
 const SLUG_REGEX = /^[a-z0-9]([a-z0-9-]{2,61}[a-z0-9])?$/
 const createRules = {
-    integration: {
-        required: true, message: 'Pick an integration', trigger: ['blur', 'change']
-    },
+    // integration is intentionally NOT required — a standalone webhook
+    // (no association) is a fully supported, intentional configuration.
     slug: {
         required: true, trigger: ['blur', 'input'],
         validator: (_rule: any, value: string) => {
@@ -172,7 +190,7 @@ const emptyWebhook = {
     note: ''
 }
 const webhookToCreate: Ref<any> = ref({ ...emptyWebhook })
-const webhookToEdit: Ref<any> = ref({ uuid: '', slug: '', status: 'ACTIVE', installation: '', note: '', secret: '' })
+const webhookToEdit: Ref<any> = ref({ uuid: '', slug: '', status: 'ACTIVE', installation: '', note: '', secret: '', integration: null as string | null })
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const createFormRef = ref<any>(null)
@@ -194,8 +212,26 @@ function onCreateOpen() {
     showCreateModal.value = true
 }
 
+// Resolve an integration uuid to a friendly label for the list. Falls back
+// to the short uuid if the integration isn't in the (webhook-capable) list
+// the parent supplied — e.g. a pre-existing link to an integration whose
+// WEBHOOK capability was later removed.
+function integrationLabel(uuid: string | null): string {
+    if (!uuid) return ''
+    const ci = effectiveCiIntegrations.value.find((c: any) => c.uuid === uuid)
+    return ci ? (ci.note || ci.identifier || uuid.substring(0, 8)) : uuid.substring(0, 8)
+}
+
 const webhookFields: any[] = [
     { key: 'slug', title: 'Slug' },
+    {
+        key: 'integration', title: 'Integration',
+        // A no-integration webhook is an intentional "standalone" config, not
+        // a broken one — label it so explicitly.
+        render: (row: any) => row.integration
+            ? integrationLabel(row.integration)
+            : h('span', { style: { color: '#888', fontStyle: 'italic' } }, 'Standalone')
+    },
     {
         key: 'status', title: 'Status',
         render: (row: any) => row.status || 'ACTIVE'
@@ -242,7 +278,8 @@ function onEditOpen(row: any) {
         status: row.status || 'ACTIVE',
         installation: row.installation || '',
         note: row.note || '',
-        secret: ''
+        secret: '',
+        integration: row.integration || null
     }
     showEditModal.value = true
 }
@@ -332,7 +369,11 @@ async function updateWebhook() {
             note: webhookToEdit.value.note || null,
             status: webhookToEdit.value.status,
             installation: webhookToEdit.value.installation || '',
-            slug: webhookToEdit.value.slug
+            slug: webhookToEdit.value.slug,
+            // Tri-state on the server: '' clears the link (-> standalone), a uuid
+            // sets/keeps it. The modal always shows the current value, so sending
+            // it back is a no-op unless the user changed or cleared it.
+            integration: webhookToEdit.value.integration || ''
         }
         if (webhookToEdit.value.secret && webhookToEdit.value.secret.trim().length > 0) {
             input.secret = webhookToEdit.value.secret.trim()
