@@ -594,6 +594,11 @@
                         <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" label="GitHub Application ID" description="GitHub Application ID">
                             <n-input type="number" v-model:value="createIntegrationObject.schedule" required placeholder="Enter GitHub Application ID" />
                         </n-form-item>
+                        <n-text v-if="createIntegrationObject.type === 'GITHUB'" depth="3" style="font-size: 12px;">
+                            Inbound vs outbound: the App private key + App ID above sign <b>outbound</b> calls to
+                            GitHub (PR check-runs / comments). <b>Inbound</b> pull_request webhooks use a separate
+                            HMAC secret, configured in the Webhooks sub-tab after this integration is saved.
+                        </n-text>
 
                         <n-form-item v-if="createIntegrationObject.type === 'GITLAB'" label="GitLab Authentication Token">
                             <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter GitLab Authentication Token" />
@@ -643,7 +648,7 @@
                         <n-form-item label="Type">
                             <n-text>{{ editCiIntegrationObject.type }}</n-text>
                         </n-form-item>
-                        <n-form-item label="Capabilities" description="Reduce or expand without re-creating the integration.">
+                        <n-form-item label="Capabilities" description="Reduce or expand without re-creating the integration. PR Validate (outbound check-runs / PR comments) needs the App private key and App ID.">
                             <n-checkbox-group v-model:value="editCiIntegrationObject.capabilities">
                                 <n-space>
                                     <n-checkbox value="WORKFLOW_DISPATCH" label="Workflow Dispatch" />
@@ -698,11 +703,32 @@
                             </n-form-item>
                         </template>
                         <n-text depth="3" style="font-size: 13px;">
-                            To add or modify the inbound webhook (slug, secret) attached to this integration,
-                            use the Webhooks sub-tab.
+                            Inbound vs outbound: the App private key here signs <b>outbound</b> calls to GitHub
+                            (PR check-runs / comments). <b>Inbound</b> pull_request webhooks use a separate
+                            HMAC secret — add or edit those in the Webhooks sub-tab.
+                        </n-text>
+                        <!-- Test connection: validates the SAVED App key + App ID against GitHub. -->
+                        <n-alert
+                            v-if="editTestResult"
+                            :type="editTestResult.ok ? 'success' : 'error'"
+                            :title="editTestResult.ok ? 'Connection OK' : 'Connection failed'"
+                            closable
+                            @close="editTestResult = null"
+                        >
+                            {{ editTestResult.message }}
+                        </n-alert>
+                        <n-text v-if="editCiIntegrationObject.type === 'GITHUB'" depth="3" style="font-size: 12px;">
+                            Test connection checks the saved key + App ID; save any edits first to test a replacement.
                         </n-text>
                         <n-space>
                             <n-button :loading="editCiIntegrationLoading" @click="saveEditCiIntegration" type="success">Save</n-button>
+                            <n-button
+                                v-if="editCiIntegrationObject.type === 'GITHUB'"
+                                :loading="editTestLoading"
+                                @click="testGithubConnection"
+                                type="info"
+                                ghost
+                            >Test connection</n-button>
                             <n-button @click="showCiEditModal = false" type="default">Cancel</n-button>
                         </n-space>
                     </n-space>
@@ -817,6 +843,9 @@ const editCiIntegrationObject: Ref<any> = ref({
     updateCapabilitiesOnly: true, secret: '', schedule: ''
 })
 const editCiIntegrationLoading = ref(false)
+// "Test connection" result banner state (GitHub edit modal).
+const editTestLoading = ref(false)
+const editTestResult = ref<any>(null) // { ok, message, installations } | null
 // Edit-modal key replacement uses its own input-mode/filename state (separate
 // from the create form) plus the same toggle-clears-stale-value safety.
 const editSecretInputMode = ref<'paste' | 'upload'>('upload')
@@ -1096,6 +1125,7 @@ function openEditCiIntegrationModal(row: any) {
     }
     editSecretInputMode.value = 'upload'
     editUploadedSecretFileName.value = ''
+    editTestResult.value = null
     showCiEditModal.value = true
 }
 
@@ -1246,6 +1276,31 @@ async function saveEditCiIntegration() {
         notify('error', 'Failed to save integration', commonFunctions.parseGraphQLError(e?.message) || e?.message || String(e))
     } finally {
         editCiIntegrationLoading.value = false
+    }
+}
+
+// Self-diagnose aid: validates the SAVED GitHub App key + App ID against GitHub
+// (testGithubIntegration mutation) and shows a green/red banner. Tests the stored
+// credentials, not unsaved edits — save first to test a replacement.
+async function testGithubConnection() {
+    editTestResult.value = null
+    editTestLoading.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation testGithubIntegration($uuid: ID!) {
+                    testGithubIntegration(uuid: $uuid) { ok message installations }
+                }`,
+            variables: { uuid: editCiIntegrationObject.value.uuid }
+        })
+        editTestResult.value = resp.data?.testGithubIntegration
+            || { ok: false, message: 'No response from server.', installations: 0 }
+    } catch (e: any) {
+        editTestResult.value = { ok: false,
+            message: commonFunctions.parseGraphQLError(e?.message) || e?.message || String(e),
+            installations: 0 }
+    } finally {
+        editTestLoading.value = false
     }
 }
 
