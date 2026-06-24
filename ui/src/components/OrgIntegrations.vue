@@ -134,15 +134,17 @@
                 <div>
                     <div class="info-banner-title">Inbound webhooks</div>
                     <div class="info-banner-body">
-                        Each webhook is bound to a CI integration with the <span class="cap-chip">WEBHOOK</span> capability.
+                        Each webhook verifies deliveries with its own HMAC secret. Linking a webhook to a GitHub App
+                        integration is <strong>optional</strong> — an organizational association only, never used for
+                        delivery; a standalone webhook works the same.
                         <template v-if="webhookCapableInstances.length">
-                            Available:
+                            Integrations you can optionally link:
                             <strong v-for="(n, i) in webhookCapableInstances" :key="n">
                                 <span v-if="i > 0">, </span>{{ n }}
                             </strong>.
                         </template>
                         <template v-else>
-                            No webhook-capable CI integrations configured. Add one from the Catalog first.
+                            No webhook-capable GitHub integrations yet — you can still create a standalone webhook.
                         </template>
                     </div>
                 </div>
