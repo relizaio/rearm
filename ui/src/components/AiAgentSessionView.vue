@@ -17,6 +17,18 @@
                 </span>
                 {{ agent.name }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
             </a>
+            <template v-if="session.primaryModel">
+                <span class="dim">·</span>
+                <n-tooltip trigger="hover" :width="300">
+                    <template #trigger>
+                        <n-tag size="small" type="default" :bordered="false" class="model-badge">
+                            {{ modelLabel }}
+                            <span class="model-assert">{{ assertionLabel }}</span>
+                        </n-tag>
+                    </template>
+                    {{ assertionTip }}
+                </n-tooltip>
+            </template>
         </div>
         <h3>{{ session.title || '(untitled)' }}</h3>
 
@@ -28,6 +40,18 @@
                     </n-descriptions-item>
                     <n-descriptions-item label="Title">{{ session.title || '—' }}</n-descriptions-item>
                     <n-descriptions-item label="Client session ID"><code>{{ session.clientSessionId }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Model">
+                        <template v-if="session.primaryModel">
+                            <span>{{ modelLabel }}</span>
+                            <n-tooltip trigger="hover" :width="300">
+                                <template #trigger>
+                                    <n-tag size="tiny" :bordered="false" class="model-assert-tag">{{ assertionLabel }}</n-tag>
+                                </template>
+                                {{ assertionTip }}
+                            </n-tooltip>
+                        </template>
+                        <span v-else class="dim">—</span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
                     <n-descriptions-item label="Started">{{ formatDate(session.startedAt) }}</n-descriptions-item>
                     <n-descriptions-item label="Closed">{{ formatDate(session.closedAt) }}</n-descriptions-item>
@@ -165,6 +189,39 @@ const releaseRows = computed<any[]>(() => {
 })
 
 const prRows = computed<any[]>(() => session.value?.pullRequests ?? [])
+
+// Model surfacing (v1a). The model is a property of the chat, recorded on
+// the session — see Session.primaryModel. modelAssertion is DECLARED today
+// (the agent self-reported the model string via the CLI); RUNTIME_OBSERVED
+// is reserved for host-side hooks that read the runtime's own record.
+const modelLabel = computed<string>(() => {
+    const m = session.value?.primaryModel
+    if (!m) return '—'
+    const ver = m.version && m.version !== 'unknown' ? ` @ ${m.version}` : ''
+    const pub = m.publisher ? `${m.publisher} · ` : ''
+    return `${pub}${m.name}${ver}`
+})
+
+// Exhaustive map of the ModelAssertionState enum. Anything outside it
+// (null on a legacy row, or a future enum member the UI predates) must
+// render as the neutral 'unknown' rather than silently claiming the
+// weaker-but-specific 'declared' provenance — mislabeling provenance is
+// worse than admitting we don't know it.
+const ASSERTION_LABELS: Record<string, string> = {
+    DECLARED: 'declared',
+    RUNTIME_OBSERVED: 'observed',
+}
+
+const ASSERTION_TIPS: Record<string, string> = {
+    DECLARED: 'Declared: the agent self-reported this model via the CLI. ReARM trusts the agent\'s word; it is not independently verified, and does not carry the authority of the session\'s commit signatures.',
+    RUNTIME_OBSERVED: 'Observed: the model was read from the runtime\'s own record. This label does not carry the authority of the session\'s commit signatures.',
+}
+
+const assertionLabel = computed<string>(() =>
+    ASSERTION_LABELS[session.value?.modelAssertion] ?? 'unknown')
+
+const assertionTip = computed<string>(() =>
+    ASSERTION_TIPS[session.value?.modelAssertion] ?? 'The provenance of this model attribution is unknown.')
 
 onMounted(load)
 
@@ -527,4 +584,7 @@ const policyColumns: DataTableColumns<any> = [
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 .mt-1 { margin-top: 8px; font-size: 12px; }
 .verdict-summary { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.model-badge { font-size: 12px; }
+.model-assert { margin-left: 6px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; opacity: 0.7; }
+.model-assert-tag { margin-left: 8px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; }
 </style>
