@@ -32,9 +32,6 @@ import jakarta.validation.Valid;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -65,19 +62,23 @@ public class ProductReleasesApiController implements ProductReleasesApi {
     
     @Override
     public ResponseEntity<TeaPaginatedProductReleaseResponse> queryTeaProductReleases(
-            @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
-            @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
             @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,
-            @Parameter(name = "idValue", description = "If present, only the objects with the given identifier value will be returned.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idValue", required = false) @Nullable String idValue
+            @Parameter(name = "idValue", description = "If present, only the objects with the given identifier value will be returned.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idValue", required = false) @Nullable String idValue,
+            @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+            @Parameter(name = "pageToken", description = "An opaque token used to retrieve the next page of results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+            @Parameter(name = "sortField", description = "The field by which to sort the results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "createdDate") String sortField,
+            @Parameter(name = "sortOrder", description = "The direction of the sort.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
         ) {
-    	 	// TODO: implement search
-    		TeaPaginatedProductReleaseResponse tpprr = new TeaPaginatedProductReleaseResponse();
-    		var releaseDatas = sharedReleaseService.listProductReleasesOfOrg(UserService.USER_ORG, pageSize, pageOffset);
+    	 	// TODO: implement search and sort
+    		long size = TeaPaginationUtil.effectiveSize(pageSize);
+    		long offset = TeaPaginationUtil.decodeOffset(pageToken);
+    		var releaseDatas = sharedReleaseService.listProductReleasesOfOrg(UserService.USER_ORG, size + 1, offset);
     		var releases = releaseDatas.stream().map(x -> teaTransformerService.transformProductReleaseToTea(x)).toList();
-    		tpprr.setPageSize(pageSize);
-    		tpprr.setResults(releases);
-    		tpprr.setTotalResults((long) releases.size());
-    		tpprr.setTimestamp(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.SECONDS));
+    		var page = TeaPaginationUtil.fromOverfetch(releases, offset, size);
+    		TeaPaginatedProductReleaseResponse tpprr = new TeaPaginatedProductReleaseResponse();
+    		tpprr.setResults(page.items());
+    		tpprr.setHasNext(page.hasNext());
+    		tpprr.setNextPageToken(page.nextPageToken());
     		return ResponseEntity.ok(tpprr);
 
         }
