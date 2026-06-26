@@ -318,6 +318,25 @@
                             GitHub (PR check-runs / comments). <b>Inbound</b> pull_request webhooks use a separate
                             HMAC secret, configured in the Webhooks sub-tab after this integration is saved.
                         </n-text>
+                        <!-- Test the UNSAVED key + App ID against GitHub before saving. -->
+                        <template v-if="createIntegrationObject.type === 'GITHUB'">
+                            <n-alert
+                                v-if="createTestCredResult"
+                                :type="createTestCredResult.ok ? 'success' : 'error'"
+                                :title="createTestCredResult.ok ? 'Credentials OK' : 'Credentials check failed'"
+                                closable
+                                @close="createTestCredResult = null"
+                                style="margin-bottom: 6px;"
+                            >
+                                {{ createTestCredResult.message }}
+                            </n-alert>
+                            <n-button
+                                size="small"
+                                :loading="createTestCredLoading"
+                                :disabled="!createIntegrationObject.secret"
+                                @click="testGithubCredentials('create')"
+                            >Test credentials</n-button>
+                        </template>
 
                         <n-form-item v-if="createIntegrationObject.type === 'GITLAB'" label="GitLab Authentication Token">
                             <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter GitLab Authentication Token" />
@@ -420,6 +439,26 @@
                             >
                                 <n-input type="number" v-model:value="editCiIntegrationObject.schedule" placeholder="Enter GitHub Application ID" />
                             </n-form-item>
+                            <!-- Test the UNSAVED replacement key + App ID against GitHub before saving.
+                                 Distinct from "Test connection" below, which tests the SAVED credentials. -->
+                            <template v-if="!editCiIntegrationObject.updateCapabilitiesOnly">
+                                <n-alert
+                                    v-if="editTestCredResult"
+                                    :type="editTestCredResult.ok ? 'success' : 'error'"
+                                    :title="editTestCredResult.ok ? 'Credentials OK' : 'Credentials check failed'"
+                                    closable
+                                    @close="editTestCredResult = null"
+                                    style="margin-bottom: 6px;"
+                                >
+                                    {{ editTestCredResult.message }}
+                                </n-alert>
+                                <n-button
+                                    size="small"
+                                    :loading="editTestCredLoading"
+                                    :disabled="!editCiIntegrationObject.secret"
+                                    @click="testGithubCredentials('edit')"
+                                >Test credentials (unsaved)</n-button>
+                            </template>
                         </template>
                         <n-text depth="3" style="font-size: 13px;">
                             Inbound vs outbound: the App private key here signs <b>outbound</b> calls to GitHub
@@ -560,6 +599,12 @@ const editCiIntegrationLoading = ref(false)
 // "Test connection" result banner state (GitHub edit modal).
 const editTestLoading = ref(false)
 const editTestResult = ref<any>(null) // { ok, message, installations } | null
+// "Test credentials" (UNSAVED key + App ID) banner state — create & edit modals.
+// Distinct from editTestResult, which tests the SAVED integration.
+const createTestCredLoading = ref(false)
+const createTestCredResult = ref<any>(null)
+const editTestCredLoading = ref(false)
+const editTestCredResult = ref<any>(null)
 // Edit-modal key replacement uses its own input-mode/filename state (separate
 // from the create form) plus the same toggle-clears-stale-value safety.
 const editSecretInputMode = ref<'paste' | 'upload'>('upload')
@@ -708,6 +753,7 @@ function openEditCiIntegrationModal(row: any) {
     editSecretInputMode.value = 'upload'
     editUploadedSecretFileName.value = ''
     editTestResult.value = null
+    editTestCredResult.value = null
     showCiEditModal.value = true
 }
 
@@ -727,6 +773,7 @@ function resetCreateIntegrationObject() {
         capabilities: []
     }
     uploadedSecretFileName.value = ''
+    createTestCredResult.value = null
 }
 
 function resetBearForm() {
@@ -883,6 +930,41 @@ async function testGithubConnection() {
             installations: 0 }
     } finally {
         editTestLoading.value = false
+    }
+}
+
+// "Test credentials": validate the UNSAVED key + App ID currently in the form
+// against GitHub (testGithubCredentialsInput mutation), WITHOUT persisting. Used
+// from both the create modal and the edit credential-replacement section.
+// SECURITY note: the private key is sent only to our own backend over the
+// authenticated GraphQL endpoint; the server never logs or echoes it.
+async function testGithubCredentials(target: 'create' | 'edit') {
+    const isCreate = target === 'create'
+    const obj = isCreate ? createIntegrationObject.value : editCiIntegrationObject.value
+    const resultRef = isCreate ? createTestCredResult : editTestCredResult
+    const loadingRef = isCreate ? createTestCredLoading : editTestCredLoading
+    resultRef.value = null
+    loadingRef.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation testGithubCredentialsInput($org: ID!, $privateKey: String!, $appId: String) {
+                    testGithubCredentialsInput(org: $org, privateKey: $privateKey, appId: $appId) { ok message installations }
+                }`,
+            variables: {
+                org: orguuid.value,
+                privateKey: obj.secret,
+                appId: String(obj.schedule ?? '').trim() || null
+            }
+        })
+        resultRef.value = resp.data?.testGithubCredentialsInput
+            || { ok: false, message: 'No response from server.', installations: 0 }
+    } catch (e: any) {
+        resultRef.value = { ok: false,
+            message: commonFunctions.parseGraphQLError(e?.message) || e?.message || String(e),
+            installations: 0 }
+    } finally {
+        loadingRef.value = false
     }
 }
 
