@@ -84,6 +84,7 @@
                     :loading="inboxLoading"
                     :single-line="false"
                     :bordered="false"
+                    :scroll-x="1000"
                     :row-key="(row) => row.uuid"
                     v-model:checked-row-keys="selectedInboxRows"
                 />
@@ -160,7 +161,8 @@
                         </n-descriptions-item>
                         <n-descriptions-item label="Channel">
                             <span v-if="!inboxDrawerRow.channelUuid" class="muted-12">Direct</span>
-                            <span v-else>{{ channelNameById[inboxDrawerRow.channelUuid] || '(deleted)' }}</span>
+                            <span v-else-if="inboxDrawerRow.channelName">{{ inboxDrawerRow.channelName }}</span>
+                            <span v-else class="muted-12" :title="inboxDrawerRow.channelUuid">(deleted channel)</span>
                         </n-descriptions-item>
                         <n-descriptions-item label="Delivered">
                             {{ formatHistoryTimestamp(inboxDrawerRow.sentAt || inboxDrawerRow.createdDate) }}
@@ -258,9 +260,9 @@ import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import {
-    ChannelRow, InboxRow, deliveryStatusOptions, eventTypeOptions,
-    LIST_CHANNELS_QUERY, deliveryStatusTagType, severityTagType,
-    formatHistoryTimestamp, extractError, buildNameMap
+    InboxRow, deliveryStatusOptions, eventTypeOptions,
+    deliveryStatusTagType, severityTagType,
+    formatHistoryTimestamp, extractError
 } from '@/utils/notificationsCommon'
 
 const props = defineProps<{
@@ -281,9 +283,6 @@ const myuser = computed<any>(() => store.getters.myuser)
 const canWrite = computed<boolean>(() =>
     commonFunctions.isWritable(orgUuid.value, myuser.value, 'ORG')
 )
-
-const channels = ref<ChannelRow[]>([])
-const channelNameById = computed<Record<string, string>>(() => buildNameMap(channels.value))
 
 const inboxListDrawerOpen = ref<boolean>(false)
 const drawerTab = ref<string>('inbox')
@@ -420,7 +419,7 @@ const INBOX_QUERY = gql`
             offset: $offset
         ) {
             items {
-                uuid org outboxEventUuid subscriptionUuid channelUuid
+                uuid org outboxEventUuid subscriptionUuid channelUuid channelName
                 status origin dedupKey attemptCount nextAttemptAt sentAt
                 lastError createdDate readAt eventType severity
                 title description payloadJson
@@ -472,19 +471,6 @@ const APPROVALS_COUNT_QUERY = gql`
     }
 `
 
-async function loadChannels (): Promise<void> {
-    try {
-        const res = await graphqlClient.query({
-            query: LIST_CHANNELS_QUERY,
-            variables: { orgUuid: orgUuid.value },
-            fetchPolicy: 'network-only',
-        })
-        channels.value = res.data?.notificationChannels || []
-    } catch (e: any) {
-        message.error(`Failed to load channels: ${extractError(e)}`)
-    }
-}
-
 function openInboxDrawer (): void {
     inboxListDrawerOpen.value = true
     // Land on the tab that has something for the user: when there are no
@@ -492,11 +478,11 @@ function openInboxDrawer (): void {
     // on an empty Inbox would look broken.
     drawerTab.value = (inboxUnreadCount.value === 0 && approvalsCount.value > 0)
         ? 'approvals' : 'inbox'
-    // Lazy-load the body + channel name map the first time the drawer
-    // opens so a user who never opens it pays no round-trip cost.
+    // Lazy-load the body the first time the drawer opens so a user who
+    // never opens it pays no round-trip cost. Channel names ride along on
+    // each inbox row (channelName), so no separate channel-list fetch.
     if (!inboxLoadedOnce) {
         inboxLoadedOnce = true
-        loadChannels()
         loadInbox()
     }
     // Approvals are part of the nav badge, so the poll keeps the count fresh
@@ -771,11 +757,11 @@ const inboxColumns = computed(() => [
         disabled: (row: InboxRow) => !!row.readAt,
     },
     {
-        title: 'When', key: 'when',
+        title: 'When', key: 'when', width: 170,
         render: (row: InboxRow) => formatHistoryTimestamp(row.sentAt || row.createdDate),
     },
     {
-        title: 'Status', key: 'status',
+        title: 'Status', key: 'status', width: 110,
         render: (row: InboxRow) => h(
             NTag,
             { type: deliveryStatusTagType(row.status), size: 'small' },
@@ -783,7 +769,7 @@ const inboxColumns = computed(() => [
         ),
     },
     {
-        title: 'Message', key: 'message',
+        title: 'Message', key: 'message', minWidth: 220,
         render: (row: InboxRow) => {
             // The Message cell is the click target that opens the inbox
             // drawer. Title is bold; description sits below as muted helper
@@ -815,7 +801,7 @@ const inboxColumns = computed(() => [
         },
     },
     {
-        title: 'Severity', key: 'severity',
+        title: 'Severity', key: 'severity', width: 110,
         render: (row: InboxRow) => row.severity
             ? h(
                 NTag,
@@ -825,16 +811,19 @@ const inboxColumns = computed(() => [
             : h('span', { class: 'muted-12' }, '—'),
     },
     {
-        title: 'Channel', key: 'channelUuid',
+        title: 'Channel', key: 'channelUuid', width: 150,
         // Null channel = Phase 4a targeted delivery (personal inbox copy,
-        // no transmission channel) — not a deleted channel.
+        // no transmission channel) — not a deleted channel. channelName is
+        // resolved server-side and rides along on the row, so no admin-only
+        // channel-list fetch is needed; a null name on a real channelUuid
+        // means the channel was deleted.
         render: (row: InboxRow) => (row.channelUuid
-            ? (channelNameById.value[row.channelUuid]
+            ? (row.channelName
                 || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'))
             : h('span', { class: 'muted-12' }, 'Direct')),
     },
     {
-        title: 'Read', key: 'readAt',
+        title: 'Read', key: 'readAt', width: 200,
         render: (row: InboxRow) => row.readAt
             ? h(NSpace, { size: 'small', align: 'center' }, {
                 default: () => [

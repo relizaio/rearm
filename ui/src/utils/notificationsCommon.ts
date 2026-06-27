@@ -75,6 +75,10 @@ export interface InboxRow {
     subscriptionUuid: string | null
     // Null for targeted (per-user) approval deliveries — no channel involved.
     channelUuid: string | null
+    // Server-resolved channel display name (added alongside channelUuid so the
+    // inbox doesn't need an admin-only channel-list fetch to render the name).
+    // Null when the channel has been deleted or for channel-less targeted rows.
+    channelName: string | null
     status: string
     origin: string
     dedupKey: string | null
