@@ -81,6 +81,9 @@
                                     Add route
                                 </n-button>
                             </div>
+                            <div class="routes-hint">
+                                A route's Perspectives filter gates which events this channel actually <strong>delivers</strong> — it does not affect the in-app inbox/bell visibility. Leave empty for no restriction.
+                            </div>
                             <div v-for="(r, i) in subForm.routes" :key="i" class="route-row">
                                 <n-grid :cols="24" :x-gap="8" item-responsive>
                                     <n-gi :span="8">
@@ -125,6 +128,17 @@
                                                 multiple
                                                 placeholder="(none)"
                                                 clearable
+                                            />
+                                        </n-form-item>
+                                    </n-gi>
+                                    <n-gi :span="22" :offset="0">
+                                        <n-form-item :label="i === 0 ? 'Perspectives (delivery filter)' : ''" :show-feedback="false">
+                                            <n-select
+                                                v-model:value="r.perspectives"
+                                                :options="perspectiveOptions"
+                                                multiple
+                                                clearable
+                                                placeholder="All perspectives (no restriction)"
                                             />
                                         </n-form-item>
                                     </n-gi>
@@ -197,6 +211,7 @@
 
 <script lang="ts" setup>
 import { ref, computed, h, onMounted } from 'vue'
+import { useStore } from 'vuex'
 import {
     NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
     NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag,
@@ -219,6 +234,7 @@ const props = defineProps<{
 
 const dialog = useDialog()
 const message = useMessage()
+const store = useStore()
 
 const orgUuid = computed<string>(() => props.orguuid)
 const canWrite = computed<boolean>(() => props.isWritable)
@@ -227,10 +243,14 @@ interface SubscriptionRoute {
     whenSeverityAtLeast: string | null
     channels: string[]
     channelGroups: string[]
+    // Delivery filter: restricts which events this route's channels deliver
+    // to the listed perspectives. NOT the inbox/bell visibility gate. Empty
+    // = no restriction (all perspectives).
+    perspectives: string[]
     // Carries the as-loaded route object on edit so fields the UI still
-    // doesn't model (andEnvIn, andLifecycleIn, perspectives) survive an
-    // Edit → Save round-trip instead of being silently stripped.
-    // channels + channelGroups overlay this last and win. Empty on Create.
+    // doesn't model (andEnvIn, andLifecycleIn) survive an Edit → Save
+    // round-trip instead of being silently stripped. channels +
+    // channelGroups + perspectives overlay this last and win. Empty on Create.
     _raw?: Record<string, any>
 }
 
@@ -253,7 +273,7 @@ interface SubscriptionForm {
 }
 
 function freshRoute (): SubscriptionRoute {
-    return { whenSeverityAtLeast: null, channels: [], channelGroups: [] }
+    return { whenSeverityAtLeast: null, channels: [], channelGroups: [], perspectives: [] }
 }
 
 function freshSubscriptionForm (): SubscriptionForm {
@@ -291,6 +311,13 @@ const channelGroupOptions = computed(() =>
     channelGroups.value.map(g => ({
         label: `${g.name} (${g.channels.length} ch)`,
         value: g.uuid,
+    }))
+)
+
+const perspectiveOptions = computed(() =>
+    (store.getters.perspectivesOfOrg(orgUuid.value) || []).map((p: any) => ({
+        label: p.name,
+        value: p.uuid,
     }))
 )
 
@@ -392,6 +419,7 @@ function openEditSubscription (row: SubscriptionRow): void {
                 whenSeverityAtLeast: r.whenSeverityAtLeast || null,
                 channels: Array.isArray(r.channels) ? [...r.channels] : [],
                 channelGroups: Array.isArray(r.channelGroups) ? [...r.channelGroups] : [],
+                perspectives: Array.isArray(r.perspectives) ? [...r.perspectives] : [],
                 _raw: r,
             }))
         }
@@ -451,13 +479,14 @@ async function saveSubscription (): Promise<void> {
         eventTypes: f.eventTypes,
         filter: filterInput,
         // Spread the original route's still-unmodelled fields (andEnvIn,
-        // andLifecycleIn, perspectives) so an Edit → Save round-trip
-        // doesn't silently strip them. The modeled fields overlay last.
+        // andLifecycleIn) so an Edit → Save round-trip doesn't silently
+        // strip them. The modeled fields overlay last and win.
         routes: f.routes.map(r => ({
             ...(r._raw || {}),
             whenSeverityAtLeast: r.whenSeverityAtLeast,
             channels: r.channels,
             channelGroups: r.channelGroups,
+            perspectives: r.perspectives,
         })),
         dedupWindowMinutes: f.dedupWindowMinutes,
     }
@@ -569,7 +598,12 @@ const subscriptionColumns = computed(() => [
 ])
 
 onMounted(async () => {
-    await Promise.all([loadChannels(), loadChannelGroups(), loadSubscriptions()])
+    await Promise.all([
+        loadChannels(),
+        loadChannelGroups(),
+        loadSubscriptions(),
+        store.dispatch('fetchPerspectives', orgUuid.value),
+    ])
 })
 </script>
 
@@ -595,6 +629,7 @@ onMounted(async () => {
     margin-bottom: 8px;
 }
 .routes-title { font-size: 13px; font-weight: 600; }
+.routes-hint { font-size: 12px; color: var(--n-text-color-3, #888); margin-bottom: 10px; }
 .route-row + .route-row { margin-top: 6px; }
 .route-remove-cell { display: flex; align-items: flex-end; }
 </style>
