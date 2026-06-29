@@ -73,6 +73,10 @@
                             <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="orgUuid" />
                         </div>
                     </n-tab-pane>
+
+                    <n-tab-pane name="overTime" tab="⏱ Finding changes over time">
+                        <OverTimeFindingChanges :over-time-finding-changes="changelog.overTimeFindingChanges" :org-uuid="orgUuid" />
+                    </n-tab-pane>
                 </n-tabs>
             </div>
             
@@ -83,6 +87,9 @@
                     </n-tab-pane>
                     <n-tab-pane name="findings" tab="🔒 Finding Changes">
                         <FindingChangesDisplayWithAttribution />
+                    </n-tab-pane>
+                    <n-tab-pane name="overTime" tab="⏱ Finding changes over time">
+                        <OverTimeFindingChanges />
                     </n-tab-pane>
                 </n-tabs>
             </div>
@@ -104,6 +111,7 @@ import {
     ChangelogControls,
     FindingChangesDisplay,
     FindingChangesDisplayWithAttribution,
+    OverTimeFindingChanges,
     SbomChangesDisplay,
     ComponentHeader,
     ReleaseHeader

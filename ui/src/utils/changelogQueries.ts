@@ -90,6 +90,39 @@ const RELEASE_FINDING_CHANGES_FRAGMENT = `
     }
 `
 
+// Over-time finding changes: flat list of re-scan-driven MetricsRevisionFindingChange
+// records. Exactly one of vulnerability/violation/weakness is non-null per record;
+// previousSeverity is set only for SEVERITY_INCREASED. Reuses the same lightweight
+// nested selections as the per-release finding-change fragments.
+const OVER_TIME_FINDING_CHANGES_FRAGMENT = `
+    changeDate
+    changeKind
+    releaseUuid
+    version
+    componentUuid
+    componentName
+    previousSeverity
+    vulnerability {
+        vulnId
+        purl
+        severity
+        aliases {
+            aliasId
+        }
+        knownExploited
+    }
+    violation {
+        type
+        purl
+    }
+    weakness {
+        cweId
+        severity
+        ruleId
+        location
+    }
+`
+
 const NONE_RELEASE_CHANGES_FRAGMENT = `
     releaseUuid
     version
@@ -248,6 +281,9 @@ const NONE_CHANGELOG_FIELDS = `
     branches {
         ${NONE_BRANCH_CHANGES_FRAGMENT}
     }
+    overTimeFindingChanges {
+        ${OVER_TIME_FINDING_CHANGES_FRAGMENT}
+    }
 `
 
 const NONE_PRODUCT_CHANGELOG_FIELDS = `
@@ -300,6 +336,9 @@ const AGGREGATED_CHANGELOG_FIELDS = `
     }
     findingChanges {
         ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
+    }
+    overTimeFindingChanges {
+        ${OVER_TIME_FINDING_CHANGES_FRAGMENT}
     }
 `
 
@@ -457,6 +496,9 @@ export async function fetchOrganizationChangelogByDate(params: {
                                 ${NONE_CHANGELOG_FIELDS}
                             }
                         }
+                        overTimeFindingChanges {
+                            ${OVER_TIME_FINDING_CHANGES_FRAGMENT}
+                        }
                     }
                     ... on AggregatedOrganizationChangelog {
                         orgUuid
@@ -473,6 +515,9 @@ export async function fetchOrganizationChangelogByDate(params: {
                         }
                         findingChanges {
                             ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
+                        }
+                        overTimeFindingChanges {
+                            ${OVER_TIME_FINDING_CHANGES_FRAGMENT}
                         }
                     }
                 }

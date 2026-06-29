@@ -87,6 +87,29 @@ export interface ReleaseFindingChanges {
 }
 
 /**
+ * Kind of finding change surfaced by a metrics re-scan over time.
+ */
+export type FindingChangeKind = 'APPEARED' | 'RESOLVED' | 'SEVERITY_INCREASED' | 'KEV_ADDED'
+
+/**
+ * A single re-scan-driven finding change observed at a point in time.
+ * Exactly one of vulnerability / violation / weakness is non-null per record;
+ * previousSeverity is set only for SEVERITY_INCREASED.
+ */
+export interface MetricsRevisionFindingChange {
+    changeDate: string
+    changeKind: FindingChangeKind
+    releaseUuid: string
+    version: string
+    componentUuid: string
+    componentName: string
+    vulnerability?: ReleaseVulnerabilityInfo | null
+    violation?: ReleaseViolationInfo | null
+    weakness?: ReleaseWeaknessInfo | null
+    previousSeverity?: string | null
+}
+
+/**
  * All changes for a single release (NONE mode).
  * Embeds code, SBOM, and finding changes in one self-contained record.
  */
@@ -147,6 +170,7 @@ export interface NoneChangelog {
     firstRelease: ReleaseInfo
     lastRelease: ReleaseInfo
     branches: NoneBranchChanges[]
+    overTimeFindingChanges: MetricsRevisionFindingChange[]
 }
 
 /**
@@ -187,6 +211,7 @@ export interface AggregatedChangelog {
     branches: AggregatedBranchChanges[]
     sbomChanges: SbomChangesWithAttribution
     findingChanges: FindingChangesWithAttribution
+    overTimeFindingChanges: MetricsRevisionFindingChange[]
 }
 
 /**
@@ -203,6 +228,7 @@ export interface NoneOrganizationChangelog {
     dateFrom: string
     dateTo: string
     components: ComponentChangelog[]
+    overTimeFindingChanges: MetricsRevisionFindingChange[]
 }
 
 /**
@@ -216,6 +242,7 @@ export interface AggregatedOrganizationChangelog {
     components: ComponentChangelog[]
     sbomChanges: SbomChangesWithAttribution
     findingChanges: FindingChangesWithAttribution
+    overTimeFindingChanges: MetricsRevisionFindingChange[]
 }
 
 /**
