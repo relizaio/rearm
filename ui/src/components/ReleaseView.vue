@@ -772,7 +772,7 @@
                         <p>Open this tab to load underlying artifact details.</p>
                     </div>
                 </n-tab-pane>
-                <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals">
+                <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals" data-testid="release-approvals-tab">
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER'">
                         <div v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'" style="margin-bottom: 10px;">
                             <strong>Approved Environments: </strong>
@@ -808,7 +808,7 @@
                             </template>
                         </div>
                         <n-space v-if="isWritable && approvalEntries.length" style="margin-bottom: 10px;">
-                            <n-button @click="requestApprovals" :loading="requestApprovalsPending" :disabled="requestApprovalsPending" title="Notify everyone who can still approve this release">
+                            <n-button @click="requestApprovals" :loading="requestApprovalsPending" :disabled="requestApprovalsPending" title="Notify everyone who can still approve this release" data-testid="request-approvals">
                                 <template #icon>
                                     <n-icon><Bell /></n-icon>
                                 </template>
@@ -827,7 +827,7 @@
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
                             <n-spin :show="approvalPending" small>
-                                <n-button @click="triggerApproval" :disabled="approvalPending">
+                                <n-button @click="triggerApproval" :disabled="approvalPending" data-testid="save-approvals">
                                     <template #icon>
                                         <n-icon><ClipboardCheck /></n-icon>
                                     </template>
@@ -835,7 +835,7 @@
                                     <span v-else>Save Approvals</span>
                                 </n-button>
                             </n-spin>
-                            <n-button type="warning" @click="resetApprovals">
+                            <n-button type="warning" @click="resetApprovals" data-testid="reset-approvals">
                                 <template #icon>
                                     <n-icon><Refresh /></n-icon>
                                 </template>
@@ -4997,12 +4997,18 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                     } else {
                         title = 'Unset'
                     }
+                    // Machine-readable cell state for the test harness. Today
+                    // the tri-state is only inferable from title/indeterminate;
+                    // surface it explicitly as data-state on the checkbox.
+                    const approvalState = isApproved ? 'APPROVED' : (isDisapproved ? 'DISAPPROVED' : 'UNSET')
                     const checkBoxEl = h(NCheckbox,
                         {
                             checked: isApproved,
                             indeterminate: isDisapproved,
                             disabled: isDisabled,
                             title,
+                            'data-testid': `approval-cell-${row.uuid}-${aid}`,
+                            'data-state': approvalState,
                             style: isDisapproved ? "--n-color-checked: red; --n-color-disabled: red;" : "",
                             size: 'large',
                             onClick: (e: any, i: any) => {
