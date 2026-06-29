@@ -45,6 +45,7 @@
                         :key="card.id"
                         class="card"
                         :class="{ 'card-configured': isCardConfigured(card), 'card-available': !isCardConfigured(card) }"
+                        :data-testid="`catalog-card-${card.id}`"
                     >
                         <!-- card header: logo + title + vendor + status pill -->
                         <div class="card-head">
@@ -83,7 +84,7 @@
                                     </template>
                                     Configured by an instance administrator in System Settings
                                 </n-tooltip>
-                                <n-button v-else size="small" :disabled="card.proOnly && !showCiFeatures" @click="openAddForCard(card)">
+                                <n-button v-else size="small" :disabled="card.proOnly && !showCiFeatures" @click="openAddForCard(card)" :data-testid="`add-channel-${card.id}`">
                                     <template #icon><n-icon><CirclePlus /></n-icon></template>
                                     {{ card.externalConfig ? 'Configure' : 'Add' }}
                                 </n-button>
@@ -95,10 +96,10 @@
                             <div class="instance-list">
                                 <!-- Notification channels (Email / Webhook / Sentinel) -->
                                 <template v-if="isChannelCard(card)">
-                                    <div v-for="ch in channelRowsForCard(card)" :key="ch.uuid" class="instance-row">
+                                    <div v-for="ch in channelRowsForCard(card)" :key="ch.uuid" class="instance-row" :data-testid="`channel-instance-${card.id}`">
                                         <div class="instance-status"><span class="ddot" :class="ch.status === 'ENABLED' ? 'ok' : 'off'" /></div>
                                         <div class="instance-body">
-                                            <div class="instance-name">{{ ch.name }}</div>
+                                            <div class="instance-name" data-testid="channel-instance-name">{{ ch.name }}</div>
                                             <div v-if="card.id === 'EMAIL'" class="instance-meta">
                                                 <span class="instance-scope">{{ emailRecipientsSummary(ch) }}</span>
                                             </div>
@@ -167,7 +168,7 @@
                             </div>
 
                             <!-- + Add another for multi-instance only -->
-                            <button v-if="card.multiInstance" class="add-another" @click="openAddForCard(card)">
+                            <button v-if="card.multiInstance" class="add-another" @click="openAddForCard(card)" :data-testid="`add-channel-${card.id}`">
                                 <n-icon size="14"><CirclePlus /></n-icon>
                                 <span>Add another {{ card.name }}</span>
                             </button>
@@ -301,7 +302,7 @@
                         </n-alert>
 
                         <n-space>
-                            <n-button :loading="slackChSaveLoading" @click="saveSlackChannel" type="success">Save</n-button>
+                            <n-button :loading="slackChSaveLoading" @click="saveSlackChannel" type="success" data-testid="save-SLACK-channel">Save</n-button>
                             <n-button @click="showSlackChModal = false" type="default">Cancel</n-button>
                         </n-space>
                     </n-space>
@@ -341,7 +342,7 @@
                         </n-alert>
 
                         <n-space>
-                            <n-button :loading="teamsChSaveLoading" @click="saveTeamsChannel" type="success">Save</n-button>
+                            <n-button :loading="teamsChSaveLoading" @click="saveTeamsChannel" type="success" data-testid="save-MSTEAMS-channel">Save</n-button>
                             <n-button @click="showTeamsChModal = false" type="default">Cancel</n-button>
                         </n-space>
                     </n-space>
@@ -394,7 +395,7 @@
                         </n-alert>
 
                         <n-space>
-                            <n-button :loading="emailSaveLoading" @click="saveEmailChannel" type="success">Save</n-button>
+                            <n-button :loading="emailSaveLoading" @click="saveEmailChannel" type="success" data-testid="save-EMAIL-channel">Save</n-button>
                             <n-button @click="showEmailModal = false" type="default">Cancel</n-button>
                         </n-space>
                     </n-space>
@@ -448,7 +449,7 @@
                         </n-alert>
 
                         <n-space>
-                            <n-button :loading="webhookChSaveLoading" @click="saveWebhookChannel" type="success">Save</n-button>
+                            <n-button :loading="webhookChSaveLoading" @click="saveWebhookChannel" type="success" data-testid="save-WEBHOOK-channel">Save</n-button>
                             <n-button @click="showWebhookChModal = false" type="default">Cancel</n-button>
                         </n-space>
                     </n-space>
@@ -501,7 +502,7 @@
                         </n-alert>
 
                         <n-space>
-                            <n-button :loading="sentinelSaveLoading" @click="saveSentinelChannel" type="success">Save</n-button>
+                            <n-button :loading="sentinelSaveLoading" @click="saveSentinelChannel" type="success" data-testid="save-SENTINEL-channel">Save</n-button>
                             <n-button @click="showSentinelModal = false" type="default">Cancel</n-button>
                         </n-space>
                     </n-space>

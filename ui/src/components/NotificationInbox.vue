@@ -1,7 +1,7 @@
 <template>
     <span class="inbox-nav-trigger">
-        <n-badge :value="navBadgeCount" :max="99" :show="navBadgeCount > 0">
-            <n-icon class="clickable" title="Notifications" size="20" @click="openInboxDrawer">
+        <n-badge :value="navBadgeCount" :max="99" :show="navBadgeCount > 0" data-testid="inbox-badge">
+            <n-icon class="clickable" title="Notifications" size="20" @click="openInboxDrawer" data-testid="inbox-bell">
                 <Bell />
             </n-icon>
         </n-badge>
@@ -13,7 +13,7 @@
         <n-drawer v-model:show="inboxListDrawerOpen" :width="760" placement="right">
             <n-drawer-content title="Notifications" closable>
                 <n-tabs v-model:value="drawerTab" type="line" animated>
-                <n-tab-pane name="inbox" tab="Inbox">
+                <n-tab-pane name="inbox" tab="Inbox" data-testid="inbox-tab">
                 <div class="tab-toolbar">
                     <div class="tab-toolbar-info">
                         Your personal triage queue. Org-admins see every delivery; perspective-members see deliveries that touch a release in one of their perspectives.
@@ -25,6 +25,7 @@
                             type="primary"
                             @click="bulkMarkRead"
                             :loading="inboxBulkLoading"
+                            data-testid="mark-selected-read"
                         >
                             <template #icon><n-icon><Check /></n-icon></template>
                             Mark {{ selectedInboxRows.length }} read
@@ -35,6 +36,7 @@
                             secondary
                             @click="markAllReadConfirm"
                             :loading="inboxMarkAllLoading"
+                            data-testid="mark-all-read"
                         >
                             Mark all read
                         </n-button>
@@ -105,7 +107,7 @@
                      a user with no approval roles sees an empty list. Acting
                      on an approval still happens on the release page — this
                      tab is the triage surface, the Version link is the hop. -->
-                <n-tab-pane name="approvals" :tab="approvalsTabLabel">
+                <n-tab-pane name="approvals" :tab="approvalsTabLabel" data-testid="approvals-tab">
                     <div class="tab-toolbar">
                         <div class="tab-toolbar-info">
                             Releases with an approval pending on one of your approval roles. Open the release to approve or disapprove.
@@ -758,13 +760,17 @@ const inboxColumns = computed(() => [
     },
     {
         title: 'When', key: 'when', width: 170,
-        render: (row: InboxRow) => formatHistoryTimestamp(row.sentAt || row.createdDate),
+        render: (row: InboxRow) => h(
+            'span',
+            { 'data-testid': 'inbox-cell-when' },
+            formatHistoryTimestamp(row.sentAt || row.createdDate),
+        ),
     },
     {
         title: 'Status', key: 'status', width: 110,
         render: (row: InboxRow) => h(
             NTag,
-            { type: deliveryStatusTagType(row.status), size: 'small' },
+            { type: deliveryStatusTagType(row.status), size: 'small', 'data-testid': 'inbox-cell-status' },
             { default: () => row.status },
         ),
     },
@@ -787,6 +793,7 @@ const inboxColumns = computed(() => [
                 {
                     type: 'button',
                     class: 'inbox-message-link',
+                    'data-testid': 'inbox-message-link',
                     onClick: () => openInboxRow(row),
                 },
                 {
@@ -805,10 +812,10 @@ const inboxColumns = computed(() => [
         render: (row: InboxRow) => row.severity
             ? h(
                 NTag,
-                { type: severityTagType(row.severity), size: 'small' },
+                { type: severityTagType(row.severity), size: 'small', 'data-testid': 'inbox-cell-severity' },
                 { default: () => row.severity },
             )
-            : h('span', { class: 'muted-12' }, '—'),
+            : h('span', { class: 'muted-12', 'data-testid': 'inbox-cell-severity' }, '—'),
     },
     {
         title: 'Channel', key: 'channelUuid', width: 150,
@@ -817,10 +824,14 @@ const inboxColumns = computed(() => [
         // resolved server-side and rides along on the row, so no admin-only
         // channel-list fetch is needed; a null name on a real channelUuid
         // means the channel was deleted.
-        render: (row: InboxRow) => (row.channelUuid
-            ? (row.channelName
-                || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'))
-            : h('span', { class: 'muted-12' }, 'Direct')),
+        render: (row: InboxRow) => h(
+            'span',
+            { 'data-testid': 'inbox-cell-channel' },
+            row.channelUuid
+                ? (row.channelName
+                    || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'))
+                : h('span', { class: 'muted-12' }, 'Direct'),
+        ),
     },
     {
         title: 'Read', key: 'readAt', width: 200,
@@ -858,10 +869,12 @@ const approvalsColumns = computed(() => [
     {
         title: 'Component', key: 'componentName',
         render: (row: ReleasePendingApproval) => {
-            if (!row.componentUuid) return h('span', { class: 'muted-12' }, row.componentName || '—')
-            const base = row.componentType === 'PRODUCT' ? 'productsOfOrg' : 'componentsOfOrg'
-            return approvalLink(`/${base}/${orgUuid.value}/${row.componentUuid}`,
-                row.componentName || row.componentUuid)
+            const inner = !row.componentUuid
+                ? h('span', { class: 'muted-12' }, row.componentName || '—')
+                : approvalLink(
+                    `/${row.componentType === 'PRODUCT' ? 'productsOfOrg' : 'componentsOfOrg'}/${orgUuid.value}/${row.componentUuid}`,
+                    row.componentName || row.componentUuid)
+            return h('span', { 'data-testid': 'approval-pending-row' }, inner)
         },
     },
     {

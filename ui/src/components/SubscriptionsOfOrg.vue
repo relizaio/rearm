@@ -9,6 +9,7 @@
                 type="primary"
                 size="small"
                 @click="openCreateSubscription"
+                data-testid="add-subscription"
             >
                 <template #icon><n-icon><CirclePlus /></n-icon></template>
                 Add subscription
@@ -54,6 +55,7 @@
                                 :options="eventTypeOptions"
                                 multiple
                                 placeholder="Pick one or more event types"
+                                data-testid="sub-eventtypes"
                             />
                         </n-form-item>
 
@@ -76,7 +78,7 @@
                         <div class="routes-section">
                             <div class="routes-header">
                                 <div class="routes-title">Routes</div>
-                                <n-button size="tiny" @click="addRoute">
+                                <n-button size="tiny" @click="addRoute" data-testid="add-route">
                                     <template #icon><n-icon><CirclePlus /></n-icon></template>
                                     Add route
                                 </n-button>
@@ -84,7 +86,7 @@
                             <div class="routes-hint">
                                 A route's Perspectives filter gates which events this channel actually <strong>delivers</strong> — it does not affect the in-app inbox/bell visibility. Leave empty for no restriction.
                             </div>
-                            <div v-for="(r, i) in subForm.routes" :key="i" class="route-row">
+                            <div v-for="(r, i) in subForm.routes" :key="i" class="route-row" :data-testid="`route-row-${i}`">
                                 <n-grid :cols="24" :x-gap="8" item-responsive>
                                     <n-gi :span="8">
                                         <n-form-item :label="i === 0 ? 'Minimum severity' : ''" :show-feedback="false">
@@ -93,6 +95,7 @@
                                                 :options="severityOptions"
                                                 placeholder="Any"
                                                 clearable
+                                                data-testid="route-severity"
                                             />
                                         </n-form-item>
                                     </n-gi>
@@ -103,6 +106,7 @@
                                                 :options="channelOptions"
                                                 multiple
                                                 placeholder="Pick channels (and/or groups below)"
+                                                data-testid="route-channels"
                                             />
                                         </n-form-item>
                                     </n-gi>
@@ -128,6 +132,7 @@
                                                 multiple
                                                 placeholder="(none)"
                                                 clearable
+                                                data-testid="route-channelgroups"
                                             />
                                         </n-form-item>
                                     </n-gi>
@@ -139,6 +144,7 @@
                                                 multiple
                                                 clearable
                                                 placeholder="All perspectives (no restriction)"
+                                                data-testid="route-perspectives"
                                             />
                                         </n-form-item>
                                     </n-gi>
@@ -197,6 +203,7 @@
                                 type="primary"
                                 :loading="savingSubscription"
                                 :disabled="!subForm.name.trim() || subForm.eventTypes.length === 0 || subForm.routes.length === 0"
+                                data-testid="save-subscription"
                             >
                                 Save
                             </n-button>
@@ -581,6 +588,7 @@ const subscriptionColumns = computed(() => [
                     size: 'tiny', secondary: true,
                     onClick: () => openEditSubscription(row),
                     disabled: !canWrite.value,
+                    'data-testid': 'edit-subscription',
                 }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
                 h(NButton, {
                     size: 'tiny', secondary: true,
