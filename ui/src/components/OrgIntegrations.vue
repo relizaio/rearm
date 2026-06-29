@@ -173,20 +173,11 @@
                             </button>
                         </template>
 
-                        <!-- Pro-only hint for messaging cards: security and
-                             vulnerability alerts route through the
-                             Subscriptions sub-tab (same Integrations surface)
-                             rather than these base Slack/Teams credentials.
-                             Gated on Pro so the OSS catalog stays the same. -->
-                        <div
-                            v-if="showCiFeatures && (card.id === 'SLACK' || card.id === 'MSTEAMS')"
-                            class="card-pro-hint"
-                        >
-                            Security and vulnerability alerts use a separate destination —
-                            manage in
-                            <a class="pro-hint-link" @click="switchSubTab('subscriptions')">Subscriptions</a>
-                            →
-                        </div>
+                        <!-- Once a messaging channel is configured, events only
+                             reach it when a subscription routes them there.
+                             Applies to every channel card (Slack/Teams/Email/
+                             Webhook/Sentinel). Gated on Pro so the OSS catalog
+                             stays the same. -->
                         <div
                             v-if="showCiFeatures && isChannelCard(card) && isCardConfigured(card)"
                             class="card-pro-hint"
@@ -279,31 +270,80 @@
 
         <!-- ================================= MODALS ================================= -->
 
-        <!-- Slack -->
-        <n-modal v-model:show="showSlackModal" preset="dialog" :show-icon="false">
-            <n-card style="width: 600px" size="huge" title="Add Slack integration" :bordered="false" role="dialog" aria-modal="true">
-                <n-form>
-                    <n-form-item label="Secret" description="Slack integration secret">
-                        <n-input type="password" v-model:value="createIntegrationObject.secret" required placeholder="Enter Slack integration secret" />
-                    </n-form-item>
-                    <n-space>
-                        <n-button @click="onAddBaseIntegration('SLACK')" type="success">Submit</n-button>
-                        <n-button @click="resetCreateIntegrationObject" type="error">Reset</n-button>
+        <!-- Slack notification channel ADD / EDIT -->
+        <n-modal v-model:show="showSlackChModal" preset="dialog" :show-icon="false">
+            <n-card style="width: 640px" size="huge" :title="slackChForm.uuid ? 'Edit Slack channel' : 'Add Slack channel'" :bordered="false" role="dialog" aria-modal="true">
+                <n-form :model="slackChForm">
+                    <n-space vertical size="large">
+                        <n-form-item label="Name" :show-feedback="false">
+                            <n-input v-model:value="slackChForm.name" required placeholder="e.g. #security-alerts" />
+                        </n-form-item>
+                        <n-form-item label="Incoming-webhook URL" :show-feedback="false">
+                            <n-input
+                                type="password"
+                                show-password-on="click"
+                                v-model:value="slackChForm.webhookUrl"
+                                :placeholder="slackChForm.uuid ? '(unchanged — leave blank to keep the current webhook URL)' : 'https://hooks.slack.com/services/...'"
+                            />
+                        </n-form-item>
+                        <n-text depth="3" style="font-size: 12px;">
+                            Create an incoming webhook in your Slack workspace and paste its URL here. The URL is the
+                            credential — it is stored encrypted and not displayed; re-enter it to change the destination.
+                        </n-text>
+
+                        <n-alert v-if="slackChModalError" type="error" :show-icon="false">
+                            {{ slackChModalError }}
+                            <template v-if="isConflictError(slackChModalError)" #action>
+                                <n-button size="small" type="primary" @click="reloadSlackChannelFromServer">
+                                    Reload from server
+                                </n-button>
+                            </template>
+                        </n-alert>
+
+                        <n-space>
+                            <n-button :loading="slackChSaveLoading" @click="saveSlackChannel" type="success">Save</n-button>
+                            <n-button @click="showSlackChModal = false" type="default">Cancel</n-button>
+                        </n-space>
                     </n-space>
                 </n-form>
             </n-card>
         </n-modal>
 
-        <!-- MS Teams -->
-        <n-modal v-model:show="showMsteamsModal" preset="dialog" :show-icon="false">
-            <n-card style="width: 600px" size="huge" title="Add MS Teams integration" :bordered="false" role="dialog" aria-modal="true">
-                <n-form>
-                    <n-form-item label="Secret" description="MS Teams integration URI">
-                        <n-input type="password" v-model:value="createIntegrationObject.secret" required placeholder="Enter MS Teams integration URI" />
-                    </n-form-item>
-                    <n-space>
-                        <n-button @click="onAddBaseIntegration('MSTEAMS')" type="success">Submit</n-button>
-                        <n-button @click="resetCreateIntegrationObject" type="error">Reset</n-button>
+        <!-- Microsoft Teams notification channel ADD / EDIT -->
+        <n-modal v-model:show="showTeamsChModal" preset="dialog" :show-icon="false">
+            <n-card style="width: 640px" size="huge" :title="teamsChForm.uuid ? 'Edit Microsoft Teams channel' : 'Add Microsoft Teams channel'" :bordered="false" role="dialog" aria-modal="true">
+                <n-form :model="teamsChForm">
+                    <n-space vertical size="large">
+                        <n-form-item label="Name" :show-feedback="false">
+                            <n-input v-model:value="teamsChForm.name" required placeholder="e.g. SecOps channel" />
+                        </n-form-item>
+                        <n-form-item label="Workflows webhook URL" :show-feedback="false">
+                            <n-input
+                                type="password"
+                                show-password-on="click"
+                                v-model:value="teamsChForm.webhookUrl"
+                                :placeholder="teamsChForm.uuid ? '(unchanged — leave blank to keep the current webhook URL)' : 'https://...logic.azure.com/... or https://...powerplatform.com/...'"
+                            />
+                        </n-form-item>
+                        <n-text depth="3" style="font-size: 12px;">
+                            Create a "Post to a channel when a webhook request is received" flow in Power Automate
+                            Workflows and paste its URL here. The URL is the credential — it is stored encrypted and not
+                            displayed; re-enter it to change the destination.
+                        </n-text>
+
+                        <n-alert v-if="teamsChModalError" type="error" :show-icon="false">
+                            {{ teamsChModalError }}
+                            <template v-if="isConflictError(teamsChModalError)" #action>
+                                <n-button size="small" type="primary" @click="reloadTeamsChannelFromServer">
+                                    Reload from server
+                                </n-button>
+                            </template>
+                        </n-alert>
+
+                        <n-space>
+                            <n-button :loading="teamsChSaveLoading" @click="saveTeamsChannel" type="success">Save</n-button>
+                            <n-button @click="showTeamsChModal = false" type="default">Cancel</n-button>
+                        </n-space>
                     </n-space>
                 </n-form>
             </n-card>
@@ -871,8 +911,6 @@ const bearForm = ref({
 const showVulncheckModal = ref(false)
 const vulncheckForm = ref({ token: '' })
 
-const showSlackModal = ref(false)
-const showMsteamsModal = ref(false)
 const showDtModal = ref(false)
 const showBearModal = ref(false)
 const showCiAddModal = ref(false)
@@ -922,6 +960,9 @@ const notificationChannelRows: Ref<ChannelCatalogRow[]> = ref([])
 const emailChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'EMAIL'))
 const webhookChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'WEBHOOK'))
 const sentinelChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'SENTINEL'))
+const slackChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'SLACK'))
+// Backend channel-type name for Teams is MS_TEAMS, not the MSTEAMS card id.
+const msteamsChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'MS_TEAMS'))
 
 const showEmailModal = ref(false)
 const emailSaveLoading = ref(false)
@@ -991,8 +1032,8 @@ interface CardConfig {
 
 const CARDS: CardConfig[] = [
     // Messaging
-    { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Push release notifications to a Slack channel.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: false },
-    { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Push release notifications to a Microsoft Teams channel.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: false },
+    { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Send security and operational notifications to a Slack channel via an incoming-webhook URL.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: true, proOnly: true },
+    { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Send security and operational notifications to a Microsoft Teams channel via a Power Automate Workflows webhook URL.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: true, proOnly: true },
     { id: 'EMAIL', name: 'Email', vendor: 'Reliza', category: 'messaging', description: 'Send security and operational notifications to a list of email recipients, batched into periodic digest emails.', logoBg: '#2D8F4E', iconComponent: Mail, multiInstance: true, proOnly: true },
     // SendGrid is not a per-org notification channel — it is the
     // instance-wide email delivery provider (EmailSendType.SENDGRID),
@@ -1030,12 +1071,25 @@ const visibleSections = computed(() => {
 })
 
 // ---- Card status helpers ---------------------------------------------------
+// SLACK/MSTEAMS are notification-channel destinations too (the unified
+// IntegrationType model folded the retired NotificationChannelType in), so
+// their catalog cards render configured channels exactly like EMAIL/WEBHOOK/
+// SENTINEL rather than the legacy secret-based base integration.
 function isChannelCard(card: CardConfig): boolean {
-    return card.id === 'EMAIL' || card.id === 'WEBHOOK' || card.id === 'SENTINEL'
+    return card.id === 'SLACK' || card.id === 'MSTEAMS'
+        || card.id === 'EMAIL' || card.id === 'WEBHOOK' || card.id === 'SENTINEL'
+}
+
+// Card ids and notification-channel type names match for every channel kind
+// except Teams: the card id is 'MSTEAMS' but the channel type the backend
+// emits (and accepts) is 'MS_TEAMS'. Normalize so the filter lines up.
+function channelTypeForCard(card: CardConfig): string {
+    return card.id === 'MSTEAMS' ? 'MS_TEAMS' : card.id
 }
 
 function channelRowsForCard(card: CardConfig): ChannelCatalogRow[] {
-    return notificationChannelRows.value.filter(c => c.type === card.id)
+    const t = channelTypeForCard(card)
+    return notificationChannelRows.value.filter(c => c.type === t)
 }
 
 function isCardConfigured(card: CardConfig): boolean {
@@ -1127,7 +1181,7 @@ function kindLabel(t: string): string {
 // ---- Modal openers ---------------------------------------------------------
 function openAddForCard(card: CardConfig) {
     if (card.proOnly && !showCiFeatures.value) return
-    if (card.id === 'SLACK') { showSlackModal.value = true; return }
+    if (card.id === 'SLACK') { openAddSlackChannel(); return }
     if (card.id === 'EMAIL') { openAddEmailChannel(); return }
     // SendGrid is instance-wide config, not a per-org channel — send the
     // user to System Settings → Email Sending Configuration (global-admin
@@ -1135,7 +1189,7 @@ function openAddForCard(card: CardConfig) {
     if (card.id === 'SENDGRID') { router.push({ name: 'systemSettings' }); return }
     if (card.id === 'WEBHOOK') { openAddWebhookChannel(); return }
     if (card.id === 'SENTINEL') { openAddSentinelChannel(); return }
-    if (card.id === 'MSTEAMS') { showMsteamsModal.value = true; return }
+    if (card.id === 'MSTEAMS') { openAddTeamsChannel(); return }
     if (card.id === 'DEPENDENCYTRACK') { showDtModal.value = true; return }
     if (card.id === 'BEAR') { openBearAddModal(); return }
     if (card.id === 'CISA_KEV') { confirmToggleCisaKev(); return }
@@ -1236,8 +1290,6 @@ async function onAddBaseIntegration(type: string) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     } finally {
         resetCreateIntegrationObject()
-        showSlackModal.value = false
-        showMsteamsModal.value = false
         showDtModal.value = false
     }
 }
@@ -1905,9 +1957,182 @@ async function reloadSentinelChannelFromServer() {
     }
 }
 
-// ---- Shared channel actions (all three channel cards) ------------------------
+// ---- Slack / Teams channel CRUD ----------------------------------------------
+// Slack and Teams channels carry a single secret credential: the incoming-
+// webhook URL (Slack) / Power Automate Workflows webhook URL (Teams). Like the
+// webhook channel, the URL is encrypted server-side and never read back, so on
+// edit a blank URL preserves the stored one (rename-only) and a new URL
+// replaces it. The on-the-wire channel type is SLACK / MS_TEAMS.
+const showSlackChModal = ref(false)
+const slackChSaveLoading = ref(false)
+const slackChModalError = ref('')
+const slackChForm = ref({
+    uuid: '',
+    expectedRevision: null as number | null,
+    name: '',
+    webhookUrl: ''
+})
+
+function openAddSlackChannel() {
+    slackChForm.value = { uuid: '', expectedRevision: null, name: '', webhookUrl: '' }
+    slackChModalError.value = ''
+    showSlackChModal.value = true
+}
+
+function openEditSlackChannel(ch: ChannelCatalogRow) {
+    slackChForm.value = { uuid: ch.uuid, expectedRevision: ch.revision, name: ch.name, webhookUrl: '' }
+    slackChModalError.value = ''
+    showSlackChModal.value = true
+}
+
+async function saveSlackChannel() {
+    slackChModalError.value = ''
+    const name = (slackChForm.value.name || '').trim()
+    if (!name) {
+        slackChModalError.value = 'Channel name is required.'
+        return
+    }
+    const isEdit = !!slackChForm.value.uuid
+    // Secrets may be whitespace-significant; trim only for the blank-check.
+    const url = (slackChForm.value.webhookUrl || '').trim()
+    let slackConfig: any = null
+    if (url) {
+        if (!url.toLowerCase().startsWith('https://')) {
+            slackChModalError.value = 'Slack webhook URL must be HTTPS.'
+            return
+        }
+        slackConfig = { webhookUrl: url }
+    } else if (!isEdit) {
+        slackChModalError.value = 'Slack incoming-webhook URL is required.'
+        return
+    }
+    slackChSaveLoading.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation upsertNotificationChannel($input: NotificationChannelInput!) {
+                    upsertNotificationChannel(input: $input) { uuid }
+                }`,
+            variables: {
+                input: {
+                    uuid: isEdit ? slackChForm.value.uuid : null,
+                    expectedRevision: isEdit ? slackChForm.value.expectedRevision : null,
+                    org: orguuid.value,
+                    name,
+                    type: 'SLACK',
+                    slackConfig
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        showSlackChModal.value = false
+        await loadNotificationChannels(false)
+        notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `${cardName('SLACK')} channel "${name}" saved.`)
+    } catch (err: any) {
+        slackChModalError.value = extractError(err)
+    } finally {
+        slackChSaveLoading.value = false
+    }
+}
+
+async function reloadSlackChannelFromServer() {
+    await loadNotificationChannels(false)
+    const fresh = slackChannels.value.find(c => c.uuid === slackChForm.value.uuid)
+    if (fresh) {
+        openEditSlackChannel(fresh)
+    } else {
+        showSlackChModal.value = false
+        notify('warning', 'Channel Removed', 'This channel no longer exists on the server.')
+    }
+}
+
+const showTeamsChModal = ref(false)
+const teamsChSaveLoading = ref(false)
+const teamsChModalError = ref('')
+const teamsChForm = ref({
+    uuid: '',
+    expectedRevision: null as number | null,
+    name: '',
+    webhookUrl: ''
+})
+
+function openAddTeamsChannel() {
+    teamsChForm.value = { uuid: '', expectedRevision: null, name: '', webhookUrl: '' }
+    teamsChModalError.value = ''
+    showTeamsChModal.value = true
+}
+
+function openEditTeamsChannel(ch: ChannelCatalogRow) {
+    teamsChForm.value = { uuid: ch.uuid, expectedRevision: ch.revision, name: ch.name, webhookUrl: '' }
+    teamsChModalError.value = ''
+    showTeamsChModal.value = true
+}
+
+async function saveTeamsChannel() {
+    teamsChModalError.value = ''
+    const name = (teamsChForm.value.name || '').trim()
+    if (!name) {
+        teamsChModalError.value = 'Channel name is required.'
+        return
+    }
+    const isEdit = !!teamsChForm.value.uuid
+    const url = (teamsChForm.value.webhookUrl || '').trim()
+    let teamsConfig: any = null
+    if (url) {
+        if (!url.toLowerCase().startsWith('https://')) {
+            teamsChModalError.value = 'Teams webhook URL must be HTTPS.'
+            return
+        }
+        teamsConfig = { webhookUrl: url }
+    } else if (!isEdit) {
+        teamsChModalError.value = 'Teams Workflows webhook URL is required.'
+        return
+    }
+    teamsChSaveLoading.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation upsertNotificationChannel($input: NotificationChannelInput!) {
+                    upsertNotificationChannel(input: $input) { uuid }
+                }`,
+            variables: {
+                input: {
+                    uuid: isEdit ? teamsChForm.value.uuid : null,
+                    expectedRevision: isEdit ? teamsChForm.value.expectedRevision : null,
+                    org: orguuid.value,
+                    name,
+                    type: 'MS_TEAMS',
+                    teamsConfig
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        showTeamsChModal.value = false
+        await loadNotificationChannels(false)
+        notify('success', isEdit ? 'Channel Updated' : 'Channel Added', `${cardName('MSTEAMS')} channel "${name}" saved.`)
+    } catch (err: any) {
+        teamsChModalError.value = extractError(err)
+    } finally {
+        teamsChSaveLoading.value = false
+    }
+}
+
+async function reloadTeamsChannelFromServer() {
+    await loadNotificationChannels(false)
+    const fresh = msteamsChannels.value.find(c => c.uuid === teamsChForm.value.uuid)
+    if (fresh) {
+        openEditTeamsChannel(fresh)
+    } else {
+        showTeamsChModal.value = false
+        notify('warning', 'Channel Removed', 'This channel no longer exists on the server.')
+    }
+}
+
+// ---- Shared channel actions (all channel cards) ------------------------------
 function openEditChannelForCard(card: CardConfig, ch: ChannelCatalogRow) {
-    if (card.id === 'EMAIL') openEditEmailChannel(ch)
+    if (card.id === 'SLACK') openEditSlackChannel(ch)
+    else if (card.id === 'MSTEAMS') openEditTeamsChannel(ch)
+    else if (card.id === 'EMAIL') openEditEmailChannel(ch)
     else if (card.id === 'WEBHOOK') openEditWebhookChannel(ch)
     else if (card.id === 'SENTINEL') openEditSentinelChannel(ch)
 }
