@@ -43,6 +43,18 @@
                     </template>
                     <span>Net change in findings: new findings minus resolved findings for this period.</span>
                 </n-tooltip>
+                <n-tooltip v-if="newlyKevCount > 0" trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag type="error" size="small" :bordered="false" class="tag-spacing worsened-tag">Newly KEV ({{ newlyKevCount }})</n-tag>
+                    </template>
+                    <span>Findings newly flagged as a CISA Known Exploited Vulnerability within this period.</span>
+                </n-tooltip>
+                <n-tooltip v-if="severityIncreasedCount > 0" trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag type="warning" size="small" :bordered="false" class="tag-spacing worsened-tag">Severity ↑ ({{ severityIncreasedCount }})</n-tag>
+                    </template>
+                    <span>Findings whose severity was raised within this period.</span>
+                </n-tooltip>
             </div>
             
             <FindingListSection title="New Findings" title-class="finding-new" key-prefix="new" :findings="newFindings" :rich-aliases="true"
@@ -51,6 +63,22 @@
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getAppearedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
+                        <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
+                        <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
+                    </div>
+                </template>
+            </FindingListSection>
+
+            <FindingListSection v-if="isOrgLevelView && worsenedFindings.length > 0" title="Worsened / Newly KEV" title-class="finding-inherited" key-prefix="worsened" :findings="worsenedFindings" :rich-aliases="true"
+                description="Findings still present that got worse in this period — newly listed as a CISA Known Exploited Vulnerability and/or had their severity raised. Findings that are also brand-new appear only under New Findings (badged there)."
+                @kev-click="openKevModal">
+                <template #attribution="{ finding }">
+                    <div v-if="showAttribution" class="attribution">
+                        <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
+                        <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
+                        <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
             </FindingListSection>
@@ -61,6 +89,7 @@
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
             </FindingListSection>
@@ -70,7 +99,10 @@
                 @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
+                        <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
+                        <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
                         <span v-for="(seg, i) in getInheritedDebtContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
             </FindingListSection>
@@ -80,7 +112,10 @@
                 @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
+                        <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
+                        <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
                         <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
             </FindingListSection>
@@ -91,11 +126,22 @@
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
             </FindingListSection>
 
             <kev-details-modal v-model:show="showKevModal" :cve-id="kevModalCveId" :org-uuid="orgUuid || ''" />
+
+            <n-drawer v-model:show="showTimeline" :width="560" placement="right">
+                <n-drawer-content :title="timelineTitle" closable>
+                    <OverTimeFindingChanges
+                        :over-time-finding-changes="overTimeFindingChanges"
+                        :finding-key-filter="timelineFilterKey"
+                        :org-uuid="orgUuid"
+                    />
+                </n-drawer-content>
+            </n-drawer>
         </div>
         <div v-else class="empty-state">
             <div class="summary-tags">
@@ -109,23 +155,28 @@
 
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
-import { NTag, NTooltip } from 'naive-ui'
+import { NTag, NTooltip, NDrawer, NDrawerContent } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
+import OverTimeFindingChanges from './OverTimeFindingChanges.vue'
 import KevDetailsModal from '../KevDetailsModal.vue'
 import { getSeverityIndex } from '../../utils/findingUtils'
 import { resolveKevCveId } from '../../utils/kevService'
-import type { 
+import type {
     FindingChangesWithAttribution,
     VulnerabilityWithAttribution,
     ViolationWithAttribution,
     WeaknessWithAttribution,
     OrgLevelContext
 } from '../../types/changelog-attribution'
+import type { MetricsRevisionFindingChange } from '../../types/changelog-sealed'
 
 interface Props {
     findingChanges?: FindingChangesWithAttribution
     showAttribution?: boolean
     orgUuid?: string
+    // Flat re-scan timeline (same GraphQL payload) — filtered client-side by
+    // finding key for the per-finding drill-down drawer. Optional/nullable.
+    overTimeFindingChanges?: MetricsRevisionFindingChange[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -138,6 +189,38 @@ const kevModalCveId = ref('')
 function openKevModal(finding: any) {
     kevModalCveId.value = resolveKevCveId({ id: finding.findingId, aliases: finding.aliases })
     showKevModal.value = true
+}
+
+// ---- Per-finding timeline drill-down (drawer) ----
+const showTimeline = ref(false)
+const timelineFilterKey = ref('')
+const timelineTitle = ref('')
+
+// Type-scoped id key matching recordFindingKey() in OverTimeFindingChanges.vue:
+// deliberately excludes the per-release component so a CVE's whole cross-release
+// timeline is shown (this is the #41 case — same CVE, different releases).
+function findingKeyForFilter(finding: NormalizedFinding): string {
+    return `${finding.type}-${finding.findingId}`
+}
+
+// A timeline is available only when the payload actually carries at least one
+// matching over-time record for this finding (flag-off / legacy => no link).
+function canViewTimeline(finding: NormalizedFinding): boolean {
+    const records = props.overTimeFindingChanges
+    if (!records || records.length === 0) return false
+    const key = findingKeyForFilter(finding)
+    return records.some(rec => {
+        if (rec.vulnerability) return `VULN-${rec.vulnerability.vulnId}` === key
+        if (rec.violation) return `VIOLATION-${rec.violation.type}` === key
+        if (rec.weakness) return `WEAKNESS-${rec.weakness.cweId || rec.weakness.ruleId || ''}` === key
+        return false
+    })
+}
+
+function openTimeline(finding: NormalizedFinding) {
+    timelineFilterKey.value = findingKeyForFilter(finding)
+    timelineTitle.value = `Timeline — ${finding.findingId}`
+    showTimeline.value = true
 }
 
 type AttributionSegment = {
@@ -257,9 +340,37 @@ const orgInheritedTechnicalDebtFindings = computed(() =>
     )))
 )
 
-const orgFullyResolvedFindings = computed(() => 
+const orgFullyResolvedFindings = computed(() =>
     sortBySeverity(allFindings.value.filter(f => f.orgContext?.isFullyResolved))
 )
+
+// A finding "worsened" if it newly became KEV and/or had its severity raised
+// this period. Nullable fields => coerce to boolean so flag-off payloads are inert.
+function isWorsened(f: NormalizedFinding): boolean {
+    return !!(f.orgContext?.isNewlyKev || f.orgContext?.isSeverityIncreased)
+}
+
+// Worsened section lists worsened findings that are NOT already surfaced under
+// New Findings — a KEV/severity-worsened finding that is also brand-new is
+// badge-only in New (signed-off decision: no double-listing).
+const worsenedFindings = computed(() =>
+    sortBySeverity(allFindings.value.filter(f => isWorsened(f) && !f.orgContext?.isNewToOrganization))
+)
+
+// Headline counts. Prefer the backend rollup totals; fall back to a client-side
+// count of the org-context flags when the rollup fields are absent (both are
+// nullable — 0 when the backend feature flag is off, hiding the tags).
+const newlyKevCount = computed(() => {
+    const total = props.findingChanges?.totalNewlyKev
+    if (total != null) return total
+    return allFindings.value.filter(f => !!f.orgContext?.isNewlyKev).length
+})
+
+const severityIncreasedCount = computed(() => {
+    const total = props.findingChanges?.totalSeverityIncreased
+    if (total != null) return total
+    return allFindings.value.filter(f => !!f.orgContext?.isSeverityIncreased).length
+})
 
 // COMPONENT-LEVEL: Three-category system
 const componentNewFindings = computed(() => 
@@ -442,4 +553,43 @@ function getInheritedDebtContextSegments(finding: NormalizedFinding): Attributio
 <style scoped lang="scss">
 @use './finding-common';
 
+.finding-changes {
+    .worsened-tag {
+        font-weight: 600;
+    }
+
+    .worsened-badge {
+        display: inline-block;
+        margin-right: 8px;
+        padding: 0 6px;
+        border-radius: 3px;
+        font-size: 0.85em;
+        font-style: normal;
+        font-weight: 600;
+        line-height: 1.5;
+        white-space: nowrap;
+    }
+
+    .worsened-badge-kev {
+        background: #fde3e3;
+        color: #a5211b;
+    }
+
+    .worsened-badge-sev {
+        background: #fdf0d9;
+        color: #a06600;
+    }
+
+    .timeline-link {
+        margin-left: 8px;
+        color: #2080f0;
+        font-style: normal;
+        cursor: pointer;
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+}
 </style>

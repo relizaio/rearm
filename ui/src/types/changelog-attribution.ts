@@ -27,6 +27,11 @@ export interface OrgLevelContext {
     isInheritedInAllComponents: boolean // Present in first AND last release of ALL components (technical debt)
     componentCount: number              // Number of components currently affected
     affectedComponentNames: string[]    // Names of components currently affected
+    // Posture-worsening context (additive; populated only when the backend feature
+    // flag is on — null/undefined on legacy payloads, render nothing when absent).
+    isNewlyKev?: boolean | null         // Finding became a CISA Known Exploited Vulnerability within this period
+    isSeverityIncreased?: boolean | null // Finding's severity was raised within this period
+    previousSeverity?: string | null    // Prior severity when isSeverityIncreased (for "prev -> current")
 }
 
 /**
@@ -113,5 +118,9 @@ export interface FindingChangesWithAttribution {
     weaknesses: WeaknessWithAttribution[]
     totalAppeared: number
     totalResolved: number
+    // Posture-worsening rollup counts (additive; null/undefined when the
+    // backend feature flag is off — render the tag only when > 0).
+    totalNewlyKev?: number | null
+    totalSeverityIncreased?: number | null
 }
 

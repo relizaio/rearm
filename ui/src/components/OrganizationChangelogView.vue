@@ -70,7 +70,7 @@
                         
                         <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedOrganizationChangelog'">
                             <p class="aggregation-note">Aggregated across all components</p>
-                            <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="orgUuid" />
+                            <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" />
                         </div>
                     </n-tab-pane>
                 </n-tabs>

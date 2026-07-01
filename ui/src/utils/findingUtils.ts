@@ -59,6 +59,83 @@ export function getFindingUrl(id: string): string | null {
 
 const LS_KEY = 'rearm_external_link_consent_until'
 
+/**
+ * Shared normalizers turning the raw ReleaseVulnerabilityInfo / ReleaseViolationInfo /
+ * ReleaseWeaknessInfo GraphQL records into the flat shape FindingListSection renders.
+ * Extracted from FindingChangesDisplay.vue so multiple changelog surfaces
+ * (per-release finding changes + over-time finding changes) share one source of truth.
+ */
+export interface NormalizedReleaseFinding {
+    findingId: string
+    affectedComponent: string
+    severity?: string
+    aliases: string[]
+    type: 'VULN' | 'VIOLATION' | 'WEAKNESS'
+    typeLabel: string
+    analysisState: string | null
+    knownExploited?: boolean
+}
+
+export function normalizeReleaseVuln(v: any): NormalizedReleaseFinding {
+    return {
+        findingId: v.vulnId || '',
+        affectedComponent: v.purl || '',
+        severity: v.severity || '',
+        aliases: Array.isArray(v.aliases) ? v.aliases.map((a: any) => typeof a === 'string' ? a : a.aliasId) : [],
+        type: 'VULN',
+        typeLabel: 'VULNERABILITY',
+        analysisState: v.analysisState || null,
+        knownExploited: !!v.knownExploited
+    }
+}
+
+export function normalizeReleaseViolation(v: any): NormalizedReleaseFinding {
+    return {
+        findingId: v.type || '',
+        affectedComponent: v.purl || '',
+        severity: undefined,
+        aliases: [],
+        type: 'VIOLATION',
+        typeLabel: 'VIOLATION',
+        analysisState: v.analysisState || null
+    }
+}
+
+export function normalizeReleaseWeakness(w: any): NormalizedReleaseFinding {
+    return {
+        findingId: w.cweId || w.ruleId || '',
+        affectedComponent: w.location || '',
+        severity: w.severity || '',
+        aliases: [],
+        type: 'WEAKNESS',
+        typeLabel: 'WEAKNESS',
+        analysisState: w.analysisState || null
+    }
+}
+
+/**
+ * Normalize whichever of vulnerability / violation / weakness is non-null on a
+ * MetricsRevisionFindingChange record (exactly one is set per the backend contract).
+ */
+export function normalizeFindingChangeRecord(rec: {
+    vulnerability?: any
+    violation?: any
+    weakness?: any
+}): NormalizedReleaseFinding | null {
+    if (rec.vulnerability) return normalizeReleaseVuln(rec.vulnerability)
+    if (rec.violation) return normalizeReleaseViolation(rec.violation)
+    if (rec.weakness) return normalizeReleaseWeakness(rec.weakness)
+    return null
+}
+
+export function sortBySeverityThenId(findings: NormalizedReleaseFinding[]): NormalizedReleaseFinding[] {
+    return [...findings].sort((a, b) => {
+        const severityDiff = getSeverityIndex(a.severity) - getSeverityIndex(b.severity)
+        if (severityDiff !== 0) return severityDiff
+        return String(a.findingId || '').localeCompare(String(b.findingId || ''))
+    })
+}
+
 export async function openExternalLink(href: string): Promise<void> {
     try {
         const now = Date.now()
