@@ -163,6 +163,9 @@ const ORG_LEVEL_CONTEXT_FRAGMENT = `
     isInheritedInAllComponents
     componentCount
     affectedComponentNames
+    isNewlyKev
+    isSeverityIncreased
+    previousSeverity
 `
 
 const SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
@@ -186,6 +189,8 @@ const SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
 const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
     totalAppeared
     totalResolved
+    totalNewlyKev
+    totalSeverityIncreased
     vulnerabilities {
         vulnId
         purl

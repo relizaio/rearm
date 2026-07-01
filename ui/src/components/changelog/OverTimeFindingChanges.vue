@@ -14,7 +14,11 @@
                     :findings="bucket.appeared"
                     description="Findings that first appeared in a release on this date."
                     @kev-click="openKevModal"
-                />
+                >
+                    <template #attribution="{ finding }">
+                        <div class="release-attribution">{{ releaseLabel(finding) }}</div>
+                    </template>
+                </FindingListSection>
                 <FindingListSection
                     title="Resolved"
                     title-class="finding-resolved"
@@ -22,7 +26,11 @@
                     :findings="bucket.resolved"
                     description="Findings that were no longer detected in a release as of this date."
                     @kev-click="openKevModal"
-                />
+                >
+                    <template #attribution="{ finding }">
+                        <div class="release-attribution">{{ releaseLabel(finding) }}</div>
+                    </template>
+                </FindingListSection>
                 <FindingListSection
                     title="Severity increased"
                     title-class="finding-partial"
@@ -32,10 +40,14 @@
                     @kev-click="openKevModal"
                 >
                     <template #attribution="{ finding }">
-                        <div v-if="finding.previousSeverity" class="severity-change">
-                            Severity: <strong>{{ finding.previousSeverity }}</strong>
-                            <span class="severity-arrow">→</span>
-                            <strong>{{ finding.severity || 'UNASSIGNED' }}</strong>
+                        <div class="release-attribution">
+                            {{ releaseLabel(finding) }}
+                            <template v-if="finding.previousSeverity">
+                                <span class="severity-change">Severity: <strong>{{ finding.previousSeverity }}</strong>
+                                    <span class="severity-arrow">→</span>
+                                    <strong>{{ finding.severity || 'UNASSIGNED' }}</strong>
+                                </span>
+                            </template>
                         </div>
                     </template>
                 </FindingListSection>
@@ -46,7 +58,11 @@
                     :findings="bucket.kevAdded"
                     description="Findings newly flagged as a CISA Known Exploited Vulnerability on this date."
                     @kev-click="openKevModal"
-                />
+                >
+                    <template #attribution="{ finding }">
+                        <div class="release-attribution">{{ releaseLabel(finding) }}</div>
+                    </template>
+                </FindingListSection>
             </div>
             <kev-details-modal v-model:show="showKevModal" :cve-id="kevModalCveId" :org-uuid="orgUuid || ''" />
         </div>
@@ -71,9 +87,35 @@ import type { MetricsRevisionFindingChange } from '../../types/changelog-sealed'
 interface Props {
     overTimeFindingChanges?: MetricsRevisionFindingChange[]
     orgUuid?: string
+    // Drill-down mode: when set, only timeline records whose finding matches this
+    // type-scoped id key are shown (all releases/components of that one finding).
+    findingKeyFilter?: string
 }
 
 const props = defineProps<Props>()
+
+// Type-scoped id key for a raw over-time record: identifies a single logical
+// finding (e.g. a CVE) across releases/components — deliberately excludes the
+// per-release purl/location so #41's "same CVE in two releases" collapses to one
+// timeline. Mirrors findingKeyForFilter() in FindingChangesDisplayWithAttribution.
+function recordFindingKey(rec: MetricsRevisionFindingChange): string | null {
+    if (rec.vulnerability) return `VULN-${rec.vulnerability.vulnId}`
+    if (rec.violation) return `VIOLATION-${rec.violation.type}`
+    if (rec.weakness) return `WEAKNESS-${rec.weakness.cweId || rec.weakness.ruleId || ''}`
+    return null
+}
+
+// Per-release attribution line for a normalized over-time finding (closes #41):
+// two identical CVE rows from different releases are now distinguishable.
+function releaseLabel(finding: { componentName?: string, version?: string }): string {
+    const parts: string[] = []
+    if (finding.componentName) parts.push(finding.componentName)
+    if (finding.version) parts.push(finding.version)
+    if (parts.length === 0) return ''
+    return finding.componentName && finding.version
+        ? `${finding.componentName}@${finding.version}`
+        : parts.join(' ')
+}
 
 const showKevModal = ref(false)
 const kevModalCveId = ref('')
@@ -126,7 +168,10 @@ function toOverTimeFinding(rec: MetricsRevisionFindingChange): OverTimeFinding |
 }
 
 const dateBuckets = computed<DateBucket[]>(() => {
-    const records = props.overTimeFindingChanges || []
+    let records = props.overTimeFindingChanges || []
+    if (props.findingKeyFilter) {
+        records = records.filter(rec => recordFindingKey(rec) === props.findingKeyFilter)
+    }
     const byDay = new Map<string, { label: string, records: MetricsRevisionFindingChange[] }>()
 
     for (const rec of records) {
@@ -198,9 +243,14 @@ const dateBuckets = computed<DateBucket[]>(() => {
         font-weight: 600;
     }
 
-    .severity-change {
+    .release-attribution {
         margin-left: 24px;
         font-size: 0.85em;
+        color: #666;
+    }
+
+    .severity-change {
+        margin-left: 8px;
         color: #666;
 
         .severity-arrow {

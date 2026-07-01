@@ -283,17 +283,8 @@
                 <!-- AGGREGATED mode: Show top-level aggregated changes -->
                 <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                     <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
-                    <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" />
+                    <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" />
                 </div>
-            </n-tab-pane>
-
-            <n-tab-pane name="overTime" tab="⏱ Finding changes over time">
-                <OverTimeFindingChanges
-                    v-if="hasData && (changelog.__typename === 'NoneChangelog' || changelog.__typename === 'AggregatedChangelog')"
-                    :over-time-finding-changes="changelog.overTimeFindingChanges"
-                    :org-uuid="changelog.orgUuid"
-                />
-                <OverTimeFindingChanges v-else />
             </n-tab-pane>
         </n-tabs>
     </div>
@@ -311,7 +302,6 @@ import { useStore } from 'vuex'
 import {
     FindingChangesDisplay,
     FindingChangesDisplayWithAttribution,
-    OverTimeFindingChanges,
     SbomChangesDisplay,
     CodeChangesDisplay,
     ReleaseHeader,
