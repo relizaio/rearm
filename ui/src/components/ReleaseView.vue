@@ -1265,7 +1265,7 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -4997,7 +4997,7 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                     // always visible rather than only discoverable by clicking twice.
                     const approveIcon = h(NIcon,
                         {
-                            class: isDisabled ? '' : 'clickable',
+                            class: isDisabled ? 'icons' : 'icons clickable',
                             size: 22,
                             title: isApproved && isDisabled ? 'Approved' : (isApproved ? 'Your Approval Pending (click to clear)' : 'Approve'),
                             'data-testid': `approval-approve-${row.uuid}-${aid}`,
@@ -5012,7 +5012,7 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                     )
                     const disapproveIcon = h(NIcon,
                         {
-                            class: isDisabled ? '' : 'clickable',
+                            class: isDisabled ? 'icons' : 'icons clickable',
                             size: 22,
                             title: isDisapproved && isDisabled ? 'Disapproved' : (isDisapproved ? 'Your Disapproval Pending (click to clear)' : 'Disapprove'),
                             'data-testid': `approval-disapprove-${row.uuid}-${aid}`,
