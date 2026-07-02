@@ -129,7 +129,7 @@
                             <n-alert
                                 v-if="isOrgAdmin && !hasApprovalRoleGrant"
                                 type="info"
-                                :show-icon="true"
+                                :show-icon="false"
                                 data-testid="approvals-empty-admin-hint"
                             >
                                 Nothing is waiting on your approval role right now. As an Org Admin you can still approve or disapprove any release directly from its page -- this list only shows releases where you hold an explicit approval role. Ask another admin to grant you one if you want items to appear here automatically.
@@ -303,12 +303,9 @@ const canWrite = computed<boolean>(() =>
 // override. An admin with no approval role legitimately sees an empty
 // list here even with pending releases elsewhere -- the empty-state hint
 // below exists so that doesn't read as broken.
-const isOrgAdmin = computed<boolean>(() => {
-    const perms = myuser.value?.permissions?.permissions || []
-    return perms.some((p: any) =>
-        p.scope === 'ORGANIZATION' && p.org === orgUuid.value && p.object === orgUuid.value && p.type === 'ADMIN'
-    )
-})
+const isOrgAdmin = computed<boolean>(() =>
+    commonFunctions.isAdmin(orgUuid.value, myuser.value)
+)
 const hasApprovalRoleGrant = computed<boolean>(() => {
     const perms = myuser.value?.permissions?.permissions || []
     return perms.some((p: any) => p.org === orgUuid.value && p.approvals && p.approvals.length > 0)
@@ -951,6 +948,14 @@ watch(orgUuid, () => {
     if (orgUuid.value) {
         loadInboxUnreadCount()
         loadApprovalsCount()
+        // The drawer is mounted once at nav level and can stay open across an
+        // org switch (no openInboxDrawer() re-fire to trigger the full-row
+        // load). Without this, approvalsItems sits at [] with loading=false
+        // for the new org, and the empty-state hint below would confidently
+        // claim "nothing pending" for data that was simply never fetched.
+        if (inboxListDrawerOpen.value && drawerTab.value === 'approvals') {
+            loadApprovals()
+        }
     }
 })
 
