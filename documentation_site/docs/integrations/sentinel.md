@@ -1,7 +1,6 @@
-
 # Microsoft Sentinel
 
-::: info ReARM Pro only
+::: warning ReARM Pro only
 Microsoft Sentinel is a **security and operational notification channel** (routed
 through **Notifications -> Channels**), not a release-notification integration.
 It streams the same event feed described in [Notifications](../configure/notifications)
@@ -46,10 +45,12 @@ the DCE/DCR/service-principal trio if you don't have them yet.
 4. Click **Save**.
 
 ::: tip Editing later
-On edit, the tenant ID / client ID / client secret fields show as
-`(unchanged)` -- leave them blank to keep the existing credentials, or fill in
-all three together to rotate them. The DCR endpoint / immutable ID / stream
-name always show their current values and can be changed independently.
+On edit, all six fields show blank with an `(unchanged)` placeholder --
+credentials and DCR routing are stored and replaced together as one unit.
+Leave all six blank to keep everything as-is, or fill in all six together to
+replace the whole configuration (e.g. to point at a different DCR, you must
+re-enter the tenant ID / client ID / client secret too, even if those
+haven't changed).
 :::
 
 ## Route events to the channel

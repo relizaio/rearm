@@ -1,11 +1,10 @@
-
 ---
 sidebarDepth: 2
 ---
 
 # Notifications
 
-::: info ReARM Pro only
+::: warning ReARM Pro only
 Everything on this page -- channels, subscriptions, routes, and KEV alerts --
 is part of ReARM Pro's security-and-operational notification framework,
 configured under **Organization Settings -> Integrations -> Notifications**.
@@ -60,7 +59,7 @@ A subscription's `eventTypes` list controls what it can match:
 ## Duplicate delivery protection
 
 ReARM deduplicates deliveries to the same channel from the same subscription
-within a rolling window (configurable per subscription; several hours by
+within a rolling window (configurable per subscription; 24 hours by
 default), so a flapping upstream signal won't repeat-fire the same alert to
 the same channel over and over. Test/synthetic events (see
 [Testing](#testing-channels-and-subscriptions) below) intentionally bypass
