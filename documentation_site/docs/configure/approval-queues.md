@@ -1,11 +1,10 @@
-
 ---
 sidebarDepth: 2
 ---
 
 # Approval Queues
 
-::: info ReARM Pro only
+::: warning ReARM Pro only
 :::
 
 An **approval policy** on a release can require a minimum number of approvals
