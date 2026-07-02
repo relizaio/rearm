@@ -14,6 +14,7 @@ Generic integrations with ReARM can be done using [ReARM CLI](./rearmcli).
 ## Notification Integrations
 1. [Slack](./slack)
 2. [Microsoft Teams](./msteams)
+3. [Microsoft Sentinel](./sentinel)
 
 ## Integrations with Cyber-Security Tools
 1. [Dependency-Track](./dtrack)
