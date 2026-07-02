@@ -124,7 +124,19 @@
                         :single-line="false"
                         :bordered="false"
                         :row-key="(row) => row.releaseUuid"
-                    />
+                    >
+                        <template #empty>
+                            <n-alert
+                                v-if="isOrgAdmin && !hasApprovalRoleGrant"
+                                type="info"
+                                :show-icon="true"
+                                data-testid="approvals-empty-admin-hint"
+                            >
+                                Nothing is waiting on your approval role right now. As an Org Admin you can still approve or disapprove any release directly from its page -- this list only shows releases where you hold an explicit approval role. Ask another admin to grant you one if you want items to appear here automatically.
+                            </n-alert>
+                            <span v-else data-testid="approvals-empty-generic">No releases are waiting on your approval right now.</span>
+                        </template>
+                    </n-data-table>
                 </n-tab-pane>
                 </n-tabs>
             </n-drawer-content>
@@ -285,6 +297,22 @@ const myuser = computed<any>(() => store.getters.myuser)
 const canWrite = computed<boolean>(() =>
     commonFunctions.isWritable(orgUuid.value, myuser.value, 'ORG')
 )
+// Mirrors ApprovalNeedsService's own rule server-side: Org Admin lets you
+// cast a vote on any release, but this tab (and the APPROVAL_REQUESTED
+// notification) is keyed off an explicit approval role, not the ADMIN
+// override. An admin with no approval role legitimately sees an empty
+// list here even with pending releases elsewhere -- the empty-state hint
+// below exists so that doesn't read as broken.
+const isOrgAdmin = computed<boolean>(() => {
+    const perms = myuser.value?.permissions?.permissions || []
+    return perms.some((p: any) =>
+        p.scope === 'ORGANIZATION' && p.org === orgUuid.value && p.object === orgUuid.value && p.type === 'ADMIN'
+    )
+})
+const hasApprovalRoleGrant = computed<boolean>(() => {
+    const perms = myuser.value?.permissions?.permissions || []
+    return perms.some((p: any) => p.org === orgUuid.value && p.approvals && p.approvals.length > 0)
+})
 
 const inboxListDrawerOpen = ref<boolean>(false)
 const drawerTab = ref<string>('inbox')
