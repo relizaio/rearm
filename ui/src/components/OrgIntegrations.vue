@@ -2150,19 +2150,6 @@ function openEditChannelForCard(card: CardConfig, ch: ChannelCatalogRow) {
 // without needing to reassign a new Set each time.
 const testingChannels: Ref<Set<string>> = ref(new Set())
 
-const TEST_NOTIFICATION_CHANNEL_MUTATION = gql`
-    mutation testNotificationChannel($channelUuid: ID!) {
-        testNotificationChannel(channelUuid: $channelUuid) { uuid status }
-    }
-`
-const TEST_DELIVERY_POLL_QUERY = gql`
-    query testDeliveryPoll($orgUuid: ID!, $eventUuid: ID!, $channelUuid: ID!) {
-        notificationDeliveries(orgUuid: $orgUuid, eventUuid: $eventUuid, channelUuid: $channelUuid, limit: 1) {
-            items { status lastError }
-        }
-    }
-`
-
 // testNotificationChannel bypasses subscription matching/dedup and always
 // produces a visible delivery, but dispatch is still async (fan-out +
 // worker), so the mutation itself only returns a PENDING outbox event uuid
@@ -2172,9 +2159,20 @@ const TEST_DELIVERY_POLL_QUERY = gql`
 // regardless of whether this tab is still watching.
 async function sendChannelTest(ch: ChannelCatalogRow) {
     testingChannels.value.add(ch.uuid)
+    // Snapshot the org this test started in. orguuid is a live computed over
+    // props.orguuid, and this component is reused (not remounted) across an
+    // org switch -- reading orguuid.value fresh on each poll iteration would
+    // send the wrong org on the query after a mid-poll switch, and the
+    // event/channel pair wouldn't exist under the new org, silently forcing
+    // every poll to a "still pending" timeout even if the original test
+    // resolved seconds later.
+    const testOrgUuid = orguuid.value
     try {
         const res = await graphqlClient.mutate({
-            mutation: TEST_NOTIFICATION_CHANNEL_MUTATION,
+            mutation: gql`
+                mutation testNotificationChannel($channelUuid: ID!) {
+                    testNotificationChannel(channelUuid: $channelUuid) { uuid status }
+                }`,
             variables: { channelUuid: ch.uuid },
             fetchPolicy: 'no-cache'
         })
@@ -2186,9 +2184,17 @@ async function sendChannelTest(ch: ChannelCatalogRow) {
         const maxAttempts = 40
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 1500))
+            // The org was switched away from mid-poll -- abandon quietly
+            // rather than show a toast about a different org's context.
+            if (orguuid.value !== testOrgUuid) return
             const pollRes = await graphqlClient.query({
-                query: TEST_DELIVERY_POLL_QUERY,
-                variables: { orgUuid: orguuid.value, eventUuid, channelUuid: ch.uuid },
+                query: gql`
+                    query notificationDeliveriesForChannelTest($orgUuid: ID!, $eventUuid: ID!, $channelUuid: ID!) {
+                        notificationDeliveries(orgUuid: $orgUuid, eventUuid: $eventUuid, channelUuid: $channelUuid, limit: 1) {
+                            items { status lastError }
+                        }
+                    }`,
+                variables: { orgUuid: testOrgUuid, eventUuid, channelUuid: ch.uuid },
                 fetchPolicy: 'no-cache'
             })
             const delivery = pollRes.data?.notificationDeliveries?.items?.[0]
@@ -2203,7 +2209,9 @@ async function sendChannelTest(ch: ChannelCatalogRow) {
             }
             // Still PENDING (or another non-terminal status) -- keep polling.
         }
-        notify('warning', 'Still Pending', `Test to "${ch.name}" is still processing. Check Notification History for the result.`)
+        if (orguuid.value === testOrgUuid) {
+            notify('warning', 'Still Pending', `Test to "${ch.name}" is still processing. Check Notification History for the result.`)
+        }
     } catch (err: any) {
         notify('error', 'Error', extractError(err))
     } finally {
@@ -2623,8 +2631,9 @@ watch(() => props.orguuid, async () => {
 }
 .instance-icon:hover { color: var(--ink); background: var(--bg-tint); }
 .instance-icon.danger:hover { color: var(--danger); background: #FCEEEC; }
-.instance-icon.icon-spin { cursor: default; animation: instance-icon-spin 1s linear infinite; }
-@keyframes instance-icon-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+/* Reuses the global `spin` keyframe (App.vue) rather than redefining an
+   identical rotate-0-to-360 animation. */
+.instance-icon.icon-spin { cursor: default; animation: spin 1s linear infinite; }
 
 /* ---- + Add another ------------------------------------------------------ */
 .add-another {
