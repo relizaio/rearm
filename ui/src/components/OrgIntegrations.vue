@@ -115,6 +115,13 @@
                                                 :title="ch.status === 'ENABLED' ? 'Disable channel (pauses sending, keeps configuration)' : 'Enable channel'"
                                                 @click="toggleChannelStatus(ch)"
                                             ><PlayerPause v-if="ch.status === 'ENABLED'" /><PlayerPlay v-else /></n-icon>
+                                            <n-icon
+                                                class="instance-icon"
+                                                :class="{ 'icon-spin': testingChannels.has(ch.uuid) }"
+                                                size="20"
+                                                :title="testingChannels.has(ch.uuid) ? 'Sending test...' : 'Send test notification'"
+                                                @click="!testingChannels.has(ch.uuid) && sendChannelTest(ch)"
+                                            ><Refresh v-if="testingChannels.has(ch.uuid)" /><Send v-else /></n-icon>
                                             <n-icon class="instance-icon" size="20" :title="`Edit ${card.name} channel`" @click="openEditChannelForCard(card, ch)"><EditIcon /></n-icon>
                                             <n-icon class="instance-icon danger" size="20" :title="`Delete ${card.name} channel`" @click="onDeleteChannel(card, ch)"><Trash /></n-icon>
                                         </div>
@@ -830,7 +837,7 @@ import {
 import {
     Edit as EditIcon, Trash, Refresh, CirclePlus, CloudUpload,
     BrandGithub, BrandGitlab, BrandSlack, Mail, PlayerPlay, PlayerPause,
-    PlugConnected, ShieldCheck, LayoutGrid, Bell, Users
+    PlugConnected, ShieldCheck, LayoutGrid, Bell, Users, Send
 } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import { FetchPolicy } from '@apollo/client'
@@ -2138,6 +2145,72 @@ function openEditChannelForCard(card: CardConfig, ch: ChannelCatalogRow) {
     else if (card.id === 'SENTINEL') openEditSentinelChannel(ch)
 }
 
+// Channel uuids with an in-flight test. A ref wrapping a Set is reactive
+// under Vue 3's collection handling -- .add()/.delete() trigger updates
+// without needing to reassign a new Set each time.
+const testingChannels: Ref<Set<string>> = ref(new Set())
+
+const TEST_NOTIFICATION_CHANNEL_MUTATION = gql`
+    mutation testNotificationChannel($channelUuid: ID!) {
+        testNotificationChannel(channelUuid: $channelUuid) { uuid status }
+    }
+`
+const TEST_DELIVERY_POLL_QUERY = gql`
+    query testDeliveryPoll($orgUuid: ID!, $eventUuid: ID!, $channelUuid: ID!) {
+        notificationDeliveries(orgUuid: $orgUuid, eventUuid: $eventUuid, channelUuid: $channelUuid, limit: 1) {
+            items { status lastError }
+        }
+    }
+`
+
+// testNotificationChannel bypasses subscription matching/dedup and always
+// produces a visible delivery, but dispatch is still async (fan-out +
+// worker), so the mutation itself only returns a PENDING outbox event uuid
+// -- poll notificationDeliveries for the terminal status. ~1.5s cadence,
+// up to 40 attempts (~60s) before giving up client-side and telling the
+// user to check History; the delivery keeps processing server-side
+// regardless of whether this tab is still watching.
+async function sendChannelTest(ch: ChannelCatalogRow) {
+    testingChannels.value.add(ch.uuid)
+    try {
+        const res = await graphqlClient.mutate({
+            mutation: TEST_NOTIFICATION_CHANNEL_MUTATION,
+            variables: { channelUuid: ch.uuid },
+            fetchPolicy: 'no-cache'
+        })
+        const eventUuid = res.data?.testNotificationChannel?.uuid
+        if (!eventUuid) {
+            notify('error', 'Test Failed', `No test event was created for "${ch.name}".`)
+            return
+        }
+        const maxAttempts = 40
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 1500))
+            const pollRes = await graphqlClient.query({
+                query: TEST_DELIVERY_POLL_QUERY,
+                variables: { orgUuid: orguuid.value, eventUuid, channelUuid: ch.uuid },
+                fetchPolicy: 'no-cache'
+            })
+            const delivery = pollRes.data?.notificationDeliveries?.items?.[0]
+            if (!delivery) continue
+            if (delivery.status === 'SENT' || delivery.status === 'ACKED') {
+                notify('success', 'Test Sent', `Test notification delivered to "${ch.name}".`)
+                return
+            }
+            if (delivery.status === 'FAILED') {
+                notify('error', 'Test Failed', delivery.lastError || `Delivery to "${ch.name}" failed.`)
+                return
+            }
+            // Still PENDING (or another non-terminal status) -- keep polling.
+        }
+        notify('warning', 'Still Pending', `Test to "${ch.name}" is still processing. Check Notification History for the result.`)
+    } catch (err: any) {
+        notify('error', 'Error', extractError(err))
+    } finally {
+        testingChannels.value.delete(ch.uuid)
+    }
+}
+
 async function toggleChannelStatus(ch: ChannelCatalogRow) {
     const next = ch.status === 'ENABLED' ? 'DISABLED' : 'ENABLED'
     try {
@@ -2550,6 +2623,8 @@ watch(() => props.orguuid, async () => {
 }
 .instance-icon:hover { color: var(--ink); background: var(--bg-tint); }
 .instance-icon.danger:hover { color: var(--danger); background: #FCEEEC; }
+.instance-icon.icon-spin { cursor: default; animation: instance-icon-spin 1s linear infinite; }
+@keyframes instance-icon-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ---- + Add another ------------------------------------------------------ */
 .add-another {
