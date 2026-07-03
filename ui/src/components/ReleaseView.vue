@@ -824,6 +824,11 @@
                                 </li>
                             </ul>
                         </div>
+                        <n-space v-if="approvalEntries.length" align="center" :size="16" style="margin-bottom: 6px; font-size: 12px; color: #888;" data-testid="approval-legend">
+                            <span><n-icon size="14" color="#18a058" style="vertical-align: -2px;"><Check /></n-icon> Approve</span>
+                            <span><n-icon size="14" color="#d03050" style="vertical-align: -2px;"><X /></n-icon> Disapprove</span>
+                            <span>Click an icon to set your vote, click it again to clear</span>
+                        </n-space>
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
                             <n-spin :show="approvalPending" small>
@@ -1255,12 +1260,12 @@ import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { Bell, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
+import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -4985,43 +4990,44 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                     if (!isDisabled && givenApprovals.value[row.uuid]) isDisabled = (givenApprovals.value[row.uuid][aid]?.length > 0)
                     const isDisapproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'DISAPPROVED' : false
                     const isApproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'APPROVED' : false
-                    let title: string
-                    if (isApproved && isDisabled) {
-                        title = 'Approved'
-                    } else if (isApproved) {
-                        title = 'Your Approval Pending'
-                    } else if (isDisapproved && isDisabled) {
-                        title = 'Disapproved'
-                    } else if (isDisapproved) {
-                        title = 'Your Disapproval Pending'
-                    } else {
-                        title = 'Unset'
-                    }
-                    // Machine-readable cell state for the test harness. Today
-                    // the tri-state is only inferable from title/indeterminate;
-                    // surface it explicitly as data-state on the checkbox.
+                    // Machine-readable cell state for the test harness.
                     const approvalState = isApproved ? 'APPROVED' : (isDisapproved ? 'DISAPPROVED' : 'UNSET')
-                    const checkBoxEl = h(NCheckbox,
+                    // Approve and Disapprove are two separate controls (not one checkbox
+                    // cycling through a hidden third state) so the disapprove option is
+                    // always visible rather than only discoverable by clicking twice.
+                    const approveIcon = h(NIcon,
                         {
-                            checked: isApproved,
-                            indeterminate: isDisapproved,
-                            disabled: isDisabled,
-                            title,
-                            'data-testid': `approval-cell-${row.uuid}-${aid}`,
+                            class: isDisabled ? 'icons' : 'icons clickable',
+                            size: 22,
+                            title: isApproved && isDisabled ? 'Approved' : (isApproved ? 'Your Approval Pending (click to clear)' : 'Approve'),
+                            'data-testid': `approval-approve-${row.uuid}-${aid}`,
                             'data-state': approvalState,
-                            style: isDisapproved ? "--n-color-checked: red; --n-color-disabled: red;" : "",
-                            size: 'large',
-                            onClick: (e: any, i: any) => {
-                                e.preventDefault()
-                                if (!isDisabled && isApproved) {
-                                    updateMatrixCheckbox('DISAPPROVED', {uuid: row.uuid, approval: aid})
-                                } else if (!isDisabled && isDisapproved) {
-                                    updateMatrixCheckbox('UNSET', {uuid: row.uuid, approval: aid})
-                                } else if (!isDisabled) {
-                                    updateMatrixCheckbox('APPROVED', {uuid: row.uuid, approval: aid})
-                                }
+                            color: isApproved ? '#18a058' : '#c2c2c2',
+                            style: isDisabled ? 'opacity: 0.5;' : '',
+                            onClick: () => {
+                                if (isDisabled) return
+                                updateMatrixCheckbox(isApproved ? 'UNSET' : 'APPROVED', {uuid: row.uuid, approval: aid})
                             }
-                        }
+                        }, () => h(Check)
+                    )
+                    const disapproveIcon = h(NIcon,
+                        {
+                            class: isDisabled ? 'icons' : 'icons clickable',
+                            size: 22,
+                            title: isDisapproved && isDisabled ? 'Disapproved' : (isDisapproved ? 'Your Disapproval Pending (click to clear)' : 'Disapprove'),
+                            'data-testid': `approval-disapprove-${row.uuid}-${aid}`,
+                            'data-state': approvalState,
+                            color: isDisapproved ? '#d03050' : '#c2c2c2',
+                            style: isDisabled ? 'opacity: 0.5;' : '',
+                            onClick: () => {
+                                if (isDisabled) return
+                                updateMatrixCheckbox(isDisapproved ? 'UNSET' : 'DISAPPROVED', {uuid: row.uuid, approval: aid})
+                            }
+                        }, () => h(X)
+                    )
+                    const checkBoxEl = h(NSpace,
+                        { size: 8, align: 'center', 'data-testid': `approval-cell-${row.uuid}-${aid}` },
+                        () => [approveIcon, disapproveIcon]
                     )
                     // Add Admin Override icon for org admins on DRAFT releases when approval is already given
                     const isOrgAdmin = myUser?.permissions?.permissions?.some((p: any) => 
