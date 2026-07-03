@@ -217,21 +217,21 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, h, onMounted } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted, Ref } from 'vue'
 import { useStore } from 'vuex'
 import {
     NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
-    NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag,
+    NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag, NDropdown, NTooltip,
     NRadioGroup, NRadioButton, useDialog, useMessage
 } from 'naive-ui'
-import { CirclePlus, Trash, Edit as EditIcon } from '@vicons/tabler'
+import { CirclePlus, Trash, Edit as EditIcon, Send } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import {
     ChannelRow, ChannelGroupRow, SubscriptionRow, TYPE_LABELS,
     subscriptionStatusOptions, eventTypeOptions, severityOptions,
     LIST_CHANNELS_QUERY, LIST_GROUPS_QUERY, LIST_SUBSCRIPTIONS_QUERY,
-    extractError, isConflictError
+    extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType
 } from '@/utils/notificationsCommon'
 
 const props = defineProps<{
@@ -348,6 +348,22 @@ const SET_SUBSCRIPTION_STATUS_MUTATION = gql`
 const DELETE_SUBSCRIPTION_MUTATION = gql`
     mutation deleteNotificationSubscription($uuid: ID!) {
         deleteNotificationSubscription(uuid: $uuid)
+    }
+`
+
+const INJECT_SYNTHETIC_EVENT_MUTATION = gql`
+    mutation injectSyntheticEvent($orgUuid: ID!, $template: SyntheticEventTemplateEnum!) {
+        injectSyntheticEvent(orgUuid: $orgUuid, template: $template) {
+            uuid status
+        }
+    }
+`
+
+const DELIVERIES_FOR_EVENT_QUERY = gql`
+    query notificationDeliveriesForSubscriptionTest($orgUuid: ID!, $eventUuid: ID!) {
+        notificationDeliveries(orgUuid: $orgUuid, eventUuid: $eventUuid, limit: 200) {
+            items { uuid subscriptionUuid channelUuid status lastError }
+        }
     }
 `
 
@@ -554,6 +570,139 @@ function confirmDeleteSubscription (row: SubscriptionRow): void {
     })
 }
 
+const testingSubscriptions: Ref<Set<string>> = ref(new Set())
+
+// This pane is rendered behind v-if in OrgIntegrations.vue, so switching
+// sub-tabs mid-poll unmounts it outright; the org-switch guard alone
+// doesn't catch that (props just freeze at their last value). Without
+// this, an in-flight test's result dialog can pop up over a tab the user
+// already navigated away from.
+let isUnmounted = false
+onUnmounted(() => { isUnmounted = true })
+
+// Templates whose eventType this subscription actually listens for. Empty
+// when eventTypes is limited to kinds with no synthetic template yet
+// (RELEASE_CREATED / RELEASE_LIFECYCLE_CHANGED / RELEASE_BOM_DIFF /
+// APPROVAL_REQUESTED / APPROVAL_RESOLVED) -- see notificationsCommon.ts.
+function matchingTemplates (row: SubscriptionRow): Array<{ label: string, value: string }> {
+    return templatesForEventTypes(row.eventTypes || [])
+}
+
+// Null when the Test control should be enabled; otherwise the tooltip text
+// explaining why it's disabled for this row. Takes the already-computed
+// matchingTemplates(row) so callers don't filter syntheticEventTemplates twice.
+function testDisabledReason (row: SubscriptionRow, templates: Array<{ label: string, value: string }>): string | null {
+    if (row.status === 'DISABLED') {
+        return 'Subscription is disabled -- enable it first to test.'
+    }
+    if (templates.length === 0) {
+        return `No synthetic template exists yet for this subscription's event type(s) (${(row.eventTypes || []).join(', ') || 'none selected'}).`
+    }
+    return null
+}
+
+// injectSyntheticEvent is org-wide, not subscription-scoped: it writes one
+// outbox event that the fan-out worker matches against every ACTIVE (or
+// PREVIEW) subscription in the org, not just this one -- other subscriptions
+// on the same event type fire too, delivering to their own real channels
+// (Slack, PagerDuty, email...). Confirm before injecting, since this can
+// surprise another team's channel, not just the one being tested.
+function confirmSubscriptionTest (row: SubscriptionRow, template: string): void {
+    // Belt-and-suspenders: the Test control is already disabled while a test
+    // is in flight (see testingSubscriptions), but that's a reactive prop on
+    // a dropdown trigger -- guard the entry point too so a stray double-fire
+    // (e.g. a second confirm dialog opened before the first one's disabled
+    // state painted) can't launch two org-wide synthetic events at once.
+    if (testingSubscriptions.value.has(row.uuid)) return
+    dialog.warning({
+        title: `Test "${row.name}"?`,
+        content: "This injects a real synthetic event for the whole org, not just this subscription -- any other ACTIVE or PREVIEW subscription matching the same event type will also fire and deliver to its own channels (Slack, email, etc.).",
+        positiveText: 'Send test event',
+        negativeText: 'Cancel',
+        onPositiveClick: () => runSubscriptionTest(row, template),
+    })
+}
+
+async function runSubscriptionTest (row: SubscriptionRow, template: string): Promise<void> {
+    if (testingSubscriptions.value.has(row.uuid)) return
+    testingSubscriptions.value.add(row.uuid)
+    const testOrgUuid = orgUuid.value
+    // Immediate, unmissable feedback the moment the confirm dialog closes --
+    // the button's own loading spinner is easy to miss on a tiny icon
+    // button, and there's a real gap (mutation + first 1.5s poll) before
+    // the result dialog can appear.
+    const loadingHandle = message.loading(`Sending test event for "${row.name}"...`, { duration: 0 })
+    try {
+        const res = await graphqlClient.mutate({
+            mutation: INJECT_SYNTHETIC_EVENT_MUTATION,
+            variables: { orgUuid: testOrgUuid, template },
+            fetchPolicy: 'no-cache',
+        })
+        const eventUuid = res.data?.injectSyntheticEvent?.uuid
+        if (!eventUuid) {
+            message.error(`No test event was created for "${row.name}".`)
+            return
+        }
+        const channelNameById = buildNameMap(channels.value)
+        const maxAttempts = 40
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 1500))
+            if (isUnmounted || orgUuid.value !== testOrgUuid) return
+            const pollRes = await graphqlClient.query({
+                query: DELIVERIES_FOR_EVENT_QUERY,
+                variables: { orgUuid: testOrgUuid, eventUuid },
+                fetchPolicy: 'no-cache',
+            })
+            const items = (pollRes.data?.notificationDeliveries?.items || [])
+                .filter((d: any) => d.subscriptionUuid === row.uuid)
+            if (items.length > 0 && items.every((d: any) => d.status !== 'PENDING')) {
+                if (!isUnmounted) reportSubscriptionTestResult(row, items, channelNameById)
+                return
+            }
+        }
+        if (!isUnmounted && orgUuid.value === testOrgUuid) {
+            reportSubscriptionTestResult(row, [], channelNameById, true)
+        }
+    } catch (err: any) {
+        if (!isUnmounted) message.error(`Test failed: ${extractError(err)}`)
+    } finally {
+        loadingHandle.destroy()
+        testingSubscriptions.value.delete(row.uuid)
+    }
+}
+
+function reportSubscriptionTestResult (
+    row: SubscriptionRow,
+    items: Array<{ channelUuid: string | null, status: string, lastError: string | null }>,
+    channelNameById: Record<string, string>,
+    timedOut = false,
+): void {
+    if (items.length === 0) {
+        dialog.info({
+            title: `Test result -- ${row.name}`,
+            content: timedOut
+                ? 'Still waiting on a delivery after 60s. The event may still be processing -- check Notification History for the result.'
+                : "The synthetic event was injected but produced no delivery for this subscription. Its filter, or a route's minimum-severity gate, likely excluded it.",
+        })
+        return
+    }
+    const lines = items.map(d => {
+        const chName = d.channelUuid ? (channelNameById[d.channelUuid] || d.channelUuid) : '(no channel)'
+        const detail = d.lastError ? `: ${d.lastError}` : ''
+        return `${chName} -> ${d.status}${detail}`
+    })
+    // Reuse the same status->tag classification as History/Inbox so this
+    // dialog can't call something an unqualified "success" that isn't --
+    // e.g. BATCHED (queued in an email digest, not actually sent yet) would
+    // otherwise fall through a FAILED-only check and render green.
+    const tagTypes = items.map(d => deliveryStatusTagType(d.status))
+    const dialogType = tagTypes.includes('error') ? 'warning' : (tagTypes.every(t => t === 'success') ? 'success' : 'info')
+    dialog[dialogType]({
+        title: `Test result -- ${row.name}`,
+        content: () => h('div', lines.map((l, i) => h('div', { key: i }, l))),
+    })
+}
+
 function subscriptionRouteCount (row: SubscriptionRow): number {
     try { return row.routes ? (JSON.parse(row.routes) || []).length : 0 }
     catch { return 0 }
@@ -582,26 +731,51 @@ const subscriptionColumns = computed(() => [
     },
     {
         title: 'Actions', key: 'actions',
-        render: (row: SubscriptionRow) => h(NSpace, { size: 'small' }, {
-            default: () => [
-                h(NButton, {
+        render: (row: SubscriptionRow) => {
+            const templates = matchingTemplates(row)
+            const disabledReason = testDisabledReason(row, templates)
+            const isTesting = testingSubscriptions.value.has(row.uuid)
+            const testButtonDisabled = !canWrite.value || !!disabledReason || isTesting
+            const testButton = h(NDropdown, {
+                trigger: 'click',
+                // NDropdown options key off `key` (not NSelect's `value`) --
+                // onSelect hands back that `key`.
+                options: templates.map(t => ({ label: t.label, key: t.value })),
+                disabled: testButtonDisabled,
+                onSelect: (key: string) => confirmSubscriptionTest(row, key),
+            }, {
+                default: () => h(NButton, {
                     size: 'tiny', secondary: true,
-                    onClick: () => openEditSubscription(row),
-                    disabled: !canWrite.value,
-                    'data-testid': 'edit-subscription',
-                }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
-                h(NButton, {
-                    size: 'tiny', secondary: true,
-                    onClick: () => toggleSubscriptionStatus(row),
-                    disabled: !canWrite.value,
-                }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
-                h(NButton, {
-                    size: 'tiny', secondary: true, type: 'error',
-                    onClick: () => confirmDeleteSubscription(row),
-                    disabled: !canWrite.value,
-                }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
-            ],
-        }),
+                    disabled: testButtonDisabled,
+                    loading: isTesting,
+                    'data-testid': 'test-subscription',
+                }, { icon: () => h(NIcon, null, { default: () => h(Send) }) }),
+            })
+            return h(NSpace, { size: 'small' }, {
+                default: () => [
+                    h(NButton, {
+                        size: 'tiny', secondary: true,
+                        onClick: () => openEditSubscription(row),
+                        disabled: !canWrite.value,
+                        'data-testid': 'edit-subscription',
+                    }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
+                    h(NButton, {
+                        size: 'tiny', secondary: true,
+                        onClick: () => toggleSubscriptionStatus(row),
+                        disabled: !canWrite.value,
+                    }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
+                    h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => testButton,
+                        default: () => disabledReason || "Send a synthetic test event through this subscription's matching path (also exercises other subscriptions on the same event type -- asks for confirmation first).",
+                    }),
+                    h(NButton, {
+                        size: 'tiny', secondary: true, type: 'error',
+                        onClick: () => confirmDeleteSubscription(row),
+                        disabled: !canWrite.value,
+                    }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
+                ],
+            })
+        },
     },
 ])
 

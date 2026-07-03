@@ -138,6 +138,31 @@ export const eventTypeOptions = [
     { label: 'Approval resolved', value: 'APPROVAL_RESOLVED' },
 ]
 
+// Mirrors SyntheticEventTemplates.Template in rearm-core (backend/src/main/
+// java/io/reliza/service/SyntheticEventTemplates.java). Only the event types
+// listed here have a synthetic template to exercise them -- RELEASE_CREATED,
+// RELEASE_LIFECYCLE_CHANGED, RELEASE_BOM_DIFF, APPROVAL_REQUESTED, and
+// APPROVAL_RESOLVED have none yet, so a subscription scoped to only those
+// event types has nothing the "Test" affordance can inject.
+export const syntheticEventTemplates: Array<{ label: string, value: string, eventType: string }> = [
+    { label: 'Critical vuln, single shipped release', value: 'CRITICAL_VULN_SINGLE_SHIPPED_RELEASE', eventType: 'NEW_VULN_AFFECTS_RELEASES' },
+    { label: 'Critical KEV vuln, three releases', value: 'CRITICAL_KEV_VULN_THREE_RELEASES_IN_PAYLOAD', eventType: 'NEW_VULN_AFFECTS_RELEASES' },
+    { label: 'KEV-listed vuln on a draft release', value: 'KEV_LISTED_DRAFT_RELEASE', eventType: 'NEW_VULN_AFFECTS_RELEASES' },
+    { label: 'Severity bump: MEDIUM to CRITICAL', value: 'SEVERITY_BUMP_MEDIUM_TO_CRITICAL', eventType: 'VULNERABILITY_RECORD_UPDATED' },
+    { label: 'CVE newly added to KEV', value: 'KEV_ADDED', eventType: 'VULNERABILITY_RECORD_UPDATED' },
+    { label: 'VEX resolved to not_affected', value: 'VEX_RESOLVED_NOT_AFFECTED', eventType: 'VEX_STATE_CHANGED' },
+]
+
+// Templates whose eventType is one the subscription actually listens for --
+// picking any of these and injecting it can, at most, be matched by this
+// subscription (still subject to its filter/CEL and each route's severity gate).
+export function templatesForEventTypes (eventTypes: string[]): Array<{ label: string, value: string }> {
+    const types = new Set(eventTypes || [])
+    return syntheticEventTemplates
+        .filter(t => types.has(t.eventType))
+        .map(t => ({ label: t.label, value: t.value }))
+}
+
 export const severityOptions = [
     { label: 'CRITICAL', value: 'CRITICAL' },
     { label: 'HIGH', value: 'HIGH' },
