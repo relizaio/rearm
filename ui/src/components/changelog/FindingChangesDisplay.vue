@@ -28,7 +28,7 @@ import { computed, ref } from 'vue'
 import { NTag } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
 import KevDetailsModal from '../KevDetailsModal.vue'
-import { getSeverityIndex } from '../../utils/findingUtils'
+import { normalizeReleaseVuln as normalizeVuln, normalizeReleaseViolation as normalizeViolation, normalizeReleaseWeakness as normalizeWeakness, sortBySeverityThenId } from '../../utils/findingUtils'
 import { resolveKevCveId } from '../../utils/kevService'
 import type { ReleaseFindingChanges } from '../../types/changelog-sealed'
 
@@ -57,45 +57,7 @@ const summary = computed(() => {
     }
 })
 
-const sortBySeverity = (findings: any[]) => {
-    if (!findings) return []
-    return [...findings].sort((a, b) => {
-        const severityDiff = getSeverityIndex(a.severity || '') - getSeverityIndex(b.severity || '')
-        if (severityDiff !== 0) return severityDiff
-        return String(a.findingId || '').localeCompare(String(b.findingId || ''))
-    })
-}
-
-const normalizeVuln = (v: any) => ({
-    findingId: v.vulnId || '',
-    affectedComponent: v.purl || '',
-    severity: v.severity || '',
-    aliases: Array.isArray(v.aliases) ? v.aliases.map((a: any) => typeof a === 'string' ? a : a.aliasId) : [],
-    type: 'VULN',
-    typeLabel: 'VULNERABILITY',
-    analysisState: v.analysisState || null,
-    knownExploited: !!v.knownExploited
-})
-
-const normalizeViolation = (v: any) => ({
-    findingId: v.type || '',
-    affectedComponent: v.purl || '',
-    severity: undefined as string | undefined,
-    aliases: [] as string[],
-    type: 'VIOLATION',
-    typeLabel: 'VIOLATION',
-    analysisState: v.analysisState || null
-})
-
-const normalizeWeakness = (w: any) => ({
-    findingId: w.cweId || w.ruleId || '',
-    affectedComponent: w.location || '',
-    severity: w.severity || '',
-    aliases: [] as string[],
-    type: 'WEAKNESS',
-    typeLabel: 'WEAKNESS',
-    analysisState: w.analysisState || null
-})
+const sortBySeverity = sortBySeverityThenId
 
 const appearedFindings = computed(() => {
     if (!props.findingChanges) return []
