@@ -9,8 +9,7 @@ export const links = {
   discord: 'https://discord.gg/UTxjBf9juQ',
   github: 'https://github.com/relizaio/rearm',
   datasheet: 'https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_Datasheet_v6_2026-04-16.pdf',
-  // TODO: comparisons not yet ported to the 2026 site; absolute link to current site.
-  comparisons: 'https://rearmhq.com/comparisons',
+  comparisons: '/comparisons/',
 };
 
 export const productNav = [
