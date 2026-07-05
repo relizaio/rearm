@@ -72,6 +72,14 @@ const { active = '' } = Astro.props;
     background: #FFFFFF; border: 1px solid var(--border-card);
     min-width: 240px; padding: 8px 0; z-index: 60;
   }
+  /* Invisible hover bridge across the 14px visual gap between the trigger and
+     the menu; without it, moving the pointer down to the menu leaves :hover
+     mid-gap and the menu closes before it can be reached. */
+  .dd::before {
+    content: '';
+    position: absolute;
+    top: -15px; left: 0; right: 0; height: 15px;
+  }
   .dd a {
     display: block; padding: 9px 18px; font-size: 14px; font-weight: 500;
     color: var(--navy); text-decoration: none;
