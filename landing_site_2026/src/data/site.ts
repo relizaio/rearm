@@ -14,7 +14,7 @@ export const links = {
 };
 
 export const productNav = [
-  { label: 'SBOM/xBOM Management', href: '/product/sbom-xbom-management/' },
+  { label: 'SBOM/XBOM Management', href: '/product/sbom-xbom-management/' },
   { label: 'Findings Aggregation', href: '/product/findings-aggregation/' },
   { label: 'Release Policies', href: '/product/release-policies/' },
   { label: 'AI Governance', href: '/product/ai-governance/' },
@@ -29,7 +29,7 @@ export const useCaseNav = [
 
 // page-name -> href used by capability cards / question rows / related links
 export const pageHrefs: Record<string, string> = {
-  'SBOM/xBOM Management': '/product/sbom-xbom-management/',
+  'SBOM/XBOM Management': '/product/sbom-xbom-management/',
   'Findings Aggregation': '/product/findings-aggregation/',
   'Release Policies': '/product/release-policies/',
   'AI Governance': '/product/ai-governance/',

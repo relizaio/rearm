@@ -1,6 +1,6 @@
 {
   "levels": [
-    "SBOM/xBOM",
+    "SBOM/XBOM",
     "Release",
     "Branch",
     "Component",
@@ -35,10 +35,10 @@
   ],
   "caps": [
     {
-      "name": "SBOM/xBOM Management",
+      "name": "SBOM/XBOM Management",
       "line": "Every SBOM, organized, diffable, searchable.",
       "shot": "[ SCREENSHOT: SBOM diff view between two versions ]",
-      "link": "SBOM/xBOM Management"
+      "link": "SBOM/XBOM Management"
     },
     {
       "name": "Findings Aggregation",
@@ -88,11 +88,11 @@
   "questions": [
     {
       "q": "Where do we run log4j 2.14 today?",
-      "page": "SBOM/xBOM Management"
+      "page": "SBOM/XBOM Management"
     },
     {
       "q": "What changed between 1.2 and 1.3?",
-      "page": "SBOM/xBOM Management"
+      "page": "SBOM/XBOM Management"
     },
     {
       "q": "Is this release cleared to ship?",
@@ -132,12 +132,12 @@
       "id": "3b",
       "href": "#3b",
       "path": "/product/sbom-xbom-management",
-      "label": "SBOM/xBOM Management",
+      "label": "SBOM/XBOM Management",
       "h1": "Every SBOM, organized, diffable, searchable.",
-      "problem": "SBOMs generated in CI end up as build artifacts nobody can query. ReARM attaches every SBOM and xBOM to the release that produced it, per component and per product.",
+      "problem": "SBOMs generated in CI end up as build artifacts nobody can query. ReARM attaches every SBOM and XBOM to the release that produced it, per component and per product.",
       "chain": [
         {
-          "name": "SBOM/xBOM",
+          "name": "SBOM/XBOM",
           "c1": "#5EEBC3",
           "c2": "#4FC7E8",
           "on": true,
@@ -194,7 +194,7 @@
         {
           "num": "01 / ORGANIZED STORAGE",
           "title": "Not a bucket of JSON files",
-          "body": "Every SBOM and xBOM is versioned and tied to the release that produced it, per component and per product. Ask for any shipped version's bill of materials and get it in one click.",
+          "body": "Every SBOM and XBOM is versioned and tied to the release that produced it, per component and per product. Ask for any shipped version's bill of materials and get it in one click.",
           "shot": "[ SCREENSHOT 4: product release composition view ]"
         },
         {
@@ -239,7 +239,7 @@
       "problem": "Release criteria that live in wiki pages and tribal knowledge do not get enforced. ReARM turns them into policies that run against every release, automatically.",
       "chain": [
         {
-          "name": "SBOM/xBOM",
+          "name": "SBOM/XBOM",
           "c1": "#5EEBC3",
           "c2": "#4FC7E8",
           "on": false,
@@ -328,7 +328,7 @@
       "problem": "Coding agents multiply commit volume. 'Who wrote this, and under what approval' stops being answerable by convention. ReARM makes it answerable by record.",
       "chain": [
         {
-          "name": "SBOM/xBOM",
+          "name": "SBOM/XBOM",
           "c1": "#5EEBC3",
           "c2": "#4FC7E8",
           "on": false,
@@ -431,7 +431,7 @@
           "num": "01",
           "title": "Submission-ready SBOMs",
           "body": "Generated and stored per device release, versioned and tied to the release that produced them.",
-          "cap": "SBOM/xBOM Management"
+          "cap": "SBOM/XBOM Management"
         },
         {
           "num": "02",
@@ -477,7 +477,7 @@
           "num": "01",
           "title": "HBOM + SBOM per unit",
           "body": "Hardware and software bill of materials per unit and per configuration, kept together.",
-          "cap": "SBOM/xBOM Management"
+          "cap": "SBOM/XBOM Management"
         },
         {
           "num": "02",
@@ -581,7 +581,7 @@
           "num": "01",
           "title": "SBOM per product release",
           "body": "Annex I requirements met by default: every product release carries its SBOM.",
-          "cap": "SBOM/xBOM Management"
+          "cap": "SBOM/XBOM Management"
         },
         {
           "num": "02",
@@ -615,7 +615,7 @@
       "cta": "GitHub",
       "features": [
         "Self-hosted",
-        "SBOM/xBOM storage and roll-up",
+        "SBOM/XBOM storage and roll-up",
         "Community support"
       ]
     },
