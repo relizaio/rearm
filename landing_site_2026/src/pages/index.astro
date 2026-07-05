@@ -258,12 +258,15 @@ const allQuestions = [...questions, ...extraQuestions];
   .reg-items { display: flex; gap: 22px; flex-wrap: wrap; }
   .reg-item { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.08em; color: var(--body-2); font-weight: 600; }
 
-  .logos-section { padding: 8px 0 32px; }
+  .logos-section { padding: 8px 0 44px; }
   .logo-block { text-align: center; }
   .logo-title { font-size: 24px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 4px; }
   .logo-sub { color: var(--muted-1); font-size: 15px; margin-bottom: 8px; }
-  .logo-items { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; }
-  .fav-icon { width: 166px; height: auto; margin: 10px 2%; }
+  /* Uniform cells: constraining BOTH dimensions (object-fit: contain) keeps
+     tall/square marks from dominating wide wordmarks; generous gaps declutter. */
+  .logo-items { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 30px 56px; margin-top: 20px; }
+  .logo-items a { display: flex; align-items: center; justify-content: center; width: 166px; height: 60px; }
+  .fav-icon { max-width: 166px; max-height: 60px; width: auto; height: auto; object-fit: contain; }
 
   .editions { padding: 0 0 72px; }
   .editions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
@@ -281,6 +284,8 @@ const allQuestions = [...questions, ...extraQuestions];
     .uc-grid { grid-template-columns: 1fr; }
     .q-row { flex-direction: column; gap: 6px; }
     .ai-strip h2 { font-size: 20px; }
-    .fav-icon { width: 72px; }
+    .logo-items { gap: 18px 26px; }
+    .logo-items a { width: 96px; height: 40px; }
+    .fav-icon { max-width: 96px; max-height: 40px; }
   }
 </style>
