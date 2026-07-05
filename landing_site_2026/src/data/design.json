@@ -111,13 +111,13 @@
     {
       "num": "01 / AUTOMATIC ASSEMBLY",
       "title": "One structure, six levels, zero stitching",
-      "body": "Component releases bundle into product releases as they are produced. No manual assembly, no stale spreadsheets. The hierarchy above is not a diagram of your process; it is the live data model.",
+      "body": "Component releases bundle into product releases as they are produced. No manual assembly, no stale spreadsheets. The hierarchy above is not a diagram of your process; it is the live data model. Multi-level nesting is supported: products can contain products, and evidence propagates through every level.",
       "shot": "[ SCREENSHOT 4: hierarchy / product release composition view ]"
     },
     {
       "num": "02 / DRILL-DOWN",
       "title": "Product-level count to exact SBOM entry in three clicks",
-      "body": "Start from a product-level vulnerability count. Click to the offending component, then to the exact SBOM entry that carries the finding. Every number on the dashboard is traversable to its source.",
+      "body": "Start from a product-level vulnerability count. Click to the offending component, then to the exact SBOM entry that carries the finding. Every number on the dashboard is traversable to its source. Findings of every type are covered: vulnerabilities, weaknesses, and license violations, aggregated from Dependency-Track and your other tools, with triage and audit at organization, product, component or release scope.",
       "shot": "[ SCREENSHOT: drill-down from product finding to SBOM entry ]"
     },
     {
@@ -200,7 +200,7 @@
         {
           "num": "02 / CONTINUOUS DIFFING",
           "title": "What changed between 1.2 and 1.3? Two answers, same release pair.",
-          "body": "Dependency delta: every new release is automatically diffed against its predecessor as it lands. Continuous, not on-request; any two versions diffable on demand, at component and product level. Code delta: auto-generated changelogs from the commits between the two releases, shown alongside the SBOM diff. Releases are versioned automatically per your org's version schema; no manual bumping.",
+          "body": "Dependency delta: every new release is automatically diffed against its predecessor as it lands. Continuous, not on-request; any two versions diffable on demand, at component and product level. Code delta: auto-generated changelogs from the commits between the two releases, shown alongside the SBOM diff. Releases are versioned automatically per your org's version schema; no manual bumping. Finding delta: how vulnerabilities and policy findings changed between the two releases, in the same changelog view.",
           "callout": "Dependency-analysis tools do not do cross-version SBOM diffing. ReARM does.",
           "shot": "[ SCREENSHOT 1 + 3: SBOM diff between versions, changelog alongside ]"
         },
@@ -213,7 +213,7 @@
         {
           "num": "04 / BEYOND SBOM",
           "title": "HBOMs, VDRs, attestations, anything",
-          "body": "Arbitrary artifacts attach to releases with the same organization and the same roll-up. If it is evidence, it has a place in the hierarchy.",
+          "body": "HBOMs, VEX, VDR, BOV, SARIF, digital signatures, attestations, build metadata: every artifact needed to prove integrity, safety, and compliance, attached to the release that produced it, versioned, and retained for 10+ years. ReARM is the system of record for your supply chain evidence.",
           "shot": "[ SCREENSHOT: artifacts attached to a release ]"
         },
         {
@@ -221,6 +221,12 @@
           "title": "Serve SBOMs downstream",
           "body": "Distribute SBOMs and artifacts to downstream consumers via TEA. Customers, authorities, and program offices pull from the same organized source.",
           "shot": "[ SCREENSHOT: distribution / TEA endpoint view ]"
+        },
+        {
+          "num": "06 / AGENTIC ENRICHMENT",
+          "title": "SBOMs arrive incomplete. BEAR fixes that.",
+          "body": "Reliza BEAR, ReARM's agentic SBOM enrichment and augmentation tool, automatically enriches your SBOMs with additional metadata, including supplier, copyright and license information, before they roll up.",
+          "shot": "[ SCREENSHOT: BEAR-enriched SBOM entry, before and after ]"
         }
       ]
     },
@@ -290,7 +296,7 @@
         {
           "num": "01 / LIFECYCLE",
           "title": "Draft, assembled, approved or rejected",
-          "body": "Approval policies and a release lifecycle enforced automatically on every release. No release reaches approved without passing the rules your organization set.",
+          "body": "Approval policies and a release lifecycle enforced automatically on every release. No release reaches approved without passing the rules your organization set. Both manual and automated approvals are supported.",
           "shot": "[ SCREENSHOT: release lifecycle view ]"
         },
         {
@@ -308,7 +314,7 @@
         {
           "num": "04 / AUDIT TRAIL",
           "title": "Who approved, when, against what",
-          "body": "Every approval records who or what approved, when, and against which evidence snapshot. Years later, the answer is still there.",
+          "body": "Every approval records who or what approved, when, and against which evidence snapshot. Years later, the answer is still there. Every approval is immutably recorded with a timestamp, approver identity, and the evidence it was based on. Your release approval workflow is also your audit trail.",
           "shot": "[ SCREENSHOT: approval audit trail ]"
         }
       ]

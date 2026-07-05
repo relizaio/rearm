@@ -3,19 +3,12 @@ import Base from '../layouts/Base.astro';
 import Chain from '../components/Chain.astro';
 import Shot from '../components/Shot.astro';
 import CtaBand from '../components/CtaBand.astro';
-import { links, caps, useCasePanels, questions, fullChain, pageHrefs } from '../data/site';
+import {
+  links, caps, useCasePanels, questions, fullChain, pageHrefs,
+  integrations, clientsPartners, teaLink, demoVideo, regulations, extraQuestions,
+} from '../data/site';
 
-const worksWith = [
-  { name: 'Dependency-Track', img: '/logos/dtrack.png' },
-  { name: 'CycloneDX', img: '/logos/cdx.png' },
-  { name: 'GitHub', img: '/logos/github.png' },
-  { name: 'GitLab', img: '/logos/gitlab.png' },
-  { name: 'Slack', img: '/logos/slack.png' },
-];
-const trustedBy = [
-  { name: 'OVHcloud', img: '/logos/ovh.png' },
-  { name: 'Semperis', img: '/logos/semperis.png' },
-];
+const allQuestions = [...questions, ...extraQuestions];
 ---
 
 <Base title="ReARM — Release Governance Platform" active="home">
@@ -45,6 +38,19 @@ const trustedBy = [
   <section class="band">
     <div class="container">
       <Chain chain={fullChain} variant="dark" animated={true} label="HOW REARM SEES YOUR PRODUCT" />
+    </div>
+  </section>
+
+  <!-- DEMO VIDEO -->
+  <section class="video-section">
+    <div class="container video-wrap">
+      <div class="eyebrow eyebrow--muted video-label">SEE IT IN ACTION</div>
+      <iframe
+        class="video-frame"
+        src={demoVideo}
+        allow="fullscreen; picture-in-picture"
+        title="ReARM Demo Walkthrough"
+      ></iframe>
     </div>
   </section>
 
@@ -102,7 +108,7 @@ const trustedBy = [
     <div class="container">
       <div class="eyebrow eyebrow--muted">QUESTIONS REARM CAN ANSWER</div>
       <div class="q-list">
-        {questions.map((q) => (
+        {allQuestions.map((q) => (
           <a class="q-row" href={pageHrefs[q.page]}>
             <span class="q-q">{q.q}</span>
             <span class="q-page">{q.page} →</span>
@@ -112,20 +118,54 @@ const trustedBy = [
     </div>
   </section>
 
-  <!-- LOGOS -->
-  <section class="logos-section">
-    <div class="container">
-      <div class="logo-row">
-        <span class="eyebrow eyebrow--muted">WORKS WITH</span>
-        <div class="logo-items">
-          {worksWith.map((l) => <img src={l.img} alt={l.name} title={l.name} />)}
-        </div>
+  <!-- COMPLIANCE STRIP -->
+  <section class="reg-section">
+    <div class="container reg-strip">
+      <span class="eyebrow eyebrow--muted">REGULATIONS</span>
+      <div class="reg-items">
+        {regulations.map((r) => <span class="reg-item">{r}</span>)}
       </div>
-      <div class="logo-row">
-        <span class="eyebrow eyebrow--muted">TRUSTED BY</span>
-        <div class="logo-items">
-          {trustedBy.map((l) => <img src={l.img} alt={l.name} title={l.name} />)}
-        </div>
+    </div>
+  </section>
+
+  <!-- SUPPORTS (TEA) -->
+  <section class="logos-section">
+    <div class="container logo-block">
+      <h2 class="logo-title">Supports</h2>
+      <p class="logo-sub">OWASP Transparency Exchange API</p>
+      <div class="logo-items">
+        <a href={teaLink} title="OWASP Transparency Exchange API" target="_blank" rel="noopener noreferrer">
+          <img src="/logos/tealogo.png" alt="OWASP Transparency Exchange API" class="fav-icon" />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTEGRATES -->
+  <section class="logos-section">
+    <div class="container logo-block">
+      <h2 class="logo-title">Integrates</h2>
+      <p class="logo-sub">with your favorite tools</p>
+      <div class="logo-items">
+        {integrations.map((l) => (
+          <a href={l.url} title={l.title} target="_blank" rel="noopener noreferrer">
+            <img src={`/logos/${l.file}`} alt={l.title} class="fav-icon" />
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- CLIENTS AND PARTNERS -->
+  <section class="logos-section">
+    <div class="container logo-block">
+      <h2 class="logo-title">Clients and Partners</h2>
+      <div class="logo-items">
+        {clientsPartners.map((l) => (
+          <a href={l.url} title={l.title} target="_blank" rel="noopener noreferrer">
+            <img src={`/logos/${l.file}`} alt={l.title} class="fav-icon" />
+          </a>
+        ))}
       </div>
     </div>
   </section>
@@ -202,10 +242,28 @@ const trustedBy = [
   .q-q { color: var(--navy); font-weight: 600; font-size: 16px; }
   .q-page { color: var(--orange-text); font-weight: 600; font-size: 14px; white-space: nowrap; }
 
-  .logos-section { padding: 8px 0 48px; }
-  .logo-row { display: flex; align-items: center; gap: 32px; padding: 18px 0; flex-wrap: wrap; }
-  .logo-items { display: flex; align-items: center; gap: 34px; flex-wrap: wrap; }
-  .logo-items img { height: 34px; width: auto; opacity: 0.85; }
+  .video-section { padding: 56px 0 24px; }
+  .video-wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .video-frame {
+    width: 100%; max-width: 888px; aspect-ratio: 16 / 9;
+    border: 1px solid var(--border-card);
+  }
+
+  .reg-section { padding: 0 0 48px; }
+  .reg-strip {
+    display: flex; align-items: center; gap: 26px; flex-wrap: wrap;
+    border: 1px solid var(--border-card); background: var(--surface-strip);
+    padding: 18px 26px;
+  }
+  .reg-items { display: flex; gap: 22px; flex-wrap: wrap; }
+  .reg-item { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.08em; color: var(--body-2); font-weight: 600; }
+
+  .logos-section { padding: 8px 0 32px; }
+  .logo-block { text-align: center; }
+  .logo-title { font-size: 24px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 4px; }
+  .logo-sub { color: var(--muted-1); font-size: 15px; margin-bottom: 8px; }
+  .logo-items { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .fav-icon { width: 166px; height: auto; margin: 10px 2%; }
 
   .editions { padding: 0 0 72px; }
   .editions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
@@ -223,5 +281,6 @@ const trustedBy = [
     .uc-grid { grid-template-columns: 1fr; }
     .q-row { flex-direction: column; gap: 6px; }
     .ai-strip h2 { font-size: 20px; }
+    .fav-icon { width: 72px; }
   }
 </style>

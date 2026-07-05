@@ -71,3 +71,51 @@ export const tiers = design.tiers as {
 export const fullChain: ChainLevel[] = levels.map((name, i) => ({
   name, c1: grads[i][0], c2: grads[i][1], on: true,
 }));
+
+// Integration / client logos, carried over 1:1 from the current site.
+export const integrations = [
+  { file: 'dtrack.png', url: 'https://dependencytrack.org', title: 'Dependency-Track' },
+  { file: 'cdx.png', url: 'https://cyclonedx.org', title: 'CycloneDX' },
+  { file: 'spdx.png', url: 'https://spdx.org', title: 'SPDX' },
+  { file: 'ado.png', url: 'https://dev.azure.com', title: 'Azure DevOps' },
+  { file: 'github.png', url: 'https://github.com', title: 'GitHub' },
+  { file: 'gitlab.png', url: 'https://gitlab.com', title: 'GitLab' },
+  { file: 'jenkins.png', url: 'https://www.jenkins.io', title: 'Jenkins' },
+  { file: 'nvd.png', url: 'https://nvd.nist.gov', title: 'NVD' },
+  { file: 'osv.png', url: 'https://osv.dev', title: 'OSV' },
+  { file: 'sonatype_oss.png', url: 'https://ossindex.sonatype.org', title: 'Sonatype OSS Index' },
+  { file: 'snyk.png', url: 'https://snyk.io', title: 'Snyk' },
+  { file: 'slack.png', url: 'https://slack.com', title: 'Slack' },
+  { file: 'cosign.png', url: 'https://github.com/sigstore/cosign', title: 'Sigstore Cosign' },
+  { file: 'msteams.png', url: 'https://www.microsoft.com/en-us/microsoft-365/microsoft-teams/group-chat-software', title: 'Microsoft Teams' },
+  { file: 'oci.png', url: 'https://www.opencontainers.org', title: 'Open Container Initiative' },
+  { file: 'sendgrid.png', url: 'https://sendgrid.com', title: 'SendGrid' },
+  { file: 'semgrep.png', url: 'https://semgrep.dev', title: 'Semgrep' },
+  { file: 'checkov.png', url: 'https://www.checkov.io', title: 'Checkov' },
+  { file: 'gmail.png', url: 'https://gmail.com', title: 'Gmail' },
+  { file: 'shiftleftcyber.png', url: 'https://shiftleftcyber.io', title: 'ShiftLeftCyber' },
+  { file: 'clearlydefined.png', url: 'https://clearlydefined.io', title: 'ClearlyDefined' },
+  { file: 'depsdev.png', url: 'https://deps.dev', title: 'deps.dev' },
+  { file: 'cdxgen.png', url: 'https://github.com/cdxgen/cdxgen', title: 'cdxgen' },
+];
+
+export const clientsPartners = [
+  { file: 'investottawa.png', url: 'https://www.investottawa.ca/', title: 'Invest Ottawa' },
+  { file: 'kdm.png', url: 'https://kdmanalytics.com', title: 'KDM Analytics' },
+  { file: 'iq.png', url: 'https://www.iqinnovationhub.com', title: 'IQ Innovation Hub' },
+  { file: 'wysdom.png', url: 'https://wysdom.ai', title: 'Wysdom.AI' },
+  { file: 'ovh.png', url: 'https://ovhcloud.com', title: 'OVHcloud' },
+  { file: 'wicwac.png', url: 'https://wicwac.com', title: 'WicWac' },
+  { file: 'semperis.png', url: 'https://www.semperis.com', title: 'Semperis' },
+];
+
+export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
+export const demoVideo = 'https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4';
+
+export const regulations = ['EU CRA', 'NIS2', 'DORA', 'US EO 14028 / 14144', 'FDA 524B', 'RBI / SEBI'];
+
+// The two questions carried over from the current site's Q&A section.
+export const extraQuestions = [
+  { q: 'What was the posture of 1.0.3 three months ago, when it shipped?', page: 'Findings Aggregation' },
+  { q: 'Can we prove to an auditor that every shipped release was reviewed and approved?', page: 'Release Policies' },
+];

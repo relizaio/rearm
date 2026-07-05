@@ -11,10 +11,35 @@ interface Props {
 }
 const {
   title,
-  description = 'ReARM is a release governance platform: SBOM/xBOM management, findings aggregation, release policies and AI governance.',
+  description = 'ReARM is a release governance platform: release-level supply chain evidence, approvals, and audit-ready history.',
   active = '',
   ogImage,
 } = Astro.props;
+
+// schema.org structured data (parity with the previous site's homepage JSON-LD,
+// description updated to the current positioning).
+const siteUrl = (Astro.site?.href ?? 'https://rearmhq.com').replace(/\/$/, '');
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': 'https://reliza.io',
+      name: 'Reliza',
+      url: 'https://reliza.io',
+      logo: { '@type': 'ImageObject', url: `${siteUrl}/rearm.png` },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': siteUrl,
+      name: 'ReARM',
+      description: 'Release Governance Platform',
+      applicationCategory: 'DevSecOps',
+      url: siteUrl,
+      publisher: { '@id': 'https://reliza.io' },
+    },
+  ],
+};
 ---
 
 <!doctype html>
@@ -28,6 +53,7 @@ const {
     <meta property="og:description" content={description} />
     {ogImage && <meta property="og:image" content={ogImage} />}
     <link rel="icon" type="image/png" href="/birds.png" />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
