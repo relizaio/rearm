@@ -1,0 +1,149 @@
+/* ReARM 2026 marketing site - "Origami Facets" design system.
+   Tokens and shared utilities per design_handoff_rearm_site/README.md.
+   Square corners throughout; no border-radius, no shadows. */
+
+:root {
+  /* palette */
+  --navy: #141C3C;
+  --navy-panel: #1B2653;
+  --navy-grad-end: #23306B;
+  --orange-1: #F08A4B;
+  --orange-2: #E76F3C;
+  --orange-text: #C4611F;
+  --callout-text: #7A4A22;
+  --callout-bg: #FFF8F3;
+  --body: #4A5065;
+  --body-2: #5A5F72;
+  --muted-1: #6B7183;
+  --muted-2: #8A90A6;
+  --muted-3: #9AA0B4;
+  --dark-muted-1: #9AA1BC;
+  --dark-muted-2: #B9C0D8;
+  --mint: #5EEBC3;
+  --mint-2: #8FD6C9;
+  --green: #2E9E77;
+  --border-card: #E3E5EC;
+  --border-rule: #EEF0F5;
+  --border-dim: #D5D9E4;
+  --border-dashed: #C9CEDC;
+  --surface-ph: #F4F6FB;
+  --surface-strip: #F7F8FB;
+  --surface-faint: #FAFBFE;
+  --surface-warm: #FFFDFB;
+
+  --font-sans: 'Sora', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  --page-max: 1280px;
+  --pad-x: 52px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--body);
+  background: #FFFFFF;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+h1, h2, h3, h4 { color: var(--navy); margin: 0; }
+a { color: var(--orange-text); }
+p { margin: 0; }
+
+.container {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding-left: var(--pad-x);
+  padding-right: var(--pad-x);
+}
+
+/* mono eyebrow label */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--orange-text);
+}
+.eyebrow--mint { color: var(--mint); }
+.eyebrow--muted { color: var(--muted-1); }
+
+/* faceted (clipped) buttons */
+.btn {
+  display: inline-block;
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  padding: 13px 28px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: #FFFFFF;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.btn--navy { background: var(--navy); }
+.btn--orange { background: linear-gradient(120deg, var(--orange-1), var(--orange-2)); }
+.btn--outline {
+  background: #FFFFFF;
+  color: var(--navy);
+  outline: 1.5px solid var(--navy);
+  outline-offset: -1.5px;
+}
+
+/* angled navy band */
+.band {
+  background: var(--navy);
+  color: #FFFFFF;
+  clip-path: polygon(0 36px, 100% 0, 100% 100%, 0 100%);
+  padding-top: 92px;
+  padding-bottom: 64px;
+}
+.band--both {
+  clip-path: polygon(0 36px, 100% 0, 100% calc(100% - 36px), 0 100%);
+  padding-bottom: 100px;
+}
+.band--grad { background: linear-gradient(120deg, var(--navy), var(--navy-grad-end)); }
+
+/* orange left-border callout */
+.callout {
+  background: var(--callout-bg);
+  border-left: 3px solid var(--orange-1);
+  color: var(--callout-text);
+  padding: 14px 18px;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+/* section rules */
+.rule { border: 0; border-top: 1px solid var(--border-rule); margin: 0; }
+
+/* screenshot placeholder (until real captures land) */
+.shot-ph {
+  background: var(--surface-ph);
+  border: 1.5px dashed var(--border-dashed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted-2);
+  min-height: 180px;
+}
+
+@media (max-width: 900px) {
+  :root { --pad-x: 20px; }
+  .band, .band--both { clip-path: polygon(0 16px, 100% 0, 100% 100%, 0 100%); padding-top: 56px; padding-bottom: 40px; }
+  .band--both { clip-path: polygon(0 16px, 100% 0, 100% calc(100% - 16px), 0 100%); padding-bottom: 56px; }
+}

@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: landing-2026
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: landing-2026
+  namespace: landing-2026
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: landing-2026
+  template:
+    metadata:
+      labels:
+        app: landing-2026
+    spec:
+      containers:
+        - name: landing-2026
+          image: docker.io/library/landing-2026:local-1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: landing-2026
+  namespace: landing-2026
+spec:
+  selector:
+    app: landing-2026
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: landing-2026-websecure
+  namespace: landing-2026
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`landing.psclaude.rearmhq.com`)
+      services:
+        - name: landing-2026
+          port: 80
+  tls:
+    certResolver: le
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: landing-2026-web
+  namespace: landing-2026
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: Host(`landing.psclaude.rearmhq.com`)
+      middlewares:
+        - name: landing-2026-redirect-https
+      services:
+        - name: landing-2026
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: landing-2026-redirect-https
+  namespace: landing-2026
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

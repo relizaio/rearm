@@ -1,0 +1,659 @@
+{
+  "levels": [
+    "SBOM/xBOM",
+    "Release",
+    "Branch",
+    "Component",
+    "Feature Set",
+    "Product"
+  ],
+  "grads": [
+    [
+      "#5EEBC3",
+      "#4FC7E8"
+    ],
+    [
+      "#4FC7E8",
+      "#5B7CFA"
+    ],
+    [
+      "#5B7CFA",
+      "#7B6CF6"
+    ],
+    [
+      "#7B6CF6",
+      "#C86CD8"
+    ],
+    [
+      "#C86CD8",
+      "#F08A4B"
+    ],
+    [
+      "#F08A4B",
+      "#F4B04B"
+    ]
+  ],
+  "caps": [
+    {
+      "name": "SBOM/xBOM Management",
+      "line": "Every SBOM, organized, diffable, searchable.",
+      "shot": "[ SCREENSHOT: SBOM diff view between two versions ]",
+      "link": "SBOM/xBOM Management"
+    },
+    {
+      "name": "Findings Aggregation",
+      "line": "Findings roll up from SBOM to product level.",
+      "shot": "[ SCREENSHOT: product release composition view ]",
+      "link": "Findings Aggregation"
+    },
+    {
+      "name": "Release Policies",
+      "line": "Encode release rules once; every release is checked.",
+      "shot": "[ SCREENSHOT: rejected release + policy rule ]",
+      "link": "Release Policies"
+    },
+    {
+      "name": "AI Governance",
+      "line": "Know exactly what your agents shipped.",
+      "shot": "[ SCREENSHOT: agent session + signed commit ]",
+      "link": "AI Governance"
+    }
+  ],
+  "useCasePanels": [
+    {
+      "q": "Shipping a regulated medical device?",
+      "name": "Medical Devices",
+      "c1": "#5EEBC3",
+      "c2": "#4FC7E8"
+    },
+    {
+      "q": "Sustaining fielded systems?",
+      "name": "Field Digital Twin",
+      "c1": "#5B7CFA",
+      "c2": "#7B6CF6"
+    },
+    {
+      "q": "Need to know what's actually running?",
+      "name": "Deployment Governance",
+      "c1": "#F08A4B",
+      "c2": "#F4B04B"
+    },
+    {
+      "q": "Selling into the EU under CRA?",
+      "name": "EU CRA Compliance",
+      "c1": "#C86CD8",
+      "c2": "#F08A4B"
+    }
+  ],
+  "questions": [
+    {
+      "q": "Where do we run log4j 2.14 today?",
+      "page": "SBOM/xBOM Management"
+    },
+    {
+      "q": "What changed between 1.2 and 1.3?",
+      "page": "SBOM/xBOM Management"
+    },
+    {
+      "q": "Is this release cleared to ship?",
+      "page": "Release Policies"
+    },
+    {
+      "q": "What exactly is deployed in production right now?",
+      "page": "Deployment Governance"
+    },
+    {
+      "q": "Which of our code did agents write, and under what approval?",
+      "page": "AI Governance"
+    }
+  ],
+  "findBlocks": [
+    {
+      "num": "01 / AUTOMATIC ASSEMBLY",
+      "title": "One structure, six levels, zero stitching",
+      "body": "Component releases bundle into product releases as they are produced. No manual assembly, no stale spreadsheets. The hierarchy above is not a diagram of your process; it is the live data model.",
+      "shot": "[ SCREENSHOT 4: hierarchy / product release composition view ]"
+    },
+    {
+      "num": "02 / DRILL-DOWN",
+      "title": "Product-level count to exact SBOM entry in three clicks",
+      "body": "Start from a product-level vulnerability count. Click to the offending component, then to the exact SBOM entry that carries the finding. Every number on the dashboard is traversable to its source.",
+      "shot": "[ SCREENSHOT: drill-down from product finding to SBOM entry ]"
+    },
+    {
+      "num": "03 / POINT-IN-TIME VS NOW",
+      "title": "What did we know at ship time vs what do we know now",
+      "body": "New CVEs and KEV entries are evaluated against shipped versions, not just the latest build. Posture at ship time is preserved as evidence; current posture is computed continuously.",
+      "shot": "[ SCREENSHOT: shipped-version posture vs current posture ]"
+    }
+  ],
+  "prodPages": [
+    {
+      "id": "3b",
+      "href": "#3b",
+      "path": "/product/sbom-xbom-management",
+      "label": "SBOM/xBOM Management",
+      "h1": "Every SBOM, organized, diffable, searchable.",
+      "problem": "SBOMs generated in CI end up as build artifacts nobody can query. ReARM attaches every SBOM and xBOM to the release that produced it, per component and per product.",
+      "chain": [
+        {
+          "name": "SBOM/xBOM",
+          "c1": "#5EEBC3",
+          "c2": "#4FC7E8",
+          "on": true,
+          "off": false,
+          "notLast": true
+        },
+        {
+          "name": "Release",
+          "c1": "#4FC7E8",
+          "c2": "#5B7CFA",
+          "on": true,
+          "off": false,
+          "notLast": true
+        },
+        {
+          "name": "Branch",
+          "c1": "#5B7CFA",
+          "c2": "#7B6CF6",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Component",
+          "c1": "#7B6CF6",
+          "c2": "#C86CD8",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Feature Set",
+          "c1": "#C86CD8",
+          "c2": "#F08A4B",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Product",
+          "c1": "#F08A4B",
+          "c2": "#F4B04B",
+          "on": false,
+          "off": true,
+          "notLast": false
+        }
+      ],
+      "hasRelated": true,
+      "related": [
+        "Medical Devices",
+        "EU CRA"
+      ],
+      "blocks": [
+        {
+          "num": "01 / ORGANIZED STORAGE",
+          "title": "Not a bucket of JSON files",
+          "body": "Every SBOM and xBOM is versioned and tied to the release that produced it, per component and per product. Ask for any shipped version's bill of materials and get it in one click.",
+          "shot": "[ SCREENSHOT 4: product release composition view ]"
+        },
+        {
+          "num": "02 / CONTINUOUS DIFFING",
+          "title": "What changed between 1.2 and 1.3? Two answers, same release pair.",
+          "body": "Dependency delta: every new release is automatically diffed against its predecessor as it lands. Continuous, not on-request; any two versions diffable on demand, at component and product level. Code delta: auto-generated changelogs from the commits between the two releases, shown alongside the SBOM diff. Releases are versioned automatically per your org's version schema; no manual bumping.",
+          "callout": "Dependency-analysis tools do not do cross-version SBOM diffing. ReARM does.",
+          "shot": "[ SCREENSHOT 1 + 3: SBOM diff between versions, changelog alongside ]"
+        },
+        {
+          "num": "03 / DEPENDENCY SEARCH",
+          "title": "Where do we run log4j 2.14?",
+          "body": "Answered portfolio-wide in seconds, across every product and every shipped version. Not just the latest build: everything you have ever released.",
+          "shot": "[ SCREENSHOT 2: dependency search results across portfolio ]"
+        },
+        {
+          "num": "04 / BEYOND SBOM",
+          "title": "HBOMs, VDRs, attestations, anything",
+          "body": "Arbitrary artifacts attach to releases with the same organization and the same roll-up. If it is evidence, it has a place in the hierarchy.",
+          "shot": "[ SCREENSHOT: artifacts attached to a release ]"
+        },
+        {
+          "num": "05 / DISTRIBUTION",
+          "title": "Serve SBOMs downstream",
+          "body": "Distribute SBOMs and artifacts to downstream consumers via TEA. Customers, authorities, and program offices pull from the same organized source.",
+          "shot": "[ SCREENSHOT: distribution / TEA endpoint view ]"
+        }
+      ]
+    },
+    {
+      "id": "3d",
+      "href": "#3d",
+      "path": "/product/release-policies",
+      "label": "Release Policies",
+      "h1": "Encode your release rules once. Every release is checked, with evidence.",
+      "problem": "Release criteria that live in wiki pages and tribal knowledge do not get enforced. ReARM turns them into policies that run against every release, automatically.",
+      "chain": [
+        {
+          "name": "SBOM/xBOM",
+          "c1": "#5EEBC3",
+          "c2": "#4FC7E8",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Release",
+          "c1": "#4FC7E8",
+          "c2": "#5B7CFA",
+          "on": true,
+          "off": false,
+          "notLast": true
+        },
+        {
+          "name": "Branch",
+          "c1": "#5B7CFA",
+          "c2": "#7B6CF6",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Component",
+          "c1": "#7B6CF6",
+          "c2": "#C86CD8",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Feature Set",
+          "c1": "#C86CD8",
+          "c2": "#F08A4B",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Product",
+          "c1": "#F08A4B",
+          "c2": "#F4B04B",
+          "on": true,
+          "off": false,
+          "notLast": false
+        }
+      ],
+      "hasRelated": true,
+      "related": [
+        "Medical Devices",
+        "EU CRA"
+      ],
+      "blocks": [
+        {
+          "num": "01 / LIFECYCLE",
+          "title": "Draft, assembled, approved or rejected",
+          "body": "Approval policies and a release lifecycle enforced automatically on every release. No release reaches approved without passing the rules your organization set.",
+          "shot": "[ SCREENSHOT: release lifecycle view ]"
+        },
+        {
+          "num": "02 / A REAL RULE",
+          "title": "Reject release if critical or high vulnerabilities > 0",
+          "body": "That is an actual policy rule, and this is an actual release it rejected. Not a mockup: the screenshot shows the rule and the REJECTED release side by side.",
+          "shot": "[ SCREENSHOT 5: rejected release + the policy rule that rejected it ]"
+        },
+        {
+          "num": "03 / REJECTION IN CI",
+          "title": "What a blocked release looks like",
+          "body": "A failed check on the pipeline, an annotation on the pull request, a release that cannot proceed. Rejection is visible where engineers work, not buried in a dashboard.",
+          "shot": "[ SCREENSHOT 6: PR check / annotation from a rejected release ]"
+        },
+        {
+          "num": "04 / AUDIT TRAIL",
+          "title": "Who approved, when, against what",
+          "body": "Every approval records who or what approved, when, and against which evidence snapshot. Years later, the answer is still there.",
+          "shot": "[ SCREENSHOT: approval audit trail ]"
+        }
+      ]
+    },
+    {
+      "id": "3e",
+      "href": "#3e",
+      "path": "/product/ai-governance",
+      "label": "AI Governance",
+      "h1": "Know exactly what your agents shipped.",
+      "problem": "Coding agents multiply commit volume. 'Who wrote this, and under what approval' stops being answerable by convention. ReARM makes it answerable by record.",
+      "chain": [
+        {
+          "name": "SBOM/xBOM",
+          "c1": "#5EEBC3",
+          "c2": "#4FC7E8",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Release",
+          "c1": "#4FC7E8",
+          "c2": "#5B7CFA",
+          "on": true,
+          "off": false,
+          "notLast": true
+        },
+        {
+          "name": "Branch",
+          "c1": "#5B7CFA",
+          "c2": "#7B6CF6",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Component",
+          "c1": "#7B6CF6",
+          "c2": "#C86CD8",
+          "on": true,
+          "off": false,
+          "notLast": true
+        },
+        {
+          "name": "Feature Set",
+          "c1": "#C86CD8",
+          "c2": "#F08A4B",
+          "on": false,
+          "off": true,
+          "notLast": true
+        },
+        {
+          "name": "Product",
+          "c1": "#F08A4B",
+          "c2": "#F4B04B",
+          "on": true,
+          "off": false,
+          "notLast": false
+        }
+      ],
+      "hasRelated": false,
+      "related": [],
+      "blocks": [
+        {
+          "num": "01 / ATTRIBUTION",
+          "title": "Per-commit attribution, cryptographically signed",
+          "body": "Agent vs human, which agent, which model. Backed by signed commits, not commit-message convention.",
+          "shot": "[ SCREENSHOT 7: signed agent commit with trailers ]"
+        },
+        {
+          "num": "02 / AGENT SESSIONS",
+          "title": "Scoped, auditable work sessions",
+          "body": "Each agent works in a session with orientation and final reports attached as evidence. What it was asked to do and what it says it did, on the record.",
+          "shot": "[ SCREENSHOT 7: agent session view ]"
+        },
+        {
+          "num": "03 / POLICY GATES",
+          "title": "The same policy engine that gates humans",
+          "body": "Approval policies keyed on agent and session state. Agent-written code passes the same gates as human-written code, or it does not ship.",
+          "shot": "[ SCREENSHOT: policy gate on agent work ]"
+        },
+        {
+          "num": "04 / ROLL-UP",
+          "title": "Agent contribution, visible at every level",
+          "body": "Per release, per component, per product: the same hierarchy as everything else. Agent work is not a separate system; it is a dimension of the one you already govern.",
+          "shot": "[ SCREENSHOT: agent contribution roll-up ]"
+        }
+      ]
+    }
+  ],
+  "ucPages": [
+    {
+      "id": "3f",
+      "href": "#3f",
+      "path": "/use-cases/medical-devices",
+      "label": "Medical Devices",
+      "persona": "FOR REGULATORY AFFAIRS + ENGINEERING LEADERSHIP",
+      "h1": "Submission-ready SBOMs. Audit-ready evidence. For every device release.",
+      "pain": "FDA section 524B premarket cybersecurity requires SBOMs and ongoing vulnerability monitoring. Auditors ask for evidence years after ship. Build records scattered across CI systems do not survive that question.",
+      "a1": "rgba(94,235,195,0.10)",
+      "a2": "rgba(91,124,250,0.10)",
+      "stripLabel": "STANDARDS",
+      "strip": [
+        "FDA 524B",
+        "EU MDR"
+      ],
+      "evidence": "SBOM · VDR · KEV MONITORING · RELEASE CRITERIA · IMMUTABLE HISTORY",
+      "publicDemo": false,
+      "shot": false,
+      "note": false,
+      "steps": [
+        {
+          "num": "01",
+          "title": "Submission-ready SBOMs",
+          "body": "Generated and stored per device release, versioned and tied to the release that produced them.",
+          "cap": "SBOM/xBOM Management"
+        },
+        {
+          "num": "02",
+          "title": "Postmarket monitoring",
+          "body": "New CVEs and KEV entries evaluated against shipped versions, not just the latest build.",
+          "cap": "Findings Aggregation"
+        },
+        {
+          "num": "03",
+          "title": "Documented, enforced release criteria",
+          "body": "Release policies encode your criteria once; every release is checked automatically, with evidence.",
+          "cap": "Release Policies"
+        },
+        {
+          "num": "04",
+          "title": "Immutable release history",
+          "body": "A record of what actually shipped, holding up years later when auditors ask.",
+          "cap": "Audit Evidence"
+        }
+      ]
+    },
+    {
+      "id": "3g",
+      "href": "#3g",
+      "path": "/use-cases/field-digital-twin",
+      "label": "Field Digital Twin",
+      "persona": "FOR DEFENSE PROGRAM OFFICES + OEMS",
+      "h1": "A digital twin of every fielded unit: hardware, software, and every replacement.",
+      "pain": "Fielded configurations drift from as-built the moment a part is swapped or firmware is patched. 'Which fielded units carry X?' is unanswerable from build records alone.",
+      "a1": "rgba(91,124,250,0.10)",
+      "a2": "rgba(123,108,246,0.10)",
+      "stripLabel": "EVIDENCE",
+      "strip": [
+        "HBOM + SBOM",
+        "Replacements"
+      ],
+      "evidence": "PER-UNIT CONFIGURATION · DISTRIBUTION MODEL · SUSTAINMENT AUDITS",
+      "publicDemo": false,
+      "shot": "[ SCREENSHOT 9: distribution page, HBOM + replacements ]",
+      "note": "copy pending verification against actual distribution page",
+      "steps": [
+        {
+          "num": "01",
+          "title": "HBOM + SBOM per unit",
+          "body": "Hardware and software bill of materials per unit and per configuration, kept together.",
+          "cap": "SBOM/xBOM Management"
+        },
+        {
+          "num": "02",
+          "title": "Per-deployment composition",
+          "body": "Each fielded deployment's exact composition tracked via the distribution model.",
+          "cap": "Distribution"
+        },
+        {
+          "num": "03",
+          "title": "Replacements tracking",
+          "body": "Part and component swaps recorded against the twin. As-maintained, not just as-built.",
+          "cap": "Distribution"
+        },
+        {
+          "num": "04",
+          "title": "Fleet-wide exposure queries",
+          "body": "By vulnerability or by part number: which fielded units carry X, answered in seconds.",
+          "cap": "Dependency Search"
+        },
+        {
+          "num": "05",
+          "title": "Evidence trail for sustainment audits",
+          "body": "The same immutable history, extended to every fielded unit's service life.",
+          "cap": "Audit Evidence"
+        }
+      ]
+    },
+    {
+      "id": "3h",
+      "href": "#3h",
+      "path": "/use-cases/deployment-governance",
+      "label": "Deployment Governance",
+      "persona": "FOR PLATFORM + DEVOPS LEADS",
+      "h1": "What should be running, what is actually running, and the delta.",
+      "pain": "Release records say what was approved. Nobody can prove what is deployed where right now. ReARM closes the loop between plan and actual.",
+      "a1": "rgba(240,138,75,0.10)",
+      "a2": "rgba(244,176,75,0.10)",
+      "stripLabel": "EVIDENCE",
+      "strip": [
+        "Plan vs Actual",
+        "Drift Detection"
+      ],
+      "evidence": "INSTANCES · ENVIRONMENTS · FEATURE-SET TARGETING · RUNTIME EVIDENCE",
+      "publicDemo": true,
+      "shot": "[ SCREENSHOT 8: instances page, plan vs actual side by side ]",
+      "note": false,
+      "steps": [
+        {
+          "num": "01",
+          "title": "Instances and environments registered",
+          "body": "Every instance and environment is a first-class object in ReARM, not a spreadsheet row.",
+          "cap": "Deployment Model"
+        },
+        {
+          "num": "02",
+          "title": "Plan vs actual, continuously reconciled",
+          "body": "Approved and expected state vs observed state, resolved side by side and kept current.",
+          "cap": "Reconciliation"
+        },
+        {
+          "num": "03",
+          "title": "Drift surfaced immediately",
+          "body": "The moment actual diverges from plan, it is visible. No quarterly audits to find out.",
+          "cap": "Drift Detection"
+        },
+        {
+          "num": "04",
+          "title": "Feature-set targeting",
+          "body": "Point an instance at a feature set; ReARM reconciles what should land there.",
+          "cap": "Feature Sets"
+        },
+        {
+          "num": "05",
+          "title": "Evidence, extended to runtime",
+          "body": "The same evidence trail that covers releases now covers what actually runs.",
+          "cap": "Audit Evidence"
+        }
+      ]
+    },
+    {
+      "id": "3i",
+      "href": "#3i",
+      "path": "/use-cases/eu-cra",
+      "label": "EU CRA Compliance",
+      "persona": "FOR ENGINEERING + COMPLIANCE AT MANUFACTURERS SELLING INTO THE EU",
+      "h1": "CRA obligations, operationalized.",
+      "pain": "The Cyber Resilience Act makes SBOMs, coordinated vulnerability handling, and due-diligence evidence a condition of selling into the EU. ReARM turns each obligation into something your pipeline already does.",
+      "a1": "rgba(200,108,216,0.10)",
+      "a2": "rgba(240,138,75,0.10)",
+      "stripLabel": "TIMELINE",
+      "strip": [
+        "Sep 2026: reporting obligations",
+        "Dec 2027: full application"
+      ],
+      "evidence": "ANNEX I · SBOM · CVD · DISTRIBUTION (TEA) · DUE-DILIGENCE EVIDENCE",
+      "publicDemo": false,
+      "shot": false,
+      "note": "optional page, cut anytime",
+      "steps": [
+        {
+          "num": "01",
+          "title": "SBOM per product release",
+          "body": "Annex I requirements met by default: every product release carries its SBOM.",
+          "cap": "SBOM/xBOM Management"
+        },
+        {
+          "num": "02",
+          "title": "Coordinated vulnerability handling",
+          "body": "Findings triage and analysis workflow, documented as it happens.",
+          "cap": "Findings Aggregation"
+        },
+        {
+          "num": "03",
+          "title": "Distribution to authorities and customers",
+          "body": "SBOMs and artifacts served downstream via TEA.",
+          "cap": "Distribution"
+        },
+        {
+          "num": "04",
+          "title": "Due-diligence evidence",
+          "body": "Documented release criteria and immutable history, ready when the question comes.",
+          "cap": "Release Policies"
+        }
+      ]
+    }
+  ],
+  "tiers": [
+    {
+      "name": "ReARM CE",
+      "price": "Free",
+      "unit": "open source",
+      "border": "#E3E5EC",
+      "bg": "#fff",
+      "popular": false,
+      "cta": "GitHub",
+      "features": [
+        "Self-hosted",
+        "SBOM/xBOM storage and roll-up",
+        "Community support"
+      ]
+    },
+    {
+      "name": "Pro Starter",
+      "price": "$195",
+      "unit": "/mo",
+      "border": "#E3E5EC",
+      "bg": "#fff",
+      "popular": false,
+      "cta": "Get Started",
+      "features": [
+        "Managed or supported",
+        "Commercial features",
+        "Standard support"
+      ]
+    },
+    {
+      "name": "Pro Standard",
+      "price": "$1,350",
+      "unit": "/mo",
+      "border": "#F08A4B",
+      "bg": "#FFFDFB",
+      "popular": true,
+      "cta": "Get Started",
+      "features": [
+        "Everything in Starter",
+        "Advanced policies",
+        "Priority support"
+      ]
+    },
+    {
+      "name": "Enterprise",
+      "price": "$75",
+      "unit": "/write user/mo",
+      "border": "#E3E5EC",
+      "bg": "#fff",
+      "popular": false,
+      "cta": "Contact Us",
+      "features": [
+        "Everything in Standard",
+        "SSO and audit controls",
+        "Dedicated support"
+      ]
+    }
+  ]
+}

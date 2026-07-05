@@ -1,0 +1,13 @@
+---
+import Base from '../../layouts/Base.astro';
+import PostList from '../../components/PostList.astro';
+import { getCollection } from 'astro:content';
+
+const items = (await getCollection('news'))
+  .map((p) => ({ slug: p.id, title: p.data.title, date: p.data.date }))
+  .sort((a, b) => (a.date > b.date ? -1 : 1));
+---
+
+<Base title="News — ReARM" active="news">
+  <PostList heading="News" base="/news" items={items} />
+</Base>

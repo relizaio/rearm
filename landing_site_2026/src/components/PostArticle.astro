@@ -1,0 +1,53 @@
+---
+// Shared article shell for blog/news posts. The <slot /> receives the
+// rendered markdown <Content /> - pipeline parity with the old site is
+// handled in astro.config.mjs (gfm/smartypants off, raw HTML allowed).
+interface Props { title: string; date: string; backHref: string; backLabel: string }
+const { title, date, backHref, backLabel } = Astro.props;
+---
+
+<article class="post">
+  <div class="container post-container">
+    <a class="back" href={backHref}>← {backLabel}</a>
+    <div class="post-date">{date}</div>
+    <h1>{title}</h1>
+    <div class="post-body">
+      <slot />
+    </div>
+  </div>
+</article>
+
+<style>
+  .post { padding: 52px 0 72px; }
+  .post-container { max-width: 860px; }
+  .back { font-size: 14px; font-weight: 600; text-decoration: none; }
+  .post-date { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted-1); margin: 26px 0 10px; }
+  h1 { font-size: 38px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 28px; }
+  @media (max-width: 640px) { h1 { font-size: 26px; } }
+</style>
+
+<style is:global>
+  /* markdown body typography (global: targets rendered <Content /> HTML) */
+  .post-body { font-size: 16px; line-height: 1.75; color: var(--body); }
+  .post-body h2, .post-body h3, .post-body h4 { color: var(--navy); margin: 1.6em 0 0.6em; letter-spacing: -0.015em; }
+  .post-body h2 { font-size: 26px; }
+  .post-body h3 { font-size: 21px; }
+  .post-body h4 { font-size: 17px; }
+  .post-body p { margin: 0 0 1.1em; }
+  .post-body img { max-width: 100%; height: auto; border: 1px solid var(--border-card); }
+  .post-body pre {
+    background: var(--navy); color: #EDF0FA; padding: 18px 20px; overflow-x: auto;
+    font-family: var(--font-mono); font-size: 13.5px; line-height: 1.6;
+  }
+  .post-body code { font-family: var(--font-mono); font-size: 0.92em; }
+  .post-body :not(pre) > code { background: var(--surface-strip); border: 1px solid var(--border-rule); padding: 1px 5px; }
+  .post-body blockquote {
+    margin: 1.2em 0; padding: 10px 18px; border-left: 3px solid var(--orange-1);
+    background: var(--callout-bg); color: var(--callout-text);
+  }
+  .post-body ul, .post-body ol { padding-left: 1.4em; margin: 0 0 1.1em; }
+  .post-body li { margin-bottom: 0.35em; }
+  .post-body table { border-collapse: collapse; margin: 1.2em 0; width: 100%; }
+  .post-body th, .post-body td { border: 1px solid var(--border-card); padding: 8px 12px; text-align: left; font-size: 14.5px; }
+  .post-body th { background: var(--surface-strip); color: var(--navy); }
+</style>

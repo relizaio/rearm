@@ -1,0 +1,12 @@
+---
+// Screenshot slot. Until real product captures land, renders the design's
+// dashed placeholder box, clearly marked. `label` comes from the design data
+// (e.g. "[ SCREENSHOT 1 + 3: SBOM diff between versions, changelog alongside ]").
+interface Props { label: string; ratio?: string }
+const { label, ratio = '16 / 8' } = Astro.props;
+const clean = label.replace(/^\[\s*/, '').replace(/\s*\]$/, '');
+---
+
+<div class="shot-ph" style={`aspect-ratio: ${ratio};`}>
+  <span>PLACEHOLDER — {clean}</span>
+</div>

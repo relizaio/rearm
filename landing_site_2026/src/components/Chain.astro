@@ -1,0 +1,102 @@
+---
+// The aggregation hierarchy chain - the site's recurring motif.
+// variant "dark": full chain on a navy band (home, findings). Optionally animated.
+// variant "mini": light strip on product pages, relevant levels lit, others dimmed.
+// Chips are gradient-bordered parallelograms (1.5px gradient wrapper clipped to
+// the facet shape, inner chip navy). Flips vertical below 900px.
+import type { ChainLevel } from '../data/site';
+
+interface Props {
+  chain: ChainLevel[];
+  variant?: 'dark' | 'mini';
+  animated?: boolean;
+  label?: string;
+}
+const { chain, variant = 'dark', animated = false, label } = Astro.props;
+---
+
+<div class:list={['chain', `chain--${variant}`, { 'chain--animated': animated }]}>
+  {label && <div class:list={['chain-label', variant === 'dark' ? 'eyebrow eyebrow--mint' : 'eyebrow eyebrow--muted']}>{label}</div>}
+  <div class="chain-row">
+    {chain.map((lvl, i) => (
+      <>
+        {lvl.on ? (
+          <span class="chip-wrap" style={`background: linear-gradient(135deg, ${lvl.c1}, ${lvl.c2});`} data-chip data-i={i}>
+            <span class="chip chip--on">{lvl.name}</span>
+          </span>
+        ) : (
+          <span class="chip chip--off" data-chip data-i={i}>{lvl.name}</span>
+        )}
+        {i < chain.length - 1 && <span class="connector" data-chip data-i={i}></span>}
+      </>
+    ))}
+  </div>
+</div>
+
+<style>
+  .chain-label { margin-bottom: 18px; }
+  .chain-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+  .chip-wrap {
+    display: inline-block;
+    padding: 1.5px;
+    clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+    flex-shrink: 0;
+  }
+  .chip {
+    display: inline-block;
+    clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+    padding: 10px 22px;
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .chip--on { background: var(--navy-panel); color: #EDF0FA; }
+  .chip--off {
+    background: #FFFFFF;
+    color: var(--muted-3);
+    border: 1px solid var(--border-dim);
+    flex-shrink: 0;
+  }
+  .connector { width: 24px; height: 1.5px; flex-shrink: 0; }
+  .chain--dark .connector { background: rgba(255, 255, 255, 0.28); }
+  .chain--mini .connector { background: var(--border-dim); width: 20px; }
+
+  /* scroll-in animation (homepage): chips light sequentially */
+  .chain--animated [data-chip] {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.45s ease-out, transform 0.45s ease-out;
+  }
+  .chain--animated.chain-in [data-chip] { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .chain--animated [data-chip] { opacity: 1; transform: none; transition: none; }
+  }
+
+  @media (max-width: 900px) {
+    .chain-row { flex-direction: column; align-items: center; }
+    .chip, .chip-wrap { min-width: 150px; text-align: center; }
+    .chip-wrap .chip { width: 100%; }
+    .connector { width: 1.5px !important; height: 13px; }
+  }
+</style>
+
+<script>
+  // Staggered light-up on scroll-into-view; runs once per chain.
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.chain--animated').forEach((el) => {
+    if (reduced) { el.classList.add('chain-in'); return; }
+    const chips = el.querySelectorAll('[data-chip]');
+    chips.forEach((c, idx) => {
+      (c as HTMLElement).style.transitionDelay = `${idx * 120}ms`;
+    });
+    new IntersectionObserver((entries, obs) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { el.classList.add('chain-in'); obs.disconnect(); }
+      });
+    }, { threshold: 0.4 }).observe(el);
+  });
+</script>

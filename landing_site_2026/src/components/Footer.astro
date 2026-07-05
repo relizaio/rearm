@@ -1,0 +1,43 @@
+---
+import { links } from '../data/site';
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <img src="/birds.png" alt="" width="28" height="28" />
+      <span>ReARM by Reliza</span>
+    </div>
+    <nav class="footer-links">
+      <a href={links.comparisons}>Comparisons</a>
+      <a href={links.datasheet} target="_blank" rel="noopener noreferrer">Datasheet</a>
+      <a href="/news/">News</a>
+      <a href={links.discord} target="_blank" rel="noopener noreferrer">Discord</a>
+      <a href={links.github} target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a href={links.docs} target="_blank" rel="noopener noreferrer">Docs</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/tos.html">Terms</a>
+    </nav>
+    <div class="footer-copy">© Reliza Incorporated, 2019–{year}</div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    background: var(--navy);
+    color: var(--dark-muted-2);
+    padding: 40px 0;
+  }
+  .footer-inner { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+  .footer-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: #FFFFFF; font-size: 15px; }
+  .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .footer-links a { color: var(--dark-muted-2); text-decoration: none; font-size: 13.5px; font-weight: 500; }
+  .footer-links a:hover { color: #FFFFFF; }
+  .footer-copy { margin-left: auto; font-size: 12.5px; color: var(--dark-muted-1); }
+  @media (max-width: 900px) {
+    .footer-inner { flex-direction: column; align-items: flex-start; }
+    .footer-copy { margin-left: 0; }
+  }
+</style>

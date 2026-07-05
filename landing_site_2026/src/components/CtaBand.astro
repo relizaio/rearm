@@ -1,0 +1,34 @@
+---
+// Closing navy CTA band used at the bottom of every page.
+import { links } from '../data/site';
+
+interface Props {
+  title?: string;
+  publicDemo?: boolean;
+}
+const { title = 'See your releases the way ReARM sees them.', publicDemo = false } = Astro.props;
+---
+
+<section class="band cta-band">
+  <div class="container cta-inner">
+    <h2 class="cta-title">{title}</h2>
+    <div class="cta-actions">
+      {publicDemo && (
+        <a class="btn btn--orange" href={links.publicDemo} target="_blank" rel="noopener noreferrer">Try Public Demo</a>
+      )}
+      <a class:list={['btn', publicDemo ? 'btn--navy cta-navy-on-dark' : 'btn--orange']} href={links.privateDemo} target="_blank" rel="noopener noreferrer">Get Private Demo</a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .cta-inner { display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap; }
+  .cta-title { color: #FFFFFF; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+  .cta-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+  .cta-navy-on-dark { outline: 1.5px solid rgba(255,255,255,0.45); outline-offset: -1.5px; }
+  @media (max-width: 900px) {
+    .cta-title { font-size: 21px; }
+    .cta-actions { width: 100%; flex-direction: column; }
+    .cta-actions .btn { text-align: center; }
+  }
+</style>

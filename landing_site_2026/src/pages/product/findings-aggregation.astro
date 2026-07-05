@@ -1,0 +1,82 @@
+---
+// The flagship page. Bespoke layout per the design: centered two-line H1,
+// orange subhead, navy band (both edges angled) with the full chain plus
+// three mono sub-labels, three blocks, closing navy CTA band.
+import Base from '../../layouts/Base.astro';
+import Chain from '../../components/Chain.astro';
+import Shot from '../../components/Shot.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { findBlocks, fullChain } from '../../data/site';
+---
+
+<Base
+  title="Findings Aggregation — ReARM"
+  description="Findings live at the SBOM level. Decisions happen at the product level. ReARM connects them, automatically."
+  active="product"
+>
+  <section class="f-hero">
+    <div class="container">
+      <div class="eyebrow" style="text-align:center;">PRODUCT / FINDINGS AGGREGATION</div>
+      <h1>Findings live at the SBOM level.<br />Decisions happen at the product level.</h1>
+      <p class="f-sub">ReARM connects them, automatically.</p>
+    </div>
+  </section>
+
+  <section class="band band--both">
+    <div class="container">
+      <Chain chain={fullChain} variant="dark" animated={true} label="ONE STRUCTURE, SIX LEVELS" />
+      <div class="sub-labels">
+        <span>FINDINGS ROLL UP →</span>
+        <span>EVIDENCE ROLLS UP →</span>
+        <span>POSTURE EMERGES →</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="blocks">
+    <div class="container">
+      {findBlocks.map((b, i) => (
+        <>
+          {i > 0 && <hr class="rule" />}
+          <div class="block">
+            <div class="block-text">
+              <div class="block-num">{b.num}</div>
+              <h2>{b.title}</h2>
+              <p>{b.body}</p>
+            </div>
+            <div class="block-shot">
+              <Shot label={b.shot} ratio="16 / 9" />
+            </div>
+          </div>
+        </>
+      ))}
+    </div>
+  </section>
+
+  <CtaBand title="From SBOM entry to ship decision, connected." />
+</Base>
+
+<style>
+  .f-hero { padding: 64px 0 44px; text-align: center; }
+  .f-hero h1 { font-size: 44px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.18; margin: 16px auto 14px; max-width: 900px; }
+  .f-sub { color: var(--orange-text); font-weight: 600; font-size: 18px; }
+
+  .sub-labels {
+    display: flex; gap: 40px; margin-top: 26px; flex-wrap: wrap;
+    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.12em;
+    color: var(--mint-2);
+  }
+
+  .blocks { padding: 32px 0 56px; }
+  .block { display: grid; grid-template-columns: 5fr 6fr; gap: 44px; padding: 44px 0; align-items: center; }
+  .block-num { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--muted-1); margin-bottom: 12px; }
+  .block h2 { font-size: 23.5px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.3; margin-bottom: 12px; }
+  .block p { font-size: 15.5px; line-height: 1.7; color: var(--body-2); }
+
+  @media (max-width: 900px) {
+    .f-hero h1 { font-size: 27px; }
+    .block { grid-template-columns: 1fr; gap: 20px; padding: 28px 0; }
+    .block h2 { font-size: 19px; }
+    .sub-labels { gap: 14px; flex-direction: column; }
+  }
+</style>

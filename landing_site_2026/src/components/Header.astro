@@ -1,0 +1,124 @@
+---
+// Shared header: logo + wordmark, nav with Product / Use Cases dropdowns,
+// Pricing, Docs (external), Blog, News, orange clipped CTA.
+// Active section link rendered in --orange-text. Mobile: hamburger.
+import { links, productNav, useCaseNav } from '../data/site';
+
+interface Props { active?: string }
+const { active = '' } = Astro.props;
+---
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="/" class="brand">
+      <img src="/birds.png" alt="ReARM logo" width="34" height="34" />
+      <span class="wordmark">ReARM</span>
+    </a>
+
+    <nav class="nav" id="site-nav">
+      <div class:list={['nav-item has-dd', { active: active === 'product' }]}>
+        <button class="nav-link dd-toggle" aria-expanded="false">Product <span class="caret">▾</span></button>
+        <div class="dd">
+          {productNav.map((p) => <a href={p.href}>{p.label}</a>)}
+        </div>
+      </div>
+      <div class:list={['nav-item has-dd', { active: active === 'use-cases' }]}>
+        <button class="nav-link dd-toggle" aria-expanded="false">Use Cases <span class="caret">▾</span></button>
+        <div class="dd">
+          {useCaseNav.map((p) => <a href={p.href}>{p.label}</a>)}
+        </div>
+      </div>
+      <a class:list={['nav-link', { active: active === 'pricing' }]} href="/pricing/">Pricing</a>
+      <a class="nav-link" href={links.docs} target="_blank" rel="noopener noreferrer">Docs</a>
+      <a class:list={['nav-link', { active: active === 'blog' }]} href="/blog/">Blog</a>
+      <a class:list={['nav-link', { active: active === 'news' }]} href="/news/">News</a>
+      <a class="btn btn--orange header-cta" href={links.privateDemo} target="_blank" rel="noopener noreferrer">Get Private Demo</a>
+    </nav>
+
+    <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span><span class="short"></span>
+    </button>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    background: #FFFFFF;
+    border-bottom: 1px solid var(--border-rule);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 68px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .wordmark { font-weight: 800; font-size: 19px; color: var(--navy); letter-spacing: -0.01em; }
+  .nav { display: flex; align-items: center; gap: 26px; }
+  .nav-link {
+    font-size: 14.5px; font-weight: 600; color: var(--navy);
+    text-decoration: none; background: none; border: none; cursor: pointer;
+    font-family: var(--font-sans); padding: 0;
+  }
+  .nav-link.active, .nav-item.active > .nav-link { color: var(--orange-text); }
+  .caret { font-size: 10px; }
+  .nav-item.has-dd { position: relative; }
+  .dd {
+    display: none;
+    position: absolute; top: calc(100% + 14px); left: -14px;
+    background: #FFFFFF; border: 1px solid var(--border-card);
+    min-width: 240px; padding: 8px 0; z-index: 60;
+  }
+  .dd a {
+    display: block; padding: 9px 18px; font-size: 14px; font-weight: 500;
+    color: var(--navy); text-decoration: none;
+  }
+  .dd a:hover { background: var(--surface-strip); color: var(--orange-text); }
+  .nav-item.has-dd:hover .dd, .nav-item.has-dd.open .dd { display: block; }
+  .header-cta { padding: 11px 22px; font-size: 14px; }
+  .hamburger {
+    display: none; background: none; border: none; cursor: pointer;
+    flex-direction: column; gap: 5px; padding: 10px; min-width: 44px; min-height: 44px;
+    align-items: flex-end;
+  }
+  .hamburger span { display: block; width: 24px; height: 2.5px; background: var(--navy); }
+  .hamburger span.short { width: 16px; }
+
+  @media (max-width: 900px) {
+    .nav {
+      display: none;
+      position: absolute; top: 68px; left: 0; right: 0;
+      background: #FFFFFF; border-bottom: 1px solid var(--border-card);
+      flex-direction: column; align-items: stretch; gap: 0; padding: 8px 0 16px;
+    }
+    .nav.open { display: flex; }
+    .nav-link { padding: 12px 20px; min-height: 44px; display: flex; align-items: center; }
+    .dd { position: static; border: none; padding: 0 0 0 16px; }
+    .header-cta { margin: 10px 20px 0; text-align: center; }
+    .hamburger { display: flex; }
+  }
+</style>
+
+<script>
+  const burger = document.getElementById('hamburger');
+  const nav = document.getElementById('site-nav');
+  burger?.addEventListener('click', () => {
+    const open = nav?.classList.toggle('open');
+    burger.setAttribute('aria-expanded', String(!!open));
+  });
+  // click-toggle for dropdowns (touch / keyboard; hover handles desktop pointer)
+  document.querySelectorAll('.dd-toggle').forEach((t) => {
+    t.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = (t as HTMLElement).closest('.nav-item');
+      const nowOpen = item?.classList.toggle('open');
+      t.setAttribute('aria-expanded', String(!!nowOpen));
+    });
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item.open').forEach((i) => i.classList.remove('open'));
+  });
+</script>

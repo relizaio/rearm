@@ -1,0 +1,87 @@
+---
+import Base from '../layouts/Base.astro';
+import CtaBand from '../components/CtaBand.astro';
+import { links, tiers } from '../data/site';
+
+const tierCta = (t: (typeof tiers)[number]) => {
+  if (t.cta === 'GitHub') return links.github;
+  if (t.cta === 'Contact Us') return links.privateDemo;
+  return links.privateDemo;
+};
+---
+
+<Base title="Pricing — ReARM" active="pricing">
+  <section class="p-hero">
+    <div class="container">
+      <div class="eyebrow">PRICING</div>
+      <h1>Pricing</h1>
+      <p class="p-explainer">
+        ReARM CE is open source and self-hosted. ReARM Pro is managed or supported, with commercial features.
+      </p>
+    </div>
+  </section>
+
+  <section class="tiers">
+    <div class="container tiers-grid">
+      {tiers.map((t) => (
+        <div class="tier" style={`border-color: ${t.border}; background: ${t.bg};`}>
+          {t.popular && <span class="popular">POPULAR</span>}
+          <h3>{t.name}</h3>
+          <div class="price">
+            <span class="amount">{t.price}</span>
+            <span class="unit">{t.unit}</span>
+          </div>
+          <ul>
+            {t.features.map((f) => (
+              <li><span class="check">✓</span>{f}</li>
+            ))}
+          </ul>
+          <a
+            class:list={['btn', t.popular ? 'btn--orange' : 'btn--navy']}
+            href={tierCta(t)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >{t.cta}</a>
+        </div>
+      ))}
+    </div>
+    <div class="container">
+      <p class="tiers-note">Feature lists are indicative; contact us for the full feature-per-tier breakdown.</p>
+    </div>
+  </section>
+
+  <CtaBand publicDemo={true} />
+</Base>
+
+<style>
+  .p-hero { padding: 64px 0 40px; }
+  .p-hero h1 { font-size: 45px; font-weight: 700; letter-spacing: -0.02em; margin: 16px 0 18px; }
+  .p-explainer { font-size: 16.5px; max-width: 640px; }
+
+  .tiers { padding: 16px 0 56px; }
+  .tiers-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .tier { position: relative; border: 1.5px solid; padding: 26px 22px; display: flex; flex-direction: column; }
+  .popular {
+    position: absolute; top: 0; right: 18px; transform: translateY(-50%);
+    background: linear-gradient(120deg, var(--orange-1), var(--orange-2));
+    color: #FFFFFF; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.12em; padding: 5px 14px;
+    clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  }
+  .tier h3 { font-size: 17px; margin-bottom: 12px; }
+  .price { display: flex; align-items: baseline; gap: 7px; margin-bottom: 18px; }
+  .amount { font-size: 30px; font-weight: 700; color: var(--navy); letter-spacing: -0.02em; }
+  .unit { font-size: 13px; color: var(--muted-1); }
+  .tier ul { list-style: none; margin: 0 0 22px; padding: 0; flex: 1; }
+  .tier li { display: flex; gap: 9px; font-size: 14px; color: var(--body-2); padding: 5px 0; }
+  .check { color: var(--green); font-weight: 700; }
+  .tier .btn { text-align: center; }
+  .tiers-note { margin-top: 22px; font-size: 13px; color: var(--muted-2); }
+
+  @media (max-width: 1100px) { .tiers-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 640px) {
+    .tiers-grid { grid-template-columns: 1fr; }
+    .p-hero h1 { font-size: 27px; }
+    .price { margin-bottom: 10px; }
+  }
+</style>

@@ -1,0 +1,227 @@
+---
+import Base from '../layouts/Base.astro';
+import Chain from '../components/Chain.astro';
+import Shot from '../components/Shot.astro';
+import CtaBand from '../components/CtaBand.astro';
+import { links, caps, useCasePanels, questions, fullChain, pageHrefs } from '../data/site';
+
+const worksWith = [
+  { name: 'Dependency-Track', img: '/logos/dtrack.png' },
+  { name: 'CycloneDX', img: '/logos/cdx.png' },
+  { name: 'GitHub', img: '/logos/github.png' },
+  { name: 'GitLab', img: '/logos/gitlab.png' },
+  { name: 'Slack', img: '/logos/slack.png' },
+];
+const trustedBy = [
+  { name: 'OVHcloud', img: '/logos/ovh.png' },
+  { name: 'Semperis', img: '/logos/semperis.png' },
+];
+---
+
+<Base title="ReARM — Release Governance Platform" active="home">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="facet-plane" aria-hidden="true"></div>
+    <div class="container hero-inner">
+      <h1>Release Governance Platform</h1>
+      <p class="hero-p">
+        Modern products are assembled from dozens of independently-released components, which makes
+        two questions hard to answer fast: what's actually in a release, and is it secure enough to
+        ship (with verifiable evidence to prove it).
+      </p>
+      <p class="hero-p hero-p2">
+        ReARM answers both by automatically assembling product releases from component releases as
+        they're produced, rolling up their SBOMs/XBOMs, security findings, and other artifacts to
+        the product level.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn--outline" href={links.publicDemo} target="_blank" rel="noopener noreferrer">Try Public Demo</a>
+        <a class="btn btn--navy" href={links.privateDemo} target="_blank" rel="noopener noreferrer">Get Private Demo</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- HIERARCHY CHAIN BAND -->
+  <section class="band">
+    <div class="container">
+      <Chain chain={fullChain} variant="dark" animated={true} label="HOW REARM SEES YOUR PRODUCT" />
+    </div>
+  </section>
+
+  <!-- CAPABILITY CARDS -->
+  <section class="caps-section">
+    <div class="container">
+      <p class="caps-intro">
+        For every release, ReARM shows what it's made of, its current security posture, and whether
+        it's cleared to ship under organization policies, with the evidence behind every call and a
+        record of what actually shipped.
+      </p>
+      <div class="caps-grid">
+        {caps.map((c) => (
+          <a class="cap-card" href={pageHrefs[c.link]}>
+            <Shot label={c.shot} ratio="16 / 8" />
+            <h3>{c.name}</h3>
+            <p>{c.line}</p>
+            <span class="cap-link">Explore {c.name} →</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- AI-SPEED STRIP -->
+  <section class="band band--both band--grad ai-strip">
+    <div class="container ai-inner">
+      <div>
+        <div class="eyebrow eyebrow--mint">BUILT FOR AI-SPEED DEVELOPMENT</div>
+        <h2>Coding agents multiplied commit volume by an order of magnitude. Governance has to keep up.</h2>
+        <p>ReARM attributes, gates, and evidences agent-written code with the same machinery that governs everything else.</p>
+      </div>
+      <a class="btn btn--orange" href="/product/ai-governance/">AI Governance →</a>
+    </div>
+  </section>
+
+  <!-- USE-CASE PANELS -->
+  <section class="uc-section">
+    <div class="container">
+      <div class="eyebrow eyebrow--muted uc-label">USE CASES</div>
+      <div class="uc-grid">
+        {useCasePanels.map((u) => (
+          <a class="uc-panel" href={pageHrefs[u.name]}>
+            <span class="uc-facet" style={`background: linear-gradient(135deg, ${u.c1}22, ${u.c2}22);`} aria-hidden="true"></span>
+            <h3>{u.q}</h3>
+            <span class="uc-link">{u.name} →</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- QUESTIONS -->
+  <section class="q-section">
+    <div class="container">
+      <div class="eyebrow eyebrow--muted">QUESTIONS REARM CAN ANSWER</div>
+      <div class="q-list">
+        {questions.map((q) => (
+          <a class="q-row" href={pageHrefs[q.page]}>
+            <span class="q-q">{q.q}</span>
+            <span class="q-page">{q.page} →</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- LOGOS -->
+  <section class="logos-section">
+    <div class="container">
+      <div class="logo-row">
+        <span class="eyebrow eyebrow--muted">WORKS WITH</span>
+        <div class="logo-items">
+          {worksWith.map((l) => <img src={l.img} alt={l.name} title={l.name} />)}
+        </div>
+      </div>
+      <div class="logo-row">
+        <span class="eyebrow eyebrow--muted">TRUSTED BY</span>
+        <div class="logo-items">
+          {trustedBy.map((l) => <img src={l.img} alt={l.name} title={l.name} />)}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EDITIONS -->
+  <section class="editions">
+    <div class="container editions-grid">
+      <div class="ed-cell">
+        <h3>ReARM CE</h3>
+        <p>Open source and self-hosted. SBOM/xBOM storage and roll-up, community support.</p>
+        <a href={links.github} target="_blank" rel="noopener noreferrer">GitHub →</a>
+      </div>
+      <div class="ed-cell">
+        <h3>ReARM Pro</h3>
+        <p>Managed or supported, with commercial features: advanced policies, priority support, enterprise auth.</p>
+        <a href="/pricing/">Pricing →</a>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand publicDemo={true} />
+</Base>
+
+<style>
+  .hero { position: relative; overflow: hidden; padding: 88px 0 72px; }
+  .facet-plane {
+    position: absolute; top: 0; right: 0; width: 46%; height: 100%;
+    background: linear-gradient(135deg, rgba(94,235,195,0.12), rgba(91,124,250,0.12) 55%, rgba(240,138,75,0.10));
+    clip-path: polygon(28% 0, 100% 0, 100% 100%, 0 22%);
+  }
+  .hero-inner { position: relative; max-width: 860px; margin: 0; }
+  .hero h1 { font-size: 56px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.1; margin-bottom: 26px; }
+  .hero-p { font-size: 17px; line-height: 1.7; max-width: 720px; }
+  .hero-p2 { margin-top: 14px; color: var(--body-2); }
+  .hero-actions { display: flex; gap: 14px; margin-top: 32px; }
+
+  .caps-section { padding: 72px 0; }
+  .caps-intro { font-size: 17px; line-height: 1.7; max-width: 820px; margin-bottom: 40px; color: var(--body); }
+  .caps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .cap-card {
+    border: 1px solid var(--border-card); padding: 22px; text-decoration: none;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .cap-card h3 { font-size: 17px; margin-top: 6px; }
+  .cap-card p { color: var(--body-2); font-size: 15px; }
+  .cap-link { color: var(--orange-text); font-weight: 600; font-size: 14px; }
+
+  .ai-strip h2 { color: #FFFFFF; font-size: 26px; letter-spacing: -0.02em; max-width: 700px; margin: 12px 0; }
+  .ai-strip p { color: var(--dark-muted-2); max-width: 640px; }
+  .ai-inner { display: flex; align-items: center; justify-content: space-between; gap: 32px; flex-wrap: wrap; }
+
+  .uc-section { padding: 72px 0 40px; }
+  .uc-label { margin-bottom: 24px; }
+  .uc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .uc-panel {
+    position: relative; border: 1px solid var(--border-card); padding: 24px 20px 20px;
+    text-decoration: none; overflow: hidden; min-height: 150px;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 16px;
+  }
+  .uc-facet {
+    position: absolute; top: 0; left: 0; width: 70%; height: 56%;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+  .uc-panel h3 { position: relative; font-size: 16.5px; line-height: 1.4; }
+  .uc-link { position: relative; color: var(--orange-text); font-weight: 600; font-size: 14px; }
+
+  .q-section { padding: 40px 0 72px; }
+  .q-list { margin-top: 22px; }
+  .q-row {
+    display: flex; justify-content: space-between; gap: 18px; align-items: baseline;
+    padding: 16px 2px; border-bottom: 1px solid var(--border-rule); text-decoration: none;
+  }
+  .q-row:first-child { border-top: 1px solid var(--border-rule); }
+  .q-q { color: var(--navy); font-weight: 600; font-size: 16px; }
+  .q-page { color: var(--orange-text); font-weight: 600; font-size: 14px; white-space: nowrap; }
+
+  .logos-section { padding: 8px 0 48px; }
+  .logo-row { display: flex; align-items: center; gap: 32px; padding: 18px 0; flex-wrap: wrap; }
+  .logo-items { display: flex; align-items: center; gap: 34px; flex-wrap: wrap; }
+  .logo-items img { height: 34px; width: auto; opacity: 0.85; }
+
+  .editions { padding: 0 0 72px; }
+  .editions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .ed-cell { border: 1px solid var(--border-card); background: var(--surface-faint); padding: 26px; }
+  .ed-cell h3 { font-size: 18px; margin-bottom: 8px; }
+  .ed-cell p { font-size: 15px; color: var(--body-2); margin-bottom: 12px; }
+  .ed-cell a { font-weight: 600; font-size: 14.5px; text-decoration: none; }
+
+  @media (max-width: 900px) {
+    .hero { padding: 48px 0 40px; }
+    .hero h1 { font-size: 34px; }
+    .hero-actions { flex-direction: column; }
+    .hero-actions .btn { text-align: center; }
+    .caps-grid, .editions-grid { grid-template-columns: 1fr; }
+    .uc-grid { grid-template-columns: 1fr; }
+    .q-row { flex-direction: column; gap: 6px; }
+    .ai-strip h2 { font-size: 20px; }
+  }
+</style>
