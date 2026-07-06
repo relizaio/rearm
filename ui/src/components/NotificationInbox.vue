@@ -80,6 +80,16 @@
                     </n-gi>
                 </n-grid>
 
+                <n-alert
+                    v-if="inboxDegraded"
+                    type="warning"
+                    :show-icon="false"
+                    class="inbox-degraded-alert"
+                    data-testid="inbox-degraded-alert"
+                >
+                    Some inbox details are unavailable on this server version, so a few columns (such as channel name) may be missing. Your notifications are shown below.
+                </n-alert>
+
                 <n-data-table
                     :data="inboxItems"
                     :columns="inboxColumns"
@@ -174,9 +184,7 @@
                             <n-tag :type="deliveryStatusTagType(inboxDrawerRow.status)" size="small">{{ inboxDrawerRow.status }}</n-tag>
                         </n-descriptions-item>
                         <n-descriptions-item label="Channel">
-                            <span v-if="!inboxDrawerRow.channelUuid" class="muted-12">Direct</span>
-                            <span v-else-if="inboxDrawerRow.channelName">{{ inboxDrawerRow.channelName }}</span>
-                            <span v-else class="muted-12" :title="inboxDrawerRow.channelUuid">(deleted channel)</span>
+                            <span :class="{ 'muted-12': drawerChannel.muted }" :title="drawerChannel.title">{{ drawerChannel.text }}</span>
                         </n-descriptions-item>
                         <n-descriptions-item label="Delivered">
                             {{ formatHistoryTimestamp(inboxDrawerRow.sentAt || inboxDrawerRow.createdDate) }}
@@ -278,6 +286,7 @@ import {
     deliveryStatusTagType, severityTagType,
     formatHistoryTimestamp, extractError
 } from '@/utils/notificationsCommon'
+import { loadNotificationInboxPage } from '@/utils/notificationInboxQuery'
 
 const props = defineProps<{
     orguuid: string
@@ -317,6 +326,14 @@ let inboxLoadedOnce = false
 
 const inboxItems = ref<InboxRow[]>([])
 const inboxLoading = ref<boolean>(false)
+// True when the deployed backend rejected the full inbox selection (a field
+// it doesn't have yet -- e.g. a CE mirror lagging Pro) and we fell back to
+// the core selection. Rows still render; enrichment (channelName) is absent.
+const inboxDegraded = ref<boolean>(false)
+// Sticky within a session: set once the backend rejects the full selection so
+// later loads skip straight to the core query. Reset on org switch to re-probe
+// (e.g. if pointed at a different / upgraded backend).
+let inboxFullRejected = false
 const inboxTotalCount = ref<number>(0)
 const inboxUnreadCount = ref<number>(0)
 const inboxPage = ref<number>(1)
@@ -428,33 +445,10 @@ const approvalPayloadView = computed<ApprovalPayloadView | null>(() => {
     return null
 })
 
-const INBOX_QUERY = gql`
-    query notificationInbox(
-        $orgUuid: ID!,
-        $unreadOnly: Boolean,
-        $status: NotificationDeliveryStatusEnum,
-        $eventType: NotificationEventTypeEnum,
-        $limit: Int,
-        $offset: Int
-    ) {
-        notificationInbox(
-            orgUuid: $orgUuid,
-            unreadOnly: $unreadOnly,
-            status: $status,
-            eventType: $eventType,
-            limit: $limit,
-            offset: $offset
-        ) {
-            items {
-                uuid org outboxEventUuid subscriptionUuid channelUuid channelName
-                status origin dedupKey attemptCount nextAttemptAt sentAt
-                lastError createdDate readAt eventType severity
-                title description payloadJson
-            }
-            totalCount unreadCount limit offset
-        }
-    }
-`
+// The inbox query selection + its drift-tolerant loader live in
+// @/utils/notificationInboxQuery (loadNotificationInboxPage). Kept out of
+// this component so the core/enrichment field split has a single source of
+// truth that the schema-drift test can assert against.
 
 const INBOX_UNREAD_COUNT_QUERY = gql`
     query notificationUnreadCount($orgUuid: ID!) {
@@ -569,20 +563,20 @@ async function loadInbox (): Promise<void> {
     inboxLoading.value = true
     try {
         const offset = (inboxPage.value - 1) * inboxPageSize.value
-        const res = await graphqlClient.query({
-            query: INBOX_QUERY,
-            variables: {
-                orgUuid: orgUuid.value,
-                unreadOnly: inboxUnreadOnly.value,
-                status: inboxStatusFilter.value,
-                eventType: inboxEventTypeFilter.value,
-                limit: inboxPageSize.value,
-                offset,
-            },
-            fetchPolicy: 'network-only',
-        })
+        const { page, degraded } = await loadNotificationInboxPage(graphqlClient, {
+            orgUuid: orgUuid.value,
+            unreadOnly: inboxUnreadOnly.value,
+            status: inboxStatusFilter.value,
+            eventType: inboxEventTypeFilter.value,
+            limit: inboxPageSize.value,
+            offset,
+        }, inboxFullRejected)
         if (myToken !== inboxInflightToken) return
-        const page = res.data?.notificationInbox
+        inboxDegraded.value = degraded
+        // Once this backend has rejected the full selection, skip straight to
+        // the core selection on subsequent loads so we don't pay the
+        // reject-then-retry round-trip on every open/page/filter/refresh.
+        if (degraded) inboxFullRejected = true
         inboxItems.value = page?.items || []
         inboxTotalCount.value = page?.totalCount || 0
         // Don't write inboxUnreadCount from page.unreadCount: that value is
@@ -596,6 +590,9 @@ async function loadInbox (): Promise<void> {
         selectedInboxRows.value = selectedInboxRows.value.filter(uuid => visible.has(uuid))
     } catch (e: any) {
         if (myToken !== inboxInflightToken) return
+        // Clear the degraded banner on a hard failure so a stale "some details
+        // unavailable" hint doesn't linger above a generic load-error toast.
+        inboxDegraded.value = false
         message.error(`Failed to load inbox: ${extractError(e)}`)
     } finally {
         if (myToken === inboxInflightToken) inboxLoading.value = false
@@ -776,6 +773,20 @@ async function loadInboxUnreadCount (): Promise<void> {
     }
 }
 
+// Single source of truth for the Channel label, shared by the table cell and
+// the row-detail drawer so the deleted-vs-degraded distinction can't drift
+// between them. `muted` = render dim; `title` = hover text (the uuid) where
+// useful. States: no channelUuid => Direct; channelName present => the name;
+// channelName selected-but-null => the channel was deleted; channelName ABSENT
+// from the row (degraded fallback) => a neutral label, NOT a false "deleted".
+function channelLabel (row: InboxRow | null): { text: string, muted: boolean, title?: string } {
+    if (!row || !row.channelUuid) return { text: 'Direct', muted: true }
+    if (row.channelName) return { text: row.channelName, muted: false }
+    return { text: ('channelName' in row) ? '(deleted channel)' : 'Channel', muted: true, title: row.channelUuid }
+}
+
+const drawerChannel = computed(() => channelLabel(inboxDrawerRow.value))
+
 const inboxColumns = computed(() => [
     {
         type: 'selection' as const,
@@ -849,14 +860,11 @@ const inboxColumns = computed(() => [
         // resolved server-side and rides along on the row, so no admin-only
         // channel-list fetch is needed; a null name on a real channelUuid
         // means the channel was deleted.
-        render: (row: InboxRow) => h(
-            'span',
-            { 'data-testid': 'inbox-cell-channel' },
-            row.channelUuid
-                ? (row.channelName
-                    || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'))
-                : h('span', { class: 'muted-12' }, 'Direct'),
-        ),
+        render: (row: InboxRow) => {
+            const { text, muted, title } = channelLabel(row)
+            return h('span', { 'data-testid': 'inbox-cell-channel' },
+                [muted ? h('span', { class: 'muted-12', title }, text) : text])
+        },
     },
     {
         title: 'Read', key: 'readAt', width: 200,
@@ -942,6 +950,8 @@ watch(orgUuid, () => {
     inboxLoadedOnce = false
     inboxItems.value = []
     inboxTotalCount.value = 0
+    inboxDegraded.value = false
+    inboxFullRejected = false
     selectedInboxRows.value = []
     approvalsItems.value = []
     approvalsCount.value = 0
@@ -991,6 +1001,7 @@ onUnmounted(() => {
 .muted-12 { font-size: 12px; color: var(--n-text-color-3, #888); }
 .history-filters { margin-bottom: 12px; }
 .history-pagination { margin-top: 12px; display: flex; justify-content: flex-end; }
+.inbox-degraded-alert { margin-bottom: 12px; }
 
 .approval-entry-line { line-height: 1.4; }
 .approval-entry-name { font-weight: 500; }
