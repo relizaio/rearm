@@ -845,6 +845,7 @@ import Swal from 'sweetalert2'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '../utils/commonFunctions'
 import { extractError, isConflictError, webhookAuthOptions } from '../utils/notificationsCommon'
+import { loadWithSchemaDriftFallback } from '../utils/graphqlDriftFallback'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
 import SubscriptionsOfOrg from './SubscriptionsOfOrg.vue'
@@ -2344,27 +2345,47 @@ async function loadCiIntegrations(useCache: boolean) {
     }
 }
 
+// CORE = fields every channel card needs to render an instance row.
+// ENRICHMENT = EMAIL-only digest display; the card still renders without it,
+// so a backend that lacks these (CE mirror lagging Pro) degrades the digest
+// summary instead of blanking every channel on its card.
+const CATALOG_CHANNELS_CORE = gql`
+    query notificationChannelsForCatalog($orgUuid: ID!) {
+        notificationChannels(orgUuid: $orgUuid) {
+            uuid name type status revision
+        }
+    }`
+const CATALOG_CHANNELS_FULL = gql`
+    query notificationChannelsForCatalog($orgUuid: ID!) {
+        notificationChannels(orgUuid: $orgUuid) {
+            uuid name type status revision digestMode digestInterval emailRecipients
+        }
+    }`
+
 async function loadNotificationChannels(useCache: boolean) {
     // Channel queries are a Pro surface — skip on OSS, where the
     // EMAIL / WEBHOOK / SENTINEL cards render in their "Pro" state instead.
     if (!showCiFeatures.value) return
     const cachePolicy: FetchPolicy = useCache ? 'cache-first' : 'network-only'
     try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query notificationChannelsForCatalog($orgUuid: ID!) {
-                    notificationChannels(orgUuid: $orgUuid) {
-                        uuid name type status revision digestMode digestInterval emailRecipients
-                    }
-                }`,
-            variables: { orgUuid: orguuid.value },
-            fetchPolicy: cachePolicy
-        })
-        if (resp.data?.notificationChannels) {
-            notificationChannelRows.value = resp.data.notificationChannels
+        const { data, degraded } = await loadWithSchemaDriftFallback(
+            { query: (o: any) => graphqlClient.query({ ...o, fetchPolicy: cachePolicy }) },
+            {
+                fullQuery: CATALOG_CHANNELS_FULL,
+                coreQuery: CATALOG_CHANNELS_CORE,
+                variables: { orgUuid: orguuid.value },
+                extractPath: (d: any) => d?.notificationChannels,
+            },
+        )
+        if (data) notificationChannelRows.value = data
+        if (degraded) {
+            notify('warning', 'Notification channels',
+                'Some channel details are unavailable on this server version; digest settings may not show.')
         }
-    } catch (err) {
-        console.error(err)
+    } catch (err: any) {
+        // Real failure (network / auth / server) -- surface it instead of the
+        // previous silent console-only swallow that left the cards blank.
+        notify('error', 'Notification channels', `Failed to load channels: ${extractError(err)}`)
     }
 }
 

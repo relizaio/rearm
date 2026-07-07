@@ -46,6 +46,16 @@
             </n-gi>
         </n-grid>
 
+        <n-alert
+            v-if="historyDegraded"
+            type="warning"
+            :show-icon="false"
+            style="margin-bottom: 12px;"
+            data-testid="history-degraded-alert"
+        >
+            Some delivery details are unavailable on this server version, so a few columns (such as error and retry info) may be missing. Your delivery history is shown below.
+        </n-alert>
+
         <n-data-table
             :data="deliveries"
             :columns="deliveryColumns"
@@ -70,11 +80,13 @@
 import { ref, computed, h, onMounted } from 'vue'
 import {
     NDataTable, NButton, NIcon, NFormItem, NSelect, NGrid, NGi, NTag,
-    NPagination, useMessage
+    NPagination, NAlert, useMessage
 } from 'naive-ui'
 import { Refresh } from '@vicons/tabler'
 import gql from 'graphql-tag'
+import type { DocumentNode } from 'graphql'
 import graphqlClient from '@/utils/graphql'
+import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 import {
     ChannelRow, SubscriptionRow, DeliveryRow, TYPE_LABELS,
     deliveryStatusOptions, deliveryOriginOptions,
@@ -94,6 +106,9 @@ const channels = ref<ChannelRow[]>([])
 const subscriptions = ref<SubscriptionRow[]>([])
 const deliveries = ref<DeliveryRow[]>([])
 const deliveriesLoading = ref<boolean>(false)
+// True when the backend rejected the full delivery selection and we fell back
+// to the core fields (retry/error detail columns may be absent).
+const historyDegraded = ref<boolean>(false)
 const historyPage = ref<number>(1)
 const historyPageSize = ref<number>(25)
 const historyTotalCount = ref<number>(0)
@@ -118,32 +133,37 @@ const channelFilterOptions = computed(() =>
 const channelNameById = computed<Record<string, string>>(() => buildNameMap(channels.value))
 const subscriptionNameById = computed<Record<string, string>>(() => buildNameMap(subscriptions.value))
 
-const HISTORY_DELIVERIES_QUERY = gql`
-    query notificationDeliveriesPage(
-        $orgUuid: ID!,
-        $channelUuid: ID,
-        $status: NotificationDeliveryStatusEnum,
-        $origin: NotificationDeliveryOriginEnum,
-        $limit: Int,
-        $offset: Int
-    ) {
-        notificationDeliveries(
-            orgUuid: $orgUuid,
-            channelUuid: $channelUuid,
-            status: $status,
-            origin: $origin,
-            limit: $limit,
-            offset: $offset
+// CORE = identity + status + time needed to render a delivery row.
+// ENRICHMENT = retry/error detail; if a backend lacks one of these (CE mirror
+// lagging Pro) the history table degrades to core rows instead of blanking.
+const HISTORY_CORE_ITEM_FIELDS = 'uuid org outboxEventUuid subscriptionUuid channelUuid status origin createdDate'
+const HISTORY_ENRICHMENT_ITEM_FIELDS = 'dedupKey attemptCount nextAttemptAt sentAt lastError'
+function buildHistoryQuery (itemFields: string): DocumentNode {
+    return gql`
+        query notificationDeliveriesPage(
+            $orgUuid: ID!,
+            $channelUuid: ID,
+            $status: NotificationDeliveryStatusEnum,
+            $origin: NotificationDeliveryOriginEnum,
+            $limit: Int,
+            $offset: Int
         ) {
-            items {
-                uuid org outboxEventUuid subscriptionUuid channelUuid
-                status origin dedupKey attemptCount nextAttemptAt sentAt
-                lastError createdDate
+            notificationDeliveries(
+                orgUuid: $orgUuid,
+                channelUuid: $channelUuid,
+                status: $status,
+                origin: $origin,
+                limit: $limit,
+                offset: $offset
+            ) {
+                items { ${itemFields} }
+                totalCount limit offset
             }
-            totalCount limit offset
         }
-    }
-`
+    `
+}
+const HISTORY_DELIVERIES_FULL = buildHistoryQuery(`${HISTORY_CORE_ITEM_FIELDS} ${HISTORY_ENRICHMENT_ITEM_FIELDS}`)
+const HISTORY_DELIVERIES_CORE = buildHistoryQuery(HISTORY_CORE_ITEM_FIELDS)
 
 async function loadChannels (): Promise<void> {
     try {
@@ -183,8 +203,9 @@ async function loadDeliveries (): Promise<void> {
     deliveriesLoading.value = true
     try {
         const offset = (historyPage.value - 1) * historyPageSize.value
-        const res = await graphqlClient.query({
-            query: HISTORY_DELIVERIES_QUERY,
+        const { data: page, degraded } = await loadWithSchemaDriftFallback(graphqlClient, {
+            fullQuery: HISTORY_DELIVERIES_FULL,
+            coreQuery: HISTORY_DELIVERIES_CORE,
             variables: {
                 orgUuid: orgUuid.value,
                 channelUuid: historyFilters.value.channelUuid,
@@ -193,14 +214,15 @@ async function loadDeliveries (): Promise<void> {
                 limit: historyPageSize.value,
                 offset,
             },
-            fetchPolicy: 'network-only',
+            extractPath: (d: any) => d?.notificationDeliveries,
         })
         if (myToken !== historyInflightToken) return  // stale response
-        const page = res.data?.notificationDeliveries
+        historyDegraded.value = degraded
         deliveries.value = page?.items || []
         historyTotalCount.value = page?.totalCount || 0
     } catch (e: any) {
         if (myToken !== historyInflightToken) return  // stale failure
+        historyDegraded.value = false
         message.error(`Failed to load history: ${extractError(e)}`)
     } finally {
         if (myToken === historyInflightToken) deliveriesLoading.value = false
@@ -259,7 +281,9 @@ const deliveryColumns = computed(() => [
     },
     {
         title: 'Attempts', key: 'attemptCount',
-        render: (row: DeliveryRow) => `${row.attemptCount}`,
+        // attemptCount is an ENRICHMENT field -- absent (not just null) on a
+        // degraded load, so guard against rendering the literal "undefined".
+        render: (row: DeliveryRow) => row.attemptCount != null ? `${row.attemptCount}` : '',
     },
     {
         title: 'Last error', key: 'lastError',
