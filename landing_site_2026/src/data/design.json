@@ -318,7 +318,7 @@
           "title": "Reject release if critical or high vulnerabilities > 0",
           "body": "That is an actual policy rule, and this is an actual release it rejected. Not a mockup: the screenshot shows the rule and the REJECTED release side by side.",
           "shot": "[ SCREENSHOT 5: rejected release + the policy rule that rejected it ]",
-          "img": "/screenshots/3-rejected-release_plus_policy_rule.png"
+          "img": "/screenshots/rule-plus-rejection.png"
         },
         {
           "num": "03 / REJECTION IN CI",
