@@ -113,6 +113,15 @@ export const demoVideo = 'https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.
 
 export const regulations = ['EU CRA', 'NIS2', 'DORA', 'US EO 14028 / 14144', 'FDA 524B', 'RBI / SEBI'];
 
+// Capability attributions on use-case step cards: deep links to the product
+// block that implements the capability. Anything not resolvable here or in
+// pageHrefs renders as a plain (non-link) label instead of an orphaned link.
+export const capHrefs: Record<string, string> = {
+  'Audit Evidence': '/product/release-policies/#audit-trail',
+  Distribution: '/product/sbom-xbom-management/#distribution',
+  'Dependency Search': '/product/sbom-xbom-management/#dependency-search',
+};
+
 // The two questions carried over from the current site's Q&A section.
 export const extraQuestions = [
   { q: 'What was the posture of 1.0.3 three months ago, when it shipped?', page: 'Findings Aggregation' },

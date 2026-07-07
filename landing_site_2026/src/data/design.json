@@ -507,8 +507,8 @@
         },
         {
           "num": "04",
-          "title": "Fleet-wide exposure queries",
-          "body": "By vulnerability or by part number: which fielded units carry X, answered in seconds.",
+          "title": "Exposure queries",
+          "body": "Software exposure fleet-wide via dependency search; per-device lookups by part number, board location, and replacement state.",
           "cap": "Dependency Search"
         },
         {

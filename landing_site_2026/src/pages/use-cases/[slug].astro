@@ -6,7 +6,12 @@
 import Base from '../../layouts/Base.astro';
 import Shot from '../../components/Shot.astro';
 import CtaBand from '../../components/CtaBand.astro';
-import { ucPages, pageHrefs } from '../../data/site';
+import { ucPages, pageHrefs, capHrefs } from '../../data/site';
+
+// Resolve a step's capability attribution to a real target (product page or
+// a block anchor); unresolvable capabilities render as plain labels rather
+// than links that dead-end on the homepage.
+const capTarget = (cap: string): string | undefined => capHrefs[cap] ?? pageHrefs[cap];
 
 export function getStaticPaths() {
   return ucPages.map((p) => ({
@@ -36,7 +41,9 @@ const { page } = Astro.props;
             <div class="step-num">{s.num}</div>
             <h3>{s.title}</h3>
             <p>{s.body}</p>
-            <a class="step-cap" href={pageHrefs[s.cap] ?? '/'}>↳ {s.cap}</a>
+            {capTarget(s.cap)
+              ? <a class="step-cap" href={capTarget(s.cap)}>↳ {s.cap}</a>
+              : <span class="step-cap step-cap--plain">↳ {s.cap}</span>}
           </div>
         ))}
       </div>
@@ -85,6 +92,7 @@ const { page } = Astro.props;
   .step-card h3 { font-size: 16.5px; margin-bottom: 8px; }
   .step-card p { font-size: 14.5px; line-height: 1.65; color: var(--body-2); margin-bottom: 12px; }
   .step-cap { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-decoration: none; font-weight: 600; }
+  .step-cap--plain { color: var(--muted-1); cursor: default; }
   .page-note {
     margin-top: 20px; font-family: var(--font-mono); font-size: 11.5px;
     letter-spacing: 0.06em; color: var(--muted-2); text-transform: uppercase;
