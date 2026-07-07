@@ -1071,7 +1071,12 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                         <DownloadLogView />
                     </n-tab-pane>
                     <n-tab-pane name="deliveryHistory" tab="Delivery History" v-if="myUser.installationType !== 'OSS'">
-                        <NotificationHistory :orguuid="orgResolved" />
+                        <NotificationHistory
+                            :orguuid="orgResolved"
+                            :initial-channel-uuid="(route.query.historyChannel as string) || null"
+                            :initial-status="(route.query.historyStatus as string) || null"
+                            :key="`hist-${route.query.historyChannel || ''}-${route.query.historyStatus || ''}`"
+                        />
                     </n-tab-pane>
                 </n-tabs>
             </n-tab-pane>
@@ -1127,7 +1132,7 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
   
 <script lang="ts" setup>
 import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm } from 'naive-ui'
-import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
+import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
@@ -1427,9 +1432,32 @@ const currentTab = ref(isTabAccessible(requestedTab) ? requestedTab : defaultTab
 // Default Policies sub-tab is approvalPoliciesInner (Approval Policies) — the
 // most common entry point. Approval Roles / Entries are configuration of
 // vocabulary used inside the policies.
-const policySubTab = ref(route.query.policyTab as string || 'approvalPoliciesInner')
+// Default sub-tabs, shared by the ref initializers and the query->tab sync
+// watch below so the fallbacks stay in one place.
+const DEFAULT_POLICY_SUBTAB = 'approvalPoliciesInner'
+const DEFAULT_AUDIT_SUBTAB = 'downloadLog'
+const policySubTab = ref(route.query.policyTab as string || DEFAULT_POLICY_SUBTAB)
 // Audit sub-tab: Download Log (all editions) + Delivery History (Pro).
-const auditSubTab = ref(route.query.auditTab as string || 'downloadLog')
+const auditSubTab = ref(route.query.auditTab as string || DEFAULT_AUDIT_SUBTAB)
+
+// Keep the tab selection in sync when the URL query changes while OrgSettings
+// stays mounted -- e.g. an in-app "View delivery log" deep-link pushing
+// ?tab=audit&auditTab=deliveryHistory from a child (channel card, subscription
+// row). Fresh navigations pick these up at setup; this covers same-page pushes,
+// which the setup-time reads would otherwise miss. Idempotent: each branch
+// no-ops when the value is unchanged, so a user's own handleTabSwitch push
+// doesn't double-load.
+watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab], () => {
+    const t = (route.query.tab as string) || defaultTab
+    if (isTabAccessible(t) && t !== currentTab.value) {
+        currentTab.value = t
+        loadTabSpecificData(t)
+    }
+    const at = (route.query.auditTab as string) || DEFAULT_AUDIT_SUBTAB
+    if (at !== auditSubTab.value) auditSubTab.value = at
+    const pt = (route.query.policyTab as string) || DEFAULT_POLICY_SUBTAB
+    if (pt !== policySubTab.value) policySubTab.value = pt
+})
 
 const approvalRoleFields: any[] = [
     {

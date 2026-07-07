@@ -97,6 +97,12 @@ import {
 
 const props = defineProps<{
     orguuid: string
+    // Optional deep-link seeds (e.g. "View delivery log" from the inbox drawer
+    // or a channel card). Applied once to the filters on mount; the parent
+    // remounts this component when they change (keyed on the deep-link), so a
+    // fresh seed always takes effect. Manual filter changes are independent.
+    initialChannelUuid?: string | null
+    initialStatus?: string | null
 }>()
 
 const message = useMessage()
@@ -294,6 +300,10 @@ const deliveryColumns = computed(() => [
 ])
 
 onMounted(async () => {
+    // Seed filters from a deep-link BEFORE the first load so the initial
+    // query is already scoped (no flash of the full list, no extra fetch).
+    if (props.initialChannelUuid) historyFilters.value.channelUuid = props.initialChannelUuid
+    if (props.initialStatus) historyFilters.value.status = props.initialStatus
     // Channels + subscriptions feed the name-resolution maps; deliveries
     // is the actual table. Load all three in parallel.
     await Promise.all([loadChannels(), loadSubscriptions(), loadDeliveries()])
