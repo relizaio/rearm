@@ -18,7 +18,8 @@ Teams page if you're not sure which one you need.
 
 1. A **channel** is a named destination: Slack, Microsoft Teams, a generic
    webhook, email, or [Microsoft Sentinel](../integrations/sentinel). Add one
-   from the **Notifications -> Channels** tab.
+   from the **Integrations -> Catalog** tab -- each channel type is a card
+   there; click **Add** on the card to configure a destination.
 2. A **subscription** decides which events go to which channels. Add one from
    the **Notifications -> Subscriptions** tab: pick the event types you care
    about, an optional filter, and one or more **routes** -- each route pairs a
@@ -38,7 +39,7 @@ A subscription's `eventTypes` list controls what it can match:
 |---|---|
 | `NEW_VULN_AFFECTS_RELEASES` | A vulnerability is newly linked to one of your releases |
 | `VULNERABILITY_RECORD_UPDATED` | An existing vulnerability record changes -- including a CVE newly appearing on the KEV catalog (see [KEV notifications](#kev-known-exploited-vulnerabilities-notifications) below) |
-| `VEX_STATE_CHANGED` | A VEX (exploitability) status changes on a finding |
+| `VEX_STATE_CHANGED` | Reserved for VEX (exploitability) status changes. No event source emits this yet, so a subscription on it will not fire today -- prefer `VULNERABILITY_RECORD_UPDATED` for vulnerability-state changes |
 | `RELEASE_CREATED` | A new release is created |
 | `RELEASE_LIFECYCLE_CHANGED` | A release moves lifecycle stage |
 | `RELEASE_BOM_DIFF` | A release's BOM diff is computed |
@@ -83,22 +84,25 @@ scheduled to send (e.g. one parked in an email digest).
 
 ## Testing channels and subscriptions
 
-::: warning No "send test" button yet
-Sending a real test event to a channel currently has no UI -- the backend
-supports it, but you'll need a direct API call (or ask someone with API
-access) until the button ships. Documenting the current state here rather
-than the button because this comes up as soon as you add a channel and want
-to confirm it works.
-:::
+You can confirm a channel or subscription works without waiting for a real
+event, straight from the UI:
 
-If you have API access, two mutations exist for confirming a channel or
-subscription actually works, without waiting for a real event: one that pings
-a single channel directly (bypassing subscription matching, filters, and
-severity gates, so it always produces a visible delivery), and one that
-injects a synthetic event of a chosen scenario (e.g. a critical vulnerability
-on a single shipped release, a newly-KEV-listed CVE) through the normal
-subscription-matching path, so you can confirm your filters and routes behave
-the way you expect. Both bypass the dedup window described above.
+- **Test a channel** -- on the channel's card in **Integrations -> Catalog**,
+  use the **Send test** (paper-plane) action on the configured instance. This
+  pings that one channel directly, bypassing subscription matching, filters,
+  and severity gates, so it always produces a visible delivery -- the fastest
+  way to confirm a webhook URL is reachable and authorized.
+- **Test a subscription** -- in **Integrations -> Subscriptions**, use the
+  **Test** action on a subscription row and pick a synthetic scenario (e.g. a
+  critical vulnerability on a single shipped release, a newly-KEV-listed CVE).
+  The event is injected through the normal subscription-matching path, so you
+  can confirm your filters, severity gates, and routes behave the way you
+  expect. Note this injects a real synthetic event for the whole organization,
+  so any *other* active subscription matching the same event type will also
+  fire -- the UI asks you to confirm before sending.
+
+Both bypass the dedup window described above, so a test always produces a
+delivery you can see in **Delivery History**.
 
 ## KEV (Known Exploited Vulnerabilities) notifications
 
