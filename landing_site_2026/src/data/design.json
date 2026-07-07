@@ -38,25 +38,29 @@
       "name": "SBOM/XBOM Management",
       "line": "Every SBOM, organized, diffable, searchable.",
       "shot": "[ SCREENSHOT: SBOM diff view between two versions ]",
-      "link": "SBOM/XBOM Management"
+      "link": "SBOM/XBOM Management",
+      "img": "/screenshots/1-sbom-diff-between-versions.png"
     },
     {
       "name": "Findings Aggregation",
       "line": "Findings roll up from SBOM to product level.",
       "shot": "[ SCREENSHOT: product release composition view ]",
-      "link": "Findings Aggregation"
+      "link": "Findings Aggregation",
+      "img": "/screenshots/10-product-findings.png"
     },
     {
       "name": "Release Policies",
       "line": "Encode release rules once; every release is checked.",
       "shot": "[ SCREENSHOT: rejected release + policy rule ]",
-      "link": "Release Policies"
+      "link": "Release Policies",
+      "img": "/screenshots/14-policy-reject-release-on-critical-high-vuln.png"
     },
     {
       "name": "AI Governance",
       "line": "Know exactly what your agents shipped.",
       "shot": "[ SCREENSHOT: agent session + signed commit ]",
-      "link": "AI Governance"
+      "link": "AI Governance",
+      "img": "/screenshots/4-agent-sessions.png"
     }
   ],
   "useCasePanels": [
@@ -112,19 +116,22 @@
       "num": "01 / AUTOMATIC ASSEMBLY",
       "title": "One structure, six levels, zero stitching",
       "body": "Component releases bundle into product releases as they are produced. No manual assembly, no stale spreadsheets. The hierarchy above is not a diagram of your process; it is the live data model. Multi-level nesting is supported: products can contain products, and evidence propagates through every level.",
-      "shot": "[ SCREENSHOT 4: hierarchy / product release composition view ]"
+      "shot": "[ SCREENSHOT 4: hierarchy / product release composition view ]",
+      "img": "/screenshots/2-product-release-composition-view.png"
     },
     {
       "num": "02 / DRILL-DOWN",
       "title": "Product-level count to exact SBOM entry in three clicks",
       "body": "Start from a product-level vulnerability count. Click to the offending component, then to the exact SBOM entry that carries the finding. Every number on the dashboard is traversable to its source. Findings of every type are covered: vulnerabilities, weaknesses, and license violations, aggregated from Dependency-Track and your other tools, with triage and audit at organization, product, component or release scope.",
-      "shot": "[ SCREENSHOT: drill-down from product finding to SBOM entry ]"
+      "shot": "[ SCREENSHOT: drill-down from product finding to SBOM entry ]",
+      "img": "/screenshots/11-sbom-component-graph-entry-opened-from-product-findings.png"
     },
     {
       "num": "03 / POINT-IN-TIME VS NOW",
       "title": "What did we know at ship time vs what do we know now",
       "body": "New CVEs and KEV entries are evaluated against shipped versions, not just the latest build. Posture at ship time is preserved as evidence; current posture is computed continuously.",
-      "shot": "[ SCREENSHOT: shipped-version posture vs current posture ]"
+      "shot": "[ SCREENSHOT: shipped-version posture vs current posture ]",
+      "img": "/screenshots/12-export-vdr-at-shipped-time.png"
     }
   ],
   "prodPages": [
@@ -195,20 +202,23 @@
           "num": "01 / ORGANIZED STORAGE",
           "title": "Not a bucket of JSON files",
           "body": "Every SBOM and XBOM is versioned and tied to the release that produced it, per component and per product. Ask for any shipped version's bill of materials and get it in one click.",
-          "shot": "[ SCREENSHOT 4: product release composition view ]"
+          "shot": "[ SCREENSHOT 4: product release composition view ]",
+          "img": "/screenshots/7-artifacts-attached-to-release.png"
         },
         {
           "num": "02 / CONTINUOUS DIFFING",
           "title": "What changed between 1.2 and 1.3? Two answers, same release pair.",
           "body": "Dependency delta: every new release is automatically diffed against its predecessor as it lands. Continuous, not on-request; any two versions diffable on demand, at component and product level. Code delta: auto-generated changelogs from the commits between the two releases, shown alongside the SBOM diff. Releases are versioned automatically per your org's version schema; no manual bumping. Finding delta: how vulnerabilities and policy findings changed between the two releases, in the same changelog view.",
           "callout": "Dependency-analysis tools do not do cross-version SBOM diffing. ReARM does.",
-          "shot": "[ SCREENSHOT 1 + 3: SBOM diff between versions, changelog alongside ]"
+          "shot": "[ SCREENSHOT 1 + 3: SBOM diff between versions, changelog alongside ]",
+          "img": "/screenshots/diff-plus-changelog.png"
         },
         {
           "num": "03 / DEPENDENCY SEARCH",
           "title": "Where do we run log4j 2.14?",
           "body": "Answered portfolio-wide in seconds, across every product and every shipped version. Not just the latest build: everything you have ever released.",
-          "shot": "[ SCREENSHOT 2: dependency search results across portfolio ]"
+          "shot": "[ SCREENSHOT 2: dependency search results across portfolio ]",
+          "img": "/screenshots/6-dependency-search-across-portfolio.png"
         },
         {
           "num": "04 / BEYOND SBOM",
@@ -220,13 +230,15 @@
           "num": "05 / DISTRIBUTION",
           "title": "Serve SBOMs downstream",
           "body": "Distribute SBOMs and artifacts to downstream consumers via TEA. Customers, authorities, and program offices pull from the same organized source.",
-          "shot": "[ SCREENSHOT: distribution / TEA endpoint view ]"
+          "shot": "[ SCREENSHOT: distribution / TEA endpoint view ]",
+          "img": "/screenshots/8-distribution-tea.png"
         },
         {
           "num": "06 / AGENTIC ENRICHMENT",
           "title": "SBOMs arrive incomplete. BEAR fixes that.",
           "body": "Reliza BEAR, ReARM's agentic SBOM enrichment and augmentation tool, automatically enriches your SBOMs with additional metadata, including supplier, copyright and license information, before they roll up.",
-          "shot": "[ SCREENSHOT: BEAR-enriched SBOM entry, before and after ]"
+          "shot": "[ SCREENSHOT: BEAR-enriched SBOM entry, before and after ]",
+          "img": "/screenshots/9-enriched-by-bear-augmented-vs-raw-download.png"
         }
       ]
     },
@@ -297,13 +309,15 @@
           "num": "01 / LIFECYCLE",
           "title": "Draft, assembled, approved or rejected",
           "body": "Approval policies and a release lifecycle enforced automatically on every release. No release reaches approved without passing the rules your organization set. Both manual and automated approvals are supported.",
-          "shot": "[ SCREENSHOT: release lifecycle view ]"
+          "shot": "[ SCREENSHOT: release lifecycle view ]",
+          "img": "/screenshots/13-release-lifecycle-changes.png"
         },
         {
           "num": "02 / A REAL RULE",
           "title": "Reject release if critical or high vulnerabilities > 0",
           "body": "That is an actual policy rule, and this is an actual release it rejected. Not a mockup: the screenshot shows the rule and the REJECTED release side by side.",
-          "shot": "[ SCREENSHOT 5: rejected release + the policy rule that rejected it ]"
+          "shot": "[ SCREENSHOT 5: rejected release + the policy rule that rejected it ]",
+          "img": "/screenshots/3-rejected-release_plus_policy_rule.png"
         },
         {
           "num": "03 / REJECTION IN CI",
@@ -315,7 +329,8 @@
           "num": "04 / AUDIT TRAIL",
           "title": "Who approved, when, against what",
           "body": "Every approval records who or what approved, when, and against which evidence snapshot. Years later, the answer is still there. Every approval is immutably recorded with a timestamp, approver identity, and the evidence it was based on. Your release approval workflow is also your audit trail.",
-          "shot": "[ SCREENSHOT: approval audit trail ]"
+          "shot": "[ SCREENSHOT: approval audit trail ]",
+          "img": "/screenshots/15-approval-ui.png"
         }
       ]
     },
@@ -383,25 +398,22 @@
           "num": "01 / ATTRIBUTION",
           "title": "Per-commit attribution, cryptographically signed",
           "body": "Agent vs human, which agent, which model. Backed by signed commits, not commit-message convention.",
-          "shot": "[ SCREENSHOT 7: signed agent commit with trailers ]"
+          "shot": "[ SCREENSHOT 7: signed agent commit with trailers ]",
+          "img": "/screenshots/16-rearm-commit-trailers.png"
         },
         {
           "num": "02 / AGENT SESSIONS",
           "title": "Scoped, auditable work sessions",
           "body": "Each agent works in a session with orientation and final reports attached as evidence. What it was asked to do and what it says it did, on the record.",
-          "shot": "[ SCREENSHOT 7: agent session view ]"
+          "shot": "[ SCREENSHOT 7: agent session view ]",
+          "img": "/screenshots/17-agent-session-view.png"
         },
         {
           "num": "03 / POLICY GATES",
           "title": "The same policy engine that gates humans",
           "body": "Approval policies keyed on agent and session state. Agent-written code passes the same gates as human-written code, or it does not ship.",
-          "shot": "[ SCREENSHOT: policy gate on agent work ]"
-        },
-        {
-          "num": "04 / ROLL-UP",
-          "title": "Agent contribution, visible at every level",
-          "body": "Per release, per component, per product: the same hierarchy as everything else. Agent work is not a separate system; it is a dimension of the one you already govern.",
-          "shot": "[ SCREENSHOT: agent contribution roll-up ]"
+          "shot": "[ SCREENSHOT: policy gate on agent work ]",
+          "img": "/screenshots/18-agent-policy.png"
         }
       ]
     }
@@ -555,7 +567,8 @@
           "body": "The same evidence trail that covers releases now covers what actually runs.",
           "cap": "Audit Evidence"
         }
-      ]
+      ],
+      "img": "/screenshots/19-instance-page.png"
     },
     {
       "id": "3i",

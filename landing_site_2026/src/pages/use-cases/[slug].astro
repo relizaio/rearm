@@ -47,7 +47,7 @@ const { page } = Astro.props;
   {page.shot && (
     <section class="wide-shot">
       <div class="container">
-        <Shot label={page.shot} ratio="21 / 8" />
+        <Shot label={page.shot} ratio="21 / 8" src={(page as any).img} />
       </div>
     </section>
   )}

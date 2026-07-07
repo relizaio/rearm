@@ -65,7 +65,7 @@ const allQuestions = [...questions, ...extraQuestions];
       <div class="caps-grid">
         {caps.map((c) => (
           <a class="cap-card" href={pageHrefs[c.link]}>
-            <Shot label={c.shot} ratio="16 / 8" />
+            <Shot label={c.shot} ratio="16 / 8" src={(c as any).img} />
             <h3>{c.name}</h3>
             <p>{c.line}</p>
             <span class="cap-link">Explore {c.name} →</span>

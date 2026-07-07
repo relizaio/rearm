@@ -45,7 +45,7 @@ import { findBlocks, fullChain } from '../../data/site';
               <p>{b.body}</p>
             </div>
             <div class="block-shot">
-              <Shot label={b.shot} ratio="16 / 9" />
+              <Shot label={b.shot} ratio="16 / 9" src={(b as any).img} />
             </div>
           </div>
         </>

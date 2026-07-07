@@ -42,7 +42,7 @@ const { page } = Astro.props;
               {b.callout && <div class="callout">{b.callout}</div>}
             </div>
             <div class="block-shot">
-              <Shot label={b.shot} ratio="16 / 9" />
+              <Shot label={b.shot} ratio="16 / 9" src={(b as any).img} />
             </div>
           </div>
         </>
