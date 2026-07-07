@@ -52,12 +52,13 @@
                         <n-form-item label="Event types">
                             <n-select
                                 v-model:value="subForm.eventTypes"
-                                :options="eventTypeOptions"
+                                :options="eventTypeOptionsForForm"
                                 multiple
                                 placeholder="Pick one or more event types"
                                 data-testid="sub-eventtypes"
                             />
                         </n-form-item>
+                        <div class="field-hint">This subscription fires only when a selected event type is actually emitted. "VEX state changed" is reserved and not emitted yet, so it isn't selectable (an existing selection can still be removed).</div>
 
                         <n-form-item label="Filter mode">
                             <n-radio-group v-model:value="subForm.filterMode">
@@ -71,9 +72,16 @@
                                 type="textarea"
                                 :autosize="{ minRows: 3, maxRows: 8 }"
                                 style="font-family: monospace; font-size: 12px;"
-                                placeholder='e.g. event.severity == "CRITICAL" && size(affectedReleases) > 0'
+                                placeholder='e.g. event.severity == "CRITICAL" && size(event.affectedReleases) > 0'
                             />
                         </n-form-item>
+                        <div v-if="subForm.filterMode === 'ADVANCED'" class="field-hint">
+                            A CEL boolean over the event. Examples:
+                            <code>event.severity == "CRITICAL"</code>,
+                            <code>event.kevListed == true</code>,
+                            <code>size(event.affectedReleases) &gt; 0</code>.
+                            Leave Preset mode to match on event type alone.
+                        </div>
 
                         <div class="routes-section">
                             <div class="routes-header">
@@ -159,10 +167,11 @@
                                         v-model:value="subForm.dedupWindowMinutes"
                                         :min="0"
                                         clearable
-                                        placeholder="None"
+                                        placeholder="Default: 1440 (24h)"
                                         style="width: 100%;"
                                     />
                                 </n-form-item>
+                                <div class="field-hint">Suppresses repeat deliveries of the same event within the window. Leave empty for the 24h default; set 0 to deliver every matching event.</div>
                             </n-gi>
                             <n-gi>
                                 <n-space>
@@ -185,6 +194,7 @@
                                         />
                                     </n-form-item>
                                 </n-space>
+                                <div class="field-hint">Stored but not enforced yet -- rate limiting is planned; leave empty for now.</div>
                             </n-gi>
                         </n-grid>
 
@@ -307,6 +317,20 @@ const showSubscriptionModal = ref<boolean>(false)
 const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
 const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
+
+// Event-type options for THIS form. The shared eventTypeOptions marks
+// VEX_STATE_CHANGED disabled (no backend producer yet), which also makes
+// naive-ui suppress its tag "x" (closable: !disabled). That would trap a
+// legacy subscription that already selected VEX -- it could never be
+// removed via the form. So keep VEX disabled only while it is NOT already
+// selected: unselectable for new subs, still removable when editing an
+// existing VEX subscription (after removal it re-disables, no re-add).
+const eventTypeOptionsForForm = computed(() =>
+    eventTypeOptions.map(o =>
+        o.value === 'VEX_STATE_CHANGED'
+            ? { ...o, disabled: !subForm.value.eventTypes.includes('VEX_STATE_CHANGED') }
+            : o)
+)
 
 const channelOptions = computed(() =>
     channels.value
@@ -812,6 +836,22 @@ onMounted(async () => {
 }
 .routes-title { font-size: 13px; font-weight: 600; }
 .routes-hint { font-size: 12px; color: var(--n-text-color-3, #888); margin-bottom: 10px; }
+/* Inline honesty/help hints under form fields -- matches routes-hint tone but
+   sits directly beneath a field, with a touch of negative top margin to pull
+   it up against n-form-item's bottom padding. */
+.field-hint {
+    font-size: 12px;
+    color: var(--n-text-color-3, #888);
+    margin: -6px 0 12px;
+    line-height: 1.45;
+}
+.field-hint code {
+    font-family: monospace;
+    font-size: 11px;
+    background: var(--n-color-embedded, rgba(128, 128, 128, 0.12));
+    padding: 1px 4px;
+    border-radius: 3px;
+}
 .route-row + .route-row { margin-top: 6px; }
 .route-remove-cell { display: flex; align-items: flex-end; }
 </style>
