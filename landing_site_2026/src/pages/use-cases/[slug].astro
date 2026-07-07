@@ -1,7 +1,7 @@
 ---
 // Data-driven use-case pages. Template per design: top-left facet plane with
 // per-page tint pair, mono persona eyebrow, H1, pain paragraph, numbered
-// step cards ("HOW TEAMS USE REARM FOR THIS") each attributing a capability,
+// step cards ("HOW TEAMS USE ReARM FOR THIS") each attributing a capability,
 // optional wide screenshot, standards/evidence strip, CTA.
 import Base from '../../layouts/Base.astro';
 import Shot from '../../components/Shot.astro';
@@ -34,7 +34,7 @@ const { page } = Astro.props;
 
   <section class="steps">
     <div class="container">
-      <div class="eyebrow eyebrow--muted steps-label">HOW TEAMS USE REARM FOR THIS</div>
+      <div class="eyebrow eyebrow--muted steps-label">HOW TEAMS USE ReARM FOR THIS</div>
       <div class="steps-grid">
         {page.steps.map((s) => (
           <div class="step-card">
