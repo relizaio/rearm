@@ -259,6 +259,13 @@
                         >
                             Mark unread
                         </n-button>
+                        <n-button
+                            v-if="isOrgAdmin && inboxDrawerRow.channelUuid"
+                            tertiary
+                            @click="viewDeliveryLog"
+                        >
+                            View delivery log
+                        </n-button>
                         <n-button @click="inboxDrawerOpen = false">Close</n-button>
                     </n-space>
                 </n-space>
@@ -276,7 +283,7 @@ import {
     NBadge, NTabs, NTabPane, useDialog, useMessage
 } from 'naive-ui'
 import { Bell, Check, Refresh } from '@vicons/tabler'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
@@ -292,6 +299,7 @@ const props = defineProps<{
     orguuid: string
 }>()
 
+const router = useRouter()
 const store = useStore()
 const dialog = useDialog()
 const message = useMessage()
@@ -606,6 +614,28 @@ async function loadInbox (): Promise<void> {
 function applyInboxFilters (): void {
     inboxPage.value = 1
     loadInbox()
+}
+
+// "View delivery log": jump from this inbox row to the Delivery History audit
+// surface pre-filtered to the row's channel, so a user going "my alert didn't
+// arrive -> why" lands on that channel's full send log. Failures open the log
+// filtered to FAILED. Admin-only (the Audit tab is admin-gated); the button is
+// hidden otherwise, and hidden for channel-less rows (targeted approvals).
+function viewDeliveryLog (): void {
+    const row = inboxDrawerRow.value
+    if (!row || !row.channelUuid) return
+    inboxDrawerOpen.value = false
+    inboxListDrawerOpen.value = false
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: orgUuid.value },
+        query: {
+            tab: 'audit',
+            auditTab: 'deliveryHistory',
+            historyChannel: row.channelUuid,
+            ...(row.status === 'FAILED' ? { historyStatus: 'FAILED' } : {}),
+        },
+    })
 }
 
 function openInboxRow (row: InboxRow): void {
