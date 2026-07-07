@@ -73,11 +73,11 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 11. Finding audit (includes audit for vulnerabilities, weaknesses, policy violations)
 12. RBAC
 13. VEX import and export workflow (CycloneDX, OpenVEX). Import workflow supports staging area.
+14. Agentic Dashboard
 
 ## Future Capabilities (Medium-Term Roadmap)
-1. Agentic Dashboard
-2. Better handling and prescribed workflows for Attestations
-3. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
+1. Better handling and prescribed workflows for Attestations
+2. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
 
 ## Releases
 ReARM follows [Trunk Based Development (TBD)](https://trunkbaseddevelopment.com/) methodology. This means that maintainers commit directly to the main branch where possible. Consumers should use releases marked as SHIPPED (or GENERAL_AVAILABILITY).
