@@ -107,6 +107,11 @@
                                                 <span v-if="card.id === 'EMAIL'" class="cap-chip">{{ digestChipLabel(ch) }}</span>
                                                 <span v-if="ch.status !== 'ENABLED'" class="cap-chip chip-muted">DISABLED</span>
                                             </div>
+                                            <!-- Auto-disabled channel: explain WHY + prompt a re-verify, so the
+                                                 failure isn't only visible as FAILED Delivery History rows. -->
+                                            <div v-if="ch.disabledReason" class="instance-disabled-reason" data-testid="channel-disabled-reason">
+                                                {{ ch.disabledReason }}
+                                            </div>
                                         </div>
                                         <div class="instance-actions">
                                             <n-icon
@@ -964,6 +969,9 @@ interface ChannelCatalogRow {
     digestMode: string | null
     digestInterval: string | null
     emailRecipients: string[] | null
+    // Operator-facing reason the channel was auto-disabled (e.g. bad webhook
+    // URL). Null when enabled or manually disabled.
+    disabledReason: string | null
 }
 const notificationChannelRows: Ref<ChannelCatalogRow[]> = ref([])
 const emailChannels = computed(() => notificationChannelRows.value.filter(c => c.type === 'EMAIL'))
@@ -2358,7 +2366,7 @@ const CATALOG_CHANNELS_CORE = gql`
 const CATALOG_CHANNELS_FULL = gql`
     query notificationChannelsForCatalog($orgUuid: ID!) {
         notificationChannels(orgUuid: $orgUuid) {
-            uuid name type status revision digestMode digestInterval emailRecipients
+            uuid name type status revision digestMode digestInterval emailRecipients disabledReason
         }
     }`
 
@@ -2642,6 +2650,12 @@ watch(() => props.orguuid, async () => {
     background: var(--chip);
     border-color: var(--line);
     color: var(--muted);
+}
+.instance-disabled-reason {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--danger, #d03050);
 }
 .instance-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .instance-icon {
