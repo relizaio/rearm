@@ -591,7 +591,7 @@
       "evidence": "ANNEX I · SBOM · CVD · DISTRIBUTION (TEA) · DUE-DILIGENCE EVIDENCE",
       "publicDemo": false,
       "shot": false,
-      "note": "optional page, cut anytime",
+      "note": false,
       "steps": [
         {
           "num": "01",
