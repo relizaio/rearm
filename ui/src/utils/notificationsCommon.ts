@@ -127,10 +127,14 @@ export const subscriptionStatusOptions = [
     { label: 'Preview (rows land but no dispatch)', value: 'PREVIEW' },
 ]
 
+// VEX_STATE_CHANGED has no event producer in the backend yet, so a
+// subscription on it would never fire (a silent trap). Disable it here until
+// a producer ships -- prefer VULNERABILITY_RECORD_UPDATED for vuln-state
+// changes. See rearm-core SyntheticEventTemplates / notifications.md.
 export const eventTypeOptions = [
     { label: 'New vuln affects releases', value: 'NEW_VULN_AFFECTS_RELEASES' },
     { label: 'Vulnerability record updated', value: 'VULNERABILITY_RECORD_UPDATED' },
-    { label: 'VEX state changed', value: 'VEX_STATE_CHANGED' },
+    { label: 'VEX state changed (not yet available)', value: 'VEX_STATE_CHANGED', disabled: true },
     { label: 'Release created', value: 'RELEASE_CREATED' },
     { label: 'Release lifecycle changed', value: 'RELEASE_LIFECYCLE_CHANGED' },
     { label: 'Release BOM diff', value: 'RELEASE_BOM_DIFF' },
