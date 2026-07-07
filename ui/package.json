@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
-    "lint": "eslint --ext .js,.vue --ignore-path .gitignore --fix src"
+    "lint": "eslint --ext .js,.vue --ignore-path .gitignore --fix src",
+    "test": "vitest run",
+    "validate:graphql": "node scripts/validate-graphql.mjs"
   },
   "dependencies": {
     "@apollo/client": "^4.1.6",
@@ -41,10 +43,12 @@
     "@vue/eslint-config-typescript": "^14.7.0",
     "eslint": "^10.1.0",
     "eslint-plugin-vue": "^10.8.0",
+    "graphql": "^16.14.0",
     "naive-ui": "^2.44.1",
     "sass": "^1.98.0",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^3.2.7"
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "^0.27.3",
