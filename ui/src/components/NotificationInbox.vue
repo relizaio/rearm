@@ -90,16 +90,108 @@
                     Some inbox details are unavailable on this server version, so a few columns (such as channel name) may be missing. Your notifications are shown below.
                 </n-alert>
 
-                <n-data-table
-                    :data="inboxItems"
-                    :columns="inboxColumns"
-                    :loading="inboxLoading"
-                    :single-line="false"
-                    :bordered="false"
-                    :scroll-x="1000"
-                    :row-key="(row) => row.uuid"
-                    v-model:checked-row-keys="selectedInboxRows"
-                />
+                <!-- Card-style rows (replaces the old 7-column data-table that
+                     overflowed the drawer): title + severity/status tags on top,
+                     description below, then a compact channel-dot-time meta line.
+                     Unread rows carry a left accent + selection checkbox for the
+                     bulk mark-read action. -->
+                <n-spin :show="inboxLoading">
+                    <div class="inbox-list" data-testid="inbox-list">
+                        <div
+                            v-if="inboxCards.length === 0 && !inboxLoading"
+                            class="inbox-empty muted-12"
+                            data-testid="inbox-empty"
+                        >
+                            {{ inboxUnreadOnly ? 'No unread notifications.' : 'No notifications to show.' }}
+                        </div>
+                        <div
+                            v-for="c in inboxCards"
+                            :key="c.row.uuid"
+                            class="inbox-card"
+                            :class="{ unread: !c.row.readAt, read: !!c.row.readAt }"
+                            data-testid="inbox-row"
+                        >
+                            <!-- Left rail always signals: severity colour (canonical
+                                 vuln palette) for vuln/vex rows, neutral grey for
+                                 lifecycle (release/approval) rows. -->
+                            <span class="inbox-rail" :style="{ backgroundColor: c.rail }"></span>
+                            <div class="inbox-card-select">
+                                <n-checkbox
+                                    v-if="!c.row.readAt"
+                                    :checked="selectedInboxRows.includes(c.row.uuid)"
+                                    :disabled="!canWrite"
+                                    @update:checked="(v) => toggleInboxSelect(c.row.uuid, v)"
+                                />
+                            </div>
+                            <div class="inbox-card-main">
+                                <div class="inbox-card-head">
+                                    <span v-if="!c.row.readAt" class="inbox-unread-dot" aria-hidden="true"></span>
+                                    <button
+                                        type="button"
+                                        class="inbox-message-link"
+                                        data-testid="inbox-message-link"
+                                        @click="openInboxRow(c.row)"
+                                    >
+                                        <span class="inbox-message-title" data-testid="inbox-message-title">{{ c.title }}</span>
+                                    </button>
+                                    <!-- Severity tag when the row has one; otherwise a neutral
+                                         kind pill (RELEASE/APPROVAL/...) so the head always
+                                         carries a category. inbox-cell-severity is present iff
+                                         the row has a severity. -->
+                                    <n-tag
+                                        v-if="c.row.severity"
+                                        :type="severityTagType(c.row.severity)"
+                                        size="small"
+                                        :bordered="false"
+                                        data-testid="inbox-cell-severity"
+                                    >{{ c.row.severity }}</n-tag>
+                                    <n-tag
+                                        v-else
+                                        size="small"
+                                        :bordered="false"
+                                        class="inbox-kind-tag"
+                                        data-testid="inbox-cell-kind"
+                                    >{{ c.kind }}</n-tag>
+                                </div>
+                                <div v-if="c.row.description" class="inbox-message-desc muted-12">{{ c.row.description }}</div>
+                                <div class="inbox-card-sub">
+                                    <n-tag
+                                        :type="deliveryStatusTagType(c.row.status)"
+                                        size="small"
+                                        :bordered="false"
+                                        data-testid="inbox-cell-status"
+                                    >{{ c.row.status }}</n-tag>
+                                    <span class="inbox-meta-sep">&middot;</span>
+                                    <span
+                                        data-testid="inbox-cell-channel"
+                                        :class="['inbox-chan', { fail: c.failed, 'muted-12': !c.failed && c.channel.muted }]"
+                                        :title="c.channel.title"
+                                    >{{ c.channel.text }}</span>
+                                    <span v-if="c.failed" class="inbox-fail-note">&mdash; message was not delivered</span>
+                                </div>
+                            </div>
+                            <div class="inbox-card-side">
+                                <span class="inbox-time muted-12" data-testid="inbox-cell-when" :title="c.timeAbs">{{ c.timeRel }}</span>
+                                <n-button
+                                    v-if="!c.row.readAt"
+                                    class="inbox-mark-read"
+                                    size="tiny"
+                                    tertiary
+                                    type="primary"
+                                    :disabled="!canWrite"
+                                    @click="markRowRead(c.row)"
+                                >Mark read</n-button>
+                                <n-button
+                                    v-else
+                                    size="tiny"
+                                    quaternary
+                                    :disabled="!canWrite"
+                                    @click="markRowUnread(c.row)"
+                                >Unread</n-button>
+                            </div>
+                        </div>
+                    </div>
+                </n-spin>
 
                 <div v-if="inboxTotalCount > inboxPageSize" class="history-pagination">
                     <n-pagination
@@ -280,7 +372,7 @@ import {
     NDrawer, NDrawerContent, NDataTable, NButton, NIcon, NSpace, NGrid, NGi,
     NFormItem, NSelect, NRadioGroup, NRadioButton, NPagination, NTag,
     NDescriptions, NDescriptionsItem, NAlert, NCollapse, NCollapseItem,
-    NBadge, NTabs, NTabPane, useDialog, useMessage
+    NBadge, NTabs, NTabPane, NCheckbox, NSpin, useDialog, useMessage
 } from 'naive-ui'
 import { Bell, Check, Refresh } from '@vicons/tabler'
 import { RouterLink, useRouter } from 'vue-router'
@@ -288,10 +380,11 @@ import { useStore } from 'vuex'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
+import constants from '@/utils/constants'
 import {
     InboxRow, deliveryStatusOptions, eventTypeOptions,
     deliveryStatusTagType, severityTagType,
-    formatHistoryTimestamp, extractError
+    formatHistoryTimestamp, relativeTime, extractError
 } from '@/utils/notificationsCommon'
 import { loadNotificationInboxPage } from '@/utils/notificationInboxQuery'
 
@@ -656,6 +749,10 @@ async function markRowRead (row: InboxRow): Promise<void> {
         // Optimistic update — patch the row in place rather than reload.
         const idx = inboxItems.value.findIndex(r => r.uuid === row.uuid)
         if (idx >= 0) inboxItems.value[idx].readAt = readAt
+        // A read row drops its selection checkbox (v-if unread), so prune it
+        // from the pending bulk set too -- otherwise its uuid would linger and
+        // keep the "Mark N read" count inflated in the all-visible view.
+        selectedInboxRows.value = selectedInboxRows.value.filter(u => u !== row.uuid)
         if (inboxUnreadCount.value > 0) inboxUnreadCount.value -= 1
         if (inboxUnreadOnly.value) {
             inboxItems.value = inboxItems.value.filter(r => r.uuid !== row.uuid)
@@ -817,106 +914,61 @@ function channelLabel (row: InboxRow | null): { text: string, muted: boolean, ti
 
 const drawerChannel = computed(() => channelLabel(inboxDrawerRow.value))
 
-const inboxColumns = computed(() => [
-    {
-        type: 'selection' as const,
-        // Selection cell only meaningful for unread rows — read rows can't
-        // be re-marked-read.
-        disabled: (row: InboxRow) => !!row.readAt,
-    },
-    {
-        title: 'When', key: 'when', width: 170,
-        render: (row: InboxRow) => h(
-            'span',
-            { 'data-testid': 'inbox-cell-when' },
-            formatHistoryTimestamp(row.sentAt || row.createdDate),
-        ),
-    },
-    {
-        title: 'Status', key: 'status', width: 110,
-        render: (row: InboxRow) => h(
-            NTag,
-            { type: deliveryStatusTagType(row.status), size: 'small', 'data-testid': 'inbox-cell-status' },
-            { default: () => row.status },
-        ),
-    },
-    {
-        title: 'Message', key: 'message', minWidth: 220,
-        render: (row: InboxRow) => {
-            // The Message cell is the click target that opens the inbox
-            // drawer. Title is bold; description sits below as muted helper
-            // text. Fallback to the eventType label when the server-rendered
-            // title is null (malformed payload path).
-            const titleText = row.title || (row.eventType
-                ? row.eventType.replace(/_/g, ' ').toLowerCase()
-                : '(no content)')
-            const description = row.description
-            // <button type="button">, not <a href="#">. The cell is an
-            // action (open drawer), not navigation — anchor semantics would
-            // mis-announce as "link" to screen readers.
-            return h(
-                'button',
-                {
-                    type: 'button',
-                    class: 'inbox-message-link',
-                    'data-testid': 'inbox-message-link',
-                    onClick: () => openInboxRow(row),
-                },
-                {
-                    default: () => [
-                        h('div', { class: 'inbox-message-title' }, titleText),
-                        description
-                            ? h('div', { class: 'inbox-message-desc muted-12' }, description)
-                            : null,
-                    ],
-                },
-            )
-        },
-    },
-    {
-        title: 'Severity', key: 'severity', width: 110,
-        render: (row: InboxRow) => row.severity
-            ? h(
-                NTag,
-                { type: severityTagType(row.severity), size: 'small', 'data-testid': 'inbox-cell-severity' },
-                { default: () => row.severity },
-            )
-            : h('span', { class: 'muted-12', 'data-testid': 'inbox-cell-severity' }, '—'),
-    },
-    {
-        title: 'Channel', key: 'channelUuid', width: 150,
-        // Null channel = Phase 4a targeted delivery (personal inbox copy,
-        // no transmission channel) — not a deleted channel. channelName is
-        // resolved server-side and rides along on the row, so no admin-only
-        // channel-list fetch is needed; a null name on a real channelUuid
-        // means the channel was deleted.
-        render: (row: InboxRow) => {
-            const { text, muted, title } = channelLabel(row)
-            return h('span', { 'data-testid': 'inbox-cell-channel' },
-                [muted ? h('span', { class: 'muted-12', title }, text) : text])
-        },
-    },
-    {
-        title: 'Read', key: 'readAt', width: 200,
-        render: (row: InboxRow) => row.readAt
-            ? h(NSpace, { size: 'small', align: 'center' }, {
-                default: () => [
-                    h('span', { class: 'muted-12' }, formatHistoryTimestamp(row.readAt)),
-                    h(NButton, {
-                        size: 'tiny', secondary: true,
-                        onClick: () => markRowUnread(row),
-                        disabled: !canWrite.value,
-                        title: 'Mark unread',
-                    }, { default: () => 'Unread' }),
-                ],
-            })
-            : h(NButton, {
-                size: 'tiny', secondary: true, type: 'primary',
-                onClick: () => markRowRead(row),
-                disabled: !canWrite.value,
-            }, { icon: () => h(NIcon, null, { default: () => h(Check) }), default: () => 'Mark read' }),
-    },
-])
+// Neutral grey rail for rows with no severity (release/approval lifecycle
+// events) -- a UI accent, not a severity, so it stays out of the vuln palette.
+const RAIL_KIND_COLOR = '#c9ccd4'
+
+// Left-rail colour from the canonical severity palette (constants.Vulnerability-
+// Colors, shared with the vuln charts / PDF export) so severity reads the same
+// hue here as everywhere else; grey for lifecycle rows so the rail always signals.
+function railColor (severity: string | null): string {
+    if (!severity) return RAIL_KIND_COLOR
+    return (constants.VulnerabilityColors as Record<string, string>)[severity] || RAIL_KIND_COLOR
+}
+
+// Neutral kind pill shown in place of a severity tag for events that carry no
+// severity, so the head line always names the category.
+function kindLabel (eventType: string | null): string {
+    if (!eventType) return 'EVENT'
+    if (eventType.startsWith('RELEASE')) return 'RELEASE'
+    if (eventType.startsWith('APPROVAL')) return 'APPROVAL'
+    if (eventType.startsWith('VEX')) return 'VEX'
+    if (eventType.includes('VULN')) return 'VULN'
+    return 'EVENT'
+}
+
+// Card-list view model. Resolve each row's display title (server title, else
+// the event-type label, else a placeholder), channel label, rail colour, kind
+// pill, and failed-delivery flag ONCE here so the template renders straight
+// fields instead of recomputing per binding.
+const inboxCards = computed(() => inboxItems.value.map(row => {
+    const ts = row.sentAt || row.createdDate
+    return {
+        row,
+        title: row.title || (row.eventType
+            ? row.eventType.replace(/_/g, ' ').toLowerCase()
+            : '(no content)'),
+        channel: channelLabel(row),
+        rail: railColor(row.severity),
+        kind: row.severity ? null : kindLabel(row.eventType),
+        // FAILED = the delivery didn't reach the channel; surfaced inline so a
+        // "why didn't my alert arrive" scan lands immediately.
+        failed: row.status === 'FAILED',
+        // Relative time for the scan; absolute timestamp shown on hover.
+        timeRel: relativeTime(ts),
+        timeAbs: formatHistoryTimestamp(ts),
+    }
+}))
+
+// Selection is a plain uuid array (was n-data-table checked-row-keys). Only
+// unread cards render a checkbox, mirroring the old selection-column disable.
+function toggleInboxSelect (uuid: string, checked: boolean): void {
+    if (checked) {
+        if (!selectedInboxRows.value.includes(uuid)) selectedInboxRows.value.push(uuid)
+    } else {
+        selectedInboxRows.value = selectedInboxRows.value.filter(u => u !== uuid)
+    }
+}
 
 // Deep-link navigation target sits behind the 760px drawer — close it on
 // click or the user lands on a page they can't see.
@@ -1070,13 +1122,72 @@ onUnmounted(() => {
     max-width: 100%;
 }
 .inbox-message-desc {
-    margin-top: 2px;
-    line-height: 1.3;
+    margin-top: 3px;
+    line-height: 1.35;
+    /* Two-line clamp in the card layout -- enough to preview the event without
+     * letting a long description dominate the row. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100%;
 }
+
+/* --- Card-style inbox rows (replaces the old overflowing data-table) ------ */
+.inbox-list { display: flex; flex-direction: column; }
+.inbox-empty { padding: 24px 4px; text-align: center; }
+.inbox-card {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 4px 12px 0;
+    border-bottom: 1px solid var(--n-border-color, #efeff5);
+}
+.inbox-card:hover { background: var(--inbox-hover-bg, rgba(32, 128, 240, 0.035)); }
+/* Unread rows get a faint tint + bolder title so the triage queue reads at a
+ * glance; read rows sit flat and slightly muted. The left rail (below) carries
+ * the severity/kind colour independent of read state. */
+.inbox-card.unread { background: var(--inbox-unread-bg, rgba(32, 128, 240, 0.03)); }
+.inbox-card.unread .inbox-message-title { font-weight: 600; }
+.inbox-card.read .inbox-message-title {
+    font-weight: 400;
+    color: var(--n-text-color-2, #666);
+}
+
+/* Left rail: 4px severity/kind colour bar. Colour is bound inline from the
+ * shared severity palette (constants.VulnerabilityColors) via :style. */
+.inbox-rail { flex: 0 0 4px; width: 4px; border-radius: 2px; align-self: stretch; }
+
+.inbox-card-select { flex: 0 0 auto; width: 20px; padding-top: 2px; }
+.inbox-card-main { flex: 1 1 auto; min-width: 0; }
+.inbox-card-head { display: flex; align-items: center; gap: 8px; }
+.inbox-card-head .inbox-message-link { flex: 1 1 auto; min-width: 0; }
+.inbox-unread-dot {
+    flex: 0 0 8px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--n-color-primary, #2080f0);
+}
+.inbox-kind-tag { font-weight: 600; letter-spacing: 0.04em; }
+
+/* Sub-line: status pill, channel, and (on failure) an inline not-delivered
+ * note so a missed alert is obvious without opening the row. */
+.inbox-card-sub { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.inbox-meta-sep { opacity: 0.5; }
+.inbox-chan.fail { color: #d03050; font-weight: 600; }
+.inbox-fail-note { color: #d03050; font-size: 12px; }
+
+/* Right column: timestamp over the per-row read/unread action. */
+.inbox-card-side {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 6px;
+    padding-top: 1px;
+}
+.inbox-time { white-space: nowrap; }
+.inbox-card.unread .inbox-time { color: var(--n-text-color-2, #606266); font-weight: 600; }
 
 /* Inbox drawer — payload viewer. Monospace + wrap-on-word so a deeply-nested
  * JSON doesn't blow the drawer's horizontal extent. */
