@@ -166,7 +166,11 @@
                                         data-testid="inbox-cell-channel"
                                         :class="['inbox-chan', { fail: c.failed, 'muted-12': !c.failed && c.channel.muted }]"
                                         :title="c.channel.title"
-                                    >{{ c.channel.text }}</span>
+                                    >{{ c.channel.text }}<span
+                                        v-if="c.channel.disabled"
+                                        class="inbox-chan-disabled"
+                                        data-testid="inbox-cell-channel-disabled"
+                                    > (disabled)</span></span>
                                     <span v-if="c.failed" class="inbox-fail-note">&mdash; message was not delivered</span>
                                 </div>
                             </div>
@@ -285,7 +289,7 @@
                             <n-tag :type="deliveryStatusTagType(inboxDrawerRow.status)" size="small">{{ inboxDrawerRow.status }}</n-tag>
                         </n-descriptions-item>
                         <n-descriptions-item label="Channel">
-                            <span :class="{ 'muted-12': drawerChannel.muted }" :title="drawerChannel.title">{{ drawerChannel.text }}</span>
+                            <span :class="{ 'muted-12': drawerChannel.muted }" :title="drawerChannel.title">{{ drawerChannel.text }}<span v-if="drawerChannel.disabled" class="inbox-chan-disabled"> (disabled)</span></span>
                         </n-descriptions-item>
                         <n-descriptions-item label="Delivered">
                             {{ formatHistoryTimestamp(inboxDrawerRow.sentAt || inboxDrawerRow.createdDate) }}
@@ -934,9 +938,23 @@ async function loadInboxUnreadCount (): Promise<void> {
 // useful. States: no channelUuid => Direct; channelName present => the name;
 // channelName selected-but-null => the channel was deleted; channelName ABSENT
 // from the row (degraded fallback) => a neutral label, NOT a false "deleted".
-function channelLabel (row: InboxRow | null): { text: string, muted: boolean, title?: string } {
+function channelLabel (row: InboxRow | null): { text: string, muted: boolean, title?: string, disabled?: boolean } {
     if (!row || !row.channelUuid) return { text: 'Direct', muted: true }
-    if (row.channelName) return { text: row.channelName, muted: false }
+    if (row.channelName) {
+        // The channel exists. Surface a disabled/auto-disabled state (Pro-ahead
+        // enrichment; absent on a degraded load) so a failed delivery explains
+        // itself -- a disabled channel is why nothing lands, distinct from a
+        // deleted one. channelDisabledReason (when present) rides the hover.
+        const disabled = row.channelEnabled === false
+        return {
+            text: row.channelName,
+            muted: false,
+            disabled,
+            title: disabled
+                ? (row.channelDisabledReason || 'This channel is disabled; deliveries to it are paused.')
+                : undefined,
+        }
+    }
     return { text: ('channelName' in row) ? '(deleted channel)' : 'Channel', muted: true, title: row.channelUuid }
 }
 
@@ -1202,6 +1220,8 @@ onUnmounted(() => {
 .inbox-card-sub { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .inbox-meta-sep { opacity: 0.5; }
 .inbox-chan.fail { color: #d03050; font-weight: 600; }
+/* Disabled-channel suffix on the channel label: amber, hover shows the reason. */
+.inbox-chan-disabled { color: #f0a020; font-weight: 600; }
 .inbox-fail-note { color: #d03050; font-size: 12px; }
 
 /* Right column: timestamp over the per-row read/unread action. */

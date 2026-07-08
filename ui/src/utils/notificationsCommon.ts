@@ -79,6 +79,11 @@ export interface InboxRow {
     // inbox doesn't need an admin-only channel-list fetch to render the name).
     // Null when the channel has been deleted or for channel-less targeted rows.
     channelName: string | null
+    // Channel enabled/auto-disable state (Pro-ahead enrichment; optional since a
+    // degraded/CE-lagging load may omit it). channelEnabled === false = disabled;
+    // channelDisabledReason carries the auto-disable reason when present.
+    channelEnabled?: boolean | null
+    channelDisabledReason?: string | null
     status: string
     origin: string
     dedupKey: string | null
