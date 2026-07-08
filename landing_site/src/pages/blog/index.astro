@@ -8,6 +8,6 @@ const posts = (await getCollection('posts'))
   .sort((a, b) => (a.date > b.date ? -1 : 1));
 ---
 
-<Base title="Blog — ReARM" active="blog">
+<Base title="Blog - ReARM" active="blog">
   <PostList heading="Blog" base="/blog" items={posts} />
 </Base>

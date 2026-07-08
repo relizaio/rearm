@@ -561,7 +561,7 @@
         {
           "num": "04",
           "title": "Feature-set targeting",
-          "body": "Point an instance at a feature set; ReARM reconciles what should land there.",
+          "body": "Point an instance at a feature set; ReARM reconciles what should land there. Your CI/CD queries ReARM for the latest release that passed all required approval gates and promotes only that version. No approved status in ReARM, no deployment.",
           "cap": "Feature Sets"
         },
         {

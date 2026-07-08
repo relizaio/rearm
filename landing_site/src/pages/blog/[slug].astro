@@ -11,7 +11,7 @@ const { post } = Astro.props;
 const { Content } = await render(post);
 ---
 
-<Base title={`${post.data.title} — ReARM Blog`} active="blog" ogImage={post.data.ogImage}>
+<Base title={`${post.data.title} - ReARM Blog`} active="blog" ogImage={post.data.ogImage}>
   <PostArticle title={post.data.title} date={post.data.date} backHref="/blog/" backLabel="Blog">
     <Content />
   </PostArticle>

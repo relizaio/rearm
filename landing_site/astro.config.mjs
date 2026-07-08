@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
 
 // Static marketing site. Two hard compatibility requirements with the
 // previous Next.js landing_site (permalink + rendering preservation):
@@ -10,6 +11,7 @@ import { defineConfig } from 'astro/config';
 //    both ON, which would silently change rendering of tables,
 //    strikethrough, autolinks and quotes in existing posts.
 export default defineConfig({
+  integrations: [sitemap()],
   site: process.env.SITE_URL ?? 'https://rearmhq.com',
   trailingSlash: 'always',
   build: { format: 'directory' },
