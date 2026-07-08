@@ -10,7 +10,7 @@
             </n-button>
         </div>
 
-        <n-grid :cols="3" :x-gap="12" class="history-filters">
+        <n-grid :cols="4" :x-gap="12" class="history-filters">
             <n-gi>
                 <n-form-item label="Status" :show-feedback="false">
                     <n-select
@@ -18,6 +18,7 @@
                         :options="deliveryStatusOptions"
                         placeholder="Any"
                         clearable
+                        data-testid="history-status-filter"
                         @update:value="applyHistoryFilters"
                     />
                 </n-form-item>
@@ -29,6 +30,7 @@
                         :options="deliveryOriginOptions"
                         placeholder="Any"
                         clearable
+                        data-testid="history-origin-filter"
                         @update:value="applyHistoryFilters"
                     />
                 </n-form-item>
@@ -40,6 +42,21 @@
                         :options="channelFilterOptions"
                         placeholder="Any"
                         clearable
+                        filterable
+                        data-testid="history-channel-filter"
+                        @update:value="applyHistoryFilters"
+                    />
+                </n-form-item>
+            </n-gi>
+            <n-gi>
+                <n-form-item label="Subscription" :show-feedback="false">
+                    <n-select
+                        v-model:value="historyFilters.subscriptionUuid"
+                        :options="subscriptionFilterOptions"
+                        placeholder="Any"
+                        clearable
+                        filterable
+                        data-testid="history-subscription-filter"
                         @update:value="applyHistoryFilters"
                     />
                 </n-form-item>
@@ -103,6 +120,7 @@ const props = defineProps<{
     // fresh seed always takes effect. Manual filter changes are independent.
     initialChannelUuid?: string | null
     initialStatus?: string | null
+    initialSubscriptionUuid?: string | null
 }>()
 
 const message = useMessage()
@@ -121,10 +139,11 @@ const historyTotalCount = ref<number>(0)
 const historyPageCount = computed<number>(() =>
     Math.max(1, Math.ceil(historyTotalCount.value / historyPageSize.value))
 )
-const historyFilters = ref<{ status: string | null, origin: string | null, channelUuid: string | null }>({
+const historyFilters = ref<{ status: string | null, origin: string | null, channelUuid: string | null, subscriptionUuid: string | null }>({
     status: null,
     origin: null,
     channelUuid: null,
+    subscriptionUuid: null,
 })
 
 // History channel filter spans ALL channels (incl. disabled) so a user
@@ -132,6 +151,9 @@ const historyFilters = ref<{ status: string | null, origin: string | null, chann
 // past deliveries.
 const channelFilterOptions = computed(() =>
     channels.value.map(c => ({ label: `${c.name} (${TYPE_LABELS[c.type] || c.type})`, value: c.uuid }))
+)
+const subscriptionFilterOptions = computed(() =>
+    subscriptions.value.map(s => ({ label: s.name, value: s.uuid }))
 )
 
 // Cross-ref helpers — history rows carry uuids; resolve to names from
@@ -144,11 +166,20 @@ const subscriptionNameById = computed<Record<string, string>>(() => buildNameMap
 // lagging Pro) the history table degrades to core rows instead of blanking.
 const HISTORY_CORE_ITEM_FIELDS = 'uuid org outboxEventUuid subscriptionUuid channelUuid status origin createdDate'
 const HISTORY_ENRICHMENT_ITEM_FIELDS = 'dedupKey attemptCount nextAttemptAt sentAt lastError'
-function buildHistoryQuery (itemFields: string): DocumentNode {
+// withSub gates the subscriptionUuid ARGUMENT, which only newer backends accept.
+// We include it ONLY when the subscription filter is active, so the default
+// History query never sends an unknown arg (which would fail the whole query
+// and blank the table on a CE mirror lagging the Pro schema -- the same
+// blanking the field-level drift fallback guards against, but args can't
+// degrade to core since a missing arg rejects the document outright).
+function buildHistoryQuery (itemFields: string, withSub = false): DocumentNode {
+    const subVar = withSub ? '$subscriptionUuid: ID,' : ''
+    const subArg = withSub ? 'subscriptionUuid: $subscriptionUuid,' : ''
     return gql`
         query notificationDeliveriesPage(
             $orgUuid: ID!,
             $channelUuid: ID,
+            ${subVar}
             $status: NotificationDeliveryStatusEnum,
             $origin: NotificationDeliveryOriginEnum,
             $limit: Int,
@@ -157,6 +188,7 @@ function buildHistoryQuery (itemFields: string): DocumentNode {
             notificationDeliveries(
                 orgUuid: $orgUuid,
                 channelUuid: $channelUuid,
+                ${subArg}
                 status: $status,
                 origin: $origin,
                 limit: $limit,
@@ -168,8 +200,12 @@ function buildHistoryQuery (itemFields: string): DocumentNode {
         }
     `
 }
-const HISTORY_DELIVERIES_FULL = buildHistoryQuery(`${HISTORY_CORE_ITEM_FIELDS} ${HISTORY_ENRICHMENT_ITEM_FIELDS}`)
+const FULL_FIELDS = `${HISTORY_CORE_ITEM_FIELDS} ${HISTORY_ENRICHMENT_ITEM_FIELDS}`
+const HISTORY_DELIVERIES_FULL = buildHistoryQuery(FULL_FIELDS)
 const HISTORY_DELIVERIES_CORE = buildHistoryQuery(HISTORY_CORE_ITEM_FIELDS)
+// Variants that also filter by subscriptionUuid (used only when that filter is set).
+const HISTORY_DELIVERIES_FULL_SUB = buildHistoryQuery(FULL_FIELDS, true)
+const HISTORY_DELIVERIES_CORE_SUB = buildHistoryQuery(HISTORY_CORE_ITEM_FIELDS, true)
 
 async function loadChannels (): Promise<void> {
     try {
@@ -211,9 +247,10 @@ async function loadDeliveries (): Promise<void> {
     deliveriesLoading.value = true
     try {
         const offset = (historyPage.value - 1) * historyPageSize.value
+        const subUuid = historyFilters.value.subscriptionUuid
         const { data: page, degraded } = await loadWithSchemaDriftFallback(graphqlClient, {
-            fullQuery: HISTORY_DELIVERIES_FULL,
-            coreQuery: HISTORY_DELIVERIES_CORE,
+            fullQuery: subUuid ? HISTORY_DELIVERIES_FULL_SUB : HISTORY_DELIVERIES_FULL,
+            coreQuery: subUuid ? HISTORY_DELIVERIES_CORE_SUB : HISTORY_DELIVERIES_CORE,
             variables: {
                 orgUuid: orgUuid.value,
                 channelUuid: historyFilters.value.channelUuid,
@@ -221,6 +258,7 @@ async function loadDeliveries (): Promise<void> {
                 origin: historyFilters.value.origin,
                 limit: historyPageSize.value,
                 offset,
+                ...(subUuid ? { subscriptionUuid: subUuid } : {}),
             },
             extractPath: (d: any) => d?.notificationDeliveries,
         })
@@ -306,6 +344,7 @@ onMounted(async () => {
     // query is already scoped (no flash of the full list, no extra fetch).
     if (props.initialChannelUuid) historyFilters.value.channelUuid = props.initialChannelUuid
     if (props.initialStatus) historyFilters.value.status = props.initialStatus
+    if (props.initialSubscriptionUuid) historyFilters.value.subscriptionUuid = props.initialSubscriptionUuid
     // Channels + subscriptions feed the name-resolution maps; deliveries
     // is the actual table. Load all three in parallel.
     await Promise.all([loadChannels(), loadSubscriptions(), loadDeliveries()])

@@ -127,6 +127,7 @@
                                                 :title="testingChannels.has(ch.uuid) ? 'Sending test...' : 'Send test notification'"
                                                 @click="!testingChannels.has(ch.uuid) && sendChannelTest(ch)"
                                             ><Refresh v-if="testingChannels.has(ch.uuid)" /><Send v-else /></n-icon>
+                                            <n-icon class="instance-icon" size="20" title="View delivery history for this channel" @click="viewChannelDeliveries(ch.uuid)"><History /></n-icon>
                                             <n-icon class="instance-icon" size="20" :title="`Edit ${card.name} channel`" @click="openEditChannelForCard(card, ch)"><EditIcon /></n-icon>
                                             <n-icon class="instance-icon danger" size="20" :title="`Delete ${card.name} channel`" @click="onDeleteChannel(card, ch)"><Trash /></n-icon>
                                         </div>
@@ -151,6 +152,8 @@
                                             </template>
                                             <n-icon v-if="card.id === 'BEAR'" class="instance-icon" size="20" title="Edit BEAR Integration" @click="openBearEditModal"><EditIcon /></n-icon>
                                             <n-icon v-if="card.id === 'VULNCHECK_KEV'" class="instance-icon" size="20" title="Replace VulnCheck API token" @click="openVulncheckModal"><EditIcon /></n-icon>
+                                            <!-- Notification channel (Slack/Teams): jump to this channel's delivery log. -->
+                                            <n-icon v-if="isChannelCard(card)" class="instance-icon" size="20" title="View delivery history for this channel" @click="viewChannelDeliveries(channelRowsForCard(card)[0]?.uuid)"><History /></n-icon>
                                             <n-icon
                                                 class="instance-icon danger"
                                                 size="20"
@@ -842,7 +845,7 @@ import {
 import {
     Edit as EditIcon, Trash, Refresh, CirclePlus, CloudUpload,
     BrandGithub, BrandGitlab, BrandSlack, Mail, PlayerPlay, PlayerPause,
-    PlugConnected, ShieldCheck, LayoutGrid, Bell, Users, Send
+    PlugConnected, ShieldCheck, LayoutGrid, Bell, Users, Send, History
 } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import { FetchPolicy } from '@apollo/client'
@@ -867,6 +870,19 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+
+// Deep-link from a channel card into the Delivery History audit surface,
+// pre-filtered to that channel -- the "is this channel actually delivering?"
+// entry point. Mirrors the inbox/subscription "View delivery log" deep-links.
+function viewChannelDeliveries (channelUuid: string | undefined): void {
+    if (!channelUuid) return
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: props.orguuid },
+        query: { tab: 'audit', auditTab: 'deliveryHistory', historyChannel: channelUuid },
+    })
+}
+
 const notification = useNotification()
 const notify = (type: NotificationType, title: string, content: string) => {
     notification[type]({ content, meta: title, duration: 3500, keepAliveOnHover: true })
