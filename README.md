@@ -18,7 +18,7 @@
 
 #### ReARM CE stores and manages per-release SBOMs, HBOMs, other xBOMs, other Metadata, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts.
 
-## Next ReARM Community Meeting: July 7, 2026, 12:00pm EDT, Register on [LinkedIn](https://www.linkedin.com/events/7470152088409231360) or [Meetup](https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/315184551).
+## Next ReARM Community Engagement: [Demo](https://blackhat.com/us-26/arsenal/schedule/index.html#rearm-release-governance-platform-52805) at Black Hat USA Arsenal, August 6, 2026, 11:20am PDT
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
