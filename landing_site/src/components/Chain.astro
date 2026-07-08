@@ -97,6 +97,6 @@ const { chain, variant = 'dark', animated = false, label } = Astro.props;
       entries.forEach((e) => {
         if (e.isIntersecting) { el.classList.add('chain-in'); obs.disconnect(); }
       });
-    }, { threshold: 0.4 }).observe(el);
+    }, { threshold: 0.05 }).observe(el);
   });
 </script>
