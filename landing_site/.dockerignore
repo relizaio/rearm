@@ -1,15 +1,8 @@
-# Dependencies and build artifacts
+# keep the build context lean and, critically, keep the host's node_modules
+# from being COPY'd over the image's clean `npm ci` install
 node_modules
-.next
-out
-
-# VCS
-.git
+dist
+.astro
+deploy
+README.md
 .gitignore
-
-# OS/editor files
-.DS_Store
-*.log
-
-# Docker context noise
-Dockerfile
