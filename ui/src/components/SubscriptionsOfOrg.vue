@@ -16,6 +16,16 @@
             </n-button>
         </div>
 
+        <n-alert
+            v-if="subscriptionsDegraded"
+            type="warning"
+            :show-icon="false"
+            style="margin-bottom: 12px;"
+            data-testid="subscriptions-degraded-alert"
+        >
+            Some subscription details are unavailable on this server version, so a few fields (filter, routes, dedup/rate-limit) may be missing. Your subscriptions are shown below.
+        </n-alert>
+
         <n-data-table
             :data="subscriptions"
             :columns="subscriptionColumns"
@@ -240,9 +250,11 @@ import graphqlClient from '@/utils/graphql'
 import {
     ChannelRow, ChannelGroupRow, SubscriptionRow, TYPE_LABELS,
     subscriptionStatusOptions, eventTypeOptions, severityOptions,
-    LIST_CHANNELS_QUERY, LIST_GROUPS_QUERY, LIST_SUBSCRIPTIONS_QUERY,
+    LIST_CHANNELS_QUERY, LIST_GROUPS_CORE_QUERY,
+    LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
     extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType
 } from '@/utils/notificationsCommon'
+import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 
 const props = defineProps<{
     orguuid: string
@@ -313,6 +325,9 @@ const channels = ref<ChannelRow[]>([])
 const channelGroups = ref<ChannelGroupRow[]>([])
 const subscriptions = ref<SubscriptionRow[]>([])
 const subscriptionsLoading = ref<boolean>(false)
+// True when the backend rejected the full subscription selection and we fell
+// back to core fields (config columns may be absent) -- see PR #169 pattern.
+const subscriptionsDegraded = ref<boolean>(false)
 const showSubscriptionModal = ref<boolean>(false)
 const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
@@ -406,8 +421,10 @@ async function loadChannels (): Promise<void> {
 
 async function loadChannelGroups (): Promise<void> {
     try {
+        // Only names + channels are needed here (route group multiselect), so
+        // use the CORE query -- it can't drift on the Pro-ahead group fields.
         const res = await graphqlClient.query({
-            query: LIST_GROUPS_QUERY,
+            query: LIST_GROUPS_CORE_QUERY,
             variables: { orgUuid: orgUuid.value },
             fetchPolicy: 'network-only',
         })
@@ -420,13 +437,16 @@ async function loadChannelGroups (): Promise<void> {
 async function loadSubscriptions (): Promise<void> {
     subscriptionsLoading.value = true
     try {
-        const res = await graphqlClient.query({
-            query: LIST_SUBSCRIPTIONS_QUERY,
+        const { data, degraded } = await loadWithSchemaDriftFallback(graphqlClient, {
+            fullQuery: LIST_SUBSCRIPTIONS_QUERY,
+            coreQuery: LIST_SUBSCRIPTIONS_CORE_QUERY,
             variables: { orgUuid: orgUuid.value },
-            fetchPolicy: 'network-only',
+            extractPath: (d: any) => d?.notificationSubscriptions,
         })
-        subscriptions.value = res.data?.notificationSubscriptions || []
+        subscriptions.value = data || []
+        subscriptionsDegraded.value = degraded
     } catch (e: any) {
+        subscriptionsDegraded.value = false
         message.error(`Failed to load subscriptions: ${extractError(e)}`)
     } finally {
         subscriptionsLoading.value = false

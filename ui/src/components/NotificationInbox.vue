@@ -219,6 +219,15 @@
                             Refresh
                         </n-button>
                     </div>
+                    <n-alert
+                        v-if="approvalsDegraded"
+                        type="warning"
+                        :show-icon="false"
+                        style="margin-bottom: 12px;"
+                        data-testid="approvals-degraded-alert"
+                    >
+                        Some approval details are unavailable on this server version, so a few fields may be missing. Your pending approvals are shown below.
+                    </n-alert>
                     <n-data-table
                         :data="approvalsItems"
                         :columns="approvalsColumns"
@@ -387,6 +396,7 @@ import {
     formatHistoryTimestamp, relativeTime, extractError
 } from '@/utils/notificationsCommon'
 import { loadNotificationInboxPage } from '@/utils/notificationInboxQuery'
+import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 
 const props = defineProps<{
     orguuid: string
@@ -466,6 +476,9 @@ interface ReleasePendingApproval {
 
 const approvalsItems = ref<ReleasePendingApproval[]>([])
 const approvalsLoading = ref<boolean>(false)
+// True when the backend rejected the full approvals selection and we fell back
+// to core fields (componentType/pendingRoleIds absent) -- see PR #169 pattern.
+const approvalsDegraded = ref<boolean>(false)
 // A ref, not items.length: the badge poll uses a slim releaseUuid-only
 // query so it can refresh the count every minute without shipping full
 // rows; the full row load syncs it too.
@@ -584,6 +597,18 @@ const RELEASES_NEEDING_MY_APPROVAL_QUERY = gql`
     }
 `
 
+// Core selection without the Pro-ahead fields (componentType, pendingRoleIds)
+// so the approvals tab degrades to rows instead of blanking when a CE mirror
+// lags those fields -- see loadWithSchemaDriftFallback / PR #169.
+const RELEASES_NEEDING_MY_APPROVAL_CORE_QUERY = gql`
+    query releasesNeedingMyApproval($orgUuid: ID!) {
+        releasesNeedingMyApproval(orgUuid: $orgUuid) {
+            releaseUuid version componentUuid componentName lifecycle
+            pendingEntries { approvalEntryUuid approvalName }
+        }
+    }
+`
+
 // Slim variant for the 60s badge poll — same field, releaseUuid-only
 // selection, so polling the count doesn't ship full rows + nested
 // entries org-wide every minute.
@@ -622,16 +647,19 @@ async function loadApprovals (): Promise<void> {
     const myToken = ++approvalsInflightToken
     approvalsLoading.value = true
     try {
-        const res = await graphqlClient.query({
-            query: RELEASES_NEEDING_MY_APPROVAL_QUERY,
+        const { data, degraded } = await loadWithSchemaDriftFallback(graphqlClient, {
+            fullQuery: RELEASES_NEEDING_MY_APPROVAL_QUERY,
+            coreQuery: RELEASES_NEEDING_MY_APPROVAL_CORE_QUERY,
             variables: { orgUuid: orgUuid.value },
-            fetchPolicy: 'network-only',
+            extractPath: (d: any) => d?.releasesNeedingMyApproval,
         })
         if (myToken !== approvalsInflightToken) return
-        approvalsItems.value = res.data?.releasesNeedingMyApproval || []
+        approvalsItems.value = data || []
         approvalsCount.value = approvalsItems.value.length
+        approvalsDegraded.value = degraded
     } catch (e: any) {
         if (myToken !== approvalsInflightToken) return
+        approvalsDegraded.value = false
         message.error(`Failed to load pending approvals: ${extractError(e)}`)
     } finally {
         if (myToken === approvalsInflightToken) approvalsLoading.value = false

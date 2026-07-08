@@ -8,7 +8,41 @@ vi.mock('@/utils/commonFunctions', () => ({
     default: { dateDisplay: (s: string) => `ABS:${s}` },
 }))
 
-import { relativeTime } from './notificationsCommon'
+import { print } from 'graphql'
+import {
+    relativeTime,
+    LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
+    LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
+} from './notificationsCommon'
+
+// Pin the CORE vs ENRICHMENT split of the drift-fallback list queries: CORE
+// must carry every always-present render field and NONE of the Pro-ahead
+// enrichment fields (else a CE mirror would re-blank the surface), and FULL
+// must select both sets. Word-boundary match so "org" doesn't spuriously hit
+// the $orgUuid variable.
+describe('notification list query CORE / FULL split', () => {
+    const has = (doc: any, field: string) => new RegExp(`\\b${field}\\b`).test(print(doc))
+
+    const GROUP_CORE = ['uuid', 'org', 'resourceGroup', 'name', 'channels', 'revision']
+    const GROUP_ENRICHMENT = ['createdDate', 'lastUpdatedDate']
+    it('groups CORE has the render essentials and no enrichment fields', () => {
+        GROUP_CORE.forEach(f => expect(has(LIST_GROUPS_CORE_QUERY, f), `core should have ${f}`).toBe(true))
+        GROUP_ENRICHMENT.forEach(f => expect(has(LIST_GROUPS_CORE_QUERY, f), `core should NOT have ${f}`).toBe(false))
+    })
+    it('groups FULL has both core and enrichment fields', () => {
+        [...GROUP_CORE, ...GROUP_ENRICHMENT].forEach(f => expect(has(LIST_GROUPS_QUERY, f), `full should have ${f}`).toBe(true))
+    })
+
+    const SUB_CORE = ['uuid', 'org', 'resourceGroup', 'name', 'status', 'eventTypes', 'revision']
+    const SUB_ENRICHMENT = ['filter', 'routes', 'dedupWindowMinutes', 'rateLimit']
+    it('subscriptions CORE has the render essentials and no enrichment fields', () => {
+        SUB_CORE.forEach(f => expect(has(LIST_SUBSCRIPTIONS_CORE_QUERY, f), `core should have ${f}`).toBe(true))
+        SUB_ENRICHMENT.forEach(f => expect(has(LIST_SUBSCRIPTIONS_CORE_QUERY, f), `core should NOT have ${f}`).toBe(false))
+    })
+    it('subscriptions FULL has both core and enrichment fields', () => {
+        [...SUB_CORE, ...SUB_ENRICHMENT].forEach(f => expect(has(LIST_SUBSCRIPTIONS_QUERY, f), `full should have ${f}`).toBe(true))
+    })
+})
 
 // relativeTime is a pure function with an injectable `now`, so these are
 // deterministic (no dependence on the wall clock).
