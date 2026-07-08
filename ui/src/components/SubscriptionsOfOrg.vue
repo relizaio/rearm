@@ -244,7 +244,8 @@ import {
     NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag, NDropdown, NTooltip,
     NRadioGroup, NRadioButton, useDialog, useMessage
 } from 'naive-ui'
-import { CirclePlus, Trash, Edit as EditIcon, Send } from '@vicons/tabler'
+import { CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
+import { useRouter } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import {
@@ -264,6 +265,19 @@ const props = defineProps<{
 const dialog = useDialog()
 const message = useMessage()
 const store = useStore()
+const router = useRouter()
+
+// Deep-link into the Delivery History audit surface, pre-filtered to this
+// subscription, so a user can go from "this subscription" straight to "what did
+// it actually deliver (and why did some fail)". Mirrors the inbox/channel
+// "View delivery log" deep-links.
+function viewSubscriptionDeliveries (row: SubscriptionRow): void {
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: orgUuid.value },
+        query: { tab: 'audit', auditTab: 'deliveryHistory', historySubscription: row.uuid },
+    })
+}
 
 const orgUuid = computed<string>(() => props.orguuid)
 const canWrite = computed<boolean>(() => props.isWritable)
@@ -811,6 +825,14 @@ const subscriptionColumns = computed(() => [
                     h(NTooltip, { trigger: 'hover' }, {
                         trigger: () => testButton,
                         default: () => disabledReason || "Send a synthetic test event through this subscription's matching path (also exercises other subscriptions on the same event type -- asks for confirmation first).",
+                    }),
+                    h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => h(NButton, {
+                            size: 'tiny', secondary: true,
+                            onClick: () => viewSubscriptionDeliveries(row),
+                            'data-testid': 'view-subscription-deliveries',
+                        }, { icon: () => h(NIcon, null, { default: () => h(History) }) }),
+                        default: () => 'View delivery history for this subscription',
                     }),
                     h(NButton, {
                         size: 'tiny', secondary: true, type: 'error',
