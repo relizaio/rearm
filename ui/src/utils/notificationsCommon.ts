@@ -221,6 +221,26 @@ export function formatHistoryTimestamp (s: string | null): string {
     try { return commonFunctions.dateDisplay(s) } catch { return s }
 }
 
+// Compact relative time for the inbox triage list: "just now", "5m ago",
+// "3h ago", "2d ago". Past ~30 days it falls back to the absolute date so
+// ancient rows stay legible. Call sites show the absolute timestamp on hover
+// (title attr). nowMs is injectable so the pure function stays unit-testable.
+export function relativeTime (s: string | null, nowMs: number = Date.now()): string {
+    if (!s) return ''
+    const t = new Date(s).getTime()
+    if (isNaN(t)) return ''
+    const sec = Math.floor((nowMs - t) / 1000)
+    // Clock skew / future-dated rows read as "just now" rather than negatives.
+    if (sec < 60) return 'just now'
+    const min = Math.floor(sec / 60)
+    if (min < 60) return `${min}m ago`
+    const hr = Math.floor(min / 60)
+    if (hr < 24) return `${hr}h ago`
+    const day = Math.floor(hr / 24)
+    if (day < 30) return `${day}d ago`
+    return formatHistoryTimestamp(s)
+}
+
 export function truncate (s: string | null, n: number): string {
     if (!s) return ''
     return s.length > n ? `${s.slice(0, n - 1)}…` : s
