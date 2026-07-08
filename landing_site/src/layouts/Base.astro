@@ -1,0 +1,83 @@
+---
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  active?: string;
+  ogImage?: string;
+}
+const {
+  title,
+  description = "ReARM is a release governance platform: see what's in every release, whether it's cleared to ship functionally and security-wise, and the evidence proving both.",
+  active = '',
+  ogImage,
+} = Astro.props;
+
+// schema.org structured data (parity with the previous site's homepage JSON-LD,
+// description updated to the current positioning).
+const siteUrl = (Astro.site?.href ?? 'https://rearmhq.com').replace(/\/$/, '');
+// per-page canonical + social image with site-wide fallback (parity with the
+// previous site's metadataBase/canonical and twitter summary_large_image).
+const canonical = new URL(Astro.url.pathname, siteUrl).href;
+const socialImage = new URL(ogImage ?? '/rearm.png', siteUrl).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': 'https://reliza.io',
+      name: 'Reliza',
+      url: 'https://reliza.io',
+      logo: { '@type': 'ImageObject', url: `${siteUrl}/rearm.png` },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': siteUrl,
+      name: 'ReARM',
+      description: 'Release Governance Platform',
+      applicationCategory: 'DevSecOps',
+      url: siteUrl,
+      publisher: { '@id': 'https://reliza.io' },
+    },
+  ],
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="ReARM" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content={socialImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+    <link rel="icon" type="image/png" href="/favicon.png?v=2" sizes="16x16" />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <Header active={active} />
+    <main>
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

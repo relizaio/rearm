@@ -1,0 +1,18 @@
+---
+import Base from '../../layouts/Base.astro';
+import PostArticle from '../../components/PostArticle.astro';
+import { getCollection, render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const items = await getCollection('news');
+  return items.map((p) => ({ params: { slug: p.id }, props: { post: p } }));
+}
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+
+<Base title={`${post.data.title} - ReARM News`} active="news" ogImage={post.data.ogImage}>
+  <PostArticle title={post.data.title} date={post.data.date} backHref="/news/" backLabel="News">
+    <Content />
+  </PostArticle>
+</Base>

@@ -1,0 +1,38 @@
+---
+// Screenshot slot. Renders the real product capture when `src` is provided;
+// otherwise falls back to the design's dashed placeholder box, clearly marked.
+// Real images render at natural aspect (never upscaled) centered on a light
+// tile, so thin strips and small captures sit cleanly in the same frame
+// style as full-width shots.
+interface Props { label: string; ratio?: string; src?: string }
+const { label, ratio = '16 / 8', src } = Astro.props;
+const clean = label.replace(/^\[\s*/, '').replace(/\s*\]$/, '');
+---
+
+{src ? (
+  <div class="shot-tile">
+    <img src={src} alt={clean} loading="lazy" />
+  </div>
+) : (
+  <div class="shot-ph" style={`aspect-ratio: ${ratio};`}>
+    <span>PLACEHOLDER — {clean}</span>
+  </div>
+)}
+
+<style>
+  .shot-tile {
+    background: var(--surface-ph);
+    border: 1px solid var(--border-card);
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .shot-tile img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--border-rule);
+    background: #FFFFFF;
+  }
+</style>

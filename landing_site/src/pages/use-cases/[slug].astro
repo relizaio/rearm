@@ -1,0 +1,119 @@
+---
+// Data-driven use-case pages. Template per design: top-left facet plane with
+// per-page tint pair, mono persona eyebrow, H1, pain paragraph, numbered
+// step cards ("HOW TEAMS USE ReARM FOR THIS") each attributing a capability,
+// optional wide screenshot, standards/evidence strip, CTA.
+import Base from '../../layouts/Base.astro';
+import Shot from '../../components/Shot.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { ucPages, pageHrefs, capHrefs } from '../../data/site';
+
+// Resolve a step's capability attribution to a real target (product page or
+// a block anchor); unresolvable capabilities render as plain labels rather
+// than links that dead-end on the homepage.
+const capTarget = (cap: string): string | undefined => capHrefs[cap] ?? pageHrefs[cap];
+
+export function getStaticPaths() {
+  return ucPages.map((p) => ({
+    params: { slug: p.path.replace('/use-cases/', '') },
+    props: { page: p },
+  }));
+}
+const { page } = Astro.props;
+---
+
+<Base title={`${page.label} - ReARM`} description={page.pain} active="use-cases">
+  <section class="uc-hero">
+    <div class="uc-facet" style={`background: linear-gradient(135deg, ${page.a1}, ${page.a2});`} aria-hidden="true"></div>
+    <div class="container">
+      <div class="eyebrow">{page.persona}</div>
+      <h1>{page.h1}</h1>
+      <p class="pain">{page.pain}</p>
+    </div>
+  </section>
+
+  <section class="steps">
+    <div class="container">
+      <div class="eyebrow eyebrow--muted steps-label">HOW TEAMS USE ReARM FOR THIS</div>
+      <div class="steps-grid">
+        {page.steps.map((s) => (
+          <div class="step-card">
+            <div class="step-num">{s.num}</div>
+            <h3>{s.title}</h3>
+            <p>{s.body}</p>
+            {capTarget(s.cap)
+              ? <a class="step-cap" href={capTarget(s.cap)}>↳ {s.cap}</a>
+              : <span class="step-cap step-cap--plain">↳ {s.cap}</span>}
+          </div>
+        ))}
+      </div>
+      {page.note && <p class="page-note">NOTE: {page.note}</p>}
+    </div>
+  </section>
+
+  {page.shot && (
+    <section class="wide-shot">
+      <div class="container">
+        <Shot label={page.shot} ratio="21 / 8" src={(page as any).img} />
+      </div>
+    </section>
+  )}
+
+  <section class="standards">
+    <div class="container standards-inner">
+      <div class="standards-left">
+        <span class="eyebrow eyebrow--muted">{page.stripLabel}</span>
+        <div class="standards-items">
+          {page.strip.map((s, i) => <span class:list={['std', { 'std--primary': i === 0 }]}>{s}</span>)}
+        </div>
+      </div>
+      <div class="evidence">{page.evidence}</div>
+    </div>
+  </section>
+
+  <CtaBand publicDemo={page.publicDemo} />
+</Base>
+
+<style>
+  .uc-hero { position: relative; overflow: hidden; padding: 64px 0 48px; }
+  .uc-facet {
+    position: absolute; top: 0; left: 0; width: 44%; height: 100%;
+    clip-path: polygon(0 0, 72% 0, 100% 78%, 0 100%);
+  }
+  .uc-hero .container { position: relative; }
+  .uc-hero h1 { font-size: 45px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.18; margin: 16px 0 20px; max-width: 840px; }
+  .pain { font-size: 16.5px; line-height: 1.7; max-width: 720px; }
+
+  .steps { padding: 32px 0 40px; }
+  .steps-label { margin-bottom: 26px; }
+  .steps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .step-card { border: 1px solid var(--border-card); padding: 22px; }
+  .step-num { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--orange-text); margin-bottom: 10px; }
+  .step-card h3 { font-size: 16.5px; margin-bottom: 8px; }
+  .step-card p { font-size: 14.5px; line-height: 1.65; color: var(--body-2); margin-bottom: 12px; }
+  .step-cap { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-decoration: none; font-weight: 600; }
+  .step-cap--plain { color: var(--muted-1); cursor: default; }
+  .page-note {
+    margin-top: 20px; font-family: var(--font-mono); font-size: 11.5px;
+    letter-spacing: 0.06em; color: var(--muted-2); text-transform: uppercase;
+  }
+
+  .wide-shot { padding: 8px 0 40px; }
+
+  .standards { padding: 0 0 56px; }
+  .standards-inner {
+    display: flex; align-items: center; justify-content: space-between; gap: 26px; flex-wrap: wrap;
+    border: 1px solid var(--border-card); background: var(--surface-strip); padding: 22px 26px;
+  }
+  .standards-left { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .standards-items { display: flex; gap: 18px; align-items: baseline; }
+  .std { color: var(--body-2); font-size: 14.5px; }
+  .std--primary { color: var(--navy); font-weight: 700; font-size: 16px; }
+  .evidence { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.1em; color: var(--muted-1); }
+
+  @media (max-width: 900px) {
+    .uc-hero h1 { font-size: 27px; }
+    .steps-grid { grid-template-columns: 1fr; }
+    .standards-inner { flex-direction: column; align-items: flex-start; }
+  }
+</style>

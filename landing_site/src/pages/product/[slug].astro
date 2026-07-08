@@ -1,0 +1,108 @@
+---
+// Data-driven product pages (sbom-xbom-management, release-policies,
+// ai-governance). Findings Aggregation is bespoke (its own file wins
+// over this dynamic route). Layout per the design's shared template:
+// numbered blocks in a 5fr/6fr text/screenshot grid, mini hierarchy
+// chain, related use cases, CTA.
+import Base from '../../layouts/Base.astro';
+import Chain from '../../components/Chain.astro';
+import Shot from '../../components/Shot.astro';
+import CtaBand from '../../components/CtaBand.astro';
+import { prodPages, pageHrefs } from '../../data/site';
+
+export function getStaticPaths() {
+  return prodPages.map((p) => ({
+    params: { slug: p.path.replace('/product/', '') },
+    props: { page: p },
+  }));
+}
+const { page } = Astro.props;
+
+// "05 / DISTRIBUTION" -> "distribution": stable anchors so use-case step cards
+// can deep-link to the block implementing a capability.
+const anchorOf = (num: string) =>
+  num.split('/').slice(1).join('/').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+---
+
+<Base title={`${page.label} - ReARM`} description={page.problem} active="product">
+  <section class="page-hero">
+    <div class="facet-plane" aria-hidden="true"></div>
+    <div class="container">
+      <div class="eyebrow">PRODUCT / {page.label.toUpperCase()}</div>
+      <h1>{page.h1}</h1>
+      <p class="problem">{page.problem}</p>
+    </div>
+  </section>
+
+  <section class="blocks">
+    <div class="container">
+      {page.blocks.map((b, i) => (
+        <>
+          {i > 0 && <hr class="rule" />}
+          <div class="block" id={anchorOf(b.num)}>
+            <div class="block-text">
+              <div class="block-num">{b.num}</div>
+              <h2>{b.title}</h2>
+              <p>{b.body}</p>
+              {b.callout && <div class="callout">{b.callout}</div>}
+            </div>
+            <div class="block-shot">
+              <Shot label={b.shot} ratio="16 / 9" src={(b as any).img} />
+            </div>
+          </div>
+        </>
+      ))}
+    </div>
+  </section>
+
+  <section class="mini-chain">
+    <div class="container">
+      <div class="mini-chain-strip">
+        <Chain chain={page.chain} variant="mini" label="WHERE THIS LIVES IN THE HIERARCHY" />
+      </div>
+    </div>
+  </section>
+
+  {page.hasRelated && (
+    <section class="related">
+      <div class="container related-inner">
+        <span class="eyebrow eyebrow--muted">RELATED USE CASES</span>
+        {page.related.map((r) => <a href={pageHrefs[r]}>{r} →</a>)}
+      </div>
+    </section>
+  )}
+
+  <CtaBand />
+</Base>
+
+<style>
+  .page-hero { position: relative; overflow: hidden; padding: 64px 0 48px; }
+  .facet-plane {
+    position: absolute; top: 0; right: 0; width: 38%; height: 100%;
+    background: linear-gradient(135deg, rgba(94,235,195,0.12), rgba(91,124,250,0.12) 55%, rgba(240,138,75,0.10));
+    clip-path: polygon(28% 0, 100% 0, 100% 100%, 0 22%);
+  }
+  .page-hero .container { position: relative; }
+  .page-hero h1 { font-size: 45px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.18; margin: 16px 0 20px; max-width: 800px; }
+  .problem { font-size: 16.5px; line-height: 1.7; max-width: 700px; }
+
+  .blocks { padding: 24px 0 56px; }
+  .block { display: grid; grid-template-columns: 5fr 6fr; gap: 44px; padding: 44px 0; align-items: center; scroll-margin-top: 84px; }
+  .block-num { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--muted-1); margin-bottom: 12px; }
+  .block h2 { font-size: 23.5px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.3; margin-bottom: 12px; }
+  .block p { font-size: 15.5px; line-height: 1.7; color: var(--body-2); }
+  .block .callout { margin-top: 16px; }
+
+  .mini-chain { padding: 8px 0 40px; }
+  .mini-chain-strip { background: var(--surface-strip); border: 1px solid var(--border-card); padding: 26px 28px; }
+
+  .related { padding: 0 0 56px; }
+  .related-inner { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+  .related-inner a { font-weight: 600; font-size: 15px; text-decoration: none; }
+
+  @media (max-width: 900px) {
+    .page-hero h1 { font-size: 27px; }
+    .block { grid-template-columns: 1fr; gap: 20px; padding: 28px 0; }
+    .block h2 { font-size: 19px; }
+  }
+</style>

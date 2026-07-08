@@ -1,0 +1,46 @@
+---
+// Shared list shell for /blog/ and /news/ - restyled for the 2026 design,
+// content and permalinks unchanged from the previous site.
+interface Item { slug: string; title: string; date: string }
+interface Props { heading: string; base: '/blog' | '/news'; items: Item[] }
+const { heading, base, items } = Astro.props;
+---
+
+<section class="list-hero">
+  <div class="container">
+    <div class="eyebrow">{heading.toUpperCase()}</div>
+    <h1>{heading}</h1>
+  </div>
+</section>
+<section class="list-body">
+  <div class="container">
+    {items.map((p) => (
+      <a class="post-row" href={`${base}/${p.slug}/`}>
+        <span class="post-date">{p.date}</span>
+        <span class="post-title">{p.title}</span>
+        <span class="post-arrow">→</span>
+      </a>
+    ))}
+  </div>
+</section>
+
+<style>
+  .list-hero { padding: 64px 0 32px; }
+  .list-hero h1 { font-size: 45px; font-weight: 700; letter-spacing: -0.02em; margin-top: 14px; }
+  .list-body { padding: 8px 0 72px; }
+  .post-row {
+    display: flex; align-items: baseline; gap: 22px;
+    padding: 18px 2px; border-bottom: 1px solid var(--border-rule);
+    text-decoration: none;
+  }
+  .post-row:first-child { border-top: 1px solid var(--border-rule); }
+  .post-date { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted-1); min-width: 100px; }
+  .post-title { color: var(--navy); font-weight: 600; font-size: 16.5px; flex: 1; }
+  .post-row:hover .post-title { color: var(--orange-text); }
+  .post-arrow { color: var(--orange-text); font-weight: 600; }
+  @media (max-width: 640px) {
+    .list-hero h1 { font-size: 27px; }
+    .post-row { flex-direction: column; gap: 4px; }
+    .post-date { min-width: 0; }
+  }
+</style>

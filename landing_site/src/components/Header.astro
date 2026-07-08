@@ -1,0 +1,143 @@
+---
+// Shared header: logo + wordmark, nav with Product / Use Cases dropdowns,
+// Pricing, Docs (external), Blog, News, orange clipped CTA.
+// Active section link rendered in --orange-text. Mobile: hamburger.
+import { links, productNav, useCaseNav } from '../data/site';
+
+interface Props { active?: string }
+const { active = '' } = Astro.props;
+---
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="/" class="brand">
+      <img src="/birds.png" alt="ReARM logo" width="54" height="34" style="height: 34px; width: auto;" />
+      <span class="wordmark">ReARM</span>
+    </a>
+
+    <nav class="nav" id="site-nav">
+      <div class:list={['nav-item has-dd', { active: active === 'product' }]}>
+        <button class="nav-link dd-toggle" aria-expanded="false">Product <span class="caret">▾</span></button>
+        <div class="dd">
+          {productNav.map((p) => <a href={p.href}>{p.label}</a>)}
+        </div>
+      </div>
+      <div class:list={['nav-item has-dd', { active: active === 'use-cases' }]}>
+        <button class="nav-link dd-toggle" aria-expanded="false">Use Cases <span class="caret">▾</span></button>
+        <div class="dd">
+          {useCaseNav.map((p) => <a href={p.href}>{p.label}</a>)}
+        </div>
+      </div>
+      <a class:list={['nav-link', { active: active === 'pricing' }]} href="/pricing/">Pricing</a>
+      <a class="nav-link" href={links.docs} target="_blank" rel="noopener noreferrer">Docs</a>
+      <a class:list={['nav-link', { active: active === 'blog' }]} href="/blog/">Blog</a>
+      <a class:list={['nav-link', { active: active === 'news' }]} href="/news/">News</a>
+      <a class="nav-link gh-link" href={links.github} target="_blank" rel="noopener noreferrer" aria-label="ReARM on GitHub" title="ReARM on GitHub">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span class="gh-label">GitHub</span>
+      </a>
+      <a class="btn btn--orange header-cta" href={links.privateDemo} target="_blank" rel="noopener noreferrer">Get Private Demo</a>
+    </nav>
+
+    <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span><span class="short"></span>
+    </button>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    background: #FFFFFF;
+    border-bottom: 1px solid var(--border-rule);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 68px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .wordmark { font-weight: 800; font-size: 19px; color: var(--navy); letter-spacing: -0.01em; }
+  .nav { display: flex; align-items: center; gap: 26px; }
+  .nav-link {
+    font-size: 14.5px; font-weight: 600; color: var(--navy);
+    text-decoration: none; background: none; border: none; cursor: pointer;
+    font-family: var(--font-sans); padding: 0;
+  }
+  .nav-link.active, .nav-item.active > .nav-link { color: var(--orange-text); }
+  .caret { font-size: 10px; }
+  .nav-item.has-dd { position: relative; }
+  .dd {
+    display: none;
+    position: absolute; top: calc(100% + 14px); left: -14px;
+    background: #FFFFFF; border: 1px solid var(--border-card);
+    min-width: 240px; padding: 8px 0; z-index: 60;
+  }
+  /* Invisible hover bridge across the 14px visual gap between the trigger and
+     the menu; without it, moving the pointer down to the menu leaves :hover
+     mid-gap and the menu closes before it can be reached. */
+  .dd::before {
+    content: '';
+    position: absolute;
+    top: -15px; left: 0; right: 0; height: 15px;
+  }
+  .dd a {
+    display: block; padding: 9px 18px; font-size: 14px; font-weight: 500;
+    color: var(--navy); text-decoration: none;
+  }
+  .dd a:hover { background: var(--surface-strip); color: var(--orange-text); }
+  .nav-item.has-dd:hover .dd, .nav-item.has-dd.open .dd { display: block; }
+  /* GitHub mark: icon-only on desktop, quiet next to the loud CTA; the text
+     label only appears inside the stacked mobile menu where a bare icon
+     would look orphaned. */
+  .gh-link { display: flex; align-items: center; gap: 8px; }
+  .gh-link:hover { color: var(--orange-text); }
+  .gh-label { display: none; }
+  .header-cta { padding: 11px 22px; font-size: 14px; }
+  .hamburger {
+    display: none; background: none; border: none; cursor: pointer;
+    flex-direction: column; gap: 5px; padding: 10px; min-width: 44px; min-height: 44px;
+    align-items: flex-end;
+  }
+  .hamburger span { display: block; width: 24px; height: 2.5px; background: var(--navy); }
+  .hamburger span.short { width: 16px; }
+
+  @media (max-width: 900px) {
+    .nav {
+      display: none;
+      position: absolute; top: 68px; left: 0; right: 0;
+      background: #FFFFFF; border-bottom: 1px solid var(--border-card);
+      flex-direction: column; align-items: stretch; gap: 0; padding: 8px 0 16px;
+    }
+    .nav.open { display: flex; }
+    .nav-link { padding: 12px 20px; min-height: 44px; display: flex; align-items: center; }
+    .gh-label { display: inline; }
+    .dd { position: static; border: none; padding: 0 0 0 16px; }
+    .header-cta { margin: 10px 20px 0; text-align: center; }
+    .hamburger { display: flex; }
+  }
+</style>
+
+<script>
+  const burger = document.getElementById('hamburger');
+  const nav = document.getElementById('site-nav');
+  burger?.addEventListener('click', () => {
+    const open = nav?.classList.toggle('open');
+    burger.setAttribute('aria-expanded', String(!!open));
+  });
+  // click-toggle for dropdowns (touch / keyboard; hover handles desktop pointer)
+  document.querySelectorAll('.dd-toggle').forEach((t) => {
+    t.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = (t as HTMLElement).closest('.nav-item');
+      const nowOpen = item?.classList.toggle('open');
+      t.setAttribute('aria-expanded', String(!!nowOpen));
+    });
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item.open').forEach((i) => i.classList.remove('open'));
+  });
+</script>

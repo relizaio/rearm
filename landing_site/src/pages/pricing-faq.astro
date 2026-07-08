@@ -1,0 +1,97 @@
+---
+// Ported 1:1 from the current site (URL preserved: /pricing-faq/), restyled
+// for the 2026 design. Copy verbatim except the comparisons link, which points
+// at the current site until that page is ported.
+import Base from '../layouts/Base.astro';
+import CtaBand from '../components/CtaBand.astro';
+import { links } from '../data/site';
+
+const faqs: { question: string; answer: string[]; link?: { text: string; href: string } }[] = [
+  {
+    question: 'How is the number of users calculated?',
+    answer: [
+      'Each paid seat corresponds to one write user - someone who can create, modify, or manage releases, components, artifacts, and settings within ReARM.',
+      'For ReARM Pro Starter plan, for every 3 write users we include one additional read-only user at no extra cost. Read-only users can view releases, artifacts, and dashboards but cannot make changes.',
+      'For ReARM Pro Standard and Enterprise plans, for every 2 write users we include one additional read-only user at no extra cost. Read-only users can view releases, artifacts, and dashboards but cannot make changes.',
+      'For example, on Standard or Enterprise, if you purchase a plan for 20 write users, you get up to 10 additional read-only users (30 total).',
+    ],
+  },
+  {
+    question: 'What is the difference in infrastructure between tiers?',
+    answer: [
+      'Starter - Your ReARM instance runs on a single node and artifact storage limited to 65GB (you will be offered to migrate to Standard tier if you exceed this limit). This is ideal for small teams getting started with supply chain evidence management.',
+      'Standard - Your ReARM instance runs in a dedicated private VNet / VPC or self-hosted in a non-air-gapped environment.',
+      'Enterprise - In addition to the private VNet / VPC and self-hosted options, the Enterprise tier is the only plan where we support fully air-gapped environments.',
+      'For self-hosted deployments under Standard and Enterprise tiers, Reliza provides support for the deployment and maintenance of the ReARM instance, including setting up of regular backups and monitoring.',
+    ],
+  },
+  {
+    question: 'Is the infrastructure shared with other customers?',
+    answer: [
+      'No. Regardless of which tier you choose, you always get your own dedicated instance of ReARM.',
+    ],
+  },
+  {
+    question: "Why should I choose ReARM Pro if I don't need the additional features?",
+    answer: [
+      'Even if you only need the core SBOM/XBOM storage and retrieval functionality available in ReARM CE, ReARM Pro can still be the more economical choice.',
+      'We believe that the price we offer for ReARM Pro is less than what you would typically pay for your own infrastructure plus ongoing maintenance, monitoring, backups, and upgrades.',
+      'On top of that, you get premium support with guaranteed response times, a managed Dependency-Track instance, and automatic upgrades - all handled by Reliza.',
+      'ReARM Pro also includes the ability to arrange custom commercial terms.',
+    ],
+    link: { text: 'See ReARM Pro vs ReARM CE comparison for details.', href: `${links.comparisons}#rearm-pro-vs-rearm-ce` },
+  },
+  {
+    question: 'Is it possible to upgrade from ReARM CE to ReARM Pro or vice versa?',
+    answer: [
+      'Yes, the data schema is fully compatible between ReARM editions. You can upgrade or downgrade at any time subject to any applicable contract terms.',
+      'When you downgrade from ReARM Pro to ReARM CE, you lose access to any ReARM Pro features but all your data remains intact.',
+      'When you upgrade from ReARM CE to ReARM Pro, you gain access to all ReARM Pro features right away.',
+    ],
+  },
+];
+---
+
+<Base
+  title="Pricing FAQ - ReARM by Reliza"
+  description="Frequently asked questions about ReARM pricing, infrastructure, and plans."
+  active="pricing"
+>
+  <section class="faq-hero">
+    <div class="container">
+      <div class="eyebrow">PRICING / FAQ</div>
+      <h1>Pricing FAQ</h1>
+      <p class="faq-sub">Common questions about ReARM plans, pricing, and infrastructure</p>
+    </div>
+  </section>
+
+  <section class="faq-list">
+    <div class="container faq-container">
+      {faqs.map((f, i) => (
+        <div class="faq-item">
+          <div class="faq-num">{String(i + 1).padStart(2, '0')}</div>
+          <h2>{f.question}</h2>
+          {f.answer.map((p) => <p>{p}</p>)}
+          {f.link && <p><a href={f.link.href}>{f.link.text}</a></p>}
+        </div>
+      ))}
+      <a class="back" href="/pricing/">← Back to Pricing</a>
+    </div>
+  </section>
+
+  <CtaBand />
+</Base>
+
+<style>
+  .faq-hero { padding: 64px 0 36px; }
+  .faq-hero h1 { font-size: 45px; font-weight: 700; letter-spacing: -0.02em; margin: 16px 0 14px; }
+  .faq-sub { font-size: 16.5px; color: var(--body-2); }
+  .faq-list { padding: 8px 0 64px; }
+  .faq-container { max-width: 860px; }
+  .faq-item { border-top: 1px solid var(--border-rule); padding: 30px 0; }
+  .faq-num { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; color: var(--orange-text); margin-bottom: 10px; }
+  .faq-item h2 { font-size: 21px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 12px; }
+  .faq-item p { font-size: 15.5px; line-height: 1.7; color: var(--body-2); margin-bottom: 10px; }
+  .back { font-weight: 600; font-size: 14.5px; text-decoration: none; display: inline-block; margin-top: 18px; }
+  @media (max-width: 640px) { .faq-hero h1 { font-size: 27px; } }
+</style>

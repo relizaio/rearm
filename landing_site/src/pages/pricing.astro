@@ -1,0 +1,310 @@
+---
+// Full functional port of the current site's pricing: regional pricing with
+// timezone detection + localStorage persistence, write-user selectors with
+// live price calculation, real tier features with tooltips. Styled per the
+// 2026 design (clipped buttons, POPULAR badge, square corners).
+import Base from '../layouts/Base.astro';
+import CtaBand from '../components/CtaBand.astro';
+import { links } from '../data/site';
+
+const regions = [
+  { value: 'US', label: 'US', flag: '🇺🇸' },
+  { value: 'CA', label: 'Canada', flag: '🇨🇦' },
+  { value: 'GB', label: 'UK', flag: '🇬🇧' },
+  { value: 'EU', label: 'EU', flag: '🇪🇺' },
+  { value: 'AU', label: 'Australia', flag: '🇦🇺' },
+  { value: 'SG', label: 'Singapore', flag: '🇸🇬' },
+];
+
+const ceBullets = [
+  'FOSS ReARM Community Edition',
+  'Self-Hosted',
+  'Single Organization',
+  'Community support',
+  'All Core SBOM/XBOM Storage & Retrieval Functionality',
+  'Vulnerabilities and Violations via self-managed Dependency-Track Integration',
+];
+const starterBullets = [
+  'Up to 65GB of storage for compressed artifacts*',
+  'Priority Support (8 hours response time)',
+  'Managed Dependency-Track',
+  'Multi-Perspective Workflow',
+  'Approvals & Event Workflows',
+  'Marketing Releases',
+  'SBOM Enrichment via BEAR',
+  'Free 60-day trial*',
+];
+const standardBullets = [
+  'All in ReARM Pro - Starter',
+  'Private VPC / VNet with SSO and unlimited artifact storage, option for on-prem deployment',
+  'Enhanced support (24x7, 4 hours response time)',
+  'Support for Multi-Organization Workflow',
+  'Free 60-day trial*',
+];
+const enterpriseBullets = [
+  'All in ReARM Pro - Standard',
+  'Premium support (24x7, 1 hour response time)',
+  'Option for air-gapped deployment',
+  'Free 60-day trial*',
+];
+
+const trialTooltip = 'A ReARM Pro Starter instance is provided during the trial, subject to Terms of Service. After the trial, you may: continue with a paid ReARM Pro plan; export your data and switch to a self-hosted FOSS ReARM CE instance; or cancel altogether.';
+const storageTooltip = 'Usually, enough to store more than 200,000 SBOMs';
+const tooltipFor = (b: string) =>
+  b.startsWith('Free 60-day trial') ? trialTooltip : b.endsWith('*') ? storageTooltip : null;
+---
+
+<Base title="Pricing - ReARM" active="pricing">
+  <section class="p-hero">
+    <div class="container">
+      <div class="eyebrow">PRICING</div>
+      <h1>Pricing &amp; Plans</h1>
+      <p class="p-explainer">
+        ReARM CE is open source and self-hosted. ReARM Pro is managed or supported, with commercial
+        features. Fixed predictable rates for any team.
+        <a href="/pricing-faq/" class="faq-link" title="Pricing FAQ">Pricing FAQ</a>
+      </p>
+    </div>
+  </section>
+
+  <section class="region-picker">
+    <div class="container region-inner">
+      <span class="eyebrow eyebrow--muted">PRICING REGION</span>
+      <div class="region-buttons" role="group" aria-label="Select pricing region">
+        {regions.map((r) => (
+          <button type="button" class="region-btn" data-region={r.value} aria-label={r.label} title={r.label}>
+            <span class="region-flag">{r.flag}</span>
+            <span class="region-label">{r.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="tiers">
+    <div class="container tiers-grid">
+      <!-- CE -->
+      <div class="tier">
+        <h3>ReARM CE</h3>
+        <div class="price"><span class="amount">Free</span><span class="unit">Forever</span></div>
+        <div class="selector selector--spacer"></div>
+        <ul>
+          {ceBullets.map((b) => <li><span class="check">✓</span>{b}</li>)}
+        </ul>
+        <a class="btn btn--navy" href={links.docs} target="_blank" rel="noopener noreferrer">Documentation</a>
+      </div>
+
+      <!-- Starter -->
+      <div class="tier">
+        <h3>ReARM Pro - Starter</h3>
+        <div class="price"><span class="amount" id="starter-price">$195</span><span class="unit">Per Month</span></div>
+        <div class="selector">
+          <label for="starter-users">Number of write users (1-14):</label>
+          <div class="selector-row">
+            <input type="number" id="starter-users" min="1" max="14" value="1" />
+            <input type="range" id="starter-range" min="1" max="14" value="1" aria-label="Starter write users" />
+          </div>
+        </div>
+        <ul>
+          {starterBullets.map((b) => (
+            <li>
+              <span class="check">✓</span>
+              {tooltipFor(b) ? <span class="tt">{b}<span class="tt-text">{tooltipFor(b)}</span></span> : b}
+            </li>
+          ))}
+        </ul>
+        <a class="btn btn--navy" href="mailto:sales@reliza.io">Contact Sales</a>
+      </div>
+
+      <!-- Standard -->
+      <div class="tier tier--popular">
+        <span class="popular">POPULAR</span>
+        <h3>ReARM Pro - Standard</h3>
+        <div class="price"><span class="amount" id="standard-price">$1,350</span><span class="unit">Per Month</span></div>
+        <div class="selector">
+          <label for="standard-users">Number of write users (15-39):</label>
+          <div class="selector-row">
+            <input type="number" id="standard-users" min="15" max="39" value="15" />
+            <input type="range" id="standard-range" min="15" max="39" value="15" aria-label="Standard write users" />
+          </div>
+        </div>
+        <ul>
+          {standardBullets.map((b) => (
+            <li>
+              <span class="check">✓</span>
+              {tooltipFor(b) ? <span class="tt">{b}<span class="tt-text">{tooltipFor(b)}</span></span> : b}
+            </li>
+          ))}
+        </ul>
+        <a class="btn btn--orange" href="mailto:sales@reliza.io">Contact Sales</a>
+      </div>
+
+      <!-- Enterprise -->
+      <div class="tier">
+        <h3>ReARM Pro - Enterprise</h3>
+        <div class="price"><span class="amount" id="enterprise-price">$75</span><span class="unit">per write user per month</span></div>
+        <div class="selector"><span class="selector-note">40+ write users</span></div>
+        <ul>
+          {enterpriseBullets.map((b) => (
+            <li>
+              <span class="check">✓</span>
+              {tooltipFor(b) ? <span class="tt">{b}<span class="tt-text">{tooltipFor(b)}</span></span> : b}
+            </li>
+          ))}
+        </ul>
+        <a class="btn btn--navy" href="mailto:sales@reliza.io">Contact Sales</a>
+      </div>
+    </div>
+
+    <div class="container">
+      <p class="tiers-note">
+        Each paid seat is one write user. Read-only users are included at no extra cost (1 per 3 write
+        users on Starter; 1 per 2 on Standard and Enterprise). Details in the
+        <a href="/pricing-faq/">Pricing FAQ</a>.
+      </p>
+    </div>
+  </section>
+
+  <CtaBand publicDemo={true} />
+</Base>
+
+<script>
+  // Regional pricing + user-count calculators. Region detected from the
+  // browser timezone, persisted in localStorage (same key as the old site
+  // so returning visitors keep their selection).
+  const KEY = 'rearm_pricing_region';
+  type Region = 'US' | 'EU' | 'CA' | 'GB' | 'AU' | 'SG';
+  const PRICES: Record<Region, { sym: string; startupBase: number; startupPerUser: number; standardBase: number; standardPerUser: number; enterprise: string }> = {
+    US: { sym: '$', startupBase: 195, startupPerUser: 45, standardBase: 1350, standardPerUser: 65, enterprise: '$75' },
+    EU: { sym: '€', startupBase: 165, startupPerUser: 40, standardBase: 1170, standardPerUser: 55, enterprise: '€65' },
+    CA: { sym: 'C$', startupBase: 250, startupPerUser: 60, standardBase: 1850, standardPerUser: 85, enterprise: 'C$100' },
+    GB: { sym: '£', startupBase: 145, startupPerUser: 35, standardBase: 1020, standardPerUser: 54, enterprise: '£60' },
+    AU: { sym: 'A$', startupBase: 275, startupPerUser: 65, standardBase: 1950, standardPerUser: 85, enterprise: 'A$105' },
+    SG: { sym: 'S$', startupBase: 245, startupPerUser: 55, standardBase: 1730, standardPerUser: 82, enterprise: 'S$95' },
+  };
+
+  function detectRegion(): Region {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      if (tz === 'GB' || tz === 'GB-Eire' || tz === 'Europe/London' || tz === 'Europe/Belfast') return 'GB';
+      if (tz.includes('Australia')) return 'AU';
+      if (tz.includes('Singapore')) return 'SG';
+      if (tz.includes('Europe')) return 'EU';
+      if (tz.includes('America')) {
+        const ca = ['America/Toronto', 'America/Vancouver', 'America/Winnipeg'];
+        if (ca.includes(tz) || tz.startsWith('Canada/')) return 'CA';
+        return 'US';
+      }
+      return 'US';
+    } catch { return 'US'; }
+  }
+
+  let region: Region = (() => {
+    try {
+      const stored = localStorage.getItem(KEY);
+      if (stored && stored in PRICES) return stored as Region;
+    } catch {}
+    return detectRegion();
+  })();
+
+  const starterNum = document.getElementById('starter-users') as HTMLInputElement;
+  const starterRange = document.getElementById('starter-range') as HTMLInputElement;
+  const standardNum = document.getElementById('standard-users') as HTMLInputElement;
+  const standardRange = document.getElementById('standard-range') as HTMLInputElement;
+
+  function fmt(n: number) { return n.toLocaleString('en-US'); }
+  function update() {
+    const p = PRICES[region];
+    const su = parseInt(starterNum.value, 10) || 1;
+    const st = parseInt(standardNum.value, 10) || 15;
+    document.getElementById('starter-price')!.textContent = p.sym + fmt(p.startupBase + (su - 1) * p.startupPerUser);
+    document.getElementById('standard-price')!.textContent = p.sym + fmt(p.standardBase + Math.max(0, st - 15) * p.standardPerUser);
+    document.getElementById('enterprise-price')!.textContent = p.enterprise;
+    document.querySelectorAll('.region-btn').forEach((b) => {
+      b.classList.toggle('region-btn--active', (b as HTMLElement).dataset.region === region);
+    });
+    try { localStorage.setItem(KEY, region); } catch {}
+  }
+
+  document.querySelectorAll('.region-btn').forEach((b) => {
+    b.addEventListener('click', () => { region = (b as HTMLElement).dataset.region as Region; update(); });
+  });
+  function pair(num: HTMLInputElement, range: HTMLInputElement) {
+    num.addEventListener('input', () => {
+      const v = parseInt(num.value, 10);
+      if (!isNaN(v) && v >= +num.min && v <= +num.max) { range.value = String(v); update(); }
+    });
+    range.addEventListener('input', () => { num.value = range.value; update(); });
+  }
+  pair(starterNum, starterRange);
+  pair(standardNum, standardRange);
+  update();
+</script>
+
+<style>
+  .p-hero { padding: 64px 0 32px; }
+  .p-hero h1 { font-size: 45px; font-weight: 700; letter-spacing: -0.02em; margin: 16px 0 18px; }
+  .p-explainer { font-size: 16.5px; max-width: 720px; }
+  .faq-link { font-weight: 600; margin-left: 8px; }
+
+  .region-picker { padding: 0 0 28px; }
+  .region-inner { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .region-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .region-btn {
+    display: flex; align-items: center; gap: 7px;
+    background: #FFFFFF; border: 1px solid var(--border-card); cursor: pointer;
+    padding: 7px 13px; font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+    color: var(--body-2);
+  }
+  .region-btn--active { border-color: var(--orange-1); color: var(--navy); background: var(--surface-warm); }
+  .region-flag { font-size: 17px; line-height: 1; }
+
+  .tiers { padding: 4px 0 56px; }
+  .tiers-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .tier { position: relative; border: 1.5px solid var(--border-card); background: #FFFFFF; padding: 26px 22px; display: flex; flex-direction: column; }
+  .tier--popular { border-color: var(--orange-1); background: var(--surface-warm); }
+  .popular {
+    position: absolute; top: 0; right: 18px; transform: translateY(-50%);
+    background: linear-gradient(120deg, var(--orange-1), var(--orange-2));
+    color: #FFFFFF; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.12em; padding: 5px 14px;
+    clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  }
+  .tier h3 { font-size: 16.5px; margin-bottom: 12px; }
+  .price { display: flex; align-items: baseline; gap: 7px; margin-bottom: 14px; flex-wrap: wrap; }
+  .amount { font-size: 29px; font-weight: 700; color: var(--navy); letter-spacing: -0.02em; }
+  .unit { font-size: 12.5px; color: var(--muted-1); }
+
+  .selector { min-height: 64px; margin-bottom: 12px; }
+  .selector--spacer { min-height: 64px; }
+  .selector label { display: block; font-size: 12px; color: var(--muted-1); margin-bottom: 6px; }
+  .selector-row { display: flex; align-items: center; gap: 10px; }
+  .selector-row input[type='number'] {
+    width: 58px; padding: 5px 7px; border: 1px solid var(--border-card);
+    font-family: var(--font-sans); font-size: 14px; color: var(--navy);
+  }
+  .selector-row input[type='range'] { flex: 1; accent-color: var(--orange-1); }
+  .selector-note { font-size: 12.5px; color: var(--muted-1); }
+
+  .tier ul { list-style: none; margin: 0 0 22px; padding: 0; flex: 1; }
+  .tier li { display: flex; gap: 9px; font-size: 13.5px; line-height: 1.5; color: var(--body-2); padding: 5px 0; }
+  .check { color: var(--green); font-weight: 700; }
+  .tier .btn { text-align: center; }
+  .tiers-note { margin-top: 22px; font-size: 13px; color: var(--muted-2); max-width: 760px; }
+
+  /* tooltip for asterisked features */
+  .tt { position: relative; cursor: help; border-bottom: 1px dotted var(--muted-2); }
+  .tt-text {
+    display: none; position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 20;
+    width: 280px; background: var(--navy); color: #EDF0FA; padding: 12px 14px;
+    font-size: 12.5px; line-height: 1.55;
+  }
+  .tt:hover .tt-text { display: block; }
+
+  @media (max-width: 1100px) { .tiers-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 640px) {
+    .tiers-grid { grid-template-columns: 1fr; }
+    .p-hero h1 { font-size: 27px; }
+    .selector, .selector--spacer { min-height: 0; }
+  }
+</style>
