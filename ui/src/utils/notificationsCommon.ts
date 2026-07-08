@@ -283,19 +283,30 @@ export const LIST_CHANNELS_QUERY = gql`
     }
 `
 
-export const LIST_GROUPS_QUERY = gql`
-    query notificationChannelGroups($orgUuid: ID!) {
-        notificationChannelGroups(orgUuid: $orgUuid) {
-            uuid org resourceGroup name channels revision createdDate lastUpdatedDate
-        }
-    }
-`
+// Channel-group + subscription list queries are split CORE vs ENRICHMENT so
+// the list surfaces can degrade gracefully instead of blanking when the
+// deployed backend (a CE mirror lagging the Pro schema) lacks a Pro-ahead
+// field -- see loadWithSchemaDriftFallback / PR #169. CORE = the identity +
+// render essentials that always exist; ENRICHMENT = the newer fields.
 
-export const LIST_SUBSCRIPTIONS_QUERY = gql`
-    query notificationSubscriptions($orgUuid: ID!) {
-        notificationSubscriptions(orgUuid: $orgUuid) {
-            uuid org resourceGroup name status eventTypes
-            filter routes dedupWindowMinutes rateLimit revision
-        }
-    }
-`
+const GROUP_CORE_FIELDS = 'uuid org resourceGroup name channels revision'
+const GROUP_ENRICHMENT_FIELDS = 'createdDate lastUpdatedDate'
+function buildGroupsQuery (fields: string) {
+    return gql`
+        query notificationChannelGroups($orgUuid: ID!) {
+            notificationChannelGroups(orgUuid: $orgUuid) { ${fields} }
+        }`
+}
+export const LIST_GROUPS_QUERY = buildGroupsQuery(`${GROUP_CORE_FIELDS} ${GROUP_ENRICHMENT_FIELDS}`)
+export const LIST_GROUPS_CORE_QUERY = buildGroupsQuery(GROUP_CORE_FIELDS)
+
+const SUBSCRIPTION_CORE_FIELDS = 'uuid org resourceGroup name status eventTypes revision'
+const SUBSCRIPTION_ENRICHMENT_FIELDS = 'filter routes dedupWindowMinutes rateLimit'
+function buildSubscriptionsQuery (fields: string) {
+    return gql`
+        query notificationSubscriptions($orgUuid: ID!) {
+            notificationSubscriptions(orgUuid: $orgUuid) { ${fields} }
+        }`
+}
+export const LIST_SUBSCRIPTIONS_QUERY = buildSubscriptionsQuery(`${SUBSCRIPTION_CORE_FIELDS} ${SUBSCRIPTION_ENRICHMENT_FIELDS}`)
+export const LIST_SUBSCRIPTIONS_CORE_QUERY = buildSubscriptionsQuery(SUBSCRIPTION_CORE_FIELDS)

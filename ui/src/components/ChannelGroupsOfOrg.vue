@@ -15,6 +15,16 @@
             </n-button>
         </div>
 
+        <n-alert
+            v-if="channelGroupsDegraded"
+            type="warning"
+            :show-icon="false"
+            style="margin-bottom: 12px;"
+            data-testid="groups-degraded-alert"
+        >
+            Some group details are unavailable on this server version, so a few columns (such as created/updated dates) may be missing. Your channel groups are shown below.
+        </n-alert>
+
         <n-data-table
             :data="channelGroups"
             :columns="channelGroupColumns"
@@ -84,8 +94,9 @@ import { CirclePlus, Trash, Edit as EditIcon } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import {
     ChannelRow, ChannelGroupRow, TYPE_LABELS, LIST_CHANNELS_QUERY,
-    LIST_GROUPS_QUERY, extractError, isConflictError, formatHistoryTimestamp
+    LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY, extractError, isConflictError, formatHistoryTimestamp
 } from '@/utils/notificationsCommon'
+import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 import gql from 'graphql-tag'
 
 const props = defineProps<{
@@ -113,6 +124,9 @@ function freshGroupForm (): ChannelGroupForm {
 const channels = ref<ChannelRow[]>([])
 const channelGroups = ref<ChannelGroupRow[]>([])
 const channelGroupsLoading = ref<boolean>(false)
+// True when the backend rejected the full group selection and we fell back to
+// core fields (created/updated columns may be absent) -- see PR #169 pattern.
+const channelGroupsDegraded = ref<boolean>(false)
 const showGroupModal = ref<boolean>(false)
 const savingGroup = ref<boolean>(false)
 const groupModalError = ref<string>('')
@@ -155,13 +169,16 @@ async function loadChannels (): Promise<void> {
 async function loadChannelGroups (): Promise<void> {
     channelGroupsLoading.value = true
     try {
-        const res = await graphqlClient.query({
-            query: LIST_GROUPS_QUERY,
+        const { data, degraded } = await loadWithSchemaDriftFallback(graphqlClient, {
+            fullQuery: LIST_GROUPS_QUERY,
+            coreQuery: LIST_GROUPS_CORE_QUERY,
             variables: { orgUuid: orgUuid.value },
-            fetchPolicy: 'network-only',
+            extractPath: (d: any) => d?.notificationChannelGroups,
         })
-        channelGroups.value = res.data?.notificationChannelGroups || []
+        channelGroups.value = data || []
+        channelGroupsDegraded.value = degraded
     } catch (e: any) {
+        channelGroupsDegraded.value = false
         message.error(`Failed to load channel groups: ${extractError(e)}`)
     } finally {
         channelGroupsLoading.value = false

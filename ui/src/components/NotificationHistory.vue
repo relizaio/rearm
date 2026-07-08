@@ -90,7 +90,7 @@ import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 import {
     ChannelRow, SubscriptionRow, DeliveryRow, TYPE_LABELS,
     deliveryStatusOptions, deliveryOriginOptions,
-    LIST_CHANNELS_QUERY, LIST_SUBSCRIPTIONS_QUERY,
+    LIST_CHANNELS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
     deliveryStatusTagType, formatHistoryTimestamp, truncate,
     buildNameMap, extractError
 } from '@/utils/notificationsCommon'
@@ -186,8 +186,10 @@ async function loadChannels (): Promise<void> {
 
 async function loadSubscriptions (): Promise<void> {
     try {
+        // History only needs subscription names (uuid -> name map), so the CORE
+        // query is enough and can't drift on the Pro-ahead config fields.
         const res = await graphqlClient.query({
-            query: LIST_SUBSCRIPTIONS_QUERY,
+            query: LIST_SUBSCRIPTIONS_CORE_QUERY,
             variables: { orgUuid: orgUuid.value },
             fetchPolicy: 'network-only',
         })
