@@ -10,7 +10,7 @@ import { defineConfig } from 'astro/config';
 //    both ON, which would silently change rendering of tables,
 //    strikethrough, autolinks and quotes in existing posts.
 export default defineConfig({
-  site: 'https://landing.psclaude.rearmhq.com',
+  site: process.env.SITE_URL ?? 'https://rearmhq.com',
   trailingSlash: 'always',
   build: { format: 'directory' },
   markdown: {

@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://rearmhq.com/sitemap.xml
