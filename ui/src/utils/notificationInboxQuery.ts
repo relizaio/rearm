@@ -31,6 +31,10 @@ export const INBOX_CORE_ITEM_FIELDS: string[] = [
 // behind a presence guard (`'field' in row`) so a degraded row can't throw.
 export const INBOX_ENRICHMENT_ITEM_FIELDS: string[] = [
     'channelName',
+    // Channel enabled/auto-disable state so the label can distinguish a
+    // disabled/misconfigured channel from a deleted one (see channelLabel).
+    'channelEnabled',
+    'channelDisabledReason',
 ]
 
 function buildInboxQuery (itemFields: string[]): DocumentNode {

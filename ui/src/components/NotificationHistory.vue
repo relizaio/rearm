@@ -160,6 +160,14 @@ const subscriptionFilterOptions = computed(() =>
 // the loaded channels + subscriptions lists.
 const channelNameById = computed<Record<string, string>>(() => buildNameMap(channels.value))
 const subscriptionNameById = computed<Record<string, string>>(() => buildNameMap(subscriptions.value))
+// Channel status (from the channels list) so a delivery to a disabled channel
+// reads "name (disabled)" instead of looking healthy -- the audit-log analogue
+// of the inbox's disabled-channel label.
+const channelStatusById = computed<Record<string, string>>(() => {
+    const m: Record<string, string> = {}
+    for (const c of channels.value) m[c.uuid] = c.status
+    return m
+})
 
 // CORE = identity + status + time needed to render a delivery row.
 // ENRICHMENT = retry/error detail; if a backend lacks one of these (CE mirror
@@ -308,10 +316,18 @@ const deliveryColumns = computed(() => [
         title: 'Channel', key: 'channelUuid',
         // Null channel = Phase 4a targeted delivery (personal inbox copy,
         // no transmission channel) — not a deleted channel.
-        render: (row: DeliveryRow) => (row.channelUuid
-            ? (channelNameById.value[row.channelUuid]
-                || h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)'))
-            : h('span', { class: 'muted-12' }, 'Direct')),
+        render: (row: DeliveryRow) => {
+            if (!row.channelUuid) return h('span', { class: 'muted-12' }, 'Direct')
+            const name = channelNameById.value[row.channelUuid]
+            if (!name) return h('span', { class: 'muted-12', title: row.channelUuid }, '(deleted channel)')
+            const status = channelStatusById.value[row.channelUuid]
+            return status && status !== 'ENABLED'
+                ? h('span', {}, [name, h('span', {
+                    class: 'hist-chan-disabled',
+                    title: 'This channel is disabled; deliveries to it are paused.',
+                }, ' (disabled)')])
+                : name
+        },
     },
     {
         title: 'Subscription', key: 'subscriptionUuid',
@@ -361,6 +377,7 @@ onMounted(async () => {
 }
 .tab-toolbar-info { font-size: 12.5px; color: var(--n-text-color-3, #888); }
 .muted-12 { font-size: 12px; color: var(--n-text-color-3, #888); }
+.hist-chan-disabled { color: #f0a020; font-weight: 600; }
 .history-filters { margin-bottom: 12px; }
 .history-pagination { margin-top: 12px; display: flex; justify-content: flex-end; }
 </style>
