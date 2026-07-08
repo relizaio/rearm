@@ -121,8 +121,8 @@
     },
     {
       "num": "02 / DRILL-DOWN",
-      "title": "Product-level count to exact SBOM entry in three clicks",
-      "body": "Start from a product-level vulnerability count. Click to the offending component, then to the exact SBOM entry that carries the finding. Every number on the dashboard is traversable to its source. Findings of every type are covered: vulnerabilities, weaknesses, and license violations, aggregated from Dependency-Track and your other tools, with triage and audit at organization, product, component or release scope.",
+      "title": "Product-level count to exact artifact in three clicks",
+      "body": "Start from a product-level vulnerability count. Click to the offending component, then to the exact SBOM entry that carries the finding. Every number on the dashboard is traversable to its source. Findings of every type are covered: vulnerabilities, weaknesses, policy and license violations, aggregated from Dependency-Track and your other tools, with triage and audit at organization, product, component or release scope.",
       "shot": "[ SCREENSHOT: drill-down from product finding to SBOM entry ]",
       "img": "/screenshots/11-sbom-component-graph-entry-opened-from-product-findings.png"
     },
@@ -201,7 +201,7 @@
         {
           "num": "01 / ORGANIZED STORAGE",
           "title": "Not a bucket of JSON files",
-          "body": "Every SBOM and XBOM is versioned and tied to the release that produced it, per component and per product. Ask for any shipped version's bill of materials and get it in one click.",
+          "body": "Every SBOM and XBOM is versioned and tied to the release that produced it, per component and per product. Ask for any shipped version's bill of materials and get it in few clicks.",
           "shot": "[ SCREENSHOT 4: product release composition view ]",
           "img": "/screenshots/7-artifacts-attached-to-release.png"
         },
@@ -569,6 +569,12 @@
           "title": "Evidence, extended to runtime",
           "body": "The same evidence trail that covers releases now covers what actually runs.",
           "cap": "Audit Evidence"
+        },
+        {
+          "num": "06",
+          "title": "ReARM CD closes the loop",
+          "body": "ReARM CD, the open-source deployment controller, pulls each instance's expected state from ReARM, applies it, and reports back what actually landed. The reconcile loop that keeps plan and actual honest.",
+          "cap": "ReARM CD"
         }
       ],
       "img": "/screenshots/19-instance-page.png"

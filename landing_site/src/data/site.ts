@@ -120,6 +120,7 @@ export const capHrefs: Record<string, string> = {
   'Audit Evidence': '/product/release-policies/#audit-trail',
   Distribution: '/product/sbom-xbom-management/#distribution',
   'Dependency Search': '/product/sbom-xbom-management/#dependency-search',
+  'ReARM CD': 'https://github.com/relizaio/rearm-cd',
 };
 
 // The two questions carried over from the current site's Q&A section.
