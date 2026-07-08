@@ -1,4 +1,4 @@
-FROM node:26.1.0-alpine3.23@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea AS build-stage
+FROM node:26.5.0-alpine3.24@sha256:a2bcf9238874d3900c086e685b8dc43e1ca8fa4e4a6c6e5f14a21f2f42e3af5f AS build-stage
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -6,7 +6,7 @@ COPY ./ .
 # Build Astro static site (outputs to /app/dist)
 RUN npm run build
 
-FROM nginx:1.31.0-alpine3.23-slim@sha256:9e666aeefa9801445bc2ff4994c48d314736dae4cf1f551ace03e38ea0373552 AS artifact-stage
+FROM nginx:1.31.2-alpine3.23-slim@sha256:dd722b8ee8794f3c273bfaf8b5351b0652a68ccd73c17e5f0d029857a58f25ef AS artifact-stage
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
