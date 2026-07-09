@@ -11,7 +11,7 @@
                 </n-tooltip>
             </h5>
             <ul>
-                <li v-for="finding in activeFindings" :key="`${keyPrefix}-${finding.type}-${finding.findingId}-${finding.affectedComponent}`">
+                <li v-for="finding in activeFindings" :key="`${keyPrefix}-${finding.type}-${finding.findingId}-${finding.affectedComponent}${finding.releaseUuid ? '-' + finding.releaseUuid : ''}`">
                     <span class="finding-row">
                         <n-tag v-if="finding.severity !== undefined" :type="getSeverityTagType(finding.severity)" :bordered="false" size="small" :class="'severity-' + (finding.severity || 'UNASSIGNED').toLowerCase()">
                             {{ finding.severity || 'UNASSIGNED' }}
@@ -53,7 +53,7 @@
             </h5>
             <n-collapse-transition :show="showSuppressed">
                 <ul>
-                    <li v-for="finding in suppressedFindings" :key="`${keyPrefix}-suppressed-${finding.type}-${finding.findingId}-${finding.affectedComponent}`">
+                    <li v-for="finding in suppressedFindings" :key="`${keyPrefix}-suppressed-${finding.type}-${finding.findingId}-${finding.affectedComponent}${finding.releaseUuid ? '-' + finding.releaseUuid : ''}`">
                         <span class="finding-row suppressed-finding">
                             <n-tag type="default" size="small" class="suppressed-tag">{{ getAnalysisStateLabel(finding.analysisState) }}</n-tag>
                             <n-tag v-if="finding.severity !== undefined" :type="getSeverityTagType(finding.severity)" :bordered="false" size="small" :class="'severity-' + (finding.severity || 'UNASSIGNED').toLowerCase()">

@@ -20,12 +20,12 @@
                             <code class="purl">{{ artifact.purl }}</code>
                         </span>
                         <div v-if="showAttribution && artifact.addedIn.length > 0" class="attribution">
-                            <span class="attribution-context">Added in <template v-for="(attr, i) in artifact.addedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template></span>
+                            <span class="attribution-context">Added in <template v-for="(attr, i) in artifact.addedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template><span v-if="moreCount((artifact as any).addedInCount, artifact.addedIn) > 0" class="more-text"> +{{ moreCount((artifact as any).addedInCount, artifact.addedIn) }} more</span></span>
                         </div>
                     </li>
                 </ul>
             </div>
-            
+
             <!-- Net Removed Artifacts -->
             <div v-if="netRemovedArtifacts.length > 0">
                 <h5 class="sbom-removed">Removed ({{ netRemovedArtifacts.length }})</h5>
@@ -38,7 +38,7 @@
                             <code class="purl">{{ artifact.purl }}</code>
                         </span>
                         <div v-if="showAttribution && artifact.removedIn.length > 0" class="attribution">
-                            <span class="attribution-context">Removed in <template v-for="(attr, i) in artifact.removedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template></span>
+                            <span class="attribution-context">Removed in <template v-for="(attr, i) in artifact.removedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template><span v-if="moreCount((artifact as any).removedInCount, artifact.removedIn) > 0" class="more-text"> +{{ moreCount((artifact as any).removedInCount, artifact.removedIn) }} more</span></span>
                         </div>
                     </li>
                 </ul>
@@ -59,9 +59,9 @@
                             <code class="purl">{{ artifact.purl }}</code>
                         </span>
                         <div v-if="showAttribution" class="attribution">
-                            <span v-if="artifact.addedIn.length > 0" class="attribution-context">Added in <template v-for="(attr, i) in artifact.addedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template></span>
+                            <span v-if="artifact.addedIn.length > 0" class="attribution-context">Added in <template v-for="(attr, i) in artifact.addedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template><span v-if="moreCount((artifact as any).addedInCount, artifact.addedIn) > 0" class="more-text"> +{{ moreCount((artifact as any).addedInCount, artifact.addedIn) }} more</span></span>
                             <span v-if="artifact.addedIn.length > 0 && artifact.removedIn.length > 0" class="attribution-context"> · </span>
-                            <span v-if="artifact.removedIn.length > 0" class="attribution-context">Removed in <template v-for="(attr, i) in artifact.removedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template></span>
+                            <span v-if="artifact.removedIn.length > 0" class="attribution-context">Removed in <template v-for="(attr, i) in artifact.removedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template><span v-if="moreCount((artifact as any).removedInCount, artifact.removedIn) > 0" class="more-text"> +{{ moreCount((artifact as any).removedInCount, artifact.removedIn) }} more</span></span>
                         </div>
                     </li>
                 </ul>
@@ -82,9 +82,9 @@
                             <code class="purl">{{ artifact.purl }}</code>
                         </span>
                         <div v-if="showAttribution" class="attribution">
-                            <span v-if="artifact.addedIn.length > 0" class="attribution-context">Added in <template v-for="(attr, i) in artifact.addedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template></span>
+                            <span v-if="artifact.addedIn.length > 0" class="attribution-context">Added in <template v-for="(attr, i) in artifact.addedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template><span v-if="moreCount((artifact as any).addedInCount, artifact.addedIn) > 0" class="more-text"> +{{ moreCount((artifact as any).addedInCount, artifact.addedIn) }} more</span></span>
                             <span v-if="artifact.addedIn.length > 0 && artifact.removedIn.length > 0" class="attribution-context"> · </span>
-                            <span v-if="artifact.removedIn.length > 0" class="attribution-context">Removed in <template v-for="(attr, i) in artifact.removedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template></span>
+                            <span v-if="artifact.removedIn.length > 0" class="attribution-context">Removed in <template v-for="(attr, i) in artifact.removedIn" :key="attr.releaseUuid"><span v-if="i > 0">, </span><router-link :to="{ name: 'ReleaseView', params: { uuid: attr.releaseUuid } }" class="release-link">{{ attr.componentName }}@{{ attr.releaseVersion }}</router-link><span v-if="attr.branchName" class="branch-hint"> ({{ attr.branchName }})</span></template><span v-if="moreCount((artifact as any).removedInCount, artifact.removedIn) > 0" class="more-text"> +{{ moreCount((artifact as any).removedInCount, artifact.removedIn) }} more</span></span>
                         </div>
                     </li>
                 </ul>
@@ -223,6 +223,14 @@ const hasChanges = computed(() => {
            redistributedArtifacts.value.length > 0 ||
            transientArtifacts.value.length > 0
 })
+
+// "+N more" for the (preview-capped) addedIn/removedIn inline lists. The true
+// total lives in addedInCount/removedInCount (present only on AGGREGATED
+// artifacts; NONE-mode synthetic rows omit them -> returns 0, nothing shown).
+// No drill-down query exists for SBOM, so this is plain text only.
+function moreCount(count: number | undefined, shown: unknown[] | undefined): number {
+    return Math.max(0, (count || 0) - (shown ? shown.length : 0))
+}
 </script>
 
 <style scoped lang="scss">
@@ -326,6 +334,11 @@ const hasChanges = computed(() => {
     }
     
     .attribution-context {
+        color: #888;
+        font-style: italic;
+    }
+
+    .more-text {
         color: #888;
         font-style: italic;
     }

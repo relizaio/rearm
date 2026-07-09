@@ -70,7 +70,7 @@
                         
                         <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedOrganizationChangelog'">
                             <p class="aggregation-note">Aggregated across all components</p>
-                            <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" />
+                            <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" :date-from="dateFrom" :date-to="dateTo" :perspective-uuid="perspectiveUuid" />
                         </div>
                     </n-tab-pane>
                 </n-tabs>
@@ -129,17 +129,22 @@ const aggregationType: Ref<'NONE' | 'AGGREGATED'> = ref('AGGREGATED')
 const loading: Ref<boolean> = ref(false)
 const changelog: Ref<OrganizationChangelog | null> = ref(null)
 
+// Drill-down window bound to the currently-loaded changelog (updated on fetch so
+// the "+N more" / timeline drawers query the same range that was displayed).
+const dateFrom = ref('')
+const dateTo = ref('')
+
 const fetchChangelog = async () => {
     loading.value = true
     try {
-        const dateFrom = new Date(dateRange.value[0]).toISOString()
-        const dateTo = new Date(dateRange.value[1]).toISOString()
-        
+        dateFrom.value = new Date(dateRange.value[0]).toISOString()
+        dateTo.value = new Date(dateRange.value[1]).toISOString()
+
         const params = {
             orgUuid: props.orgUuid,
             perspectiveUuid: props.perspectiveUuid,
-            dateFrom,
-            dateTo,
+            dateFrom: dateFrom.value,
+            dateTo: dateTo.value,
             aggregated: aggregationType.value as 'NONE' | 'AGGREGATED',
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }

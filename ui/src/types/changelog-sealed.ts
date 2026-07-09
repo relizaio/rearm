@@ -206,11 +206,17 @@ export interface AggregatedChangelog {
     componentUuid: string
     componentName: string
     orgUuid: string
-    firstRelease: ReleaseInfo
-    lastRelease: ReleaseInfo
+    // Nullable: the empty-window posture path (no in-window releases) returns
+    // these null while still surfacing postureFindingChanges over the window.
+    firstRelease?: ReleaseInfo | null
+    lastRelease?: ReleaseInfo | null
     branches: AggregatedBranchChanges[]
     sbomChanges: SbomChangesWithAttribution
     findingChanges: FindingChangesWithAttribution
+    // Component/product "Finding Changes" posture rollup over the window
+    // (flag-gated backend field; null when off/legacy). Same shape as the
+    // org-level findingChanges / Tab A.
+    postureFindingChanges?: FindingChangesWithAttribution | null
     overTimeFindingChanges: MetricsRevisionFindingChange[]
 }
 

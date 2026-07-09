@@ -14,7 +14,7 @@
             <ChangelogControls
                 v-model:dateRange="dateRange"
                 v-model:aggregationType="aggregationType"
-                :show-aggregation="!!(changelog && changelog.branches && changelog.branches.length > 0)"
+                :show-aggregation="!!(changelog && (postureFindingChanges || (changelog.branches && changelog.branches.length > 0)))"
                 @apply="getAggregatedChangelog"
             />
         </div>
@@ -24,9 +24,9 @@
             <h2 v-if="changelog && changelog.orgUuid && changelog.branches && changelog.branches.length >= 1">
                 <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: changelog.branches[0].branchUuid }}">{{ changelog.componentName + '(' + changelog.branches[0].branchName + ')' }}</router-link>
                 <span>&nbsp;</span>
-                <router-link :to="{ name: 'ReleaseView', params: {uuid: changelog.firstRelease.uuid}}">{{changelog.firstRelease.version}}</router-link>
+                <router-link v-if="changelog.firstRelease" :to="{ name: 'ReleaseView', params: {uuid: changelog.firstRelease.uuid}}">{{changelog.firstRelease.version}}</router-link>
                 <span> - </span>
-                <router-link :to="{ name: 'ReleaseView', params: {uuid: changelog.lastRelease.uuid}}">{{changelog.lastRelease.version}}</router-link>
+                <router-link v-if="changelog.lastRelease" :to="{ name: 'ReleaseView', params: {uuid: changelog.lastRelease.uuid}}">{{changelog.lastRelease.version}}</router-link>
             </h2>
             <ChangelogControls
                 v-model:aggregationType="aggregationType"
@@ -80,7 +80,7 @@
             </n-button>
         </div>
         
-        <n-tabs v-if="changelog" v-model:value="activeTab" type="segment" animated style="margin-top: 4px;">
+        <n-tabs v-if="changelog" :value="activeTab" @update:value="onTabUpdate" type="segment" animated style="margin-top: 4px;">
             <!-- Code / Component Changes tab -->
             <n-tab-pane name="code" :tab="codeTabLabel">
                 <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
@@ -233,10 +233,18 @@
             </n-tab-pane>
             
             <n-tab-pane name="vulnerabilities" tab="🔒 Finding Changes">
-                <div v-if="!hasData">
-                    <FindingChangesDisplayWithAttribution />
+                <!-- Posture rollup over the window (component/product AGGREGATED).
+                     Flag-gated backend field; renders even when there are no
+                     in-window releases so the empty-window case is not blank. -->
+                <div v-if="postureFindingChanges" class="posture-section">
+                    <p style="margin-bottom: 10px; font-style: italic;">Finding posture over the selected window, {{ aggregatedDescription.charAt(0).toLowerCase() + aggregatedDescription.slice(1) }}</p>
+                    <FindingChangesDisplayWithAttribution :finding-changes="postureFindingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" :over-time-finding-changes="postureOverTimeFindingChanges" :scope-label="findingScopeLabel" :date-from="drillDateFrom" :date-to="drillDateTo" :component-uuid="changelog.componentUuid" :branch-uuid="drillBranchUuid" />
                 </div>
-                
+
+                <div v-if="!hasData">
+                    <FindingChangesDisplayWithAttribution v-if="!postureFindingChanges" />
+                </div>
+
                 <!-- NONE mode: flat chronological per-release Finding changes -->
                 <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
                     <div v-for="entry in flattenedReleases" :key="entry.release.releaseUuid">
@@ -280,10 +288,23 @@
                     </div>
                 </div>
 
-                <!-- AGGREGATED mode: Show top-level aggregated changes -->
+                <!-- AGGREGATED mode: Show top-level aggregated changes.
+                     When the posture section (above) is present it is the primary
+                     content, so the legacy release-centric rollup is collapsed into
+                     an expandable block to avoid two side-by-side sections that read
+                     as contradictory. With no posture (flag off / legacy) it renders
+                     normally so nothing regresses. -->
                 <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
-                    <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
-                    <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" />
+                    <n-collapse v-if="postureFindingChanges" style="margin-top: 16px;">
+                        <n-collapse-item title="Show per-release finding changes" name="legacy-finding-changes">
+                            <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
+                            <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" :date-from="drillDateFrom" :date-to="drillDateTo" :component-uuid="changelog.componentUuid" :branch-uuid="drillBranchUuid" />
+                        </n-collapse-item>
+                    </n-collapse>
+                    <template v-else>
+                        <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
+                        <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" />
+                    </template>
                 </div>
             </n-tab-pane>
         </n-tabs>
@@ -297,7 +318,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import { Ref, ref, watch, computed } from 'vue'
-import { NTabs, NTabPane, NButton, useNotification } from 'naive-ui'
+import { NTabs, NTabPane, NButton, NCollapse, NCollapseItem, useNotification } from 'naive-ui'
 import { useStore } from 'vuex'
 import {
     FindingChangesDisplay,
@@ -420,6 +441,50 @@ const aggregatedDescription = computed(() => {
         : 'Aggregated across all active branches'
 })
 
+// Component/product "Finding Changes" posture rollup over the window. Present
+// only on AggregatedChangelog and only when the backend flag populated it;
+// null (=> section hidden) when the flag is off or the payload is legacy.
+const postureFindingChanges = computed(() => {
+    const cl = changelog.value
+    if (cl && cl.__typename === 'AggregatedChangelog') {
+        return cl.postureFindingChanges ?? null
+    }
+    return null
+})
+
+const postureOverTimeFindingChanges = computed(() => {
+    const cl = changelog.value
+    if (cl && cl.__typename === 'AggregatedChangelog') {
+        return cl.overTimeFindingChanges
+    }
+    return undefined
+})
+
+// Scope for the "(first occurrence in ...)" attribution text on the posture
+// rollup. Org view keeps the component default via the prop default.
+const findingScopeLabel = computed<'component' | 'product'>(() =>
+    isProduct.value ? 'product' : 'component'
+)
+
+// Drill-down window + scope for the "+N more" / timeline drawers. Only the
+// date-based view carries a date window; release-comparison mode omits it (the
+// drawers gate themselves off when dateFrom/dateTo are absent).
+const drillDateFrom = computed(() =>
+    isDateBased.value ? new Date(dateRange.value[0]).toISOString() : undefined
+)
+const drillDateTo = computed(() =>
+    isDateBased.value ? new Date(dateRange.value[1]).toISOString() : undefined
+)
+// Scope the drill-down to a single branch only when exactly one is in view.
+const drillBranchUuid = computed<string | undefined>(() => {
+    if (props.branchprop) return props.branchprop
+    const cl = changelog.value
+    if (cl && cl.__typename === 'AggregatedChangelog' && cl.branches && cl.branches.length === 1) {
+        return cl.branches[0].branchUuid
+    }
+    return undefined
+})
+
 // Stable display order for change-type buckets, mirroring AGGREGATED commitsByType.
 const CHANGE_TYPE_ORDER = ['feat', 'fix', 'perf', 'refactor', 'revert', 'build', 'test', 'docs', 'chore', 'ci', 'style']
 
@@ -513,6 +578,30 @@ watch(aggregationType, async() => {
 const selectedSeverity : Ref<string> = ref('ALL')
 
 const activeTab = ref<string>('code')
+
+// Whether the user has manually picked a tab. Until then we may steer the
+// initial tab based on the loaded payload; once the user switches we never
+// override their choice.
+const userSelectedTab = ref(false)
+
+function onTabUpdate (value: string) {
+    userSelectedTab.value = true
+    activeTab.value = value
+}
+
+// Derived default tab: when a changelog loads with posture data but no
+// code/release changes (empty-window: branches.length === 0), land on the
+// Finding Changes tab so the user doesn't see an empty "Code changes" tab.
+// Only applies before the user has switched tabs, and only steers away from
+// the initial 'code' default so an explicit choice is never clobbered.
+watch(changelog, () => {
+    if (userSelectedTab.value) return
+    if (postureFindingChanges.value && !hasData.value) {
+        activeTab.value = 'vulnerabilities'
+    } else {
+        activeTab.value = 'code'
+    }
+})
 const store = useStore()
 const notification = useNotification()
 const myorg = computed(() => store.getters.myorg)

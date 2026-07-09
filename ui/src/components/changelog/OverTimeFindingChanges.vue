@@ -79,6 +79,7 @@ import KevDetailsModal from '../KevDetailsModal.vue'
 import {
     normalizeFindingChangeRecord,
     sortBySeverityThenId,
+    findingChangeRecordKey,
     type NormalizedReleaseFinding
 } from '../../utils/findingUtils'
 import { resolveKevCveId } from '../../utils/kevService'
@@ -95,14 +96,12 @@ interface Props {
 const props = defineProps<Props>()
 
 // Type-scoped id key for a raw over-time record: identifies a single logical
-// finding (e.g. a CVE) across releases/components — deliberately excludes the
-// per-release purl/location so #41's "same CVE in two releases" collapses to one
-// timeline. Mirrors findingKeyForFilter() in FindingChangesDisplayWithAttribution.
+// finding (e.g. a CVE) across releases/components - deliberately excludes the
+// per-release purl/location so "same CVE in two releases" collapses to one
+// timeline. Client-side grouping key only (findingChangeRecordKey in findingUtils);
+// NOT the backend findingKey used by the server-side timeline drill-down.
 function recordFindingKey(rec: MetricsRevisionFindingChange): string | null {
-    if (rec.vulnerability) return `VULN-${rec.vulnerability.vulnId}`
-    if (rec.violation) return `VIOLATION-${rec.violation.type}`
-    if (rec.weakness) return `WEAKNESS-${rec.weakness.cweId || rec.weakness.ruleId || ''}`
-    return null
+    return findingChangeRecordKey(rec)
 }
 
 // Per-release attribution line for a normalized over-time finding (closes #41):
