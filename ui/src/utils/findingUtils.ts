@@ -128,6 +128,25 @@ export function normalizeFindingChangeRecord(rec: {
     return null
 }
 
+/**
+ * Type-scoped id key identifying a single logical finding (e.g. a CVE) across
+ * releases/components, used for CLIENT-SIDE grouping of the over-time timeline.
+ * Deliberately excludes the per-release purl/location so a "same CVE in two
+ * releases" case collapses to one group. NOTE: this is a UI grouping key, NOT
+ * the backend `findingKey` (`vulnId|purl`) used by the findingAttributionByDate /
+ * findingChangeTimelineByDate drill-down -- those pass the DTO's `findingKey`.
+ */
+export function findingChangeRecordKey(rec: {
+    vulnerability?: any
+    violation?: any
+    weakness?: any
+}): string | null {
+    if (rec.vulnerability) return `VULN-${rec.vulnerability.vulnId}`
+    if (rec.violation) return `VIOLATION-${rec.violation.type}`
+    if (rec.weakness) return `WEAKNESS-${rec.weakness.cweId || rec.weakness.ruleId || ''}`
+    return null
+}
+
 export function sortBySeverityThenId(findings: NormalizedReleaseFinding[]): NormalizedReleaseFinding[] {
     return [...findings].sort((a, b) => {
         const severityDiff = getSeverityIndex(a.severity) - getSeverityIndex(b.severity)

@@ -28,7 +28,7 @@ export interface OrgLevelContext {
     componentCount: number              // Number of components currently affected
     affectedComponentNames: string[]    // Names of components currently affected
     // Posture-worsening context (additive; populated only when the backend feature
-    // flag is on — null/undefined on legacy payloads, render nothing when absent).
+    // flag is on - null/undefined on legacy payloads, render nothing when absent).
     isNewlyKev?: boolean | null         // Finding became a CISA Known Exploited Vulnerability within this period
     isSeverityIncreased?: boolean | null // Finding's severity was raised within this period
     previousSeverity?: string | null    // Prior severity when isSeverityIncreased (for "prev -> current")
@@ -43,6 +43,8 @@ export interface ArtifactWithAttribution {
     version: string
     addedIn: ComponentAttribution[]
     removedIn: ComponentAttribution[]
+    addedInCount: number
+    removedInCount: number
     isNetAdded: boolean      // Org-wide: net added across all components
     isNetRemoved: boolean    // Org-wide: net removed across all components
 }
@@ -60,14 +62,19 @@ export interface SbomChangesWithAttribution {
  * Vulnerability with attribution showing which releases introduced/resolved it
  */
 export interface VulnerabilityWithAttribution {
+    findingKey: string  // opaque handle for the findingAttributionByDate drill-down
     vulnId: string
     purl: string
     severity: string
     aliases: Array<{ aliasId: string }>
     knownExploited?: boolean
+    // *In are PREVIEW-capped (first ATTRIBUTION_PREVIEW_CAP); *InCount is the true total ("+N more").
     resolvedIn: ComponentAttribution[]
     appearedIn: ComponentAttribution[]
     presentIn: ComponentAttribution[]
+    resolvedInCount: number
+    appearedInCount: number
+    presentInCount: number
     isNetResolved: boolean   // Org-wide: net resolved across all components
     isNetAppeared: boolean   // Org-wide: net appeared across all components
     isStillPresent: boolean  // Org-wide: still present in some releases
@@ -79,11 +86,15 @@ export interface VulnerabilityWithAttribution {
  * Violation with attribution
  */
 export interface ViolationWithAttribution {
+    findingKey: string
     type: string
     purl: string
     resolvedIn: ComponentAttribution[]
     appearedIn: ComponentAttribution[]
     presentIn: ComponentAttribution[]
+    resolvedInCount: number
+    appearedInCount: number
+    presentInCount: number
     isNetResolved: boolean
     isNetAppeared: boolean
     isStillPresent: boolean
@@ -95,6 +106,7 @@ export interface ViolationWithAttribution {
  * Weakness with attribution
  */
 export interface WeaknessWithAttribution {
+    findingKey: string
     cweId: string
     severity: string | null
     ruleId: string | null
@@ -102,6 +114,9 @@ export interface WeaknessWithAttribution {
     resolvedIn: ComponentAttribution[]
     appearedIn: ComponentAttribution[]
     presentIn: ComponentAttribution[]
+    resolvedInCount: number
+    appearedInCount: number
+    presentInCount: number
     isNetResolved: boolean
     isNetAppeared: boolean
     isStillPresent: boolean
@@ -119,7 +134,7 @@ export interface FindingChangesWithAttribution {
     totalAppeared: number
     totalResolved: number
     // Posture-worsening rollup counts (additive; null/undefined when the
-    // backend feature flag is off — render the tag only when > 0).
+    // backend feature flag is off - render the tag only when > 0).
     totalNewlyKev?: number | null
     totalSeverityIncreased?: number | null
 }

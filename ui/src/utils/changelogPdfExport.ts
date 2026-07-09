@@ -255,7 +255,7 @@ function buildSbomAggregatedTable(changelog: any): { headers: string[]; rows: Pd
     for (const art of sorted) {
         const status = art.isNetAdded ? 'Added' : art.isNetRemoved ? 'Removed' : 'Changed'
         const statusColor = art.isNetAdded ? '#18a058' : art.isNetRemoved ? '#d03050' : '#f0a020'
-        const attribution = formatAttribution(art.addedIn, art.removedIn)
+        const attribution = formatAttribution(art.addedIn, art.removedIn, art.addedInCount, art.removedInCount)
 
         rows.push({ cells: [
             { text: status, color: statusColor },
@@ -423,13 +423,20 @@ function buildFindingAggregatedTable(changelog: any): { headers: string[]; rows:
 
 // ==================== Attribution Helpers ====================
 
-function formatAttribution(addedIn: any[], removedIn: any[]): string {
+// Inline attribution arrays are preview-capped; the true total lives in *InCount.
+// A static PDF cannot lazy-fetch, so append " +N more" to signal truncation.
+function moreSuffix(count: number | undefined, shown: any[]): string {
+    const more = Math.max(0, (count || 0) - (shown ? shown.length : 0))
+    return more > 0 ? ` +${more} more` : ''
+}
+
+function formatAttribution(addedIn: any[], removedIn: any[], addedInCount?: number, removedInCount?: number): string {
     const parts: string[] = []
     if (addedIn && addedIn.length > 0) {
-        parts.push('Added in: ' + addedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', '))
+        parts.push('Added in: ' + addedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', ') + moreSuffix(addedInCount, addedIn))
     }
     if (removedIn && removedIn.length > 0) {
-        parts.push('Removed in: ' + removedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', '))
+        parts.push('Removed in: ' + removedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', ') + moreSuffix(removedInCount, removedIn))
     }
     return parts.join('; ')
 }
@@ -437,10 +444,10 @@ function formatAttribution(addedIn: any[], removedIn: any[]): string {
 function formatFindingAttribution(finding: any): string {
     const parts: string[] = []
     if (finding.appearedIn && finding.appearedIn.length > 0) {
-        parts.push(finding.appearedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', '))
+        parts.push(finding.appearedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', ') + moreSuffix(finding.appearedInCount, finding.appearedIn))
     }
     if (finding.resolvedIn && finding.resolvedIn.length > 0) {
-        parts.push('Resolved: ' + finding.resolvedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', '))
+        parts.push('Resolved: ' + finding.resolvedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', ') + moreSuffix(finding.resolvedInCount, finding.resolvedIn))
     }
     return parts.join('; ')
 }
