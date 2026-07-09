@@ -63,6 +63,8 @@
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getAppearedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="moreCount(finding.appearedInCount, finding.appearedIn) > 0 && canDrillDown" class="more-link" @click.prevent="openAttributionDrawer(finding, 'APPEARED')">+{{ moreCount(finding.appearedInCount, finding.appearedIn) }} more</a>
+                        <span v-else-if="moreCount(finding.appearedInCount, finding.appearedIn) > 0" class="more-text">+{{ moreCount(finding.appearedInCount, finding.appearedIn) }} more</span>
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
                         <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
                         <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
@@ -78,6 +80,8 @@
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
                         <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
                         <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="moreCount(finding.presentInCount, finding.presentIn) > 0 && canDrillDown" class="more-link" @click.prevent="openAttributionDrawer(finding, 'PRESENT')">+{{ moreCount(finding.presentInCount, finding.presentIn) }} more</a>
+                        <span v-else-if="moreCount(finding.presentInCount, finding.presentIn) > 0" class="more-text">+{{ moreCount(finding.presentInCount, finding.presentIn) }} more</span>
                         <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
@@ -88,7 +92,11 @@
                 @kev-click="openKevModal">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
+                        <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
+                        <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="moreCount(finding.resolvedInCount, finding.resolvedIn) > 0 && canDrillDown" class="more-link" @click.prevent="openAttributionDrawer(finding, 'RESOLVED')">+{{ moreCount(finding.resolvedInCount, finding.resolvedIn) }} more</a>
+                        <span v-else-if="moreCount(finding.resolvedInCount, finding.resolvedIn) > 0" class="more-text">+{{ moreCount(finding.resolvedInCount, finding.resolvedIn) }} more</span>
                         <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
@@ -102,6 +110,8 @@
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
                         <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
                         <span v-for="(seg, i) in getInheritedDebtContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="moreCount(finding.presentInCount, finding.presentIn) > 0 && canDrillDown" class="more-link" @click.prevent="openAttributionDrawer(finding, 'PRESENT')">+{{ moreCount(finding.presentInCount, finding.presentIn) }} more</a>
+                        <span v-else-if="moreCount(finding.presentInCount, finding.presentIn) > 0" class="more-text">+{{ moreCount(finding.presentInCount, finding.presentIn) }} more</span>
                         <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
@@ -115,6 +125,8 @@
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
                         <span v-if="finding.orgContext?.isSeverityIncreased" class="worsened-badge worsened-badge-sev" title="Severity was raised in this period">Severity ↑<template v-if="finding.orgContext?.previousSeverity"> ({{ finding.orgContext.previousSeverity }} → {{ finding.severity || 'UNASSIGNED' }})</template></span>
                         <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="moreCount(finding.presentInCount, finding.presentIn) > 0 && canDrillDown" class="more-link" @click.prevent="openAttributionDrawer(finding, 'PRESENT')">+{{ moreCount(finding.presentInCount, finding.presentIn) }} more</a>
+                        <span v-else-if="moreCount(finding.presentInCount, finding.presentIn) > 0" class="more-text">+{{ moreCount(finding.presentInCount, finding.presentIn) }} more</span>
                         <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
@@ -126,6 +138,8 @@
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                        <a v-if="moreCount(finding.resolvedInCount, finding.resolvedIn) > 0 && canDrillDown" class="more-link" @click.prevent="openAttributionDrawer(finding, 'RESOLVED')">+{{ moreCount(finding.resolvedInCount, finding.resolvedIn) }} more</a>
+                        <span v-else-if="moreCount(finding.resolvedInCount, finding.resolvedIn) > 0" class="more-text">+{{ moreCount(finding.resolvedInCount, finding.resolvedIn) }} more</span>
                         <a v-if="canViewTimeline(finding)" class="timeline-link" @click.prevent="openTimeline(finding)">View timeline</a>
                     </div>
                 </template>
@@ -135,11 +149,33 @@
 
             <n-drawer v-model:show="showTimeline" :width="560" placement="right">
                 <n-drawer-content :title="timelineTitle" closable>
-                    <OverTimeFindingChanges
-                        :over-time-finding-changes="overTimeFindingChanges"
-                        :finding-key-filter="timelineFilterKey"
-                        :org-uuid="orgUuid"
-                    />
+                    <n-spin :show="timelineLoading">
+                        <OverTimeFindingChanges
+                            :over-time-finding-changes="timelineItems"
+                            :finding-key-filter="''"
+                            :org-uuid="orgUuid"
+                        />
+                        <div v-if="timelineItems.length < timelineTotal" class="drawer-load-more">
+                            <n-button size="small" :loading="timelineLoading" @click="loadMoreTimeline">Load more ({{ timelineItems.length }} of {{ timelineTotal }})</n-button>
+                        </div>
+                    </n-spin>
+                </n-drawer-content>
+            </n-drawer>
+
+            <n-drawer v-model:show="showAttributionDrawer" :width="560" placement="right">
+                <n-drawer-content :title="attributionTitle" closable>
+                    <n-spin :show="attributionLoading">
+                        <p class="drawer-total">{{ attributionTotal }} total</p>
+                        <ul class="attribution-list">
+                            <li v-for="item in attributionItems" :key="`${item.releaseUuid}-${item.componentUuid}`">
+                                <router-link :to="{ name: 'ReleaseView', params: { uuid: item.releaseUuid } }" class="release-link">{{ attributionLabel(item) }}</router-link>
+                            </li>
+                        </ul>
+                        <div v-if="attributionItems.length === 0 && !attributionLoading" class="drawer-empty">No entries.</div>
+                        <div v-if="attributionItems.length < attributionTotal" class="drawer-load-more">
+                            <n-button size="small" :loading="attributionLoading" @click="loadMoreAttribution">Load more ({{ attributionItems.length }} of {{ attributionTotal }})</n-button>
+                        </div>
+                    </n-spin>
                 </n-drawer-content>
             </n-drawer>
         </div>
@@ -155,12 +191,17 @@
 
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
-import { NTag, NTooltip, NDrawer, NDrawerContent } from 'naive-ui'
+import { NTag, NTooltip, NDrawer, NDrawerContent, NSpin, NButton } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
 import OverTimeFindingChanges from './OverTimeFindingChanges.vue'
 import KevDetailsModal from '../KevDetailsModal.vue'
 import { getSeverityIndex } from '../../utils/findingUtils'
 import { resolveKevCveId } from '../../utils/kevService'
+import {
+    fetchFindingAttribution,
+    fetchFindingChangeTimeline,
+    type ComponentAttributionEntry
+} from '../../utils/changelogQueries'
 import type {
     FindingChangesWithAttribution,
     VulnerabilityWithAttribution,
@@ -170,18 +211,36 @@ import type {
 } from '../../types/changelog-attribution'
 import type { MetricsRevisionFindingChange } from '../../types/changelog-sealed'
 
+type AttributionBucket = 'APPEARED' | 'PRESENT' | 'RESOLVED'
+
 interface Props {
     findingChanges?: FindingChangesWithAttribution
     showAttribution?: boolean
     orgUuid?: string
-    // Flat re-scan timeline (same GraphQL payload) — filtered client-side by
-    // finding key for the per-finding drill-down drawer. Optional/nullable.
+    // Flat re-scan timeline (same GraphQL payload) - retained for backward compat
+    // but no longer used to gate/populate the timeline drawer (which now fetches
+    // server-side; the inline payload is capped and can miss older events).
     overTimeFindingChanges?: MetricsRevisionFindingChange[]
+    // Scope of the "first occurrence in ..." attribution text. Defaults to
+    // 'organization' so the org changelog view renders unchanged; the
+    // component/product posture rollup passes 'component' / 'product'.
+    scopeLabel?: 'organization' | 'component' | 'product'
+    // Drill-down context: date window + scope for the "+N more" attribution
+    // drawer and the per-finding timeline drawer (both fetched server-side).
+    dateFrom?: string
+    dateTo?: string
+    componentUuid?: string
+    branchUuid?: string
+    perspectiveUuid?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    showAttribution: true
+    showAttribution: true,
+    scopeLabel: 'organization'
 })
+
+// Drill-down is available only when we have the org + date window to scope a query.
+const canDrillDown = computed(() => !!(props.orgUuid && props.dateFrom && props.dateTo))
 
 const showKevModal = ref(false)
 const kevModalCveId = ref('')
@@ -191,36 +250,152 @@ function openKevModal(finding: any) {
     showKevModal.value = true
 }
 
-// ---- Per-finding timeline drill-down (drawer) ----
+// ---- Per-finding timeline drill-down (drawer, fetched server-side) ----
+// The inline overTimeFindingChanges payload is capped to the newest 1000 events
+// so a client-side per-finding filter can MISS older events. The drawer instead
+// pages the finding's full timeline via fetchFindingChangeTimeline.
 const showTimeline = ref(false)
-const timelineFilterKey = ref('')
 const timelineTitle = ref('')
+const timelineItems = ref<MetricsRevisionFindingChange[]>([])
+const timelineTotal = ref(0)
+const timelinePage = ref(0)
+const timelineLoading = ref(false)
+const timelineFindingKey = ref('')
+const TIMELINE_PAGE_SIZE = 50
 
-// Type-scoped id key matching recordFindingKey() in OverTimeFindingChanges.vue:
-// deliberately excludes the per-release component so a CVE's whole cross-release
-// timeline is shown (this is the #41 case — same CVE, different releases).
-function findingKeyForFilter(finding: NormalizedFinding): string {
-    return `${finding.type}-${finding.findingId}`
+// A timeline link is offered whenever drill-down context is present - the events
+// live in a separate store that the changelog payload no longer carries, so we
+// gate on scope availability rather than the (capped/absent) inline array.
+function canViewTimeline(finding: NormalizedFinding): boolean {
+    return canDrillDown.value && !!finding.findingKey
 }
 
-// A timeline is available only when the payload actually carries at least one
-// matching over-time record for this finding (flag-off / legacy => no link).
-function canViewTimeline(finding: NormalizedFinding): boolean {
-    const records = props.overTimeFindingChanges
-    if (!records || records.length === 0) return false
-    const key = findingKeyForFilter(finding)
-    return records.some(rec => {
-        if (rec.vulnerability) return `VULN-${rec.vulnerability.vulnId}` === key
-        if (rec.violation) return `VIOLATION-${rec.violation.type}` === key
-        if (rec.weakness) return `WEAKNESS-${rec.weakness.cweId || rec.weakness.ruleId || ''}` === key
-        return false
-    })
+async function loadTimelinePage(page: number) {
+    if (!props.orgUuid || !props.dateFrom || !props.dateTo) return
+    timelineLoading.value = true
+    try {
+        const res = await fetchFindingChangeTimeline({
+            orgUuid: props.orgUuid,
+            componentUuid: props.componentUuid,
+            branchUuid: props.branchUuid,
+            perspectiveUuid: props.perspectiveUuid,
+            dateFrom: props.dateFrom,
+            dateTo: props.dateTo,
+            findingKey: timelineFindingKey.value,
+            page,
+            pageSize: TIMELINE_PAGE_SIZE
+        })
+        if (page === 0) {
+            timelineItems.value = res.items as MetricsRevisionFindingChange[]
+        } else {
+            timelineItems.value = [...timelineItems.value, ...(res.items as MetricsRevisionFindingChange[])]
+        }
+        timelineTotal.value = res.total
+        timelinePage.value = res.page
+    } catch (error) {
+        console.error('Error fetching finding change timeline:', error)
+    } finally {
+        timelineLoading.value = false
+    }
 }
 
 function openTimeline(finding: NormalizedFinding) {
-    timelineFilterKey.value = findingKeyForFilter(finding)
+    timelineFindingKey.value = finding.findingKey
     timelineTitle.value = `Timeline — ${finding.findingId}`
+    timelineItems.value = []
+    timelineTotal.value = 0
+    timelinePage.value = 0
     showTimeline.value = true
+    loadTimelinePage(0)
+}
+
+function loadMoreTimeline() {
+    loadTimelinePage(timelinePage.value + 1)
+}
+
+// ---- "+N more" attribution drill-down (drawer, fetched server-side) ----
+const showAttributionDrawer = ref(false)
+const attributionTitle = ref('')
+const attributionItems = ref<ComponentAttributionEntry[]>([])
+const attributionTotal = ref(0)
+const attributionPage = ref(0)
+const attributionLoading = ref(false)
+const attributionFindingKey = ref('')
+const attributionFindingKind = ref<'VULNERABILITY' | 'VIOLATION' | 'WEAKNESS'>('VULNERABILITY')
+const attributionBucket = ref<AttributionBucket>('APPEARED')
+const ATTRIBUTION_PAGE_SIZE = 50
+
+const BUCKET_LABELS: Record<AttributionBucket, string> = {
+    APPEARED: 'Appeared in',
+    PRESENT: 'Present in',
+    RESOLVED: 'Resolved in'
+}
+
+function findingKindOf(finding: NormalizedFinding): 'VULNERABILITY' | 'VIOLATION' | 'WEAKNESS' {
+    switch (finding.type) {
+        case 'VULN': return 'VULNERABILITY'
+        case 'VIOLATION': return 'VIOLATION'
+        default: return 'WEAKNESS'
+    }
+}
+
+function attributionLabel(item: ComponentAttributionEntry): string {
+    if (item.componentName) return `${item.componentName}@${item.releaseVersion}`
+    if (item.branchName) return `${item.branchName} ${item.releaseVersion}`
+    return item.releaseVersion
+}
+
+async function loadAttributionPage(page: number) {
+    if (!props.orgUuid || !props.dateFrom || !props.dateTo) return
+    attributionLoading.value = true
+    try {
+        const res = await fetchFindingAttribution({
+            orgUuid: props.orgUuid,
+            componentUuid: props.componentUuid,
+            branchUuid: props.branchUuid,
+            perspectiveUuid: props.perspectiveUuid,
+            dateFrom: props.dateFrom,
+            dateTo: props.dateTo,
+            findingKind: attributionFindingKind.value,
+            findingKey: attributionFindingKey.value,
+            bucket: attributionBucket.value,
+            page,
+            pageSize: ATTRIBUTION_PAGE_SIZE
+        })
+        if (page === 0) {
+            attributionItems.value = res.items
+        } else {
+            attributionItems.value = [...attributionItems.value, ...res.items]
+        }
+        attributionTotal.value = res.total
+        attributionPage.value = res.page
+    } catch (error) {
+        console.error('Error fetching finding attribution:', error)
+    } finally {
+        attributionLoading.value = false
+    }
+}
+
+function openAttributionDrawer(finding: NormalizedFinding, bucket: AttributionBucket) {
+    attributionFindingKey.value = finding.findingKey
+    attributionFindingKind.value = findingKindOf(finding)
+    attributionBucket.value = bucket
+    attributionTitle.value = `${BUCKET_LABELS[bucket]} — ${finding.findingId}`
+    attributionItems.value = []
+    attributionTotal.value = 0
+    attributionPage.value = 0
+    showAttributionDrawer.value = true
+    loadAttributionPage(0)
+}
+
+function loadMoreAttribution() {
+    loadAttributionPage(attributionPage.value + 1)
+}
+
+// "+N more" count for a bucket: total (from *InCount) minus the inline preview
+// entries already shown. Returns 0 when nothing is hidden.
+function moreCount(count: number, shown: unknown[]): number {
+    return Math.max(0, (count || 0) - (shown ? shown.length : 0))
 }
 
 type AttributionSegment = {
@@ -230,6 +405,7 @@ type AttributionSegment = {
 
 type NormalizedFinding = {
     findingId: string
+    findingKey: string
     affectedComponent: string
     severity?: string
     aliases?: Array<{ aliasId: string }>
@@ -239,6 +415,9 @@ type NormalizedFinding = {
     appearedIn: any[]
     resolvedIn: any[]
     presentIn: any[]
+    appearedInCount: number
+    resolvedInCount: number
+    presentInCount: number
     isNetAppeared: boolean
     isNetResolved: boolean
     isStillPresent: boolean
@@ -256,6 +435,7 @@ const sortBySeverity = (findings: NormalizedFinding[]) => {
 
 const normalizeVulnerability = (vuln: VulnerabilityWithAttribution): NormalizedFinding => ({
     findingId: vuln.vulnId,
+    findingKey: vuln.findingKey,
     affectedComponent: vuln.purl,
     severity: vuln.severity,
     aliases: vuln.aliases,
@@ -265,6 +445,9 @@ const normalizeVulnerability = (vuln: VulnerabilityWithAttribution): NormalizedF
     appearedIn: vuln.appearedIn,
     resolvedIn: vuln.resolvedIn,
     presentIn: vuln.presentIn,
+    appearedInCount: vuln.appearedInCount,
+    resolvedInCount: vuln.resolvedInCount,
+    presentInCount: vuln.presentInCount,
     isNetAppeared: vuln.isNetAppeared,
     isNetResolved: vuln.isNetResolved,
     isStillPresent: vuln.isStillPresent,
@@ -274,12 +457,16 @@ const normalizeVulnerability = (vuln: VulnerabilityWithAttribution): NormalizedF
 
 const normalizeViolation = (violation: ViolationWithAttribution): NormalizedFinding => ({
     findingId: violation.type,
+    findingKey: violation.findingKey,
     affectedComponent: violation.purl,
     type: 'VIOLATION',
     typeLabel: 'VIOLATION',
     appearedIn: violation.appearedIn,
     resolvedIn: violation.resolvedIn,
     presentIn: violation.presentIn,
+    appearedInCount: violation.appearedInCount,
+    resolvedInCount: violation.resolvedInCount,
+    presentInCount: violation.presentInCount,
     isNetAppeared: violation.isNetAppeared,
     isNetResolved: violation.isNetResolved,
     isStillPresent: violation.isStillPresent,
@@ -289,6 +476,7 @@ const normalizeViolation = (violation: ViolationWithAttribution): NormalizedFind
 
 const normalizeWeakness = (weakness: WeaknessWithAttribution): NormalizedFinding => ({
     findingId: weakness.cweId || weakness.ruleId || '',
+    findingKey: weakness.findingKey,
     affectedComponent: weakness.location,
     severity: weakness.severity || undefined,
     type: 'WEAKNESS',
@@ -296,6 +484,9 @@ const normalizeWeakness = (weakness: WeaknessWithAttribution): NormalizedFinding
     appearedIn: weakness.appearedIn,
     resolvedIn: weakness.resolvedIn,
     presentIn: weakness.presentIn,
+    appearedInCount: weakness.appearedInCount,
+    resolvedInCount: weakness.resolvedInCount,
+    presentInCount: weakness.presentInCount,
     isNetAppeared: weakness.isNetAppeared,
     isNetResolved: weakness.isNetResolved,
     isStillPresent: weakness.isStillPresent,
@@ -351,7 +542,7 @@ function isWorsened(f: NormalizedFinding): boolean {
 }
 
 // Worsened section lists worsened findings that are NOT already surfaced under
-// New Findings — a KEV/severity-worsened finding that is also brand-new is
+// New Findings - a KEV/severity-worsened finding that is also brand-new is
 // badge-only in New (signed-off decision: no double-listing).
 const worsenedFindings = computed(() =>
     sortBySeverity(allFindings.value.filter(f => isWorsened(f) && !f.orgContext?.isNewToOrganization))
@@ -359,7 +550,7 @@ const worsenedFindings = computed(() =>
 
 // Headline counts. Prefer the backend rollup totals; fall back to a client-side
 // count of the org-context flags when the rollup fields are absent (both are
-// nullable — 0 when the backend feature flag is off, hiding the tags).
+// nullable - 0 when the backend feature flag is off, hiding the tags).
 const newlyKevCount = computed(() => {
     const total = props.findingChanges?.totalNewlyKev
     if (total != null) return total
@@ -438,7 +629,7 @@ function getAppearedContextSegments(finding: NormalizedFinding): AttributionSegm
             segments.push({ text: `${a.componentName}@${a.releaseVersion}`, releaseUuid: a.releaseUuid })
         })
         if (finding.orgContext.isNewToOrganization) {
-            segments.push({ text: ' (first occurrence in organization)' })
+            segments.push({ text: ` (first occurrence in ${props.scopeLabel})` })
         } else if (finding.orgContext.wasPreviouslyReported) {
             segments.push({ text: ' (was previously reported in other components)' })
         }
@@ -591,5 +782,64 @@ function getInheritedDebtContextSegments(finding: NormalizedFinding): Attributio
             text-decoration: underline;
         }
     }
+
+    .more-link {
+        margin-left: 6px;
+        color: #2080f0;
+        font-style: normal;
+        cursor: pointer;
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
+    .more-text {
+        margin-left: 6px;
+        color: #888;
+        font-style: italic;
+    }
+}
+
+.drawer-total {
+    margin-bottom: 10px;
+    color: #666;
+    font-style: italic;
+}
+
+.attribution-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+
+    li {
+        padding: 4px 0;
+        border-bottom: 1px solid #f0f0f0;
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+
+    .release-link {
+        color: #2080f0;
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+}
+
+.drawer-empty {
+    padding: 12px 0;
+    color: #999;
+    font-style: italic;
+}
+
+.drawer-load-more {
+    margin-top: 12px;
+    text-align: center;
 }
 </style>

@@ -92,8 +92,9 @@ const RELEASE_FINDING_CHANGES_FRAGMENT = `
 
 // Over-time finding changes: flat list of re-scan-driven MetricsRevisionFindingChange
 // records. Exactly one of vulnerability/violation/weakness is non-null per record;
-// previousSeverity is set only for SEVERITY_INCREASED. Reuses the same lightweight
-// nested selections as the per-release finding-change fragments.
+// previousSeverity is set only for SEVERITY_INCREASED. Selects analysisState on each
+// nested finding for parity with the per-release finding-change fragments (so
+// suppressed/FALSE_POSITIVE findings render correctly in the drill-down drawer).
 const OVER_TIME_FINDING_CHANGES_FRAGMENT = `
     changeDate
     changeKind
@@ -109,17 +110,20 @@ const OVER_TIME_FINDING_CHANGES_FRAGMENT = `
         aliases {
             aliasId
         }
+        analysisState
         knownExploited
     }
     violation {
         type
         purl
+        analysisState
     }
     weakness {
         cweId
         severity
         ruleId
         location
+        analysisState
     }
 `
 
@@ -177,6 +181,8 @@ const SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         version
         isNetAdded
         isNetRemoved
+        addedInCount
+        removedInCount
         addedIn {
             ${COMPONENT_ATTRIBUTION_FRAGMENT}
         }
@@ -192,6 +198,7 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
     totalNewlyKev
     totalSeverityIncreased
     vulnerabilities {
+        findingKey
         vulnId
         purl
         severity
@@ -202,6 +209,9 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         isNetAppeared
         isNetResolved
         isStillPresent
+        appearedInCount
+        resolvedInCount
+        presentInCount
         appearedIn {
             ${COMPONENT_ATTRIBUTION_FRAGMENT}
         }
@@ -217,11 +227,15 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         analysisState
     }
     violations {
+        findingKey
         type
         purl
         isNetAppeared
         isNetResolved
         isStillPresent
+        appearedInCount
+        resolvedInCount
+        presentInCount
         appearedIn {
             ${COMPONENT_ATTRIBUTION_FRAGMENT}
         }
@@ -237,6 +251,7 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         analysisState
     }
     weaknesses {
+        findingKey
         cweId
         severity
         ruleId
@@ -244,6 +259,9 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         isNetAppeared
         isNetResolved
         isStillPresent
+        appearedInCount
+        resolvedInCount
+        presentInCount
         appearedIn {
             ${COMPONENT_ATTRIBUTION_FRAGMENT}
         }
@@ -340,6 +358,9 @@ const AGGREGATED_CHANGELOG_FIELDS = `
         ${SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
     }
     findingChanges {
+        ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
+    }
+    postureFindingChanges {
         ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
     }
     overTimeFindingChanges {
@@ -540,4 +561,168 @@ export async function fetchOrganizationChangelogByDate(params: {
     })
 
     return (response.data as any).organizationChangelogByDate as OrganizationChangelog
+}
+
+// ========== Drill-down: full attribution / timeline behind the capped inline previews ==========
+
+export interface ComponentAttributionEntry {
+    componentUuid: string
+    componentName: string
+    releaseUuid: string
+    releaseVersion: string
+    branchUuid?: string
+    branchName?: string
+}
+
+export interface ComponentAttributionPage {
+    items: ComponentAttributionEntry[]
+    total: number
+    page: number
+    pageSize: number
+}
+
+/**
+ * Pages one finding's FULL attribution for a bucket (the "+N more" behind the capped inline list).
+ * `total` equals the *InCount shown inline. Scope: org (only orgUuid) / component (+componentUuid) /
+ * branch (+componentUuid+branchUuid).
+ */
+export async function fetchFindingAttribution(params: {
+    orgUuid: string
+    componentUuid?: string
+    branchUuid?: string
+    perspectiveUuid?: string
+    dateFrom: string
+    dateTo: string
+    findingKind: 'VULNERABILITY' | 'VIOLATION' | 'WEAKNESS'
+    findingKey: string
+    bucket: 'APPEARED' | 'PRESENT' | 'RESOLVED'
+    page?: number
+    pageSize?: number
+}): Promise<ComponentAttributionPage> {
+    const response = await graphqlClient.query({
+        query: gql`
+            query FetchFindingAttribution(
+                $orgUuid: ID!
+                $componentUuid: ID
+                $branchUuid: ID
+                $perspectiveUuid: ID
+                $dateFrom: DateTime!
+                $dateTo: DateTime!
+                $findingKind: ChangelogFindingKind!
+                $findingKey: String!
+                $bucket: FindingAttributionBucket!
+                $page: Int
+                $pageSize: Int
+            ) {
+                findingAttributionByDate(
+                    orgUuid: $orgUuid
+                    componentUuid: $componentUuid
+                    branchUuid: $branchUuid
+                    perspectiveUuid: $perspectiveUuid
+                    dateFrom: $dateFrom
+                    dateTo: $dateTo
+                    findingKind: $findingKind
+                    findingKey: $findingKey
+                    bucket: $bucket
+                    page: $page
+                    pageSize: $pageSize
+                ) {
+                    total
+                    page
+                    pageSize
+                    items {
+                        ${COMPONENT_ATTRIBUTION_FRAGMENT}
+                    }
+                }
+            }
+        `,
+        variables: {
+            orgUuid: params.orgUuid,
+            componentUuid: params.componentUuid || null,
+            branchUuid: params.branchUuid || null,
+            perspectiveUuid: params.perspectiveUuid || null,
+            dateFrom: params.dateFrom,
+            dateTo: params.dateTo,
+            findingKind: params.findingKind,
+            findingKey: params.findingKey,
+            bucket: params.bucket,
+            page: params.page ?? 0,
+            pageSize: params.pageSize ?? 50
+        },
+        fetchPolicy: 'no-cache'
+    })
+    return (response.data as any).findingAttributionByDate as ComponentAttributionPage
+}
+
+export interface MetricsRevisionFindingChangePage {
+    items: any[]
+    total: number
+    page: number
+    pageSize: number
+    since?: string
+}
+
+/**
+ * Pages the over-time finding-change timeline behind the capped inline overTimeFindingChanges. Optional
+ * findingKey narrows to one finding's timeline (drawer). Newest-first.
+ */
+export async function fetchFindingChangeTimeline(params: {
+    orgUuid: string
+    componentUuid?: string
+    branchUuid?: string
+    perspectiveUuid?: string
+    dateFrom: string
+    dateTo: string
+    findingKey?: string
+    page?: number
+    pageSize?: number
+}): Promise<MetricsRevisionFindingChangePage> {
+    const response = await graphqlClient.query({
+        query: gql`
+            query FetchFindingChangeTimeline(
+                $orgUuid: ID!
+                $componentUuid: ID
+                $branchUuid: ID
+                $perspectiveUuid: ID
+                $dateFrom: DateTime!
+                $dateTo: DateTime!
+                $findingKey: String
+                $page: Int
+                $pageSize: Int
+            ) {
+                findingChangeTimelineByDate(
+                    orgUuid: $orgUuid
+                    componentUuid: $componentUuid
+                    branchUuid: $branchUuid
+                    perspectiveUuid: $perspectiveUuid
+                    dateFrom: $dateFrom
+                    dateTo: $dateTo
+                    findingKey: $findingKey
+                    page: $page
+                    pageSize: $pageSize
+                ) {
+                    total
+                    page
+                    pageSize
+                    since
+                    items {
+                        ${OVER_TIME_FINDING_CHANGES_FRAGMENT}
+                    }
+                }
+            }
+        `,
+        variables: {
+            orgUuid: params.orgUuid,
+            componentUuid: params.componentUuid || null,
+            branchUuid: params.branchUuid || null,
+            perspectiveUuid: params.perspectiveUuid || null,
+            dateFrom: params.dateFrom,
+            dateTo: params.dateTo,
+            findingKey: params.findingKey || null,
+            page: params.page ?? 0,
+            pageSize: params.pageSize ?? 50
+        },
+        fetchPolicy: 'no-cache'
+    })
+    return (response.data as any).findingChangeTimelineByDate as MetricsRevisionFindingChangePage
 }
