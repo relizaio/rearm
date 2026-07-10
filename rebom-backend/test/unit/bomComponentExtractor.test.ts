@@ -6,9 +6,26 @@ import {
 } from '../../src/services/bom/bomComponentExtractor';
 
 describe('bomComponentExtractor.canonicalizePurl', () => {
-	it('strips qualifiers from a purl', () => {
+	it('preserves distro but strips arch for apk', () => {
 		const raw = 'pkg:apk/alpine/alpine-baselayout-data@3.6.5-r0?arch=x86_64&distro=alpine-3.20.5';
-		expect(canonicalizePurl(raw)).toBe('pkg:apk/alpine/alpine-baselayout-data@3.6.5-r0');
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:apk/alpine/alpine-baselayout-data@3.6.5-r0?distro=alpine-3.20.5');
+	});
+
+	it('preserves distro but strips arch for deb', () => {
+		const raw = 'pkg:deb/debian/curl@7.50.3-1?arch=i386&distro=debian-9';
+		expect(canonicalizePurl(raw)).toBe('pkg:deb/debian/curl@7.50.3-1?distro=debian-9');
+	});
+
+	it('preserves distro and epoch for rpm, strips arch', () => {
+		const raw = 'pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25&epoch=1';
+		expect(canonicalizePurl(raw)).toBe(
+			'pkg:rpm/fedora/curl@7.50.3-1.fc25?distro=fedora-25&epoch=1');
+	});
+
+	it('canonicalizes an apk purl without distro into its bare form', () => {
+		const raw = 'pkg:apk/alpine/openssl@3.5.7-r0?arch=x86_64';
+		expect(canonicalizePurl(raw)).toBe('pkg:apk/alpine/openssl@3.5.7-r0');
 	});
 
 	it('strips subpath from a purl', () => {
