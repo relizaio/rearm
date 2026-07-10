@@ -68,32 +68,46 @@ export interface ParsedBom {
 }
 
 /**
- * purl types whose identity is incomplete without a specific qualifier — the
+ * purl types whose identity is incomplete without specific qualifiers — the
  * purl-spec marks these `requirement: "required"` (julia/swid), plus oci where
- * the registry must be preserved to disambiguate the image. Canonicalization
- * keeps ONLY the listed qualifier for these types and strips everything else.
+ * the registry must be preserved to disambiguate the image, plus Linux distro
+ * packages (apk/deb/rpm/bitnami) where `distro` scopes advisory matching to a
+ * release branch (Alpine secdb / OSV `Alpine:v3.NN` ecosystems — without it a
+ * matcher can only match across all branches, surfacing long-fixed CVEs) and
+ * rpm `epoch` which is part of RPM version identity. Canonicalization keeps
+ * ONLY the listed qualifiers for these types and strips everything else.
  */
-const PRESERVED_QUALIFIERS: Record<string, string> = {
-	julia: 'uuid',
-	swid: 'tag_id',
-	oci: 'repository_url',
+const PRESERVED_QUALIFIERS: Record<string, string[]> = {
+	julia: ['uuid'],
+	swid: ['tag_id'],
+	oci: ['repository_url'],
+	apk: ['distro'],
+	deb: ['distro'],
+	rpm: ['distro', 'epoch'],
+	bitnami: ['distro'],
 };
 
 /**
  * Strip qualifiers and subpath from a purl, leaving the canonical
  * identity part: pkg:<type>/<namespace>/<name>@<version>. For purl types in
- * {@link PRESERVED_QUALIFIERS} the one required qualifier is retained (DTrack
- * and OSV match on the qualifier-stripped purl, but these types lose identity
- * without it). Returns null if the input is missing or unparseable.
+ * {@link PRESERVED_QUALIFIERS} the listed identity-bearing qualifiers are
+ * retained (DTrack and OSV match on the qualifier-stripped purl, but these
+ * types lose identity or advisory-matching precision without them). Returns
+ * null if the input is missing or unparseable.
  */
 export function canonicalizePurl(rawPurl: string | undefined | null): string | null {
 	if (!rawPurl) return null;
 	try {
 		const parsed = PackageURL.fromString(rawPurl);
-		const preserveKey = PRESERVED_QUALIFIERS[parsed.type];
+		const preserveKeys = PRESERVED_QUALIFIERS[parsed.type];
 		let qualifiers: { [k: string]: string } | undefined = undefined;
-		if (preserveKey && parsed.qualifiers && (parsed.qualifiers as any)[preserveKey] != null) {
-			qualifiers = { [preserveKey]: String((parsed.qualifiers as any)[preserveKey]) };
+		if (preserveKeys && parsed.qualifiers) {
+			for (const key of preserveKeys) {
+				if ((parsed.qualifiers as any)[key] != null) {
+					qualifiers = qualifiers ?? {};
+					qualifiers[key] = String((parsed.qualifiers as any)[key]);
+				}
+			}
 		}
 		const canonical = new PackageURL(
 			parsed.type,
