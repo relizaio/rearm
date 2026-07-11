@@ -34,7 +34,7 @@ export async function isDtrackConfiguredForOrg (orgUuid: string): Promise<boolea
     }
 }
 
-export type ReleaseScanStatusKind = 'enrichment-pending' | 'dtrack-pending' | 'scan-pending' | 'ready'
+export type ReleaseScanStatusKind = 'enrichment-pending' | 'dtrack-pending' | 'scan-pending' | 'rejected' | 'ready'
 
 export interface ReleaseScanStatus {
     kind: ReleaseScanStatusKind
@@ -53,6 +53,11 @@ export interface ReleaseScanStatus {
  *                      not completed across all scannable inputs (artifacts +
  *                      child releases for products). Catches PENDING-lifecycle
  *                      releases and product releases waiting on a child.
+ *  rejected            the release is REJECTED and its scan never completed —
+ *                      the scan will not run for a rejected release, so a
+ *                      "pending" badge would wait forever. Enrichment-pending
+ *                      is NOT remapped: rebom enrichment is artifact-level and
+ *                      still finishes regardless of release lifecycle.
  *  ready               firstScanned is set — caller renders the existing circles
  */
 export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): ReleaseScanStatus {
@@ -65,9 +70,11 @@ export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): 
             title: 'BOM enrichment in progress for at least one artifact'
         }
     }
+    const rejected = release?.lifecycle === 'REJECTED'
     if (dtrackConfigured) {
         const hasDtrackPending = artifacts.some((a) => isBomDtrackPending(a))
         if (hasDtrackPending) {
+            if (rejected) return rejectedStatus()
             return {
                 kind: 'dtrack-pending',
                 label: 'DTrack pending',
@@ -76,6 +83,7 @@ export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): 
         }
     }
     if (!release?.metrics?.firstScanned) {
+        if (rejected) return rejectedStatus()
         return {
             kind: 'scan-pending',
             label: 'Scan pending',
@@ -83,6 +91,14 @@ export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): 
         }
     }
     return { kind: 'ready', label: '', title: '' }
+}
+
+function rejectedStatus (): ReleaseScanStatus {
+    return {
+        kind: 'rejected',
+        label: 'Release rejected',
+        title: 'Release was rejected — the scan will not run for this release'
+    }
 }
 
 function collectArtifactsForStatus (release: any): any[] {

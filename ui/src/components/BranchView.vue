@@ -476,7 +476,7 @@ const dtrackConfigured: Ref<boolean> = ref(false)
 isDtrackConfiguredForOrg(orguuid).then((c) => { dtrackConfigured.value = c })
 
 function renderPendingBadge (status: { label: string, title: string, kind: string }) {
-    const bg = status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
+    const bg = status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
     return h('span', {
         title: status.title,
         style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`

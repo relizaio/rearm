@@ -66,7 +66,7 @@
                         <span
                             v-if="getPendingStatus(rel).kind !== 'ready'"
                             :title="getPendingStatus(rel).title"
-                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0, background: getPendingStatus(rel).kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
+                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0, background: getPendingStatus(rel).kind === 'rejected' ? '#d03050' : getPendingStatus(rel).kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
                         >{{ getPendingStatus(rel).label }}</span>
                         <n-space :size="1" v-else-if="rel.metrics?.lastScanned" style="flex-shrink: 0;">
                             <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ rel.metrics.critical }}</span>
