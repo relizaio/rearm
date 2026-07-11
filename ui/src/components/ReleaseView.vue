@@ -646,7 +646,7 @@
                         <span
                             v-if="releaseScanStatus.kind !== 'ready'"
                             :title="releaseScanStatus.title"
-                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', background: releaseScanStatus.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
+                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', background: releaseScanStatus.kind === 'rejected' ? '#d03050' : releaseScanStatus.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
                         >{{ releaseScanStatus.label }}</span>
                         <n-space :size="1" v-else>
                             <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.critical }}</span>
@@ -5354,11 +5354,12 @@ function renderEnrichmentPill (row: any): any {
 }
 
 function renderChildScanStatusBadge (status: { label: string, title: string, kind: string }): any {
-    // Same color rule as the home-page widgets and BranchView: orange for the
+    // Same color rule as the home-page widgets and BranchView: red for a
+    // rejected release whose scan will never run, orange for the
     // BOM-enrichment stage, yellow for everything else (DTrack-pending,
     // scan-pending). Keeps the parent-release table's pre-scan child rows in
     // sync with the rest of the UI instead of falling back to zeroed circles.
-    const bg = status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
+    const bg = status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
     return h('span', {
         title: status.title,
         style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`
@@ -5399,6 +5400,11 @@ function renderDtrackPill (row: any): any {
     }
     if (m.dependencyTrackFullUri) {
         return h(NTag, { type: 'warning', size: 'small', round: true, title: 'Submitted to Dependency-Track, awaiting scan results' }, () => 'Scanning…')
+    }
+    // A rejected release's artifacts are never submitted — a "pending" pill
+    // would wait forever, so say what actually happened.
+    if (updatedRelease.value?.lifecycle === 'REJECTED') {
+        return h(NTag, { type: 'error', size: 'small', round: true, title: 'Release was rejected — the scan will not run for this release' }, () => 'Release rejected')
     }
     return h(NTag, { type: 'warning', size: 'small', round: true, title: 'Awaiting Dependency-Track submission' }, () => 'Scan pending')
 }
