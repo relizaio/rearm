@@ -1257,57 +1257,6 @@ async function fetchMostVulnerableComponents () {
                             policyViolationsLicenseTotal
                             policyViolationsSecurityTotal
                             policyViolationsOperationalTotal
-                            vulnerabilityDetails {
-                                purl
-                                vulnId
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                knownExploited
-                                aliases { type aliasId }
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails { version componentDetails { name } }
-                                    artifactDetails { type }
-                                }
-                                severities { source severity }
-                            }
-                            violationDetails {
-                                purl
-                                type
-                                license
-                                violationDetails
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails { version componentDetails { name } }
-                                    artifactDetails { type }
-                                }
-                            }
-                            weaknessDetails {
-                                cweId
-                                ruleId
-                                location
-                                fingerprint
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails { version componentDetails { name } }
-                                    artifactDetails { type }
-                                }
-                            }
                         }
                     }
                 }`,
@@ -1339,8 +1288,7 @@ async function fetchMostVulnerableComponents () {
             uuid: x.componentuuid || x.uuid,
             name: x.componentname || x.name || 'Unknown',
             routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg',
-            metrics,
-            rawMetrics: x.metrics
+            metrics
             }
         })
     } catch (err: any) {
