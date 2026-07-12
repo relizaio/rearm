@@ -1,4 +1,4 @@
-FROM node:26.2.0-alpine3.23@sha256:7c6af15abe4e3de859690e7db171d0d711bf37d27528eddfe625b2fe89e097f8 AS builder
+FROM node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66 AS builder
 
 ARG TARGETARCH
 ARG TARGETOS
@@ -24,13 +24,13 @@ WORKDIR /app
 # Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
 COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.05.20/rearm-26.05.20-linux-amd64.zip ;\
-        unzip rearm-26.05.20-linux-amd64.zip ;\
+        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.07.2/rearm-26.07.2-linux-amd64.zip ;\
+        unzip rearm-26.07.2-linux-amd64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-linux-musl-x64 ;\
         mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.05.20/rearm-26.05.20-linux-arm64.zip ;\
-        unzip rearm-26.05.20-linux-arm64.zip ;\
+        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.07.2/rearm-26.07.2-linux-arm64.zip ;\
+        unzip rearm-26.07.2-linux-arm64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
     fi && \
@@ -66,7 +66,7 @@ RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && \
 # Build after tests pass
 RUN npm run build
 
-FROM node:26.2.0-alpine3.23@sha256:7c6af15abe4e3de859690e7db171d0d711bf37d27528eddfe625b2fe89e097f8 AS deliverable
+FROM node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66 AS deliverable
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined

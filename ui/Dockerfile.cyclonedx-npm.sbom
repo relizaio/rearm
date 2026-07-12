@@ -1,5 +1,5 @@
-FROM node:24.13.0-alpine3.23@sha256:cd6fb7efa6490f039f3471a189214d5f548c11df1ff9e5b181aa49e22c14383e AS build-stage
-RUN mkdir /sbom && npm install -g @cyclonedx/cyclonedx-npm@4.1.2
+FROM node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS build-stage
+RUN mkdir /sbom && npm install -g @cyclonedx/cyclonedx-npm@5.0.0
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --ignore-scripts
