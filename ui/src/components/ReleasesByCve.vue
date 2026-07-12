@@ -8,6 +8,15 @@
         :auto-focus="false"
     >
         <n-spin :show="loading">
+            <n-alert
+                v-if="truncated"
+                type="warning"
+                style="margin-bottom: 12px;"
+                :show-icon="true"
+            >
+                Showing the {{ shownReleases }} most recent matching releases of {{ totalReleases }} total.
+                Narrow the search by perspective or refine the finding to see the rest.
+            </n-alert>
             <component-branches-table
                 :data="componentData"
                 :org-uuid="props.orgUuid"
@@ -26,7 +35,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, useNotification } from 'naive-ui'
+import { NModal, NSpin, NAlert, useNotification } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -49,6 +58,9 @@ const emit = defineEmits(['update:show'])
 
 const loading = ref(false)
 const componentData = ref<any[]>([])
+const totalReleases = ref(0)
+const shownReleases = ref(0)
+const truncated = ref(false)
 
 const confirmAndOpen = async (e: Event, href: string) => {
     e.preventDefault()
@@ -131,7 +143,11 @@ const fetchReleases = async () => {
             query: gql`
                 query searchReleasesByCveId($org: ID!, $cveId: String!, $perspectiveUuid: ID) {
                     searchReleasesByCveId(org: $org, cveId: $cveId, perspectiveUuid: $perspectiveUuid) {
-                        uuid
+                        totalReleases
+                        shownReleases
+                        truncated
+                        components {
+                            uuid
                         name
                         type
                         versionSchema
@@ -158,6 +174,7 @@ const fetchReleases = async () => {
                                 }
                             }
                         }
+                        }
                     }
                 }
             `,
@@ -168,10 +185,15 @@ const fetchReleases = async () => {
             },
             fetchPolicy: 'no-cache'
         })
-        componentData.value = (response.data as any).searchReleasesByCveId || []
+        const result = (response.data as any).searchReleasesByCveId
+        componentData.value = result?.components || []
+        totalReleases.value = result?.totalReleases || 0
+        shownReleases.value = result?.shownReleases || 0
+        truncated.value = result?.truncated || false
     } catch (error: any) {
         console.error('Error fetching releases by CVE ID:', error)
         componentData.value = []
+        truncated.value = false
         notification.error({
             title: 'Error',
             content: `Failed to fetch releases for ${props.cveId}: ${commonFunctions.parseGraphQLError(error.message)}`,
