@@ -38,7 +38,7 @@ COPY ./ .
 RUN VERSION_SAFE="$(echo $VERSION | tr '/' '-')" && \
     sed -i "s,Version_Managed_By_CI_AND_Reliza,$VERSION_SAFE," pom.xml
 
-RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage && cp target/*.jar application.jar && java -Djarmode=layertools -jar application.jar extract
+RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage && cp target/*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --launcher --destination extracted
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b  AS artifact-stage
 ENV JAVA_HOME=/opt/java/openjdk
@@ -52,11 +52,11 @@ RUN mkdir /app
 RUN echo "version=$VERSION" > /app/version && echo "commit=$GIT_COMMIT" >> /app/version && echo "branch=$GIT_BRANCH" >> /app/version
 RUN addgroup -S apprunner && adduser -S apprunner -G apprunner && chown apprunner:apprunner -R /app
 USER apprunner
-COPY --from=build-stage --chown=apprunner:apprunner /workdir/dependencies/ /app/
-COPY --from=build-stage --chown=apprunner:apprunner /workdir/snapshot-dependencies/ /app/
-# COPY --from=build-stage --chown=apprunner:apprunner /workdir/resources/ /app/
-COPY --from=build-stage --chown=apprunner:apprunner /workdir/application/ /app/
-COPY --from=build-stage --chown=apprunner:apprunner /workdir/spring-boot-loader/ /app/
+COPY --from=build-stage --chown=apprunner:apprunner /workdir/extracted/dependencies/ /app/
+COPY --from=build-stage --chown=apprunner:apprunner /workdir/extracted/snapshot-dependencies/ /app/
+# COPY --from=build-stage --chown=apprunner:apprunner /workdir/extracted/resources/ /app/
+COPY --from=build-stage --chown=apprunner:apprunner /workdir/extracted/application/ /app/
+COPY --from=build-stage --chown=apprunner:apprunner /workdir/extracted/spring-boot-loader/ /app/
 RUN mkdir /app/config
 COPY --chown=apprunner:apprunner ./application.yaml /app/config/
 COPY --chown=apprunner:apprunner ./start-core.sh /app/
