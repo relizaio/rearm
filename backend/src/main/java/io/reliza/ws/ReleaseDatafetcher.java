@@ -268,6 +268,10 @@ public class ReleaseDatafetcher {
 	 * fail we surface the agent-path denial (it carries the richer
 	 * sessionUuid/clientSessionId context) rather than the generic
 	 * "not authorized for this resource" from the RESOURCE path.
+	 * Individual path denials log at INFO inside AuthorizationService;
+	 * the SECURITY-level log fires here, only once BOTH paths have
+	 * denied — an agent-path miss that the RESOURCE path authorizes is
+	 * a legitimate read, not an alertable event.
 	 */
 	@DgsData(parentType = "Query", field = "agenticReleaseProgrammatic")
 	public ReleaseData agenticReleaseProgrammatic(
@@ -292,6 +296,9 @@ public class ReleaseDatafetcher {
 						ahp, PermissionFunction.RESOURCE, PermissionScope.RELEASE,
 						releaseUuid, List.of(rd), CallType.READ);
 			} catch (AccessDeniedException resourceDenied) {
+				log.error("SECURITY: agentic release read denied on both paths — release {} (sessionUuid={}, clientSessionId={}, org={}; agent path: {}; resource path: {})",
+						releaseUuid, sessionUuid, clientSessionId, ahp.getOrgUuid(),
+						agentDenied.getMessage(), resourceDenied.getMessage());
 				throw agentDenied;
 			}
 		}
