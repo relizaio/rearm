@@ -1,4 +1,4 @@
-FROM maven:3.9.16-eclipse-temurin-25-noble@sha256:52766e42de54a9a52bd72e500db1d8e8818133b79550586aa7ddac10c6e4fc84
+FROM maven:3.9.16-eclipse-temurin-25-noble@sha256:7e461cec477077c1d9e50b13df8aef9018764410f4c4cd7c34803f10c4c99e4c
 ARG VERSION=not_versioned
 RUN mkdir /app && mkdir /sbom
 COPY . /app/
