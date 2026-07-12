@@ -1257,57 +1257,6 @@ async function fetchMostVulnerableComponents () {
                             policyViolationsLicenseTotal
                             policyViolationsSecurityTotal
                             policyViolationsOperationalTotal
-                            vulnerabilityDetails {
-                                purl
-                                vulnId
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                knownExploited
-                                aliases { type aliasId }
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails { version componentDetails { name } }
-                                    artifactDetails { type }
-                                }
-                                severities { source severity }
-                            }
-                            violationDetails {
-                                purl
-                                type
-                                license
-                                violationDetails
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails { version componentDetails { name } }
-                                    artifactDetails { type }
-                                }
-                            }
-                            weaknessDetails {
-                                cweId
-                                ruleId
-                                location
-                                fingerprint
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails { version componentDetails { name } }
-                                    artifactDetails { type }
-                                }
-                            }
                         }
                     }
                 }`,
@@ -1339,8 +1288,7 @@ async function fetchMostVulnerableComponents () {
             uuid: x.componentuuid || x.uuid,
             name: x.componentname || x.name || 'Unknown',
             routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg',
-            metrics,
-            rawMetrics: x.metrics
+            metrics
             }
         })
     } catch (err: any) {
@@ -1364,15 +1312,92 @@ const vulnModalTypeFilter: Ref<string | string[]> = ref('')
 const vulnModalComponentUuid = ref('')
 const vulnModalComponentType = ref('')
 
-function openVulnModalForComponent (item: any, severityFilter: string = '', typeFilter: string | string[] = '') {
+// Drill-down details are fetched on demand via the existing
+// findingsPerDayForComponent hot path (today's date key, which also applies
+// the live vulnerability-analysis overlay server-side) — the widget list
+// itself carries counts only.
+async function openVulnModalForComponent (item: any, severityFilter: string = '', typeFilter: string | string[] = '') {
     const typeLabel = vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'product' : 'component'
     vulnModalComponentName.value = `Findings for ${typeLabel}: ${item.name}`
     vulnModalComponentUuid.value = item.uuid
     vulnModalComponentType.value = vulnerableComponentsInput.value.componentType
     vulnModalSeverityFilter.value = severityFilter
     vulnModalTypeFilter.value = typeFilter
-    vulnModalData.value = item.rawMetrics ? processMetricsData(item.rawMetrics) : []
+    vulnModalData.value = []
     showVulnModalForComponent.value = true
+    vulnModalLoading.value = true
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query findingsPerDayForComponent($componentUuid: ID!, $date: String!) {
+                    findingsPerDayForComponent(componentUuid: $componentUuid, date: $date) {
+                        vulnerabilityDetails {
+                            purl
+                            vulnId
+                            severity
+                            analysisState
+                            analysisDate
+                            attributedAt
+                            knownExploited
+                            aliases { type aliasId }
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails { version componentDetails { name } }
+                                artifactDetails { type }
+                            }
+                            severities { source severity }
+                        }
+                        violationDetails {
+                            purl
+                            type
+                            license
+                            violationDetails
+                            analysisState
+                            analysisDate
+                            attributedAt
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails { version componentDetails { name } }
+                                artifactDetails { type }
+                            }
+                        }
+                        weaknessDetails {
+                            cweId
+                            ruleId
+                            location
+                            fingerprint
+                            severity
+                            analysisState
+                            analysisDate
+                            attributedAt
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails { version componentDetails { name } }
+                                artifactDetails { type }
+                            }
+                        }
+                    }
+                }`,
+            variables: {
+                componentUuid: item.uuid,
+                date: new Date().toISOString().slice(0, 10)
+            },
+            fetchPolicy: 'no-cache'
+        })
+        const details = (response.data as any)?.findingsPerDayForComponent
+        vulnModalData.value = details ? processMetricsData(details) : []
+    } catch (err: any) {
+        vulnModalData.value = []
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        vulnModalLoading.value = false
+    }
 }
 
 function displayActiveComponentType () {
