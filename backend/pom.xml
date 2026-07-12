@@ -31,7 +31,7 @@
          patch releases that carry CVE fixes vs the BOM-pinned defaults.
          Refresh on each Spring Boot bump and re-check against the
          scanner so we don't silently regress past a future BOM. -->
-    <netty.version>4.2.14.Final</netty.version>
+    <netty.version>4.2.15.Final</netty.version>
     <tomcat.version>11.0.22</tomcat.version>
     <postgresql.version>42.7.13</postgresql.version>
   </properties>
