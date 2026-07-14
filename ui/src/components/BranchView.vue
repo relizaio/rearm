@@ -233,21 +233,6 @@
                                 :inputRelease=editableDependency.editCompRelease
                                 @addedComponent="editedComponent" />
             </n-modal>
-            <n-modal
-                v-model:show="showAddOssArtifactModal"
-                preset="dialog"
-                :show-icon="false"
-                style="width: 90%"
-            >
-                <n-form>
-                    <n-form-item
-                                label="Artifact">
-                        <n-input v-model:value="ossArtifact"/>
-                    </n-form-item>
-                    <n-button @click="registerOssArtifact" type="success" variant="primary">Submit</n-button>
-                    <n-button @click="ossArtifact = ''" type="warning" variant="danger">Reset</n-button>
-                </n-form>
-            </n-modal>
             <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-top: 20px;">
                 <n-space>
                     <n-button type="success" @click="saveModifiedBranch">
@@ -395,43 +380,6 @@ import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseS
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 
-async function loadApprovalMatrix (org: string, resourceGroup: string) {
-    let amxResponse = await graphqlClient.query({
-        query: gql`
-            query getApprovalMatrix($orgUuid: ID!, $appUuid: ID) {
-                getApprovalMatrix(orgUuid: $orgUuid, appUuid: $appUuid) {
-                    matrix {
-                        matrix
-                    }
-                }
-            }
-            `,
-        variables: {
-            orgUuid: org,
-            appUuid: resourceGroup
-        }
-    })
-    return amxResponse.data.getApprovalMatrix.matrix.matrix
-}
-
-async function loadApprovalTypes (org: string, resourceGroup: string) {
-    const atypesResponse = await graphqlClient.query({
-        query: gql`
-            query activeApprovalTypes($orgUuid: ID!, $appUuid: ID) {
-                activeApprovalTypes(orgUuid: $orgUuid, appUuid: $appUuid) {
-                    approvalTypes
-                }
-            }
-            `,
-        variables: {
-            orgUuid: org,
-            appUuid: resourceGroup
-        }
-    })
-    return [''].concat(Object.keys(atypesResponse.data.activeApprovalTypes.approvalTypes))
-        .map((x: string) => {return {label: x, value: x}})
-}
-
 async function loadEnvironmentTypes (org: string) {
     let etypesResponse = await graphqlClient.query({
         query: gql`
@@ -493,7 +441,6 @@ const showBranchSettingsModal: Ref<boolean> = ref(false)
 const showSetNextVersionModal: Ref<boolean> = ref(false)
 const showAddComponentModal: Ref<boolean> = ref(false)
 const showEditComponentModal: Ref<boolean> = ref(false)
-const showAddOssArtifactModal: Ref<boolean> = ref(false)
 const showCreateReleaseModal: Ref<boolean> = ref(false)
 const showFeatureSetParticipationModal: Ref<boolean> = ref(false)
 const showPatternPreviewModal: Ref<boolean> = ref(false)
@@ -684,9 +631,6 @@ const handleBranchSettingsClose = async function(show: boolean) {
         window.history.replaceState({}, '', newUrl)
     }
 }
-
-const approvalMatrix = ref({})
-if (false && myUser.installationType !== 'OSS') approvalMatrix.value = await loadApprovalMatrix(orguuid, modifiedBranch.value.resourceGroup)
 
 const releaseFilter = ref({
     lifecycle: '',
@@ -895,7 +839,6 @@ function resetBranchSettings() {
 }
 
 const vcsRepos: Ref<any[]> = ref([])
-const approvalTypes: Ref<any[]> = ref([])
 const environmentTypes: Ref<any[]> = ref([])
 const releaseTagKeys: Ref<any[]> = ref([])
 const editingRow: Ref<string | null> = ref(null)
@@ -1823,23 +1766,6 @@ const editedComponent = function (component: any) {
     }
 }
 
-const ossArtifact = ref('')
-
-const registerOssArtifact = async function () {
-    await graphqlClient.mutate({
-        mutation: gql`
-            mutation registerOssArtifact($artifact: String!, $org: ID!) {
-                registerOssArtifact(artifact: $artifact, org: $org) {
-                    uuid
-                    displayIdentifier
-                }
-            }`,
-        variables: { artifact: ossArtifact.value, org: orguuid }
-    })
-    ossArtifact.value = ''
-    showAddOssArtifactModal.value = false
-}
-
 const linkVcsRepo = function (value: any) {
     modifiedBranch.value.vcs = value.repo
     modifiedBranch.value.vcsBranch = value.branch
@@ -1894,7 +1820,6 @@ async function onCreated () {
         modifiedBranch.value = commonFunctions.deepCopy(branchData.value)
     }
     modifiedBranch.value.dependencyPatterns = normalizeDependencyPatterns(modifiedBranch.value.dependencyPatterns)
-    if (false && myUser.installationType !== 'OSS') approvalTypes.value = await loadApprovalTypes (branchData.value.org, branchData.value.componentDetails.resourceGroup)
     if (false && myUser.installationType !== 'OSS')  environmentTypes.value = await loadEnvironmentTypes (branchData.value.org)
     const rlz = await store.dispatch('fetchReleases', {branch: branchUuid.value})
     // compute list of tag keys

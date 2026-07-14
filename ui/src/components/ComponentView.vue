@@ -72,17 +72,6 @@
                                 </n-icon>
                             </n-space>
                             <n-modal
-                                v-model:show="showComponentAnalyticsModal"
-                                preset="dialog"
-                                :show-icon="false"
-                                style="width: 90%"
-                            >
-                                <component-analytics
-                                    :componentUuidProp="componentData.uuid"
-                                    :componentTypeProp="componentData.type"
-                                />
-                            </n-modal>
-                            <n-modal
                                 v-model:show="showComponentChangelogModal"
                                 preset="dialog"
                                 :show-icon="false"
@@ -1076,7 +1065,6 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
-import ComponentAnalytics from './ComponentAnalytics.vue'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
@@ -1304,7 +1292,6 @@ const selectedCiIntegration: ComputedRef<any> = computed((): any => {
 })
 
 const showCloneBranchModal : Ref<boolean> = ref(false)
-const showComponentAnalyticsModal : Ref<boolean> = ref(false)
 const showComponentChangelogModal : Ref<boolean> = ref(false)
 const showFeatureSetParticipationModal : Ref<boolean> = ref(false)
 const showAddBranchModal : Ref<boolean> = ref(false)

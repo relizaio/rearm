@@ -8,18 +8,17 @@
 //   - CE    (rearm/backend/.../schema.graphqls)        = delayed mirror.
 //
 // Policy:
-//   - REPORT-ONLY by default (always exit 0). Prints, per document:
+//   - Prints, per document:
 //       * [FAIL]  invalid against Pro  -- UI selects a field/type/arg absent
 //                 from the Pro schema (source of truth).
 //       * [WARN]  valid on Pro, absent on the CE mirror -- expected enrichment
 //                 lag, handled at runtime by the core/enrichment fallback
 //                 (see notificationInboxQuery.ts).
-//     It's report-only because a whole-app hard gate currently trips over a
-//     batch of PRE-EXISTING dead UI code paths (mutations/queries the backend
-//     never implemented -- tracked separately on the board), which are out of
-//     scope for the notifications drift work that introduced this script.
-//   - With --strict, exit 1 on any Pro failure. Use once the pre-existing
-//     dead-code paths are cleaned up, to turn this into a true CI gate.
+//   - With --strict, exit 1 on any Pro failure. The `validate:graphql` npm
+//     script passes --strict, so it is now a hard gate: the batch of
+//     PRE-EXISTING dead UI code paths that once forced report-only has been
+//     removed, so a new Pro-invalid document fails the check. Run without
+//     --strict for a non-failing report.
 //
 // The notifications inbox drift itself IS hard-gated, by the vitest
 // schema-drift test (notificationInboxSchemaDrift.spec.ts) which fails the
