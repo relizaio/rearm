@@ -8,7 +8,7 @@
     "serve": "vite preview",
     "lint": "eslint --ext .js,.vue --ignore-path .gitignore --fix src",
     "test": "vitest run",
-    "validate:graphql": "node scripts/validate-graphql.mjs"
+    "validate:graphql": "node scripts/validate-graphql.mjs --strict"
   },
   "dependencies": {
     "@apollo/client": "^4.1.6",

@@ -724,25 +724,6 @@
                 </div>
             </n-tab-pane>
 
-            <n-tab-pane v-if="false && myUser && myUser.installationType !== 'OSS'" name="protected environments" tab="Protected Environments">
-                <div v-if="resourceGroups && resourceGroups.length" class="approvalMatrixBlock">
-                    <h5>Protected Environments For Resource Group:
-                        <n-dropdown trigger="hover" title="Select Resource Group"
-                            :text="myapp.name" :options="resourceGroupOptions" @select="selectResourceGroup">
-                            <n-button>{{ myapp.name }}</n-button>
-                        </n-dropdown>
-                    </h5>
-                    <div class="container">
-                        <n-form label-placement="left" :style="{maxWidth: '640px'}" size="medium">
-                            <n-checkbox-group v-model:value="protectedEnvironments" :options="environmentOptions">
-                                <n-checkbox v-for="b in environmentOptions" :key="b.value" :value="b.value" :label="b.label"></n-checkbox>
-                            </n-checkbox-group>
-                            <n-button attr-type="submit"  type="success" @click="saveProtectedEnvironments" :disabled="myapp.protectedEnvironments && myapp.protectedEnvironments.toString() === protectedEnvironments.toString()">Save</n-button>
-                            <!-- <n-button attr-type="reset" @click="resetApprovals">Reset</n-button> -->
-                        </n-form>
-                    </div>
-                </div>
-            </n-tab-pane>
             <n-tab-pane name="perspectives" tab="Perspectives" v-if="myUser.installationType !== 'OSS'">
                 <div class="perspectivesBlock mt-4">
                     <h5>Perspectives ({{ perspectives.length }})
@@ -1137,7 +1118,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1567,28 +1548,8 @@ function resetInvitee () {
     }
 }
 const myapp: Ref<any> = ref({})
-const protectedEnvironments: Ref<any[]> = ref([])
 
 const resourceGroups: ComputedRef<any> = computed((): any => store.getters.allResourceGroups)
-const resourceGroupOptions: ComputedRef<any> = computed((): any => {
-    const apps = store.getters.allResourceGroups.map((app: any) => {
-        return {
-            label: app.name,
-            key: app.uuid
-        }
-    })
-    apps.push({label: 'Create New', key: 'create_new'})
-    return apps
-})
-function selectResourceGroup(key: string) {
-    if (key === 'create_new') {
-        showCreateResourceGroupModal.value = true
-    } else {
-        myapp.value = resourceGroups.value.find((app: any) => app.uuid === key)
-        protectedEnvironments.value = myapp.value.protectedEnvironments
-    }
-}
-
 const newappname: Ref<string> = ref('')
 const permissionTypes: string[] = constants.PermissionTypes
 const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
@@ -2667,19 +2628,6 @@ const userFields = [
                         )
                     ]
                 }
-            }
-            if(row.uuid === myUser.value.uuid){
-                els.push(
-                    h(
-                        NIcon,
-                        {
-                            title: 'Generate User API Key',
-                            class: 'icons clickable',
-                            size: 25,
-                            onClick: () => genUserApiKey()
-                        }, { default: () => h(LockOpen) }
-                    )
-                )
             }
             el = h('div', els)
         
@@ -3884,43 +3832,6 @@ async function genApiKey() {
     }
     
 }
-async function genUserApiKey() {
-    let swalObject: SweetAlertOptions = {
-        title: 'Are you sure?',
-        text: 'A new API Key will be generated, any existing integrations with previous API Key (if exist) will stop working.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, generate it!',
-        cancelButtonText: 'No, cancel it'
-    }
-    const swalResult = await Swal.fire(swalObject)
-    if (swalResult.value) {
-        const keyResp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setUserOrgApiKey($orgUuid: ID!) {
-                    setUserOrgApiKey(orgUuid: $orgUuid) {
-                        id
-                        apiKey
-                        authorizationHeader
-                    }
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setUserOrgApiKey)      
-        Swal.fire({
-            title: 'Generated!',
-            customClass: {popup: 'swal-wide'},
-            html: newKeyMessage,
-            icon: 'success'
-        })
-    } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        notify('error', 'Cancelled', 'Your existing API Key is safe')
-    }
-}
-
 function getGeneratedRegistryTokenHTML(responseData: any) {
     return `
             <div style="text-align: left;">
@@ -4304,7 +4215,6 @@ async function confirmRestoreUserGroup() {
 function initializeResourceGroup() {
     if (!myapp.value.uuid) {
         myapp.value = resourceGroups.value.find((app: any) => app.uuid === '00000000-0000-0000-0000-000000000000')
-        protectedEnvironments.value = myapp.value.protectedEnvironments
     }
 }
 
@@ -4976,18 +4886,6 @@ const environmentOptions: ComputedRef<any[]> = computed((): any => {
         return { 'label': et, 'value': et }
     })
 })
-async function saveProtectedEnvironments() {
-
-    if (myapp.value) {
-        const gqlResponse = await store.dispatch('saveProtectedEnvironments', {
-            org: myapp.value.org,
-            uuid: myapp.value.uuid,
-            protectedEnvironments: protectedEnvironments.value
-        })
-        notify('success', 'Updated', 'Successfully updated Protected Environments')            
-    }
-}
-
 const dataTableRowKey = (row: any) => row.uuid
 
 const approvalEntryFields: DataTableColumns<any> = [

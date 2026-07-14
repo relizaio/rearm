@@ -148,32 +148,32 @@ const fetchReleases = async () => {
                         truncated
                         components {
                             uuid
-                        name
-                        type
-                        versionSchema
-                        branches {
-                            uuid
                             name
-                            status
+                            type
                             versionSchema
-                            latestReleaseVersion
-                            releases {
+                            branches {
                                 uuid
-                                version
-                                createdDate
-                                lifecycle
-                                metrics {
-                                    critical
-                                    high
-                                    medium
-                                    low
-                                    unassigned
-                                    policyViolationsLicenseTotal
-                                    policyViolationsSecurityTotal
-                                    policyViolationsOperationalTotal
+                                name
+                                status
+                                versionSchema
+                                latestReleaseVersion
+                                releases {
+                                    uuid
+                                    version
+                                    createdDate
+                                    lifecycle
+                                    metrics {
+                                        critical
+                                        high
+                                        medium
+                                        low
+                                        unassigned
+                                        policyViolationsLicenseTotal
+                                        policyViolationsSecurityTotal
+                                        policyViolationsOperationalTotal
+                                    }
                                 }
                             }
-                        }
                         }
                     }
                 }

@@ -209,33 +209,6 @@
             ></prism-editor>
         </n-modal>
         <n-modal
-            v-model:show="showProductPublicVersionModal"
-            preset="dialog"
-            :show-icon="false"
-            style="width: 90%;"
-            title="Public Instance Product Version Link"
-        >
-            <p>You can share the following public link to display instance product version:</p>
-            <div>
-                <strong>
-                    Link:
-                </strong>
-                &nbsp;
-                <span>
-                    <n-icon class="clickable icons" @click="copyToClipboard(selectedInstanceProductVersionIdentifier)" size="20"><Clipboard /></n-icon>
-                </span>
-                &nbsp;
-                <span>
-                    <n-icon class="clickable icons" @click="refreshSharableLink(selectedPrl)" title="Refresh sharable link" size="20"><Refresh /></n-icon>
-                </span>
-                &nbsp;
-                <span>
-                    <n-icon class="clickable icons" @click="deleteSharableLink(selectedPrl)" title="Delete sharable link" size="20"><Trash /></n-icon>
-                </span>
-                <n-input type="textarea" disabled v-model:value="selectedInstanceProductVersionIdentifier"/>
-            </div>
-        </n-modal>
-        <n-modal
             v-model:show="showInstSettingsModal"
             preset="dialog"
             :show-icon="false"
@@ -470,7 +443,7 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
 import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular, DismissCircle20Regular} from '@vicons/fluent'
-import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, Clipboard, X, Check, Server, History } from '@vicons/tabler'
+import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'
@@ -554,15 +527,12 @@ const showEditPropertyModal = ref(false)
 const showReleaseViewModal = ref(false)
 const showInstSettingsModal = ref(false)
 const showLinkFeatureSetModal = ref(false)
-const showProductPublicVersionModal = ref(false)
 const showSelectTargetReleaseModal = ref(false)
 const showAddComponentTargetReleaseModal = ref(false)
 const showAddInstancePropertyModal = ref(false)
 const showRevisionComparisonModal = ref(false)
 const selectedReleaseIdForModal = ref('')
 const selectedNamespace = ref('')
-const selectedInstanceProductVersionIdentifier = ref('')
-const selectedPrl = ref({})
 
 const focusedProduct: Ref<any> = ref({})
 const focusedProperty: Ref<any> = ref({})
@@ -1096,97 +1066,6 @@ const parseDeployedReleases = function (releases: any) {
         })
     }
     return deployedRls
-}
-
-const copySharableLink = function (prl: any) {
-    selectedInstanceProductVersionIdentifier.value = window.location.origin + '/api/public/v1/instance/productVersion/' + prl.encryptedIdentifier
-    selectedPrl.value = prl
-    showProductPublicVersionModal.value = true
-}
-
-const generateSharableLink = async function (prl: any) {
-    // const postParams = {
-    //     namespace: prl.namespace,
-    //     instance: instanceUuid,
-    //     featureSet: prl.featureSet
-    // }
-    // await axios.post('/api/manual/v1/instance/generateFeatureSetIdentifier', postParams)
-
-    try{
-        await graphqlClient.mutate({
-            mutation: gql`
-                mutation generateFeatureSetIdentifier($instanceUuid: ID!, $featureSetUuid: ID, $namespace: String) {
-                    generateFeatureSetIdentifier(instanceUuid: $instanceUuid, featureSetUuid: $featureSetUuid, namespace: $namespace )
-                }`,
-            variables: {
-                instanceUuid: instanceUuid,
-                featureSetUuid: prl.featureSet,
-                namespace: prl.namespace
-            }
-        })
-    }   catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
-    }
-    // refetch instance to sync store
-    await fetchInstance()
-}
-
-const deleteSharableLink = async function (prl: any) {
-    showProductPublicVersionModal.value = false
-    const onSwalConfirm = async function () {
-        // const postParams = {
-        //     namespace: prl.namespace,
-        //     instance: instanceUuid,
-        //     featureSet: prl.featureSet
-        // }
-        // await axios.delete('/api/manual/v1/instance/generateFeatureSetIdentifier', { data: postParams })
-        try{
-            await graphqlClient.mutate({
-                mutation: gql`
-                    mutation deleteFeatureSetIdentifier($instanceUuid: ID!, $featureSetUuid: ID, $namespace: String) {
-                        deleteFeatureSetIdentifier(instanceUuid: $instanceUuid, featureSetUuid: $featureSetUuid, namespace: $namespace )
-                    }`,
-                variables: {
-                    instanceUuid: instanceUuid,
-                    featureSetUuid: prl.featureSet,
-                    namespace: prl.namespace
-                }
-            })
-            // refetch instance to sync store
-            await fetchInstance()
-        }   catch (err: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
-        }
-    }
-    const swalData: SwalData = {
-        questionText: 'Sharable version link will be deleted, and existing links will not display version information.',
-        successTitle: 'Deleted!',
-        successText: 'Sharable version link has been deleted.',
-        dismissText: 'Your shareable version link is safe.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
-}
-
-const refreshSharableLink = async function (prl: any) {
-    showProductPublicVersionModal.value = false
-    const onSwalConfirm = async function () {
-        generateSharableLink(prl)
-    }
-    const swalData: SwalData = {
-        questionText: 'Sharable version link will be regenerated, and any existing link will not display version information.',
-        successTitle: 'Refreshed!',
-        successText: 'Sharable version link has been refreshed.',
-        dismissText: 'Your shareable version link is safe.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const removeProductLink = async function (fsUuid: string, namespace: string) {

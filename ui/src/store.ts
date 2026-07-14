@@ -17,7 +17,6 @@ const storeObject : any = {
             marketingReleases: [],
             vcsRepos: [],
             sourceCodeEntries: [],
-            artifacts: [],
             instances: [],
             changes: [],
             properties: [],
@@ -52,9 +51,6 @@ const storeObject : any = {
         },
         allUsers (state: any) {
             return state.users.slice()
-        },
-        artifactById (state: any) {
-            return (uuid: any) => state.artifacts.find((art: any) => art.uuid === uuid)
         },
         branchById (state: any) {
             return (uuid: string) => state.branches.find((b: any) => b.uuid === uuid)
@@ -165,10 +161,6 @@ const storeObject : any = {
         }
     },
     mutations: {
-        ADD_ARTIFACT (state: any, artifact: any) {
-            state.artifacts = state.artifacts.filter((art: any) => (art.uuid !== artifact.uuid))
-            state.artifacts.push(artifact)
-        },
         ADD_BRANCH (state : any, branch : any) {
             let foundBranch = false
             for (let i = 0; i < state.branches.length; i++) {
@@ -246,10 +238,6 @@ const storeObject : any = {
         UPDATE_ORGANIZATION (state: any, organization: any) {
             state.organizations = state.organizations.filter((org: any) => (org.uuid !== organization.uuid))
             state.organizations.push(organization)
-        },
-        UPDATE_RESOURCE_GROUP (state : any, resourceGroup : any) {
-            state.resourceGroups = state.resourceGroups.filter((app: any) => (app.uuid !== resourceGroup.uuid))
-            state.resourceGroups.push(resourceGroup)
         },
         SET_BRANCHES_OF_COMP (state : any, setObj : any) {
             let newBranches = state.branches.filter((b : any) => (b.componentUuid !== setObj.id && b.component !== setObj.id))
@@ -348,23 +336,6 @@ const storeObject : any = {
             })
             context.commit('ADD_BRANCH', data.data.cloneBranch)
             return data.data.cloneBranch
-        },
-        async createArtifact(context: any, artProps: any){
-            console.log(artProps)
-            const resp = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation createArtifact($artifact: ArtifactInput!) {
-                        createArtifact(artifact: $artifact) {
-                            displayIdentifier
-                            uuid
-                        }
-                    }`,
-                variables: {
-                    'artifact': artProps.artifacts
-                }
-            })
-            context.commit('ADD_ARTIFACT', resp.data.createArtifact)
-            return resp.data.createArtifact
         },
         // async addArtifactManual(context: any, artProps: any){
         //     const data = await graphqlClient.mutate({
@@ -1755,27 +1726,6 @@ const storeObject : any = {
             })
             context.commit('ADD_RESOURCE_GROUP', data.data.createResourceGroup)
             return data.data.createResourceGroup
-        },
-        async saveProtectedEnvironments (context: any, appObj: any) {
-            const data = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation setProtectedEnvironments($orgUuid: ID!, $uuid: ID!, $protectedEnvironments: [String]) {
-                        setProtectedEnvironments(orgUuid: $orgUuid, uuid: $uuid, protectedEnvironments: $protectedEnvironments) {
-                            uuid
-                            org
-                            name
-                            protectedEnvironments
-                        }
-                    }`,
-                variables: {
-                    orgUuid: appObj.org,
-                    uuid: appObj.uuid,
-                    protectedEnvironments: appObj.protectedEnvironments
-                }
-            })
-            context.commit('UPDATE_RESOURCE_GROUP', data.data.setProtectedEnvironments)
-           
-            return data.data.setProtectedEnvironments
         },
         async fetchChangelogBetweenReleases (context: any, params: any) {
             const { fetchComponentChangelog } = await import('./utils/changelogQueries')

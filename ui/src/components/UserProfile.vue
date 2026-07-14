@@ -62,23 +62,6 @@
                 title="Restore Organiztion" size="20"><ArrowUp /></n-icon>
         </div>
 
-        <div v-if="false" style="margin-top: 4%;">
-            <h4> SSH KEY
-                <NIcon>
-                    <Key />
-                </NIcon>
-            </h4>
-            <span v-if="myUser.publicSshKeys && myUser.publicSshKeys.length">
-                SSH Key is set. <n-icon class="clickable" title="Delete SSH Key" @click="deleteSshKey" size="20"><Trash /></n-icon>
-            </span>
-            <span v-else>
-                <n-button type="success" @click="showAddSshKeyModal = true">Add Public SSH Key</n-button>
-            </span>
-        </div>
-        <n-modal v-model:show="showAddSshKeyModal" preset="dialog" :show-icon="false" style="width: 70%">
-            <n-input v-model:value="sshKey" type="textarea" placeholder="Paste SSH Key Here" />
-            <n-button type="success" @click="addSshKey">Add Key</n-button>
-        </n-modal>
         <n-modal v-model:show="showCreateOrgModal" preset="dialog" :show-icon="false" style="width: 50%"
             title="Create New Organization">
             <n-form>
@@ -111,11 +94,9 @@ import { NIcon, NCheckbox, NInput, NModal, NDataTable, NForm, NFormItem, NInputG
 import { ComputedRef, h, ref, Ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { Edit as EditIcon, Key, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
+import { Edit as EditIcon, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
 import Swal from 'sweetalert2'
-import gql from 'graphql-tag'
-import graphqlClient from '../utils/graphql'
 import { OnChange } from 'naive-ui/es/upload/src/interface'
 
 
@@ -368,34 +349,6 @@ function updateUserName() {
 // const myUser: Ref<any> = ref({})
 const organizations: ComputedRef<any> = computed((): any => store.getters.allOrganizations)
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
-
-const showAddSshKeyModal: Ref<boolean> = ref(false)
-const sshKey: Ref<string> = ref('')
-async function addSshKey() {
-    let name = 'default'
-    await graphqlClient.mutate({
-        mutation: gql`
-            mutation addSshKey {
-                addSshKey(name: "${name}", key: "${sshKey.value}") 
-            }`
-    })
-    await store.dispatch('fetchMyUser')
-    showAddSshKeyModal.value = false
-    sshKey.value = ''
-}
-async function deleteSshKey() {
-    const keyId = myUser.value.publicSshKeys[0].uuid
-    await graphqlClient.mutate({
-        mutation: gql`
-            mutation removeSshKey($uuid: ID!) {
-                removeSshKey(uuid: $uuid) 
-            }`,
-        variables: {
-            'uuid': keyId
-        }
-    })
-    await store.dispatch('fetchMyUser')
-}
 </script>
 
 <style lang="scss">
