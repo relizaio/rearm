@@ -62,7 +62,10 @@ function walk (dir) {
         const p = join(dir, name)
         const st = statSync(p)
         if (st.isDirectory()) out.push(...walk(p))
-        else if (/\.(ts|vue|js|mjs)$/.test(name)) out.push(p)
+        // Skip test files: their gql documents are deliberately-invalid fixtures
+        // (e.g. a bogus `thing` query used to exercise the drift fallback), not
+        // real UI operations to validate against the prod schema.
+        else if (/\.(ts|vue|js|mjs)$/.test(name) && !/\.(spec|test)\.[tj]s$/.test(name)) out.push(p)
     }
     return out
 }
