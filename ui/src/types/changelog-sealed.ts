@@ -104,6 +104,9 @@ export interface MetricsRevisionFindingChange {
     version: string
     componentUuid: string
     componentName: string
+    // F7b: producing branch, so the timeline drawer can distinguish rows sharing one component@version.
+    branchUuid?: string | null
+    branchName?: string | null
     vulnerability?: ReleaseVulnerabilityInfo | null
     violation?: ReleaseViolationInfo | null
     weakness?: ReleaseWeaknessInfo | null

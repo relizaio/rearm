@@ -102,6 +102,8 @@ const OVER_TIME_FINDING_CHANGES_FRAGMENT = `
     version
     componentUuid
     componentName
+    branchUuid
+    branchName
     previousSeverity
     vulnerability {
         vulnId
