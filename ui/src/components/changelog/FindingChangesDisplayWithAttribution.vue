@@ -150,13 +150,31 @@
             <n-drawer v-model:show="showTimeline" :width="560" placement="right">
                 <n-drawer-content :title="timelineTitle" closable>
                     <n-spin :show="timelineLoading">
+                        <div v-if="timelineScopeAvailable" class="timeline-scope-toggle">
+                            <n-switch v-model:value="timelineAllPosture" size="small" @update:value="onTimelineScopeChange" />
+                            <span class="timeline-scope-label">
+                                Include re-scans of earlier releases
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <span class="scope-help">(?)</span>
+                                    </template>
+                                    By default this timeline shows changes on releases produced in the selected
+                                    window. Enable this to also surface re-scan-driven changes on releases shipped
+                                    <em>before</em> the window (e.g. a newly-disclosed CVE matched against an
+                                    already-shipped release).
+                                </n-tooltip>
+                            </span>
+                        </div>
                         <OverTimeFindingChanges
                             :over-time-finding-changes="timelineItems"
                             :finding-key-filter="''"
                             :org-uuid="orgUuid"
                         />
+                        <p v-if="timelineTruncated" class="timeline-truncated-note">
+                            Showing the newest {{ timelineTotal.toLocaleString() }} changes for this window; narrow the date range to see older ones.
+                        </p>
                         <div v-if="timelineItems.length < timelineTotal" class="drawer-load-more">
-                            <n-button size="small" :loading="timelineLoading" @click="loadMoreTimeline">Load more ({{ timelineItems.length }} of {{ timelineTotal }})</n-button>
+                            <n-button size="small" :loading="timelineLoading" @click="loadMoreTimeline">Load more ({{ timelineItems.length }} of {{ timelineTotal }}{{ timelineTruncated ? '+' : '' }})</n-button>
                         </div>
                     </n-spin>
                 </n-drawer-content>
@@ -191,7 +209,7 @@
 
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
-import { NTag, NTooltip, NDrawer, NDrawerContent, NSpin, NButton } from 'naive-ui'
+import { NTag, NTooltip, NDrawer, NDrawerContent, NSpin, NButton, NSwitch } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
 import OverTimeFindingChanges from './OverTimeFindingChanges.vue'
 import KevDetailsModal from '../KevDetailsModal.vue'
@@ -200,7 +218,8 @@ import { resolveKevCveId } from '../../utils/kevService'
 import {
     fetchFindingAttribution,
     fetchFindingChangeTimeline,
-    type ComponentAttributionEntry
+    type ComponentAttributionEntry,
+    type FindingChangeScope
 } from '../../utils/changelogQueries'
 import type {
     FindingChangesWithAttribution,
@@ -261,7 +280,16 @@ const timelineTotal = ref(0)
 const timelinePage = ref(0)
 const timelineLoading = ref(false)
 const timelineFindingKey = ref('')
+const timelineTruncated = ref(false)
 const TIMELINE_PAGE_SIZE = 50
+
+// ALL_POSTURE scope is org-level only (the backend degrades a component/branch-scoped request to
+// RELEASE_ANCHORED), so the "include re-scans of earlier releases" toggle is offered only in the
+// org changelog context. F5.
+const timelineScopeAvailable = computed(() => !props.componentUuid && !props.branchUuid)
+const timelineAllPosture = ref(false)
+const timelineScope = computed<FindingChangeScope>(() =>
+    timelineScopeAvailable.value && timelineAllPosture.value ? 'ALL_POSTURE' : 'RELEASE_ANCHORED')
 
 // A timeline link is offered whenever drill-down context is present - the events
 // live in a separate store that the changelog payload no longer carries, so we
@@ -283,7 +311,8 @@ async function loadTimelinePage(page: number) {
             dateTo: props.dateTo,
             findingKey: timelineFindingKey.value,
             page,
-            pageSize: TIMELINE_PAGE_SIZE
+            pageSize: TIMELINE_PAGE_SIZE,
+            scope: timelineScope.value
         })
         if (page === 0) {
             timelineItems.value = res.items as MetricsRevisionFindingChange[]
@@ -292,6 +321,7 @@ async function loadTimelinePage(page: number) {
         }
         timelineTotal.value = res.total
         timelinePage.value = res.page
+        timelineTruncated.value = res.truncated === true
     } catch (error) {
         console.error('Error fetching finding change timeline:', error)
     } finally {
@@ -305,12 +335,22 @@ function openTimeline(finding: NormalizedFinding) {
     timelineItems.value = []
     timelineTotal.value = 0
     timelinePage.value = 0
+    timelineTruncated.value = false
     showTimeline.value = true
     loadTimelinePage(0)
 }
 
 function loadMoreTimeline() {
     loadTimelinePage(timelinePage.value + 1)
+}
+
+// Toggling the scope re-fetches the timeline from page 0 (the item set changes).
+function onTimelineScopeChange() {
+    timelineItems.value = []
+    timelineTotal.value = 0
+    timelinePage.value = 0
+    timelineTruncated.value = false
+    loadTimelinePage(0)
 }
 
 // ---- "+N more" attribution drill-down (drawer, fetched server-side) ----
@@ -840,6 +880,34 @@ function getInheritedDebtContextSegments(finding: NormalizedFinding): Attributio
 
 .drawer-load-more {
     margin-top: 12px;
+    text-align: center;
+}
+
+.timeline-scope-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.timeline-scope-label {
+    font-size: 0.9em;
+    color: #444;
+
+    .scope-help {
+        margin-left: 2px;
+        color: #999;
+        cursor: help;
+    }
+}
+
+.timeline-truncated-note {
+    margin-top: 12px;
+    font-size: 0.85em;
+    font-style: italic;
+    color: #b45309;
     text-align: center;
 }
 </style>
