@@ -92,7 +92,7 @@ const RELEASE_FINDING_CHANGES_FRAGMENT = `
 
 // Over-time finding changes: flat list of re-scan-driven MetricsRevisionFindingChange
 // records. Exactly one of vulnerability/violation/weakness is non-null per record;
-// previousSeverity is set only for SEVERITY_INCREASED. Selects analysisState on each
+// previousSeverity is set for SEVERITY_INCREASED and SEVERITY_DECREASED. Selects analysisState on each
 // nested finding for parity with the per-release finding-change fragments (so
 // suppressed/FALSE_POSITIVE findings render correctly in the drill-down drawer).
 const OVER_TIME_FINDING_CHANGES_FRAGMENT = `

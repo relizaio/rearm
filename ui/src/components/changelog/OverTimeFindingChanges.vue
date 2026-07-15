@@ -52,11 +52,43 @@
                     </template>
                 </FindingListSection>
                 <FindingListSection
+                    title="Severity decreased"
+                    title-class="finding-resolved"
+                    :key-prefix="`ot-severity-down-${bucket.dateKey}`"
+                    :findings="bucket.severityDecreased"
+                    description="Findings whose severity was lowered on this date."
+                    @kev-click="openKevModal"
+                >
+                    <template #attribution="{ finding }">
+                        <div class="release-attribution">
+                            {{ releaseLabel(finding) }}
+                            <template v-if="finding.previousSeverity">
+                                <span class="severity-change">Severity: <strong>{{ finding.previousSeverity }}</strong>
+                                    <span class="severity-arrow">→</span>
+                                    <strong>{{ finding.severity || 'UNASSIGNED' }}</strong>
+                                </span>
+                            </template>
+                        </div>
+                    </template>
+                </FindingListSection>
+                <FindingListSection
                     title="KEV listed"
                     title-class="finding-inherited"
                     :key-prefix="`ot-kev-${bucket.dateKey}`"
                     :findings="bucket.kevAdded"
                     description="Findings newly flagged as a CISA Known Exploited Vulnerability on this date."
+                    @kev-click="openKevModal"
+                >
+                    <template #attribution="{ finding }">
+                        <div class="release-attribution">{{ releaseLabel(finding) }}</div>
+                    </template>
+                </FindingListSection>
+                <FindingListSection
+                    title="KEV removed"
+                    title-class="finding-resolved"
+                    :key-prefix="`ot-kev-removed-${bucket.dateKey}`"
+                    :findings="bucket.kevRemoved"
+                    description="Findings no longer flagged as a CISA Known Exploited Vulnerability on this date."
                     @kev-click="openKevModal"
                 >
                     <template #attribution="{ finding }">
@@ -138,7 +170,9 @@ interface DateBucket {
     appeared: OverTimeFinding[]
     resolved: OverTimeFinding[]
     severityIncreased: OverTimeFinding[]
+    severityDecreased: OverTimeFinding[]
     kevAdded: OverTimeFinding[]
+    kevRemoved: OverTimeFinding[]
 }
 
 function dayKey(changeDate: string): string {
@@ -190,7 +224,9 @@ const dateBuckets = computed<DateBucket[]>(() => {
         const appeared: OverTimeFinding[] = []
         const resolved: OverTimeFinding[] = []
         const severityIncreased: OverTimeFinding[] = []
+        const severityDecreased: OverTimeFinding[] = []
         const kevAdded: OverTimeFinding[] = []
+        const kevRemoved: OverTimeFinding[] = []
 
         for (const rec of dayRecords) {
             const f = toOverTimeFinding(rec)
@@ -199,7 +235,9 @@ const dateBuckets = computed<DateBucket[]>(() => {
                 case 'APPEARED': appeared.push(f); break
                 case 'RESOLVED': resolved.push(f); break
                 case 'SEVERITY_INCREASED': severityIncreased.push(f); break
+                case 'SEVERITY_DECREASED': severityDecreased.push(f); break
                 case 'KEV_ADDED': kevAdded.push(f); break
+                case 'KEV_REMOVED': kevRemoved.push(f); break
             }
         }
 
@@ -209,7 +247,9 @@ const dateBuckets = computed<DateBucket[]>(() => {
             appeared: sortBySeverityThenId(appeared) as OverTimeFinding[],
             resolved: sortBySeverityThenId(resolved) as OverTimeFinding[],
             severityIncreased: sortBySeverityThenId(severityIncreased) as OverTimeFinding[],
-            kevAdded: sortBySeverityThenId(kevAdded) as OverTimeFinding[]
+            severityDecreased: sortBySeverityThenId(severityDecreased) as OverTimeFinding[],
+            kevAdded: sortBySeverityThenId(kevAdded) as OverTimeFinding[],
+            kevRemoved: sortBySeverityThenId(kevRemoved) as OverTimeFinding[]
         }
     })
 })
