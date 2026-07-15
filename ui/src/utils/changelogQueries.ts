@@ -660,7 +660,14 @@ export interface MetricsRevisionFindingChangePage {
     page: number
     pageSize: number
     since?: string
+    // F4: true when total is a floor (org ALL_POSTURE scan hit its cap). Render total as 'N+'.
+    // Optional so a backend that doesn't yet return it degrades gracefully (treated as false).
+    truncated?: boolean
 }
+
+// Read scope for the over-time timeline. RELEASE_ANCHORED (default) = events on releases produced in the
+// window; ALL_POSTURE = also re-scan-driven changes on releases shipped before the window (org scope only).
+export type FindingChangeScope = 'RELEASE_ANCHORED' | 'ALL_POSTURE'
 
 /**
  * Pages the over-time finding-change timeline behind the capped inline overTimeFindingChanges. Optional
@@ -676,6 +683,7 @@ export async function fetchFindingChangeTimeline(params: {
     findingKey?: string
     page?: number
     pageSize?: number
+    scope?: FindingChangeScope
 }): Promise<MetricsRevisionFindingChangePage> {
     const response = await graphqlClient.query({
         query: gql`
@@ -689,6 +697,7 @@ export async function fetchFindingChangeTimeline(params: {
                 $findingKey: String
                 $page: Int
                 $pageSize: Int
+                $scope: FindingChangeScope
             ) {
                 findingChangeTimelineByDate(
                     orgUuid: $orgUuid
@@ -700,11 +709,13 @@ export async function fetchFindingChangeTimeline(params: {
                     findingKey: $findingKey
                     page: $page
                     pageSize: $pageSize
+                    scope: $scope
                 ) {
                     total
                     page
                     pageSize
                     since
+                    truncated
                     items {
                         ${OVER_TIME_FINDING_CHANGES_FRAGMENT}
                     }
@@ -720,7 +731,8 @@ export async function fetchFindingChangeTimeline(params: {
             dateTo: params.dateTo,
             findingKey: params.findingKey || null,
             page: params.page ?? 0,
-            pageSize: params.pageSize ?? 50
+            pageSize: params.pageSize ?? 50,
+            scope: params.scope ?? null
         },
         fetchPolicy: 'no-cache'
     })
