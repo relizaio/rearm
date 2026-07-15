@@ -89,12 +89,13 @@ export interface ReleaseFindingChanges {
 /**
  * Kind of finding change surfaced by a metrics re-scan over time.
  */
-export type FindingChangeKind = 'APPEARED' | 'RESOLVED' | 'SEVERITY_INCREASED' | 'KEV_ADDED'
+export type FindingChangeKind =
+    'APPEARED' | 'RESOLVED' | 'SEVERITY_INCREASED' | 'SEVERITY_DECREASED' | 'KEV_ADDED' | 'KEV_REMOVED'
 
 /**
  * A single re-scan-driven finding change observed at a point in time.
  * Exactly one of vulnerability / violation / weakness is non-null per record;
- * previousSeverity is set only for SEVERITY_INCREASED.
+ * previousSeverity is set for SEVERITY_INCREASED and SEVERITY_DECREASED (the pre-change severity).
  */
 export interface MetricsRevisionFindingChange {
     changeDate: string
