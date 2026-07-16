@@ -1,0 +1,31 @@
+# Dynamic configuration for the optional traefik TLS front (see the
+# "tls" profile in docker-compose.yml). Uses the file provider so no
+# docker socket needs to be mounted into the proxy container.
+#
+# TLS modes:
+# - Default: traefik's built-in self-signed certificate (browser
+#   warning; fine for IP-based evals -- browsers need https for the
+#   Web Crypto API the login flow depends on).
+# - Let's Encrypt: set REARM_ACME_EMAIL (and a real REARM_TLS_HOST
+#   domain, reachable on default ports) to switch the router to the
+#   ACME resolver configured in docker-compose.yml.
+http:
+  routers:
+    rearm:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - websecure
+      service: rearm-ui
+      {{ if env "REARM_ACME_EMAIL" }}
+      tls:
+        certResolver: le
+        domains:
+          - main: '{{ env "REARM_TLS_HOST" }}'
+      {{ else }}
+      tls: {}
+      {{ end }}
+  services:
+    rearm-ui:
+      loadBalancer:
+        servers:
+          - url: "http://rearm-ui:80"

@@ -1,12 +1,16 @@
 services:
   rearm-core:
     image: registry.relizahub.com/library/rearm-backend:26.05.35@sha256:cb852201a6b6ba77b96908517712e29e1578c40e2b854161cdfff211a65bdf29
+    # Legacy core.env kept for one release for backward compatibility --
+    # prefer the OCI_* variables in .env (see .env.example).
     env_file:
      - path: ./core.env
        required: false
     environment:
      - PG_HOST=rearm-postgresql
      - PG_PORT=5432
+     - PG_PASS=${REARM_PG_PASS:-relizaPass}
+     - RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-}
      - PROJECT_PROTOCOL=${REARM_PROTOCOL:-http}
      - PROJECT_HOST=${REARM_HOST:-localhost:8092}
      - KEYCLOAK_ISSUER_URI=${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}
@@ -54,7 +58,7 @@ services:
      # only if you need remote DB access and have changed the password.
      - "${REARM_PG_BIND:-127.0.0.1}:5440:5432"
     environment:
-     - POSTGRES_PASSWORD=relizaPass
+     - POSTGRES_PASSWORD=${REARM_PG_PASS:-relizaPass}
     deploy:
       replicas: 1
       restart_policy:
@@ -70,7 +74,7 @@ services:
      - KC_DB=postgres
      - KC_DB_SCHEMA=reliza_keycloak
      - KC_DB_USERNAME=postgres
-     - KC_DB_PASSWORD=relizaPass
+     - KC_DB_PASSWORD=${KEYCLOAK_PG_PASS:-relizaPass}
      - KC_DB_URL=jdbc:postgresql://keycloak-postgres:5432/postgres
      - KEYCLOAK_ADMIN=admin
      - KEYCLOAK_ADMIN_PASSWORD=admin
@@ -99,7 +103,7 @@ services:
   keycloak-postgres:
     image: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
     environment:
-     - POSTGRES_PASSWORD=relizaPass
+     - POSTGRES_PASSWORD=${KEYCLOAK_PG_PASS:-relizaPass}
     deploy:
       replicas: 1
       restart_policy:
@@ -109,13 +113,15 @@ services:
       - "rearm-keycloak-compose-postgres-data:/relizaio/postgresql"
   oci-artifact-service:
     image: registry.relizahub.com/library/rearm-oci-artifact-service:26.03.12@sha256:fc00a0d8e3dfbf513e6e2bdc18d93047f1b76da7014cbb9d1f2483a187bc69dc
+    # Legacy oci.env kept for one release for backward compatibility --
+    # prefer the OCI_* variables in .env (see .env.example).
     env_file:
      - path: ./oci.env
        required: false
-    # environment:
-    # - REGISTRY_HOST=registry.relizahub.com
-    # - REGISTRY_USERNAME=rh_430fcdde-d7bc-4542-ad5b-4f534f4942f0
-    # - REGISTRY_TOKEN=changeme
+    environment:
+     - REGISTRY_HOST=${OCI_REGISTRY_HOST:-}
+     - REGISTRY_USERNAME=${OCI_REGISTRY_USERNAME:-}
+     - REGISTRY_TOKEN=${OCI_REGISTRY_TOKEN:-}
     deploy:
       replicas: 1
       restart_policy:
@@ -125,13 +131,16 @@ services:
         delay: 10s
   rebom-backend:
     image: registry.relizahub.com/library/rebom-backend:0.20.4@sha256:1b75c28fe1fa2e28b25b2fdd80e2cbd1cc43751b64657020cf6e87c7428e6dc3
+    # Legacy rebom.env kept for one release for backward compatibility --
+    # prefer the OCI_* variables in .env (see .env.example).
     env_file:
      - path: ./rebom.env
        required: false
     environment:
      - POSTGRES_HOST=rebom-postgresql
      - POSTGRES_PORT=5432
-     - POSTGRES_PASSWORD=relizaPass
+     - POSTGRES_PASSWORD=${REBOM_PG_PASS:-relizaPass}
+     - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-}
      - OCI_STORAGE_ENABLED=true
      - OCI_ARTIFACT_SERVICE_HOST=http://oci-artifact-service:8083
     depends_on:
@@ -146,7 +155,7 @@ services:
   rebom-postgresql:
     image: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
     environment:
-     - POSTGRES_PASSWORD=relizaPass
+     - POSTGRES_PASSWORD=${REBOM_PG_PASS:-relizaPass}
     deploy:
       replicas: 1
       restart_policy:
@@ -162,37 +171,49 @@ services:
       [
         '-url=jdbc:postgresql://rebom-postgresql:5432/postgres',
         '-user=postgres',
-        '-password=relizaPass',
+        '-password=${REBOM_PG_PASS:-relizaPass}',
         '-defaultSchema=rebom',
         '-schemas=rebom',
         'migrate'
       ]
     volumes:
       - ./rebom-migrations:/flyway/sql
-  caddy:
+  traefik:
     # TLS front, enabled with: docker compose --profile tls up -d
     # Required for any non-localhost deployment: browsers only expose the
     # Web Crypto API (needed by the login flow) in secure contexts, i.e.
-    # https or localhost. See Caddyfile for REARM_SITE_ADDRESS /
-    # REARM_TLS_CONFIG modes (self-signed for IP evals, ACME for domains).
-    image: caddy:2.11.4@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    # https or localhost. Serves a self-signed certificate by default
+    # (browser warning; fine for IP-based evals); set REARM_ACME_EMAIL and
+    # a real REARM_TLS_HOST domain on default ports for Let's Encrypt.
+    image: traefik:v3.7.8@sha256:5cb000ad823bfcfff911e22a4c4fa09cee74c7a2d960c012a1a46a8d0a159fcf
     profiles: ["tls"]
+    command:
+     - --entrypoints.websecure.address=:443
+     - --entrypoints.web.address=:80
+     # http -> https redirect. NB: the redirect targets the standard port;
+     # with a non-443 REARM_TLS_PORT just use the https URL directly.
+     - --entrypoints.web.http.redirections.entrypoint.to=websecure
+     - --entrypoints.web.http.redirections.entrypoint.scheme=https
+     # watch=false: the dynamic config is static for this deployment, and
+     # disabling the watcher avoids failing on hosts with exhausted
+     # inotify instances (the watcher error otherwise leaves traefik
+     # routerless, answering 404 to everything).
+     - --providers.file.filename=/etc/traefik/dynamic.yml
+     - --providers.file.watch=false
+     - --certificatesresolvers.le.acme.email=${REARM_ACME_EMAIL:-noreply@example.com}
+     - --certificatesresolvers.le.acme.storage=/data/acme.json
+     - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
     ports:
-     # When REARM_HOST carries a non-443 port (e.g. 203.0.113.7:8443), set
-     # REARM_TLS_PORT to that same port -- caddy listens on the port from
-     # its site address, which is derived from REARM_HOST.
-     - "${REARM_TLS_PORT:-443}:${REARM_TLS_PORT:-443}"
+     - "${REARM_TLS_PORT:-443}:443"
      # Port 80 is used for the ACME http challenge and http->https redirect.
      - "${REARM_TLS_HTTP_PORT:-80}:80"
     environment:
-     # Bare host or IP (no port) -- certificate SAN + default SNI. Must
-     # match the host part of REARM_HOST.
+     # Consumed by the go-template conditionals in traefik-dynamic.yml.
      - REARM_TLS_HOST=${REARM_TLS_HOST:-localhost}
-     - REARM_TLS_PORT=${REARM_TLS_PORT:-443}
-     - REARM_TLS_CONFIG=${REARM_TLS_CONFIG:-internal}
+     - REARM_ACME_EMAIL=${REARM_ACME_EMAIL:-}
     volumes:
-     - ./Caddyfile:/etc/caddy/Caddyfile:ro
-     - caddy-data:/data
+     - ./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
+     - traefik-data:/data
     depends_on:
      - rearm-ui
     deploy:
@@ -206,5 +227,5 @@ volumes:
     driver: local
   rebom-postgres-data:
     driver: local
-  caddy-data:
+  traefik-data:
     driver: local
