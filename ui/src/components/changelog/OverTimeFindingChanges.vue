@@ -136,16 +136,18 @@ function recordFindingKey(rec: MetricsRevisionFindingChange): string | null {
     return findingChangeRecordKey(rec)
 }
 
-// Per-release attribution line for a normalized over-time finding (closes #41):
-// two identical CVE rows from different releases are now distinguishable.
-function releaseLabel(finding: { componentName?: string, version?: string }): string {
+// Per-row attribution line for a normalized over-time finding: component@version plus the branch
+// (F7b) so the many drawer rows that share one component@version -- the same finding fanned out across
+// a component's branches -- are distinguishable, not an undifferentiated wall.
+function releaseLabel(finding: { componentName?: string, version?: string, branchName?: string | null }): string {
     const parts: string[] = []
     if (finding.componentName) parts.push(finding.componentName)
     if (finding.version) parts.push(finding.version)
-    if (parts.length === 0) return ''
-    return finding.componentName && finding.version
+    let label = finding.componentName && finding.version
         ? `${finding.componentName}@${finding.version}`
         : parts.join(' ')
+    if (finding.branchName) label = label ? `${label} (${finding.branchName})` : finding.branchName
+    return label
 }
 
 const showKevModal = ref(false)
@@ -161,6 +163,7 @@ type OverTimeFinding = NormalizedReleaseFinding & {
     componentName: string
     version: string
     releaseUuid: string
+    branchName?: string | null
     previousSeverity?: string | null
 }
 
@@ -196,6 +199,7 @@ function toOverTimeFinding(rec: MetricsRevisionFindingChange): OverTimeFinding |
         componentName: rec.componentName,
         version: rec.version,
         releaseUuid: rec.releaseUuid,
+        branchName: rec.branchName ?? null,
         previousSeverity: rec.previousSeverity ?? null
     }
 }
