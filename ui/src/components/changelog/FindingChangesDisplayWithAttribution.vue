@@ -47,13 +47,13 @@
                     <template #trigger>
                         <n-tag type="error" size="small" :bordered="false" class="tag-spacing worsened-tag">Newly KEV ({{ newlyKevCount }})</n-tag>
                     </template>
-                    <span>Findings newly flagged as a CISA Known Exploited Vulnerability within this period.</span>
+                    <span>Open findings (still present at the end of the period) that became a CISA Known Exploited Vulnerability during it. A finding that became KEV but was resolved before the period ended is not counted here — see the over-time tab for every KEV event.</span>
                 </n-tooltip>
                 <n-tooltip v-if="severityIncreasedCount > 0" trigger="hover" placement="bottom">
                     <template #trigger>
                         <n-tag type="warning" size="small" :bordered="false" class="tag-spacing worsened-tag">Severity ↑ ({{ severityIncreasedCount }})</n-tag>
                     </template>
-                    <span>Findings whose severity was raised within this period.</span>
+                    <span>Open findings (still present at the end of the period) whose severity was raised during it. A finding raised then resolved before the period ended is not counted here — see the over-time tab for every severity change.</span>
                 </n-tooltip>
             </div>
             
