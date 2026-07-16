@@ -1,0 +1,21 @@
+# TLS front for non-localhost deployments (enabled via the "tls" compose
+# profile). Browsers only expose the Web Crypto API in secure contexts
+# (https or localhost), and the ReARM login flow requires it -- so any
+# deployment reached by hostname or IP needs TLS termination.
+#
+# REARM_TLS_HOST   - bare host or IP, no port (e.g. rearm.example.com or
+#                    203.0.113.7). Also used as default_sni so IP-based
+#                    evals work: browsers send no SNI for IP URLs.
+# REARM_TLS_PORT   - https port (default 443). Non-443 ports are fine for
+#                    self-signed evals but break ACME/Let's Encrypt.
+# REARM_TLS_CONFIG - "internal" (default) for a self-signed certificate
+#                    (browser warning; fine for evals), or an email
+#                    address to enable automatic Let's Encrypt (requires
+#                    a real domain and default ports 80/443).
+{
+	default_sni {$REARM_TLS_HOST}
+}
+https://{$REARM_TLS_HOST}:{$REARM_TLS_PORT} {
+	tls {$REARM_TLS_CONFIG}
+	reverse_proxy rearm-ui:80
+}

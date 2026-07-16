@@ -7,9 +7,9 @@ services:
     environment:
      - PG_HOST=rearm-postgresql
      - PG_PORT=5432
-     - PROJECT_PROTOCOL=http
-     - PROJECT_HOST=localhost:8092
-     - KEYCLOAK_ISSUER_URI=http://localhost:8092
+     - PROJECT_PROTOCOL=${REARM_PROTOCOL:-http}
+     - PROJECT_HOST=${REARM_HOST:-localhost:8092}
+     - KEYCLOAK_ISSUER_URI=${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}
      - KEYCLOAK_SET_URI=http://keycloak:9080
      - RELIZAPROP_REBOM_URI=http://rebom-backend:4000/
      - RELIZAPROP_OCIARTIFACTS_SERVICE_HOST=oci-artifact-service
@@ -32,7 +32,7 @@ services:
      - MAX_BODY_SIZE=50M
      - HUB_HOST=rearm-core
      - HUB_PORT=8086
-     - PROJECT_ORIGIN=http://localhost:8092
+     - PROJECT_ORIGIN=${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}
      - KEYCLOAK_HOST=keycloak
      - KEYCLOAK_PORT=9080
      - KEYCLOAK_ADMIN_ACCESS=
@@ -49,7 +49,10 @@ services:
   rearm-postgresql:
     image: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
     ports:
-     - "5440:5432"
+     # Bound to loopback by default -- this is a convenience port with a
+     # well-known default password. Override REARM_PG_BIND (e.g. 0.0.0.0)
+     # only if you need remote DB access and have changed the password.
+     - "${REARM_PG_BIND:-127.0.0.1}:5440:5432"
     environment:
      - POSTGRES_PASSWORD=relizaPass
     deploy:
@@ -76,7 +79,14 @@ services:
     entrypoint:
      - /bin/sh
      - -c
-     - /opt/keycloak/bin/kc.sh start --import-realm --http-enabled true --hostname-strict false --http-host 0.0.0.0 --http-port 9080 --hostname http://localhost:8092/kauth
+     # The imported realm's login-app client pins its redirect URIs / web
+     # origins to http://localhost:8092 -- rewrite them to the external
+     # origin before the import so login works on any host. NB:
+     # --import-realm only seeds a realm that does not exist yet, so
+     # changing REARM_HOST later requires wiping the keycloak volume
+     # (docker compose down -v; destroys users) or editing the login-app
+     # client in the Keycloak admin console.
+     - RF=$$(ls /opt/keycloak/data/import/*reliza-realm*.json | head -1) && sed "s#http://localhost:8092#${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}#g" "$$RF" > /tmp/realm.json && cp /tmp/realm.json "$$RF" && /opt/keycloak/bin/kc.sh start --import-realm --http-enabled true --hostname-strict false --http-host 0.0.0.0 --http-port 9080 --hostname ${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}/kauth
     depends_on:
      - keycloak-postgres
     deploy:
@@ -159,10 +169,42 @@ services:
       ]
     volumes:
       - ./rebom-migrations:/flyway/sql
+  caddy:
+    # TLS front, enabled with: docker compose --profile tls up -d
+    # Required for any non-localhost deployment: browsers only expose the
+    # Web Crypto API (needed by the login flow) in secure contexts, i.e.
+    # https or localhost. See Caddyfile for REARM_SITE_ADDRESS /
+    # REARM_TLS_CONFIG modes (self-signed for IP evals, ACME for domains).
+    image: caddy:2.11.4@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    profiles: ["tls"]
+    ports:
+     # When REARM_HOST carries a non-443 port (e.g. 203.0.113.7:8443), set
+     # REARM_TLS_PORT to that same port -- caddy listens on the port from
+     # its site address, which is derived from REARM_HOST.
+     - "${REARM_TLS_PORT:-443}:${REARM_TLS_PORT:-443}"
+     # Port 80 is used for the ACME http challenge and http->https redirect.
+     - "${REARM_TLS_HTTP_PORT:-80}:80"
+    environment:
+     # Bare host or IP (no port) -- certificate SAN + default SNI. Must
+     # match the host part of REARM_HOST.
+     - REARM_TLS_HOST=${REARM_TLS_HOST:-localhost}
+     - REARM_TLS_PORT=${REARM_TLS_PORT:-443}
+     - REARM_TLS_CONFIG=${REARM_TLS_CONFIG:-internal}
+    volumes:
+     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+     - caddy-data:/data
+    depends_on:
+     - rearm-ui
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 volumes:
   rearm-keycloak-compose-postgres-data:
     driver: local
   rearm-postgres-data:
     driver: local
   rebom-postgres-data:
-    driver: local    
+    driver: local
+  caddy-data:
+    driver: local
