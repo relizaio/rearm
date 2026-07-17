@@ -56,6 +56,7 @@
                                 <n-form-item label="Status">
                                     <n-select v-model:value="subForm.status" :options="subscriptionStatusOptions" />
                                 </n-form-item>
+                                <div class="field-hint">"Preview" is reserved and not available yet, so it isn't selectable -- a preview subscription would never deliver anything, exactly like Disabled. (An existing Preview subscription can still be switched to Active or Disabled.)</div>
                             </n-gi>
                         </n-grid>
 
@@ -660,11 +661,12 @@ function testDisabledReason (row: SubscriptionRow, templates: Array<{ label: str
 }
 
 // injectSyntheticEvent is org-wide, not subscription-scoped: it writes one
-// outbox event that the fan-out worker matches against every ACTIVE (or
-// PREVIEW) subscription in the org, not just this one -- other subscriptions
-// on the same event type fire too, delivering to their own real channels
-// (Slack, PagerDuty, email...). Confirm before injecting, since this can
-// surprise another team's channel, not just the one being tested.
+// outbox event that the fan-out worker matches against every ACTIVE
+// subscription in the org, not just this one -- other subscriptions on the
+// same event type fire too, delivering to their own real channels (Slack,
+// PagerDuty, email...). Confirm before injecting, since this can surprise
+// another team's channel, not just the one being tested. (PREVIEW subs are
+// NOT matched: fan-out queries status='ACTIVE' only.)
 function confirmSubscriptionTest (row: SubscriptionRow, template: string): void {
     // Belt-and-suspenders: the Test control is already disabled while a test
     // is in flight (see testingSubscriptions), but that's a reactive prop on
@@ -674,7 +676,7 @@ function confirmSubscriptionTest (row: SubscriptionRow, template: string): void 
     if (testingSubscriptions.value.has(row.uuid)) return
     dialog.warning({
         title: `Test "${row.name}"?`,
-        content: "This injects a real synthetic event for the whole org, not just this subscription -- any other ACTIVE or PREVIEW subscription matching the same event type will also fire and deliver to its own channels (Slack, email, etc.).",
+        content: "This injects a real synthetic event for the whole org, not just this subscription -- any other ACTIVE subscription matching the same event type will also fire and deliver to its own channels (Slack, email, etc.).",
         positiveText: 'Send test event',
         negativeText: 'Cancel',
         onPositiveClick: () => runSubscriptionTest(row, template),
@@ -773,7 +775,11 @@ const subscriptionColumns = computed(() => [
         render: (row: SubscriptionRow) => h(
             NTag,
             {
-                type: row.status === 'ACTIVE' ? 'success' : (row.status === 'PREVIEW' ? 'info' : 'warning'),
+                // Legacy PREVIEW rows tag as 'warning' alongside DISABLED, not
+                // 'info': fan-out matches ACTIVE only, so a PREVIEW
+                // subscription delivers nothing. A calm blue badge would imply
+                // it is doing something benign-but-active. It isn't.
+                type: row.status === 'ACTIVE' ? 'success' : 'warning',
                 size: 'small',
             },
             { default: () => row.status },

@@ -11,6 +11,7 @@ vi.mock('@/utils/commonFunctions', () => ({
 import { print } from 'graphql'
 import {
     relativeTime,
+    subscriptionStatusOptions, eventTypeOptions,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
 } from './notificationsCommon'
@@ -46,6 +47,33 @@ describe('notification list query CORE / FULL split', () => {
 
 // relativeTime is a pure function with an injectable `now`, so these are
 // deterministic (no dependence on the wall clock).
+// Guard the two options that are deliberately unselectable because the backend
+// has no implementation behind them. Both were silent traps: the control was
+// offered, the user picked it, and nothing ever fired. Re-enabling either
+// without shipping its backend half re-opens that trap, so pin them here --
+// this is the executable form of the comments next to each options list.
+describe('unselectable options without a backend implementation', () => {
+    const option = (opts: Array<{ value: string, disabled?: boolean }>, value: string) =>
+        opts.find(o => o.value === value)
+
+    it('keeps PREVIEW unselectable while fan-out matches ACTIVE only', () => {
+        // NotificationSubscriptionRepository.findActiveByOrgString filters on
+        // status='ACTIVE', so a PREVIEW subscription never reaches fan-out and
+        // behaves exactly like DISABLED. Reproduced on the sandbox: ACTIVE -> 1
+        // delivery row, PREVIEW -> 0, DISABLED -> 0.
+        expect(option(subscriptionStatusOptions, 'PREVIEW')?.disabled).toBe(true)
+    })
+
+    it('leaves the implemented subscription statuses selectable', () => {
+        expect(option(subscriptionStatusOptions, 'ACTIVE')?.disabled).toBeFalsy()
+        expect(option(subscriptionStatusOptions, 'DISABLED')?.disabled).toBeFalsy()
+    })
+
+    it('keeps VEX_STATE_CHANGED unselectable while it has no event producer', () => {
+        expect(option(eventTypeOptions, 'VEX_STATE_CHANGED')?.disabled).toBe(true)
+    })
+})
+
 describe('relativeTime', () => {
     const now = Date.parse('2026-07-08T12:00:00Z')
     const ago = (ms: number) => new Date(now - ms).toISOString()
