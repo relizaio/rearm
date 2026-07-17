@@ -193,7 +193,7 @@ public class AnalyticsDataFetcher {
 		ComponentData cd = getComponentService.getComponentData(componentUuid)
 				.orElseThrow(() -> new RelizaException("Component not found"));
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(cd), CallType.READ);
-		return analyticsMetricsService.getVulnViolationByComponentChartData(componentUuid, dateFrom, dateTo);
+		return analyticsMetricsService.getVulnViolationByComponentChartDataStored(componentUuid, dateFrom, dateTo);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

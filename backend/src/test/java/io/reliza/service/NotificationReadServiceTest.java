@@ -278,12 +278,12 @@ class NotificationReadServiceTest {
         UUID orgUuid = UUID.randomUUID();
         UUID perspectiveUuid = UUID.randomUUID();
         // Inbox countInbox signature now: (org, userUuid, isOrgAdmin,
-        // perspectivesLiteral, unreadOnly, status, eventType). countUnread
-        // passes null for both status and eventType.
-        when(deliveryRepo.countInbox(eq(orgUuid), eq(userUuid), eq(false), any(), eq(true), eq(null), eq(null)))
+        // perspectivesLiteral, componentUuidsLiteral, unreadOnly, status,
+        // eventType). countUnread passes null for both status and eventType.
+        when(deliveryRepo.countInbox(eq(orgUuid), eq(userUuid), eq(false), any(), any(), eq(true), eq(null), eq(null)))
                 .thenReturn(7L);
 
-        long count = service.countUnread(userUuid, orgUuid, List.of(perspectiveUuid), false);
+        long count = service.countUnread(userUuid, orgUuid, List.of(perspectiveUuid), List.of(), false);
 
         assertEquals(7L, count);
     }

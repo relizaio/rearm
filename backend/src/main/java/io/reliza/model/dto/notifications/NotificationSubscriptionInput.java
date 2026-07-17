@@ -55,7 +55,16 @@ public record NotificationSubscriptionInput(
             List<ReleaseLifecycle> andLifecycleIn,
             List<UUID> channels,
             /*
-             * Phase 13b — UUIDs of NotificationChannelGroups whose
+             * Phase 12 perspective scoping. UUIDs of perspectives that
+             * gate this route's deliveries: an event is delivered only
+             * when the affected release touches at least one of these
+             * perspectives. Null / empty = no perspective gate (match
+             * anything) -- the fan-out gate (perspectiveGateMatches in
+             * NotificationFanOutService) treats both shapes identically.
+             */
+            List<UUID> perspectives,
+            /*
+             * Phase 13b -- UUIDs of NotificationChannelGroups whose
              * members are merged with {@code channels} at fan-out time.
              * Null / empty = no group expansion (deliver to direct
              * channels only). Validated at save time by

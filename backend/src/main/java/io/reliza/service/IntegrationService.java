@@ -67,7 +67,6 @@ import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
-import io.reliza.model.TextPayload;
 import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.VulnerabilityRecordData.CweEntry;
 import io.reliza.model.VulnerabilityRecordData.Fetcher;
@@ -126,20 +125,7 @@ public class IntegrationService {
 	private static final Logger log = LoggerFactory.getLogger(IntegrationService.class);
 
 	private final IntegrationRepository repository;
-	
-	// slack var
-	private static final String SLACK_URI_PREFIX = "https://hooks.slack.com/services/";	
-	
-	private final WebClient slackWebClient = WebClient
-													.builder()
-													.baseUrl(SLACK_URI_PREFIX)
-													.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-													.build();
-	private final WebClient teamsWebClient = WebClient
-			.builder()
-			.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-			.build();
-	
+
 	// 150 MB ceiling on a single Dependency-Track response payload. Was 200 MB,
 	// then 50 MB (too tight — tripped DataBufferLimitException on real
 	// projects), then 100 MB. Raised again to 150 MB to give projects with
@@ -343,21 +329,27 @@ public class IntegrationService {
 
 	@Transactional
 	public Integration createIntegration (TriggerIntegrationInputDto tii, WhoUpdated wu)
-			throws DatabindException, JacksonException {
+			throws DatabindException, JacksonException, RelizaException {
 		Integration i = new Integration();
 		String secret = tii.getSecret();
 		if (tii.getType() == IntegrationType.GITHUB) {
 			secret = normalizeGithubAppPrivateKey(secret);
 		}
-		String encryptedSecret = encryptionService.encrypt(secret);
 		IntegrationData id = new IntegrationData();
 		id.setOrg(tii.getOrg());
 		id.setIdentifier("TRIGGER_" + UUID.randomUUID().toString());
 		id.setType(tii.getType());
-		id.setSecret(encryptedSecret);
 		id.setNote(tii.getNote());
 		id.setCapabilities(tii.getCapabilities());
+		// Set the App ID (schedule) before the assert so it can validate both the
+		// key and the App ID together (see assertGithubPrValidateHasKey).
 		if (StringUtils.isNotEmpty(tii.getSchedule())) id.setSchedule(tii.getSchedule());
+		// Reject a PR_VALIDATE GitHub integration with no App key/App ID before
+		// encryption: `secret` here is the normalized plaintext, and an
+		// empty/null key would otherwise reach encrypt() (a null throws a
+		// less actionable IllegalArgumentException) or persist silently broken.
+		assertGithubPrValidateHasKey(id, secret);
+		id.setSecret(encryptionService.encrypt(secret));
 		if (StringUtils.isNotEmpty(tii.getUri())) {
 			URI uri = null;
 			if (tii.getType() == IntegrationType.ADO) {
@@ -384,12 +376,76 @@ public class IntegrationService {
 	 */
 	@Transactional
 	public Integration updateCapabilities(UUID uuid,
-			List<IntegrationData.IntegrationCapability> capabilities, WhoUpdated wu) {
+			List<IntegrationData.IntegrationCapability> capabilities, WhoUpdated wu) throws RelizaException {
 		Integration i = repository.findById(uuid)
 				.orElseThrow(() -> new IllegalArgumentException("Integration not found: " + uuid));
 		IntegrationData id = IntegrationData.dataFromRecord(i);
 		id.setCapabilities(capabilities == null ? List.of() : capabilities);
+		// Adding PR_VALIDATE to a GitHub integration that has no App key would
+		// produce a silently-broken validation channel; the stored secret is
+		// encrypted, so decrypt to detect the empty/absent case.
+		assertGithubPrValidateHasKey(id, encryptionService.decrypt(id.getSecret()));
 		return saveIntegration(i, Utils.dataToRecord(id), wu);
+	}
+
+	/**
+	 * Replace the GitHub App private key (and optionally the App ID) on an existing
+	 * GITHUB integration, leaving capabilities and all other record_data untouched.
+	 * The key is normalized (PKCS#1 PEM / PKCS#8 PEM / DER base64 all accepted) and
+	 * re-encrypted, and the PR_VALIDATE-needs-key rule is re-asserted so a
+	 * credential replacement can't leave a PR_VALIDATE integration broken. A blank
+	 * {@code appId} leaves the stored App ID unchanged (rotate the key alone).
+	 * Caller is responsible for authorization (org-admin).
+	 */
+	@Transactional
+	public Integration updateGithubAppCredentials(UUID uuid, String privateKey, String appId, WhoUpdated wu)
+			throws RelizaException {
+		Integration i = repository.findById(uuid)
+				.orElseThrow(() -> new IllegalArgumentException("Integration not found: " + uuid));
+		IntegrationData id = IntegrationData.dataFromRecord(i);
+		if (id.getType() != IntegrationType.GITHUB) {
+			throw new RelizaException("updateGithubAppCredentials is only valid for GITHUB integrations");
+		}
+		String secret = normalizeGithubAppPrivateKey(privateKey);
+		// Update the App ID (schedule) before the assert so it validates the key and
+		// App ID together; a blank appId leaves the existing App ID in place.
+		if (StringUtils.isNotBlank(appId)) {
+			id.setSchedule(appId);
+		}
+		assertGithubPrValidateHasKey(id, secret);
+		id.setSecret(encryptionService.encrypt(secret));
+		return saveIntegration(i, Utils.dataToRecord(id), wu);
+	}
+
+	/**
+	 * A GITHUB integration with the PR_VALIDATE capability needs the GitHub App
+	 * private key: {@code SaasIntegrationService.getGithubKey} signs the
+	 * installation-token JWT with it. Saving PR_VALIDATE with an empty key
+	 * yields an integration that silently fails on every PR-validation and
+	 * DTrack-sync comment attempt (getGithubKey logs and returns null) -- the
+	 * misconfiguration behind this incident. Reject it at the create/update
+	 * boundary with a clear message instead. {@code plainSecret} is the
+	 * decrypted/plaintext key (callers pass it pre-encryption or post-decryption)
+	 * so blank detection works regardless of the entry path.
+	 *
+	 * <p>The App ID ({@code IntegrationData.schedule}) is validated alongside the
+	 * key: {@code getGithubJWT} uses it as the JWT issuer, so a blank App ID is the
+	 * same silent-failure class as a blank key (the token mint fails and no comment
+	 * / check-run is posted). The caller must set the schedule on {@code id} before
+	 * invoking this method.
+	 */
+	private void assertGithubPrValidateHasKey(IntegrationData id, String plainSecret) throws RelizaException {
+		if (id.getType() == IntegrationType.GITHUB
+				&& id.hasCapability(IntegrationData.IntegrationCapability.PR_VALIDATE)) {
+			if (StringUtils.isBlank(plainSecret)) {
+				throw new RelizaException("GitHub integration with PR_VALIDATE capability requires a "
+						+ "non-empty GitHub App private key (secret); none was provided");
+			}
+			if (StringUtils.isBlank(id.getSchedule())) {
+				throw new RelizaException("GitHub integration with PR_VALIDATE capability requires a "
+						+ "non-empty GitHub App ID; none was provided");
+			}
+		}
 	}
 
 	@Transactional
@@ -408,159 +464,6 @@ public class IntegrationService {
 		i.setRecordData(recordData);
 		i = (Integration) WhoUpdated.injectWhoUpdatedData(i, wu);
 		return repository.save(i);
-	}
-	
-	public void sendNotification (UUID orgUuid, IntegrationType notificationType, String channelIdentifier, List<TextPayload> payload) {
-		if (!payload.isEmpty()) {
-			switch (notificationType) {
-			case SLACK:
-				// retrieve notification secret
-				Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(orgUuid, notificationType, channelIdentifier);
-				if (oid.isPresent()) {
-					String secret = encryptionService.decrypt(oid.get().getSecret());
-					// construct payload string for Slack
-					StringBuilder payloadStrSlackSb = parseTextPayloadForSlack(payload);
-					Map<String, String> payloadMap = Map.of("text", payloadStrSlackSb.toString());
-					slackWebClient.post().uri(secret).bodyValue(payloadMap)
-						.retrieve()
-						.toEntity(String.class)
-						.subscribe(
-							successValue -> {},
-							error -> {
-								log.error(error.getMessage());
-							}
-						);
-				}
-				break;
-			case MSTEAMS:
-				// retrieve notification secret
-				Optional<IntegrationData> oidteams = getIntegrationDataByOrgTypeIdentifier(orgUuid, notificationType, channelIdentifier);
-				if (oidteams.isPresent()) {
-					String secret = encryptionService.decrypt(oidteams.get().getSecret());
-					StringBuilder payloadStrTeamsSb = parseTextPayloadForMsteams(payload, true);
-					try {
-						Map<String, Object> payloadMap = wrapTeamsPayloadInActionCard(payloadStrTeamsSb.toString());
-						URI teamsUri = URI.create(secret);
-						var twc = teamsWebClient.post().uri(teamsUri);
-						    twc.bodyValue(payloadMap).retrieve()
-							.toEntity(String.class)
-							.subscribe(
-								successValue -> {},
-								error -> {
-									if (error instanceof WebClientResponseException wcre) {
-										log.error("Teams webhook error: status={}, body={}", wcre.getStatusCode(), wcre.getResponseBodyAsString());
-									} else {
-										log.error("Teams webhook error: {}", error.getMessage(), error);
-									}
-								}
-							);
-					} catch (Exception e) {
-						log.error("Error on submitting Teams notification", e);
-					}
-				}
-				break;
-			default:
-				break;
-			}
-		}
-	}
-	
-	private Map<String, Object> wrapTeamsPayloadInActionCard (String payload) throws DatabindException, JacksonException {
-		String cardSample = """
-	    {
-	       "type":"message",
-	       "attachments":[
-	          {
-	             "contentType":"application/vnd.microsoft.card.adaptive",
-	             "contentUrl":null,
-	             "content":{
-					  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-					  "type": "AdaptiveCard",
-					  "version": "1.5",
-					  "body": [
-					    {
-					      "type": "TextBlock",
-					      "text": ""
-					    }
-					  ],
-					  "msteams": {
-					  	"width": "Full"
-					  }
-				 }
-	         }
-	       ]
-	    }
-				""";
-		@SuppressWarnings("unchecked")
-		Map<String, Object> cardSampleParsed = Utils.OM.readValue(cardSample, Map.class);
-		@SuppressWarnings("unchecked")
-		List<Map<String, Object>> attArr = (List<Map<String, Object>>) cardSampleParsed.get("attachments");
-		@SuppressWarnings("unchecked")
-		Map<String, Object> contentMap = (Map<String, Object>) attArr.get(0).get("content");
-		@SuppressWarnings("unchecked")
-		List<Map<String, String>> bodyArr = (List<Map<String, String>>) contentMap.get("body");
-		Map<String, String> bodyTextMap = bodyArr.get(0);
-		bodyTextMap.put("text", payload);
-		return cardSampleParsed;
-	}
-	
-	private StringBuilder parseTextPayloadForMsteams(List<TextPayload> payload, boolean withUris) {
-		StringBuilder payloadStrTeamsSb = new StringBuilder();
-		// emojis in teams - see 
-		// here - https://apps.timwhitlock.info/emoji/tables/unicode
-		// and here - https://stackoverflow.com/questions/53384141/teams-webhook-send-emojis-in-notifications
-		for (var p: payload) {
-			if (null == p.uri() || !withUris) {
-				String addText = p.text();
-				boolean hasEmoji = false;
-				switch (addText) {
-				case "\n":
-					addText = "<br />";
-					break;
-				case ":white_check_mark:":
-					addText = "&#x2705;";
-					hasEmoji = true;
-					break;
-				case ":x:":
-					addText = "&#x274c;";
-					hasEmoji = true;
-					break;
-				case ":floppy_disk:":
-					addText = "&#x1F4BE;";
-					hasEmoji = true;
-					break;
-				default:
-					break;
-				}
-				// no URI mode also does not support emojis
-				if (!(!withUris && hasEmoji)) payloadStrTeamsSb.append(addText);
-			} else {
-				String addTextUri = p.text();
-				if (":package:".equals(addTextUri)) addTextUri = "&#x1F4E6;";
-				payloadStrTeamsSb.append("[");
-				payloadStrTeamsSb.append(addTextUri);
-				payloadStrTeamsSb.append("](");
-				payloadStrTeamsSb.append(p.uri());
-				payloadStrTeamsSb.append(")");
-			}
-		}
-		return payloadStrTeamsSb;
-	}
-	
-	private StringBuilder parseTextPayloadForSlack(List<TextPayload> payload) {
-		StringBuilder payloadStrSlackSb = new StringBuilder();
-		for (var p: payload) {
-			if (null == p.uri()) {
-				payloadStrSlackSb.append(p.text());
-			} else {
-				payloadStrSlackSb.append("<");
-				payloadStrSlackSb.append(p.uri());
-				payloadStrSlackSb.append("|");
-				payloadStrSlackSb.append(p.text());
-				payloadStrSlackSb.append(">");
-			}
-		}
-		return payloadStrSlackSb;
 	}
 	
 	public record DependencyTrackBomPayload (UUID project, String bom) {}
@@ -1716,7 +1619,7 @@ public class IntegrationService {
 	 * keep working. The read side (SaasIntegrationService.getGithubKey)
 	 * always expects PKCS#8 DER base64, so all three inputs converge here.
 	 */
-	static String normalizeGithubAppPrivateKey (String input) {
+	public static String normalizeGithubAppPrivateKey (String input) {
 		if (StringUtils.isEmpty(input)) return input;
 		String trimmed = input.trim();
 		if (trimmed.startsWith("-----BEGIN ")) {

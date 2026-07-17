@@ -65,8 +65,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         Bucket bucket = buckets.get(key, k ->
                 Bucket.builder()
                         .addLimit(limit -> limit
-                                .capacity(50)
-                                .refillGreedy(50, Duration.ofSeconds(30))
+                                .capacity(100)
+                                .refillGreedy(100, Duration.ofSeconds(30))
                         )
                         .build()
         );

@@ -837,7 +837,7 @@ public class AuthorizationService {
 		if (sessionUuid != null) {
 			session = agentSessionService.getSessionData(sessionUuid).orElse(null);
 			if (session != null && !orgUuid.equals(session.getOrg())) {
-				log.error("SECURITY: agentic-session-read denied — session {} belongs to org {}, calling key {} is in org {} (releaseUuid={})",
+				log.info("agentic-session-read: session {} belongs to org {}, calling key {} is in org {} (releaseUuid={}) — caller may fall back to RESOURCE-on-release path",
 						sessionUuid, session.getOrg(), matchingKeyId, orgUuid, releaseUuid);
 				throw new AccessDeniedException("Session belongs to a different org");
 			}
@@ -859,7 +859,7 @@ public class AuthorizationService {
 			throw new AccessDeniedException("sessionUuid or clientSessionId is required");
 		}
 		if (session == null) {
-			log.error("SECURITY: agentic-session-read denied — session not found (sessionUuid={}, clientSessionId={}, releaseUuid={}, callingKey={}, org={})",
+			log.info("agentic-session-read: session not found (sessionUuid={}, clientSessionId={}, releaseUuid={}, callingKey={}, org={}) — caller may fall back to RESOURCE-on-release path",
 					sessionUuid, clientSessionId, releaseUuid, matchingKeyId, orgUuid);
 			throw new AccessDeniedException("Session not found");
 		}
@@ -867,7 +867,7 @@ public class AuthorizationService {
 		// 3. Session's owning agent must belong to calling key's identity.
 		AgentData rootAgent = agentService.getAgentData(session.getAgent()).orElse(null);
 		if (rootAgent == null) {
-			log.error("SECURITY: agentic-session-read denied — session {} references missing root agent {} (releaseUuid={}, callingKey={})",
+			log.info("agentic-session-read: session {} references missing root agent {} (releaseUuid={}, callingKey={}) — caller may fall back to RESOURCE-on-release path",
 					session.getUuid(), session.getAgent(), releaseUuid, matchingKeyId);
 			throw new AccessDeniedException("Session's root agent not found");
 		}
@@ -876,7 +876,7 @@ public class AuthorizationService {
 				matchingKeyId.toString(),
 				WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()));
 		if (!callerIdentity.getUuid().equals(rootAgent.getAgentIdentity())) {
-			log.error("SECURITY: agentic-session-read denied — session {} owned by agent {} with identity {}, but calling key {} resolves to identity {} (releaseUuid={})",
+			log.info("agentic-session-read: session {} owned by agent {} with identity {}, but calling key {} resolves to identity {} (releaseUuid={}) — caller may fall back to RESOURCE-on-release path",
 					session.getUuid(), rootAgent.getUuid(), rootAgent.getAgentIdentity(),
 					matchingKeyId, callerIdentity.getUuid(), releaseUuid);
 			throw new AccessDeniedException("Session not owned by calling key");
@@ -885,7 +885,7 @@ public class AuthorizationService {
 		// 4. Release must be attributed to this session.
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		if (ord.isEmpty() || !orgUuid.equals(ord.get().getOrg())) {
-			log.error("SECURITY: agentic-session-read denied — release {} not found in org {} (session={}, callingKey={})",
+			log.info("agentic-session-read: release {} not found in org {} (session={}, callingKey={}) — caller may fall back to RESOURCE-on-release path",
 					releaseUuid, orgUuid, session.getUuid(), matchingKeyId);
 			throw new AccessDeniedException("Release not found in this org");
 		}
@@ -899,7 +899,7 @@ public class AuthorizationService {
 			}
 		}
 		if (!releaseInSession) {
-			log.error("SECURITY: agentic-session-read denied — release {} is not attributed to session {} (callingKey={}, org={})",
+			log.info("agentic-session-read: release {} is not attributed to session {} (callingKey={}, org={}) — caller may fall back to RESOURCE-on-release path",
 					releaseUuid, session.getUuid(), matchingKeyId, orgUuid);
 			throw new AccessDeniedException("Release not attributed to this session");
 		}

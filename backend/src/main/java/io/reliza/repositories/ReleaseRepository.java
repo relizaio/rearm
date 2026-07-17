@@ -197,6 +197,16 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_LATEST_RELEASE_BEFORE_TIMESTAMP,
 			nativeQuery = true)
 	UUID findLatestReleaseBeforeTimestamp(String branchUuidAsString, String timestamp);
+
+	@Query(
+			value = VariableQueries.FIND_LATEST_RELEASE_AT_OR_BEFORE_TIMESTAMP,
+			nativeQuery = true)
+	UUID findLatestReleaseAtOrBeforeTimestamp(@Param("branchUuidAsString") String branchUuidAsString, @Param("timestamp") String timestamp);
+
+	@Query(
+			value = VariableQueries.FIND_LATEST_RELEASES_AT_OR_BEFORE_TIMESTAMP_BATCH,
+			nativeQuery = true)
+	List<Release> findLatestReleasesAtOrBeforeTimestampBatch(@Param("branchUuidStrings") String[] branchUuidStrings, @Param("timestamp") String timestamp);
 	
 	@Query(
 			value = VariableQueries.FIND_DISTINCT_RELEASE_TAG_KEYS_OF_ORG,
@@ -223,10 +233,16 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Release> findBranchReleasesByTagKeyAndValue(String orgUuidAsString, String branchUuidAsString, String tagKey, String tagValue);
 
+	/**
+	 * Per-org (org, SUM(metrics_revision), assembled_count) rows backing the
+	 * today-analytics refresh change signal -- see the SQL comment in
+	 * {@link VariableQueries#ORG_METRICS_SIGNALS}. Each row is
+	 * [String orgUuid, Number revSum, Number assembledCount, Number maxUpdatedEpoch].
+	 */
 	@Query(
-			value = VariableQueries.FIND_MAX_RELEASE_LAST_SCANNED_TIMESTAMP,
+			value = VariableQueries.ORG_METRICS_SIGNALS,
 			nativeQuery = true)
-	Double findMaxReleaseLastScannedTimestamp();
+	List<Object[]> findOrgMetricsSignals();
 	
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT,
@@ -333,10 +349,23 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<UUID> findReleasesWithWeaknessInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
 	
+	/**
+	 * Earliest created_date among a component's releases (any lifecycle) --
+	 * bound for the component-analytics lazy history backfill: no point
+	 * walking chart days before the component's first release, and the
+	 * guard keeps the leading-gap trigger from re-firing forever.
+	 */
+	@Query(value = """
+			SELECT min(created_date) FROM rearm.releases
+			WHERE record_data->>'component' = :componentUuidAsString
+			""", nativeQuery = true)
+	java.time.Instant findEarliestReleaseDateOfComponent(@Param("componentUuidAsString") String componentUuidAsString);
+
+	/** Rows are (uuid, total_matches) — capped uuid page + window count. */
 	@Query(
 			value = VariableQueries.FIND_RELEASES_BY_CVE_ID,
 			nativeQuery = true)
-	List<Release> findReleasesByCveId(String orgUuidAsString, String cveId);
+	List<Object[]> findReleasesByCveId(String orgUuidAsString, String cveId, int limit);
 
 	@Transactional
 	@Modifying
@@ -375,7 +404,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * still in failure-backoff. Oldest-first to drain backed-up work fairly.
 	 *
 	 * <p>Returns just UUIDs so the caller can iterate with a heap-pressure
-	 * guard between {@code findById} calls — at most one Release entity
+	 * guard between {@code findById} calls -- at most one Release entity
 	 * (and therefore at most one row's worth of JSONB snapshots) is
 	 * resident in the persistence context at any moment. Loading full
 	 * {@link Release} rows up front would trigger Hibernate dirty-checking
@@ -425,8 +454,47 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void recordSbomReconcileFailure(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
 
+	/**
+	 * Record an incomplete (or throwing) metrics compute: bump the counter and
+	 * fence the release out of the metrics finders for {@code skipSeconds}.
+	 * The release stays finder-eligible (an incomplete compute stamps no
+	 * lastScanned) — the fence only spaces retries, so a release waiting on an
+	 * unscanned BOM / child doesn't occupy one of the per-tick finder slots
+	 * every minute and starve younger rows behind it in the ORDER BY.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set("
+			+ "    jsonb_set(coalesce(flow_control, '{}'::jsonb), "
+			+ "              '{metricsComputeFailureCount}', "
+			+ "              to_jsonb(coalesce((flow_control->>'metricsComputeFailureCount')::int, 0) + 1), "
+			+ "              true), "
+			+ "    '{metricsComputeSkipUntil}', "
+			+ "    to_jsonb((now() + (:skipSeconds || ' seconds')::interval)::text), "
+			+ "    true) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	void recordMetricsComputeIncomplete(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
+
+	/**
+	 * Drop the metrics-compute backoff fence. Called when a compute finishes
+	 * complete (fresh start for any future wait) and eagerly on containing
+	 * product releases when a child's firstScanned lands, so the parent is
+	 * re-derived on the next tick instead of waiting out its backoff. The
+	 * WHERE guard makes the common no-fence case a no-op.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = NULLIF("
+			+ "    flow_control - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
+			+ "    '{}'::jsonb) "
+			+ "WHERE uuid = :uuid "
+			+ "AND flow_control->>'metricsComputeSkipUntil' IS NOT NULL", nativeQuery = true)
+	void clearMetricsComputeBackoff(@Param("uuid") UUID uuid);
+
 	// ---------------------------------------------------------------------
-	// Auto-integrate queue — same flow_control marker pattern as the SBOM
+	// Auto-integrate queue -- same flow_control marker pattern as the SBOM
 	// reconcile queue above. Lets release-create mark a release as needing
 	// product feature-set auto-integration and have it run AFTER COMMIT on a
 	// bounded executor (off the request connection), with durable retry so a
@@ -446,7 +514,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * Atomic claim of a queued auto-integrate. The immediate after-commit run
 	 * and the per-minute scheduler drain can otherwise pick up the SAME queued
 	 * release concurrently (the marker is only cleared at the end of a run) and
-	 * double-integrate it — observed as duplicate same-second product releases.
+	 * double-integrate it -- observed as duplicate same-second product releases.
 	 * Sets the skip-until lease iff the release is queued and not already
 	 * leased; returns 0 when the claim is lost (or nothing is queued) so the
 	 * caller skips. A successful run clears all markers; a failed run replaces
@@ -502,7 +570,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * catch-up scheduler can later identify releases still on an older
 	 * aggregation layout via the partial index added in V37. Updated
 	 * separately from the flow_control clear so future migrations of this
-	 * area can simply bump the constant in code — rows below it surface as
+	 * area can simply bump the constant in code -- rows below it surface as
 	 * eligible-for-reconcile without any Flyway re-enqueue UPDATE.
 	 */
 	@Transactional

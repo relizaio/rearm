@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -275,12 +276,51 @@ public class NotificationChannelService {
         }
         auditService.createAndSaveAuditRecord(TableName.INTEGRATIONS, channel);
         data.setIsEnabled(enabled);
+        // Re-enabling clears any auto-disable reason -- the operator has (we
+        // assume) fixed the URL; a fresh dispatch failure would set it again.
+        if (enabled) data.setDisabledReason(null);
         Map<String, Object> recordData = Utils.dataToRecord(data);
         channel.setRecordData(recordData);
         channel.setRevision(channel.getRevision() + 1);
         channel.setLastUpdatedDate(ZonedDateTime.now());
         channel = (Integration) WhoUpdated.injectWhoUpdatedData(channel, wu);
         return integrationRepo.save(channel);
+    }
+
+    /**
+     * Auto-disable a channel whose configuration makes it undeliverable (e.g.
+     * a webhook URL that isn't the expected host), stamping {@code reason} so
+     * the operator sees WHY in the Catalog. Called from the delivery worker on
+     * a {@code CHANNEL_MISCONFIGURED} dispatch outcome so that a permanently-
+     * broken channel stops producing a FAILED delivery row for every event.
+     *
+     * <p>Idempotent: a no-op when the channel is already disabled with the
+     * same reason, so repeated in-flight deliveries don't churn revisions.
+     */
+    @Transactional
+    public void autoDisableForMisconfiguration(UUID uuid, String reason) {
+        if (uuid == null) return;
+        Optional<Integration> oChannel = integrationRepo.findById(uuid);
+        if (oChannel.isEmpty()) return;
+        Integration channel = oChannel.get();
+        IntegrationData data = parseRecordData(channel);
+        if (data == null) return;
+        boolean alreadyDisabled = Boolean.FALSE.equals(data.getIsEnabled());
+        if (alreadyDisabled && Objects.equals(data.getDisabledReason(), reason)) {
+            return; // nothing changed -- skip the revision bump / audit churn
+        }
+        auditService.createAndSaveAuditRecord(TableName.INTEGRATIONS, channel);
+        data.setIsEnabled(false);
+        data.setDisabledReason(reason);
+        Map<String, Object> recordData = Utils.dataToRecord(data);
+        channel.setRecordData(recordData);
+        channel.setRevision(channel.getRevision() + 1);
+        channel.setLastUpdatedDate(ZonedDateTime.now());
+        // System-initiated (from the delivery worker), so no WhoUpdated actor
+        // to inject -- unlike setChannelStatus; the audit row records the
+        // machine action without a human/API actor, which is correct here.
+        integrationRepo.save(channel);
+        log.warn("Auto-disabled notification channel {}: {}", uuid, reason);
     }
 
     /**
@@ -314,29 +354,33 @@ public class NotificationChannelService {
         // Reject the non-matching per-type config explicitly. Silently
         // dropping a populated webhookConfig for a SLACK channel (or
         // vice versa) would be a footgun.
+        // Render the operator-facing type label off the enum via the
+        // canonical wire-name seam (MSTEAMS -> "MS_TEAMS") rather than a
+        // hand-typed literal, so the error wording can't drift from the enum.
+        String typeLabel = IntegrationData.toChannelTypeName(seed.getType());
         switch (seed.getType()) {
             case SLACK -> {
-                rejectMismatchedConfig("SLACK", "slackConfig",
+                rejectMismatchedConfig(typeLabel, "slackConfig",
                         webhookConfig, emailConfig, teamsConfig, sentinelConfig);
                 validateSlackConfig(slackConfig);
             }
             case WEBHOOK -> {
-                rejectMismatchedConfig("WEBHOOK", "webhookConfig",
+                rejectMismatchedConfig(typeLabel, "webhookConfig",
                         slackConfig, emailConfig, teamsConfig, sentinelConfig);
                 validateWebhookConfig(webhookConfig);
             }
             case EMAIL -> {
-                rejectMismatchedConfig("EMAIL", "emailConfig",
+                rejectMismatchedConfig(typeLabel, "emailConfig",
                         slackConfig, webhookConfig, teamsConfig, sentinelConfig);
                 validateEmailConfig(emailConfig);
             }
             case MSTEAMS -> {
-                rejectMismatchedConfig("MS_TEAMS", "teamsConfig",
+                rejectMismatchedConfig(typeLabel, "teamsConfig",
                         slackConfig, webhookConfig, emailConfig, sentinelConfig);
                 validateTeamsConfig(teamsConfig);
             }
             case SENTINEL -> {
-                rejectMismatchedConfig("SENTINEL", "sentinelConfig",
+                rejectMismatchedConfig(typeLabel, "sentinelConfig",
                         slackConfig, webhookConfig, emailConfig, teamsConfig);
                 validateSentinelConfig(sentinelConfig);
             }
@@ -349,8 +393,9 @@ public class NotificationChannelService {
         if (config == null) return; // null = preserve existing on update
         if (StringUtils.isNotBlank(config.webhookUrl())
                 && !SlackWebhookUrlValidator.isValid(config.webhookUrl())) {
-            throw new RelizaException("Slack webhook URL must start with "
-                    + SlackWebhookUrlValidator.SLACK_WEBHOOK_HOST_PREFIX);
+            throw new RelizaException("Slack webhook URL must be an https:// URL on host "
+                    + SlackWebhookUrlValidator.SLACK_WEBHOOK_HOST
+                    + " (incoming-webhook or Workflow trigger)");
         }
     }
 

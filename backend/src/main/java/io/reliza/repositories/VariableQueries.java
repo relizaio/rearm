@@ -116,7 +116,7 @@ class VariableQueries {
 	// jsonb @> containment (instead of an EXISTS jsonb_array_elements scan) so the
 	// jsonb_path_ops GIN index from V47 (idx_users_permission_objects) can serve it.
 	// `arr @> '[{"object":"<id>"}]'` matches any user whose permission array has an
-	// element containing object==:objectId — semantically equal to the prior scan.
+	// element containing object==:objectId -- semantically equal to the prior scan.
 	protected static final String FIND_USERS_BY_PERMISSION_OBJECT = "select * from rearm.users u"
 			+ " WHERE u.record_data->'permissions'->'permissions'"
 			+ " @> jsonb_build_array(jsonb_build_object('object', cast(:objectId as text)))";
@@ -175,17 +175,17 @@ class VariableQueries {
 	 */
 	protected static final String FIND_DELIVERABLE_BY_DIGEST_RECORD = """
 	    select * from rearm.deliverables a where a.record_data->>'org' = :orgUuidAsString 
-	    and jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('algo',:algo,'scope',:scope,'digest',:digest))));
+	    and a.record_data @> jsonb_build_object('softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('algo',:algo,'scope',:scope,'digest',:digest))));
 	""";
 	
 	protected static final String FIND_DELIVERABLE_BY_DIGEST_ANY_ALGO = """
 		    select * from rearm.deliverables a where a.record_data->>'org' = :orgUuidAsString 
-		    and jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('scope',:scope,'digest',:digest))));
+		    and a.record_data @> jsonb_build_object('softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('scope',:scope,'digest',:digest))));
 		""";
 	
 	protected static final String FIND_DELIVERABLE_BY_DIGEST_AND_COMPONENT = """
 			SELECT * FROM rearm.deliverables a
-				WHERE jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))
+				WHERE a.record_data @> jsonb_build_object('softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))
 				AND cast (a.record_data->>'branch' as UUID) in (select uuid from rearm.branches where
 					record_data->>'component' = :compUuidAsStr)
 				AND (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
@@ -213,7 +213,7 @@ class VariableQueries {
 	// upload (createdDate ASC) so a burst of new BOMs doesn't starve older
 	// ones still waiting to be processed. Returns UUIDs only so the
 	// every-minute scheduler can iterate with a heap-pressure guard between
-	// findById materializations — at most one Artifact (and one row's JSONB
+	// findById materializations -- at most one Artifact (and one row's JSONB
 	// snapshot) is resident in the persistence context. Loading full rows
 	// up front triggered Hibernate dirty-checking snapshots that deep-copy
 	// the metrics JSONB via serialize→bytes→deserialize, large enough on
@@ -235,16 +235,16 @@ class VariableQueries {
 	// digest, prefer one that already has a dependencyTrackProject
 	// (so dedup picks the existing target instead of a sibling that's
 	// also still pending). Within each group, oldest-first so dedup
-	// is deterministic across runs. Self-skip stays in the caller —
+	// is deterministic across runs. Self-skip stays in the caller --
 	// keeping the SQL self-blind so the same query is reusable.
 	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString"
-	+ " and jsonb_contains(record_data, jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))"
+	+ " and record_data @> jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest)))"
 	+ " order by (case when a.metrics->>'dependencyTrackProject' is not null"
 	+ "                  and a.metrics->>'dependencyTrackProject' <> '' then 0 else 1 end) asc,"
 	+ "          a.record_data->>'createdDate' asc";
 	
 	// UUID-only finder. Used by callers (findReleaseDatasByDtrackProjects) that
-	// only need the artifact identities — loading the full Artifact entity row
+	// only need the artifact identities -- loading the full Artifact entity row
 	// fired Hibernate's snapshot deep-copy on the metrics JSONB column for every
 	// result, which contributed to the same heap-pressure pattern PR #92 / #94
 	// closed elsewhere.
@@ -252,7 +252,7 @@ class VariableQueries {
 			select a.uuid from rearm.artifacts a where a.metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
 		""";
 
-	// UUID-only — caller (VulnAnalysisUpdateService) feeds the UUID
+	// UUID-only -- caller (VulnAnalysisUpdateService) feeds the UUID
 	// straight to computeArtifactMetrics(uuid). Avoids materializing
 	// full Artifact rows (and their JSONB-snapshot deep copies) in the
 	// persistence context for a finding-affected sweep that can return
@@ -270,7 +270,7 @@ class VariableQueries {
 
 	// Notifications fan-out enrichment (Phase 2c): given a vuln primary id,
 	// find every artifact in the org whose metrics carry it. Distinct from
-	// FIND_ARTIFACTS_WITH_VULNERABILITY above which requires a purl too —
+	// FIND_ARTIFACTS_WITH_VULNERABILITY above which requires a purl too --
 	// at fan-out time we know the vulnPrimaryId but not which purl(s) it
 	// landed against, since one CVE can affect multiple components in
 	// the same org.
@@ -337,11 +337,11 @@ class VariableQueries {
 	
 	protected static final String FIND_BRANCHES_BY_CHILD_COMPONENT_AND_BRANCH = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED' AND "
-			+ "jsonb_contains(record_data, jsonb_build_object('dependencies', jsonb_build_array(json_build_object('uuid', :compUuidAsString, 'branch', :branchUuidAsString)))) ";
+			+ "record_data @> jsonb_build_object('dependencies', jsonb_build_array(jsonb_build_object('uuid', :compUuidAsString, 'branch', :branchUuidAsString))) ";
 
 	protected static final String FIND_FEATURE_SETS_BY_CHILD_COMPONENT = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED' AND "
-			+ "jsonb_contains(record_data, jsonb_build_object('dependencies', jsonb_build_array(json_build_object('uuid', :compUuidAsString)))) ";
+			+ "record_data @> jsonb_build_object('dependencies', jsonb_build_array(jsonb_build_object('uuid', :compUuidAsString))) ";
 	
 	protected static final String FIND_FEATURE_SETS_WITH_DEPENDENCY_PATTERNS = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED' AND "
@@ -444,7 +444,7 @@ class VariableQueries {
 			+ " ORDER BY r.created_date desc ";
 
 	// SBOM-changelog lineage queries (prev / next / fork-point). Only CANCELLED
-	// releases are excluded — a CANCELLED release never really existed. REJECTED
+	// releases are excluded -- a CANCELLED release never really existed. REJECTED
 	// releases ARE kept in the lineage on purpose: a rejected build is a real
 	// artifact set, and in gate workflows (a build rejected by a gate, then a
 	// fixed build passes) the user expects the passing release's "Changes in
@@ -476,12 +476,47 @@ class VariableQueries {
 			+ "select next_release_uuid from NextRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
 
 	protected static final String FIND_LATEST_RELEASE_BEFORE_TIMESTAMP = """
-			SELECT uuid FROM rearm.releases r 
+			SELECT uuid FROM rearm.releases r
 			WHERE r.record_data->>'branch' = :branchUuidAsString
 			AND r.created_date < cast(:timestamp as timestamptz)
 			AND r.record_data->>'lifecycle' NOT IN ('CANCELLED')
 			ORDER BY r.created_date DESC
 			LIMIT 1
+			""";
+
+	/**
+	 * Branch-latest release created AT-OR-BEFORE a timestamp (INCLUSIVE, {@code <=}).
+	 * Used by the changelog posture-diff from-baseline (board task #38, phase 3, "Finding
+	 * Changes" rollup): the snapshot in effect AT the window start {@code from} is the newest
+	 * release on the branch created {@code <= from}. Excludes CANCELLED / REJECTED whose metrics
+	 * may be incomplete (mirrors the lineage / audit paths). Bounded per-branch lookup (LIMIT 1),
+	 * never a full-history scan.
+	 */
+	protected static final String FIND_LATEST_RELEASE_AT_OR_BEFORE_TIMESTAMP = """
+			SELECT uuid FROM rearm.releases r
+			WHERE r.record_data->>'branch' = :branchUuidAsString
+			AND r.created_date <= cast(:timestamp as timestamptz)
+			AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
+			ORDER BY r.created_date DESC
+			LIMIT 1
+			""";
+
+	/**
+	 * BATCHED form of {@link #FIND_LATEST_RELEASE_AT_OR_BEFORE_TIMESTAMP} (org posture-diff N+1
+	 * elimination): the branch-latest release created {@code <= :timestamp} for a SET of branches, in
+	 * one round-trip. DISTINCT ON (branch) with (branch, created_date DESC) picks the single newest
+	 * qualifying release per branch -- byte-identical per-branch semantics to the LIMIT-1 single-branch
+	 * query, just resolved for many branches at once. Uses {@code = ANY(CAST(:branchUuidStrings AS
+	 * text[]))} (Postgres array param) to avoid IN-list parameter limits with thousands of branches.
+	 * Excludes CANCELLED / REJECTED identically. Returns full release rows so the caller can map to
+	 * ReleaseData directly.
+	 */
+	protected static final String FIND_LATEST_RELEASES_AT_OR_BEFORE_TIMESTAMP_BATCH = """
+			SELECT DISTINCT ON (r.record_data->>'branch') * FROM rearm.releases r
+			WHERE r.record_data->>'branch' = ANY(CAST(:branchUuidStrings AS text[]))
+			AND r.created_date <= cast(:timestamp as timestamptz)
+			AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
+			ORDER BY r.record_data->>'branch', r.created_date DESC
 			""";
 
 	protected static final String FIND_ALL_RELEASES_OF_ORG = "select * from rearm.releases r where r.record_data->>'"
@@ -506,7 +541,7 @@ class VariableQueries {
 	 * N+1 of per-component release fetches (84 components × ~40ms = ~3.5s on agent-scully)
 	 * into a single round-trip. Returns one row per release across the requested
 	 * components, projecting just the two columns needed to compute the
-	 * synthetic effectiveLifecycle bucket — never the full record_data JSONB.
+	 * synthetic effectiveLifecycle bucket -- never the full record_data JSONB.
 	 *
 	 * Caller groups by component_uuid in memory and applies the same min-post-GA /
 	 * max-pre-or-at-GA logic the per-component path used to run inline.
@@ -521,13 +556,13 @@ class VariableQueries {
 	
 	protected static final String FIND_RELEASES_BY_DELIVERABLE_AND_ORG = """
 			select * from rearm.releases where uuid = (select cast (record_data->>'release' as UUID) from rearm.variants
-			WHERE jsonb_contains(record_data, jsonb_build_object('outboundDeliverables', jsonb_build_array(:deliverableUuidAsString)))
+			WHERE record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(:deliverableUuidAsString))
 			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000'))
 			""";
 	
 	protected static final String FIND_RELEASES_BY_ARTIFACT_AND_ORG = """
 			select * from rearm.releases
-			WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(:artifactUuidAsString)))
+			WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(:artifactUuidAsString))
 			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
 			""";
 	
@@ -612,13 +647,13 @@ class VariableQueries {
 	
 	protected static final String FIND_RELEASES_BY_ORG_AND_IDENTIFIER = """
 		SELECT * FROM rearm.releases where record_data->>'org' = :orgUuidAsString 
-		AND jsonb_contains(record_data, jsonb_build_object('identifiers', 
-		jsonb_build_array(jsonb_build_object('idType', :idType, 'idValue', :idValue))))
+		AND record_data @> jsonb_build_object('identifiers', 
+		jsonb_build_array(jsonb_build_object('idType', :idType, 'idValue', :idValue)))
 	""";
 			
 	// LIMIT keeps the per-tick batch bounded so a flood of abandoned PENDING releases
 	// can't pull thousands of rows into memory in one scheduler pass. Order by created_date ASC
-	// so the oldest stuck release is rejected first — guarantees forward progress under load.
+	// so the oldest stuck release is rejected first -- guarantees forward progress under load.
 	protected static final String FIND_PENDING_RELEASES_AFTER_CUTOFF = "SELECT * FROM rearm.releases r WHERE r.record_data->>'"
 	+ CommonVariables.LIFECYCLE_FIELD +"' = :lifecycle AND r.created_date < cast (:cutOffDate as timestamptz)"
 	+ " ORDER BY r.created_date ASC LIMIT :limit";
@@ -656,9 +691,42 @@ class VariableQueries {
 			  AND tags.key = :tagKey AND tags.value = :tagValue
 	""";
 
-	protected static final String FIND_MAX_RELEASE_LAST_SCANNED_TIMESTAMP = """
-		SELECT coalesce(max(cast (metrics->>'lastScanned' as float)), 0) FROM rearm.releases
-	""";
+	/*
+	 * Per-org change signal for the every-N-min "today" analytics refresh.
+	 * One grouped pass over releases instead of per-org scans. The pair
+	 * (SUM(metrics_revision), assembled_count) moves on every input change
+	 * the findings-over-time chart cares about:
+	 *   - SUM(metrics_revision): +1 on every metrics write (scan ingest AND
+	 *     triage both funnel through updateMetrics). Per-row counters make
+	 *     MAX useless as a watermark; the SUM is a monotonic change counter.
+	 *   - assembled_count: catches a release ENTERING/LEAVING the chart's
+	 *     input set (DRAFT->ASSEMBLED with unchanged metrics takes the
+	 *     touch-only branch and bumps no revision; cancel/reject of an
+	 *     assembled release likewise). Counts every scannable (ASSEMBLED+)
+	 *     lifecycle so internal transitions (e.g. ASSEMBLED->GA) don't
+	 *     produce false positives.
+	 *   - MAX(last_updated_date): catches offsetting lifecycle transitions in
+	 *     one window (one release cancelled while another assembles keeps the
+	 *     count flat) -- any release-entity save bumps it. The jsonb-only
+	 *     updateMetrics path doesn't touch it, which SUM(metrics_revision)
+	 *     covers.
+	 * Known blind spots (heal at next org write or the midnight job):
+	 * branch archival, FindingAnalyticsParticipation toggles, perspective
+	 * membership edits (today's row; history is handled by the existing
+	 * perspective-hash recompute).
+	 */
+	protected static final String ORG_METRICS_SIGNALS = """
+		SELECT record_data->>'org' AS org,
+		       COALESCE(SUM(metrics_revision), 0) AS rev_sum,
+		       COUNT(*) FILTER (WHERE record_data->>'lifecycle' IN
+		           ('ASSEMBLED','READY_TO_SHIP','GENERAL_AVAILABILITY','END_OF_MARKETING',
+		            'END_OF_DISTRIBUTION','END_OF_SUPPORT','END_OF_LIFE')) AS assembled_count,
+		       COALESCE(MAX(EXTRACT(EPOCH FROM last_updated_date))::bigint, 0) AS max_updated_epoch
+		FROM rearm.releases
+		WHERE record_data->>'org' IS NOT NULL
+		GROUP BY record_data->>'org'
+		""";
+
 	
 	/*
 	 * Pick releases whose metrics need recomputing because at least one artifact they
@@ -670,7 +738,7 @@ class VariableQueries {
 	 * History: prior versions used a global :cutoffTimestamp parameter bound to
 	 * MAX(release.lastScanned) and filtered as art.lastScanned > MAX(release.lastScanned).
 	 * Whenever any release was recomputed (via this path or BY_UPDATE), the global max
-	 * jumped forward and stranded any artifact older than the new floor — even if the
+	 * jumped forward and stranded any artifact older than the new floor -- even if the
 	 * release containing it was much older still. The V17 column-extraction commit
 	 * (f67d0292, 2026-03-30) compounded the issue by adding an outer WHERE on
 	 * release.metrics->>'lastScanned' that was definitionally empty
@@ -687,7 +755,13 @@ class VariableQueries {
 	 */
 	// LIMIT caps the per-tick batch so a backlog of out-of-date releases doesn't blow up
 	// memory in one pass. ORDER BY last_updated_date ASC puts the staleest unprocessed release
-	// first so nothing starves — the next tick processes the next batch.
+	// first so nothing starves -- the next tick processes the next batch.
+	//
+	// metricsComputeSkipUntil fence (all four metrics finders): a release whose
+	// compute ended incomplete (own BOM / child release still unscanned) or threw
+	// is fenced out until its backoff expires. Without the fence such rows stamp
+	// no lastScanned, keep their old last_updated_date, and permanently occupy
+	// the head of the ASC order -- >= :limit of them starves everything younger.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT = """
 		WITH releases_with_artifacts AS (
 			SELECT rlzs.*,
@@ -699,6 +773,8 @@ class VariableQueries {
 		FROM releases_with_artifacts rwa
 		INNER JOIN rearm.artifacts a ON a.uuid = rwa.artifact_uuid
 		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) > rwa.rel_last_scanned
+		  AND (rwa.flow_control->>'metricsComputeSkipUntil' IS NULL
+		       OR (rwa.flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
 		ORDER BY rwa.last_updated_date ASC
 		LIMIT :limit
 		""";
@@ -726,6 +802,8 @@ class VariableQueries {
 		        AND coalesce(cast(a.metrics->>'lastScanned' as float), 0)
 		            > coalesce(cast(rlzs.metrics->>'lastScanned' as float), 0)
 		  )
+		  AND (rlzs.flow_control->>'metricsComputeSkipUntil' IS NULL
+		       OR (rlzs.flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
 		ORDER BY rlzs.last_updated_date ASC
 		LIMIT :limit
 		""";
@@ -734,6 +812,14 @@ class VariableQueries {
 	 * Outbound-deliverable variant. Same per-release comparison, joined through the
 	 * variant.outboundDeliverables → deliverable.artifacts chain back to the variant's
 	 * release. See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
+	 *
+	 * NOTE on shape: keep the variants-driven element-unnest join. A rewrite to
+	 * whole-column jsonb containment (record_data @> {"outboundDeliverables": [...]})
+	 * regressed catastrophically on prod: the planner correlated the deliverable's
+	 * artifacts unnest into the hash-build side and rebuilt the releases×artifacts
+	 * hash once per deliverable row (statement timeout, from a ~0.5s baseline).
+	 * This shape decomposes only one reasonable way (one variants scan, PK joins,
+	 * one merge with releases) and measures ~0.5s/tick on prod-scale data.
 	 */
 	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES = """
@@ -752,6 +838,8 @@ class VariableQueries {
 		INNER JOIN rearm.artifacts a ON a.uuid = roa.artifact_uuid
 		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) >
 		      coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0)
+		  AND (rlzs.flow_control->>'metricsComputeSkipUntil' IS NULL
+		       OR (rlzs.flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
 		ORDER BY rlzs.last_updated_date ASC
 		LIMIT :limit
 		""";
@@ -768,10 +856,13 @@ class VariableQueries {
 	    LIMIT :limit
 			""";
 	
-	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
+	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale and the
+	// metricsComputeSkipUntil fence.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE = """
 		SELECT * FROM rearm.releases
 			 WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
+			   AND (flow_control->>'metricsComputeSkipUntil' IS NULL
+			        OR (flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
 			 ORDER BY last_updated_date ASC
 			 LIMIT :limit
 		""";
@@ -794,10 +885,10 @@ class VariableQueries {
 		WITH
 			unprocessedDeliverables (uuid) AS (
 				SELECT del.uuid from rearm.deliverables del
-				WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(:artUuidAsString)))),
+				WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(:artUuidAsString))),
 			unprocessedRlzIds (uuid) AS (
 				SELECT distinct var.record_data->>'release' from unprocessedDeliverables, rearm.variants var
-				WHERE jsonb_contains(record_data, jsonb_build_object('outboundDeliverables', jsonb_build_array(unprocessedDeliverables.uuid))))
+				WHERE record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(unprocessedDeliverables.uuid)))
 			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
 				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
 		""";
@@ -839,7 +930,7 @@ class VariableQueries {
 				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
 		""";
 
-	// UUID-only — caller (VulnAnalysisUpdateService) feeds each UUID
+	// UUID-only -- caller (VulnAnalysisUpdateService) feeds each UUID
 	// straight to computeReleaseMetrics(uuid, false). See the
 	// FIND_ARTIFACTS_WITH_* block above for the heap-pressure
 	// rationale; Release rows are even worse offenders because they
@@ -856,12 +947,12 @@ class VariableQueries {
 			""";
 
 	// Same as FIND_RELEASES_WITH_VULNERABILITY but with NO location/purl
-	// predicate — matches a CVE in any package location. Used by the KEV
+	// predicate -- matches a CVE in any package location. Used by the KEV
 	// live re-gate fan-out: when a CVE newly enters the KEV catalog, every
 	// release that ships it (regardless of which purl carries it) must have
 	// its metrics recomputed so kevCount/the gate re-fires.
 	// KEV re-gate: match the CVE as a finding's primary id OR one of its
-	// aliases (KEV resolution is alias-aware — a release is KEV if the listed
+	// aliases (KEV resolution is alias-aware -- a release is KEV if the listed
 	// CVE is an alias even when the primary id is a GHSA/OSV id). Location is
 	// intentionally not predicated (the CVE may sit in any package).
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION = """
@@ -1492,9 +1583,10 @@ class VariableQueries {
 			AND sce.record_data->'artifacts' IS NOT NULL
 			UNION
 			SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') AS artifact_uuid
-			FROM rearm.deliverables d
-			JOIN rearm.variants v ON d.uuid::text IN (SELECT jsonb_array_elements_text(v.record_data->'outboundDeliverables'))
-			JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
+			FROM rearm.releases r
+			JOIN rearm.variants v ON v.record_data->>'release' = r.uuid::text
+			CROSS JOIN LATERAL jsonb_array_elements_text(v.record_data->'outboundDeliverables') AS deliv(uuid_text)
+			JOIN rearm.deliverables d ON d.uuid = deliv.uuid_text::uuid
 			WHERE r.record_data->>'component' IN (:componentUuids)
 			AND d.record_data->'artifacts' IS NOT NULL
 			""";
@@ -1522,8 +1614,16 @@ class VariableQueries {
 	/*
 	 * Release Metrics CVE Search
 	 */
+	/*
+	 * UUID-only projection with a window total, capped at :limit newest matches.
+	 * A previous SELECT * variant loaded every matching Release entity (five
+	 * JSONB columns each, snapshot-doubled by JsonBinaryType dirty-checking) --
+	 * a widely-present CVE matching thousands of releases exhausted the heap
+	 * and OOM-restarted a client instance. Callers hydrate the capped uuid page
+	 * through the lite loader (totals only, no metrics detail arrays).
+	 */
 	protected static final String FIND_RELEASES_BY_CVE_ID = """
-			SELECT * FROM rearm.releases r
+			SELECT r.uuid, count(*) OVER () AS total_matches FROM rearm.releases r
 			WHERE r.record_data->>'org' = :orgUuidAsString
 			AND r.metrics IS NOT NULL
 			AND (
@@ -1542,5 +1642,6 @@ class VariableQueries {
 				)
 			)
 			ORDER BY r.created_date DESC
+			LIMIT :limit
 			""";
 }

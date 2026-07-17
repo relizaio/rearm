@@ -130,6 +130,23 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 			if (rl == PENDING || rl == DRAFT) isAllowed = true;
 			return isAllowed;
 		}
+
+		/**
+		 * True once a release has reached {@link #END_OF_SUPPORT} or later (currently END_OF_SUPPORT,
+		 * END_OF_LIFE, and any future terminal state added after them). Such releases are retired and
+		 * are hidden from finding-change DISPLAY surfaces: the findings-over-time CHART
+		 * ({@code AnalyticsMetricsService}) today, and the changelog posture endpoints in a follow-up
+		 * (keyed on current lifecycle, so a retired branch tip drops from posture rather than showing a
+		 * phantom "resolved"). Exclusion is display-side ONLY: finding-change emit, the v3 backfill, and
+		 * the dedup predecessor-inheritance path are all left untouched, so a retired release keeps its
+		 * event history (and a child branch keeps what it legitimately inherited) -- retirement hides a
+		 * release, it does not erase it or disturb the dedup engine. Ordinal comparison is deliberate --
+		 * the enum order is load-bearing (see the note above). END_OF_MARKETING / END_OF_DISTRIBUTION
+		 * are NOT retired (still supported) and keep showing.
+		 */
+		public static boolean isSupportEnded(ReleaseLifecycle rl) {
+			return rl != null && rl.ordinal() >= END_OF_SUPPORT.ordinal();
+		}
 	}
 
 	public enum UpdateReleaseStrength {

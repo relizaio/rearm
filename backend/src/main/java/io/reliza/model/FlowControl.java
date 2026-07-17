@@ -60,5 +60,17 @@ public record FlowControl(
         // failure-backoff fence; autoIntegrateFailureCount the attempt count.
         String autoIntegrateRequestedAt,
         String autoIntegrateSkipUntil,
-        Integer autoIntegrateFailureCount) implements Serializable {
+        Integer autoIntegrateFailureCount,
+        // Metrics-compute backoff fence (mirrors the sbomReconcile*/autoIntegrate*
+        // skip pattern). Set when a scannable release's metrics compute ends
+        // incomplete (own BOM or a child release still unscanned) or throws, so
+        // the release stops occupying the per-tick finder slots every minute
+        // while it waits — without a fence, permanently-incomplete rows are the
+        // oldest rows in every finder's ORDER BY and starve everything behind
+        // them. The row stays finder-eligible (no lastScanned is stamped);
+        // the fence only spaces out retries. Cleared on a complete compute and
+        // eagerly on containing products when a child's firstScanned lands, so
+        // parents heal on the next tick instead of waiting out the backoff.
+        String metricsComputeSkipUntil,
+        Integer metricsComputeFailureCount) implements Serializable {
 }

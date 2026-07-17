@@ -61,7 +61,8 @@ public class ReleaseChangeHookImpl implements ReleaseChangeHook {
 		if (ref == null) return;
 		ReleaseCreatedPayload payload = new ReleaseCreatedPayload(ref, scheduled);
 		String dedupKey = "release:created:" + rd.getUuid();
-		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_CREATED, dedupKey, payload);
+		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_CREATED, dedupKey, payload,
+				support.buildAffectedReleases(rd, ref));
 	}
 
 	@Override
@@ -76,7 +77,8 @@ public class ReleaseChangeHookImpl implements ReleaseChangeHook {
 		// New lifecycle is part of the key so DRAFT -> ASSEMBLED produces two
 		// distinct events rather than collapsing inside the dedup window.
 		String dedupKey = "release:lc:" + rd.getUuid() + ":" + newLifecycle.name();
-		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_LIFECYCLE_CHANGED, dedupKey, payload);
+		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_LIFECYCLE_CHANGED, dedupKey, payload,
+				support.buildAffectedReleases(rd, ref));
 	}
 
 	@Override
@@ -91,7 +93,8 @@ public class ReleaseChangeHookImpl implements ReleaseChangeHook {
 		if (ref == null) return;
 		ReleaseBomDiffPayload payload = new ReleaseBomDiffPayload(ref, added, removed);
 		String dedupKey = "release:bomdiff:" + rd.getUuid();
-		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_BOM_DIFF, dedupKey, payload);
+		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_BOM_DIFF, dedupKey, payload,
+				support.buildAffectedReleases(rd, ref));
 	}
 
 	@Override

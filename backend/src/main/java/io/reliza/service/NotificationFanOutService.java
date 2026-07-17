@@ -786,6 +786,13 @@ public class NotificationFanOutService {
         if (data != null && data.getOrg() != null && !data.getOrg().equals(eventOrg)) {
             return false;
         }
+        // Disabled channel: suppress the delivery entirely (no History row). A
+        // disabled channel is off -- creating a row per event only to fail it
+        // at dispatch is the "flood" an auto-disabled misconfigured channel
+        // would otherwise produce. Manual kill-switch disables benefit too.
+        if (data != null && Boolean.FALSE.equals(data.getIsEnabled())) {
+            return false;
+        }
         return true;
     }
 
@@ -1019,6 +1026,7 @@ public class NotificationFanOutService {
                         rd.getComponent(), component, perspectiveCache);
                 out.add(new AffectedRelease(
                         rd.getUuid(),
+                        rd.getComponent(),
                         componentName,
                         rd.getVersion(),
                         branchName,

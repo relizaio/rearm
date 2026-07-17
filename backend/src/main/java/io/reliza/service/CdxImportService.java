@@ -28,13 +28,14 @@ import io.reliza.common.VcsType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.DeliverableData.PackageType;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
-import io.reliza.model.VcsRepository;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.dto.ReleaseDto;
@@ -213,8 +214,12 @@ public class CdxImportService {
 
 		UUID vcsRepoUuid = null;
 		if (StringUtils.isNotEmpty(vcsUri)) {
-			Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, vcsUri, null, VcsType.GIT, true, wu);
-			if (vcsRepo.isPresent()) vcsRepoUuid = vcsRepo.get().getUuid();
+			// Provision via REQUIRES_NEW so the row is committed before
+			// SourceCodeEntryService.createSourceCodeEntry (also REQUIRES_NEW)
+			// validates it -- creating the row inline in this import's outer tx
+			// left it invisible to that inner tx and every pedigree SCE failed
+			// with "VCS <uuid> not found". Same contract as the addrelease path.
+			vcsRepoUuid = vcsRepositoryService.provisionVcsRepository(orgUuid, vcsUri, VcsType.GIT, wu);
 		}
 
 		var cpdBuilder = CreateComponentDto.builder()
@@ -232,25 +237,26 @@ public class CdxImportService {
 	}
 
 	private BranchData findOrCreateBranch(ComponentData componentData, String branchName, String vcsUri, WhoUpdated wu) throws RelizaException {
-		Optional<io.reliza.model.Branch> branchOpt = branchService.findBranchByName(componentData.getUuid(), branchName, true, wu);
+		Optional<Branch> branchOpt = branchService.findBranchByName(componentData.getUuid(), branchName, true, wu);
 		if (branchOpt.isPresent()) {
 			BranchData bd = BranchData.branchDataFromDbRecord(branchOpt.get());
-			// Attach VCS repo to branch if not yet set and URI is available
+			// Attach VCS repo to branch if not yet set and URI is available.
+			// Provisioned via REQUIRES_NEW (committed) for the same reason as in
+			// findOrCreateComponent; the branch link stays in this outer tx per
+			// the provisionVcsRepository contract.
 			if (bd.getVcs() == null && StringUtils.isNotEmpty(vcsUri)) {
-				Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(componentData.getOrg(), vcsUri, null, VcsType.GIT, true, wu);
-				if (vcsRepo.isPresent()) {
-					var branchDto = io.reliza.model.dto.BranchDto.builder()
-							.uuid(bd.getUuid())
-							.vcs(vcsRepo.get().getUuid())
-							.vcsBranch(branchName)
-							.build();
-					try {
-						branchService.updateBranch(branchDto, wu);
-					} catch (RelizaException e) {
-						log.warn("Could not attach VCS to branch {}: {}", branchName, e.getMessage());
-					}
-					bd = BranchData.branchDataFromDbRecord(branchService.getBranch(bd.getUuid()).get());
+				UUID vcsRepoUuid = vcsRepositoryService.provisionVcsRepository(componentData.getOrg(), vcsUri, VcsType.GIT, wu);
+				var branchDto = BranchDto.builder()
+						.uuid(bd.getUuid())
+						.vcs(vcsRepoUuid)
+						.vcsBranch(branchName)
+						.build();
+				try {
+					branchService.updateBranch(branchDto, wu);
+				} catch (RelizaException e) {
+					log.warn("Could not attach VCS to branch {}: {}", branchName, e.getMessage());
 				}
+				bd = BranchData.branchDataFromDbRecord(branchService.getBranch(bd.getUuid()).get());
 			}
 			return bd;
 		}

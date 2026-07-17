@@ -56,6 +56,7 @@ class NotificationDeliveryWorkerTest {
     private IntegrationRepository integrationRepo;
     private NotificationOutboxEventRepository outboxRepo;
     private SlackChannelDispatcher slackDispatcher;
+    private NotificationChannelService channelService;
     private NotificationDeliveryWorker worker;
 
     @BeforeEach
@@ -68,10 +69,12 @@ class NotificationDeliveryWorkerTest {
         // @PostConstruct registry, so the mock must report its type.
         when(slackDispatcher.supportedType()).thenReturn(IntegrationType.SLACK);
         when(deliveryRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        channelService = mock(NotificationChannelService.class);
         worker = new NotificationDeliveryWorker();
         inject(worker, "deliveryRepo", deliveryRepo);
         inject(worker, "integrationRepo", integrationRepo);
         inject(worker, "outboxRepo", outboxRepo);
+        inject(worker, "channelService", channelService);
         // Inject the dispatcher list the same way Spring would, then run the
         // registry builder (@PostConstruct in production) to index by type.
         inject(worker, "channelDispatchers", List.<ChannelDispatcher>of(slackDispatcher));
@@ -130,6 +133,32 @@ class NotificationDeliveryWorkerTest {
     }
 
     @Test
+    void retriableFailureOnChannelTestSkipsBackoffAndFailsImmediately() {
+        // Same scenario as retriableFailureKeepsStatusPendingAndBumpsAttemptViaBackoff
+        // except the outbox event carries a channelTestTarget (testNotificationChannel)
+        // -- a test delivery exists for fast feedback, not resilience, so it
+        // should go straight to FAILED on attempt 1 instead of scheduling a
+        // BackoffPolicy retry.
+        NotificationDelivery delivery = pendingDelivery();
+        Integration channel = slackChannel(true);
+        NotificationOutboxEvent event = stubEvent();
+        event.setChannelTestTarget(channel.getUuid());
+        wireBatch(delivery, channel, event);
+
+        when(slackDispatcher.dispatch(any(), any()))
+                .thenReturn(ChannelDispatchResult.retriable("Slack returned 503"));
+
+        worker.drainBatch(50);
+
+        ArgumentCaptor<NotificationDelivery> captor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo).save(captor.capture());
+        NotificationDelivery saved = captor.getValue();
+        assertEquals(NotificationDeliveryStatus.FAILED, saved.getStatus());
+        assertEquals(1, saved.getAttemptCount());
+        assertEquals("Slack returned 503", saved.getLastError());
+    }
+
+    @Test
     void retriableFailureWithRetryAfterHonorsHeader() {
         NotificationDelivery delivery = pendingDelivery();
         Integration channel = slackChannel(true);
@@ -169,6 +198,28 @@ class NotificationDeliveryWorkerTest {
         NotificationDelivery saved = captor.getValue();
         assertEquals(NotificationDeliveryStatus.FAILED, saved.getStatus());
         assertTrue(saved.getLastError().contains("invalid_webhook_url"));
+    }
+
+    @Test
+    void channelMisconfiguredFailsDeliveryAndAutoDisablesChannel() {
+        NotificationDelivery delivery = pendingDelivery();
+        Integration channel = slackChannel(true);
+        NotificationOutboxEvent event = stubEvent();
+        wireBatch(delivery, channel, event);
+
+        when(slackDispatcher.dispatch(any(), any()))
+                .thenReturn(ChannelDispatchResult.channelMisconfigured(
+                        "Webhook URL is not a Slack host (hooks.slack.com); re-enter"));
+
+        worker.drainBatch(50);
+
+        ArgumentCaptor<NotificationDelivery> captor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo).save(captor.capture());
+        assertEquals(NotificationDeliveryStatus.FAILED, captor.getValue().getStatus());
+        // The channel itself is auto-disabled with the reason so subsequent
+        // events stop producing FAILED rows.
+        verify(channelService).autoDisableForMisconfiguration(
+                delivery.getChannelUuid(), "Webhook URL is not a Slack host (hooks.slack.com); re-enter");
     }
 
     @Test

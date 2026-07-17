@@ -4,10 +4,15 @@
 package io.reliza.service.kev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -130,5 +135,80 @@ class CisaKevConnectorTest {
 	@Test
 	void emptyCatalogReturnsEmptyList() throws Exception {
 		assertTrue(withFeed("{\"catalogVersion\":\"x\",\"vulnerabilities\":[]}").fetchCatalog(null).isEmpty());
+	}
+
+	// ---------- CISA WAF hardening: User-Agent + transient backoff ----------
+
+	@Test
+	void sendsDescriptiveUserAgentSoCisaWafDoesNotBlock() throws Exception {
+		// CISA/Akamai 403s reactor-netty's default UA; the fetch must carry a
+		// real, non-default identifier. Capture the outgoing request headers.
+		AtomicReference<String> ua = new AtomicReference<>();
+		AtomicReference<String> accept = new AtomicReference<>();
+		CisaKevConnector connector = newConnector(req -> {
+			ua.set(req.headers().getFirst(HttpHeaders.USER_AGENT));
+			accept.set(req.headers().getFirst(HttpHeaders.ACCEPT));
+			return Mono.just(ClientResponse.create(HttpStatus.OK)
+					.headers(h -> h.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+					.body(FEED_JSON)
+					.build());
+		});
+
+		connector.fetchCatalog(null);
+
+		assertNotNull(ua.get(), "KEV fetch must send a User-Agent");
+		assertTrue(ua.get().startsWith("ReARM-KEV-Sync/"), "expected descriptive UA, got: " + ua.get());
+		assertFalse(ua.get().toLowerCase().contains("reactornetty"), "must not send reactor-netty's default UA");
+		assertEquals(MediaType.APPLICATION_JSON_VALUE, accept.get());
+	}
+
+	@Test
+	void retriesTransientTooManyRequestsThenSucceeds() throws Exception {
+		AtomicInteger attempts = new AtomicInteger();
+		CisaKevConnector connector = newConnector(req -> {
+			if (attempts.getAndIncrement() < 2) {
+				return Mono.just(ClientResponse.create(HttpStatus.TOO_MANY_REQUESTS).build());
+			}
+			return Mono.just(ClientResponse.create(HttpStatus.OK)
+					.headers(h -> h.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+					.body(FEED_JSON)
+					.build());
+		});
+		connector.retryFirstBackoff = Duration.ofMillis(1); // don't sleep for real
+
+		List<KevAssertionData> entries = connector.fetchCatalog(null);
+
+		assertEquals(3, entries.size());
+		assertEquals(3, attempts.get(), "expected 2 retries after the initial attempt");
+	}
+
+	@Test
+	void doesNotRetryForbiddenAndFailsClosedImmediately() throws Exception {
+		// CISA's WAF 403 is a sticky IP cooldown, not transient -- retrying it
+		// in-pass never recovers and only loads an already-blocked IP. So a 403
+		// must fail closed on the first attempt (no retries).
+		AtomicInteger attempts = new AtomicInteger();
+		CisaKevConnector connector = newConnector(req -> {
+			attempts.incrementAndGet();
+			return Mono.just(ClientResponse.create(HttpStatus.FORBIDDEN).build());
+		});
+		connector.retryFirstBackoff = Duration.ofMillis(1);
+
+		assertTrue(connector.fetchCatalog(null).isEmpty());
+		assertEquals(1, attempts.get(), "403 must not be retried");
+	}
+
+	@Test
+	void abortsAfterExhaustingRetriesOnPersistentServerError() throws Exception {
+		AtomicInteger attempts = new AtomicInteger();
+		CisaKevConnector connector = newConnector(req -> {
+			attempts.incrementAndGet();
+			return Mono.just(ClientResponse.create(HttpStatus.SERVICE_UNAVAILABLE).build());
+		});
+		connector.retryFirstBackoff = Duration.ofMillis(1);
+
+		// Fail-closed: exhausted retries return an empty list, never throw.
+		assertTrue(connector.fetchCatalog(null).isEmpty());
+		assertEquals(4, attempts.get()); // initial + 3 backoff retries
 	}
 }

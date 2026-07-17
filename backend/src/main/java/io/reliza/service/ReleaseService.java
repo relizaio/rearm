@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -44,7 +45,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -122,7 +128,13 @@ import io.reliza.service.oss.OssReleaseService;
 
 @Service
 public class ReleaseService {
-	
+
+	@PersistenceContext
+	private EntityManager entityManager;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
+
 	@Autowired
 	private DeliverableService deliverableService;
 	
@@ -1862,6 +1874,24 @@ public class ReleaseService {
 	}
 	
 	/**
+	 * Run one metrics-compute finder in its own transaction with JIT disabled
+	 * for that transaction only (SET LOCAL). The finders' jsonb-heavy plans
+	 * carry wildly inflated cost estimates — set-returning jsonb functions
+	 * default to 100 rows and jsonb operator selectivities are flat guesses —
+	 * which pushes every tick's plan over jit_above_cost and pays 40-315ms of
+	 * LLVM compile per execution for queries that usually return zero rows.
+	 * SET LOCAL reverts at commit, so nothing else on the connection is
+	 * affected when it returns to the pool.
+	 */
+	private List<Release> findForMetricsComputeJitOff (Supplier<List<Release>> finder) {
+		TransactionTemplate tx = new TransactionTemplate(transactionManager);
+		return tx.execute(status -> {
+			entityManager.createNativeQuery("SET LOCAL jit = off").executeUpdate();
+			return finder.get();
+		});
+	}
+
+	/**
 	 * Per-tick metrics compute. Each of the five constituent finders is capped at
 	 * {@code limit} rows so the worst-case in-memory batch is bounded to 5*limit releases
 	 * (typically ~100 with limit=20). Whichever rows don't fit this tick land on the next
@@ -1884,7 +1914,7 @@ public class ReleaseService {
 		Set<UUID> dedupProcessedReleases = new HashSet<>();
 
 		try {
-			var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(limit);
+			var releasesByArt = findForMetricsComputeJitOff(() -> repository.findReleasesForMetricsComputeByArtifactDirect(limit));
 			log.debug("[compute metrics scheduler]: releases by art size = " + releasesByArt.size());
 			// for (var r : releasesByArt) log.debug("[compute metrics scheduler]: release by art uuid = " + r.getUuid());
 			computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases);
@@ -1893,7 +1923,7 @@ public class ReleaseService {
 		}
 
 		try {
-			var releasesBySce = repository.findReleasesForMetricsComputeBySce(limit);
+			var releasesBySce = findForMetricsComputeJitOff(() -> repository.findReleasesForMetricsComputeBySce(limit));
 			log.debug("[compute metrics scheduler]: releases by sce size = " + releasesBySce.size());
 			// for (var r : releasesBySce) log.debug("[compute metrics scheduler]: release by sce uuid = " + r.getUuid());
 			computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases);
@@ -1902,7 +1932,7 @@ public class ReleaseService {
 		}
 
 		try {
-			var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(limit);
+			var releasesByOutboundDel = findForMetricsComputeJitOff(() -> repository.findReleasesForMetricsComputeByOutboundDeliverables(limit));
 			log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByOutboundDel.size());
 			// for (var r : releasesByOutboundDel) log.debug("[compute metrics scheduler]: release by od uuid = " + r.getUuid());
 			computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases);
@@ -1911,7 +1941,7 @@ public class ReleaseService {
 		}
 
 		try {
-			var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate(limit);
+			var releasesByUpdateDate = findForMetricsComputeJitOff(() -> repository.findReleasesForMetricsComputeByUpdate(limit));
 			log.debug("[compute metrics scheduler]: releases by updated date del size = " + releasesByUpdateDate.size());
 			// for (var r : releasesByUpdateDate) log.debug("[compute metrics scheduler]: release by upd uuid = " + r.getUuid());
 			computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases);
@@ -1983,6 +2013,18 @@ public class ReleaseService {
 			} catch (Exception e) {
 				log.error("Metrics compute failed for release {} — continuing with batch: {}",
 						r.getUuid(), e.getMessage(), e);
+				// Poison-pill fence: a throwing compute leaves no state change, so the
+				// same row is re-picked at the head of the finder order every tick —
+				// grinding the same exception and starving younger rows behind it.
+				// Escalating backoff (same schedule as incomplete computes; first
+				// attempts free) keeps it retrying without monopolizing the batch.
+				try {
+					repository.recordMetricsComputeIncomplete(r.getUuid(),
+							ReleaseMetricsComputeService.nextMetricsComputeBackoffSeconds(r.getFlowControl()));
+				} catch (Exception fenceEx) {
+					log.warn("Failed to fence release {} after metrics compute failure",
+							r.getUuid(), fenceEx);
+				}
 			}
 		}
 	}
@@ -3094,7 +3136,7 @@ public class ReleaseService {
 	}
 
 	static String computeAnalysisKey(String purl, String vulnId) {
-		return Utils.minimizePurl(purl) + "|" + vulnId;
+		return Utils.purlIdentity(purl) + "|" + vulnId;
 	}
 	
 	/**

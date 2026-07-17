@@ -246,6 +246,33 @@ public class SchedulingService {
 		}
     }
     
+    /**
+     * Change-driven refresh of the "today" analytics rows backing the
+     * findings-over-time chart (DB-only read path). Cheap when idle: one
+     * grouped signal query over releases; only orgs whose signal moved since
+     * their last refresh get recomputed (org-wide + all perspectives). Rate is
+     * env-tunable (ANALYTICS_TODAY_REFRESH_RATE) -- default 15 min, which is
+     * the chart's worst-case staleness after a metrics change.
+     */
+    @Scheduled(fixedRateString = "${relizaprops.analyticsTodayRefreshRate:PT15M}")
+    public void refreshTodayAnalytics () {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS);
+            log.debug("refresh today analytics lock acquired {}", lock);
+			if (lock) {
+				try {
+					ossAnalyticsMetricsService.refreshTodayAnalyticsForChangedOrgs();
+				} catch (Exception e) {
+					log.error("Exception in refreshing today analytics", e);
+				} finally {
+					releaseLock(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS);
+				}
+			}
+		} catch (Exception e) {
+			log.error("Refresh today analytics run failed with an error", e);
+		}
+    }
+    
     @Scheduled(cron="0 15 3 * * *") // once daily 3:15 AM — separated from other daily crons
     public void scheduleSyntheticDtrackDailyResync() {
         try {

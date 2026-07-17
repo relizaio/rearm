@@ -4,6 +4,7 @@
 
 package io.reliza.ws;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -165,7 +166,7 @@ public class VexStatementProposalDataFetcher {
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
-			PermissionScope.ORGANIZATION, org, List.of(ro), callType);
+			PermissionScope.ORGANIZATION, org, Collections.singletonList(ro), callType);
 	}
 
 	/**
@@ -189,14 +190,14 @@ public class VexStatementProposalDataFetcher {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(release, org);
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
-			PermissionScope.RELEASE, release, List.of(ro), callType);
+			PermissionScope.RELEASE, release, Collections.singletonList(ro), callType);
 	}
 
 	private void gateComponent(UserData oud, UUID org, UUID component, PermissionFunction perm, CallType callType) throws RelizaException {
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
-			PermissionScope.COMPONENT, component, List.of(ro), callType);
+			PermissionScope.COMPONENT, component, Collections.singletonList(ro), callType);
 	}
 
 	/**
