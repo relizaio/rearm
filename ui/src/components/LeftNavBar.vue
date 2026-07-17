@@ -21,11 +21,27 @@
             />
                 </n-layout-sider>
                 <n-layout>
-                    <router-view style="margin-left: 5px; margin-right: 5px;"
-                        class="nofloat viewWrapper"
-                        @routerViewEvent="routerViewEventHandle"
-                        :key="$route.fullPath"
-                    />
+                    <!-- Route components use top-level await (async setup), so each
+                         navigation must suspend at its own boundary. Without this
+                         nested Suspense, the keyed remount re-suspends the app-root
+                         Suspense, and a patch landing mid-resolution (menu active
+                         item, store updates) intermittently leaves both the old and
+                         new route subtrees stacked in the DOM until a full reload.
+                         RouteComponent is renamed from the slot's Component prop to
+                         avoid shadowing the Component type imported from vue. -->
+                    <router-view v-slot="{ Component: RouteComponent }">
+                        <template v-if="RouteComponent">
+                            <Suspense>
+                                <component
+                                    :is="RouteComponent"
+                                    style="margin-left: 5px; margin-right: 5px;"
+                                    class="nofloat viewWrapper"
+                                    @routerViewEvent="routerViewEventHandle"
+                                    :key="$route.fullPath"
+                                />
+                            </Suspense>
+                        </template>
+                    </router-view>
                 </n-layout>
             </n-layout>
         </n-space>
