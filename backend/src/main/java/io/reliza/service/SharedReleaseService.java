@@ -26,7 +26,10 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.github.packageurl.PackageURL;
 
@@ -84,7 +87,20 @@ public class SharedReleaseService {
 
 	@Autowired
 	private SidPurlResolver sidPurlResolver;
-	
+
+	// Best-effort, REQUIRES_NEW + afterCommit emitter of finding-change deltas (board task #38,
+	// phase 1). Living in its own bean keeps the diff-emit in a physically separate transaction so a
+	// diff-emit failure can never roll back the customer-critical metrics write.
+	//
+	// @Lazy: the emitter depends (transitively) on FindingComparisonService, which depends on this
+	// SharedReleaseService by constructor -- so a direct injection would re-form the original
+	// FindingComparisonService <-> SharedReleaseService cycle through the emitter. @Lazy on this seam
+	// (the emitter is only touched on the metrics-write path, via an afterCommit callback) breaks it;
+	// the previous @Lazy on the FindingComparisonService field is removed.
+	@Autowired
+	@Lazy
+	private FindingChangeEventEmitter findingChangeEventEmitter;
+
 	public final static Integer DEFAULT_NUM_RELEASES = 300;
 	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 10;
 	
@@ -103,14 +119,41 @@ public class SharedReleaseService {
 		repository.touchLastScanned(releaseUuid);
 	}
 
-	public Double getMaxReleaseLastScannedTimestamp() {
-		return repository.findMaxReleaseLastScannedTimestamp();
+	/**
+	 * Per-org change signal for the today-analytics refresh: the pair moves on
+	 * every metrics write (SUM of per-row metrics_revision counters) and on any
+	 * release entering/leaving the scannable (ASSEMBLED+) set. Consumed by
+	 * OssAnalyticsMetricsService, which diffs it against an in-memory snapshot
+	 * to decide which orgs need their "today" analytics row recomputed.
+	 */
+	public record OrgMetricsSignal(long revSum, long assembledCount, long maxUpdatedEpoch) {}
+
+	public Map<UUID, OrgMetricsSignal> getOrgMetricsSignals() {
+		Map<UUID, OrgMetricsSignal> signals = new HashMap<>();
+		for (Object[] row : repository.findOrgMetricsSignals()) {
+			try {
+				signals.put(UUID.fromString((String) row[0]), new OrgMetricsSignal(
+						((Number) row[1]).longValue(), ((Number) row[2]).longValue(),
+						((Number) row[3]).longValue()));
+			} catch (IllegalArgumentException e) {
+				// org value in record_data isn't a UUID -- skip the garbage row
+				log.warn("Skipping org metrics signal row with malformed org: {}", row[0]);
+			}
+		}
+		return signals;
 	}
+
 
 	@Transactional
 	public void saveReleaseMetrics (Release r, ReleaseMetricsDto metrics) {
 		try {
-			if (r.getMetrics() != null) {
+			// Pre-overwrite ("old live") metrics map: r.getMetrics() still holds the persisted
+			// snapshot here -- updateMetrics() below is what writes the new one to the DB.
+			Map<String, Object> oldLiveRaw = r.getMetrics();
+			// changeDate must be IDENTICAL to the audit row's revisionCreatedDate so the changelog
+			// re-source (phase 3) buckets the change at the same instant the snapshot rolled over.
+			ZonedDateTime revisionCreatedDate = ZonedDateTime.now();
+			if (oldLiveRaw != null) {
 				int revision = r.getMetricsRevision();
 				int maxAuditRevision = metricsAuditRepository.findMaxRevision(
 						MetricsEntityType.RELEASE.name(), r.getUuid());
@@ -120,8 +163,15 @@ public class SharedReleaseService {
 							r.getUuid(), r.getMetricsRevision(), maxAuditRevision, revision);
 					repository.bumpMetricsRevision(r.getUuid());
 				}
-				MetricsAudit audit = buildMetricsAudit(r, revision);
+				MetricsAudit audit = buildMetricsAudit(r, revision, revisionCreatedDate);
 				metricsAuditRepository.save(audit);
+				// Additive emit of finding-change deltas (board task #38, phase 1) -- DECOUPLED from
+				// this transaction. Deferred to afterCommit + REQUIRES_NEW so a diff-emit failure can
+				// NEVER roll back the customer-critical metrics + metrics_audit write (this runs on the
+				// hot DT-sync ingestion path), and so a rolled-back metrics tx leaves NO orphan
+				// finding_change_events rows. The metrics_audit write above is unchanged -- the
+				// changelog still reads audit until phase 3.
+				scheduleFindingChangeEventEmit(r, oldLiveRaw, metrics, revisionCreatedDate, revision);
 			}
 			String metricsJson = Utils.OM.writeValueAsString(metrics);
 			repository.updateMetrics(r.getUuid(), metricsJson);
@@ -130,13 +180,55 @@ public class SharedReleaseService {
 		}
 	}
 
-	private MetricsAudit buildMetricsAudit(Release r, int revision) {
+	/**
+	 * Best-effort, transaction-isolated scheduling of the finding-change-event emit (board task #38,
+	 * phase 1). The emit is deferred to an {@code afterCommit} synchronization that calls the
+	 * {@link FindingChangeEventEmitter} (its own {@code REQUIRES_NEW} bean), so:
+	 * <ul>
+	 *   <li>it fires ONLY if the metrics transaction actually committed -- a rolled-back metrics write
+	 *       never leaves orphan {@code finding_change_events} rows (the synchronization simply does not
+	 *       run, and a replayed save re-registers it);</li>
+	 *   <li>it runs in a physically separate transaction, so it cannot mark the metrics tx
+	 *       rollback-only -- the metrics + metrics_audit write stay atomic with each other and
+	 *       unaffected;</li>
+	 *   <li>any failure is caught, logged at ERROR (operator alerting fires on ERROR) and swallowed --
+	 *       it can never propagate back into {@code saveReleaseMetrics}.</li>
+	 * </ul>
+	 * When there is no ambient synchronization (e.g. a direct unit-test invocation with no tx manager),
+	 * the emit runs inline -- there is no shared tx to poison and best-effort swallow still applies.
+	 */
+	private void scheduleFindingChangeEventEmit(Release r, Map<String, Object> oldLiveRaw,
+			ReleaseMetricsDto metrics, ZonedDateTime revisionCreatedDate, int revision) {
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					emitFindingChangeEventsBestEffort(r, oldLiveRaw, metrics, revisionCreatedDate, revision);
+				}
+			});
+		} else {
+			emitFindingChangeEventsBestEffort(r, oldLiveRaw, metrics, revisionCreatedDate, revision);
+		}
+	}
+
+	/** Invokes the REQUIRES_NEW emitter, swallowing (and logging at ERROR) any failure. */
+	private void emitFindingChangeEventsBestEffort(Release r, Map<String, Object> oldLiveRaw,
+			ReleaseMetricsDto metrics, ZonedDateTime revisionCreatedDate, int revision) {
+		try {
+			findingChangeEventEmitter.emit(r, oldLiveRaw, metrics, revisionCreatedDate, revision);
+		} catch (Exception e) {
+			log.error("Failed to emit finding_change_events for release {} (revision {}) -- metrics + audit "
+					+ "write are unaffected; this diff-emit is best-effort", r.getUuid(), revision, e);
+		}
+	}
+
+	private MetricsAudit buildMetricsAudit(Release r, int revision, ZonedDateTime revisionCreatedDate) {
 		MetricsAudit audit = new MetricsAudit();
 		audit.setEntityType(MetricsEntityType.RELEASE);
 		audit.setEntityUuid(r.getUuid());
 		audit.setOrg(UUID.fromString((String) r.getRecordData().get("org")));
 		audit.setMetricsRevision(revision);
-		audit.setRevisionCreatedDate(ZonedDateTime.now());
+		audit.setRevisionCreatedDate(revisionCreatedDate);
 		audit.setEntityCreatedDate(r.getCreatedDate());
 		audit.setMetrics(r.getMetrics());
 		return audit;
@@ -205,6 +297,12 @@ public class SharedReleaseService {
 	 * Batch totals-only read. Skips uuids that no longer resolve (logged), like
 	 * {@link #getReleaseDataList(Collection, UUID)}.
 	 */
+	/** Earliest created_date among a component's releases; null when it has none. */
+	public ZonedDateTime findEarliestReleaseDateOfComponent (UUID componentUuid) {
+		java.time.Instant earliest = repository.findEarliestReleaseDateOfComponent(componentUuid.toString());
+		return earliest == null ? null : earliest.atZone(java.time.ZoneOffset.UTC);
+	}
+
 	public List<ReleaseData> getReleaseDataListLight (Collection<UUID> uuidList) {
 		if (uuidList == null || uuidList.isEmpty()) {
 			return new LinkedList<>();
@@ -215,7 +313,7 @@ public class SharedReleaseService {
 	}
 
 	/**
-	 * Org-scoped batch totals-only read — drop-in for
+	 * Org-scoped batch totals-only read -- drop-in for
 	 * {@link #getReleaseDataList(Collection, UUID)} that mirrors its org filter
 	 * (releases whose org differs are skipped, as the org-scoped per-uuid load
 	 * does) while avoiding the heavy metrics detail arrays and events.
@@ -231,7 +329,7 @@ public class SharedReleaseService {
 	}
 
 	/**
-	 * Org-scoped totals-only single read — drop-in for {@link #getReleaseData(UUID, UUID)}
+	 * Org-scoped totals-only single read -- drop-in for {@link #getReleaseData(UUID, UUID)}
 	 * that returns the release only when it belongs to {@code org}, while avoiding the
 	 * heavy metrics detail arrays and approval/update events.
 	 */
@@ -580,7 +678,7 @@ public class SharedReleaseService {
 	}
 	
 	/**
-	 * Inverse of {@link #unwindReleaseDependencies(ReleaseData)} — recursively
+	 * Inverse of {@link #unwindReleaseDependencies(ReleaseData)} -- recursively
 	 * locates every product release that bundles {@code rd}, then every
 	 * product that bundles those, and so on. Mirrors the dropped helper that
 	 * used to live on ReleaseService; lives here so callers in lower-tier
@@ -600,7 +698,7 @@ public class SharedReleaseService {
 	/**
 	 * Org-scoped variant of {@link #locateAllProductsOfRelease(ReleaseData, Set)}.
 	 * When {@code myOrg} is non-null the upward walk only surfaces products
-	 * owned by that org — important for impact-analysis on a seed release
+	 * owned by that org -- important for impact-analysis on a seed release
 	 * that lives in the external/system sentinel org but whose bundling
 	 * products are in the caller's org.
 	 */
@@ -666,7 +764,7 @@ public class SharedReleaseService {
 		
 		// Group dependencies by component UUID to handle same component with multiple branches.
 		// JOB-status deps participate in product-release composition just like REQUIRED /
-		// TRANSIENT — the product release remembers what version of the job was current at
+		// TRANSIENT -- the product release remembers what version of the job was current at
 		// integration time, the UI surfaces it, and only the actual-vs-target match treats
 		// JOB releases as non-gating (so a stale deployed job doesn't flap the match).
 		Map<UUID, List<ChildComponent>> componentToDeps = dependencies.stream()
@@ -844,9 +942,71 @@ public class SharedReleaseService {
 		return repository.findReleasesOfComponentBetweenDates(componentUuid.toString(), fromDateTime, toDateTime)
 				.stream()
 				.map(ReleaseData::dataFromRecord)
-				.filter(rd -> rd.getLifecycle() != null && 
+				.filter(rd -> rd.getLifecycle() != null &&
 						rd.getLifecycle().ordinal() >= minLifecycle.ordinal())
 				.collect(Collectors.toList());
+	}
+
+	/**
+	 * BATCHED org-wide analogue of {@link #listReleaseDataOfComponentBetweenDates} (org posture-diff N+1
+	 * elimination): every in-window release of the ORG in ONE query, grouped by component UUID. Applies
+	 * the same {@code minLifecycle} filter in memory as the per-component method, so each component's list
+	 * is identical to what a per-component call would return (modulo ordering, which the caller re-sorts).
+	 * Components with no in-window release are simply absent from the map (caller defaults to empty).
+	 */
+	public Map<UUID, List<ReleaseData>> listReleaseDataOfOrgBetweenDatesByComponent(UUID orgUuid,
+			ZonedDateTime fromDateTime, ZonedDateTime toDateTime, ReleaseLifecycle minLifecycle) {
+		return repository.findReleasesOfOrgBetweenDates(orgUuid.toString(), fromDateTime, toDateTime)
+				.stream()
+				.map(ReleaseData::dataFromRecord)
+				.filter(rd -> rd.getLifecycle() != null &&
+						rd.getLifecycle().ordinal() >= minLifecycle.ordinal())
+				.filter(rd -> rd.getComponent() != null)
+				.collect(Collectors.groupingBy(ReleaseData::getComponent));
+	}
+
+	/**
+	 * Branch-latest release created AT-OR-BEFORE {@code atDateTime} (inclusive). Returns the single
+	 * newest non-CANCELLED / non-REJECTED release on the branch whose {@code created_date <= atDateTime},
+	 * or empty if none. Bounded per-branch lookup (LIMIT 1), used by the changelog posture-diff to seed
+	 * each branch's from-baseline (the snapshot in effect at the window start).
+	 */
+	public Optional<ReleaseData> getBranchLatestReleaseAtOrBeforeDate(UUID branchUuid, ZonedDateTime atDateTime) {
+		if (branchUuid == null || atDateTime == null) return Optional.empty();
+		UUID releaseUuid = repository.findLatestReleaseAtOrBeforeTimestamp(branchUuid.toString(), atDateTime.toString());
+		if (releaseUuid == null) return Optional.empty();
+		return getReleaseData(releaseUuid);
+	}
+
+	/** Chunk size for the batched branch-latest lookup array param (well under any parameter/array limit). */
+	private static final int BRANCH_LATEST_BATCH_CHUNK = 1000;
+
+	/**
+	 * BATCHED form of {@link #getBranchLatestReleaseAtOrBeforeDate} (org posture-diff N+1 elimination):
+	 * for EACH branch in {@code branchUuids}, its latest non-CANCELLED / non-REJECTED release created
+	 * {@code <= atDateTime}, resolved in a handful of round-trips instead of one LIMIT-1 query per
+	 * branch. Returns a map keyed by branch UUID; branches with no qualifying release are simply absent
+	 * (mirrors the single-branch {@code Optional.empty()}). The array param is chunked at
+	 * {@value #BRANCH_LATEST_BATCH_CHUNK} branches per call to stay well within Postgres array limits;
+	 * results are merged. Per-branch result is byte-identical to the single-branch query (same
+	 * DISTINCT-ON / created_date DESC / lifecycle-exclusion semantics).
+	 */
+	public Map<UUID, ReleaseData> getBranchLatestReleasesAtOrBeforeDate(Collection<UUID> branchUuids, ZonedDateTime atDateTime) {
+		Map<UUID, ReleaseData> result = new HashMap<>();
+		if (branchUuids == null || branchUuids.isEmpty() || atDateTime == null) return result;
+		List<UUID> distinct = branchUuids.stream().filter(Objects::nonNull).distinct().toList();
+		String timestamp = atDateTime.toInstant().toString(); // RFC-3339 Z instant: a region-zoned ZonedDateTime would render a [Region] suffix Postgres rejects
+		for (int i = 0; i < distinct.size(); i += BRANCH_LATEST_BATCH_CHUNK) {
+			List<UUID> chunk = distinct.subList(i, Math.min(i + BRANCH_LATEST_BATCH_CHUNK, distinct.size()));
+			String[] chunkStrings = chunk.stream().map(UUID::toString).toArray(String[]::new);
+			for (Release r : repository.findLatestReleasesAtOrBeforeTimestampBatch(chunkStrings, timestamp)) {
+				ReleaseData rd = ReleaseData.dataFromRecord(r);
+				if (rd.getBranch() != null) {
+					result.put(rd.getBranch(), rd);
+				}
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -1021,7 +1181,7 @@ public class SharedReleaseService {
 	 *
 	 * <p>Caller-supplied identifiers are preserved; a platform sid PURL is appended when
 	 * the resolver returns enabled; carryover from the component's own PURL runs only when
-	 * the caller supplied no identifiers. Existing snapshot is honored as-is — never overwritten.
+	 * the caller supplied no identifiers. Existing snapshot is honored as-is -- never overwritten.
 	 *
 	 * @throws RelizaException on perspective ambiguity, or when the resolver returns enabled
 	 *   with invalid authority segments (would emit a malformed {@code pkg:sid//...}).
@@ -1034,7 +1194,7 @@ public class SharedReleaseService {
 
 		SidPurlResolver.ResolvedSidPolicy policy = sidPurlResolver.resolveForComponent(cd, org);
 
-		// Strip caller-supplied sid only when the platform is about to emit its own —
+		// Strip caller-supplied sid only when the platform is about to emit its own --
 		// otherwise vendor-supplied sid (typical for EXTERNAL components) passes through.
 		if (policy.enabled()) {
 			result.removeIf(SharedReleaseService::isSidPurlIdentifier);
@@ -1061,7 +1221,7 @@ public class SharedReleaseService {
 	/**
 	 * Version-stamp the component's first PURL into a release identifier.
 	 * {@code skipSid=true} skips {@code pkg:sid/...} on the scan so a stale vendor sid
-	 * doesn't race the platform-emitted one. {@code skipSid=false} preserves it — that's
+	 * doesn't race the platform-emitted one. {@code skipSid=false} preserves it -- that's
 	 * how vendor-asserted sid identity rides through to releases of EXTERNAL components.
 	 * Returns empty (not throws) on failure so callers can decide.
 	 */
@@ -1092,7 +1252,7 @@ public class SharedReleaseService {
 
 	/**
 	 * Build a sid PURL identifier from a pre-resolved policy. Throws if the policy is
-	 * enabled but its segments are invalid — never emits {@code pkg:sid//<name>@v}.
+	 * enabled but its segments are invalid -- never emits {@code pkg:sid//<name>@v}.
 	 * Returns the snapshot the caller should persist (existing one if non-null,
 	 * otherwise {@code cd.getName()} captured here). Caller must ensure
 	 * {@code policy.enabled() == true}.
@@ -1264,7 +1424,7 @@ public class SharedReleaseService {
 		return rds;
 	}
 	
-	// UUID-only finders for VulnAnalysisUpdateService — caller feeds each
+	// UUID-only finders for VulnAnalysisUpdateService -- caller feeds each
 	// UUID straight to computeReleaseMetrics(uuid, false), so materializing
 	// the full Release (with five JSONB columns' worth of snapshot
 	// deep-copies per row) would be pure waste and a heap-pressure
@@ -1449,13 +1609,28 @@ public class SharedReleaseService {
 	 * @param perspectiveUuid Optional perspective UUID to filter components by perspective
 	 * @return List of ComponentWithBranches containing hierarchical release data
 	 */
-	public List<ComponentWithBranches> findReleasesByCveId(UUID orgUuid, String cveId, UUID perspectiveUuid) {
-		List<Release> releases = repository.findReleasesByCveId(orgUuid.toString(), cveId);
-		List<ReleaseData> releaseDataList = releases.stream()
-				.map(ReleaseData::dataFromRecord)
+	/**
+	 * Cap on releases hydrated and returned by the CVE search. The uuid page is
+	 * newest-first, so the cap keeps the most relevant matches; the window total
+	 * still reports the full match count for the UI's truncation note.
+	 */
+	public static final int CVE_SEARCH_RELEASE_LIMIT = 500;
+
+	public CveSearchResultDto.CveSearchResult findReleasesByCveId(UUID orgUuid, String cveId, UUID perspectiveUuid) {
+		List<Object[]> rows = repository.findReleasesByCveId(orgUuid.toString(), cveId, CVE_SEARCH_RELEASE_LIMIT);
+		int totalMatches = rows.isEmpty() ? 0 : ((Number) rows.get(0)[1]).intValue();
+		List<UUID> uuids = rows.stream()
+				.map(row -> Utils.parseUuidFromObject(row[0]))
 				.collect(Collectors.toList());
-		
-		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid);
+		// Lite hydration: totals-only metrics, no detail arrays or events — the
+		// result tree needs component/branch/version/lifecycle and the summary
+		// counts, never the megabyte-scale finding details.
+		List<ReleaseData> releaseDataList = getReleaseDataListLight(uuids, orgUuid);
+		releaseDataList.sort(new ReleaseData.ReleaseDateComparator());
+		List<ComponentWithBranches> components =
+				convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid);
+		return new CveSearchResultDto.CveSearchResult(
+				components, totalMatches, releaseDataList.size(), totalMatches > releaseDataList.size());
 	}
 	
 	/**
@@ -1520,7 +1695,7 @@ public class SharedReleaseService {
 	/**
 	 * Same as the 4-arg variant but with an optional {@code componentType}
 	 * filter applied before the limit cap. Components are looked up
-	 * in-memory per release — fine for the typical UI limit (≤100) and
+	 * in-memory per release -- fine for the typical UI limit (≤100) and
 	 * avoids a SQL join through release.record_data → component table
 	 * that would defeat the existing JSONB index on org.
 	 *

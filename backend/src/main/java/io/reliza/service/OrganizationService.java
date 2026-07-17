@@ -45,9 +45,11 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.oss.LicensingConstants;
+import io.reliza.dto.ChangelogRecords;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.model.SystemInfoData;
+import io.reliza.model.MetricsAudit;
 import io.reliza.model.Organization;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
@@ -124,7 +126,7 @@ public class OrganizationService {
 	/**
 	 * Replace the org's global PR-validation trigger rule list. Persistence-only:
 	 * the caller is responsible for validating each rule (regex compile, name
-	 * uniqueness, integration scope/capability) — typically the SAAS-only
+	 * uniqueness, integration scope/capability) -- typically the SAAS-only
 	 * {@code OrgValidationTriggerService.setRules}, which handles those checks
 	 * before delegating here. Lives on the shared service so the data field
 	 * round-trip stays in one place; the validation that gates writes lives in
@@ -145,7 +147,7 @@ public class OrganizationService {
 	/**
 	 * Replace the org's global approval-policy assignment rule list.
 	 * Persistence-only: the caller is responsible for validating each
-	 * rule (regex compile, name uniqueness, policy exists in same org) —
+	 * rule (regex compile, name uniqueness, policy exists in same org) --
 	 * typically the SAAS-only {@code OrgApprovalPolicyService.setRules},
 	 * which handles those checks before delegating here. Lives on the
 	 * shared service so the data field round-trip stays in one place;
@@ -162,6 +164,70 @@ public class OrganizationService {
 		od.setGlobalApprovalPolicyRules(validatedRules == null ? new java.util.LinkedList<>() : validatedRules);
 		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
 		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
+	/**
+	 * Certifies the per-org {@code finding_change_events} backfill watermark (board task #38) so the
+	 * posture-diff read path can trust reverse-replay for this org, stamped with the CURRENT event
+	 * vocabulary version. Atomic + idempotent at the SQL level (conditional targeted {@code jsonb_set} --
+	 * never a whole-record save), so the scheduled backfill can never clobber a concurrent user settings
+	 * update, and re-runs keep the original completion instant. Persistence-only; the backfill service
+	 * decides WHEN to call this (full-range backfill, no per-release failures).
+	 */
+	@Transactional
+	public void certifyFindingChangeBackfill(UUID orgUuid, ZonedDateTime completedAt) {
+		certifyFindingChangeBackfill(orgUuid, completedAt,
+				ChangelogRecords.FINDING_CHANGE_EVENT_VOCAB_VERSION);
+	}
+
+	/**
+	 * As {@link #certifyFindingChangeBackfill(UUID, ZonedDateTime)} but stamping an EXPLICIT vocabulary
+	 * version: the backfill passes 1 (minimum) when covered-skips mean this run did not actually re-diff
+	 * all history, so an org is never certified for kinds its log may not contain.
+	 */
+	@Transactional
+	public void certifyFindingChangeBackfill(UUID orgUuid, ZonedDateTime completedAt, int vocabVersion) {
+		repository.certifyFindingChangeBackfill(orgUuid, completedAt.toInstant().toString(), vocabVersion);
+	}
+
+	/**
+	 * Bumps an already-certified org's watermark to the CURRENT event vocabulary version -- called only
+	 * after a FULL-RANGE RESEED backfill re-diffed the org's history with the widened vocabulary (a
+	 * non-reseed run skips covered releases and must never certify new kinds). Atomic conditional update;
+	 * no-op for uncertified or already-current orgs.
+	 */
+	@Transactional
+	public void bumpFindingChangeBackfillVocab(UUID orgUuid) {
+		repository.bumpFindingChangeBackfillVocab(orgUuid, ChangelogRecords.FINDING_CHANGE_EVENT_VOCAB_VERSION);
+	}
+
+	/**
+	 * Orgs with no backfill watermark AND no {@code RELEASE} metrics_audit history -- vacuously complete
+	 * (no re-scan transitions ever happened), eligible for immediate certification by the repair sweep.
+	 */
+	public List<UUID> listOrgsEligibleForVacuousFindingChangeCertification(MetricsAudit.MetricsEntityType entityType) {
+		return repository.findOrgsEligibleForVacuousFindingChangeCertification(entityType.name());
+	}
+
+	/**
+	 * Branch-grain v3 analogue of {@link #listOrgsEligibleForVacuousFindingChangeCertification}: gates on the
+	 * V3 watermark so a never-re-scanned org that already carries a legacy v1/v2 watermark is still eligible
+	 * for vacuous v3 certification.
+	 */
+	public List<UUID> listOrgsEligibleForVacuousFindingChangeV3Certification(MetricsAudit.MetricsEntityType entityType) {
+		return repository.findOrgsEligibleForVacuousFindingChangeV3Certification(entityType.name());
+	}
+
+	/**
+	 * Certifies the org's BRANCH-GRAIN {@code finding_change_events_v3} (events-lite) backfill watermark at
+	 * the CURRENT {@link io.reliza.service.FindingDimKey#KEY_VERSION} (v3 shares the {@code finding_dim}
+	 * dimension). Called only when a full v3 backfill of the org completed with no per-release failures.
+	 * Overwrites on re-run so a re-key backfill re-certifies at the new version.
+	 */
+	@Transactional
+	public void certifyFindingChangeV3Backfill(UUID orgUuid, ZonedDateTime completedAt) {
+		repository.certifyFindingChangeV3Backfill(orgUuid, completedAt.toInstant().toString(),
+				FindingDimKey.KEY_VERSION);
 	}
 	
 	private List<Organization> listAllOrganizations() {
@@ -699,7 +765,7 @@ public class OrganizationService {
 		SidPurlMode effectiveMode = patchMode != null ? patchMode : settings.getSidPurlMode();
 		List<String> effectiveSegments = patchSegments != null ? patchSegments : settings.getSidAuthoritySegments();
 
-		// Validate any non-empty patch segments — otherwise invalid values could be
+		// Validate any non-empty patch segments -- otherwise invalid values could be
 		// persisted while sid is off and "go live" later when an admin flips the mode.
 		if (patchSegments != null && !patchSegments.isEmpty()) {
 			SidPurlUtils.ValidationResult vr = SidPurlUtils.validateAuthoritySegments(patchSegments);
@@ -721,12 +787,12 @@ public class OrganizationService {
 		}
 		if (patchSegments != null) {
 			// Normalize empty list to null for symmetry with ComponentService
-			// (ComponentService.java:~372) and PerspectiveService.updateSidPurl — stored
+			// (ComponentService.java:~372) and PerspectiveService.updateSidPurl -- stored
 			// shape is consistently `null` for "no segments", never `[]`.
 			settings.setSidAuthoritySegments(patchSegments.isEmpty() ? null : patchSegments);
 		}
 
-		// DISABLED means no segments — clear so stale data can't go live on a future toggle.
+		// DISABLED means no segments -- clear so stale data can't go live on a future toggle.
 		if (settings.getSidPurlModeOrDefault() == SidPurlMode.DISABLED) {
 			settings.setSidAuthoritySegments(null);
 		}

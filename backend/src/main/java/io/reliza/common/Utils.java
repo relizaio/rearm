@@ -260,9 +260,29 @@ public class Utils {
 	}
 
 	public static boolean uriEquals(String uri1, String uri2) {
-		String uri1Edited = uri1.replace("https://", "").replace("http://", ""); 
-		String uri2Edited = uri1.replace("https://", "").replace("http://", "");
-		return uri1Edited.equalsIgnoreCase(uri2Edited);
+		// Canonicalize both sides to the VCS repository storage key form so
+		// every spelling of the same repository compares equal. NB: this used
+		// to compare uri1 against itself and always returned true, which left
+		// the VCS mismatch check in populateSourceCodeEntryByVcsAndCommit dead.
+		// Known limitation: provider-specific split forms that differ in path
+		// structure (e.g. Azure DevOps 'dev.azure.com/org/proj/_git/repo' vs
+		// 'ssh.dev.azure.com/v3/org/proj/repo') are not equated -- callers
+		// must not treat a false result as proof of a different repository.
+		return StringUtils.equalsIgnoreCase(canonicalVcsUriForComparison(uri1), canonicalVcsUriForComparison(uri2));
+	}
+
+	/**
+	 * Canonicalize a VCS URI for equality comparison only (not for storage or
+	 * lookup keys): strips the ssh scheme on top of what
+	 * {@link #normalizeVcsUri} (http/https scheme, user@) and
+	 * {@link #cleanVcsUri} (git@, trailing .git, scp-style colon) remove, and
+	 * drops a trailing slash.
+	 */
+	private static String canonicalVcsUriForComparison(String uri) {
+		if (uri == null) return null;
+		String canonical = RegExUtils.replaceFirst(uri, "^ssh://", "");
+		canonical = cleanVcsUri(normalizeVcsUri(canonical));
+		return StringUtils.stripEnd(canonical, "/");
 	}
 	
 	/**
@@ -620,7 +640,7 @@ public class Utils {
 		oe.setContacts(List.of(oc));
 		rearmComponent.setSupplier(oe);
 		rearmComponent.setAuthors(List.of(oc));
-		rearmComponent.setDescription("Supply Chain Evidence Store");
+		rearmComponent.setDescription("Release Governance Platform");
 		ExternalReference erRelizaVcs = new ExternalReference();
 		erRelizaVcs.setType(org.cyclonedx.model.ExternalReference.Type.VCS);
 		erRelizaVcs.setUrl("ssh://git@github.com/relizaio/rearm.git");
@@ -650,26 +670,26 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.05.5";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.07.4";
 
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "efd34f252b3bd980edf1b1537eec283d269b152f2d677ae72d9479222c1d898a";
-    private static final String REARM_CD_HELM_VERSION = "0.3.20";
-    private static final String REARM_CD_HELM_COMMIT = "85c23cf809f6a6d7fda06e3629a0f01ce1ac5d60";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.3.20 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "6d17397b4a43772ce716ae65522a9b26f26e0c4ca9ce0b1ba7e2e4a2717e91ca";
+    private static final String REARM_CD_HELM_VERSION = "0.3.22";
+    private static final String REARM_CD_HELM_COMMIT = "35504f0b07bc905c3450b92318253182e7428390";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.3.22 [skip ci]";
 
-    public static final String REARM_CD_CONTAINER_DIGEST = "19e0f949eb9f0d7714e275dbc594edaa5d3653f20a53b03c2c22c935f6b6a340";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.46";
-    public static final String REARM_CD_CONTAINER_COMMIT = "bddef1ff4cedb7ca76f56059577c203797e756b0";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd): trigger build";
+    public static final String REARM_CD_CONTAINER_DIGEST = "2cb74272852a4922a52536197e1f5c8399a87fd37afa481c43396dee91073ca2";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.48";
+    public static final String REARM_CD_CONTAINER_COMMIT = "16184724dd87351839f0bcef53d01b181eebd852";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "rearm-cd: bump go deps, rearm-cli 26.07.2, kubectl 1.35.6, helm 4.2.3, kubeseal 0.38.4, base images (#5)";
 
     // ReARM Watcher container — sibling to rearm-cd-app under the same ReARM CD product.
     // Was missing from the hard-coded fallback prior to the 26.05.5 BOM update.
     public static final String REARM_WATCHER_CONTAINER_NAME = "registry.relizahub.com/library/rearm-watcher-app";
-    public static final String REARM_WATCHER_CONTAINER_DIGEST = "f4aa18fa67bcc41475eca41e750d954dcfe534d396e015440e7e388ca3ddf0dd";
-    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.03.14";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT = "ebc0c5a0eb24d22c1e32f0a2814d17528259fc3c";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "chore: bump dependencies";
+    public static final String REARM_WATCHER_CONTAINER_DIGEST = "90606bb8920e43bdf3ebaf90e37f8235a97f9fb874efb1e4b1df8bbda1a74756";
+    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.07.0";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT = "21ec41d85f3febcd03468ed37f7c7cfce12480d1";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "watcher: rearm-cli 26.07.2, kubectl 1.35.6 (#4)";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
@@ -929,8 +949,45 @@ public class Utils {
 	}
 
 	/**
-	 * Canonicalizes a PURL by stripping qualifiers AND subpath, matching the
-	 * canonical-purl form computed by rebom and persisted in
+	 * Canonical qualifier-free PURL identity used as the content-dedup and
+	 * analysis-match key for findings: {@link #minimizePurl} reduced to
+	 * type/namespace/name/version/subpath. Different scanners emit the same
+	 * installed package under qualifier-bearing and bare purls (e.g.
+	 * {@code pkg:deb/debian/systemd@257.9-1~deb13u1?arch=amd64&distro=debian-13}
+	 * vs the bare {@code pkg:deb/debian/systemd@257.9-1~deb13u1}); keying on the
+	 * raw purl treats those as distinct findings and double-counts the same
+	 * vulnerability. On a null or unparseable purl this falls back to the raw
+	 * value (or "" when null) so non-pkg locators still dedup by their own
+	 * string instead of all collapsing into one null bucket.
+	 */
+	public static String purlIdentity(String purl) {
+		String minimized = minimizePurl(purl);
+		return minimized != null ? minimized : (purl != null ? purl : "");
+	}
+
+	/**
+	 * Identity-bearing qualifiers retained by canonicalization, per purl type.
+	 * MUST stay in sync with {@code PRESERVED_QUALIFIERS} in rebom's
+	 * bomComponentExtractor.ts — rebom computes the canonical form persisted in
+	 * {@code sbom_components.canonical_purl}; this mirror only re-derives it for
+	 * lookups. julia/swid carry spec-required qualifiers, oci needs the registry
+	 * to disambiguate the image, and Linux distro packages (apk/deb/rpm/bitnami)
+	 * need {@code distro} so advisory matching can scope to the release branch
+	 * (plus rpm {@code epoch}, part of RPM version identity).
+	 */
+	private static final Map<String, List<String>> CANONICAL_PRESERVED_QUALIFIERS = Map.of(
+			"julia", List.of("uuid"),
+			"swid", List.of("tag_id"),
+			"oci", List.of("repository_url"),
+			"apk", List.of("distro"),
+			"deb", List.of("distro"),
+			"rpm", List.of("distro", "epoch"),
+			"bitnami", List.of("distro"));
+
+	/**
+	 * Canonicalizes a PURL by stripping the subpath and all qualifiers except the
+	 * identity-bearing ones in {@link #CANONICAL_PRESERVED_QUALIFIERS}, matching
+	 * the canonical-purl form computed by rebom and persisted in
 	 * {@code sbom_components.canonical_purl}. Use this before looking up an
 	 * sbom_components row by purl supplied from outside.
 	 */
@@ -940,12 +997,20 @@ public class Utils {
 		}
 		try {
 			PackageURL packageUrl = new PackageURL(purl);
-			return PackageURLBuilder.aPackageURL()
+			PackageURLBuilder builder = PackageURLBuilder.aPackageURL()
 					.withType(packageUrl.getType())
 					.withNamespace(packageUrl.getNamespace())
 					.withName(packageUrl.getName())
-					.withVersion(packageUrl.getVersion())
-					.build().toString();
+					.withVersion(packageUrl.getVersion());
+			List<String> preserveKeys = CANONICAL_PRESERVED_QUALIFIERS.get(packageUrl.getType());
+			Map<String, String> qualifiers = packageUrl.getQualifiers();
+			if (preserveKeys != null && qualifiers != null) {
+				for (String key : preserveKeys) {
+					String value = qualifiers.get(key);
+					if (value != null) builder.withQualifier(key, value);
+				}
+			}
+			return builder.build().toString();
 		} catch (MalformedPackageURLException e) {
 			log.warn("Failed to parse PURL for canonicalization: {}", purl, e);
 			return null;

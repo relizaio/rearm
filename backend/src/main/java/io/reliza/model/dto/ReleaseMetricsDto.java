@@ -4,6 +4,7 @@
 
 package io.reliza.model.dto;
 
+import java.io.Serializable;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAlias;
 
+import io.reliza.common.Utils;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
 import lombok.Data;
@@ -92,7 +94,16 @@ public class ReleaseMetricsDto implements Cloneable {
 		@JsonProperty("license") @JsonAlias("License") String license,
 		String violationDetails, Set<FindingSourceDto> sources, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt) {}
 	
-	public static record VulnerabilityAliasDto (VulnerabilityAliasType type, String aliasId) {}
+	/**
+	 * Implements {@link Serializable} because this record is persisted to JSONB
+	 * (e.g. {@code FindingChangeEvent.aliases}) via the hypersistence
+	 * {@code JsonBinaryType}, which deep-copies JSONB attribute values for
+	 * Hibernate dirty-checking and therefore requires every element object to be
+	 * Serializable. Without it, the JPA read path throws a JpaSystemException.
+	 * Both component types ({@link VulnerabilityAliasType} enum and String) are
+	 * themselves serializable; the JSON shape is unchanged.
+	 */
+	public static record VulnerabilityAliasDto (VulnerabilityAliasType type, String aliasId) implements Serializable {}
 
 	/**
 	 * Vulnerability ID types based on OSV schema.
@@ -774,7 +785,11 @@ public class ReleaseMetricsDto implements Cloneable {
 	}
 	
 	private String getVulnKey (VulnerabilityDto vulnDto) {
-		return vulnDto.purl + vulnDto.vulnId;
+		// "|" separator keeps the purl/vulnId boundary unambiguous now that the
+		// qualifier-free identity strips the trailing qualifier that previously
+		// delimited the two segments. See Utils.purlIdentity for why qualifiers
+		// are stripped (bare vs qualifier-bearing purls name the same package).
+		return Utils.purlIdentity(vulnDto.purl) + "|" + vulnDto.vulnId;
 	}
 	
 	private List<VulnerabilityDto> mergeVulnerabilityDtos(List<VulnerabilityDto> list1, List<VulnerabilityDto> list2) {
@@ -856,11 +871,11 @@ public class ReleaseMetricsDto implements Cloneable {
 	}
 
 	private String getViolationKey (ViolationDto violationDto) {
-		return violationDto.purl() + (violationDto.type() != null ? violationDto.type().name() : "");
+		return Utils.purlIdentity(violationDto.purl()) + (violationDto.type() != null ? violationDto.type().name() : "");
 	}
-	
+
 	private String getVulnerabilityKey(VulnerabilityDto vuln) {
-		return vuln.purl() + "|" + vuln.vulnId();
+		return Utils.purlIdentity(vuln.purl()) + "|" + vuln.vulnId();
 	}
 	
 	private List<ViolationDto> mergeViolationDtos(List<ViolationDto> list1, List<ViolationDto> list2) {
@@ -946,10 +961,12 @@ public class ReleaseMetricsDto implements Cloneable {
 		
 		// Collect all identifiers for each vulnerability with purl prefix
 		for (VulnerabilityDto vuln : vulnerabilityDetails) {
+			// qualifier-stripped purl, computed once per finding (parsing is non-trivial),
+			// so the same package under bare and qualifier-bearing purls groups together
+			String vulnPurlId = Utils.purlIdentity(vuln.purl());
 			Set<String> allIds = getAllIdentifiers(vuln);
 			for (String id : allIds) {
-				// Create composite key: purl + "|" + id
-				String compositeKey = (vuln.purl() != null ? vuln.purl() : "") + "|" + id;
+				String compositeKey = vulnPurlId + "|" + id;
 				purlIdToVulnsMap.computeIfAbsent(compositeKey, k -> new ArrayList<>()).add(vuln);
 			}
 		}
@@ -970,15 +987,16 @@ public class ReleaseMetricsDto implements Cloneable {
 			
 			// Get all identifiers for current vulnerability
 			Set<String> currentIds = getAllIdentifiers(vuln);
-			
+			String vulnPurlId = Utils.purlIdentity(vuln.purl());
+
 			// Find all other vulnerabilities that share any identifier within the same purl
 			for (String id : currentIds) {
-				String compositeKey = (vuln.purl() != null ? vuln.purl() : "") + "|" + id;
+				String compositeKey = vulnPurlId + "|" + id;
 				List<VulnerabilityDto> vulnsWithId = purlIdToVulnsMap.get(compositeKey);
 				if (vulnsWithId != null) {
 					for (VulnerabilityDto otherVuln : vulnsWithId) {
-						if (!processed.contains(otherVuln) && 
-							Objects.equals(vuln.purl(), otherVuln.purl())) {
+						if (!processed.contains(otherVuln) &&
+							Objects.equals(vulnPurlId, Utils.purlIdentity(otherVuln.purl()))) {
 							toMerge.add(otherVuln);
 							processed.add(otherVuln);
 						}
@@ -1319,8 +1337,9 @@ public class ReleaseMetricsDto implements Cloneable {
 		Map<String, ViolationDto> violationMap = new LinkedHashMap<>();
 		
 		for (ViolationDto violation : violationDetails) {
-			// Create composite key: purl + type (same as getViolationKey)
-			String key = violation.purl() + violation.type().name();
+			// Create composite key: qualifier-stripped purl + type (same as getViolationKey),
+			// so bare and qualifier-bearing purls for the same package collapse here too
+			String key = Utils.purlIdentity(violation.purl()) + violation.type().name();
 			
 			if (violationMap.containsKey(key)) {
 				// Merge sources if duplicate found

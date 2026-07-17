@@ -15,7 +15,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 
@@ -29,9 +28,11 @@ import io.reliza.common.Utils;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalyticsMetrics;
 import io.reliza.model.AnalyticsMetricsData;
+import io.reliza.model.ComponentAnalyticsMetrics;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData;
+import io.reliza.repositories.ComponentAnalyticsMetricsRepository;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerBranch;
@@ -61,11 +62,11 @@ public class AnalyticsMetricsService {
 
 	@Autowired
 	private GetComponentService getComponentService;
+
+	@Autowired
+	private ComponentAnalyticsMetricsRepository componentAnalyticsMetricsRepository;
 	
 	private final AnalyticsMetricsRepository repository;
-
-	private record CachedTodayMetrics(Double cutoffTimestamp, AnalyticsMetricsData data) {}
-	private final Map<UUID, CachedTodayMetrics> todayMetricsCache = new ConcurrentHashMap<>();
 
 	AnalyticsMetricsService(
 		AnalyticsMetricsRepository repository
@@ -115,26 +116,25 @@ public class AnalyticsMetricsService {
 	
 	public Optional<ReleaseMetricsDto> getFindingsPerDay(UUID org, String dateKey) {
 		Optional<AnalyticsMetrics> existingAm = repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
-		
-		if (existingAm.isPresent()) {
-			return existingAm.map(AnalyticsMetricsData::dataFromRecord)
-					.map(AnalyticsMetricsData::getMetrics);
+		if (existingAm.isEmpty()) {
+			// DB-only: today's row is maintained by the change-driven refresh and
+			// the midnight seed; there is no hot recompute fallback anymore.
+			return Optional.empty();
 		}
-		
-		// If not found in DB, check if dateKey matches today's date
+		Optional<ReleaseMetricsDto> metrics = existingAm.map(AnalyticsMetricsData::dataFromRecord)
+				.map(AnalyticsMetricsData::getMetrics);
+		// Preserve the pre-existing behavior split: today's drill-down applied the
+		// org-scope vuln analysis overlay (the old hot path did this in-memory),
+		// historical days are returned as stored. Same overlay, now applied to the
+		// stored row instead of a fresh recompute.
 		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
 		java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
-		
-		if (requestedDate.equals(today)) {
-			// Compute metrics for today without saving
-			ZonedDateTime createdDate = requestedDate.atTime(23, 59, 59).atZone(java.time.ZoneOffset.UTC);
-			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, createdDate);
-			var metrics = amd.getMetrics().clone();
-			vulnAnalysisService.processReleaseMetricsDto(org, org, AnalysisScope.ORG, metrics);
-			return Optional.of(metrics);
+		if (metrics.isPresent() && requestedDate.equals(today)) {
+			var overlaid = metrics.get().clone();
+			vulnAnalysisService.processReleaseMetricsDto(org, org, AnalysisScope.ORG, overlaid);
+			return Optional.of(overlaid);
 		}
-		
-		return Optional.empty();
+		return metrics;
 	}
 	
 	
@@ -223,10 +223,14 @@ public class AnalyticsMetricsService {
 			ZonedDateTime dateTo) {
 		ZonedDateTime today = ZonedDateTime.now();
 		if (dateTo.isAfter(today)) dateTo = today;
-		var chartData = new LinkedList<>(listChartDataByOrgDates(org, dateFrom, dateTo));
-		var todaysData = computeActualAnalyticsMetricsDataForOrg(org, ZonedDateTime.now());
-		chartData.addAll(todaysData.convertToChartDto());
-		return chartData;
+		// DB-only, including today's point: the today row is maintained by the
+		// change-driven refresh (OssAnalyticsMetricsService
+		// .refreshTodayAnalyticsForChangedOrgs) and the midnight seed, so the
+		// read path never recomputes metrics. Component/branch chart variants
+		// below intentionally keep their compute path -- analytics_metrics has
+		// no component/branch dimension and persisting that cardinality is not
+		// worth it for non-home-page charts.
+		return new LinkedList<>(listChartDataByOrgDates(org, dateFrom, dateTo));
 	}
 	
 	
@@ -257,6 +261,8 @@ public class AnalyticsMetricsService {
 		// Then merge all branch metrics for each day
 		Map<LocalDate, Map<UUID, ReleaseData>> latestReleasePerBranchPerDay = new HashMap<>();
 		for (ReleaseData rd : allReleasesInRange) {
+			// Retired releases (END_OF_SUPPORT or later) leave the findings-over-time chart.
+			if (ReleaseLifecycle.isSupportEnded(rd.getLifecycle())) continue;
 			LocalDate releaseDate = rd.getCreatedDate().toLocalDate();
 			UUID branchUuid = rd.getBranch();
 			latestReleasePerBranchPerDay.computeIfAbsent(releaseDate, k -> new HashMap<>());
@@ -311,6 +317,8 @@ public class AnalyticsMetricsService {
 		// Group releases by date (LocalDate) and pick the latest release for each day
 		Map<LocalDate, ReleaseData> latestReleasePerDay = new HashMap<>();
 		for (ReleaseData rd : releasesInRange) {
+			// Retired releases (END_OF_SUPPORT or later) leave the findings-over-time chart.
+			if (ReleaseLifecycle.isSupportEnded(rd.getLifecycle())) continue;
 			LocalDate releaseDate = rd.getCreatedDate().toLocalDate();
 			ReleaseData existing = latestReleasePerDay.get(releaseDate);
 			if (existing == null || 
@@ -349,20 +357,11 @@ public class AnalyticsMetricsService {
 	}
 	
 	
+	// No more per-replica today-cache here: writers (the change-driven refresh
+	// and the midnight job) are the only callers now, each already gated by a
+	// change signal, and the read path serves the shared analytics_metrics
+	// rows -- which also removes the old replica-divergence on today's data.
 	public AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
-		LocalDate requestedDate = createdDate.toLocalDate();
-		LocalDate today = LocalDate.now(createdDate.getZone());
-		if (!requestedDate.isBefore(today)) {
-			Double currentCutoff = sharedReleaseService.getMaxReleaseLastScannedTimestamp();
-			if (currentCutoff == null) currentCutoff = 0.0;
-			CachedTodayMetrics cached = todayMetricsCache.get(org);
-			if (cached != null && cached.cutoffTimestamp() >= currentCutoff) {
-				return cached.data();
-			}
-			AnalyticsMetricsData freshData = computeAnalyticsMetricsDataInternal(org, createdDate);
-			todayMetricsCache.put(org, new CachedTodayMetrics(currentCutoff, freshData));
-			return freshData;
-		}
 		return computeAnalyticsMetricsDataInternal(org, createdDate);
 	}
 
@@ -389,92 +388,360 @@ public class AnalyticsMetricsService {
 			latestReleasesOfBranches = new LinkedList<>();
 		}
 		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		// One walk feeds two aggregations: the org-wide rollup (dedup-by-content
+		// across everything) and per-component/product rollups persisted to
+		// component_analytics_metrics (counts only) for the most-vulnerable
+		// widget and PRODUCT-perspective findings-over-time.
+		Map<UUID, ReleaseMetricsDto> byComponent = new HashMap<>();
 		latestReleasesOfBranches.forEach(rd -> {
 			ReleaseMetricsDto rmd2 = rd.getMetrics();
-			rmd2.enrichSourcesWithRelease(rd.getUuid());
-			rmd.mergeWithByContent(rmd2);
+			if (rmd2 == null) return; // scan-pending release: nothing to merge yet
+			ReleaseMetricsDto enriched = rmd2.clone();
+			enriched.enrichSourcesWithRelease(rd.getUuid());
+			rmd.mergeWithByContent(enriched);
+			byComponent.computeIfAbsent(rd.getComponent(), k -> new ReleaseMetricsDto())
+					.mergeWithByContent(enriched);
 		});
+		recordComponentAnalytics(org, byComponent, componentByUuid,
+				AnalyticsMetricsData.obtainAnalyticsDateKey(createdDate));
 		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, null, rmd, createdDate);
 	}
 
+	/**
+	 * Upsert counts-only daily rows for the given per-component merged metrics.
+	 * Detail arrays are never persisted here -- drill-downs recompute via
+	 * {@link #getFindingsPerDayForComponent}.
+	 */
+	private void recordComponentAnalytics(UUID org, Map<UUID, ReleaseMetricsDto> byComponent,
+			Map<UUID, ComponentData> componentByUuid, String dateKey) {
+		for (Map.Entry<UUID, ReleaseMetricsDto> e : byComponent.entrySet()) {
+			ComponentData cd = componentByUuid.get(e.getKey());
+			if (cd == null || cd.getType() == null) continue;
+			ReleaseMetricsDto metrics = e.getValue();
+			metrics.computeMetricsFromFacts();
+			try {
+				componentAnalyticsMetricsRepository.upsertDay(org, cd.getUuid(), cd.getType().name(),
+						dateKey, Utils.OM.writeValueAsString(numericMetricsMap(metrics)));
+			} catch (Exception ex) {
+				log.error("Failed to upsert component analytics for component {} date {}", cd.getUuid(), dateKey, ex);
+			}
+		}
+	}
+
+	private Map<String, Object> numericMetricsMap(ReleaseMetricsDto m) {
+		Map<String, Object> nm = new java.util.LinkedHashMap<>();
+		nm.put("critical", metricInt(m.getCritical()));
+		nm.put("high", metricInt(m.getHigh()));
+		nm.put("medium", metricInt(m.getMedium()));
+		nm.put("low", metricInt(m.getLow()));
+		nm.put("unassigned", metricInt(m.getUnassigned()));
+		nm.put("weaknesses", metricInt(m.getWeaknesses()));
+		nm.put("policyViolationsTotal", metricInt(m.getPolicyViolationsTotal()));
+		nm.put("policyViolationsLicenseTotal", metricInt(m.getPolicyViolationsLicenseTotal()));
+		nm.put("policyViolationsOperationalTotal", metricInt(m.getPolicyViolationsOperationalTotal()));
+		nm.put("policyViolationsSecurityTotal", metricInt(m.getPolicyViolationsSecurityTotal()));
+		return nm;
+	}
+
+	/**
+	 * Compute + persist counts-only daily rows for the org's components and
+	 * products as of {@code targetDate}, optionally restricted to
+	 * {@code onlyComponents} (the product 60-day self-backfill path). Same walk
+	 * shape as the org rollup, without the org-wide merge.
+	 */
+	public void computeAndRecordComponentAnalyticsForOrg(UUID org, ZonedDateTime targetDate, Set<UUID> onlyComponents) {
+		ZonedDateTime upToDate = targetDate.toLocalDate().plusDays(1).atStartOfDay(targetDate.getZone());
+		var activeBranches = branchService.listBranchesOfOrg(org).stream()
+				.map(BranchData::branchDataFromDbRecord)
+				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
+				.filter(b -> onlyComponents == null || onlyComponents.contains(b.getComponent()))
+				.collect(Collectors.toList());
+		if (activeBranches.isEmpty()) return;
+		Set<UUID> componentUuids = activeBranches.stream().map(BranchData::getComponent).collect(Collectors.toSet());
+		Map<UUID, ComponentData> componentByUuid = getComponentService.getListOfComponentData(componentUuids).stream()
+				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
+		List<ReleaseData> latestReleasesOfBranches;
+		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
+			latestReleasesOfBranches = customPool.submit(() ->
+				activeBranches.parallelStream()
+					.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab, componentByUuid.get(ab.getComponent()), ReleaseLifecycle.ASSEMBLED, upToDate))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.toList())
+			).get();
+		} catch (Exception e) {
+			log.error("Error in parallel release fetch for component analytics", e);
+			return;
+		}
+		Map<UUID, ReleaseMetricsDto> byComponent = new HashMap<>();
+		for (ReleaseData rd : latestReleasesOfBranches) {
+			if (rd.getMetrics() == null) continue;
+			ReleaseMetricsDto enriched = rd.getMetrics().clone();
+			enriched.enrichSourcesWithRelease(rd.getUuid());
+			byComponent.computeIfAbsent(rd.getComponent(), k -> new ReleaseMetricsDto())
+					.mergeWithByContent(enriched);
+		}
+		recordComponentAnalytics(org, byComponent, componentByUuid,
+				AnalyticsMetricsData.obtainAnalyticsDateKey(targetDate));
+	}
+
+	/**
+	 * Table-backed read of pre-computed daily counts (component_analytics_metrics).
+	 * Reads today's rows, falling back to yesterday's (today's appear via the
+	 * change-driven refresh / midnight seed); a fresh org with neither computes
+	 * and records today's rows once (self-heal), after which reads are indexed.
+	 * Response is totals-only by construction -- detail drill-downs go through
+	 * findingsPerDayForComponent.
+	 */
 	public List<MostVulnerableComponent> mostVulnerableComponentsPerOrg(UUID org, ZonedDateTime createdDate,
 			ComponentType componentType, Integer maxComponents, Set<UUID> perspectiveComponentUuids) {
 		if (maxComponents == null || maxComponents <= 0) return List.of();
+		String typeName = (componentType == null || componentType == ComponentType.ANY)
+				? ComponentType.COMPONENT.name() : componentType.name();
 
-		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
+		String todayKey = AnalyticsMetricsData.obtainAnalyticsDateKey(createdDate);
+		List<ComponentAnalyticsMetrics> rows = componentAnalyticsMetricsRepository
+				.findByOrgTypeAndDateOrdered(org, typeName, todayKey);
+		if (rows.isEmpty()) {
+			String yesterdayKey = AnalyticsMetricsData.obtainAnalyticsDateKey(createdDate.minusDays(1));
+			rows = componentAnalyticsMetricsRepository.findByOrgTypeAndDateOrdered(org, typeName, yesterdayKey);
+		}
+		if (rows.isEmpty()) {
+			// Fresh org / pre-backfill: compute once, record, then serve from the table.
+			computeAndRecordComponentAnalyticsForOrg(org, createdDate, null);
+			rows = componentAnalyticsMetricsRepository.findByOrgTypeAndDateOrdered(org, typeName, todayKey);
+		}
+		if (rows.isEmpty()) return List.of();
 
+		List<ComponentAnalyticsMetrics> filtered = rows.stream()
+				.filter(r -> perspectiveComponentUuids == null || perspectiveComponentUuids.contains(r.getComponent()))
+				.limit(maxComponents)
+				.collect(Collectors.toList());
+		if (filtered.isEmpty()) return List.of();
+
+		Map<UUID, ComponentData> componentByUuid = getComponentService
+				.getListOfComponentData(filtered.stream().map(ComponentAnalyticsMetrics::getComponent).collect(Collectors.toSet()))
+				.stream().collect(Collectors.toMap(ComponentData::getUuid, c -> c));
+
+		List<MostVulnerableComponent> result = new ArrayList<>();
+		for (ComponentAnalyticsMetrics row : filtered) {
+			ComponentData cd = componentByUuid.get(row.getComponent());
+			if (cd == null) continue;
+			result.add(new MostVulnerableComponent(cd.getUuid(), cd.getName(), cd.getType(),
+					metricsFromNumericMap(row.getNumericMetrics())));
+		}
+		return result;
+	}
+
+	private ReleaseMetricsDto metricsFromNumericMap(Map<String, Object> nm) {
+		ReleaseMetricsDto m = new ReleaseMetricsDto();
+		m.setVulnerabilityDetails(null);
+		m.setViolationDetails(null);
+		m.setWeaknessDetails(null);
+		if (nm == null) return m;
+		m.setCritical(numOrZero(nm.get("critical")));
+		m.setHigh(numOrZero(nm.get("high")));
+		m.setMedium(numOrZero(nm.get("medium")));
+		m.setLow(numOrZero(nm.get("low")));
+		m.setUnassigned(numOrZero(nm.get("unassigned")));
+		m.setWeaknesses(numOrZero(nm.get("weaknesses")));
+		m.setPolicyViolationsTotal(numOrZero(nm.get("policyViolationsTotal")));
+		m.setPolicyViolationsLicenseTotal(numOrZero(nm.get("policyViolationsLicenseTotal")));
+		m.setPolicyViolationsOperationalTotal(numOrZero(nm.get("policyViolationsOperationalTotal")));
+		m.setPolicyViolationsSecurityTotal(numOrZero(nm.get("policyViolationsSecurityTotal")));
+		return m;
+	}
+
+	private Integer numOrZero(Object v) {
+		return v instanceof Number n ? n.intValue() : 0;
+	}
+
+	/**
+	 * Self-backfill, run per org from the periodic analytics tick: any PRODUCT
+	 * missing yesterday's counts row gets {@code productBackfillDays} recomputed
+	 * (charts need history), any COMPONENT missing yesterday's row gets
+	 * yesterday only (the widget needs at most one day). No-op once seeded --
+	 * one IN-list existence query per type per tick -- and self-heals new
+	 * components/products as they appear.
+	 */
+	public void seedComponentAnalyticsIfMissing(UUID org, int productBackfillDays) {
 		var activeBranches = branchService.listBranchesOfOrg(org).stream()
 				.map(BranchData::branchDataFromDbRecord)
 				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
 				.collect(Collectors.toList());
-
-		Set<UUID> allBranchComponentUuids = activeBranches.stream()
-				.map(BranchData::getComponent)
-				.collect(Collectors.toSet());
-		Map<UUID, ComponentData> componentByUuid = getComponentService
-				.getListOfComponentData(allBranchComponentUuids).stream()
+		if (activeBranches.isEmpty()) return;
+		Set<UUID> componentUuids = activeBranches.stream().map(BranchData::getComponent).collect(Collectors.toSet());
+		Map<UUID, ComponentData> componentByUuid = getComponentService.getListOfComponentData(componentUuids).stream()
 				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
 
-		final List<BranchData> filteredActiveBranches;
-		{
-			var stream = activeBranches.stream();
-			if (perspectiveComponentUuids != null) {
-				stream = stream.filter(b -> perspectiveComponentUuids.contains(b.getComponent()));
+		ZonedDateTime yesterday = ZonedDateTime.now().minusDays(1);
+		String yesterdayKey = AnalyticsMetricsData.obtainAnalyticsDateKey(yesterday);
+
+		Set<UUID> products = componentByUuid.values().stream()
+				.filter(c -> c.getType() == ComponentType.PRODUCT)
+				.map(ComponentData::getUuid).collect(Collectors.toSet());
+		Set<UUID> components = componentByUuid.values().stream()
+				.filter(c -> c.getType() == ComponentType.COMPONENT)
+				.map(ComponentData::getUuid).collect(Collectors.toSet());
+
+		Set<UUID> missingProducts = missingForDate(org, products, yesterdayKey);
+		if (!missingProducts.isEmpty()) {
+			log.info("component analytics seed: org {} backfilling {} product(s) {} day(s) back",
+					org, missingProducts.size(), productBackfillDays);
+			for (int i = productBackfillDays - 1; i >= 0; i--) {
+				computeAndRecordComponentAnalyticsForOrg(org, yesterday.minusDays(i), missingProducts);
 			}
-			if (componentType != null && componentType != ComponentType.ANY) {
-				stream = stream.filter(b -> {
-					var cd = componentByUuid.get(b.getComponent());
-					return cd != null && cd.getType() == componentType;
-				});
+		}
+		Set<UUID> missingComponents = missingForDate(org, components, yesterdayKey);
+		if (!missingComponents.isEmpty()) {
+			log.info("component analytics seed: org {} seeding yesterday for {} component(s)",
+					org, missingComponents.size());
+			computeAndRecordComponentAnalyticsForOrg(org, yesterday, missingComponents);
+		}
+	}
+
+	private Set<UUID> missingForDate(UUID org, Set<UUID> candidates, String dateKey) {
+		if (candidates.isEmpty()) return Set.of();
+		Set<UUID> present = componentAnalyticsMetricsRepository
+				.findByOrgAndComponentInAndDateKey(org, candidates, dateKey).stream()
+				.map(ComponentAnalyticsMetrics::getComponent).collect(Collectors.toSet());
+		Set<UUID> missing = new java.util.HashSet<>(candidates);
+		missing.removeAll(present);
+		return missing;
+	}
+
+	/**
+	 * Table-backed findings-over-time for one component/product, used by the
+	 * component/product page charts and PRODUCT-perspective charts.
+	 *
+	 * History ([from .. yesterday]) is served from component_analytics_metrics;
+	 * a component with no stored rows in the window is lazily backfilled on
+	 * first open (scoped to this component, one release-list query per branch
+	 * with carry-forward across days -- NOT one as-of query per day).
+	 *
+	 * TODAY's tick is ALWAYS computed hot from the component's latest branch
+	 * releases (cheap: one component's branches) and written through to the
+	 * table, so the chart's newest point reflects the latest release state
+	 * regardless of the analytics refresh cadence.
+	 */
+	public List<VulnViolationsChartDto> getVulnViolationByComponentChartDataStored(UUID componentUuid,
+			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+		ZonedDateTime now = ZonedDateTime.now();
+		if (dateTo.isAfter(now)) dateTo = now;
+		var branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE).stream()
+				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
+				.collect(Collectors.toList());
+		if (branches.isEmpty()) return new LinkedList<>();
+		UUID org = branches.get(0).getOrg();
+
+		String fromKey = AnalyticsMetricsData.obtainAnalyticsDateKey(dateFrom);
+		String todayKey = AnalyticsMetricsData.obtainAnalyticsDateKey(now);
+		String yesterdayKey = AnalyticsMetricsData.obtainAnalyticsDateKey(now.minusDays(1));
+		String histToKey = AnalyticsMetricsData.obtainAnalyticsDateKey(dateTo).compareTo(yesterdayKey) < 0
+				? AnalyticsMetricsData.obtainAnalyticsDateKey(dateTo) : yesterdayKey;
+
+		List<ComponentAnalyticsMetrics> rows = componentAnalyticsMetricsRepository
+				.findByComponentAndDateRange(componentUuid, fromKey, histToKey);
+		// Lazy history backfill trigger: the startup seed writes only
+		// yesterday's row for components, so "zero rows" is the wrong signal --
+		// detect a LEADING GAP instead (earliest stored row later than the
+		// window start), guarded by the component's first release date so the
+		// trigger can't re-fire for windows predating the component entirely.
+		String earliestStoredKey = rows.isEmpty() ? null : rows.get(0).getDateKey();
+		if (fromKey.compareTo(histToKey) <= 0
+				&& (earliestStoredKey == null || earliestStoredKey.compareTo(fromKey) > 0)) {
+			var firstRelease = sharedReleaseService.findEarliestReleaseDateOfComponent(componentUuid);
+			String gapEndKey = earliestStoredKey == null ? histToKey
+					: LocalDate.parse(earliestStoredKey).minusDays(1).format(java.time.format.DateTimeFormatter.ISO_DATE);
+			if (firstRelease != null
+					&& AnalyticsMetricsData.obtainAnalyticsDateKey(firstRelease).compareTo(gapEndKey) <= 0) {
+				ZonedDateTime gapFrom = firstRelease.isAfter(dateFrom) ? firstRelease : dateFrom;
+				backfillComponentAnalyticsRange(org, componentUuid, branches, gapFrom,
+						LocalDate.parse(gapEndKey).atStartOfDay(dateFrom.getZone()));
+				rows = componentAnalyticsMetricsRepository.findByComponentAndDateRange(componentUuid, fromKey, histToKey);
 			}
-			filteredActiveBranches = stream.collect(Collectors.toList());
 		}
 
-		List<ReleaseData> latestReleasesOfBranches;
-		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
-			latestReleasesOfBranches = customPool.submit(() ->
-					filteredActiveBranches.parallelStream()
-						.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab, componentByUuid.get(ab.getComponent()), ReleaseLifecycle.ASSEMBLED, upToDate))
-						.filter(Optional::isPresent)
-						.map(Optional::get)
-						.collect(Collectors.toList())
-			).get();
-		} catch (Exception e) {
-			log.error("Error in parallel release fetch", e);
-			latestReleasesOfBranches = new LinkedList<>();
+		// today's tick: hot from latest releases, written through
+		if (AnalyticsMetricsData.obtainAnalyticsDateKey(dateTo).compareTo(todayKey) >= 0) {
+			computeAndRecordComponentAnalyticsForOrg(org, now, Set.of(componentUuid));
+			rows = new ArrayList<>(rows);
+			rows.addAll(componentAnalyticsMetricsRepository.findByComponentAndDateRange(componentUuid, todayKey, todayKey));
 		}
 
-		Map<UUID, ReleaseMetricsDto> metricsByComponent = new HashMap<>();
-		for (ReleaseData rd : latestReleasesOfBranches) {
-			if (rd.getMetrics() == null) continue;
-			ReleaseMetricsDto rdMetrics = rd.getMetrics().clone();
-			rdMetrics.enrichSourcesWithRelease(rd.getUuid());
-			metricsByComponent
-					.computeIfAbsent(rd.getComponent(), k -> new ReleaseMetricsDto())
-					.mergeWithByContent(rdMetrics);
+		var zone = dateFrom.getZone();
+		List<VulnViolationsChartDto> out = new LinkedList<>();
+		for (ComponentAnalyticsMetrics row : rows) {
+			ZonedDateTime date = LocalDate.parse(row.getDateKey()).atStartOfDay(zone);
+			out.addAll(metricsFromNumericMap(row.getNumericMetrics()).convertToChartDto(date));
 		}
+		return out;
+	}
 
-		return metricsByComponent.entrySet().stream()
-				.map(e -> {
-					var cd = componentByUuid.get(e.getKey());
-					if (cd == null) return null;
-					ReleaseMetricsDto metrics = e.getValue();
-					metrics.computeMetricsFromFacts();
-					return new MostVulnerableComponent(cd.getUuid(), cd.getName(), cd.getType(), metrics);
-				})
-				.filter(java.util.Objects::nonNull)
-				.sorted(Comparator
-						.comparing((MostVulnerableComponent c) -> metricInt(c.metrics().getCritical())).reversed()
-						.thenComparing(c -> metricInt(c.metrics().getHigh()), Comparator.reverseOrder())
-						.thenComparing(c -> metricInt(c.metrics().getMedium()), Comparator.reverseOrder())
-						.thenComparing(c -> metricInt(c.metrics().getLow()), Comparator.reverseOrder())
-						.thenComparing(c -> metricInt(c.metrics().getUnassigned()), Comparator.reverseOrder())
-						.thenComparing(c -> metricInt(c.metrics().getWeaknesses()), Comparator.reverseOrder())
-						.thenComparing(c -> metricInt(c.metrics().getPolicyViolationsTotal()), Comparator.reverseOrder())
-						.thenComparing(c -> c.componentname() == null ? "" : c.componentname(), String.CASE_INSENSITIVE_ORDER)
-				)
-				.limit(maxComponents)
-				.toList();
+	/**
+	 * Range backfill for ONE component: per branch, one query for the releases
+	 * inside the window plus one as-of anchor before it, then an in-memory
+	 * carry-forward walk producing the latest release per branch per day.
+	 * Days before the component's first release produce no row (matching the
+	 * as-of walk semantics); days after it always do, so the lazy trigger
+	 * (zero rows in window) fires at most once per component per window.
+	 */
+	private void backfillComponentAnalyticsRange(UUID org, UUID componentUuid, List<BranchData> branches,
+			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+		if (dateTo.isBefore(dateFrom)) return;
+		ComponentData cd = getComponentService.getComponentData(componentUuid).orElse(null);
+		if (cd == null || cd.getType() == null) return;
+		LocalDate fromDay = dateFrom.toLocalDate();
+		LocalDate toDay = dateTo.toLocalDate();
+
+		// per branch: anchor (latest as of window start EOD) + in-window releases
+		Map<UUID, java.util.NavigableMap<LocalDate, ReleaseData>> perBranchByDay = new HashMap<>();
+		for (BranchData b : branches) {
+			java.util.TreeMap<LocalDate, ReleaseData> byDay = new java.util.TreeMap<>();
+			sharedReleaseService.getReleaseDataOfBranch(org, b.getUuid(), ReleaseLifecycle.ASSEMBLED,
+					fromDay.plusDays(1).atStartOfDay(dateFrom.getZone()))
+					.ifPresent(rd -> byDay.put(fromDay, rd));
+			for (ReleaseData rd : sharedReleaseService.listReleaseDataOfBranchBetweenDates(
+					b.getUuid(), dateFrom, dateTo.toLocalDate().plusDays(1).atStartOfDay(dateTo.getZone()),
+					ReleaseLifecycle.ASSEMBLED)) {
+				LocalDate day = rd.getCreatedDate().toLocalDate();
+				ReleaseData existing = byDay.get(day);
+				if (existing == null || rd.getCreatedDate().isAfter(existing.getCreatedDate())) {
+					byDay.put(day, rd);
+				}
+			}
+			if (!byDay.isEmpty()) perBranchByDay.put(b.getUuid(), byDay);
+		}
+		if (perBranchByDay.isEmpty()) return;
+
+		String dateKeyPrefixLog = null;
+		for (LocalDate day = fromDay; !day.isAfter(toDay); day = day.plusDays(1)) {
+			ReleaseMetricsDto merged = new ReleaseMetricsDto();
+			boolean any = false;
+			for (var byDay : perBranchByDay.values()) {
+				var entry = byDay.floorEntry(day); // latest release on-or-before this day (carry-forward)
+				if (entry == null) continue;
+				ReleaseMetricsDto m = entry.getValue().getMetrics();
+				if (m == null) continue;
+				ReleaseMetricsDto enriched = m.clone();
+				enriched.enrichSourcesWithRelease(entry.getValue().getUuid());
+				merged.mergeWithByContent(enriched);
+				any = true;
+			}
+			if (!any) continue;
+			merged.computeMetricsFromFacts();
+			String dateKey = day.format(java.time.format.DateTimeFormatter.ISO_DATE);
+			if (dateKeyPrefixLog == null) {
+				dateKeyPrefixLog = dateKey;
+				log.info("component analytics lazy backfill: component {} window {}..{}", componentUuid, dateKey, toDay);
+			}
+			try {
+				componentAnalyticsMetricsRepository.upsertDay(org, componentUuid, cd.getType().name(),
+						dateKey, Utils.OM.writeValueAsString(numericMetricsMap(merged)));
+			} catch (Exception ex) {
+				log.error("lazy backfill upsert failed for component {} date {}", componentUuid, dateKey, ex);
+			}
+		}
 	}
 
 	private int metricInt(Integer value) {
@@ -507,6 +774,10 @@ public class AnalyticsMetricsService {
 			}
 			am.setNumericMetrics(nm);
 		}
+		// entity field initializer only stamps construction time; on re-save
+		// (the today-row upsert path) it must be bumped explicitly, matching
+		// the service-side convention used across the codebase
+		am.setLastUpdatedDate(ZonedDateTime.now());
 		am = (AnalyticsMetrics) WhoUpdated.injectWhoUpdatedData(am, wu);
 		return repository.save(am);
 	}

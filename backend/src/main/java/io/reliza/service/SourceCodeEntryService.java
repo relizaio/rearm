@@ -113,7 +113,7 @@ public class SourceCodeEntryService {
 				return null;
 			
 			BranchData bd = obd.get();
-			// check vs branch vcs and return error if doesn't match
+			// check vs branch vcs and warn if doesn't match
 			UUID vcsUuidFromBranch = bd.getVcs();
 			// Read-only lookup. SCE-level dedup that previously relied on this
 			// pessimistic lock is now enforced by the V26 unique index on
@@ -121,36 +121,57 @@ public class SourceCodeEntryService {
 			// routine handling the race for the loser.
 			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepository(vcsUuidFromBranch);
 			String vcsUri = sceDto.getUri();
+			UUID resolvedVcsUuid;
 			if (StringUtils.isNotEmpty(vcsUri) && ovr.isPresent() && !Utils.uriEquals(vcsUri, VcsRepositoryData.dataFromRecord(ovr.get()).getUri())) {
-				throw new RelizaException("VCS repository mismatch: branch VCS does not match the supplied URI");
+				// Deliberately a warn, not an error. uriEquals equates the common
+				// spellings of one repository (scheme, git@/user@, .git, scp colon),
+				// but URI forms it cannot reconcile are legitimately in flight on
+				// this path -- Azure DevOps https vs ssh split forms, CycloneDX
+				// pedigree commit URLs, UI-edited stored URIs -- and this check
+				// never fired historically (uriEquals self-compared and was always
+				// true), so rejecting here would break flows that work today. The
+				// SCE binds to the branch's linked repository either way; the warn
+				// makes a genuine cross-repo submission visible in logs.
+				log.warn("Supplied VCS URI '{}' does not match branch {} linked VCS repository '{}' - binding SCE for commit {} to the branch's repository",
+						vcsUri, bd.getUuid(), VcsRepositoryData.dataFromRecord(ovr.get()).getUri(), sceDto.getCommit());
+				resolvedVcsUuid = ovr.get().getUuid();
 			} else if (ovr.isEmpty() && StringUtils.isNotEmpty(vcsUri) && null != vcsType) {	// branch does not have vcs repo set
-				ovr = vcsRepositoryService.getVcsRepositoryByUri(sceDto.getOrganizationUuid(), vcsUri, null, vcsType, true, wu);
-				// update branch with correct vcs repo
-				try {
-					BranchDto branchDto = BranchDto.builder()
-												.uuid(bd.getUuid())
-												.vcs(ovr.get().getUuid())
-												.vcsBranch(sceDto.getVcsBranch())
-												.build();
-					branchService.updateBranch(branchDto, wu);
-				} catch (RelizaException re) {
-					throw new RuntimeException(re.getMessage());
-				} 
+				// Create/commit the VCS repo in its own REQUIRES_NEW tx so it is
+				// visible to the routine's REQUIRES_NEW createSourceCodeEntry lookup
+				// -- creating it inline in this outer tx left the row invisible to
+				// the inner tx and NPE'd the auto-VCS addrelease path (PR #217).
+				resolvedVcsUuid = vcsRepositoryService.provisionVcsRepository(
+						sceDto.getOrganizationUuid(), vcsUri, vcsType, wu);
+				// Link the repo to the branch in THIS outer tx, not the REQUIRES_NEW
+				// one above. The branch row may be write-locked or freshly inserted
+				// by the outer tx (unarchive-on-addrelease, branch auto-create), so
+				// a cross-connection REQUIRES_NEW update would self-deadlock against
+				// that lock or miss the uncommitted row.
+				BranchDto branchDto = BranchDto.builder()
+											.uuid(bd.getUuid())
+											.vcs(resolvedVcsUuid)
+											.vcsBranch(sceDto.getVcsBranch())
+											.build();
+				branchService.updateBranch(branchDto, wu);
 			} else if (ovr.isEmpty() && null == bd.getVcs()) {
 				// fail if no vcs data is provided and branch does not have vcs linked already
 				throw new RelizaException("Branch does not have linked VCS repository and no VCS data provided");
+			} else {
+				// branch already carries a (matching) VCS, or the supplied uri
+				// matched the existing one -- use the row resolved off the branch.
+				resolvedVcsUuid = ovr.get().getUuid();
 			}
 
 			// construct source code entry itself
 			sceDto.setBranch(bd.getUuid());
-			sceDto.setVcs(ovr.get().getUuid());
+			sceDto.setVcs(resolvedVcsUuid);
 			Optional<SourceCodeEntry> osce = populateSourceCodeEntryByVcsAndCommitRoutine(sceDto, createIfMissing, wu);
 			if (osce.isPresent()) osced = Optional.of(SourceCodeEntryData.dataFromRecord(osce.get()));
 			return osced;
 	}
 	
 	@Transactional
-	private Optional<SourceCodeEntry> populateSourceCodeEntryByVcsAndCommitRoutine (SceDto sceDto, boolean createIfMissing, WhoUpdated wu) {
+	private Optional<SourceCodeEntry> populateSourceCodeEntryByVcsAndCommitRoutine (SceDto sceDto, boolean createIfMissing, WhoUpdated wu) throws RelizaException {
 		Optional<SourceCodeEntry> osce = repository.findByCommitAndVcs(sceDto.getCommit(), sceDto.getVcs().toString());
 		if (osce.isEmpty() && createIfMissing) {
 			log.debug("osce is empty creating new ...");
@@ -247,12 +268,16 @@ public class SourceCodeEntryService {
 	// REQUIRES_NEW so a unique-violation on (vcs, commit) rolls back only this
 	// attempt's tx, letting the routine's catch-and-recover proceed.
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public SourceCodeEntry createSourceCodeEntry (SceDto sceDto, WhoUpdated wu) {
+	public SourceCodeEntry createSourceCodeEntry (SceDto sceDto, WhoUpdated wu) throws RelizaException {
+		// Phase 2 follow-up to PR #217: the VCS row is now committed before this
+		// REQUIRES_NEW tx runs -- on the auto-VCS path by
+		// VcsRepositoryService.provisionVcsRepository, on the direct mutation path
+		// by the caller's pre-existing repo -- so this lookup is safe and restores the
+		// sanity check the self-heal had to drop. Produces a clean RelizaException
+		// instead of the opaque SERVICE_ERROR an unread .get() would have thrown.
+		VcsRepositoryData vrd = vcsRepositoryService.getVcsRepositoryData(sceDto.getVcs())
+				.orElseThrow(() -> new RelizaException("VCS " + sceDto.getVcs() + " not found"));
 		SourceCodeEntry sce = new SourceCodeEntry();
-		// No VCS read here: on the auto-create path (branch had no linked
-		// VCS at addrelease time and the input supplied uri + type), the row
-		// referenced by sceDto.vcs was inserted by the caller's outer tx
-		// and is not yet visible to this REQUIRES_NEW tx.
 		// resolve organization via branch
 		Optional<BranchData> bdOpt = branchService.getBranchData(sceDto.getBranch());
 		if (bdOpt.isPresent()) {
@@ -263,6 +288,14 @@ public class SourceCodeEntryService {
 										.getOrg();
 			if (null == sceDto.getOrganizationUuid())
 				sceDto.setOrganizationUuid(orgUuid);
+		}
+
+		// Defense-in-depth: never let a source code entry in one org bind to
+		// another org's VCS repository. The vcs uuid arrives on the inbound dto
+		// and the org is resolved above, so compare them before persisting.
+		if (null != sceDto.getOrganizationUuid() && !vrd.getOrg().equals(sceDto.getOrganizationUuid())) {
+			throw new RelizaException("VCS " + sceDto.getVcs()
+					+ " belongs to a different organization than the source code entry");
 		}
 
 		SourceCodeEntryData sced = SourceCodeEntryData.scEntryDataFactory(sceDto);

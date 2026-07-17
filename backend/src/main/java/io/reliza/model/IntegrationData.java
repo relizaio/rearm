@@ -117,6 +117,8 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	private String name; // user-facing display name (notification-channel integrations; null for legacy CI types)
 	@JsonProperty
 	private UUID resourceGroup; // perspective/resource-group scoping (notification-channel integrations)
+	@JsonProperty
+	private String disabledReason; // operator-facing reason set when a channel is auto-disabled (e.g. bad webhook URL); null when enabled or manually disabled
 
 	@JsonIgnore
 	public boolean hasCapability(IntegrationCapability cap) {

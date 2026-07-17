@@ -119,6 +119,42 @@ class ReleaseChangeHookImplTest {
         assertEquals("v2.0", release(saved).get("version"));
     }
 
+    /**
+     * Producer-side stamping for inbox visibility (#20/#21): a release event's
+     * payload must carry an {@code affectedReleases} entry whose
+     * {@code componentUuid} (component-team arm) and {@code perspectives}
+     * (perspective arm) the inbox visibility SQL walks. Without this, release
+     * notifications are invisible to every non-admin inbox. Guards the
+     * ReleaseNotificationSupport.buildAffectedReleases wiring that the
+     * decoupled NotificationInboxVisibilityQueryTest can't see.
+     */
+    @Test
+    void onReleaseCreatedStampsAffectedReleasesForInboxVisibility() {
+        UUID componentUuid = UUID.randomUUID();
+        UUID perspective = UUID.randomUUID();
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setName("myapp");
+        cd.setType(ComponentType.COMPONENT);
+        cd.setPerspectives(java.util.Set.of(perspective));
+        when(getComponentService.getComponentData(any())).thenReturn(Optional.of(cd));
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+
+        hook.onReleaseCreated(release(componentUuid, ReleaseLifecycle.DRAFT), false);
+
+        NotificationOutboxEvent saved = captureSaved();
+        java.util.List<?> ars = (java.util.List<?>) saved.getRecordData().get("affectedReleases");
+        assertNotNull(ars, "release events must stamp affectedReleases for inbox visibility");
+        assertEquals(1, ars.size());
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> ar = (java.util.Map<String, Object>) ars.get(0);
+        assertEquals(componentUuid.toString(), String.valueOf(ar.get("componentUuid")),
+                "component-team arm needs componentUuid stamped on the payload");
+        java.util.Collection<?> persp = (java.util.Collection<?>) ar.get("perspectives");
+        assertTrue(persp.stream().map(String::valueOf).anyMatch(s -> s.equals(perspective.toString())),
+                "perspective arm needs the component's perspectives stamped");
+    }
+
     @Test
     void onReleaseCreatedScheduledSetsScheduledTrue() {
         stubComponent(ComponentType.PRODUCT);

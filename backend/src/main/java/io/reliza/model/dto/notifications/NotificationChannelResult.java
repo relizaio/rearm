@@ -52,5 +52,9 @@ public record NotificationChannelResult(
         // split anticipated above: addresses are inboxes, not secrets,
         // and the edit UI needs them to render the current list. The
         // configData embargo stays in force for everything else.
-        List<String> emailRecipients) {
+        List<String> emailRecipients,
+        // Operator-facing reason a channel was auto-disabled (bad webhook
+        // URL). Null when enabled or manually disabled. Display text, not a
+        // credential.
+        String disabledReason) {
 }

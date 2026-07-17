@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -32,6 +33,7 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.UserData;
 import io.reliza.model.VcsRepositoryData;
+import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.BomComponentChange;
 import io.reliza.model.dto.notifications.ReleaseRef;
 import io.reliza.repositories.NotificationOutboxEventRepository;
@@ -137,6 +139,37 @@ public class ReleaseNotificationSupport {
 				updatedByEmail);
 	}
 
+	/**
+	 * Single-element {@code affectedReleases} list stamped onto release-scoped
+	 * outbox payloads so the inbox visibility query can see them — the
+	 * perspective arm (via {@code perspectives}) and the component-team arm
+	 * (via {@code componentUuid}). Vuln events resolve this lazily at fan-out
+	 * because the connecting artifact metrics aren't written yet; release
+	 * events have the component + perspectives in hand at produce-time, so we
+	 * build it here from the already-resolved {@link ReleaseRef} plus one
+	 * component lookup for the perspective set.
+	 *
+	 * <p>Returns an empty list (never null) when the component can't be
+	 * resolved, so the caller can pass it straight through.
+	 */
+	public List<AffectedRelease> buildAffectedReleases(ReleaseData rd, ReleaseRef ref) {
+		if (ref == null) return List.of();
+		Set<UUID> perspectives = getComponentService.getComponentData(rd.getComponent())
+				.map(ComponentData::getPerspectives)
+				.filter(ps -> ps != null && !ps.isEmpty())
+				.map(Set::copyOf)
+				.orElse(Set.of());
+		return List.of(new AffectedRelease(
+				ref.releaseUuid(),
+				ref.componentUuid(),
+				ref.componentName(),
+				ref.version(),
+				ref.branchName(),
+				ref.lifecycle(),
+				List.of(),
+				perspectives));
+	}
+
 	public static List<BomComponentChange> mapDiff(Collection<DiffComponent> diff) {
 		if (diff == null) return List.of();
 		return diff.stream()
@@ -148,8 +181,15 @@ public class ReleaseNotificationSupport {
 	/** Best-effort write: swallows failures so losing one notification never
 	 *  rolls back the business write that triggered it. */
 	public void writeOutboxEvent(UUID org, NotificationEventType type, String dedupKey, Object payload) {
+		writeOutboxEvent(org, type, dedupKey, payload, null);
+	}
+
+	/** Best-effort write that also stamps {@code affectedReleases} onto the
+	 *  payload (for inbox perspective / component-team visibility). */
+	public void writeOutboxEvent(UUID org, NotificationEventType type, String dedupKey, Object payload,
+			List<AffectedRelease> affectedReleases) {
 		try {
-			writeOutboxEventStrict(org, type, dedupKey, payload);
+			writeOutboxEventStrict(org, type, dedupKey, payload, affectedReleases);
 		} catch (RuntimeException e) {
 			log.warn("Failed to write release notification outbox row org={} type={} key={}: {}",
 					org, type, dedupKey, e.getMessage());
@@ -159,6 +199,14 @@ public class ReleaseNotificationSupport {
 	/** Strict write: rethrows, for producers where the notification IS the
 	 *  point of the mutation (e.g. APPROVAL_REQUESTED). */
 	public void writeOutboxEventStrict(UUID org, NotificationEventType type, String dedupKey, Object payload) {
+		writeOutboxEventStrict(org, type, dedupKey, payload, null);
+	}
+
+	/** Strict write that also stamps {@code affectedReleases} onto the payload.
+	 *  When non-empty, the list is merged into the converted record_data under
+	 *  the {@code affectedReleases} key the inbox visibility query walks. */
+	public void writeOutboxEventStrict(UUID org, NotificationEventType type, String dedupKey, Object payload,
+			List<AffectedRelease> affectedReleases) {
 		NotificationOutboxEvent event = new NotificationOutboxEvent();
 		event.setOrg(org);
 		event.setEventType(type);
@@ -168,7 +216,11 @@ public class ReleaseNotificationSupport {
 		event.setOccurredAt(ZonedDateTime.now());
 		@SuppressWarnings("unchecked")
 		Map<String, Object> recordData = Utils.OM.convertValue(payload, Map.class);
-		event.setRecordData(recordData != null ? recordData : new HashMap<>());
+		if (recordData == null) recordData = new HashMap<>();
+		if (affectedReleases != null && !affectedReleases.isEmpty()) {
+			recordData.put("affectedReleases", Utils.OM.convertValue(affectedReleases, List.class));
+		}
+		event.setRecordData(recordData);
 		outboxRepo.save(event);
 	}
 }

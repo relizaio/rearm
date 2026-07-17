@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.FlowControl;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -125,7 +126,8 @@ public class ReleaseMetricsComputeService {
 			// this org's kev_assertions (V54 per-org refactor).
 			stampKnownExploited(rd.getOrg(), rmd);
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
-			rmd.setLastScanned(lastScanned);
+			// lastScanned is stamped further down, gated on scanIncomplete: a still-pending
+			// scan must not record a lastScanned (see the gate after firstScanned resolves).
 			// Merge artifact firstScanned into whatever rollUpProductReleaseMetrics contributed.
 			// Do NOT unconditionally overwrite: for product releases with no artifacts of
 			// their own, releaseFirstScanned[0] is null and would wipe the value propagated
@@ -154,6 +156,30 @@ public class ReleaseMetricsComputeService {
 			boolean childrenIncomplete = hasChildren && rolledUp.getFirstScanned() == null;
 			if (childrenIncomplete) {
 				rmd.setFirstScanned(null);
+			}
+			// Only stamp lastScanned for a *complete* scan. A scan is incomplete while a
+			// BOM on this release, or a child release, still lacks firstScanned. Recording
+			// a lastScanned in that state advances it past last_updated_date, which evicts
+			// the release from the BY_UPDATE self-heal finder
+			// (ReleaseService.computeMetricsForAllUnprocessedReleases) — and nothing would
+			// ever re-derive it: the lagging input's own scan-completion recomputes that
+			// input, not this parent. Leaving lastScanned null keeps the release "dirty" so
+			// the every-minute sweep re-picks it until firstScanned can actually be set.
+			// This is the single guard that makes stuck product/aggregate releases
+			// self-heal; see the matching skip of touchReleaseLastScanned below.
+			//
+			// Lifecycle gate: only *scannable* (ASSEMBLED+) releases wait. A CANCELLED /
+			// REJECTED / PENDING / DRAFT release with unscanned inputs has nothing to
+			// wait for — its BOM will never be scanned (rejectPendingReleases
+			// auto-cancels abandoned CI runs every tick, minting exactly these rows) —
+			// so it settles (stamps lastScanned, leaves the finders) instead of
+			// squatting at the head of the finders' ASC order forever. If it's ever
+			// revived, the lifecycle transition bumps last_updated_date and it
+			// re-enters the queue naturally.
+			boolean scanIncomplete = (anyBomUnscanned[0] || childrenIncomplete)
+					&& isScannableLifecycle(rd.getLifecycle());
+			if (!scanIncomplete) {
+				rmd.setLastScanned(lastScanned);
 			}
 			// No-BOM anchor: a release that has reached a scannable lifecycle
 			// (ASSEMBLED or beyond) but has no BOM artifacts attached anywhere
@@ -192,11 +218,41 @@ public class ReleaseMetricsComputeService {
 					&& !childrenIncomplete) {
 				rmd.setFirstScanned(originalMetrics.getFirstScanned());
 			}
+			// Backoff fence: an incomplete compute is waiting on an external event
+			// (DTrack scan, child release completion). Fence the release out of the
+			// metrics finders for an escalating interval so it stops consuming one of
+			// the per-tick finder slots every minute — without a fence, permanently
+			// waiting rows are the oldest entries in every finder's ASC order and
+			// starve younger rows behind them. The first attempts are free (grace
+			// window, fence of 0s) so the healthy path — DTrack returns within a few
+			// minutes — keeps today's per-minute retry latency. A complete compute
+			// drops the fence so any future wait starts fresh.
+			if (scanIncomplete) {
+				repository.recordMetricsComputeIncomplete(r.getUuid(),
+						nextMetricsComputeBackoffSeconds(r.getFlowControl()));
+			} else {
+				repository.clearMetricsComputeBackoff(r.getUuid());
+			}
+			// Child-completion push: when this release's firstScanned lands (null →
+			// set), containing products stop waiting on it — drop their fences so the
+			// next tick re-derives them instead of letting them sleep out their
+			// backoff. firstScanned only ever lands on this rescan path, so the hook
+			// sees every transition; multi-level products chain one level per tick.
+			boolean becameScanned = rmd.getFirstScanned() != null
+					&& (originalMetrics == null || originalMetrics.getFirstScanned() == null);
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
 				sharedReleaseService.saveReleaseMetrics(r, rmd);
+				if (becameScanned) {
+					clearBackoffOnContainingProducts(rd);
+				}
 				return true;
-			} else {
+			} else if (!scanIncomplete) {
+				// Complete + unchanged: settle by stamping lastScanned so the release
+				// leaves the BY_UPDATE finder. While the scan is still incomplete we skip
+				// the touch entirely — touchReleaseLastScanned bumps last_updated_date and
+				// lastScanned together, which would evict the release before the pending
+				// child/BOM finishes and strand it in "Scan pending".
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
@@ -222,7 +278,13 @@ public class ReleaseMetricsComputeService {
 				rd.setMetrics(clonedMetrics);
 				sharedReleaseService.saveReleaseMetrics(r, clonedMetrics);
 				return true;
-			} else {
+			} else if (originalMetrics.getFirstScanned() != null) {
+				// Settle only releases whose initial scan has completed. Touching a
+				// still-scan-pending release stamps lastScanned + last_updated_date
+				// together, which evicts it from the BY_UPDATE finder before its BOM /
+				// children finish — and the rescan path (which owns firstScanned)
+				// would never see it again. This non-rescan path runs on analysis
+				// (triage) updates, which can land while the initial scan is pending.
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
@@ -307,6 +369,52 @@ public class ReleaseMetricsComputeService {
 	private static boolean isScannableLifecycle(ReleaseLifecycle lc) {
 		if (lc == null) return false;
 		return lc.ordinal() >= ReleaseLifecycle.ASSEMBLED.ordinal();
+	}
+
+	// Escalating fence for incomplete metrics computes; mirrors the SBOM
+	// reconcile backoff in SbomComponentService. The first GRACE attempts are
+	// free (0s fence — per-minute retries) so the healthy path, where DTrack
+	// returns within a few minutes, keeps today's latency. After the grace
+	// window the fence doubles from BASE up to MAX, so a release waiting on
+	// something that never arrives retries forever without occupying finder
+	// slots: 5 free ticks, then 60, 120, 240, 480, 960, 1920, 3600, 3600...
+	private static final int METRICS_BACKOFF_GRACE_ATTEMPTS = 5;
+	private static final int METRICS_BACKOFF_BASE_SECONDS = 60;
+	private static final int METRICS_BACKOFF_MAX_SECONDS = 3600;
+
+	/**
+	 * Next fence interval given the release's current flow_control. Package
+	 * visible so the poison-pill catch in
+	 * {@code ReleaseService.computeMetricsForReleaseList} escalates on the
+	 * same schedule.
+	 */
+	static int nextMetricsComputeBackoffSeconds(FlowControl fc) {
+		int priorAttempts = (fc != null && fc.metricsComputeFailureCount() != null)
+				? fc.metricsComputeFailureCount() : 0;
+		if (priorAttempts < METRICS_BACKOFF_GRACE_ATTEMPTS) return 0;
+		int escalation = priorAttempts - METRICS_BACKOFF_GRACE_ATTEMPTS;
+		return Math.min(METRICS_BACKOFF_BASE_SECONDS << Math.min(escalation, 7),
+				METRICS_BACKOFF_MAX_SECONDS);
+	}
+
+	/**
+	 * Drop the metrics-compute fence on every product release that bundles
+	 * {@code rd}, so parents waiting on this release are re-derived on the
+	 * next scheduler tick instead of sleeping out their backoff. Best-effort:
+	 * fences expire on their own, so a failure here only delays the parent,
+	 * never strands it.
+	 */
+	private void clearBackoffOnContainingProducts(ReleaseData rd) {
+		try {
+			List<Release> products = repository.findProductsByRelease(
+					rd.getOrg().toString(), rd.getUuid().toString());
+			for (Release p : products) {
+				repository.clearMetricsComputeBackoff(p.getUuid());
+			}
+		} catch (Exception e) {
+			log.warn("Failed to clear metrics-compute backoff on products of release {}",
+					rd.getUuid(), e);
+		}
 	}
 
 	private ReleaseMetricsDto rollUpProductReleaseMetrics(ReleaseData rd) {

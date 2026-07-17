@@ -254,6 +254,57 @@ class NotificationChannelServiceTest {
     }
 
     @Test
+    void autoDisableSetsReasonAndDisables() throws Exception {
+        UUID channelUuid = UUID.randomUUID();
+        Integration existing = stubChannel(channelUuid, UUID.randomUUID(), "ENC:secret", true);
+        when(integrationRepo.findById(channelUuid)).thenReturn(Optional.of(existing));
+
+        service.autoDisableForMisconfiguration(channelUuid, "Webhook URL is not a Slack host");
+
+        verify(auditService).createAndSaveAuditRecord(eq(TableName.INTEGRATIONS), eq(existing));
+        ArgumentCaptor<Integration> captor = ArgumentCaptor.forClass(Integration.class);
+        verify(integrationRepo).save(captor.capture());
+        IntegrationData persisted = parse(captor.getValue());
+        assertEquals(Boolean.FALSE, persisted.getIsEnabled());
+        assertEquals("Webhook URL is not a Slack host", persisted.getDisabledReason());
+    }
+
+    @Test
+    void autoDisableIsIdempotentWhenAlreadyDisabledWithSameReason() throws Exception {
+        UUID channelUuid = UUID.randomUUID();
+        Integration existing = stubChannel(channelUuid, UUID.randomUUID(), "ENC:secret", false);
+        IntegrationData d = parse(existing);
+        d.setDisabledReason("bad host");
+        existing.setRecordData(Utils.dataToRecord(d));
+        when(integrationRepo.findById(channelUuid)).thenReturn(Optional.of(existing));
+
+        service.autoDisableForMisconfiguration(channelUuid, "bad host");
+
+        // Nothing changed -- no audit, no save (skip revision churn).
+        verify(auditService, never()).createAndSaveAuditRecord(any(), any());
+        verify(integrationRepo, never()).save(any());
+    }
+
+    @Test
+    void reEnablingClearsDisabledReason() throws Exception {
+        UUID channelUuid = UUID.randomUUID();
+        Integration existing = stubChannel(channelUuid, UUID.randomUUID(), "ENC:secret", false);
+        IntegrationData d = parse(existing);
+        d.setDisabledReason("bad host");
+        existing.setRecordData(Utils.dataToRecord(d));
+        when(integrationRepo.findById(channelUuid)).thenReturn(Optional.of(existing));
+
+        service.setChannelStatus(channelUuid, /*enabled*/ true,
+                WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test"));
+
+        ArgumentCaptor<Integration> captor = ArgumentCaptor.forClass(Integration.class);
+        verify(integrationRepo).save(captor.capture());
+        IntegrationData persisted = parse(captor.getValue());
+        assertEquals(Boolean.TRUE, persisted.getIsEnabled());
+        assertNull(persisted.getDisabledReason());
+    }
+
+    @Test
     void deleteChannelEmitsAuditBeforeDeletion() throws Exception {
         UUID channelUuid = UUID.randomUUID();
         Integration existing = stubChannel(channelUuid, UUID.randomUUID(), "ENC:s", true);

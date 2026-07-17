@@ -3,6 +3,9 @@
 */
 package io.reliza.service;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+
 import org.apache.commons.lang3.StringUtils;
 
 /**
@@ -45,16 +48,30 @@ public final class TeamsWebhookUrlValidator {
 
     public static boolean isValid(String url) {
         if (StringUtils.isBlank(url)) return false;
-        if (!url.startsWith(EXPECTED_PREFIX)) return false;
-        // Parse defensively — strip any port + path before checking host suffix.
-        String afterScheme = url.substring(EXPECTED_PREFIX.length());
-        int firstSlash = afterScheme.indexOf('/');
-        String hostPort = firstSlash > 0 ? afterScheme.substring(0, firstSlash) : afterScheme;
-        int colon = hostPort.indexOf(':');
-        String host = colon > 0 ? hostPort.substring(0, colon) : hostPort;
-        String lc = host.toLowerCase();
+        // Tolerate a pasted trailing newline or surrounding spaces (see
+        // SlackWebhookUrlValidator): a stray control char makes new URI(...)
+        // throw and would false-reject an otherwise-valid Workflows URL.
+        url = url.strip();
+        if (!StringUtils.startsWithIgnoreCase(url, EXPECTED_PREFIX)) return false;
+        // Parse via URI so the authority is resolved per RFC-3986 -- a
+        // hand-rolled substring parse is fooled by a user:pass@ form (e.g.
+        // https://logic.azure.com:x@evil.com/) into reading the userinfo as
+        // the host. Reject userinfo outright (a real Workflows URL has none).
+        final URI uri;
+        try {
+            uri = new URI(url);
+        } catch (URISyntaxException e) {
+            return false;
+        }
+        if (uri.getUserInfo() != null) return false;
+        if (!"https".equalsIgnoreCase(uri.getScheme())) return false;
+        if (uri.getHost() == null) return false;
+        String host = uri.getHost().toLowerCase();
         for (String suffix : ACCEPTED_HOST_SUFFIXES) {
-            if (lc.endsWith(suffix)) return true;
+            // Dot boundary so an accepted suffix can't be spoofed by a
+            // lookalike host (e.g. evilpowerplatform.com ending in the bare
+            // suffix). Accept the suffix itself or any true subdomain of it.
+            if (host.equals(suffix) || host.endsWith("." + suffix)) return true;
         }
         return false;
     }

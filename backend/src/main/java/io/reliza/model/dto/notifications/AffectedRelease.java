@@ -28,10 +28,20 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
  * Populated lazily during fan-out enrichment; producers may leave it
  * unset and {@code @JsonIgnoreProperties(ignoreUnknown = true)} keeps
  * older payloads tolerant of the new field on read.
+ *
+ * <p>{@code componentUuid} is the affected release's component UUID. It
+ * backs the inbox visibility "component-team" arm: a delivery is visible
+ * to a user holding a {@code COMPONENT}-scoped permission on any
+ * {@code affectedReleases[*].componentUuid}. (The older {@code component}
+ * field is the component <em>name</em>, kept for display/CEL; it is not a
+ * stable key.) Like {@code perspectives}, may be absent on pre-existing
+ * rows — {@code @JsonIgnoreProperties} + a {@code null} canonical arg
+ * keeps reads tolerant.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record AffectedRelease(
         UUID uuid,
+        UUID componentUuid,
         String component,
         String version,
         String branch,
@@ -67,10 +77,24 @@ public record AffectedRelease(
      * Backwards-compat secondary constructor for Java callers (tests +
      * older producers) that don't supply {@code perspectives}. Delegates
      * to the canonical constructor; the compact constructor above
-     * handles the normalization.
+     * handles the normalization. {@code componentUuid} defaults to
+     * {@code null} (display-only callers don't need the visibility key).
      */
     public AffectedRelease(UUID uuid, String component, String version, String branch,
             ReleaseLifecycle lifecycle, List<String> deployedEnvs) {
-        this(uuid, component, version, branch, lifecycle, deployedEnvs, Set.of());
+        this(uuid, null, component, version, branch, lifecycle, deployedEnvs, Set.of());
+    }
+
+    /**
+     * Backwards-compat secondary constructor for callers that supply
+     * {@code perspectives} but not {@code componentUuid} — formatter /
+     * back-compat tests. Delegates with a {@code null} component UUID, so
+     * such payloads match the perspective arm but not the component-team
+     * arm. (The vuln fan-out producer uses the 8-arg canonical and DOES
+     * populate {@code componentUuid}.)
+     */
+    public AffectedRelease(UUID uuid, String component, String version, String branch,
+            ReleaseLifecycle lifecycle, List<String> deployedEnvs, Set<UUID> perspectives) {
+        this(uuid, null, component, version, branch, lifecycle, deployedEnvs, perspectives);
     }
 }

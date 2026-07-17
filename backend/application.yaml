@@ -22,6 +22,22 @@ spring:
         # metrics rollup and the notification dispatchers. Give them room to run
         # concurrently. Env-overridable for ops tuning.
         size: ${SCHEDULER_POOL_SIZE:3}
+        #
+        # NB: this key is consumed by the EXPLICIT taskScheduler bean in App.java,
+        # not by Boot auto-config -- the app's ScheduledExecutorService bean makes
+        # TaskSchedulingAutoConfiguration back off, which once left this key dead
+        # and all @Scheduled work on a silent single-thread fallback (prod
+        # incident: a 40-min boot backfill froze every scheduled subsystem).
+    execution:
+      pool:
+        # Default pool for unqualified @Async methods (vuln-analysis fan-out,
+        # download logging, KEV recompute fan-out). Consumed by the explicit
+        # defaultAsyncExecutor bean in App.java (Boot's applicationTaskExecutor backs
+        # off here for the same reason as above). Bounded + CallerRunsPolicy:
+        # overflow degrades to caller backpressure, never dropped work.
+        core-size: ${ASYNC_POOL_CORE:4}
+        max-size: ${ASYNC_POOL_MAX:8}
+        queue-capacity: ${ASYNC_POOL_QUEUE:1000}
   lifecycle:
     # Max time to wait for in-flight requests to finish during graceful
     # shutdown. Keep under the pod terminationGracePeriodSeconds (preStop
@@ -127,8 +143,26 @@ relizaprops:
     oldpassword: ${RELIZAPROP_PASS_OLD:pleasechange}
     oldsalt: ${RELIZAPROP_SALT_OLD:aaaaaaaa}
   rejectPendingReleasesRate: ${RELIZAPROP_REJECT_PENDING_RELEASES_RATE:PT15M} #ISO 8601
+  # Cadence of the change-driven "today" analytics refresh (findings-over-time
+  # chart write side). Worst-case chart staleness after a metrics change; the
+  # tick is near-free for orgs with no changes (one grouped signal query).
+  analyticsTodayRefreshRate: ${ANALYTICS_TODAY_REFRESH_RATE:PT15M} #ISO 8601
   installationSecret: ${RELIZAPROP_INSTALLATION_SECRET:r3liza}
   installationType: OSS
+  # The AGGREGATED changelog "Finding Changes" views run the posture-endpoint diff
+  # instead of the legacy pairwise release-diff. Per-org safety: an org serves the
+  # legacy path until its finding_change_events backfill watermark is certified at
+  # the current vocabulary version. Set CHANGELOG_POSTURE_DIFF_ENABLED=false to
+  # force the legacy path instance-wide (rollback lever; no data loss).
+  changelogPostureDiffEnabled: ${CHANGELOG_POSTURE_DIFF_ENABLED:true}
+  # Notification pipeline drains (shared scheduler): events fanned out and channel
+  # deliveries dispatched per 5s tick.
+  notificationOutboxBatch: ${NOTIFICATION_OUTBOX_BATCH:50}
+  notificationDeliveryBatch: ${NOTIFICATION_DELIVERY_BATCH:50}
+  # Resumable finding-change v3 backfill drain (shared scheduler): kill switch and
+  # max branches drained per 60s tick.
+  findingChangeV3BackfillDrainEnabled: ${FINDING_CHANGE_V3_BACKFILL_DRAIN_ENABLED:true}
+  findingChangeV3BackfillBatchPerTick: ${FINDING_CHANGE_V3_BACKFILL_BATCH_PER_TICK:5}
   enableBetaTea: ${RELIZAPROP_ENABLE_BETA_TEA:false}
 #spring.jpa.show-sql=true
 #spring.jpa.properties.hibernate.format_sql=true

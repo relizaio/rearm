@@ -29,7 +29,14 @@ public record ChannelDispatchResult(
         /** Transient failure; bump attempt_count and back off. */
         RETRIABLE_FAILURE,
         /** Permanent failure; mark FAILED. */
-        NON_RETRIABLE_FAILURE;
+        NON_RETRIABLE_FAILURE,
+        /**
+         * The CHANNEL itself is misconfigured (e.g. a webhook URL that isn't
+         * the expected host), not just this one delivery. Mark the delivery
+         * FAILED AND auto-disable the channel with the error as its reason, so
+         * every subsequent matching event doesn't produce another FAILED row.
+         */
+        CHANNEL_MISCONFIGURED;
     }
 
     public static ChannelDispatchResult success() {
@@ -46,5 +53,14 @@ public record ChannelDispatchResult(
 
     public static ChannelDispatchResult nonRetriable(String errorMessage) {
         return new ChannelDispatchResult(Outcome.NON_RETRIABLE_FAILURE, errorMessage, null);
+    }
+
+    /**
+     * The channel's configuration is broken (bad webhook URL, blank/undecryptable
+     * secret). The worker fails this delivery and auto-disables the channel with
+     * {@code errorMessage} as the reason so it stops flooding History.
+     */
+    public static ChannelDispatchResult channelMisconfigured(String errorMessage) {
+        return new ChannelDispatchResult(Outcome.CHANNEL_MISCONFIGURED, errorMessage, null);
     }
 }

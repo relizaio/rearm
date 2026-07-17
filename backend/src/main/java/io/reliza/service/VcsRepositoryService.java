@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.StatusEnum;
@@ -34,7 +35,7 @@ public class VcsRepositoryService {
 	
 	@Autowired
     private AuditService auditService;
-	
+
 	private final VcsRepositoryRepository repository;
 	
 	private final ComponentRepository componentRepository;
@@ -102,12 +103,52 @@ public class VcsRepositoryService {
 	}
 	
 	public Optional<VcsRepository> getVcsRepositoryByUri (UUID orgUuid, String uri, String displayName, VcsType type, boolean createIfMissing, WhoUpdated wu) {
+		// Canonicalize once so the lookup key matches what createVcsRepository
+		// stores: normalizeVcsUri strips scheme and user@, cleanVcsUri then strips
+		// git@ / trailing .git and the scp-style colon. Looking up with the raw
+		// form missed the stored (cleaned) row for e.g. '.git'-suffixed URIs, so
+		// createIfMissing re-inserted the same cleaned URI and collided with the
+		// org+uri unique index -- durably poisoning the org's row now that
+		// provisionVcsRepository commits via REQUIRES_NEW.
+		uri = Utils.cleanVcsUri(Utils.normalizeVcsUri(uri));
 		Optional<VcsRepository> ovr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
 		if (ovr.isEmpty() && createIfMissing) {
 			String vcsName = (displayName != null && !displayName.isEmpty()) ? displayName : Utils.deriveVcsNameFromUri(uri);
 			ovr = Optional.of(createVcsRepository(vcsName, orgUuid, uri, type, wu));
 		}
 		return ovr;
+	}
+
+	/**
+	 * Look up (or create) the org's VCS repository for {@code vcsUri} and return
+	 * its committed UUID.
+	 *
+	 * <p>Runs in its own {@code REQUIRES_NEW} transaction so the row is durably
+	 * committed before any downstream {@code REQUIRES_NEW} work reads it -- notably
+	 * {@link SourceCodeEntryService#createSourceCodeEntry}, which validates
+	 * {@code sceDto.vcs}. The auto-VCS {@code addrelease} path used to create the
+	 * row in the caller's still-open outer tx, where the inner tx could not see it
+	 * and NPE'd on the lookup (PR #217 dropped the lookup as a self-heal; this is
+	 * the structural fix that lets it return safely).
+	 *
+	 * <p>Linking the repo to its branch is deliberately left to the caller's outer
+	 * transaction. The branch row may already be write-locked or freshly inserted
+	 * by that same outer tx (unarchive-on-addrelease, branch auto-create by name),
+	 * so updating it from here -- on a separate connection -- would either
+	 * self-deadlock against the outer tx's lock or fail to see the not-yet-committed
+	 * row. Only the VCS repo, which is independent of the branch row, belongs in
+	 * this REQUIRES_NEW boundary.
+	 *
+	 * <p>Accepted trade-off: if the caller's outer transaction later rolls back,
+	 * this VCS row survives as a benign orphan -- the next {@code addrelease} reuses
+	 * it by URI via {@link #getVcsRepositoryByUri}. There is no FK to
+	 * garbage-collect against; the orphan is recoverable on retry.
+	 *
+	 * @return the committed VCS repository UUID
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public UUID provisionVcsRepository (UUID orgUuid, String vcsUri, VcsType vcsType, WhoUpdated wu) {
+		return getVcsRepositoryByUri(orgUuid, vcsUri, null, vcsType, true, wu).get().getUuid();
 	}
 	
 	public List<VcsRepository> listVcsReposByOrg(UUID orgUuid) {

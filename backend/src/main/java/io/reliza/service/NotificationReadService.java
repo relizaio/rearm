@@ -263,17 +263,21 @@ public class NotificationReadService {
 	 * Unread count restricted to deliveries the user is permitted to see
 	 * (org-admin → all org deliveries; perspective-member → deliveries
 	 * whose payload's affectedReleases[*].perspectives intersect the
-	 * user's perspective set; non-admin non-member → zero). Powers the
-	 * inbox-tab badge.
+	 * user's perspective set; component-team member → deliveries whose
+	 * affectedReleases[*].componentUuid is a component the user holds a
+	 * COMPONENT-scoped permission on; non-admin non-member → zero). Powers
+	 * the inbox-tab badge.
 	 *
 	 * <p>Delegated to the repository's {@code countInbox} variant so the
 	 * visibility predicate stays in one place.
 	 */
-	public long countUnread(UUID userUuid, UUID orgUuid, List<UUID> userPerspectives, boolean isOrgAdmin) {
+	public long countUnread(UUID userUuid, UUID orgUuid, List<UUID> userPerspectives,
+			List<UUID> userComponentUuids, boolean isOrgAdmin) {
 		if (userUuid == null || orgUuid == null) return 0L;
 		return deliveryRepo.countInbox(
 				orgUuid, userUuid, isOrgAdmin,
 				toPgUuidArrayLiteral(userPerspectives),
+				toPgUuidArrayLiteral(userComponentUuids),
 				/*unreadOnly*/ true, /*status*/ null, /*eventType*/ null);
 	}
 

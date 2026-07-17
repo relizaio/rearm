@@ -84,6 +84,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.entry.AggregationType;
+import io.reliza.model.changelog.entry.FindingChangeScope;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CveSearchResultDto;
@@ -101,8 +102,12 @@ import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.dto.ChangelogFindingKind;
 import io.reliza.dto.ChangelogRecords.ComponentChangelog;
 import io.reliza.dto.ChangelogRecords.OrganizationChangelog;
+import io.reliza.dto.ComponentAttributionPage;
+import io.reliza.dto.FindingAttributionBucket;
+import io.reliza.service.FindingComparisonService.FindingChangeTimelinePage;
 import io.reliza.service.ChangeLogService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.DownloadLogService;
@@ -268,6 +273,10 @@ public class ReleaseDatafetcher {
 	 * fail we surface the agent-path denial (it carries the richer
 	 * sessionUuid/clientSessionId context) rather than the generic
 	 * "not authorized for this resource" from the RESOURCE path.
+	 * Individual path denials log at INFO inside AuthorizationService;
+	 * the SECURITY-level log fires here, only once BOTH paths have
+	 * denied — an agent-path miss that the RESOURCE path authorizes is
+	 * a legitimate read, not an alertable event.
 	 */
 	@DgsData(parentType = "Query", field = "agenticReleaseProgrammatic")
 	public ReleaseData agenticReleaseProgrammatic(
@@ -292,6 +301,9 @@ public class ReleaseDatafetcher {
 						ahp, PermissionFunction.RESOURCE, PermissionScope.RELEASE,
 						releaseUuid, List.of(rd), CallType.READ);
 			} catch (AccessDeniedException resourceDenied) {
+				log.error("SECURITY: agentic release read denied on both paths — release {} (sessionUuid={}, clientSessionId={}, org={}; agent path: {}; resource path: {})",
+						releaseUuid, sessionUuid, clientSessionId, ahp.getOrgUuid(),
+						agentDenied.getMessage(), resourceDenied.getMessage());
 				throw agentDenied;
 			}
 		}
@@ -651,7 +663,78 @@ public class ReleaseDatafetcher {
 
 		return oc;
 	}
-	
+
+	/**
+	 * Paginated drill-down for ONE finding's attribution bucket (the "+N more" expansion behind the
+	 * preview-capped inline lists on the changelog *WithAttribution types). Authorizes at org / perspective
+	 * scope exactly like organizationChangelogByDate; component/branch narrowing is a display filter within
+	 * that boundary.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "findingAttributionByDate")
+	public ComponentAttributionPage findingAttributionByDate(DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo,
+			@InputArgument("findingKind") ChangelogFindingKind findingKind,
+			@InputArgument("findingKey") String findingKey,
+			@InputArgument("bucket") FindingAttributionBucket bucket,
+			@InputArgument("page") Integer page,
+			@InputArgument("pageSize") Integer pageSize
+		) throws RelizaException {
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+		}
+		return changelogService.getFindingAttributionPage(orgUuid, componentUuid, branchUuid, perspectiveUuid,
+			dateFrom, dateTo, findingKind, findingKey, bucket, page == null ? 0 : page, pageSize == null ? 0 : pageSize);
+	}
+
+	/**
+	 * Paginated over-time timeline behind the capped inline overTimeFindingChanges (drawer source).
+	 * Optional findingKey narrows to one finding. Authorizes at org / perspective scope like the changelog.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "findingChangeTimelineByDate")
+	public FindingChangeTimelinePage findingChangeTimelineByDate(
+			DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo,
+			@InputArgument("findingKey") String findingKey,
+			@InputArgument("page") Integer page,
+			@InputArgument("pageSize") Integer pageSize,
+			@InputArgument("scope") FindingChangeScope scope
+		) throws RelizaException {
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+		}
+		return changelogService.getFindingChangeTimelinePage(orgUuid, componentUuid, branchUuid, perspectiveUuid,
+			dateFrom, dateTo, findingKey, page == null ? 0 : page, pageSize == null ? 0 : pageSize,
+			scope == null ? FindingChangeScope.RELEASE_ANCHORED : scope);
+	}
+
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addReleaseManual")
@@ -1480,7 +1563,15 @@ public class ReleaseDatafetcher {
 		if (ord.isEmpty()) {
 			throw new RelizaException("Release not found. Provide either 'release' UUID or 'component' + 'version'.");
 		}
-		
+
+		// When the caller resolved the release by UUID alone, no version was
+		// supplied in the input map. Fall back to the resolved release's
+		// version so it flows through to RebomOptions -- rebom rejects a null
+		// version during PURL generation otherwise.
+		if (StringUtils.isEmpty(version)) {
+			version = ord.get().getVersion();
+		}
+
 		// Authorization
 		if (null == componentId) componentId = ord.get().getComponent();
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
@@ -2220,7 +2311,7 @@ public class ReleaseDatafetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchReleasesByCveId")
-	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByCveId(
+	public CveSearchResultDto.CveSearchResult searchReleasesByCveId(
 			@InputArgument("org") UUID orgUuid,
 			@InputArgument("cveId") String cveId,
 			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {

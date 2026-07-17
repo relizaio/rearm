@@ -4,6 +4,8 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -21,7 +23,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.SourceCodeEntry;
+import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.SceDto;
 import io.reliza.repositories.SourceCodeEntryRepository;
@@ -29,15 +33,14 @@ import io.reliza.repositories.SourceCodeEntryRepository;
 /**
  * Mockito unit tests for {@link SourceCodeEntryService#createSourceCodeEntry}.
  *
- * <p>The method runs under {@code Propagation.REQUIRES_NEW} so the inner tx
- * cannot see uncommitted writes from the caller's outer tx. Concretely: on the
- * auto-VCS path through {@link SourceCodeEntryService#populateSourceCodeEntryByVcsAndCommit}
- * the VCS row referenced by {@code sceDto.vcs} is inserted in the outer tx and
- * is not yet visible here. The contract this test pins is therefore that
- * {@code createSourceCodeEntry} must not perform a read on
- * {@link VcsRepositoryService#getVcsRepositoryData(UUID)} — re-introducing such
- * a read would resurrect the {@code NoSuchElementException} the auto-VCS callers
- * surfaced as opaque {@code SERVICE_ERROR} until that lookup was dropped.
+ * <p>The method runs under {@code Propagation.REQUIRES_NEW}. Phase 2 (the
+ * structural follow-up to PR #217) moved VCS provisioning into
+ * {@link VcsRepositoryService#provisionVcsRepository}, a {@code REQUIRES_NEW}
+ * transaction that commits the VCS row before this method runs. That makes it
+ * safe for {@code createSourceCodeEntry} to validate {@code sceDto.vcs} again --
+ * the read the self-heal had to drop. These tests pin the inverse of the old
+ * contract: the VCS row IS read, a missing row throws a clean
+ * {@link RelizaException}, and a cross-org VCS is rejected before any persist.
  */
 class SourceCodeEntryServiceTest {
 
@@ -51,6 +54,8 @@ class SourceCodeEntryServiceTest {
 	private SharedReleaseService sharedReleaseService;
 	private VcsRepositoryService vcsRepositoryService;
 	private SourceCodeEntryService service;
+
+	private static final String COMMIT = "a4ec2448bf9fd5b6981914781b015b426a134c98";
 
 	@BeforeEach
 	void wireMocks () throws Exception {
@@ -78,19 +83,29 @@ class SourceCodeEntryServiceTest {
 		f.set(service, value);
 	}
 
-	@Test
-	void createSourceCodeEntryDoesNotReadTheVcsRow () {
-		// Caller-supplied VCS UUID — on the auto-VCS path this row is committed
-		// only by the outer tx, so any read attempt from this REQUIRES_NEW tx
-		// would NoSuchElementException.
-		UUID vcsUuid = UUID.randomUUID();
-		SceDto sceDto = SceDto.builder()
+	private SceDto sceDto (UUID vcsUuid, UUID orgUuid) {
+		return SceDto.builder()
 				.uuid(UUID.randomUUID())
 				.branch(UUID.randomUUID())
 				.vcs(vcsUuid)
-				.commit("a4ec2448bf9fd5b6981914781b015b426a134c98")
-				.organizationUuid(UUID.randomUUID())
+				.commit(COMMIT)
+				.organizationUuid(orgUuid)
 				.build();
+	}
+
+	@Test
+	void createSourceCodeEntryReadsAndValidatesTheVcsRow () throws Exception {
+		// Phase 2: the VCS row referenced by sceDto.vcs is committed (by
+		// provisionVcsRepository on the auto-VCS path, or pre-existing on the
+		// direct mutation path) before this REQUIRES_NEW tx, so the validation
+		// read here returns rather than NoSuchElement-ing.
+		UUID vcsUuid = UUID.randomUUID();
+		UUID orgUuid = UUID.randomUUID();
+		SceDto sceDto = sceDto(vcsUuid, orgUuid);
+
+		VcsRepositoryData vrd = mock(VcsRepositoryData.class);
+		when(vrd.getOrg()).thenReturn(orgUuid);
+		when(vcsRepositoryService.getVcsRepositoryData(vcsUuid)).thenReturn(Optional.of(vrd));
 
 		// Skip the org-from-branch lookup (orthogonal to this contract).
 		when(branchService.getBranchData(any())).thenReturn(Optional.empty());
@@ -102,9 +117,8 @@ class SourceCodeEntryServiceTest {
 
 		SourceCodeEntry saved = service.createSourceCodeEntry(sceDto, WhoUpdated.getAutoWhoUpdated());
 
-		// Primary contract: the VCS row is never read inside createSourceCodeEntry.
-		verify(vcsRepositoryService, never()).getVcsRepositoryData(any());
-		verify(vcsRepositoryService, never()).getVcsRepository(any());
+		// Primary contract: the VCS row is read for validation.
+		verify(vcsRepositoryService).getVcsRepositoryData(vcsUuid);
 
 		// Secondary: the dto's vcs UUID flows through to the persisted record.
 		ArgumentCaptor<SourceCodeEntry> captor = ArgumentCaptor.forClass(SourceCodeEntry.class);
@@ -113,5 +127,38 @@ class SourceCodeEntryServiceTest {
 		Map<String, Object> recordData = (Map<String, Object>) captor.getValue().getRecordData();
 		assertEquals(vcsUuid.toString(), String.valueOf(recordData.get("vcs")));
 		assertEquals(saved, captor.getValue());
+	}
+
+	@Test
+	void createSourceCodeEntryThrowsWhenVcsRowMissing () {
+		UUID vcsUuid = UUID.randomUUID();
+		SceDto sceDto = sceDto(vcsUuid, UUID.randomUUID());
+		when(vcsRepositoryService.getVcsRepositoryData(vcsUuid)).thenReturn(Optional.empty());
+
+		RelizaException ex = assertThrows(RelizaException.class,
+				() -> service.createSourceCodeEntry(sceDto, WhoUpdated.getAutoWhoUpdated()));
+		assertTrue(ex.getMessage().contains(vcsUuid.toString()),
+				"error should name the missing VCS uuid");
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void createSourceCodeEntryRejectsCrossOrgVcs () {
+		UUID vcsUuid = UUID.randomUUID();
+		UUID sceOrg = UUID.randomUUID();
+		UUID vcsOrg = UUID.randomUUID();
+		SceDto sceDto = sceDto(vcsUuid, sceOrg);
+
+		VcsRepositoryData vrd = mock(VcsRepositoryData.class);
+		when(vrd.getOrg()).thenReturn(vcsOrg);
+		when(vcsRepositoryService.getVcsRepositoryData(vcsUuid)).thenReturn(Optional.of(vrd));
+		// Skip the org-from-branch lookup so the dto's org (sceOrg) is the one compared.
+		when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+
+		RelizaException ex = assertThrows(RelizaException.class,
+				() -> service.createSourceCodeEntry(sceDto, WhoUpdated.getAutoWhoUpdated()));
+		assertTrue(ex.getMessage().toLowerCase().contains("different organization"),
+				"error should flag the cross-org mismatch");
+		verify(repository, never()).save(any());
 	}
 }

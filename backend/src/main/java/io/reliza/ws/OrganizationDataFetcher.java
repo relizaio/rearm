@@ -5,6 +5,7 @@ package io.reliza.ws;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -51,6 +52,7 @@ import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.CdxImportService;
 import io.reliza.service.CdxImportService.ImportComponentResult;
+import io.reliza.service.FindingChangeEventBackfillService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ResourceGroupService;
@@ -73,6 +75,9 @@ public class OrganizationDataFetcher {
 	
 	@Autowired
 	private OrganizationService organizationService;
+
+	@Autowired
+	private FindingChangeEventBackfillService findingChangeEventBackfillService;
 	
 	@Autowired
 	private UserService userService;
@@ -322,6 +327,38 @@ public class OrganizationDataFetcher {
 		return organizationService.updateSettings(orgUuid, settingsPatch, wu);
 	}
 
+	/**
+	 * Admin-gated, org-scoped one-time backfill of the branch-grain {@code finding_change_events_v3}
+	 * (events-lite) store from the existing {@code metrics_audit} history (board task #38 + the v3
+	 * follow-on; v1/v2 were dropped in V64, so v3 is the sole store). The org-ADMIN authorization below
+	 * also carries tenant scoping: the backfill only ever touches the audited releases of {@code org}, so
+	 * a caller can never seed another tenant's data. Idempotent + restartable -- re-running is a near
+	 * no-op. Returns the number of releases processed for the org.
+	 *
+	 * <p>The v3 backfill is branch-chained + full-history, so the legacy {@code sinceRevisionDate} /
+	 * {@code reseed} arguments (which drove the per-release v1/v2 coverage skip) no longer apply and are
+	 * ignored; the mutation shape is kept for backward compatibility.
+	 *
+	 * <p>Intentionally NOT {@code @Transactional}: the backfill isolates each release in its own
+	 * {@code TransactionTemplate} transaction so one release's failure cannot roll back the batch. An
+	 * ambient resolver transaction would be joined by those templates (PROPAGATION_REQUIRED) and defeat
+	 * that isolation. The auth check above is read-only and needs no surrounding transaction.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "backfillFindingChangeEvents")
+	public Integer backfillFindingChangeEvents(
+			@InputArgument("org") UUID org,
+			@InputArgument("sinceRevisionDate") ZonedDateTime sinceRevisionDate,
+			@InputArgument("reseed") Boolean reseed) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var odBackfill = getOrganizationService.getOrganizationData(org);
+		RelizaObject roBackfill = odBackfill.isPresent() ? odBackfill.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, org, List.of(roBackfill), CallType.ADMIN);
+		return findingChangeEventBackfillService.backfillOrgV3(org).releasesProcessed();
+	}
+
 	@DgsData(parentType = "Organization", field = "type")
 	public String organizationType(DgsDataFetchingEnvironment dfe) {
 		OrganizationData od = dfe.getSource();
@@ -384,8 +421,8 @@ public class OrganizationDataFetcher {
 
 	/**
 	 * Edit just the {@code notes} field on an API key. Admin auth on
-	 * the key's owning org — same gate as setPermissionsOnFreeformApiKey
-	 * — so a notes-only edit doesn't require the caller to round-trip
+	 * the key's owning org -- same gate as setPermissionsOnFreeformApiKey
+	 * -- so a notes-only edit doesn't require the caller to round-trip
 	 * the full permissions list. Works for any key type, not only
 	 * FREEFORM (notes is a generic field on api_keys recordData).
 	 */

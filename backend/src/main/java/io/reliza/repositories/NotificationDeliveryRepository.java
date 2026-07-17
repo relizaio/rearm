@@ -124,6 +124,7 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 			+ "WHERE org = :org "
 			+ "  AND (CAST(:eventUuid AS uuid) IS NULL OR outbox_event_uuid = CAST(:eventUuid AS uuid)) "
 			+ "  AND (CAST(:channelUuid AS uuid) IS NULL OR channel_uuid = CAST(:channelUuid AS uuid)) "
+			+ "  AND (CAST(:subscriptionUuid AS uuid) IS NULL OR subscription_uuid = CAST(:subscriptionUuid AS uuid)) "
 			+ "  AND (:status IS NULL OR status = :status) "
 			+ "  AND (:origin IS NULL OR origin = :origin) "
 			+ "ORDER BY created_date DESC "
@@ -133,6 +134,7 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 		@Param("org") UUID org,
 		@Param("eventUuid") UUID eventUuid,
 		@Param("channelUuid") UUID channelUuid,
+		@Param("subscriptionUuid") UUID subscriptionUuid,
 		@Param("status") String status,
 		@Param("origin") String origin,
 		@Param("limit") int limit,
@@ -143,6 +145,7 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 			+ "WHERE org = :org "
 			+ "  AND (CAST(:eventUuid AS uuid) IS NULL OR outbox_event_uuid = CAST(:eventUuid AS uuid)) "
 			+ "  AND (CAST(:channelUuid AS uuid) IS NULL OR channel_uuid = CAST(:channelUuid AS uuid)) "
+			+ "  AND (CAST(:subscriptionUuid AS uuid) IS NULL OR subscription_uuid = CAST(:subscriptionUuid AS uuid)) "
 			+ "  AND (:status IS NULL OR status = :status) "
 			+ "  AND (:origin IS NULL OR origin = :origin)",
 		nativeQuery = true)
@@ -150,6 +153,7 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 		@Param("org") UUID org,
 		@Param("eventUuid") UUID eventUuid,
 		@Param("channelUuid") UUID channelUuid,
+		@Param("subscriptionUuid") UUID subscriptionUuid,
 		@Param("status") String status,
 		@Param("origin") String origin);
 
@@ -205,6 +209,11 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 			+ "                        FROM jsonb_array_elements(e.record_data->'affectedReleases') AS rel, "
 			+ "                             jsonb_array_elements_text(rel->'perspectives') AS pp "
 			+ "                        WHERE pp::uuid = ANY(CAST(:userPerspectives AS uuid[])) "
+			+ "                   ) "
+			+ "                   OR EXISTS ( "
+			+ "                        SELECT 1 "
+			+ "                        FROM jsonb_array_elements(e.record_data->'affectedReleases') AS car "
+			+ "                        WHERE (car->>'componentUuid')::uuid = ANY(CAST(:userComponentUuids AS uuid[])) "
 			+ "                   )))) "
 			+ "  AND ( :unreadOnly = FALSE OR r.uuid IS NULL ) "
 			+ "  AND (:status IS NULL OR d.status = :status) "
@@ -217,6 +226,7 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 		@Param("userUuid") UUID userUuid,
 		@Param("isOrgAdmin") boolean isOrgAdmin,
 		@Param("userPerspectives") String userPerspectives,
+		@Param("userComponentUuids") String userComponentUuids,
 		@Param("unreadOnly") boolean unreadOnly,
 		@Param("status") String status,
 		@Param("eventType") String eventType,
@@ -237,6 +247,11 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 			+ "                        FROM jsonb_array_elements(e.record_data->'affectedReleases') AS rel, "
 			+ "                             jsonb_array_elements_text(rel->'perspectives') AS pp "
 			+ "                        WHERE pp::uuid = ANY(CAST(:userPerspectives AS uuid[])) "
+			+ "                   ) "
+			+ "                   OR EXISTS ( "
+			+ "                        SELECT 1 "
+			+ "                        FROM jsonb_array_elements(e.record_data->'affectedReleases') AS car "
+			+ "                        WHERE (car->>'componentUuid')::uuid = ANY(CAST(:userComponentUuids AS uuid[])) "
 			+ "                   )))) "
 			+ "  AND ( :unreadOnly = FALSE OR r.uuid IS NULL ) "
 			+ "  AND (:status IS NULL OR d.status = :status) "
@@ -247,6 +262,7 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 		@Param("userUuid") UUID userUuid,
 		@Param("isOrgAdmin") boolean isOrgAdmin,
 		@Param("userPerspectives") String userPerspectives,
+		@Param("userComponentUuids") String userComponentUuids,
 		@Param("unreadOnly") boolean unreadOnly,
 		@Param("status") String status,
 		@Param("eventType") String eventType);
@@ -270,6 +286,11 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 			+ "                        FROM jsonb_array_elements(e.record_data->'affectedReleases') AS rel, "
 			+ "                             jsonb_array_elements_text(rel->'perspectives') AS pp "
 			+ "                        WHERE pp::uuid = ANY(CAST(:userPerspectives AS uuid[])) "
+			+ "                   ) "
+			+ "                   OR EXISTS ( "
+			+ "                        SELECT 1 "
+			+ "                        FROM jsonb_array_elements(e.record_data->'affectedReleases') AS car "
+			+ "                        WHERE (car->>'componentUuid')::uuid = ANY(CAST(:userComponentUuids AS uuid[])) "
 			+ "                   ))))",
 		nativeQuery = true)
 	long countDeliveryVisibleToUser(
@@ -277,7 +298,8 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 		@Param("deliveryUuid") UUID deliveryUuid,
 		@Param("userUuid") UUID userUuid,
 		@Param("isOrgAdmin") boolean isOrgAdmin,
-		@Param("userPerspectives") String userPerspectives);
+		@Param("userPerspectives") String userPerspectives,
+		@Param("userComponentUuids") String userComponentUuids);
 
 	/**
 	 * Boolean wrapper around {@link #countDeliveryVisibleToUser} matching
@@ -286,8 +308,9 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 	 * rather than "is the count zero?".
 	 */
 	default boolean existsDeliveryVisibleToUser(UUID org, UUID deliveryUuid,
-			UUID userUuid, boolean isOrgAdmin, String userPerspectives) {
-		return countDeliveryVisibleToUser(org, deliveryUuid, userUuid, isOrgAdmin, userPerspectives) > 0;
+			UUID userUuid, boolean isOrgAdmin, String userPerspectives, String userComponentUuids) {
+		return countDeliveryVisibleToUser(org, deliveryUuid, userUuid, isOrgAdmin,
+				userPerspectives, userComponentUuids) > 0;
 	}
 
 	// ---------------------------------------------------------------------

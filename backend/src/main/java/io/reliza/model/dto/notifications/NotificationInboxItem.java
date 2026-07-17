@@ -30,6 +30,12 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  *       what a user would see at the top of their Slack / email
  *       notification but stays channel-agnostic. Either can be null
  *       when the event payload is malformed.</li>
+ *   <li>{@code channelName} - the server-resolved display name of the
+ *       notification channel (an Integration row) addressed by
+ *       {@code channelUuid}. Carried on the item so the non-admin bell
+ *       never has to call the admin-only channel-list query to label a
+ *       row. Null when the channel has been deleted (the uuid no longer
+ *       resolves to an Integration).</li>
  *   <li>{@code payloadJson} — the originating outbox event's
  *       {@code recordData} serialized as JSON. Lets the UI deep-link
  *       into the affected release / vulnerability without an extra
@@ -50,6 +56,9 @@ public record NotificationInboxItem(
         UUID outboxEventUuid,
         UUID subscriptionUuid,
         UUID channelUuid,
+        String channelName,
+        Boolean channelEnabled,
+        String channelDisabledReason,
         String status,
         String origin,
         String dedupKey,
