@@ -454,4 +454,215 @@ public class SchedulingService {
         }
     }
 
+    // =====================================================================
+    // Notification pipeline + finding-change v3 drains. These drive shared
+    // services (NotificationFanOutService, NotificationDeliveryWorker,
+    // NotificationRetentionService, FindingChangeEventBackfillService), so
+    // their ticks live here in the shared scheduler — both editions run
+    // them. Edition-specific jobs (email digest, webhook prune, license,
+    // perspective analytics) stay in the SAAS-side scheduler.
+    // =====================================================================
+
+    @Autowired
+    NotificationFanOutService notificationFanOutService;
+
+    @Autowired
+    NotificationDeliveryWorker notificationDeliveryWorker;
+
+    @Autowired
+    NotificationRetentionService notificationRetentionService;
+
+    @Autowired
+    FindingChangeEventBackfillService findingChangeEventBackfillService;
+
+    /**
+     * Number of outbox events drained per tick. Tuned: enough to make
+     * progress on realistic per-org volumes without holding the advisory
+     * lock unnecessarily long. Configurable via
+     * {@code relizaprops.notificationOutboxBatch} for operator tuning
+     * without a redeploy.
+     */
+    @Value("${relizaprops.notificationOutboxBatch:50}")
+    private int notificationOutboxBatch;
+
+    /**
+     * Number of channel deliveries dispatched per tick. Sized similarly to
+     * the outbox batch -- same "make progress on realistic volumes; don't
+     * hold the lock unnecessarily long" trade-off.
+     */
+    @Value("${relizaprops.notificationDeliveryBatch:50}")
+    private int notificationDeliveryBatch;
+
+    /**
+     * Outbox fan-out drain. Every 5 seconds, claim the
+     * {@code DRAIN_NOTIFICATION_OUTBOX} advisory lock; if successful, hand
+     * a batch of PENDING events to {@link NotificationFanOutService} which
+     * writes per-channel delivery rows and flips event status to
+     * FANNED_OUT in the same transaction.
+     *
+     * <p>{@code fixedDelay} (not {@code fixedRate}) so a slow batch doesn't
+     * pile up ticks -- next tick begins 5 s after the previous one returns.
+     * The advisory lock cross-replica-serialises the work; a single
+     * batch that takes longer than the tick interval is bounded by the
+     * lock anyway.
+     */
+    @Scheduled(fixedDelayString = "PT5S")
+    public void drainNotificationOutbox() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.DRAIN_NOTIFICATION_OUTBOX);
+            log.debug("notification outbox lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    int processed = notificationFanOutService.drainBatch(notificationOutboxBatch);
+                    if (processed > 0) {
+                        log.debug("Notification outbox fan-out processed {} events", processed);
+                    }
+                } catch (Exception e) {
+                    log.error("Exception during notification outbox fan-out", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.DRAIN_NOTIFICATION_OUTBOX);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Notification outbox drain run failed with an error", e);
+        }
+    }
+
+    /**
+     * Channel delivery drain. Every 5 seconds, claim the
+     * {@code DRAIN_NOTIFICATION_DELIVERIES} advisory lock; if successful,
+     * hand a batch of PENDING deliveries (whose {@code next_attempt_at}
+     * has elapsed) to {@link NotificationDeliveryWorker}, which dispatches
+     * each through the channel-specific dispatcher.
+     *
+     * <p>Two ticks run in parallel -- this one and the outbox drain -- on
+     * separate advisory locks. They feed each other: outbox drain writes
+     * PENDING delivery rows; this drain reads them.
+     */
+    @Scheduled(fixedDelayString = "PT5S")
+    public void drainNotificationDeliveries() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.DRAIN_NOTIFICATION_DELIVERIES);
+            log.debug("notification deliveries lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    int processed = notificationDeliveryWorker.drainBatch(notificationDeliveryBatch);
+                    if (processed > 0) {
+                        log.debug("Notification delivery worker processed {} rows", processed);
+                    }
+                } catch (Exception e) {
+                    log.error("Exception during notification delivery dispatch", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.DRAIN_NOTIFICATION_DELIVERIES);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Notification delivery drain run failed with an error", e);
+        }
+    }
+
+    /**
+     * Daily 04:45 UTC retention sweep over the notifications tables
+     * (Phase 6c, S-2): events, deliveries and read marks older than each
+     * org's {@code notificationRetentionDays} window. Slotted after the
+     * 04:30 api_key_access purge to keep the nightly maintenance crons
+     * staggered.
+     */
+    @Scheduled(cron = "0 45 4 * * *")
+    public void purgeNotificationRows() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.PURGE_NOTIFICATION_ROWS);
+            log.debug("notification retention lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    int deleted = notificationRetentionService.purgeExpired();
+                    if (deleted > 0) {
+                        log.info("Notification retention sweep deleted {} rows", deleted);
+                    }
+                } finally {
+                    releaseLock(AdvisoryLockKey.PURGE_NOTIFICATION_ROWS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Notification retention sweep failed", e);
+        }
+    }
+
+    /**
+     * Kill switch for the resumable v3 (events-lite) backfill drain. Defaults on; an operator can disable it
+     * via {@code relizaprops.findingChangeV3BackfillDrainEnabled=false} (e.g. to pause the drain during a
+     * controlling-instance rollout without stopping the daily repair sweep).
+     */
+    @Value("${relizaprops.findingChangeV3BackfillDrainEnabled:true}")
+    private boolean findingChangeV3BackfillDrainEnabled;
+
+    /**
+     * Max branches the v3 backfill drain processes per tick -- the per-tick CPU bound. Conservative default
+     * (25); raise once the marker-table drain rate is observed to be safe on the target instance.
+     */
+    @Value("${relizaprops.findingChangeV3BackfillBatchPerTick:25}")
+    private int findingChangeV3BackfillBatchPerTick;
+
+    /**
+     * RESUMABLE, bounded per-tick BRANCH-GRAIN v3 (events-lite) backfill DRAIN (board task #38 follow-on) --
+     * supersedes the former one-shot boot backfill, which re-walked every uncertified org from ZERO on each
+     * boot and (org-grain all-or-nothing certification) never certified a very large instance. Each minute,
+     * claim the {@code BACKFILL_FINDING_CHANGE_V3} advisory lock (REUSED so this and the daily repair sweep
+     * stay mutually exclusive cluster-wide); if acquired, drain up to
+     * {@code findingChangeV3BackfillBatchPerTick} un-marked branches, marking each cleanly-completed branch
+     * durably so the next tick resumes instead of restarting. Certified orgs / a wholly-drained fleet are a
+     * cheap no-op (per-org {@code needsV3Backfill} short-circuit). {@code fixedDelay} (not {@code fixedRate})
+     * so a slow tick does not pile up.
+     */
+    @Scheduled(fixedDelayString = "PT60S")
+    public void drainFindingChangeV3() {
+        if (!findingChangeV3BackfillDrainEnabled) {
+            return;
+        }
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+            log.debug("finding_change_events v3 drain lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    findingChangeEventBackfillService.drainV3Backfill(findingChangeV3BackfillBatchPerTick);
+                } catch (Exception e) {
+                    log.error("Exception during finding_change_events v3 drain", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+                }
+            }
+        } catch (Exception e) {
+            log.error("finding_change_events v3 drain run failed with an error", e);
+        }
+    }
+
+    /** Repair-sweep lookback: covers >1 full day between daily runs with overlap, so every transition is
+     * re-checked by at least two consecutive sweeps. */
+    private static final int FINDING_CHANGE_REPAIR_LOOKBACK_DAYS = 2;
+
+    /**
+     * DAILY v3 (events-lite) repair sweep -- v3 is the sole finding-change store and its best-effort live
+     * emit needs a self-heal (a dropped v3 row is otherwise a permanent hole reverse-replay reconstructs
+     * across). Bounded reseed of releases re-scanned in the last {@value #FINDING_CHANGE_REPAIR_LOOKBACK_DAYS}
+     * days, re-diffed from {@code metrics_audit}; any hole self-heals within a day and is logged at ERROR
+     * when found. Also vacuously v3-certifies never-re-scanned orgs. Shares the {@code BACKFILL_FINDING_CHANGE_V3}
+     * advisory lock with the v3 backfill drain so the two never run concurrently. 03:35.
+     */
+    @Scheduled(cron = "0 35 3 * * *")
+    public void repairFindingChangeV3() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+            log.debug("finding_change_events v3 repair sweep lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    findingChangeEventBackfillService.repairSweepV3(FINDING_CHANGE_REPAIR_LOOKBACK_DAYS);
+                } finally {
+                    releaseLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+                }
+            }
+        } catch (Exception e) {
+            log.error("finding_change_events v3 repair sweep failed", e);
+        }
+    }
+
 }
