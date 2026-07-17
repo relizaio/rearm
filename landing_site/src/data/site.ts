@@ -8,7 +8,7 @@ export const links = {
   docs: 'https://docs.rearmhq.com',
   discord: 'https://discord.gg/UTxjBf9juQ',
   github: 'https://github.com/relizaio/rearm',
-  datasheet: 'https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_Datasheet_v6_2026-04-16.pdf',
+  datasheet: 'https://cdn.rearmhq.com/ReARM_Product_Info_Datasheet_v6_2026-04-16.pdf',
   comparisons: '/comparisons/',
 };
 
@@ -109,7 +109,7 @@ export const clientsPartners = [
 ];
 
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
-export const demoVideo = 'https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4';
+export const demoVideo = 'https://cdn.rearmhq.com/ReARM_Demo_Video.mp4';
 
 export const regulations = ['EU CRA', 'NIS2', 'DORA', 'US EO 14028 / 14144', 'FDA 524B', 'RBI / SEBI'];
 
