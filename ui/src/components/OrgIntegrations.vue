@@ -139,7 +139,12 @@
                                     <div class="instance-row">
                                         <div class="instance-status"><span class="ddot ok" /></div>
                                         <div class="instance-body">
-                                            <div class="instance-name">{{ singleInstanceLabel(card) }}</div>
+                                            <div class="instance-name">
+                                                {{ singleInstanceLabel(card) }}
+                                                <n-tag v-if="card.id === 'DEPENDENCYTRACK' && dtrackVersion" size="small" :bordered="false" :type="dtrackVersion === 'V5' ? 'info' : 'default'" style="margin-left: 6px;">
+                                                    {{ dtrackVersion === 'V5' ? 'v5' : 'v4' }}
+                                                </n-tag>
+                                            </div>
                                             <div v-if="card.id === 'BEAR' && bearIntegration?.uri" class="instance-meta">
                                                 <span class="instance-scope">{{ bearIntegration.uri }}</span>
                                             </div>
@@ -840,7 +845,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
     NIcon, NButton, NCard, NModal, NForm, NFormItem, NInput, NCheckbox, NCheckboxGroup,
     NRadioGroup, NRadioButton, NRadio, NSelect, NAlert, NSpace, NText, NDynamicInput,
-    NUpload, NUploadTrigger, NTooltip
+    NUpload, NUploadTrigger, NTooltip, NTag
 } from 'naive-ui'
 import {
     Edit as EditIcon, Trash, Refresh, CirclePlus, CloudUpload,
@@ -2344,8 +2349,35 @@ async function loadConfiguredIntegrations(useCache: boolean) {
         if (resp.data?.configuredBaseIntegrations) {
             configuredIntegrations.value = resp.data.configuredBaseIntegrations
         }
+        if (configuredIntegrations.value.includes('DEPENDENCYTRACK')) {
+            await loadDtrackVersion(cachePolicy)
+        } else {
+            dtrackVersion.value = null
+        }
     } catch (err) {
         console.error(err)
+    }
+}
+
+// Detected Dependency-Track generation ("V4"/"V5") for the version badge on
+// the Dependency-Track card. Auto-detected server-side from the instance's
+// /api/version at integration-create time.
+const dtrackVersion: Ref<string | null> = ref(null)
+
+async function loadDtrackVersion(cachePolicy: FetchPolicy) {
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query dependencyTrackVersion($org: ID!) {
+                    dependencyTrackVersion(org: $org)
+                }`,
+            variables: { org: orguuid.value },
+            fetchPolicy: cachePolicy
+        })
+        dtrackVersion.value = resp.data?.dependencyTrackVersion ?? null
+    } catch (err) {
+        // Older backends without the query: leave the badge off rather than error.
+        dtrackVersion.value = null
     }
 }
 
