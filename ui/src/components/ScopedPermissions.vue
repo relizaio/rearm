@@ -41,46 +41,7 @@
             </n-h5>
             <n-checkbox-group v-model:value="orgPermission.functions" @update:value="onOrgFunctionsUpdate">
                 <n-checkbox v-for="f in orgPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
-                    <span v-if="f === 'FINDING_ANALYSIS_WRITE'" style="display: inline-flex; align-items: center;">
-                        {{ translateFunctionName(f) }}
-                        <n-tooltip trigger="hover">
-                            <template #trigger>
-                                <n-icon size="16" style="margin-left: 4px;">
-                                    <QuestionCircle20Regular />
-                                </n-icon>
-                            </template>
-                            Requires "Finding Analysis Read" function to be able to view existing finding records.
-                        </n-tooltip>
-                    </span>
-                    <span v-else-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
-                        {{ translateFunctionName(f) }}
-                        <n-tooltip trigger="hover">
-                            <template #trigger>
-                                <n-icon size="16" style="margin-left: 4px;">
-                                    <QuestionCircle20Regular />
-                                </n-icon>
-                            </template>
-                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
-                        </n-tooltip>
-                    </span>
-                    <span v-else-if="f === 'AGENT'" style="display: inline-flex; align-items: center;">
-                        {{ translateFunctionName(f) }}
-                        <n-tooltip trigger="hover">
-                            <template #trigger>
-                                <n-icon size="16" style="margin-left: 4px;">
-                                    <QuestionCircle20Regular />
-                                </n-icon>
-                            </template>
-                            <div style="max-width: 480px;">
-                                The I-am-an-agent marker — grants a key the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or admining agent policies.
-                                <br/><br/>
-                                <strong>Carve-out:</strong> a key with this function (even at <code>READ_ONLY</code>) can also enrol its <em>own</em> SSH/GPG public signing key via <code>rearm agent enrollkey</code> — needed so an agent can sign its first commit without operator intervention. The backend enforces that the key being enrolled targets the calling key's own agent identity; cross-agent enrolment is rejected.
-                            </div>
-                        </n-tooltip>
-                    </span>
-                    <span v-else>
-                        {{ translateFunctionName(f) }}
-                    </span>
+                    <permission-function-label :f="f" />
                 </n-checkbox>
             </n-checkbox-group>
         </n-space>
@@ -122,18 +83,7 @@
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
                             <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
-                                    <span v-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
-                                        {{ translateFunctionName(f) }}
-                                        <n-tooltip trigger="hover">
-                                            <template #trigger>
-                                                <n-icon size="16" style="margin-left: 4px;">
-                                                    <QuestionCircle20Regular />
-                                                </n-icon>
-                                            </template>
-                                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
-                                        </n-tooltip>
-                                    </span>
-                                    <span v-else>{{ translateFunctionName(f) }}</span>
+                                    <permission-function-label :f="f" />
                                 </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
@@ -182,18 +132,7 @@
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
                             <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
-                                    <span v-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
-                                        {{ translateFunctionName(f) }}
-                                        <n-tooltip trigger="hover">
-                                            <template #trigger>
-                                                <n-icon size="16" style="margin-left: 4px;">
-                                                    <QuestionCircle20Regular />
-                                                </n-icon>
-                                            </template>
-                                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
-                                        </n-tooltip>
-                                    </span>
-                                    <span v-else>{{ translateFunctionName(f) }}</span>
+                                    <permission-function-label :f="f" />
                                 </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
@@ -243,18 +182,7 @@
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
                             <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
-                                    <span v-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
-                                        {{ translateFunctionName(f) }}
-                                        <n-tooltip trigger="hover">
-                                            <template #trigger>
-                                                <n-icon size="16" style="margin-left: 4px;">
-                                                    <QuestionCircle20Regular />
-                                                </n-icon>
-                                            </template>
-                                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
-                                        </n-tooltip>
-                                    </span>
-                                    <span v-else>{{ translateFunctionName(f) }}</span>
+                                    <permission-function-label :f="f" />
                                 </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
@@ -383,6 +311,7 @@ import { X as CloseIcon } from '@vicons/tabler'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
+import PermissionFunctionLabel from '@/components/PermissionFunctionLabel.vue'
 
 interface ApprovalRole {
     id: string
