@@ -172,6 +172,27 @@ statement message; the rest of the document still imports. Note OpenVEX has
 no severity field, so the fallback chain above always applies -- expect
 SEVERITY_MISSING demotions for CVEs the org has never seen.
 
+## Conditional justifications defer to attestation
+
+Not every accepted statement applies immediately. ReARM distinguishes
+**code properties** (true regardless of deployment) from **conditional
+claims** (true only while some consumer-side control is in place):
+
+- `not_affected` with one of `requires_configuration`,
+  `requires_environment`, `protected_by_compiler`, `protected_at_runtime`,
+  `protected_at_perimeter`, `protected_by_mitigating_control`
+- `exploitable` with a `workaround` (text or a `workaround_available`
+  response)
+
+These are accepted but their Finding Analysis write is **deferred behind a
+PENDING Mitigation Attestation**: someone must attest that the environmental
+control / workaround is actually in place (Mitigation Attestations inbox)
+before the analysis applies and finding counts change. This is by design,
+not a dropped statement -- do not "fix" it by swapping the justification to
+`code_not_reachable` or `code_not_present`; use those only when they are the
+true assessment. `not_affected` with `code_not_present` /
+`code_not_reachable` applies immediately.
+
 ## Interpreting the import outcome
 
 The upload response (and the VEX artifact record) carries the outcome
@@ -185,6 +206,7 @@ summary. Symptom-to-fix table:
 | "doc parse failed: ..." | Malformed JSON or wrong schema | Validate the JSON; check `bomFormat` / OpenVEX `@context` |
 | "Cannot import VEX: release has no SBOM components yet" | Upload order | Upload and reconcile the SBOM first, then the VEX |
 | Statement staged despite Auto-accept | Trust gate (issuer class) or missing severity demoted it | Expected; supply `ratings[]` and review the proposal, or adjust issuer class if you authored the VEX yourself |
+| Statement accepted but finding state / counts unchanged | Conditional claim (environmental justification or workaround) -- analysis write deferred behind a PENDING Mitigation Attestation | By design; attest the control in the Mitigation Attestations inbox and the analysis applies. See "Conditional justifications defer to attestation" |
 
 Do not invent an `analysis` state to force an import: `state` is an
 assertion about exploitability. If no assessment exists yet, use
