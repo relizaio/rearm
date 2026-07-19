@@ -3155,6 +3155,25 @@ type Artifact {
 	# rebom). The UI uses this to render PENDING / COMPLETED / FAILED / SKIPPED
 	# pills next to the artifact row.
 	enrichmentStatus: EnrichmentStatus
+	# Outcome of the VEX import this artifact triggered (VEX artifacts only;
+	# null otherwise). Lets the UI report matched / unmatched statement counts
+	# instead of leaving the user with a silently empty VEX tab.
+	vexImportSummary: VexImportSummary
+}
+
+# Counts from a single VEX import, persisted on the VEX artifact that produced
+# it. proposalsCreated = statements staged for review (PENDING);
+# proposalsAutoAccepted = statements applied immediately; statementsUnmatched =
+# statements whose product did not match any component in the release's SBOM
+# inventory (these produce no proposal).
+type VexImportSummary {
+	statementsTotal: Int
+	proposalsCreated: Int
+	proposalsAutoAccepted: Int
+	proposalsAutoRejected: Int
+	statementsUnmatched: Int
+	statementsErrored: Int
+	errorMessages: [String]
 }
 
 enum EnrichmentStatus {

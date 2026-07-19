@@ -46,6 +46,7 @@ public class CisaKevConnector implements KevSourceConnector {
 	private static final String KEV_USER_AGENT = "ReARM-KEV-Sync/1.0 (+https://reliza.io)";
 
 	private final String feedUrl;
+	private final String backupFeedUrl;
 	// Non-final so tests can substitute an ExchangeFunction-stubbed client.
 	private WebClient webClient;
 	// First backoff step; exponential from here. Package-private and non-final
@@ -54,8 +55,15 @@ public class CisaKevConnector implements KevSourceConnector {
 
 	public CisaKevConnector(
 			@Value("${relizaprops.kevFeedUrl:https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json}")
-			String feedUrl) {
+			String feedUrl,
+			// CISA's own first-party mirror (cisagov org) of the same feed —
+			// byte-identical output of the same publishing pipeline. Used only
+			// when the primary fails (e.g. Akamai WAF cooldown on our egress
+			// IP); GitHub's CDN has an independent failure domain.
+			@Value("${relizaprops.kevFeedBackupUrl:https://raw.githubusercontent.com/cisagov/kev-data/refs/heads/develop/known_exploited_vulnerabilities.json}")
+			String backupFeedUrl) {
 		this.feedUrl = feedUrl;
+		this.backupFeedUrl = backupFeedUrl;
 		// Feed is ~4 MB and growing; default 256 KB codec buffer would reject it.
 		ExchangeStrategies strategies = ExchangeStrategies.builder()
 				.codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(32 * 1024 * 1024))
@@ -82,39 +90,52 @@ public class CisaKevConnector implements KevSourceConnector {
 
 	@Override
 	public List<KevAssertionData> fetchCatalog(String credential) {
-		// Public feed — no auth, credential is ignored.
+		// Public feed — no auth, credential is ignored. Primary first; on any
+		// failure (fetch, parse, or empty catalog) fall back to the backup
+		// mirror. Only when BOTH fail is an error logged — a primary blip with
+		// a healthy backup is a warning-grade event, not an incident.
 		try {
-			String body = webClient.get()
-					// URI.create: pass the configured URL byte-for-byte, no template re-encoding
-					.uri(URI.create(feedUrl))
-					.header(HttpHeaders.USER_AGENT, KEV_USER_AGENT)
-					.header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-					.retrieve()
-					.bodyToMono(String.class)
-					// Back off on transient Akamai throttling (429/5xx). NOT 403:
-					// once CISA's WAF 403s the egress IP the penalty persists for
-					// a cooldown far longer than this bounded backoff, so retrying
-					// only adds load to an already-blocked IP -- fail closed and let
-					// the next scheduled pass retry. (The dedup upstream is what
-					// keeps us from tripping the WAF in the first place.)
-					.retryWhen(Retry.backoff(3, retryFirstBackoff)
-							.maxBackoff(Duration.ofSeconds(30))
-							.filter(CisaKevConnector::isTransient))
-					.block(Duration.ofSeconds(120));
-			CisaKevCatalog catalog = Utils.OM.readValue(body, CisaKevCatalog.class);
-			if (catalog == null || catalog.vulnerabilities() == null || catalog.vulnerabilities().isEmpty()) {
-				log.error("CISA KEV fetch aborted: feed at {} parsed to an empty catalog", feedUrl);
-				return List.of();
-			}
-			List<KevAssertionData> entries = new ArrayList<>(catalog.vulnerabilities().size());
-			for (CisaKevEntry e : catalog.vulnerabilities()) {
-				entries.add(toAssertionData(e));
-			}
-			return entries;
-		} catch (Exception e) {
-			log.error("CISA KEV fetch aborted: failed to fetch or parse feed at {}", feedUrl, e);
+			return fetchAndParse(feedUrl);
+		} catch (Exception primaryFailure) {
+			log.warn("CISA KEV primary feed fetch failed ({}), trying backup feed", primaryFailure.getMessage());
+		}
+		try {
+			return fetchAndParse(backupFeedUrl);
+		} catch (Exception backupFailure) {
+			log.error("CISA KEV fetch aborted: primary {} and backup {} both failed", feedUrl, backupFeedUrl,
+					backupFailure);
 			return List.of();
 		}
+	}
+
+	/** Fetch one feed URL and parse it; throws on any failure incl. an empty catalog. */
+	private List<KevAssertionData> fetchAndParse(String url) throws Exception {
+		String body = webClient.get()
+				// URI.create: pass the configured URL byte-for-byte, no template re-encoding
+				.uri(URI.create(url))
+				.header(HttpHeaders.USER_AGENT, KEV_USER_AGENT)
+				.header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+				.retrieve()
+				.bodyToMono(String.class)
+				// Back off on transient Akamai throttling (429/5xx). NOT 403:
+				// once CISA's WAF 403s the egress IP the penalty persists for
+				// a cooldown far longer than this bounded backoff, so retrying
+				// only adds load to an already-blocked IP -- fall through to
+				// the backup feed instead. (The dedup upstream is what keeps
+				// us from tripping the WAF in the first place.)
+				.retryWhen(Retry.backoff(3, retryFirstBackoff)
+						.maxBackoff(Duration.ofSeconds(30))
+						.filter(CisaKevConnector::isTransient))
+				.block(Duration.ofSeconds(120));
+		CisaKevCatalog catalog = Utils.OM.readValue(body, CisaKevCatalog.class);
+		if (catalog == null || catalog.vulnerabilities() == null || catalog.vulnerabilities().isEmpty()) {
+			throw new IllegalStateException("feed at " + url + " parsed to an empty catalog");
+		}
+		List<KevAssertionData> entries = new ArrayList<>(catalog.vulnerabilities().size());
+		for (CisaKevEntry e : catalog.vulnerabilities()) {
+			entries.add(toAssertionData(e));
+		}
+		return entries;
 	}
 
 	private static KevAssertionData toAssertionData(CisaKevEntry e) {

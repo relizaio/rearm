@@ -125,6 +125,8 @@ import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
+import io.reliza.model.dto.VexImportResult;
+import io.reliza.model.dto.VexImportSummary;
 import io.reliza.service.VexImportService;
 import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.oss.OssReleaseService;
@@ -1524,9 +1526,12 @@ public class ReleaseDatafetcher {
 
 			if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
 				try {
-					vexImportService.dispatchFromArtifact(
+					VexImportResult vexResult = vexImportService.dispatchFromArtifact(
 						artId, artDto, rd, belongsTo,
 						multipartFile.getBytes(), wu);
+					// Stamp the outcome on the artifact so the UI can report
+					// matched / unmatched counts instead of a silently empty VEX tab.
+					artifactService.saveArtifactVexImportSummary(artId, VexImportSummary.fromResult(vexResult), wu);
 				} catch (Exception e) {
 					log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
 						artId, rd.getUuid(), e.getMessage());
