@@ -3573,9 +3573,19 @@ const artifacts: ComputedRef<any> = computed((): any => {
         }
         if(updatedRelease.value.sourceCodeEntryDetails && updatedRelease.value.sourceCodeEntryDetails.artifactDetails && updatedRelease.value.sourceCodeEntryDetails.artifactDetails.length) {
             const cursce = updatedRelease.value.sourceCodeEntryDetails
+            // SCEs are canonical per (vcs, commit) and can be shared by several
+            // components; per-component artifacts are tagged with the attaching
+            // component's uuid. Commit-scoped artifacts (signatures / signed
+            // payloads -- properties of the commit, not of any one component)
+            // are shown on every release referencing the SCE: new backend data
+            // tags them with a null componentUuid, and the type check covers
+            // rows written before that convention existed.
+            const commitScopedTypes = ['SIGNATURE', 'SIGNED_PAYLOAD']
             artifacts.push.apply(artifacts,
                 updatedRelease.value.sourceCodeEntryDetails.artifactDetails
-                    .filter((ad: any) => ad.componentUuid === updatedRelease.value.componentDetails.uuid)
+                    .filter((ad: any) => !ad.componentUuid
+                        || ad.componentUuid === updatedRelease.value.componentDetails.uuid
+                        || commitScopedTypes.includes(ad.type))
                     .map((ad: any) => setArtifactBelongsTo(ad, 'Source Code Entry', '', cursce.uuid)))
         }
         
