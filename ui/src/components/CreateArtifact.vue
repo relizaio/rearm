@@ -375,7 +375,7 @@ const onSubmit = async () => {
     // For a VEX upload, ask the mutation for the resulting artifacts + their
     // import summary so we can report matched / unmatched counts.
     const releaseBody = isVex
-        ? `uuid artifactDetails { uuid displayIdentifier type vexImportSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected statementsUnmatched statementsErrored errorMessages } }`
+        ? `uuid artifactDetails { uuid displayIdentifier type vexImportSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected attestationsDeferred statementsUnmatched statementsErrored errorMessages } }`
         : `uuid`
 
     isUploading.value = true
@@ -452,6 +452,7 @@ function showVexOutcome(release: any, displayId: string) {
     const staged = s.proposalsCreated ?? 0
     const accepted = s.proposalsAutoAccepted ?? 0
     const rejected = s.proposalsAutoRejected ?? 0
+    const deferred = s.attestationsDeferred ?? 0
     const unmatched = s.statementsUnmatched ?? 0
     const errored = s.statementsErrored ?? 0
     const matched = staged + accepted + rejected
@@ -480,16 +481,24 @@ function showVexOutcome(release: any, displayId: string) {
 
     const parts = []
     if (staged > 0) parts.push(`${staged} staged for review`)
-    if (accepted > 0) parts.push(`${accepted} auto-accepted`)
+    // Deferred statements are accepted but their analysis write waits on a
+    // mitigation attestation -- report them separately so a conditional claim
+    // (e.g. not_affected / requires_environment) doesn't look silently ignored.
+    const applied = accepted - deferred
+    if (applied > 0) parts.push(`${applied} auto-accepted`)
+    if (deferred > 0) parts.push(`${deferred} deferred pending mitigation attestation`)
     if (rejected > 0) parts.push(`${rejected} auto-rejected`)
     if (unmatched > 0) parts.push(`${unmatched} unmatched`)
     if (errored > 0) parts.push(`${errored} could not be processed`)
     const breakdown = parts.length ? `: ${parts.join(', ')}` : ' processed'
+    const deferredHint = deferred > 0
+        ? ' Conditional claims apply after their control is attested in the Mitigation Attestations inbox.'
+        : ''
     const suffix = details && errored > 0 ? ` ${details}` : ''
     Swal.fire({
         icon: 'success', title: 'VEX processed',
-        text: `${total} statement${total === 1 ? '' : 's'}${breakdown}. Open the VEX tab to review.${suffix}`,
-        timer: 7000, showConfirmButton: true,
+        text: `${total} statement${total === 1 ? '' : 's'}${breakdown}. Open the VEX tab to review.${deferredHint}${suffix}`,
+        timer: deferred > 0 ? 10000 : 7000, showConfirmButton: true,
     })
 }
 
