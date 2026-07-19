@@ -30,6 +30,9 @@ public class VexImportSummary {
     private int proposalsCreated;
     private int proposalsAutoAccepted;
     private int proposalsAutoRejected;
+    // Subset of proposalsAutoAccepted whose analysis write is deferred behind a
+    // PENDING MitigationAttestation (conditional claims).
+    private int attestationsDeferred;
     private int statementsUnmatched;
     private int statementsErrored;
     // Capped at MAX_ERROR_MESSAGES so a pathological VEX can't bloat the artifact record.
@@ -43,6 +46,7 @@ public class VexImportSummary {
         s.setProposalsCreated(r.getProposalsCreated());
         s.setProposalsAutoAccepted(r.getProposalsAutoAccepted());
         s.setProposalsAutoRejected(r.getProposalsAutoRejected());
+        s.setAttestationsDeferred(r.getAttestationsDeferred());
         s.setStatementsUnmatched(r.getStatementsUnmatched());
         s.setStatementsErrored(r.getStatementsErrored());
         List<String> errors = r.getErrorMessages();

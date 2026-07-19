@@ -3171,6 +3171,10 @@ type VexImportSummary {
 	proposalsCreated: Int
 	proposalsAutoAccepted: Int
 	proposalsAutoRejected: Int
+	# Subset of proposalsAutoAccepted whose Finding Analysis write is deferred
+	# behind a PENDING MitigationAttestation (conditional claims: environmental
+	# justifications like requires_environment, or exploitable-with-workaround).
+	attestationsDeferred: Int
 	statementsUnmatched: Int
 	statementsErrored: Int
 	errorMessages: [String]

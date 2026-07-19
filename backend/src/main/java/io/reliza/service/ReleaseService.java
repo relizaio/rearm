@@ -1191,7 +1191,10 @@ public class ReleaseService {
 			WhoUpdated wu) throws IOException, RelizaException {
 		UUID orgUuid = bd.getOrg();
 		List<SCEArtifact> sceArts= new LinkedList<>();
-		if (null != artIds) sceArts = artIds.stream().map(x -> new SCEArtifact(x, bd.getComponent())).toList();
+		if (null != artIds) sceArts = artIds.stream().map(x -> new SCEArtifact(x,
+				SourceCodeEntryData.sceArtifactComponentTag(
+						artifactService.getArtifactData(x).map(ArtifactData::getType).orElse(null),
+						bd.getComponent()))).toList();
 		sceDto.setArtifacts(sceArts);
 		sceDto.setBranch(bd.getUuid());
 		sceDto.setOrganizationUuid(orgUuid);
@@ -1576,7 +1579,10 @@ public class ReleaseService {
 
 			// Attach artifacts to SCE
 			for (UUID artId : artIds) {
-				SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+				SCEArtifact sceArt = new SCEArtifact(artId,
+						SourceCodeEntryData.sceArtifactComponentTag(
+								artifactService.getArtifactData(artId).map(ArtifactData::getType).orElse(null),
+								cd.getUuid()));
 				sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
 			}
 
