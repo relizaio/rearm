@@ -1495,7 +1495,8 @@ public class ReleaseDatafetcher {
 					deliverableService.addArtifact(deliverableId, artId, wu);
 				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
 					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
-					SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+					SCEArtifact sceArt = new SCEArtifact(artId,
+							SourceCodeEntryData.sceArtifactComponentTag(artDto.getType(), cd.getUuid()));
 					sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
 				} else { //default case, attach to the release
 					releaseService.addArtifact(artId, ord.get().getUuid(),  wu);
@@ -1508,7 +1509,8 @@ public class ReleaseDatafetcher {
 					deliverableService.replaceArtifact(deliverableId,inputArtifactUuid, artId, wu);
 				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
 					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
-					SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+					SCEArtifact sceArt = new SCEArtifact(artId,
+							SourceCodeEntryData.sceArtifactComponentTag(artDto.getType(), cd.getUuid()));
 					SCEArtifact replaceArt = new SCEArtifact(inputArtifactUuid, cd.getUuid());
 					sourceCodeEntryService.replaceArtifact(sceUuid, replaceArt, sceArt, wu);
 				} else { //default case, attach to the release

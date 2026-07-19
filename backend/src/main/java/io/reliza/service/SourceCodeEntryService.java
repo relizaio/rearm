@@ -534,7 +534,10 @@ public class SourceCodeEntryService {
 		SourceCodeEntry sce = getSourceCodeEntryService.getSourceCodeEntry(sceUuid).get();
 		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
 		List<SCEArtifact> artifacts = sced.getArtifacts();
-		artifacts.remove(replaceArt);
+		// Match on artifactUuid only -- the stored entry's component tag may be a
+		// concrete uuid (component-scoped) or null (commit-scoped), and the caller
+		// can't know which without reading the SCE first.
+		artifacts.removeIf(a -> a.artifactUuid().equals(replaceArt.artifactUuid()));
 		artifacts.add(art);
 		sced.setArtifacts(artifacts);
 		Map<String,Object> recordData = Utils.dataToRecord(sced);

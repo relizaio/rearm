@@ -151,7 +151,30 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 
 	private SourceCodeEntryData () {}
 	
+	/**
+	 * componentUuid semantics: a concrete uuid means the artifact was attached in
+	 * the context of that component (monorepo case -- each component tags its own
+	 * SCE artifacts); null means the artifact is commit-scoped and applies to
+	 * every release referencing this SCE (signatures / signed payloads -- the
+	 * content is a property of the commit, not of any one component).
+	 */
 	public record SCEArtifact (UUID artifactUuid, UUID componentUuid) {}
+
+	/**
+	 * Artifact types whose content is a property of the commit itself, so one
+	 * copy on the canonical (vcs, commit) SCE serves every component sharing
+	 * that commit. Kept in sync with the semantic dedupe in
+	 * SourceCodeEntryService, which collapses byte-identical copies of these
+	 * across components.
+	 */
+	public static final java.util.Set<ArtifactData.ArtifactType> COMMIT_SCOPED_ARTIFACT_TYPES =
+			java.util.Set.of(ArtifactData.ArtifactType.SIGNATURE, ArtifactData.ArtifactType.SIGNED_PAYLOAD);
+
+	/** Resolve the component tag for a new SCE artifact: null (commit-scoped) for
+	 * signature-class types, the attaching component otherwise. */
+	public static UUID sceArtifactComponentTag(ArtifactData.ArtifactType type, UUID componentUuid) {
+		return (type != null && COMMIT_SCOPED_ARTIFACT_TYPES.contains(type)) ? null : componentUuid;
+	}
 
 	public static SourceCodeEntryData scEntryDataFactory(SceDto sceDto) {
 		SourceCodeEntryData sced = new SourceCodeEntryData();

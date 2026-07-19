@@ -308,8 +308,14 @@ public class VexImportService {
             case AUTO_ACCEPT -> {
                 VexStatementProposalData created = proposalService.createProposal(candidate, wu);
                 result.getCreatedProposalUuids().add(created.getUuid());
-                proposalService.accept(created.getUuid(), wu);
+                VexStatementProposalData accepted = proposalService.accept(created.getUuid(), wu);
                 result.setProposalsAutoAccepted(result.getProposalsAutoAccepted() + 1);
+                if (accepted.getMitigationAttestation() != null) {
+                    // Conditional claim -- the VulnAnalysis write is deferred until the
+                    // mitigation is attested. Count it so the import outcome can say so
+                    // instead of looking like a silently ignored statement.
+                    result.setAttestationsDeferred(result.getAttestationsDeferred() + 1);
+                }
             }
         }
     }
