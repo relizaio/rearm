@@ -375,7 +375,7 @@ const onSubmit = async () => {
     // For a VEX upload, ask the mutation for the resulting artifacts + their
     // import summary so we can report matched / unmatched counts.
     const releaseBody = isVex
-        ? `uuid artifactDetails { uuid displayIdentifier type vexImportSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected statementsUnmatched statementsErrored } }`
+        ? `uuid artifactDetails { uuid displayIdentifier type vexImportSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected statementsUnmatched statementsErrored errorMessages } }`
         : `uuid`
 
     isUploading.value = true
@@ -455,12 +455,25 @@ function showVexOutcome(release: any, displayId: string) {
     const unmatched = s.statementsUnmatched ?? 0
     const errored = s.statementsErrored ?? 0
     const matched = staged + accepted + rejected
+    // First few backend messages (e.g. "N entries skipped: no analysis block",
+    // doc parse errors) -- the concrete "why", not just counts.
+    const details = (s.errorMessages ?? []).slice(0, 3).join(' ')
 
-    if (total > 0 && matched === 0) {
-        const parts = [`${total} VEX statement${total === 1 ? '' : 's'} uploaded, but none matched components in this release's SBOM inventory, so nothing was added to the VEX tab.`]
-        if (unmatched > 0) parts.push(`${unmatched} unmatched (the VEX product PURLs / versions do not correspond to any component in the release's SBOM).`)
-        if (errored > 0) parts.push(`${errored} could not be parsed.`)
-        parts.push('Check that the VEX targets the same component PURLs (including version) that appear in this release\'s SBOM.')
+    if (total === 0) {
+        // Nothing to import at all: doc-level parse failure, or the document
+        // contains no VEX statements ReARM can read.
+        const text = details
+            ? `No VEX statements could be imported from this document. ${details}`
+            : 'No VEX statements found in this document. For CycloneDX VEX, ReARM imports vulnerabilities[] entries that carry an analysis block (state / justification); entries without analysis are plain vulnerability reports, not VEX statements.'
+        Swal.fire({ icon: 'warning', title: 'No VEX statements imported', text, showConfirmButton: true })
+        return
+    }
+
+    if (matched === 0) {
+        const parts = [`${total} VEX statement${total === 1 ? '' : 's'} uploaded, but none produced a proposal, so nothing was added to the VEX tab.`]
+        if (unmatched > 0) parts.push(`${unmatched} unmatched: the VEX product PURLs / versions do not correspond to any component in this release's SBOM -- check that the VEX targets the same PURLs (including version) that appear in the SBOM.`)
+        if (errored > 0) parts.push(`${errored} could not be processed.`)
+        if (details) parts.push(details)
         Swal.fire({ icon: 'warning', title: 'No VEX statements matched', text: parts.join(' '), showConfirmButton: true })
         return
     }
@@ -470,10 +483,12 @@ function showVexOutcome(release: any, displayId: string) {
     if (accepted > 0) parts.push(`${accepted} auto-accepted`)
     if (rejected > 0) parts.push(`${rejected} auto-rejected`)
     if (unmatched > 0) parts.push(`${unmatched} unmatched`)
-    if (errored > 0) parts.push(`${errored} errored`)
+    if (errored > 0) parts.push(`${errored} could not be processed`)
+    const breakdown = parts.length ? `: ${parts.join(', ')}` : ' processed'
+    const suffix = details && errored > 0 ? ` ${details}` : ''
     Swal.fire({
         icon: 'success', title: 'VEX processed',
-        text: `${total} statement${total === 1 ? '' : 's'}: ${parts.join(', ')}. Open the VEX tab to review.`,
+        text: `${total} statement${total === 1 ? '' : 's'}${breakdown}. Open the VEX tab to review.${suffix}`,
         timer: 7000, showConfirmButton: true,
     })
 }
