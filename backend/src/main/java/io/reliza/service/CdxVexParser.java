@@ -54,7 +54,15 @@ public class CdxVexParser implements VexFormatParser {
         java.util.List<VexParseEntry> entries = raw.statements().stream()
             .map(s -> new VexParseEntry(s, java.util.List.of()))
             .toList();
-        return new VexParseResult(entries, null, 0, java.util.List.of());
+        // Report no-analysis entries as invalid statements so the import summary
+        // reflects them ("N could not be processed") instead of a bare 0 total.
+        java.util.List<String> errors = raw.skippedNoAnalysis() > 0
+            ? java.util.List.of(raw.skippedNoAnalysis()
+                + " vulnerability entr" + (raw.skippedNoAnalysis() == 1 ? "y" : "ies")
+                + " skipped: no analysis block (a CycloneDX vulnerability without an analysis"
+                + " section carries no exploitability statement to import)")
+            : java.util.List.of();
+        return new VexParseResult(entries, null, raw.skippedNoAnalysis(), errors);
     }
 
     public CdxVexParseResult parseRaw(String json) {
@@ -62,7 +70,7 @@ public class CdxVexParser implements VexFormatParser {
         try {
             bom = new JsonParser().parse(json.getBytes(StandardCharsets.UTF_8));
         } catch (ParseException e) {
-            return new CdxVexParseResult(List.of(), "doc parse failed: " + e.getMessage());
+            return new CdxVexParseResult(List.of(), "doc parse failed: " + e.getMessage(), 0);
         }
 
         Map<String, String> bomRefToPurl = new HashMap<>();
@@ -75,13 +83,18 @@ public class CdxVexParser implements VexFormatParser {
         }
 
         List<CdxVexStatement> statements = new LinkedList<>();
+        int skippedNoAnalysis = 0;
         if (bom.getVulnerabilities() != null) {
             for (Vulnerability v : bom.getVulnerabilities()) {
-                if (v.getAnalysis() == null) continue;
+                if (v.getAnalysis() == null) {
+                    log.warn("CDX-VEX: vulnerability {} has no analysis block, skipping", v.getId());
+                    skippedNoAnalysis++;
+                    continue;
+                }
                 statements.add(buildStatement(v, bomRefToPurl));
             }
         }
-        return new CdxVexParseResult(statements, null);
+        return new CdxVexParseResult(statements, null, skippedNoAnalysis);
     }
 
     private CdxVexStatement buildStatement(Vulnerability v, Map<String, String> bomRefToPurl) {
