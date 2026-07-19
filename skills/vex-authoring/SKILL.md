@@ -12,7 +12,11 @@ description: >
 ReARM imports VEX (Vulnerability Exploitability eXchange) documents in two
 formats, auto-detected from content:
 
-- **CycloneDX-VEX** 1.4 - 1.6 JSON
+- **CycloneDX-VEX** 1.4 - 1.7 JSON. The bundled parser formally targets
+  1.6, but the VEX subset ReARM reads (vulnerabilities[], analysis,
+  affects, ratings) is unchanged in 1.7, so 1.7 documents import
+  (verified). Constructs introduced in 1.7 outside that subset are
+  ignored -- do not encode load-bearing VEX data in 1.7-only fields.
 - **OpenVEX** 0.2.0
 
 Import happens synchronously during artifact upload (artifact type `VEX` on a
