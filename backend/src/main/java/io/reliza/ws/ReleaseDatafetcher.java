@@ -1579,11 +1579,21 @@ public class ReleaseDatafetcher {
 
 		// Authorization
 		if (null == componentId) componentId = ord.get().getComponent();
-		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		if (null != ro) {
+		if (null != ro && ahp.getType() == ApiTypeEnum.FREEFORM) {
+			// FREEFORM keys carry scope/function permission tuples; authorize a
+			// WRITE on the resolved component the same way PR upsert does --
+			// COMPONENT-scoped READ_WRITE on this component, a PERSPECTIVE
+			// permission containing it, or org-wide READ_WRITE all match.
+			FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp,
+					PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ro.getUuid(),
+					List.of(ro), CallType.WRITE);
+			ar = AuthorizationResponse.initialize(InitType.ALLOW);
+			ar.setWhoUpdated(fkv.whoUpdated());
+		} else if (null != ro) {
+			List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 			ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 		} else {
 			authorizationService.gqlValidateAuthorizationResponse(ar);
