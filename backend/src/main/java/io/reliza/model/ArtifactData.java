@@ -22,6 +22,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.VexImportSummary;
 import io.reliza.model.tea.Link;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.TeaChecksumType;
@@ -329,6 +330,10 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	private String version; // FIGURE OUT VERSIONING 
 	@JsonIgnore
 	private DependencyTrackIntegration metrics = new DependencyTrackIntegration();
+	// Outcome of the VEX import this artifact triggered (VEX artifacts only;
+	// null otherwise). Persisted so the upload UI can report matched / unmatched
+	// counts instead of leaving the user with a silently empty VEX tab.
+	private VexImportSummary vexImportSummary;
 	/**
 	 * Artifact may have its own artifacts - this is for signature related artifacts, maybe there will be more use cases discovered later
 	 */

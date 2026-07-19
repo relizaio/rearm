@@ -72,6 +72,8 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityReferenceDto;
 import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.VulnerabilityRecordData.CvssScore;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
+import io.reliza.model.dto.VexImportResult;
+import io.reliza.model.dto.VexImportSummary;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -1418,8 +1420,11 @@ public class ReleaseService {
 			dispatchDto.setVexImportMode(vu.inputDto().getVexImportMode());
 			dispatchDto.setUserIssuerClassOverride(vu.inputDto().getUserIssuerClassOverride());
 			try {
-				vexImportService.dispatchFromArtifact(
+				VexImportResult vexResult = vexImportService.dispatchFromArtifact(
 					artId, dispatchDto, rd, belongsTo, vu.content(), wu);
+				// Stamp the outcome on the artifact so consumers can report
+				// matched / unmatched counts (mirrors the manual upload path).
+				artifactService.saveArtifactVexImportSummary(artId, VexImportSummary.fromResult(vexResult), wu);
 			} catch (Exception e) {
 				log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
 					artId, rd.getUuid(), e.getMessage());

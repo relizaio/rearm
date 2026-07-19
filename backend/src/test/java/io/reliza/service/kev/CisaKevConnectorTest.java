@@ -83,8 +83,11 @@ class CisaKevConnectorTest {
 			}
 			""";
 
+	private static final String PRIMARY_URL = "https://kev.test/feed.json";
+	private static final String BACKUP_URL = "https://kev-backup.test/feed.json";
+
 	private CisaKevConnector newConnector(ExchangeFunction exchange) throws Exception {
-		CisaKevConnector connector = new CisaKevConnector("https://kev.test/feed.json");
+		CisaKevConnector connector = new CisaKevConnector(PRIMARY_URL, BACKUP_URL);
 		WebClient stub = WebClient.builder().exchangeFunction(exchange).build();
 		Field f = CisaKevConnector.class.getDeclaredField("webClient");
 		f.setAccessible(true);
@@ -186,7 +189,8 @@ class CisaKevConnectorTest {
 	void doesNotRetryForbiddenAndFailsClosedImmediately() throws Exception {
 		// CISA's WAF 403 is a sticky IP cooldown, not transient -- retrying it
 		// in-pass never recovers and only loads an already-blocked IP. So a 403
-		// must fail closed on the first attempt (no retries).
+		// must not be retried on either feed: one attempt on the primary, then
+		// straight to the backup's single attempt.
 		AtomicInteger attempts = new AtomicInteger();
 		CisaKevConnector connector = newConnector(req -> {
 			attempts.incrementAndGet();
@@ -195,7 +199,7 @@ class CisaKevConnectorTest {
 		connector.retryFirstBackoff = Duration.ofMillis(1);
 
 		assertTrue(connector.fetchCatalog(null).isEmpty());
-		assertEquals(1, attempts.get(), "403 must not be retried");
+		assertEquals(2, attempts.get(), "403 must not be retried: one attempt per feed");
 	}
 
 	@Test
@@ -209,6 +213,69 @@ class CisaKevConnectorTest {
 
 		// Fail-closed: exhausted retries return an empty list, never throw.
 		assertTrue(connector.fetchCatalog(null).isEmpty());
-		assertEquals(4, attempts.get()); // initial + 3 backoff retries
+		assertEquals(8, attempts.get()); // (initial + 3 backoff retries) per feed
+	}
+
+	// ---------- backup feed fallback ----------
+
+	@Test
+	void backupFeedIsUsedWhenPrimaryFails() throws Exception {
+		// Primary 403s (WAF cooldown); the backup mirror serves the catalog.
+		// The result must come from the backup with no error-grade outcome.
+		AtomicInteger primaryAttempts = new AtomicInteger();
+		AtomicInteger backupAttempts = new AtomicInteger();
+		CisaKevConnector connector = newConnector(req -> {
+			if (req.url().toString().equals(PRIMARY_URL)) {
+				primaryAttempts.incrementAndGet();
+				return Mono.just(ClientResponse.create(HttpStatus.FORBIDDEN).build());
+			}
+			backupAttempts.incrementAndGet();
+			return Mono.just(ClientResponse.create(HttpStatus.OK)
+					.headers(h -> h.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+					.body(FEED_JSON)
+					.build());
+		});
+		connector.retryFirstBackoff = Duration.ofMillis(1);
+
+		List<KevAssertionData> entries = connector.fetchCatalog(null);
+
+		assertEquals(3, entries.size(), "catalog must be served from the backup feed");
+		assertEquals(1, primaryAttempts.get());
+		assertEquals(1, backupAttempts.get());
+	}
+
+	@Test
+	void backupFeedIsUsedWhenPrimaryParsesEmpty() throws Exception {
+		// An empty/degenerate primary catalog is a failure mode too (a bad
+		// publish would otherwise wipe enrichment downstream) -- it must fall
+		// through to the backup rather than being accepted.
+		CisaKevConnector connector = newConnector(req -> {
+			String body = req.url().toString().equals(PRIMARY_URL)
+					? "{\"catalogVersion\":\"x\",\"vulnerabilities\":[]}"
+					: FEED_JSON;
+			return Mono.just(ClientResponse.create(HttpStatus.OK)
+					.headers(h -> h.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+					.body(body)
+					.build());
+		});
+
+		assertEquals(3, connector.fetchCatalog(null).size());
+	}
+
+	@Test
+	void primarySuccessNeverTouchesBackup() throws Exception {
+		AtomicInteger backupAttempts = new AtomicInteger();
+		CisaKevConnector connector = newConnector(req -> {
+			if (!req.url().toString().equals(PRIMARY_URL)) {
+				backupAttempts.incrementAndGet();
+			}
+			return Mono.just(ClientResponse.create(HttpStatus.OK)
+					.headers(h -> h.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+					.body(FEED_JSON)
+					.build());
+		});
+
+		assertEquals(3, connector.fetchCatalog(null).size());
+		assertEquals(0, backupAttempts.get(), "healthy primary must not fan out to the backup");
 	}
 }

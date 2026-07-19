@@ -60,6 +60,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.VexImportSummary;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
@@ -297,6 +298,25 @@ public class ArtifactService {
 	 * @return updated Artifact
 	 * @throws RelizaException if artifact not found or validation fails
 	 */
+	/**
+	 * Persist the VEX import outcome onto the artifact that triggered it, so the
+	 * upload UI can report matched / unmatched counts (see the
+	 * {@code Artifact.vexImportSummary} GraphQL field). Best-effort at the call
+	 * site: a failure here must not fail the artifact upload -- the proposals
+	 * (if any) are already committed by the REQUIRES_NEW import.
+	 */
+	@Transactional
+	public void saveArtifactVexImportSummary(UUID artifactUuid, VexImportSummary summary, WhoUpdated wu) throws RelizaException {
+		Optional<Artifact> oa = sharedArtifactService.getArtifact(artifactUuid);
+		if (oa.isEmpty()) {
+			throw new RelizaException("Artifact not found: " + artifactUuid);
+		}
+		Artifact a = oa.get();
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		ad.setVexImportSummary(summary);
+		sharedArtifactService.saveArtifact(a, ad, wu);
+	}
+
 	@Transactional
 	public Artifact updateArtifactTags(UUID artifactUuid, List<TagRecord> newTags, WhoUpdated wu) throws RelizaException {
 		Optional<Artifact> oa = sharedArtifactService.getArtifact(artifactUuid);
