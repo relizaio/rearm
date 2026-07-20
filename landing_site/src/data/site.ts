@@ -109,7 +109,7 @@ export const clientsPartners = [
 ];
 
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
-export const demoVideo = 'https://cdn.rearmhq.com/ReARM_Tutorial_V2.mp4';
+export const demoVideo = 'https://cdn.rearmhq.com/ReARM_Tutorial_V2_1.mp4';
 
 export const regulations = ['EU CRA', 'NIS2', 'DORA', 'US EO 14028 / 14144', 'FDA 524B', 'RBI / SEBI'];
 
