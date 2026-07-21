@@ -91,32 +91,30 @@ U=$(/opt/keycloak/bin/kcadm.sh get users -r Reliza -q email=you@example.com --fi
 /opt/keycloak/bin/kcadm.sh set-password -r Reliza --userid "$U" --new-password "ChangeMe12345!"'
 ```
 
-## OCI artifact storage (optional)
+## OCI artifact storage
 
-BOMs and artifacts can be stored in an OCI registry, either external or
-bundled.
-
-**External registry:** set the four `OCI_*` variables in `.env` (see
-`.env.example`); the registry namespace is declared once and used by
-both consumers.
-
-**Bundled local registry (zot):** add the `docker-compose.zot.yml`
-overlay to run a single-container [zot](https://zotregistry.dev)
-registry on the compose network and point artifact storage at it:
-
-```sh
-docker compose -f docker-compose.yml -f docker-compose.zot.yml up -d
-```
-
-No `.env` changes are required -- credentials default to
-`rearm` / `zotRegistryPass` and can be overridden with
-`OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_TOKEN` (the htpasswd file is
-regenerated from these on every start). The registry publishes no host
-ports: it is reachable only by the other compose services. Artifacts
+BOMs and artifacts are stored in an OCI registry. By default a bundled
+single-container [zot](https://zotregistry.dev) registry runs as part of
+the stack, so artifact storage works out of the box with no
+configuration: it lives only on the compose network (no published
+ports), credentials default to `rearm` / `zotRegistryPass` (override
+with `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_TOKEN` in `.env`; the
+htpasswd file is regenerated from these on every start), and artifacts
 persist in the `rearm-zot-data` volume. The storage profile matches
 ReARM's access pattern (push once, fetch by digest, no deletes):
 deduplication and garbage collection are off, and the minimal zot image
 ships no UI/search extensions.
+
+To use an external registry instead, set in `.env`:
+
+```sh
+OCI_REGISTRY_NAMESPACE=your-namespace
+OCI_REGISTRY_HOST=registry.example.com
+OCI_REGISTRY_USERNAME=myusername
+OCI_REGISTRY_TOKEN=mypassword
+OCI_USE_PLAIN_HTTP=false      # the plain-http default only suits the bundled zot
+OCI_BUNDLED_REGISTRY_REPLICAS=0   # optional: don't run the (unused) bundled zot
+```
 
 Note: like traefik (see the comment in `docker-compose.yml`), zot needs
 an inotify instance at startup; on hosts with exhausted inotify

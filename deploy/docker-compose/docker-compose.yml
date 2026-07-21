@@ -10,7 +10,7 @@ services:
      - PG_HOST=rearm-postgresql
      - PG_PORT=5432
      - PG_PASS=${REARM_PG_PASS:-relizaPass}
-     - RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-}
+     - RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
      - PROJECT_PROTOCOL=${REARM_PROTOCOL:-http}
      - PROJECT_HOST=${REARM_HOST:-localhost:8092}
      - KEYCLOAK_ISSUER_URI=${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}
@@ -119,9 +119,14 @@ services:
      - path: ./oci.env
        required: false
     environment:
-     - REGISTRY_HOST=${OCI_REGISTRY_HOST:-}
-     - REGISTRY_USERNAME=${OCI_REGISTRY_USERNAME:-}
-     - REGISTRY_TOKEN=${OCI_REGISTRY_TOKEN:-}
+     # Defaults target the bundled zot registry below. To use an external
+     # registry instead, set OCI_REGISTRY_HOST / _USERNAME / _TOKEN in
+     # .env AND OCI_USE_PLAIN_HTTP=false (the plain-http default only
+     # suits the in-network zot).
+     - REGISTRY_HOST=${OCI_REGISTRY_HOST:-zot:5000}
+     - REGISTRY_USERNAME=${OCI_REGISTRY_USERNAME:-rearm}
+     - REGISTRY_TOKEN=${OCI_REGISTRY_TOKEN:-zotRegistryPass}
+     - USE_PLAIN_HTTP=${OCI_USE_PLAIN_HTTP:-true}
     deploy:
       replicas: 1
       restart_policy:
@@ -129,6 +134,44 @@ services:
       update_config:
         parallelism: 1
         delay: 10s
+  # Bundled local OCI registry for artifact storage, on by default and
+  # reachable only on the compose network (no published ports). Disable
+  # with OCI_BUNDLED_REGISTRY_REPLICAS=0 in .env when pointing the OCI_*
+  # variables at an external registry. Storage profile is tuned for the
+  # ReARM access pattern (push once, fetch by digest, no deletes): dedupe
+  # off, GC off, no UI/search extensions (zot-minimal image).
+  # NB: like traefik below, zot needs an inotify instance at startup; on
+  # hosts with exhausted inotify instances it exits with "couldn't
+  # initialize inotify" -- raise fs.inotify.max_user_instances.
+  zot-htpasswd:
+    image: httpd:2.4-alpine@sha256:1b766f17b84026429b7cb243317b142921b24432336e798bc881c43f45ed9567
+    entrypoint: ["/bin/sh", "-c"]
+    # Regenerated from the OCI_* variables on every start, so a credential
+    # change in .env takes effect on the next `up`.
+    command: ["htpasswd -Bbc /auth/htpasswd \"$${REGISTRY_USER}\" \"$${REGISTRY_PASS}\""]
+    environment:
+     - REGISTRY_USER=${OCI_REGISTRY_USERNAME:-rearm}
+     - REGISTRY_PASS=${OCI_REGISTRY_TOKEN:-zotRegistryPass}
+    volumes:
+     - rearm-zot-auth:/auth
+    deploy:
+      replicas: ${OCI_BUNDLED_REGISTRY_REPLICAS:-1}
+      restart_policy:
+        condition: none
+  zot:
+    image: ghcr.io/project-zot/zot-minimal:v2.1.18@sha256:892f2a5a63dd99bdf85320fee5448506119328a6d5e1a2d14d4db876be595236
+    command: ["serve", "/etc/zot/config.json"]
+    volumes:
+     - ./zot-config.json:/etc/zot/config.json:ro
+     - rearm-zot-auth:/etc/zot/auth:ro
+     - rearm-zot-data:/var/lib/zot
+    depends_on:
+      zot-htpasswd:
+        condition: service_completed_successfully
+    deploy:
+      replicas: ${OCI_BUNDLED_REGISTRY_REPLICAS:-1}
+      restart_policy:
+        condition: on-failure
   rebom-backend:
     image: registry.relizahub.com/library/rebom-backend:0.20.4@sha256:1b75c28fe1fa2e28b25b2fdd80e2cbd1cc43751b64657020cf6e87c7428e6dc3
     # Legacy rebom.env kept for one release for backward compatibility --
@@ -140,7 +183,7 @@ services:
      - POSTGRES_HOST=rebom-postgresql
      - POSTGRES_PORT=5432
      - POSTGRES_PASSWORD=${REBOM_PG_PASS:-relizaPass}
-     - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-}
+     - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
      - OCI_STORAGE_ENABLED=true
      - OCI_ARTIFACT_SERVICE_HOST=http://oci-artifact-service:8083
     depends_on:
@@ -222,6 +265,10 @@ services:
         condition: on-failure
 volumes:
   rearm-keycloak-compose-postgres-data:
+    driver: local
+  rearm-zot-auth:
+    driver: local
+  rearm-zot-data:
     driver: local
   rearm-postgres-data:
     driver: local
