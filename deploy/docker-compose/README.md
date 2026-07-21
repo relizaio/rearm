@@ -93,9 +93,36 @@ U=$(/opt/keycloak/bin/kcadm.sh get users -r Reliza -q email=you@example.com --fi
 
 ## OCI artifact storage (optional)
 
-BOMs and artifacts can be stored in an OCI registry. Set the four
-`OCI_*` variables in `.env` (see `.env.example`); the registry
-namespace is declared once and used by both consumers.
+BOMs and artifacts can be stored in an OCI registry, either external or
+bundled.
+
+**External registry:** set the four `OCI_*` variables in `.env` (see
+`.env.example`); the registry namespace is declared once and used by
+both consumers.
+
+**Bundled local registry (zot):** add the `docker-compose.zot.yml`
+overlay to run a single-container [zot](https://zotregistry.dev)
+registry on the compose network and point artifact storage at it:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.zot.yml up -d
+```
+
+No `.env` changes are required -- credentials default to
+`rearm` / `zotRegistryPass` and can be overridden with
+`OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_TOKEN` (the htpasswd file is
+regenerated from these on every start). The registry publishes no host
+ports: it is reachable only by the other compose services. Artifacts
+persist in the `rearm-zot-data` volume. The storage profile matches
+ReARM's access pattern (push once, fetch by digest, no deletes):
+deduplication and garbage collection are off, and the minimal zot image
+ships no UI/search extensions.
+
+Note: like traefik (see the comment in `docker-compose.yml`), zot needs
+an inotify instance at startup; on hosts with exhausted inotify
+instances it exits with "couldn't initialize inotify: too many open
+files" -- raise `fs.inotify.max_user_instances` (e.g.
+`sysctl -w fs.inotify.max_user_instances=512`).
 
 The legacy per-service files (`core.env`, `oci.env`, `rebom.env`) are
 still honored for backward compatibility, but new deployments should

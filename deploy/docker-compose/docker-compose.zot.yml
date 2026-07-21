@@ -1,0 +1,69 @@
+# Overlay: bundled zot OCI registry for artifact storage, reachable only on
+# the compose network (no published ports). Alternative to pointing the
+# OCI_* variables at an external registry.
+#
+# Usage (add the overlay after the base file; combine with --profile tls as
+# needed):
+#   docker compose -f docker-compose.yml -f docker-compose.zot.yml up -d
+#
+# Credentials default to rearm / zotRegistryPass; override via
+# OCI_REGISTRY_USERNAME / OCI_REGISTRY_TOKEN in .env (the same variables an
+# external registry would use -- the overlay simply redirects them at the
+# bundled zot). The htpasswd file is (re)generated from these values on
+# every start by the zot-htpasswd one-shot, so a credential change in .env
+# takes effect on the next `up`.
+#
+# Storage profile is tuned for the ReARM access pattern (push once, fetch by
+# digest, no deletes): dedupe off, GC off, no extensions (zot-minimal
+# image). Artifacts persist in the rearm-zot-data volume.
+services:
+  zot-htpasswd:
+    image: httpd:2.4-alpine@sha256:1b766f17b84026429b7cb243317b142921b24432336e798bc881c43f45ed9567
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["htpasswd -Bbc /auth/htpasswd \"$${REGISTRY_USER}\" \"$${REGISTRY_PASS}\""]
+    environment:
+     - REGISTRY_USER=${OCI_REGISTRY_USERNAME:-rearm}
+     - REGISTRY_PASS=${OCI_REGISTRY_TOKEN:-zotRegistryPass}
+    volumes:
+     - rearm-zot-auth:/auth
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+  zot:
+    image: ghcr.io/project-zot/zot-minimal:v2.1.18@sha256:892f2a5a63dd99bdf85320fee5448506119328a6d5e1a2d14d4db876be595236
+    command: ["serve", "/etc/zot/config.json"]
+    volumes:
+     - ./zot-config.json:/etc/zot/config.json:ro
+     - rearm-zot-auth:/etc/zot/auth:ro
+     - rearm-zot-data:/var/lib/zot
+    depends_on:
+      zot-htpasswd:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+  oci-artifact-service:
+    environment:
+     - REGISTRY_HOST=zot:5000
+     - REGISTRY_USERNAME=${OCI_REGISTRY_USERNAME:-rearm}
+     - REGISTRY_TOKEN=${OCI_REGISTRY_TOKEN:-zotRegistryPass}
+     # In-network plain-http; zot is not reachable from outside the compose
+     # network.
+     - USE_PLAIN_HTTP=true
+    depends_on:
+     - zot
+  # With the bundled registry the namespace no longer identifies a remote
+  # account, it is just the repository path prefix inside zot.
+  rearm-core:
+    environment:
+     - RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
+  rebom-backend:
+    environment:
+     - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
+volumes:
+  rearm-zot-auth:
+    driver: local
+  rearm-zot-data:
+    driver: local
