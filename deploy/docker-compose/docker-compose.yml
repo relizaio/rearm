@@ -16,7 +16,10 @@ services:
      - KEYCLOAK_ISSUER_URI=${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}
      - KEYCLOAK_SET_URI=http://keycloak:9080
      - RELIZAPROP_REBOM_URI=http://rebom-backend:4000/
-     - RELIZAPROP_OCIARTIFACTS_SERVICE_HOST=oci-artifact-service
+     # Full URL -- the backend uses this verbatim as the WebClient base;
+     # a bare hostname makes it dial port 80 and fail against the
+     # service's 8083.
+     - RELIZAPROP_OCIARTIFACTS_SERVICE_HOST=http://oci-artifact-service:8083
      - MAX_UPLOAD_SIZE=50MB
     depends_on:
      - rearm-postgresql

@@ -57,7 +57,14 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 		return resp, err
 	}
 	originalMediaType := mimeType.String()
+	// Strip media type parameters (e.g. "text/plain; charset=utf-8" ->
+	// "text/plain"): OCI descriptor mediaType must be a bare media type.
+	// Spec-strict registries (zot) reject manifests whose layer mediaType
+	// carries parameters; lax ones (distribution/Harbor) let it through.
 	mediaType := originalMediaType
+	if idx := strings.Index(mediaType, ";"); idx != -1 {
+		mediaType = strings.TrimSpace(mediaType[:idx])
+	}
 
 	// Add compression suffix if compressed
 	if compressionMeta != nil && compressionMeta.Algorithm == CompressionZstd {
@@ -92,12 +99,9 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 		return resp, err
 	}
 	// 2. Pack the files and tag the packed manifest using PackManifest (replaces deprecated Pack)
-	// Strip media type parameters (e.g., "text/plain; charset=utf-8" -> "text/plain")
-	// as artifactType must be a valid media type without parameters per RFC 6838
+	// mediaType is already parameter-free (stripped at detection above), so it
+	// is directly valid as the artifactType per RFC 6838.
 	artifactType := mediaType
-	if idx := strings.Index(artifactType, ";"); idx != -1 {
-		artifactType = strings.TrimSpace(artifactType[:idx])
-	}
 	manifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, artifactType, oras.PackManifestOptions{
 		Layers: fileDescriptors,
 	})
