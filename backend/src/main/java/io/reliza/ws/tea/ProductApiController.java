@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,9 +30,6 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn;
 
 import org.springframework.web.context.request.NativeWebRequest;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import jakarta.annotation.Generated;
@@ -66,19 +64,24 @@ public class ProductApiController implements ProductApi {
     @Override
         public ResponseEntity<TeaPaginatedProductReleaseResponse> getReleasesByProductId(
                 @Parameter(name = "uuid", description = "UUID of TEA Product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
-                @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
-                @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize
+                @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+                @Parameter(name = "pageToken", description = "An opaque token used to retrieve the next page of results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+                @Parameter(name = "sortField", description = "The field by which to sort the results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "createdDate") String sortField,
+                @Parameter(name = "sortOrder", description = "The direction of the sort.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
             ) {
         var ocd = getComponentService.getComponentData(uuid);
         if (ocd.isEmpty() || ocd.get().getType() != ComponentType.PRODUCT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
             return ResponseEntity.notFound().build();
         } else {
-        	TeaPaginatedProductReleaseResponse tpprr = new TeaPaginatedProductReleaseResponse();
-            var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - proper pagination
+            long size = TeaPaginationUtil.effectiveSize(pageSize);
+            long offset = TeaPaginationUtil.decodeOffset(pageToken);
+            var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, (int) (size + 1), (int) offset);
             var teaProductReleases = releases.stream().map(rd -> teaTransformerService.transformProductReleaseToTea(rd)).toList();
-        	tpprr.setResults(teaProductReleases);
-        	tpprr.setTotalResults((long) teaProductReleases.size());
-        	tpprr.setTimestamp(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.SECONDS));
+            var page = TeaPaginationUtil.fromOverfetch(teaProductReleases, offset, size);
+        	TeaPaginatedProductReleaseResponse tpprr = new TeaPaginatedProductReleaseResponse();
+        	tpprr.setResults(page.items());
+        	tpprr.setHasNext(page.hasNext());
+        	tpprr.setNextPageToken(page.nextPageToken());
             return ResponseEntity.ok(tpprr);
         }
     }
