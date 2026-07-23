@@ -283,7 +283,12 @@
                 <!-- AGGREGATED mode: Show top-level aggregated changes -->
                 <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                     <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
-                    <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" />
+                    <!-- Prefer the window posture-diff when the backend computed one: it anchors
+                         New/Resolved/StillPresent on the finding-change event dates, so a new CVE
+                         hitting an EXISTING release inside the window classifies as New. The legacy
+                         findingChanges list is release-pairwise (anchored on release creation) and
+                         can never surface that case; it remains the fallback for uncertified orgs. -->
+                    <FindingChangesDisplayWithAttribution :finding-changes="changelog.postureFindingChanges ?? changelog.findingChanges" :show-attribution="true" :org-uuid="changelog.orgUuid" :over-time-finding-changes="changelog.overTimeFindingChanges" :scope-label="props.componentprop ? 'component' : 'organization'" />
                 </div>
             </n-tab-pane>
         </n-tabs>
