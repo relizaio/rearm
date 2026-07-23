@@ -166,7 +166,7 @@ func uploadFile(c *gin.Context) {
 		return
 	}
 
-	resp, err := oc.PushArtifact(c, fileToUpload, form.Tag, compressionMetadata)
+	resp, err := oc.PushArtifact(c, fileToUpload, form.Tag, mimeType, compressionMetadata)
 	if err != nil {
 		getLogger().Errorw("Error Pushing Artifact", "error", err, "repo", form.Repo, "tag", form.Tag)
 		c.String(http.StatusBadRequest, "Error Pushing Artifact: ", err)
@@ -203,7 +203,7 @@ func downloadFile(c *gin.Context) {
 		return
 	}
 	dirToDownload := uuid.New().String()
-	descriptor, err := oc.PullArtifact(c, form.Tag, dirToDownload)
+	_, err = oc.PullArtifact(c, form.Tag, dirToDownload)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
 		return
@@ -219,28 +219,18 @@ func downloadFile(c *gin.Context) {
 	targetFile := files[0]
 	targetPath := filepath.Join("/tmp", dirToDownload, targetFile.Name())
 
-	// Check if file is compressed based on annotations or magic number
+	// Detect compression by the zstd magic number. The compression
+	// annotations live on the LAYER descriptor, but the pull returns the
+	// MANIFEST descriptor, so they are not visible here -- and older
+	// artifacts carry a wrong io.reliza.original.mediatype value anyway
+	// (the pre-fix push detected it on the already-compressed blob).
 	isCompressed := false
-	originalMediaType := ""
-	if descriptor.Annotations != nil {
-		if algo, ok := descriptor.Annotations["io.reliza.compression.algorithm"]; ok && algo == "zstd" {
+	file, err := os.Open(targetPath)
+	if err == nil {
+		defer file.Close()
+		compressed, err := IsFileCompressed(file)
+		if err == nil && compressed {
 			isCompressed = true
-		}
-		// Retrieve original media type from annotations
-		if mediaType, ok := descriptor.Annotations["io.reliza.original.mediatype"]; ok {
-			originalMediaType = mediaType
-		}
-	}
-
-	// If not detected from annotations, check file magic number
-	if !isCompressed {
-		file, err := os.Open(targetPath)
-		if err == nil {
-			defer file.Close()
-			compressed, err := IsFileCompressed(file)
-			if err == nil && compressed {
-				isCompressed = true
-			}
 		}
 	}
 
@@ -267,25 +257,14 @@ func downloadFile(c *gin.Context) {
 		finalPath = decompressedFile.Name()
 	}
 
-	// Use original media type from annotations if available, otherwise detect
-	var mimeTypeStr string
-	var extension string
-	if originalMediaType != "" {
-		mimeTypeStr = originalMediaType
-		// Try to get extension from mimetype library
-		mt := mimetype.Lookup(originalMediaType)
-		if mt != nil {
-			extension = mt.Extension()
-		}
-	} else {
-		mimeType, err := mimetype.DetectFile(finalPath)
-		if err != nil {
-			c.String(http.StatusInternalServerError, "Error Determining mimetype: ", err)
-			return
-		}
-		mimeTypeStr = mimeType.String()
-		extension = mimeType.Extension()
+	// Detect the media type on the (decompressed) content being served
+	mimeType, err := mimetype.DetectFile(finalPath)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Error Determining mimetype: ", err)
+		return
 	}
+	mimeTypeStr := mimeType.String()
+	extension := mimeType.Extension()
 
 	c.Header("Content-Description", "File Transfer")
 	c.Header("Content-type", mimeTypeStr)

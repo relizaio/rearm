@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabriel-vasile/mimetype"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/file"
@@ -41,7 +40,11 @@ func NewOrasClient(repoName string) (*OrasClient, error) {
 	return &OrasClient{repo}, nil
 }
 
-func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, tag string, compressionMeta *CompressionMetadata) (v1.Descriptor, error) {
+// PushArtifact stores the file under tag. originalMediaType is the media type
+// of the ORIGINAL (pre-compression) content as detected by the caller -- the
+// file handed in here may already be zstd-compressed, so detecting on it would
+// yield application/zstd rather than the content's real type.
+func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, tag string, originalMediaType string, compressionMeta *CompressionMetadata) (v1.Descriptor, error) {
 	// 0. Create a file store
 	getLogger().Infow("Pushing artifact", "tag", tag)
 	resp := v1.Descriptor{}
@@ -52,14 +55,17 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 	}
 	defer fs.Close()
 	// 1. Add files to a file store
-	mimeType, err := mimetype.DetectFile(uploadedFile.Name())
-	if err != nil {
-		return resp, err
+	// Strip media type parameters (e.g. "text/plain; charset=utf-8" ->
+	// "text/plain"): OCI descriptor mediaType must be a bare media type.
+	// Spec-strict registries (zot) reject manifests whose layer mediaType
+	// carries parameters; lax ones (distribution/Harbor) let it through.
+	strippedMediaType := originalMediaType
+	if idx := strings.Index(strippedMediaType, ";"); idx != -1 {
+		strippedMediaType = strings.TrimSpace(strippedMediaType[:idx])
 	}
-	originalMediaType := mimeType.String()
-	mediaType := originalMediaType
 
-	// Add compression suffix if compressed
+	// The layer carries the blob encoding: +zstd suffix when compressed
+	mediaType := strippedMediaType
 	if compressionMeta != nil && compressionMeta.Algorithm == CompressionZstd {
 		mediaType += "+zstd"
 	}
@@ -92,12 +98,9 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 		return resp, err
 	}
 	// 2. Pack the files and tag the packed manifest using PackManifest (replaces deprecated Pack)
-	// Strip media type parameters (e.g., "text/plain; charset=utf-8" -> "text/plain")
-	// as artifactType must be a valid media type without parameters per RFC 6838
-	artifactType := mediaType
-	if idx := strings.Index(artifactType, ";"); idx != -1 {
-		artifactType = strings.TrimSpace(artifactType[:idx])
-	}
+	// artifactType describes the content, not the blob encoding, so it takes
+	// the stripped original type without the compression suffix.
+	artifactType := strippedMediaType
 	manifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, artifactType, oras.PackManifestOptions{
 		Layers: fileDescriptors,
 	})
