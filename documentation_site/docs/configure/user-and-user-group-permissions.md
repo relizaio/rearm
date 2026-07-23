@@ -90,6 +90,13 @@ All functions are always available for `Administrator` permission type.
 
 If set, allow users to set granted approvals for all objects in the organization. Organization Admins can always set granted approvals.
 
+::: tip Approving vs. being notified
+The "Admins can always approve" rule above only covers the capability to
+*cast* a vote -- it does not put releases in an admin's approval queue or
+notify them. See [Approval Queues](./approval-queues) for the distinction and
+how to give an admin visibility, not just capability.
+:::
+
 ### 4) Scoped Permissions
 
 Both users and user groups support scoped overrides for:

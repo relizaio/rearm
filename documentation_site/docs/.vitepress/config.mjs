@@ -29,7 +29,9 @@ function sidebar() {
           {text: 'Committers & Commit Signing', link: '/workflows/committers'}
         ]},
         {text: 'Configure', link: '/configure/', items: [
-          {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'}
+          {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'},
+          {text: 'Notifications', link: '/configure/notifications'},
+          {text: 'Approval Queues', link: '/configure/approval-queues'}
         ]},
         {text: 'Transparency Exchange API', link: '/tea/' },
         {text: 'Integrations', link: '/integrations/',
@@ -62,6 +64,7 @@ function sidebar() {
             },
             {text: 'Slack', link: '/integrations/slack'},
             {text: 'Microsoft Teams', link: '/integrations/msteams'},
+            {text: 'Microsoft Sentinel', link: '/integrations/sentinel'},
             {text: 'Dependency-Track', link: '/integrations/dtrack'},
             {text: 'Identity Providers', link: '/integrations/identityProviders',
               items: [
