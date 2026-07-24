@@ -806,6 +806,10 @@ type Mutation {
 	setInstanceApiKey(instanceUuid: ID!): ApiKeyForUser
 	generateProductRelease(instanceUuid: ID!): [InstanceProductMapActual]
 	instData(instance: InstanceDataInput!): Object
+	# Report deployment failures from ReARM CD. Batched, idempotent per
+	# (namespace, deploymentName, fingerprint): a failure repeating on every
+	# reconcile updates one row's lastSeen/occurrenceCount rather than inserting.
+	instanceDeploymentEventsProgrammatic(events: [InstanceDeploymentEventInput!]!): Object
 	archiveInstance(instanceUuid: ID!): Boolean
 	setInstanceSealedSecretCert(sealedCert: String!): Boolean
 	# Switch a deployed product on the instance plan from its current
@@ -5163,6 +5167,11 @@ type Instance {
 	# "Unmatched Deployed Images" in the Instance UI so operators can
 	# see what is running that ReARM does not know about.
 	unmatchedReleases: [UnmatchedImage]
+	# Open (unresolved) deployment failures reported by ReARM CD, most recently
+	# seen first. Empty when the agent has reported none.
+	deploymentFailures: [InstanceDeploymentFailure]
+	# Derived from deploymentFailures -- see DeploymentHealth.
+	deploymentHealth: DeploymentHealth
 	agentData: String
 	productPlans: [InstanceProductMapPlan]
 	productActuals: [InstanceProductMapActual]
@@ -5238,6 +5247,61 @@ type InstanceProductMapActual {
 	namespace: String
 	identifier: String
 	notMatchingSince: DateTime
+}
+
+# A deployment failure reported by ReARM CD, deduplicated per
+# (namespace, deploymentName, fingerprint). Timestamps are the point:
+# firstSeen is when the CURRENT incident started, lastSeen is the most recent
+# re-report, and occurrenceCount is how many reconciles have hit it.
+type InstanceDeploymentFailure {
+	uuid: ID
+	namespace: String
+	deploymentName: String
+	phase: DeploymentPhase
+	failureClass: DeploymentFailureClass
+	message: String
+	# Redacted + truncated by the reporting agent before transmit.
+	detail: String
+	featureSet: ID
+	featureSetDetails: Branch
+	product: ID
+	targetRelease: ID
+	senderId: String
+	firstSeen: DateTime
+	lastSeen: DateTime
+	occurrenceCount: Int
+}
+
+# Stage of the ReARM CD reconcile at which a failure occurred.
+enum DeploymentPhase {
+	VALUES_MERGE
+	TAG_REPLACE
+	SECRETS
+	HELM_INSTALL
+	HELM_UNINSTALL
+	WATCHER_INSTALL
+	BACKUP
+	UNKNOWN
+}
+
+# Coarse cause classification, assigned by the reporting agent.
+enum DeploymentFailureClass {
+	RBAC_FORBIDDEN
+	CHART_NOT_FOUND
+	TIMEOUT
+	IMAGE_PULL
+	VALUES_INVALID
+	PRECONDITION_MISSING
+	UNKNOWN
+}
+
+# Derived roll-up of an instance's open deployment failures. DEGRADED means
+# open failures exist but none was re-reported recently -- which is ambiguous
+# between "fixed" and "the agent stopped reporting", so read lastSeen.
+enum DeploymentHealth {
+	HEALTHY
+	DEGRADED
+	FAILING
 }
 
 type InstancePropertyRecord {
@@ -5333,6 +5397,27 @@ input CreateInstanceInput {
 	uri: String
 	environment: String
 	clusterId: ID
+}
+
+# One deployment failure reported by ReARM CD. Batched: a reconcile sends every
+# failure it hit in a single call. `fingerprint` is the agent-computed dedup key
+# -- same underlying fault must yield the same value across reconciles, or a
+# persistent failure will accumulate rows instead of a counter. Omit it and the
+# server derives one from (deploymentName, phase, failureClass).
+input InstanceDeploymentEventInput {
+	instance: ID
+	namespace: String
+	senderId: String
+	deploymentName: String!
+	featureSet: ID
+	product: ID
+	targetRelease: ID
+	phase: DeploymentPhase
+	failureClass: DeploymentFailureClass
+	message: String
+	detail: String
+	attemptedAt: DateTime
+	fingerprint: String
 }
 
 input InstanceDataInput {
