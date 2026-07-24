@@ -695,9 +695,16 @@ export async function enrichCycloneDxBom(
  * gate be exercised before a real BEAR integration exists.
  */
 export async function isEnrichmentConfigured(org: string): Promise<boolean> {
-  if (process.env.ENRICHMENT_PENDING_IF_NOT_CONFIGURED === 'true') {
-    return true;
-  }
+  // Deliberately does NOT honor ENRICHMENT_PENDING_IF_NOT_CONFIGURED: that
+  // flag marks new BOMs PENDING so a later-configured BEAR can enrich them
+  // retroactively (see getInitialEnrichmentStatus) — it does not mean
+  // enrichment is available NOW. Consumers of this probe gate real work on
+  // the answer: ReARM's synthetic-DTrack submitOrg holds an org's components
+  // back until enrichment completes, and the enrichment scheduler skips
+  // orgs without credentials — so answering "configured" for a cred-less
+  // org deadlocks that org's scanning pipeline forever (observed on a
+  // sandbox with the flag set: every fresh org's BOMs froze at PENDING and
+  // nothing ever reached Dependency-Track).
   const integration = await getBearIntegration(org);
   return integration.configured;
 }
