@@ -1273,7 +1273,7 @@ import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
-import { getReleaseScanStatus, isDtrackConfiguredForOrg } from '@/utils/releaseScanStatus'
+import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus } from '@/utils/releaseScanStatus'
 import { processMetricsData } from '@/utils/metrics'
 import { annotateKnownExploited, fetchArtifactKevVulnIds } from '@/utils/kevService'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
@@ -3120,11 +3120,10 @@ function stopStatusPolling () {
 }
 function hasPendingStatuses (): boolean {
     if (release.value?.sbomReconcilePending) return true
-    const allArtifacts: any[] = [
-        ...(release.value?.artifactDetails || []),
-        ...((release.value?.sourceCodeEntryDetails?.artifactDetails) || []),
-        ...((release.value?.variantDetails || []).flatMap((v: any) => (v?.outboundDeliverableDetails || []).flatMap((d: any) => d?.artifactDetails || [])))
-    ]
+    // Same component-scoped artifact set as the badge — polling must not
+    // spin forever on another component's SCE artifact that this release
+    // neither displays nor waits on.
+    const allArtifacts: any[] = collectArtifactsForStatus(release.value)
     return allArtifacts.some((a: any) => {
         if (!a) return false
         if (a.enrichmentStatus === 'PENDING') return true
