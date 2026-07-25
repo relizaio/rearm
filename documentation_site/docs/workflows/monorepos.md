@@ -66,10 +66,15 @@ on:
 
 name: Build components and submit metadata to ReARM
 
+# Least privilege by default; jobs opt into more where they need it.
+permissions:
+  contents: read
+
 jobs:
   build-ui:
     permissions:
-      id-token: write
+      contents: read
+      id-token: write     # keyless Sigstore signing only
     name: Build And Push UI
     runs-on: ubuntu-latest
     steps:
@@ -89,6 +94,7 @@ jobs:
           source_code_sbom_type: 'npm'
   build-backend:
     permissions:
+      contents: read
       id-token: write
     name: Build And Push Backend
     runs-on: ubuntu-latest
@@ -118,12 +124,13 @@ For the anatomy of these actions and the non-Docker variants, see [GitHub Action
 When you build something other than a container image, wire the four actions together yourself and pass `repo_path` to `initialize`. It emits `do_build` (plus the resolved version and SCE data) for the rest of the job to gate on:
 
 ```yaml
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: relizaio/rearm-actions/setup-cli@v1
+          persist-credentials: false
+      - uses: relizaio/rearm-actions/setup-cli@dac3e7752598c46746d9b98e0a4bed76535be9b3 # v1.7.0
       - id: init
-        uses: relizaio/rearm-actions/initialize@v1
+        uses: relizaio/rearm-actions/initialize@dac3e7752598c46746d9b98e0a4bed76535be9b3 # v1.7.0
         with:
           rearm_api_id: ${{ secrets.REARM_BACKEND_API_ID }}
           rearm_api_key: ${{ secrets.REARM_BACKEND_API_KEY }}
@@ -132,10 +139,10 @@ When you build something other than a container image, wire the four actions tog
       - name: Build
         if: steps.init.outputs.do_build == 'true'
         run: ./gradlew build            # your build, versioned by steps.init.outputs.full_version
-      - uses: relizaio/rearm-actions/sbom-sign-scan@v1
+      - uses: relizaio/rearm-actions/sbom-sign-scan@dac3e7752598c46746d9b98e0a4bed76535be9b3 # v1.7.0
         if: steps.init.outputs.do_build == 'true'
         with: { ... }
-      - uses: relizaio/rearm-actions/finalize@v1
+      - uses: relizaio/rearm-actions/finalize@dac3e7752598c46746d9b98e0a4bed76535be9b3 # v1.7.0
         if: steps.init.outputs.do_build == 'true'
         with:
           rearm_full_version: ${{ steps.init.outputs.full_version }}
@@ -157,13 +164,17 @@ jobs:
   detect:
     name: Detect changed components
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       ui:      ${{ steps.f.outputs.ui }}
       backend: ${{ steps.f.outputs.backend }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - id: f
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
           filters: |
             ui:
@@ -177,6 +188,22 @@ jobs:
 ```
 
 Treat this as an optimization layered on top of `do_build`, not a replacement for it. The filter compares the *push range*, so it is blind to everything the release history knows: a component whose previous build failed looks unchanged on the next unrelated push, and its job never starts to find out otherwise. That is why the example keeps an escape hatch (`|| github.ref == 'refs/heads/main'`) that lets every component evaluate itself on the main branch, where `do_build` makes the final call.
+
+### Hardening the workflow
+
+The examples above follow a few practices that are worth keeping when you adapt them, and one of them is specific to monorepos.
+
+**Pin every action to a full commit SHA.** A tag such as `@v1` or `@v6` is a mutable pointer — whoever controls the action's repository can move it, and a compromised upstream then executes with your registry credentials and ReARM API keys on the next run. Pinning to a 40-character SHA makes the code you run immutable; the trailing `# v1.7.0` comment keeps it readable. This applies to every action in the chain, including first-party ReARM actions and popular third-party ones like `paths-filter`.
+
+Pinned SHAs do not update themselves, so pair them with [Dependabot](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot) or Renovate — both understand the SHA-plus-comment convention and will raise PRs that bump the pin and the comment together. In a monorepo this matters more than usual: one workflow file typically drives every component, so a single stale or hijacked action reaches all of them at once.
+
+**Grant the smallest set of permissions.** Declare `permissions: contents: read` at the workflow level so every job starts read-only, then have individual jobs opt into exactly what they need. `id-token: write` is required only for keyless [Cosign and Sigstore](/integrations/githubActionsCosign) signing, and `contents: write` only for jobs that push back to the repository (a Helm chart release, for example). Without a workflow-level default, jobs inherit whatever the repository default is, which is frequently far broader than a build needs.
+
+**Do not leave the token in the checkout.** `actions/checkout` writes the `GITHUB_TOKEN` into `.git/config` unless you pass `persist-credentials: false`. Any later step — a build script, a test, a transitive dependency's postinstall hook — can read it from there. Monorepo builds run more third-party tooling per job than single-project ones, so turn it off unless a later step genuinely needs to push.
+
+**Use one ReARM API key per component.** Beyond keeping releases attributed correctly, this is the blast radius argument: a Component API key can only create releases for its own Component, so a key leaked from the UI job cannot forge backend releases. A single organization-wide key shared across every job in the monorepo turns one compromised job into write access for the whole organization.
+
+**Be careful what runs on pull requests from forks.** If the repository is public, keep secret-bearing build jobs on `push` (as the examples do) and avoid `pull_request_target`, which runs workflow code from the base branch with full secret access while checking out the contributor's code. For validating incoming changes, use the dedicated [pull request validation](/integrations/githubValidate) flow instead.
 
 ## Forcing a rebuild
 
