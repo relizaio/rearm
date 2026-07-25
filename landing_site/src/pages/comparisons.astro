@@ -97,6 +97,21 @@ const sections: Section[] = [
     ],
   },
   {
+    id: 'rearm-vs-jfrog-apptrust',
+    title: 'ReARM vs JFrog AppTrust',
+    intro: 'JFrog AppTrust adds application-level release management on top of Artifactory: applications, application versions, and versions that can be composed of other application versions. That composition model converges on the Product-Component pattern ReARM has run for years, which is a useful validation of the approach. The difference is not whether a hierarchy exists - it is what a node in that hierarchy can be, and what the platform understands about the levels.',
+    leftLabel: 'ReARM',
+    rightLabel: 'JFrog AppTrust',
+    points: [
+      { left: 'Typed release hierarchy: Products, Components, Feature Sets, Branches and Releases are distinct first-class objects, so behavior can attach to a level - aggregated posture at product level, audit scope at feature set level.', right: 'Generic recursive container: everything is an application, and an application version can contain other application versions. Nesting is a convention you impose rather than a typed hierarchy the platform reasons about.' },
+      { left: 'Own finding audit engine with multiple scopes (organization-wide, product, feature set, component, branch, release), applying to findings from any source.', right: 'Lifecycle policy waivers on promotion - permission to pass a gate, rather than a scoped disposition of a finding that persists as an auditable decision.' },
+      { left: 'Branches and Feature Sets provide a parallel-maintenance axis: several shipping versions maintained concurrently, each with its own patch stream - one per regulatory market, customer, or supported release line.', right: 'Lifecycle stages (DEV -> QA -> PROD) are a progression axis. Concurrent long-lived maintenance streams have no first-class model and end up expressed as separate applications or naming conventions.' },
+      { left: 'Any release can be a node, including software you did not build: supplier and OEM releases known only from a received SBOM are first-class members of a product, which is what CRA and FDA 524B supplier transparency require.', right: 'Composition is Artifactory-bound: child application versions are builds and artifacts that exist in Artifactory. Third-party software you never built can be attached as evidence but is not a node in the composition.' },
+      { left: 'Auto-integration assembles component releases into product releases automatically, via feature sets and dependency patterns that pick up new components as they appear.', right: 'Package bindings solve artifact-to-application assignment; assembling a product version from the right child versions remains an explicit, manual step.' },
+      { left: 'Registry- and CI-agnostic: works with any registry, any CI system, and any scanner, with a FOSS Community Edition (ReARM CE) available for self-hosting.', right: 'Designed around the JFrog platform, with Artifactory as the source of truth for what can participate in a release.' },
+    ],
+  },
+  {
     id: 'rearm-vs-sbom-management-tools',
     title: 'ReARM vs SBOM Management Tools',
     intro: 'SBOM management tools such as Manifest, Cybeats, and Interlynk focus on SBOM generation, ingestion, enrichment, and supply chain visibility. These tools help you understand the supply chain. ReARM helps you control the release built from it.',
@@ -117,7 +132,7 @@ const sections: Section[] = [
 
 <Base
   title="Comparisons - ReARM by Reliza"
-  description="See how ReARM compares to Dependency-Track, SCA tools, GUAC, Chainloop, and SBOM management tools - and how it differs from each by operating at the release governance layer."
+  description="See how ReARM compares to Dependency-Track, SCA tools, GUAC, Chainloop, JFrog AppTrust, and SBOM management tools - and how it differs from each by operating at the release governance layer."
 >
   <section class="c-hero">
     <div class="container">
