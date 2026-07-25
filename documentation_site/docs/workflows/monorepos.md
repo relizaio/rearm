@@ -26,7 +26,9 @@ The repository path is a first-class field on the Component, so `(vcsUri, repoPa
 
 Everything downstream follows from this: each Component versions on its own schedule, carries its own [Branches](/concepts/#branch), and produces its own [Releases](/concepts/#release) with their own SBOMs, deliverables and findings. A change to `ui` never bumps `backend`.
 
-Authentication can go either way. Give each Component its own Component API key — the key then identifies the Component and CI passes nothing else — or use one organization-wide key and identify the target with `--component <uuid>` (CLI) / the `component` input (actions).
+Authentication can go either way. Give each Component its own Component API key — the key then identifies the Component and CI passes nothing else — or use a single FREEFORM key whose permissions cover all of them (organization scope, or a perspective in ReARM Pro) and identify the target with `--component <uuid>` (CLI) / the `component` input (actions), or by the VCS URI and repository path.
+
+Components do not have to exist before their first build: a FREEFORM key with wide-enough permissions can register them from CI on the fly, which suits monorepos where new directories appear regularly. See [Self-Registering Components from CI](./self-registration).
 
 ## How ReARM decides what to build
 
@@ -201,7 +203,7 @@ Pinned SHAs do not update themselves, so pair them with [Dependabot](https://doc
 
 **Do not leave the token in the checkout.** `actions/checkout` writes the `GITHUB_TOKEN` into `.git/config` unless you pass `persist-credentials: false`. Any later step — a build script, a test, a transitive dependency's postinstall hook — can read it from there. Monorepo builds run more third-party tooling per job than single-project ones, so turn it off unless a later step genuinely needs to push.
 
-**Use one ReARM API key per component.** Beyond keeping releases attributed correctly, this is the blast radius argument: a Component API key can only create releases for its own Component, so a key leaked from the UI job cannot forge backend releases. A single organization-wide key shared across every job in the monorepo turns one compromised job into write access for the whole organization.
+**Use one ReARM API key per component.** Beyond keeping releases attributed correctly, this is the blast radius argument: a Component API key can only create releases for its own Component, so a key leaked from the UI job cannot forge backend releases. A single FREEFORM key with organization-scoped permissions, shared across every job in the monorepo, turns one compromised job into write access for the whole organization. If you do need one key for several components — self-registration requires it — scope it to a perspective rather than the whole organization where ReARM Pro allows.
 
 **Be careful what runs on pull requests from forks.** If the repository is public, keep secret-bearing build jobs on `push` (as the examples do) and avoid `pull_request_target`, which runs workflow code from the base branch with full secret access while checking out the contributor's code. For validating incoming changes, use the dedicated [pull request validation](/integrations/githubValidate) flow instead.
 
@@ -305,4 +307,8 @@ An empty `LAST_COMMIT` means the component has never been released, and a first 
 
 **Keep repository paths stable.** The path is half of the identity ReARM resolves a Component by. Renaming `ui` to `frontend` makes the pair `(vcsUri, ui)` stop resolving, and CI behaves as if it were building a brand-new component. When a move is unavoidable, update the Component's repository path in ReARM in the same change.
 
-**One key per component, or one key plus an explicit component.** A Component API key implies its Component; an organization-wide key does not. If you reuse a single key across monorepo jobs, pass `--component` / the `component` input in every job, or the releases will pile up on whichever Component the key happens to resolve to.
+**One key per component, or one key plus an explicit component.** A Component API key implies its Component; a FREEFORM key covering many components does not. If you reuse a single key across monorepo jobs, identify the target in every job — `--component` / the `component` input, or the VCS URI and repository path — or releases will pile up on whichever Component the key happens to resolve to.
+
+**Force pushes break the anchor and the audit trail.** The whole scheme is anchored to commits: `do_build` diffs against the commit of the last release, and every release records the commit it was built from. Rewriting history on a branch that CI builds from invalidates both. The immediate symptom is mild — the anchor commit is no longer reachable, the check fails safe, and the component rebuilds once. The durable damage is not: released Source Code Entries now name commits that no longer exist in the repository, so commit signature verification, [committer attribution](./committers) and [supply chain forensics](./supply-chain-forensics) can no longer resolve what produced a shipped artifact, and changelogs between releases are computed across a history that has changed underneath them.
+
+Treat branches that CI releases from as append-only, and recover from a bad commit by pushing a follow-up rather than amending or rebasing. This matters more in a monorepo than elsewhere: one force push rewrites the anchor for *every* component in the repository, not just the one you were fixing.

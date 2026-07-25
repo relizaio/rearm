@@ -7,6 +7,7 @@ sidebarDepth: 2
 - [Bootstrap an AI Agent](./agentic)
 - [Bundling & Auto-Integrate](./bundling)
 - [Monorepos](./monorepos)
+- [Self-Registering Components from CI](./self-registration)
 - [DevOps: Instances, Secrets & Delivery](./devops)
 - [License Compliance](./license-compliance)
 - [Auditing Findings](./auditing-findings)

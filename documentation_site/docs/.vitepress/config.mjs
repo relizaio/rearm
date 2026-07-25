@@ -20,6 +20,7 @@ function sidebar() {
           {text: 'Bootstrap an AI Agent', link: '/workflows/agentic'},
           {text: 'Bundling & Auto-Integrate', link: '/workflows/bundling'},
           {text: 'Monorepos', link: '/workflows/monorepos'},
+          {text: 'Self-Registering Components', link: '/workflows/self-registration'},
           {text: 'DevOps: Instances & Delivery', link: '/workflows/devops'},
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'},
