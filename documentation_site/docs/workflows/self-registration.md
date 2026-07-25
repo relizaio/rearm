@@ -99,6 +99,6 @@ Override with `--createcomponent-name` when you want something else. Renaming af
 
 ## When to create components by hand instead
 
-Self-registration gives a new Component only what CI can describe: name, version schemas, VCS binding, and optionally a perspective. Anything else — approval policies, output triggers, component-level API keys, team and contact metadata, a specific naming convention — still has to be configured afterwards.
+Self-registration gives a new Component only what CI can describe: name, version schemas, VCS binding, and optionally a perspective. Anything else — custom approval policies and actions, component-level API keys, team and contact metadata, a specific naming convention — still has to be configured afterwards.
 
-If new components need that configuration before their first release is meaningful, create them in the UI and let CI resolve them by path instead. A practical middle ground is to let CI self-register components in development perspectives, and pre-create them deliberately in production ones.
+If new components need that configuration before their first release is meaningful, create them in the UI and let CI resolve them by path instead.
