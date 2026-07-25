@@ -239,6 +239,20 @@ const INSTANCE_GQL_DATA = `
             state
         }
     }
+    deploymentFailures {
+        uuid
+        namespace
+        deploymentName
+        phase
+        failureClass
+        message
+        detail
+        senderId
+        firstSeen
+        lastSeen
+        occurrenceCount
+    }
+    deploymentHealth
     agentData
     environment
     productPlans {
