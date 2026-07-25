@@ -825,9 +825,9 @@
                             </ul>
                         </div>
                         <n-space v-if="approvalEntries.length" align="center" :size="16" style="margin-bottom: 6px; font-size: 12px; color: #888;" data-testid="approval-legend">
-                            <span><n-icon size="14" color="#18a058" style="vertical-align: -2px;"><Check /></n-icon> Approve</span>
-                            <span><n-icon size="14" color="#d03050" style="vertical-align: -2px;"><X /></n-icon> Disapprove</span>
-                            <span>Click an icon to set your vote, click it again to clear</span>
+                            <span><span class="approval-legend-swatch approval-legend-swatch--approve"><n-icon size="12"><Check /></n-icon></span> Approve</span>
+                            <span><span class="approval-legend-swatch approval-legend-swatch--reject"><n-icon size="12"><X /></n-icon></span> Disapprove</span>
+                            <span>The filled side is your vote. Click it again to clear; a dashed outline means unsaved.</span>
                         </n-space>
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
@@ -5001,49 +5001,71 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                     const isApproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'APPROVED' : false
                     // Machine-readable cell state for the test harness.
                     const approvalState = isApproved ? 'APPROVED' : (isDisapproved ? 'DISAPPROVED' : 'UNSET')
-                    // Approve and Disapprove are two separate controls (not one checkbox
-                    // cycling through a hidden third state) so the disapprove option is
-                    // always visible rather than only discoverable by clicking twice.
-                    const approveIcon = h(NIcon,
-                        {
-                            class: isDisabled ? 'icons' : 'icons clickable',
-                            size: 22,
-                            title: isApproved && isDisabled ? 'Approved' : (isApproved ? 'Your Approval Pending (click to clear)' : 'Approve'),
-                            'data-testid': `approval-approve-${row.uuid}-${aid}`,
+                    // A vote already saved on the server (as opposed to a local,
+                    // not-yet-saved click) - rendered locked rather than editable.
+                    const isSubmitted = givenApprovals.value[row.uuid]?.[aid]?.length > 0
+                    // Segmented approve / reject control. Selection is carried by a
+                    // solid fill and a white glyph rather than by the glyph's colour
+                    // alone: two same-sized outline glyphs differing only in hue read
+                    // as decoration, are easy to mistake for each other, and are
+                    // exactly the red/green pair colour-blind users cannot separate.
+                    const segment = (active: boolean, kind: 'approve' | 'reject') => {
+                        const activeBg = kind === 'approve' ? '#18a058' : '#d03050'
+                        const activeBorder = kind === 'approve' ? '#0f7a42' : '#a82741'
+                        // Pending (clicked, unsaved) is filled but dashed, so it reads
+                        // as "not committed yet"; the Save Approvals button confirms it.
+                        const border = active
+                            ? `${isSubmitted ? '1px solid' : '2px dashed'} ${activeBorder}`
+                            : '1px solid #dcdee2'
+                        const base = [
+                            'display: inline-flex', 'align-items: center', 'justify-content: center',
+                            'width: 34px', 'height: 26px', 'box-sizing: border-box',
+                            `border: ${border}`,
+                            kind === 'approve' ? 'border-radius: 4px 0 0 4px' : 'border-radius: 0 4px 4px 0',
+                            kind === 'reject' ? 'margin-left: -1px' : '',
+                            `background: ${active ? activeBg : '#fff'}`,
+                            `color: ${active ? '#fff' : '#9aa0a6'}`,
+                            isDisabled ? 'cursor: not-allowed' : 'cursor: pointer',
+                            // Locked cells stay fully legible; only the affordance is
+                            // removed. Unset-and-locked is the one case that dims.
+                            isDisabled && !active ? 'opacity: 0.45' : ''
+                        ].filter(Boolean).join('; ')
+                        const label = kind === 'approve' ? 'Approve' : 'Disapprove'
+                        const title = isDisabled
+                            ? (active ? `${kind === 'approve' ? 'Approved' : 'Disapproved'}${isSubmitted ? ' (saved)' : ''}` : `${label} - not available to you`)
+                            : (active ? `Your ${label.toLowerCase()} is pending - click to clear` : label)
+                        return h('span', {
+                            style: base,
+                            title,
+                            role: 'button',
+                            'aria-label': label,
+                            'aria-pressed': String(active),
+                            'data-testid': `approval-${kind === 'approve' ? 'approve' : 'disapprove'}-${row.uuid}-${aid}`,
                             'data-state': approvalState,
-                            color: isApproved ? '#18a058' : '#c2c2c2',
-                            style: isDisabled ? 'opacity: 0.5;' : '',
+                            'data-submitted': String(isSubmitted),
                             onClick: () => {
                                 if (isDisabled) return
-                                updateMatrixCheckbox(isApproved ? 'UNSET' : 'APPROVED', {uuid: row.uuid, approval: aid})
+                                const target = kind === 'approve' ? 'APPROVED' : 'DISAPPROVED'
+                                updateMatrixCheckbox(active ? 'UNSET' : target, {uuid: row.uuid, approval: aid})
                             }
-                        }, () => h(Check)
-                    )
-                    const disapproveIcon = h(NIcon,
+                        }, [h(NIcon, { size: 16 }, () => h(kind === 'approve' ? Check : X))])
+                    }
+                    const checkBoxEl = h('span',
                         {
-                            class: isDisabled ? 'icons' : 'icons clickable',
-                            size: 22,
-                            title: isDisapproved && isDisabled ? 'Disapproved' : (isDisapproved ? 'Your Disapproval Pending (click to clear)' : 'Disapprove'),
-                            'data-testid': `approval-disapprove-${row.uuid}-${aid}`,
-                            'data-state': approvalState,
-                            color: isDisapproved ? '#d03050' : '#c2c2c2',
-                            style: isDisabled ? 'opacity: 0.5;' : '',
-                            onClick: () => {
-                                if (isDisabled) return
-                                updateMatrixCheckbox(isDisapproved ? 'UNSET' : 'DISAPPROVED', {uuid: row.uuid, approval: aid})
-                            }
-                        }, () => h(X)
+                            style: 'display: inline-flex; align-items: center;',
+                            'data-testid': `approval-cell-${row.uuid}-${aid}`,
+                            'data-state': approvalState
+                        },
+                        [segment(isApproved, 'approve'), segment(isDisapproved, 'reject')]
                     )
-                    const checkBoxEl = h(NSpace,
-                        { size: 8, align: 'center', 'data-testid': `approval-cell-${row.uuid}-${aid}` },
-                        () => [approveIcon, disapproveIcon]
-                    )
-                    // Add Admin Override icon for org admins on DRAFT releases when approval is already given
-                    const isOrgAdmin = myUser?.permissions?.permissions?.some((p: any) => 
-                        p.scope === 'ORGANIZATION' && p.org === release.value?.org && p.type === 'ADMIN'
-                    )
+                    // Add Admin Override icon for org admins on DRAFT releases when approval is already given.
+                    // Uses the component-level isOrgAdmin computed (the same one the
+                    // approved-environments override uses) rather than re-deriving it
+                    // here: the local copy shadowed it and matched only a literal
+                    // ORGANIZATION-scoped ADMIN row, so an admin holding the permission
+                    // through a user group saw no override control at all.
                     const isDraft = updatedRelease.value?.lifecycle === 'DRAFT' || release.value?.lifecycle === 'DRAFT'
-                    const showOverrideIcon = isOrgAdmin && isDraft && isDisabled && givenApprovals.value[row.uuid]?.[aid]?.length > 0
+                    const showOverrideIcon = isOrgAdmin.value && isDraft && isDisabled && isSubmitted
                     
                     const elements = [checkBoxEl]
                     if (showOverrideIcon) {
@@ -6248,6 +6270,21 @@ async function handleTabSwitch(tabName: string) {
 </script>
     
 <style scoped lang="scss">
+// Legend swatches mirror the segmented control in the table so the
+// legend teaches the same visual language the cells use.
+.approval-legend-swatch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 18px;
+    border-radius: 3px;
+    color: #fff;
+    vertical-align: -4px;
+    &--approve { background: #18a058; border: 1px solid #0f7a42; }
+    &--reject { background: #d03050; border: 1px solid #a82741; }
+}
+
 .row {
     padding-left: 0.5%;
     font-size: 16px;
