@@ -4,6 +4,12 @@ sidebarDepth: 2
 
 # Self-Registering Components from CI
 
+::: tip Available in both ReARM Community Edition and ReARM Pro
+Self-registration itself works in **both editions** — identity by VCS URI and repository path, creation on first build, the CLI flags and action inputs below.
+
+**Perspectives are ReARM Pro only.** On Pro you can confine a registering key to one perspective, so it can create components there and nowhere else. On CE, grant the FREEFORM key organization-scoped permission and skip the `--perspective` flag; everything else is identical.
+:::
+
 ## Description
 
 The usual order is to create a [Component](/concepts/#component) in the ReARM UI, mint its API key, and then point CI at it. Self-registration inverts that: CI describes what it is building, and ReARM creates the Component on the first build if it does not exist yet.
@@ -25,14 +31,14 @@ For a single-project repository the repository path is simply `.`; in a monorepo
 
 Component-scoped API keys cannot self-register, since such a key exists only *because* its Component already does. Creation needs a **FREEFORM key with permissions wide enough to cover the new Component**, which in practice means one of:
 
-| Intended blast radius | Permission on the FREEFORM key | How the component is filed |
-|---|---|---|
-| Anywhere in the organization | `RESOURCE` / `WRITE` at `ORGANIZATION` scope | Organization root |
-| One perspective (ReARM Pro) | `RESOURCE` / `WRITE` at `PERSPECTIVE` scope | Assigned to that perspective |
+| Intended blast radius | Permission on the FREEFORM key | How the component is filed | Editions |
+|---|---|---|---|
+| Anywhere in the organization | `RESOURCE` / `WRITE` at `ORGANIZATION` scope | Organization root | CE and Pro |
+| One perspective | `RESOURCE` / `WRITE` at `PERSPECTIVE` scope | Assigned to that perspective | Pro only |
 
 Mint FREEFORM keys from **Org Settings → API Keys**, then attach the permission from the permissions panel. The plaintext secret is shown only once, at creation.
 
-Perspective-scoped keys are the better default whenever the organization is subdivided: the key can register new components inside its own perspective and nowhere else, which keeps an automated registration path from becoming an organization-wide write capability. Only real perspectives can receive new components — product-derived perspectives are rejected.
+On ReARM Pro, perspective-scoped keys are the better default whenever the organization is subdivided: the key can register new components inside its own perspective and nowhere else, which keeps an automated registration path from becoming an organization-wide write capability. Only real perspectives can receive new components — product-derived perspectives are rejected. On ReARM Community Edition perspectives are not available, so an organization-scoped key is the only option; weigh that when deciding whether to leave a self-registering key in CI permanently or mint it for an onboarding push and remove it afterwards.
 
 Once a Component exists, day-to-day builds do not need the registering key at all. A per-Component key (or a FREEFORM key whose permissions cover that Component) is enough, and is the better thing to leave sitting in CI long term.
 

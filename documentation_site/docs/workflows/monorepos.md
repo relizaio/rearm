@@ -4,6 +4,12 @@ sidebarDepth: 2
 
 # Monorepos
 
+::: tip Available in both ReARM Community Edition and ReARM Pro
+Everything on this page works in **both editions**: binding Components to a repository path, the `do_build` change check, per-component versioning and branches, path-scoped Source Code Entries, and bundling components into a Product.
+
+The only ReARM Pro element is the **perspective**, mentioned twice below as a way to narrow an API key's blast radius. On CE, use organization-scoped FREEFORM keys instead — nothing else changes.
+:::
+
 ## Description
 
 A *monorepo* keeps several independently buildable projects in a single Git repository. It is a comfortable place to develop in and an awkward place to build from: a push touches one directory, but the naive CI pipeline rebuilds everything, and every component gets a new version it did not earn.
@@ -203,7 +209,7 @@ Pinned SHAs do not update themselves, so pair them with [Dependabot](https://doc
 
 **Do not leave the token in the checkout.** `actions/checkout` writes the `GITHUB_TOKEN` into `.git/config` unless you pass `persist-credentials: false`. Any later step — a build script, a test, a transitive dependency's postinstall hook — can read it from there. Monorepo builds run more third-party tooling per job than single-project ones, so turn it off unless a later step genuinely needs to push.
 
-**Use one ReARM API key per component.** Beyond keeping releases attributed correctly, this is the blast radius argument: a Component API key can only create releases for its own Component, so a key leaked from the UI job cannot forge backend releases. A single FREEFORM key with organization-scoped permissions, shared across every job in the monorepo, turns one compromised job into write access for the whole organization. If you do need one key for several components — self-registration requires it — scope it to a perspective rather than the whole organization where ReARM Pro allows.
+**Use one ReARM API key per component.** Beyond keeping releases attributed correctly, this is the blast radius argument: a Component API key can only create releases for its own Component, so a key leaked from the UI job cannot forge backend releases. A single FREEFORM key with organization-scoped permissions, shared across every job in the monorepo, turns one compromised job into write access for the whole organization. If you do need one key for several components — self-registration requires it — scope it to a perspective rather than the whole organization (ReARM Pro; on CE an organization-scoped key is the only option).
 
 **Be careful what runs on pull requests from forks.** If the repository is public, keep secret-bearing build jobs on `push` (as the examples do) and avoid `pull_request_target`, which runs workflow code from the base branch with full secret access while checking out the contributor's code. For validating incoming changes, use the dedicated [pull request validation](/integrations/githubValidate) flow instead.
 
