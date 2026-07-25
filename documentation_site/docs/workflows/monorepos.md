@@ -32,7 +32,7 @@ Authentication can go either way. Give each Component its own Component API key 
 
 The decision is two steps and no state:
 
-1. Ask ReARM for the component's latest release and read the commit its [Source Code Entry](/concepts/#source-code-entry) points at:
+1. Ask ReARM for the component's latest release and read its [Source Code Entry](/concepts/#source-code-entry) — the commit that release was built from:
 
    ```bash
    rearm getlatestrelease \
@@ -178,6 +178,33 @@ jobs:
 
 Treat this as an optimization layered on top of `do_build`, not a replacement for it. The filter compares the *push range*, so it is blind to everything the release history knows: a component whose previous build failed looks unchanged on the next unrelated push, and its job never starts to find out otherwise. That is why the example keeps an escape hatch (`|| github.ref == 'refs/heads/main'`) that lets every component evaluate itself on the main branch, where `do_build` makes the final call.
 
+## Forcing a rebuild
+
+Sooner or later you will want to rebuild a component whose source has not changed — CI failed for a reason that had nothing to do with the code, a base image moved underneath you, a registry push flaked, or you simply want fresh SBOMs and signatures.
+
+An empty commit will not do it. It changes no paths, so a `paths-filter` pre-gate never starts the job, and even if the job does start, the path diff is empty and `do_build` correctly says no. This is the mechanism working as designed: both checks answer "did this component's source change", and the answer is genuinely no.
+
+The idiomatic way to say "yes, rebuild it anyway" is to make a change under the component's path that means exactly that, and nothing else. Keep a trivial marker file per component and bump it:
+
+```bash
+echo 2 > backend/trigger_build
+git commit -am "chore(backend): force rebuild - registry push flaked"
+```
+
+```
+myrepo/
+├── ui/
+│   ├── trigger_build          # contains an integer
+│   └── ...
+└── backend/
+    ├── trigger_build
+    └── ...
+```
+
+The file's content is irrelevant — an integer you increment is just the easiest thing to diff and to read in history. What matters is that it lives under the component's path, so it moves that component and only that component: bumping `backend/trigger_build` rebuilds the backend and leaves the UI alone. The commit message becomes the record of why, which beats an empty commit or a hand-triggered pipeline run for auditability later.
+
+Reserve this for cases where there is no code change to make. A normal source edit already triggers the build on its own, and routinely bumping the marker defeats the point of the whole scheme.
+
 ## Versioning
 
 Monorepo components version independently, exactly as if each lived in its own repository — see [Using ReARM as Version Manager](/tutorials/using-rearm-as-version-manager) for the general model. Each Component carries its own version schema and its own feature-branch schema, so `ui` can be on `semver` while `backend` is on `CalVer`, and neither advances when the other ships.
@@ -194,9 +221,9 @@ rearm getversion \
 
 ## Source Code Entries in a monorepo
 
-In a single-project repository, a release's Source Code Entry points at the head commit. In a monorepo that would be misleading — the head commit frequently touches a different component entirely.
+A release's [Source Code Entry](/concepts/#source-code-entry) is the commit it was built from, recorded against a specific VCS repository. In a single-project repository that is simply the head commit. In a monorepo it should not be: the head commit frequently touches a different component entirely, and recording it would credit each component with somebody else's change.
 
-ReARM therefore pins each component's Source Code Entry to the last commit that actually touched *that component's path*, and reports the commit, message, author and date as one consistent triple. Two components built from the same push end up with different Source Code Entries, each naming the change that is genuinely theirs, and the commit lists attached to each release are path-filtered the same way. Merge commits are the deliberate exception: on a base-branch build whose head is a true merge, the merge commit itself is used, because that is the commit that landed.
+So the commit taken as a component's Source Code Entry is the last one that touched *that component's path*, with its message, author and date carried along as one consistent set. Two components built from the same push therefore record different Source Code Entries, each naming the change that is genuinely theirs, and the commit lists attached to each release are path-filtered the same way. Merge commits are the deliberate exception: on a base-branch build whose head is a true merge, that merge commit is recorded as-is, because it is the commit that landed on the branch.
 
 The practical payoff is that per-component history stays honest — [commit signature and attribution](./committers) verify against the right commit, and [supply chain forensics](./supply-chain-forensics) answers "what source produced this artifact" without the noise of unrelated directories.
 
@@ -243,7 +270,7 @@ An empty `LAST_COMMIT` means the component has never been released, and a first 
 
 **Shallow checkouts break the diff.** `actions/checkout` defaults to depth 1, so the last released commit is usually absent locally. Always check out with `fetch-depth: 0` when composing the actions yourself. The check fails safe rather than silently skipping — it assumes a build is needed and logs why — but you lose the savings the setup exists for.
 
-**Empty commits do not trigger builds.** With a `paths-filter` pre-gate, an empty commit changes no paths, so no component job starts. When you genuinely need to force a rebuild without a code change, keep a trivial marker file per component (for example `backend/trigger_build` containing an integer) and bump it. Reserve this for re-running a pipeline that failed for non-code reasons; a normal source edit is already enough.
+**Empty commits do not trigger builds.** They change no paths, so neither the pre-gate nor `do_build` sees anything to do. Use a per-component marker file instead — see [Forcing a rebuild](#forcing-a-rebuild).
 
 **The first build of a new component looks like an error, and isn't.** Before a Component has any release, `getlatestrelease` legitimately reports that the VCS repository or the component-for-repo-path is not found. That is treated as "no prior release" and turns into `do_build=true`. If you use `create_component: true`, the Component is created on that first run with its repository path attached.
 
