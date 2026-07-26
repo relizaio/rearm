@@ -11,6 +11,7 @@ vi.mock('@/utils/commonFunctions', () => ({
 import { print } from 'graphql'
 import {
     relativeTime,
+    buildNotificationFilterInput,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
 } from './notificationsCommon'
@@ -76,5 +77,47 @@ describe('relativeTime', () => {
         const out = relativeTime(ago(40 * DAY), now)
         expect(out).not.toMatch(/ago$/)
         expect(out.length).toBeGreaterThan(0)
+    })
+})
+
+// Edit -> Save of a subscription 400'd because the as-loaded filter blob
+// (output shape) carries a `presetConfig` object that was spread into
+// NotificationFilterInput, which only accepts mode/presetConfigJson/celExpression.
+describe('buildNotificationFilterInput', () => {
+    it('never leaks the output-only presetConfig key into the input', () => {
+        const out = buildNotificationFilterInput(
+            { mode: 'PRESET', celExpression: null, presetConfig: { sev: 'CRITICAL' } },
+            'PRESET', '')
+        expect('presetConfig' in out).toBe(false)
+        expect(Object.keys(out).sort()).toEqual(['celExpression', 'mode', 'presetConfigJson'])
+    })
+    it('maps an output presetConfig object into presetConfigJson (stringified)', () => {
+        const out = buildNotificationFilterInput(
+            { presetConfig: { sev: 'CRITICAL', envs: ['prod'] } }, 'PRESET', '')
+        expect(out.presetConfigJson).toBe(JSON.stringify({ sev: 'CRITICAL', envs: ['prod'] }))
+    })
+    it('passes through an already-string presetConfigJson unchanged', () => {
+        const out = buildNotificationFilterInput({ presetConfigJson: '{"sev":"HIGH"}' }, 'PRESET', '')
+        expect(out.presetConfigJson).toBe('{"sev":"HIGH"}')
+    })
+    it('omits presetConfigJson when neither preset field is present', () => {
+        const out = buildNotificationFilterInput({}, 'PRESET', '')
+        expect('presetConfigJson' in out).toBe(false)
+    })
+    it('load -> resave-unchanged round-trip is a valid input (no invalid keys)', () => {
+        // Simulate the loaded output blob then a save with no user edits.
+        const loaded = { mode: 'PRESET', celExpression: null, presetConfig: { sev: 'CRITICAL' } }
+        const out = buildNotificationFilterInput(loaded, 'PRESET', '')
+        const allowed = new Set(['mode', 'presetConfigJson', 'celExpression'])
+        Object.keys(out).forEach(k => expect(allowed.has(k), `unexpected input field ${k}`).toBe(true))
+    })
+    it('carries celExpression only in ADVANCED mode', () => {
+        expect(buildNotificationFilterInput({}, 'ADVANCED', 'event.kevListed == true').celExpression)
+            .toBe('event.kevListed == true')
+        expect(buildNotificationFilterInput({}, 'PRESET', 'event.kevListed == true').celExpression)
+            .toBe(null)
+    })
+    it('tolerates a null/undefined rawFilter (Create path)', () => {
+        expect(buildNotificationFilterInput(null, 'PRESET', '')).toEqual({ mode: 'PRESET', celExpression: null })
     })
 })

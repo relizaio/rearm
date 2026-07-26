@@ -315,3 +315,32 @@ function buildSubscriptionsQuery (fields: string) {
 }
 export const LIST_SUBSCRIPTIONS_QUERY = buildSubscriptionsQuery(`${SUBSCRIPTION_CORE_FIELDS} ${SUBSCRIPTION_ENRICHMENT_FIELDS}`)
 export const LIST_SUBSCRIPTIONS_CORE_QUERY = buildSubscriptionsQuery(SUBSCRIPTION_CORE_FIELDS)
+
+/**
+ * Build the payload for `NotificationFilterInput` from the modeled UI fields
+ * plus the as-loaded output blob (`_rawFilter`). Only `mode`,
+ * `presetConfigJson` and `celExpression` are valid input fields; the output
+ * blob carries an unmodelled `presetConfig` OBJECT that must NOT be spread
+ * into the input — doing so 400s the mutation ("field presetConfig not
+ * defined for NotificationFilterInput") and silently loses every Edit -> Save.
+ * Preset state is preserved by mapping `presetConfig` -> `presetConfigJson`.
+ */
+export function buildNotificationFilterInput (
+    rawFilter: Record<string, any> | null | undefined,
+    filterMode: string,
+    celExpression: string,
+): { mode: string, celExpression: string | null, presetConfigJson?: string } {
+    const raw = rawFilter || {}
+    const out: { mode: string, celExpression: string | null, presetConfigJson?: string } = {
+        mode: filterMode,
+        celExpression: filterMode === 'ADVANCED' ? celExpression : null,
+    }
+    if (raw.presetConfigJson != null) {
+        out.presetConfigJson = raw.presetConfigJson
+    } else if (raw.presetConfig != null) {
+        out.presetConfigJson = typeof raw.presetConfig === 'string'
+            ? raw.presetConfig
+            : JSON.stringify(raw.presetConfig)
+    }
+    return out
+}
