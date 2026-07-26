@@ -1,0 +1,221 @@
+{{/*
+Bundled OCI registry (zot) -- opt-in, mirroring the compose stack's
+bundled registry. When enabled, the OCI artifact service stores
+artifacts in this in-cluster registry instead of an external one, so a
+deployment needs no external registry credentials at all.
+
+Credentials follow the same create_secret_in_chart contract the rest of
+the charts use. In "generated" mode the password is looked up from the
+existing Secret first, so a helm upgrade does NOT rotate it -- rotating
+it would orphan every artifact already pushed under the old credential.
+
+Storage is a standalone PVC rather than a StatefulSet
+volumeClaimTemplate. Helm creates resources newly introduced by an
+upgrade with a client-side Update, and volumeClaimTemplates is an atomic
+list under server-side apply -- so the NEXT upgrade conflicts on the
+whole list and fails. Nothing the chart can send fixes that: the stored
+copy carries apiserver-defaulted status and creationTimestamp fields a
+template cannot reproduce. Enabling the bundled registry would have
+blocked every subsequent upgrade of the release.
+
+The htpasswd file zot authenticates against is built at pod start by an
+init container rather than templated with sprig's htpasswd: bcrypt salts
+are random, so templating it would produce a different hash on every
+render and restart zot on every upgrade for no reason.
+*/}}
+{{- if and .Values.ociArtifactService.enabled .Values.ociArtifactService.bundledRegistry.enabled }}
+{{- $br := .Values.ociArtifactService.bundledRegistry }}
+{{- $secretName := printf "%s-zot-credentials" .Release.Name }}
+{{- $mode := $br.create_secret_in_chart | default "generated" }}
+{{- if or (eq $mode "generated") (eq $mode "plaintext") }}
+{{- $password := include "rearm.zotPassword" . }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+  annotations:
+    # Survive `helm uninstall`: artifacts pushed under this credential
+    # outlive the release, and a regenerated password would lock the
+    # registry's existing content away from the artifact service.
+    helm.sh/resource-policy: keep
+type: Opaque
+data:
+  REGISTRY_USERNAME: {{ $br.username | default "rearm" | b64enc | quote }}
+  REGISTRY_TOKEN: {{ $password | b64enc | quote }}
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-zot-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {
+      "distSpecVersion": "1.1.1",
+      "storage": {
+        "rootDirectory": "/var/lib/zot",
+        "dedupe": {{ $br.dedupe | default false }},
+        "gc": {{ $br.gc | default false }}
+      },
+      "http": {
+        "address": "0.0.0.0",
+        "port": "5000",
+        "auth": {
+          "htpasswd": {
+            "path": "/etc/zot/auth/htpasswd"
+          }
+        }
+      },
+      "log": {
+        "level": {{ $br.logLevel | default "warn" | quote }}
+      }
+    }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-zot-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+  annotations:
+    # Same reasoning as the credentials Secret: the artifacts outlive the
+    # release, so uninstall must not take the volume with it.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ "ReadWriteOnce" ]
+  {{- with $br.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $br.storage | default "20Gi" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-zot
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-zot-service
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "rearm.selectorLabels" . | nindent 4 }}
+    name: rearm-zot-pod
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-zot
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+    name: rearm-zot
+spec:
+  replicas: 1
+  serviceName: {{ .Release.Name }}-zot
+  selector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-zot-pod
+  template:
+    metadata:
+      annotations:
+        # The init container below rebuilds htpasswd from the Secret, but
+        # only when the pod starts. Without this a rotated password leaves
+        # zot validating against the old hash while the artifact service
+        # already sends the new one, and every push 401s.
+        checksum/zot-credentials: {{ include "rearm.zotPassword" . | sha256sum }}
+      labels:
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+        name: rearm-zot-pod
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      initContainers:
+        # Rebuilds the htpasswd file from the Secret on every start, so a
+        # credential change takes effect on the next rollout.
+        - name: htpasswd
+          image: "{{ .Values.image.htpasswdImage }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - htpasswd -Bbc /auth/htpasswd "$REGISTRY_USERNAME" "$REGISTRY_TOKEN"
+          env:
+            - name: REGISTRY_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $br.existingSecret | default $secretName }}
+                  key: REGISTRY_USERNAME
+            - name: REGISTRY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $br.existingSecret | default $secretName }}
+                  key: REGISTRY_TOKEN
+          volumeMounts:
+            - name: zot-auth
+              mountPath: /auth
+      containers:
+        - name: zot
+          image: "{{ .Values.image.zotImage }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve", "/etc/zot/config.json"]
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          # TCP, not HTTP: with htpasswd auth on, every zot endpoint --
+          # including /v2/ -- answers 401 to an unauthenticated request,
+          # and an httpGet probe treats that as a failure and restarts the
+          # pod forever. The minimal image ships no unauthenticated health
+          # route (mgmt/search extensions are compiled out), so a listening
+          # socket is the available liveness signal.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 6
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 3
+            periodSeconds: 10
+          {{- with $br.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: zot-config
+              mountPath: /etc/zot/config.json
+              subPath: config.json
+              readOnly: true
+            - name: zot-auth
+              mountPath: /etc/zot/auth
+              readOnly: true
+            - name: zot-data
+              mountPath: /var/lib/zot
+      volumes:
+        - name: zot-config
+          configMap:
+            name: {{ .Release.Name }}-zot-config
+        - name: zot-auth
+          emptyDir: {}
+        - name: zot-data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-zot-data
+{{- end }}
