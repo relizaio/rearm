@@ -362,11 +362,32 @@ const eventTypeOptionsForForm = computed(() =>
             : o)
 )
 
-const channelOptions = computed(() =>
-    channels.value
+const channelOptions = computed(() => {
+    const enabled = channels.value
         .filter(c => c.status === 'ENABLED')
         .map(c => ({ label: `${c.name} (${TYPE_LABELS[c.type] || c.type})`, value: c.uuid }))
-)
+    const known = new Set(enabled.map(o => o.value))
+    // BUG 2: a route can still reference a channel that is now DISABLED or
+    // DELETED -- neither is in the enabled option list, so the n-select tag would
+    // render a bare UUID. Add a labeled "ghost" option for each already-referenced
+    // value so the tag reads a name (disabled) or "(deleted channel) <short>",
+    // mirroring the Delivery History label. NOT marked `disabled`: a disabled
+    // option makes the selected tag non-removable in n-select, which would trap
+    // the very dangling ref the user came to clean up -- keep it removable.
+    const byUuid = new Map(channels.value.map(c => [c.uuid, c]))
+    const referenced = new Set<string>()
+    for (const r of subForm.value.routes) for (const ch of (r.channels || [])) referenced.add(ch)
+    const ghosts = [...referenced]
+        .filter(u => !known.has(u))
+        .map(u => {
+            const c = byUuid.get(u)
+            const label = c
+                ? `${c.name} (${TYPE_LABELS[c.type] || c.type}) (disabled)`
+                : `(deleted channel) ${String(u).slice(0, 8)}`
+            return { label, value: u }
+        })
+    return [...enabled, ...ghosts]
+})
 
 const channelGroupOptions = computed(() =>
     channelGroups.value.map(g => ({

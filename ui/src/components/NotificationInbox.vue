@@ -345,6 +345,24 @@
                         </n-descriptions-item>
                     </n-descriptions>
 
+                    <!-- BUG 5: affected releases as deep links (the header says
+                         "affects N releases" but only the raw JSON listed them).
+                         Navigation closes both drawers so the release page isn't
+                         rendered underneath them. -->
+                    <div v-if="affectedReleasesView.length" class="inbox-affected-releases" data-testid="inbox-affected-releases">
+                        <div class="inbox-affected-title">Affected releases ({{ affectedReleasesView.length }})</div>
+                        <n-space size="small" :wrap="true">
+                            <router-link
+                                v-for="(ar, idx) in affectedReleasesView"
+                                :key="`${ar.uuid}-${idx}`"
+                                :to="`/release/show/${ar.uuid}`"
+                                @click="inboxDrawerOpen = false; inboxListDrawerOpen = false"
+                            >
+                                {{ ar.label }}
+                            </router-link>
+                        </n-space>
+                    </div>
+
                     <!-- Structured payload view. Pretty-printed JSON as the
                          generic fallback; approval events additionally get
                          the typed summary above.
@@ -548,6 +566,22 @@ const inboxDrawerPayload = computed<Record<string, unknown> | null>(() => {
     } catch {
         return null
     }
+})
+
+// BUG 5: the drawer says "affects N releases" but the payload's affectedReleases
+// were only visible in the raw JSON. Surface them as release deep-links.
+// AffectedRelease shape (rearm-core): { uuid, component (name), version, ... }.
+interface AffectedReleaseLink { uuid: string, label: string }
+const affectedReleasesView = computed<AffectedReleaseLink[]>(() => {
+    const arr = inboxDrawerPayload.value?.affectedReleases
+    if (!Array.isArray(arr)) return []
+    return arr.reduce<AffectedReleaseLink[]>((acc, r: any) => {
+        const uuid = typeof r?.uuid === 'string' ? r.uuid : null
+        if (!uuid) return acc
+        const parts = [r?.component, r?.version].filter((p: any) => typeof p === 'string' && p)
+        acc.push({ uuid, label: parts.length ? parts.join(' ') : uuid })
+        return acc
+    }, [])
 })
 
 interface ApprovalPayloadView {
@@ -1309,6 +1343,7 @@ onUnmounted(() => {
 /* Inbox drawer — payload viewer. Monospace + wrap-on-word so a deeply-nested
  * JSON doesn't blow the drawer's horizontal extent. */
 .inbox-drawer-desc { font-size: 14px; line-height: 1.45; }
+.inbox-affected-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--n-text-color-2, #666); }
 .inbox-drawer-payload {
     font-family: var(--font-mono, monospace);
     font-size: 12px;
