@@ -18,7 +18,7 @@
                         <n-icon :id="'artifacts' + release.uuid" size="20"><Box /></n-icon>
                     </template>
                     <p v-for="art in release.artifactDetails" :key=art.uuid>
-                        {{ art.displayIdentifier + (art.digestRecords.length ?  '@' + art.digestRecords[0].value : '') }}
+                        {{ art.displayIdentifier + (art.digestRecords?.length ?  '@' + art.digestRecords[0].digest : '') }}
                     </p>
                 </n-tooltip>
             </span>
