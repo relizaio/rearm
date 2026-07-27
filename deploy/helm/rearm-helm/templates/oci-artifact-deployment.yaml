@@ -15,6 +15,16 @@ spec:
       name: rearm-oci-artifact-pod
   template:
     metadata:
+{{- if .Values.ociArtifactService.bundledRegistry.enabled }}
+      annotations:
+        # Registry credentials arrive as secretKeyRef env vars, which are
+        # resolved once at pod start. Without this the pod keeps a rotated
+        # password until something else happens to restart it, and every
+        # push fails 401 against a registry that rebuilt its htpasswd.
+        # Empty in "external" mode -- the chart cannot see that password,
+        # so rolling on change is the operator's to do.
+        checksum/zot-credentials: {{ include "rearm.zotPassword" . | sha256sum }}
+{{- end }}
       labels:
         {{- include "rearm.selectorLabels" . | nindent 8 }}
         servicehook: {{ .Release.Name }}-oci-artifact
@@ -27,27 +37,14 @@ spec:
       containers:
         - name: {{ .Chart.Name }}-oci-artifact
           image: "{{ .Values.image.ociArtifactImage }}"
-          env: 
-            - name: REGISTRY_HOST
-              value: {{ .Values.ociArtifactService.registryHost }}
-            - name: REGISTRY_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: oci-registry-secrets
-                  key: REGISTRY_USERNAME
-                  optional: true
-            - name: REGISTRY_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: oci-registry-secrets
-                  key: REGISTRY_TOKEN
-                  optional: true
+          env:
+            {{- include "rearm.ociRegistryEnv" . | nindent 12 }}
             - name: LOG_TYPE
               value: {{ .Values.ociArtifactService.logFormatType | default "plain" | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.ociArtifactService.logLevel | default "info" | quote }}
             - name: USE_PLAIN_HTTP
-              value: {{ .Values.ociArtifactService.usePlainHttp | default "false" | quote }}
+              value: {{ include "rearm.ociPlainHttp" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -67,7 +64,7 @@ spec:
             periodSeconds: 10
 
 ---
-{{- if .Values.ociArtifactService.create_secret_in_chart}}
+{{- if and .Values.ociArtifactService.create_secret_in_chart (not .Values.ociArtifactService.bundledRegistry.enabled)}}
 apiVersion: v1
 kind: Secret
 metadata:

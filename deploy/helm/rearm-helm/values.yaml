@@ -30,6 +30,8 @@ image:
   postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
   rebomBackend: registry.relizahub.com/library/rebom-backend:0.20.4@sha256:1b75c28fe1fa2e28b25b2fdd80e2cbd1cc43751b64657020cf6e87c7428e6dc3
   flywayImage: docker.io/redgate/flyway:11.20.3-alpine@sha256:52cdd559dc8ae38a17b56615e3c7137d9b01470271112525b40373de470bb005
+  zotImage: ghcr.io/project-zot/zot-minimal:v2.1.18@sha256:892f2a5a63dd99bdf85320fee5448506119328a6d5e1a2d14d4db876be595236
+  htpasswdImage: docker.io/library/httpd:2.4-alpine@sha256:1b766f17b84026429b7cb243317b142921b24432336e798bc881c43f45ed9567
   pullPolicy: IfNotPresent
 
 imagePullSecrets: [ {"name":"regcred"} ]
@@ -109,6 +111,50 @@ ociArtifactService:
   registryUser: changeme # change
   registryToken: changeme # change
   create_secret_in_chart: true
+  # Bundled OCI registry (zot), opt-in. Mirrors the compose stack's
+  # bundled registry: turn this on and artifacts are stored in-cluster,
+  # with no external registry or credentials required. The registryHost /
+  # registryUser / registryToken values above are then unused.
+  # NB: set rebom.backend.oci.registryNamespace to a plain repository
+  # prefix (e.g. "rearm") when using this -- the default placeholder is
+  # for the external registry layout.
+  bundledRegistry:
+    # Enabling this on a FRESH install needs nothing special.
+    #
+    # It is only when ADDING the bundled registry to a deployment that
+    # already exists that one deploy must run with --force-conflicts
+    # (ReARM CD exposes this as an option). Helm creates resources
+    # introduced by an upgrade with client-side ownership, so the first
+    # later change to any zot value -- a routine zot image bump included
+    # -- otherwise fails with a conflict against helm itself, and keeps
+    # failing. One forced deploy clears it permanently; no flag is needed
+    # for any upgrade after that.
+    enabled: false
+    # Credential handling, same contract as the other charts:
+    #   generated -- random password on first install, preserved across
+    #                upgrades via lookup (never rotated silently).
+    #                Requires helm install/upgrade: `helm template` has no
+    #                cluster to look up, so it mints a fresh password on
+    #                every render. Use plaintext or external if you render
+    #                manifests and apply them separately.
+    #   plaintext -- take bundledRegistry.password verbatim
+    #   external  -- provide existingSecret with REGISTRY_USERNAME /
+    #                REGISTRY_TOKEN keys; the chart creates no Secret
+    create_secret_in_chart: generated
+    username: rearm
+    password: ""
+    existingSecret: ""
+    # Backed by a standalone PVC. Growing `storage` on a later upgrade
+    # works if the storage class allows expansion; shrinking it does not.
+    # storageClassName is fixed once the claim is bound -- changing it
+    # means deleting the PVC, which discards the stored artifacts.
+    storage: 20Gi
+    storageClassName: ""
+    logLevel: warn
+    # zot-side storage features; both off matches the compose default.
+    dedupe: false
+    gc: false
+    resources: {}
 
 useTraefikLe: true
 traefikBehindLb: false
