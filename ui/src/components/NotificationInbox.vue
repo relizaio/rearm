@@ -398,7 +398,7 @@
                             Mark unread
                         </n-button>
                         <n-button
-                            v-if="isOrgAdmin && inboxDrawerRow.channelUuid"
+                            v-if="isOrgAdmin && inboxDrawerRow.outboxEventUuid"
                             tertiary
                             @click="viewDeliveryLog"
                         >
@@ -830,13 +830,13 @@ function applyInboxFilters (): void {
 }
 
 // "View delivery log": jump from this inbox row to the Delivery History audit
-// surface pre-filtered to the row's channel, so a user going "my alert didn't
-// arrive -> why" lands on that channel's full send log. Failures open the log
-// filtered to FAILED. Admin-only (the Audit tab is admin-gated); the button is
-// hidden otherwise, and hidden for channel-less rows (targeted approvals).
+// surface pre-filtered to THIS notification's event (BUG 4), so the operator
+// sees the deliveries for the one event they came from -- across every channel
+// it fanned out to -- not the whole channel's unrelated history. Failures open
+// filtered to FAILED. Admin-only (the Audit tab is admin-gated).
 function viewDeliveryLog (): void {
     const row = inboxDrawerRow.value
-    if (!row || !row.channelUuid) return
+    if (!row || !row.outboxEventUuid) return
     inboxDrawerOpen.value = false
     inboxListDrawerOpen.value = false
     router.push({
@@ -845,7 +845,7 @@ function viewDeliveryLog (): void {
         query: {
             tab: 'audit',
             auditTab: 'deliveryHistory',
-            historyChannel: row.channelUuid,
+            historyEvent: row.outboxEventUuid,
             ...(row.status === 'FAILED' ? { historyStatus: 'FAILED' } : {}),
         },
     })

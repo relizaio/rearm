@@ -1055,9 +1055,10 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                         <NotificationHistory
                             :orguuid="orgResolved"
                             :initial-channel-uuid="(route.query.historyChannel as string) || null"
+                            :initial-event-uuid="(route.query.historyEvent as string) || null"
                             :initial-status="(route.query.historyStatus as string) || null"
                             :initial-subscription-uuid="(route.query.historySubscription as string) || null"
-                            :key="`hist-${route.query.historyChannel || ''}-${route.query.historyStatus || ''}-${route.query.historySubscription || ''}`"
+                            :key="`hist-${route.query.historyChannel || ''}-${route.query.historyEvent || ''}-${route.query.historyStatus || ''}-${route.query.historySubscription || ''}`"
                         />
                     </n-tab-pane>
                 </n-tabs>
