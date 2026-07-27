@@ -253,7 +253,8 @@ import {
     subscriptionStatusOptions, eventTypeOptions, severityOptions,
     LIST_CHANNELS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
-    extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType
+    extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType,
+    buildNotificationFilterInput
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 
@@ -544,13 +545,11 @@ async function saveSubscription (): Promise<void> {
         subModalError.value = `Route ${emptyRouteIdx + 1} has no channels or groups — pick at least one.`
         return
     }
-    // Overlay the modeled filter fields on top of the original blob so
-    // `presetConfigJson` survives instead of being nulled on every edit.
-    const filterInput: any = {
-        ...(f._rawFilter || {}),
-        mode: f.filterMode,
-        celExpression: f.filterMode === 'ADVANCED' ? f.celExpression : null,
-    }
+    // Build the filter input from ONLY the fields NotificationFilterInput
+    // accepts (mode / presetConfigJson / celExpression); the as-loaded blob
+    // carries an unmodelled `presetConfig` object that must not leak into the
+    // input (it 400s the mutation). See buildNotificationFilterInput.
+    const filterInput = buildNotificationFilterInput(f._rawFilter, f.filterMode, f.celExpression)
     const input: any = {
         uuid: f.uuid || undefined,
         expectedRevision: f.expectedRevision,
