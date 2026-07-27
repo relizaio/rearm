@@ -1,0 +1,66 @@
+{{- /*
+All traffic (UI and /api) enters through the frontend service — the frontend's
+nginx proxies /api to the api-server (see mounted_files/nginx-conf), mirroring
+the dependency-track-helm (v4) wrapper. The subchart's fullnameOverride is
+pinned to "dtrack5" in values.yaml, so service names are deterministic.
+*/}}
+{{- if .Values.useTraefikLe}}
+apiVersion: {{ .Values.traefik_crd_api_version }}
+kind: IngressRoute
+metadata:
+  name: web-ingressroute
+  namespace: {{ .Release.Namespace }}
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`{{ .Values.ingressHost}}`)
+    kind: Rule
+    services:
+    - name: dtrack5-frontend
+      port: 8080
+    middlewares:
+      - name: redirect
+---
+apiVersion: {{ .Values.traefik_crd_api_version }}
+kind: IngressRoute
+metadata:
+  name: websecure-ingressroute
+  namespace: {{ .Release.Namespace }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`{{ .Values.ingressHost}}`)
+    kind: Rule
+    services:
+    - name: dtrack5-frontend
+      port: 8080
+  tls:
+    certResolver: le
+---
+apiVersion: {{ .Values.traefik_crd_api_version }}
+kind: Middleware
+metadata:
+  name: redirect
+  namespace: {{ .Release.Namespace }}
+spec:
+  redirectScheme:
+    scheme: https
+{{- end}}
+{{- if .Values.traefikBehindLb}}
+apiVersion: {{ .Values.traefik_crd_api_version }}
+kind: IngressRoute
+metadata:
+  name: web-ingressroute
+  namespace: {{ .Release.Namespace }}
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`{{ .Values.ingressHost }}`)
+    kind: Rule
+    services:
+    - name: dtrack5-frontend
+      port: 8080
+{{- end}}

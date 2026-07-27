@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: {{ .Release.Namespace }}
+data:
+{{ (.Files.Glob "mounted_files/nginx-conf/*").AsConfig | indent 2 }}

@@ -1,0 +1,105 @@
+{{- if .Values.backups.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-dtrack-db-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: dtrack-db-backup
+    app: dependency-track
+spec:
+  schedule: {{ .Values.backups.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            name: dtrack-db-backup-pod
+        spec:
+        {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+          restartPolicy: OnFailure
+          containers:
+            - name: dtrack-db-backup
+              image: "{{ .Values.images.pgbackups }}"
+              args: ["pg", "backup"]
+              env:
+                - name: PG_HOST
+                  value: {{ .Values.backups.pgHost }}
+                - name: PG_DATABASE
+                  value: {{ .Values.backups.pgDatabase }}
+                - name: PG_USER
+                  value: {{ .Values.backups.pgUser }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: pgpassword
+                      key: POSTGRES_PASSWORD
+                - name: DUMP_PREFIX
+                  value: {{ .Values.backups.prefix }}-dtrack-db
+                - name: BACKUP_STORAGE_TYPE
+                  value: {{ .Values.backups.storageType }}
+                {{- if eq .Values.backups.storageType "s3" }}
+                - name: AWS_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: aws-bucket
+                - name: AWS_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: aws-region
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: aws-access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: aws-secret-access-key
+                {{- else if eq .Values.backups.storageType "azure" }}
+                - name: AZURE_STORAGE_ACCOUNT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: azure-storage-account
+                - name: AZURE_TENANT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: azure-tenant-id
+                - name: AZURE_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: azure-client-id
+                - name: AZURE_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: azure-client-secret
+                - name: AZURE_CONTAINER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: azure-container
+                {{- end }}
+                - name: ENCRYPTION_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backups.secretName }}
+                      key: encryption-password
+                      optional: true
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "50m"
+{{- end }}

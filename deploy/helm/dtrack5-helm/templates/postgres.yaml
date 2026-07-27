@@ -1,0 +1,151 @@
+{{- if .Values.postgres.enabled }}
+{{/*
+  Postgres credentials secret ("pgpassword"), governed by the same
+  create_secret_in_chart mode as the KEK secret (see values.yaml for the
+  mode contract). The username / password keys duplicate the credentials
+  in the layout the dependency-track subchart's database.existingSecret
+  contract expects (mounted as files by the api-server).
+*/}}
+{{- $mode := .Values.create_secret_in_chart }}
+{{- if eq $mode "generated" }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace "pgpassword" }}
+{{- $pgpass := "" }}
+{{- if and $existing $existing.data (index $existing.data "POSTGRES_PASSWORD") }}
+{{- $pgpass = index $existing.data "POSTGRES_PASSWORD" | b64dec }}
+{{- else }}
+{{- $pgpass = randAlphaNum 24 }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgpassword
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    # Survive `helm uninstall`: the postgres image only applies
+    # POSTGRES_PASSWORD at initdb, so a regenerated value would not change
+    # the actual DB password — it would just break every client mounting
+    # the new secret. Keeping the Secret lets `lookup` reuse it forever.
+    helm.sh/resource-policy: keep
+type: Opaque
+data:
+  POSTGRES_PASSWORD: {{ $pgpass | b64enc | quote }}
+  username: {{ "postgres" | b64enc | quote }}
+  password: {{ $pgpass | b64enc | quote }}
+---
+{{- else if eq $mode "plaintext" }}
+{{- if not .Values.secrets.pgpassword }}
+{{- fail "create_secret_in_chart=plaintext requires secrets.pgpassword" }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgpassword
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+data:
+  POSTGRES_PASSWORD: {{ .Values.secrets.pgpassword | b64enc | quote }}
+  username: {{ "postgres" | b64enc | quote }}
+  password: {{ .Values.secrets.pgpassword | b64enc | quote }}
+---
+{{- else if eq $mode "sealed" }}
+{{- if not .Values.secrets.pgpassword }}
+{{- fail "create_secret_in_chart=sealed requires secrets.pgpassword to carry kubeseal ciphertext" }}
+{{- end }}
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: pgpassword
+  namespace: {{ .Release.Namespace }}
+  {{- if eq .Values.sealed_secrets_scope "namespace-wide"}}
+  annotations:
+    sealedsecrets.bitnami.com/namespace-wide: "true"
+  {{- else if eq .Values.sealed_secrets_scope "cluster-wide"}}
+  annotations:
+    sealedsecrets.bitnami.com/cluster-wide: "true"
+  {{- end }}
+spec:
+  encryptedData:
+    # SealedSecret ciphertext is value-scoped (bound to secret name /
+    # namespace per the chosen scope, not to the data key), so the same
+    # kubeseal blob unseals under both keys.
+    POSTGRES_PASSWORD: {{ .Values.secrets.pgpassword | quote }}
+    password: {{ .Values.secrets.pgpassword | quote }}
+  template:
+    # Plaintext (non-secret) key injected into the unsealed Secret so it
+    # carries the full database.existingSecret layout — needs the
+    # sealed-secrets controller >= v0.17 (spec.template.data support).
+    data:
+      username: postgres
+---
+{{- else if ne $mode "none" }}
+{{- fail (printf "unknown create_secret_in_chart mode %q: use generated, plaintext, sealed, or none" $mode) }}
+{{- end}}
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: postgres
+spec:
+  replicas: 1
+  serviceName: "postgres"
+  selector:
+    matchLabels:
+      name: postgres
+  template:
+    metadata:
+      labels:
+        servicehook: postgres
+        name: postgres
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}-postgres
+          image: "{{ .Values.images.postgresImage }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pgpassword
+                  key: POSTGRES_PASSWORD
+          ports:
+            - name: pgport
+              containerPort: 5432
+              protocol: TCP
+          volumeMounts:
+          - mountPath: "/relizaio/postgresql"
+            name: dtrack-postgres-data
+          - mountPath: "/dev/shm"
+            name: dshm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+  volumeClaimTemplates:
+    - metadata:
+        name: dtrack-postgres-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ $.Values.postgres.postgresStorage }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: postgres
+spec:
+  selector:
+    name: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+{{- end}}
