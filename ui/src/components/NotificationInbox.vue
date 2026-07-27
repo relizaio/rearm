@@ -16,9 +16,24 @@
                 <n-tab-pane name="inbox" tab="Inbox" data-testid="inbox-tab">
                 <div class="tab-toolbar">
                     <div class="tab-toolbar-info">
-                        Your personal triage queue. Org-admins see every delivery; perspective-members see deliveries that touch a release in one of their perspectives.
+                        <template v-if="inboxScope === 'ORG_ALL'">
+                            All org activity — every delivery in the org. The bell badge still counts only your personal unread.
+                        </template>
+                        <template v-else>
+                            Your personal triage queue — deliveries relevant to you: releases on your components and perspectives, plus items addressed to you.
+                        </template>
                     </div>
-                    <n-space size="small">
+                    <n-space size="small" align="center">
+                        <n-radio-group
+                            v-if="isOrgAdmin"
+                            :value="inboxScope"
+                            size="small"
+                            @update:value="setInboxScope"
+                            data-testid="inbox-scope-toggle"
+                        >
+                            <n-radio-button value="PERSONAL">For me</n-radio-button>
+                            <n-radio-button value="ORG_ALL">All org activity</n-radio-button>
+                        </n-radio-group>
                         <n-button
                             v-if="canWrite && selectedInboxRows.length > 0"
                             size="small"
@@ -31,7 +46,7 @@
                             Mark {{ selectedInboxRows.length }} read
                         </n-button>
                         <n-button
-                            v-if="canWrite && inboxUnreadCount > 0"
+                            v-if="canOfferMarkAll"
                             size="small"
                             secondary
                             @click="markAllReadConfirm"
@@ -459,6 +474,25 @@ const inboxPageCount = computed<number>(() =>
 const inboxUnreadOnly = ref<boolean>(true)
 const inboxStatusFilter = ref<string | null>(null)
 const inboxEventTypeFilter = ref<string | null>(null)
+// Phase 2c inbox scope. PERSONAL (default) = my triage queue; ORG_ALL = the
+// org-wide firehose, admin-only (a non-admin's ORG_ALL collapses to PERSONAL
+// server-side, so it's harmless, but we only offer the toggle to admins). Only
+// the list + mark-all follow this; the badge stays PERSONAL (Direct-primary).
+const inboxScope = ref<'PERSONAL' | 'ORG_ALL'>('PERSONAL')
+function setInboxScope (scope: 'PERSONAL' | 'ORG_ALL'): void {
+    if (inboxScope.value === scope) return
+    inboxScope.value = scope
+    inboxPage.value = 1
+    selectedInboxRows.value = []
+    loadInbox()
+}
+// Offer "Mark all read" when the CURRENT scope has something to sweep. The badge
+// (inboxUnreadCount) is PERSONAL, so in ORG_ALL fall back to the visible list
+// total -- otherwise an admin with 0 personal unread but org-wide unread visible
+// would see no button.
+const canOfferMarkAll = computed<boolean>(() =>
+    canWrite.value && (inboxUnreadCount.value > 0
+        || (inboxScope.value === 'ORG_ALL' && inboxTotalCount.value > 0)))
 const selectedInboxRows = ref<string[]>([])
 const inboxBulkLoading = ref<boolean>(false)
 const inboxMarkAllLoading = ref<boolean>(false)
@@ -592,6 +626,15 @@ const MARK_ALL_READ_MUTATION = gql`
     }
 `
 
+// Scoped variant so a mark-all under the ORG_ALL view sweeps org-wide (matching
+// the visible list), not just the personal slice. Used only for ORG_ALL; the
+// default arg-less mutation stays safe against a backend without the arg.
+const MARK_ALL_READ_MUTATION_SCOPED = gql`
+    mutation markAllNotificationsRead($orgUuid: ID!, $inboxScope: NotificationInboxScope) {
+        markAllNotificationsRead(orgUuid: $orgUuid, inboxScope: $inboxScope) { count hasMore }
+    }
+`
+
 const RELEASES_NEEDING_MY_APPROVAL_QUERY = gql`
     query releasesNeedingMyApproval($orgUuid: ID!) {
         releasesNeedingMyApproval(orgUuid: $orgUuid) {
@@ -696,15 +739,26 @@ async function loadInbox (): Promise<void> {
     inboxLoading.value = true
     try {
         const offset = (inboxPage.value - 1) * inboxPageSize.value
-        const { page, degraded } = await loadNotificationInboxPage(graphqlClient, {
+        const inboxVars: Record<string, any> = {
             orgUuid: orgUuid.value,
             unreadOnly: inboxUnreadOnly.value,
             status: inboxStatusFilter.value,
             eventType: inboxEventTypeFilter.value,
             limit: inboxPageSize.value,
             offset,
-        }, inboxFullRejected)
+        }
+        // Send inboxScope only for the non-default ORG_ALL view so the default
+        // path stays arg-less (drift-safe); PERSONAL is the backend default.
+        if (inboxScope.value === 'ORG_ALL') inboxVars.inboxScope = 'ORG_ALL'
+        const { page, degraded, scopeUnsupported } = await loadNotificationInboxPage(
+            graphqlClient, inboxVars, inboxFullRejected)
         if (myToken !== inboxInflightToken) return
+        // Backend without ORG_ALL support: the loader already served PERSONAL.
+        // Reset the toggle so the UI matches what was fetched, and say so once.
+        if (scopeUnsupported && inboxScope.value === 'ORG_ALL') {
+            inboxScope.value = 'PERSONAL'
+            message.info('Org-wide view is not available on this backend; showing your personal inbox.')
+        }
         inboxDegraded.value = degraded
         // Once this backend has rejected the full selection, skip straight to
         // the core selection on subsequent loads so we don't pay the
@@ -879,22 +933,34 @@ async function bulkMarkRead (): Promise<void> {
 }
 
 function markAllReadConfirm (): void {
-    const n = Math.min(inboxUnreadCount.value, 500)
-    const remainder = Math.max(0, inboxUnreadCount.value - 500)
-    const tail = remainder > 0
-        ? ` Backend caps a single sweep at 500 — re-run to clear the remaining ${remainder}.`
-        : ''
+    const orgAll = inboxScope.value === 'ORG_ALL'
+    // In ORG_ALL the sweep is org-wide (up to 500), which the PERSONAL badge
+    // count doesn't measure -- so don't promise a specific number there.
+    let content: string
+    if (orgAll) {
+        content = 'This marks org-wide unread notifications as read — up to 500 per sweep; re-run to clear any remaining.'
+    } else {
+        const n = Math.min(inboxUnreadCount.value, 500)
+        const remainder = Math.max(0, inboxUnreadCount.value - 500)
+        const tail = remainder > 0
+            ? ` Backend caps a single sweep at 500 — re-run to clear the remaining ${remainder}.`
+            : ''
+        content = `This marks up to ${n} unread item(s) as read.${tail}`
+    }
     dialog.warning({
-        title: 'Mark every visible unread notification as read?',
-        content: `This marks up to ${n} unread item(s) as read.${tail}`,
+        title: orgAll ? 'Mark all org-wide unread as read?' : 'Mark every visible unread notification as read?',
+        content,
         positiveText: 'Mark all read',
         negativeText: 'Cancel',
         onPositiveClick: async () => {
             inboxMarkAllLoading.value = true
             try {
+                const orgAll = inboxScope.value === 'ORG_ALL'
                 const res = await graphqlClient.mutate({
-                    mutation: MARK_ALL_READ_MUTATION,
-                    variables: { orgUuid: orgUuid.value },
+                    mutation: orgAll ? MARK_ALL_READ_MUTATION_SCOPED : MARK_ALL_READ_MUTATION,
+                    variables: orgAll
+                        ? { orgUuid: orgUuid.value, inboxScope: 'ORG_ALL' }
+                        : { orgUuid: orgUuid.value },
                 })
                 const result = res.data?.markAllNotificationsRead
                 const marked = result?.count || 0
@@ -1081,6 +1147,9 @@ watch(orgUuid, () => {
     inboxDegraded.value = false
     inboxFullRejected = false
     selectedInboxRows.value = []
+    // Reset scope: admin-ness is per-org, so a stale ORG_ALL from the previous
+    // org would strand a non-admin here with a hidden toggle and no way back.
+    inboxScope.value = 'PERSONAL'
     approvalsItems.value = []
     approvalsCount.value = 0
     if (orgUuid.value) {
