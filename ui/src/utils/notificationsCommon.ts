@@ -66,6 +66,9 @@ export interface DeliveryRow {
     sentAt: string | null
     lastError: string | null
     createdDate: string
+    // BUG 3: the outbox event's rendered payload for the expandable row. Optional
+    // ENRICHMENT field -- absent on a backend that predates it (drift-tolerant).
+    payloadJson?: string | null
 }
 
 export interface InboxRow {
