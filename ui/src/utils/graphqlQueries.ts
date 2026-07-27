@@ -165,7 +165,7 @@ const CHILD_RELEASE_GQL_DATA = `
         uuid
         displayIdentifier
         digestRecords {
-            value
+            digest
         }
     }
     parentReleases {
