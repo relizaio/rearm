@@ -457,7 +457,7 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
 import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular, DismissCircle20Regular} from '@vicons/fluent'
-import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History } from '@vicons/tabler'
+import { Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'
@@ -986,15 +986,6 @@ const notify = async function (type: NotificationType, title: string, content: s
     })
 }
 
-const copyToClipboard = async function (text: string) {
-    try {
-        navigator.clipboard.writeText(text);
-        notify('info', 'Copied', `Copied: ${text}`)
-    } catch (error) {
-        console.error(error)
-    }
-}
-
 const deleteProperty = function (uuid: string, namespace: string, product: string) {
     updatedInstance.value.properties = updatedInstance.value.properties.filter((p: any) => !(p.uuid === uuid && p.namespace === namespace && p.product === product))
     save()
@@ -1081,27 +1072,16 @@ const parseDeployedReleases = function (releases: any) {
             selectedNamespace.value === rl.namespace) {
             let deployedRl = rl.releaseDetails
             if (deployedRl) {
-                let deployedDel
-                if (deployedRl.deliverableDetails && deployedRl.deliverableDetails.length) {
-                    let delArr = deployedRl.deliverableDetails.filter((ad: any) => (ad.uuid === rl.deliverable))
-                    if (delArr && delArr.length) deployedDel = delArr[0]
-                }
                 let dRlObj = {
                     originalReleaseId: rl.release,
                     release: deployedRl,
-                    deliverable: deployedDel,
                     type: rl.type,
                     component: deployedRl.componentDetails.name,
                     componentUuid: deployedRl.componentDetails.uuid,
                     componentType: deployedRl.componentDetails.type,
                     index: index,
                     namespace: rl.namespace,
-                    state: rl.state,
-                    branch: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.name : undefined,
-                    branchUuid: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.uuid : undefined
-                }
-                if (!dRlObj.deliverable) {
-                    dRlObj.deliverable = 'Not Set'
+                    state: rl.state
                 }
                 deployedRls.push(dRlObj)
             }
@@ -1707,22 +1687,6 @@ const targetReleaseFeilds: any[] = [
                 trigger: () => tooltipTrigger,
                 default: () => tooltipDefault
             }))
-            if(row.deliverable && row.deliverable !== 'Not Set'){
-                const artSha = row.deliverable.identifier + (row.deliverable.digests.length ?  '@' + row.deliverable.digests[0] : '')
-                els.push(h(NTooltip, {
-                    trigger: 'hover'
-                }, {
-                    trigger: () => h(NIcon, {
-                        title: 'Copy to clipboard',
-                        class: 'icons clickable',
-                        size: 24,
-                        onClick: () => copyToClipboard(artSha)
-                    },{
-                        default: () => h(Box)
-                    }),
-                    default: () => artSha
-                }))
-            }
             return els
         }
     },
@@ -1949,22 +1913,6 @@ const deployedReleaseFeilds: any[] = [
                             default: () => commit
                         })
                     ))
-            }
-            if(row.deliverable && row.deliverable !== 'Not Set'){
-                const artSha = row.deliverable.identifier + (row.deliverable.digestRecords.length ?  '@' + row.deliverable.digestRecords[0].value : '')
-                els.push(h(NTooltip, {
-                    trigger: 'hover'
-                }, {
-                    trigger: () => h(NIcon, {
-                        title: 'Copy to clipboard',
-                        class: 'icons clickable',
-                        size: 24,
-                        onClick: () => copyToClipboard(artSha)
-                    },{
-                        default: () => h(Box)
-                    }),
-                    default: () => artSha
-                }))
             }
             return h('span', {}, els)
         }
