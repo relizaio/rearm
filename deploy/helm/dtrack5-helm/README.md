@@ -26,11 +26,11 @@ Alongside that:
 
 ```bash
 helm install dtrack5 oci://registry.rearmhq.com/library/dtrack5 \
-  --version 0.1.2 --create-namespace -n dtrack5 \
+  --create-namespace -n dtrack5 \
   -f dtrack5-values.yaml
 ```
 
-The chart is public, so no registry login is needed. Full instructions, the settings worth knowing, and how to connect the result to ReARM are in the [documentation](https://docs.rearmhq.com/integrations/dtrackChart). Every value is documented inline in [`values.yaml`](./values.yaml).
+That installs the latest published version; add `--version` to pin one. The chart is public, so no registry login is needed. Full instructions, the settings worth knowing, and how to connect the result to ReARM are in the [documentation](https://docs.rearmhq.com/integrations/dtrackChart). Every value is documented inline in [`values.yaml`](./values.yaml).
 
 ## How it is built
 
