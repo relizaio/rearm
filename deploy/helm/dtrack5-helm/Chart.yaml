@@ -1,0 +1,35 @@
+apiVersion: v2
+name: dtrack5
+description: A Helm chart to deploy Dependency-Track 5 for ReARM
+
+# A chart can be either an 'application' or a 'library' chart.
+#
+# Application charts are a collection of templates that can be packaged into versioned archives
+# to be deployed.
+#
+# Library charts provide useful utilities or functions for the chart developer. They're included as
+# a dependency of application charts to inject those utilities and functions into the rendering
+# pipeline. Library charts do not define any templates and therefore cannot be deployed.
+type: application
+
+# This is the chart version. This version number should be incremented each time you make changes
+# to the chart and its templates, including the app version.
+# Versions are expected to follow Semantic Versioning (https://semver.org/)
+version: 0.0.3
+
+# This is the version number of the application being deployed. This version number should be
+# incremented each time you make changes to the application. Versions are not expected to
+# follow Semantic Versioning. They should reflect the version the application is using.
+# It is recommended to use it with quotes.
+appVersion: "5.0.3"
+
+dependencies:
+- name: dependency-track
+  # Pinned exactly: pre-release versions are not matched by range constraints.
+  # rc.2 fixed values.schema.json to allow the Helm-injected `global` key,
+  # i.e. made the chart usable as a subchart (rc.1 needed
+  # --skip-schema-validation). rc.3 is that same chart with Dependency-Track
+  # bumped to 5.0.3 -- its templates and values.yaml are byte-identical to
+  # rc.2, so nothing here had to change to follow it.
+  version: "2.0.0-rc.3"
+  repository: "https://dependencytrack.github.io/helm-charts"

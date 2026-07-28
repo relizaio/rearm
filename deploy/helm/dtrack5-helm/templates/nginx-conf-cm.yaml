@@ -1,0 +1,24 @@
+{{- /*
+Mounted by the subchart's frontend Deployment at /etc/nginx/templates (see
+frontend.additionalVolumes in values.yaml). The nginx entrypoint runs envsubst
+over that directory ONCE, at container start.
+
+So editing mounted_files/nginx-conf does not take effect on `helm upgrade`
+alone: kubelet refreshes the mounted file, but the rendered
+/etc/nginx/conf.d/default.conf is only regenerated when the container starts.
+Roll the frontend after changing it:
+
+  kubectl rollout restart deploy/dtrack5-frontend -n <namespace>
+
+Normally this would be automated with a checksum/config pod annotation, but
+the Deployment belongs to the dependency-track subchart and Helm resolves
+subchart values before templates render, so a parent chart cannot inject a
+computed hash of this ConfigMap into frontend.podAnnotations.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: {{ .Release.Namespace }}
+data:
+{{ (.Files.Glob "mounted_files/nginx-conf/*").AsConfig | indent 2 }}
