@@ -56,6 +56,7 @@ REARM_PROTOCOL=https
 REARM_TLS_HOST=rearm.example.com # bare host or IP, no port
 REARM_ACME_EMAIL=you@example.com # omit for a self-signed certificate
 COMPOSE_PROFILES=tls
+KEYCLOAK_ADMIN_PASSWORD=...      # do not leave this at the default
 ```
 
 With `REARM_ACME_EMAIL` set and ports 80/443 reachable from the internet, certificates come from Let's Encrypt; without it traefik serves a self-signed certificate, which is fine for an IP-based evaluation.
@@ -163,18 +164,28 @@ Unless you are deploying on the chart's default host, set the login URIs next - 
 
 ## Configuring Login URIs
 Time it takes: 2 minutes.
-Applies to: any deployment served on a host other than the default.
+Applies to: every Helm installation, and Docker Compose deployments whose `REARM_HOST` changed after first boot.
 
 Keycloak only redirects back to URIs its `login-app` client already knows. If those do not match the address users type in the browser, login fails with an invalid redirect error instead of returning to ReARM.
 
 **Docker Compose** does this for you. The realm is imported with the URIs rewritten to your `REARM_PROTOCOL` and `REARM_HOST` on first boot, so nothing is needed provided those were set before the stack first started. They are seeded only once, so if you change `REARM_HOST` afterwards you must either wipe the Keycloak volume (`docker compose down -v`, which also destroys local users) or apply the manual steps below.
 
-**Helm** does not rewrite them, so this step is required whenever your host differs from the chart default.
+**Helm** does not rewrite them, so this step is always required. The chart ships a placeholder host, which will not be the one your users type.
 
 To set them by hand:
 
 1. Navigate to the Keycloak login path at your ReARM URI with the `/kauth/` suffix - for example `https://rearm.example.com/kauth`.
-2. Log in with the Keycloak credentials from your compose or Helm configuration. The defaults provided by Reliza, if you have made no local modifications, are `admin / admin`. You may change these or switch to a different admin account after logging in.
+2. Log in with the Keycloak admin credentials from your compose or Helm configuration. Unless you changed them, Reliza ships `admin / admin`.
+
+   ::: warning Change these before exposing the deployment
+   The Keycloak admin console is reachable wherever your deployment is, so `admin / admin` on a non-localhost host hands anyone who finds it full control of your identity provider.
+
+   Set them before first start - they are bootstrapped once and later changes to the configuration have no effect:
+   - **Compose**: `KEYCLOAK_ADMIN_USER` and `KEYCLOAK_ADMIN_PASSWORD` in `.env`
+   - **Helm**: `keycloak.secrets.adminpassword` in your values file
+
+   If the deployment is already running, change the password in the Keycloak console instead, in the `master` realm you just logged into: `Users` -> `admin` -> `Credentials` -> `Reset password`.
+   :::
 3. In the upper left of the screen, switch realm from Keycloak to Reliza.
 4. Go to the `Clients` menu and click the `login-app` client. Add your user-facing URI to `Valid redirect URIs`, `Valid post logout redirect URIs` and `Web origins` - for example `https://rearm.example.com/*` in each. You may remove the existing preset defaults.
 
