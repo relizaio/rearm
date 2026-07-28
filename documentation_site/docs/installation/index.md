@@ -177,6 +177,14 @@ Set them before the first start. They are bootstrapped once, so editing the conf
 
 If the deployment is already running, change the password from the console instead: log in, and in the `master` realm go to `Users` -> `admin` -> `Credentials` -> `Reset password`.
 
+### Rotating after the first login
+
+Whatever you configure above is bootstrap material, and it stays readable where you put it - in `.env` on the compose host, or in your values file and the Kubernetes Secret the chart renders from it, which is base64-encoded rather than encrypted. Anyone with the file, the repository it is committed to, or read access to Secrets in the namespace can recover it, and `docker inspect` will show it on a compose host.
+
+So for anything beyond a localhost evaluation we strongly recommend logging in once and rotating the password from the console, in the `master` realm: `Users` -> `admin` -> `Credentials` -> `Reset password`. That leaves the live credential somewhere the configuration never recorded it. Nothing enforces this, so it is worth doing while the installation is still fresh in mind.
+
+If you would rather not hold the bootstrap value in plain text at all, the Helm chart can take it as a SealedSecret instead - set `keycloak.create_secret_in_chart` to `sealed` and supply kubeseal ciphertext, or to `none` and provision the Secret yourself.
+
 ## Configuring Login URIs
 Time it takes: 2 minutes.
 Applies to: every Helm installation, and Docker Compose deployments whose `REARM_HOST` changed after first boot.
