@@ -29,7 +29,9 @@ docker compose up -d
 Open `http://localhost:8092` in your browser. No configuration file is needed for a localhost deployment: every setting has a working default.
 
 #### Reaching ReARM from another machine
-Browsers only expose the Web Crypto API - which the login flow requires - in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), meaning `https` or `localhost`. A deployment reached by IP or hostname therefore has to serve TLS, or login fails with `Web Crypto API is not available`.
+Nothing in ReARM rejects plain http - this is a browser rule. Parts of the Web Crypto API are exposed only in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), and the Keycloak client library uses them to build the login request: `crypto.randomUUID` for the OIDC state and nonce, and `crypto.subtle` for the PKCE challenge. Over plain http they are undefined and the page fails immediately with `Web Crypto API is not available`.
+
+A secure context means `https`, or an origin on `localhost` / `127.0.0.1`. So the default localhost deployment above is fine over http, and so is a remote host tunnelled to a local port - but a deployment users reach at its own hostname or IP has to serve TLS.
 
 The stack includes an optional TLS front for this. Copy the template and set the host:
 

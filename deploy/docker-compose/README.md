@@ -22,10 +22,17 @@ so the login flow works over plain http.
 
 ## Scenario 2: remote host by IP (eval)
 
-Browsers only expose the Web Crypto API -- which the PKCE login flow
-requires -- in secure contexts (https or localhost). A deployment
-reached by IP or hostname therefore **must** run the TLS profile;
-plain http will fail at login with `Web Crypto API is not available`.
+Nothing here blocks plain http; browsers do. Parts of the Web Crypto API
+are exposed only in secure contexts, and keycloak-js uses them to build
+the login request -- `crypto.randomUUID` for the OIDC state and nonce,
+`crypto.subtle` for the PKCE challenge. A secure context means https, or
+an origin on localhost / 127.0.0.1, so a deployment users reach at its
+own hostname or IP **must** run the TLS profile; over plain http the page
+fails immediately with `Web Crypto API is not available`.
+
+Note the state and nonce are generated before PKCE is even considered, so
+this is not a consequence of the S256 setting -- turning PKCE off would
+not make plain http work (and keycloak-js 26 accepts no other value).
 
 ```bash
 cp .env.example .env
