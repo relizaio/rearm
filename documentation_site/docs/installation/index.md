@@ -1,8 +1,12 @@
 # Installation of ReARM Community Edition
-Open-source ReARM Community Edition (Licensed per AGPL 3.0) may be deployed using Docker Compose or via Helm Chart.
+Open-source ReARM Community Edition (Licensed per AGPL 3.0) can be installed two ways: with [Docker Compose](#installation-via-docker-compose), or with the [Helm chart](#installation-via-helm-chart) on Kubernetes. Both are fully supported, and neither is limited to local use - either can serve a single evaluation on your laptop or a deployment your whole team reaches at its own domain.
 
-## Local Installation Via Docker Compose
+If you already run Kubernetes, the Helm chart is the recommended option for production. Docker Compose is the quickest way to get an instance running on a single host, and suits evaluations, demos and smaller self-hosted deployments.
+
+## Installation Via Docker Compose
 Time it takes: 5 minutes.
+
+The compose stack runs wherever Docker does - your laptop, a VM, or a server your team reaches at its own domain. The walkthrough below brings it up on localhost first because that needs no configuration at all; [deploying on a remote host or domain](#deploying-on-a-remote-host-or-domain) is a couple of settings on top.
 
 #### Pre-requisites
 You need an operational Docker engine with Docker Compose version 2.24.0 or newer.
@@ -33,7 +37,9 @@ docker compose up -d
 
 Open `http://localhost:8092` in your browser. No configuration file is needed for a localhost deployment: every setting has a working default.
 
-#### Reaching ReARM from another machine
+#### Deploying on a remote host or domain
+Nothing about the compose stack is localhost-only. To serve it to other machines, point it at the host users will type in the browser and enable the TLS front.
+
 Nothing in ReARM rejects plain http - this is a browser rule. Parts of the Web Crypto API are exposed only in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), and the Keycloak client library uses them to build the login request: `crypto.randomUUID` for the OIDC state and nonce, and `crypto.subtle` for the PKCE challenge. Over plain http they are undefined and the page fails immediately with `Web Crypto API is not available`.
 
 A secure context means `https`, or an origin on `localhost` / `127.0.0.1`. So the default localhost deployment above is fine over http, and so is a remote host tunnelled to a local port - but a deployment users reach at its own hostname or IP has to serve TLS.
