@@ -368,17 +368,13 @@ public final class ChangelogRecords {
 		APPEARED, RESOLVED, SEVERITY_INCREASED, SEVERITY_DECREASED, KEV_ADDED, KEV_REMOVED
 	}
 
-	/**
-	 * Version of the {@link FindingChangeKind} vocabulary the emit/backfill diff produces. BUMP THIS
-	 * whenever a new kind is added that the posture-diff reverse-replay depends on, so already-seeded orgs
-	 * are NOT certified for the new vocabulary until their history is re-diffed with it (the max-revision
-	 * coverage skip is blind to newly-emittable kinds at covered revisions). The per-org watermark stores
-	 * the version it was seeded at; {@code ChangeLogService.posturePathEnabled} requires the CURRENT
-	 * version, and the boot backfill AUTOMATICALLY reseeds any org below it -- so a bump self-heals on the
-	 * next deploy with no manual per-org action. v1 = APPEARED/RESOLVED/SEVERITY_INCREASED/KEV_ADDED;
-	 * v2 adds the bidirectional SEVERITY_DECREASED/KEV_REMOVED counterparts that reverse-replay inverts.
-	 */
-	public static final int FINDING_CHANGE_EVENT_VOCAB_VERSION = 2;
+	// The FINDING_CHANGE_EVENT_VOCAB_VERSION constant that used to live here tracked the
+	// FindingChangeKind vocabulary the PRE-v3 certification watermark was stamped at; it was
+	// removed with the legacy certification writers. The v3 watermark versions on
+	// FindingDimKey.KEY_VERSION (the dim-hash canonical form) instead. If the kind vocabulary
+	// is ever widened again such that reverse-replay depends on the new kind, de-certifying
+	// seeded orgs requires either bumping KEY_VERSION (forces a full re-key + reseed) or
+	// reintroducing a vocabulary dimension on the v3 watermark.
 
 	/**
 	 * A single re-scan-driven finding change for one release. {@code changeDate} is the moment the

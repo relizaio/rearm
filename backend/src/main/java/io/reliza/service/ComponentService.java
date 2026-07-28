@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -84,6 +85,12 @@ public class ComponentService {
 
 	@Autowired
 	private io.reliza.repositories.ReleaseRepository releaseRepository;
+
+	// @Lazy breaks a construction cycle: ComponentService -> ComponentOwnershipService
+	// -> UserService -> ComponentService. Only used at runtime in updateComponent.
+	@Autowired
+	@Lazy
+	private ComponentOwnershipService componentOwnershipService;
 
 	private static final Logger log = LoggerFactory.getLogger(ComponentService.class);
 			
@@ -501,6 +508,13 @@ public class ComponentService {
 			}
 			if (null != cdto.getIsInternal()) cd.setIsInternal(cdto.getIsInternal());
 			if (null != cdto.getLeads()) cd.setLeads(cdto.getLeads());
+			// Durable owner (RFC Phase 4b): validate the ref synchronously (no DB
+			// FK backs it) against the component's org before storing. Null = no
+			// change; an invalid ref throws before any save.
+			if (null != cdto.getOwner()) {
+				componentOwnershipService.validateOwner(cdto.getOwner(), cd.getOrg());
+				cd.setOwner(cdto.getOwner());
+			}
 			// Contacts are operator free text rendered back into the team UI, so
 			// HTML-sanitize at this chokepoint (covers every updateComponent caller,
 			// not just the GraphQL boundary) before they hit the JSONB record.

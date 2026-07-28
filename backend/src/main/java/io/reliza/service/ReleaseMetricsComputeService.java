@@ -125,6 +125,14 @@ public class ReleaseMetricsComputeService {
 			// KEV stamp for the persisted metrics. orgUuid scopes the probe to
 			// this org's kev_assertions (V54 per-org refactor).
 			stampKnownExploited(rd.getOrg(), rmd);
+			// A finding cannot be attributed to this release before the release
+			// existed. Artifact-borne findings can carry earlier stamps (a shared
+			// SCE artifact attached to a newer release, or synthetic-bucket
+			// findings stamped with the bucket's scan time), and product rollups
+			// inherit children's stamps -- floor them all at release creation.
+			// Runs on the final merged shape so every contribution is covered,
+			// and is idempotent across recomputes (assembly is rebuilt fresh).
+			rmd.clampAttributedAtFloor(rd.getCreatedDate());
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			// lastScanned is stamped further down, gated on scanIncomplete: a still-pending
 			// scan must not record a lastScanned (see the gate after firstScanned resolves).
@@ -230,22 +238,39 @@ public class ReleaseMetricsComputeService {
 			if (scanIncomplete) {
 				repository.recordMetricsComputeIncomplete(r.getUuid(),
 						nextMetricsComputeBackoffSeconds(r.getFlowControl()));
+				// Surface long-running stalls: the fence is by-design silent
+				// (waiting on an external event is normal), but a release
+				// that has been incomplete for ~a day of hourly retries is
+				// stuck on something that will not arrive by itself — e.g. a
+				// BOM artifact that never reached scanning (2026-07-12 prod
+				// incident sat like this for 11 days / 266 attempts with no
+				// signal). Warn once per ~24 capped-backoff attempts.
+				FlowControl fcNow = r.getFlowControl();
+				int attemptsNow = (fcNow != null && fcNow.metricsComputeFailureCount() != null)
+						? fcNow.metricsComputeFailureCount() : 0;
+				if (attemptsNow > 0 && attemptsNow % 24 == 0) {
+					log.warn("Metrics compute for release {} has been incomplete for {} attempts — "
+							+ "likely waiting on an artifact that never reached scanning; "
+							+ "check its BOM artifacts' scan state", r.getUuid(), attemptsNow);
+				}
 			} else {
 				repository.clearMetricsComputeBackoff(r.getUuid());
 			}
-			// Child-completion push: when this release's firstScanned lands (null →
-			// set), containing products stop waiting on it — drop their fences so the
-			// next tick re-derives them instead of letting them sleep out their
-			// backoff. firstScanned only ever lands on this rescan path, so the hook
-			// sees every transition; multi-level products chain one level per tick.
-			boolean becameScanned = rmd.getFirstScanned() != null
-					&& (originalMetrics == null || originalMetrics.getFirstScanned() == null);
+			// Child-change push: ANY metrics delta on this release must reach its
+			// containing products, not just the firstScanned transition. Products
+			// re-derive their aggregate from children only when a finder selects
+			// them, and a settled product (lastScanned stamped, row untouched) is
+			// outside every finder pool — so without this push a product's
+			// aggregate freezes at whatever its children looked like when it last
+			// computed, silently ignoring later child rescans that add or resolve
+			// findings. touchForMetricsRecompute bumps the product row back into
+			// the BY_UPDATE pool and drops its fence in one statement; multi-level
+			// products chain one level per tick, and the chain terminates as soon
+			// as a level's aggregate comes out unchanged.
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
 				sharedReleaseService.saveReleaseMetrics(r, rmd);
-				if (becameScanned) {
-					clearBackoffOnContainingProducts(rd);
-				}
+				markContainingProductsStale(rd);
 				return true;
 			} else if (!scanIncomplete) {
 				// Complete + unchanged: settle by stamping lastScanned so the release
@@ -398,21 +423,30 @@ public class ReleaseMetricsComputeService {
 	}
 
 	/**
-	 * Drop the metrics-compute fence on every product release that bundles
-	 * {@code rd}, so parents waiting on this release are re-derived on the
-	 * next scheduler tick instead of sleeping out their backoff. Best-effort:
-	 * fences expire on their own, so a failure here only delays the parent,
-	 * never strands it.
+	 * Push this release's metrics change to every product release that bundles
+	 * {@code rd}: bump each product back into the {@code BY_UPDATE} finder pool
+	 * (and drop its fence) so its aggregate is re-derived from current child
+	 * state on the next scheduler tick. Replaces the old fence-only clear,
+	 * which (a) fired only on the firstScanned transition and (b) did not
+	 * touch {@code last_updated_date}, so a settled product stayed outside
+	 * every finder and its aggregate went permanently stale. Best-effort: a
+	 * failure here only delays the parent, never strands it — the next child
+	 * change retries.
 	 */
-	private void clearBackoffOnContainingProducts(ReleaseData rd) {
+	private void markContainingProductsStale(ReleaseData rd) {
 		try {
 			List<Release> products = repository.findProductsByRelease(
 					rd.getOrg().toString(), rd.getUuid().toString());
+			// UUID order: these touches run inside the caller's open compute
+			// transaction, and the parallel metrics workers can touch
+			// overlapping product sets concurrently -- a consistent lock
+			// acquisition order across workers makes deadlock impossible.
+			products.sort(java.util.Comparator.comparing(Release::getUuid));
 			for (Release p : products) {
-				repository.clearMetricsComputeBackoff(p.getUuid());
+				repository.touchForMetricsRecompute(p.getUuid());
 			}
 		} catch (Exception e) {
-			log.warn("Failed to clear metrics-compute backoff on products of release {}",
+			log.error("Failed to mark containing products stale for release {}",
 					rd.getUuid(), e);
 		}
 	}

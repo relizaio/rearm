@@ -105,13 +105,23 @@ public class SourceCodeEntryDataFetcher {
 	public List<ArtifactWebDto> artifactsOfSourceCodeEntryWithDep(DgsDataFetchingEnvironment dfe)  {
 		SourceCodeEntryData sced = dfe.getSource();
 		List<ArtifactWebDto> artList = new LinkedList<>();
+		int missing = 0;
 		if (null != sced.getArtifacts()) {
 			for (SCEArtifact scea : sced.getArtifacts()) {
-				ArtifactWebDto awd = ArtifactWebDto.fromData(artifactService
-						.getArtifactData(scea.artifactUuid())
-						.get(), scea.componentUuid());
-				artList.add(awd);
+				// Skip a dangling artifact reference rather than .get()-throwing
+				// on the missing row, which surfaced as a SERVICE_ERROR that
+				// failed the whole enclosing release query.
+				var oad = artifactService.getArtifactData(scea.artifactUuid());
+				if (oad.isPresent()) {
+					artList.add(ArtifactWebDto.fromData(oad.get(), scea.componentUuid()));
+				} else {
+					missing++;
+				}
 			}
+		}
+		if (missing > 0) {
+			log.warn("Source code entry {} references {} missing artifact(s); omitted from artifactDetails",
+					sced.getUuid(), missing);
 		}
 		return artList;
 	}

@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -52,6 +53,7 @@ import io.reliza.model.NotificationDelivery;
 import io.reliza.model.NotificationDeliveryOrigin;
 import io.reliza.model.dto.notifications.NotificationDeliveryResult;
 import io.reliza.model.NotificationDeliveryStatus;
+import io.reliza.model.NotificationInboxScope;
 import io.reliza.model.dto.notifications.NotificationInboxItem;
 import io.reliza.model.dto.notifications.NotificationInboxPage;
 import io.reliza.model.NotificationSeverity;
@@ -73,6 +75,7 @@ import io.reliza.repositories.NotificationSubscriptionRepository;
 import io.reliza.service.AuditService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.OrganizationService;
 import io.reliza.service.UserService;
 import io.reliza.service.NotificationChannelGroupService;
 import io.reliza.service.NotificationChannelService;
@@ -135,6 +138,7 @@ public class NotificationDataFetcher {
 
 	@Autowired private AuthorizationService authorizationService;
 	@Autowired private GetOrganizationService getOrganizationService;
+	@Autowired private OrganizationService organizationService;
 	@Autowired private UserService userService;
 	@Autowired private SyntheticEventService syntheticEventService;
 	@Autowired private IntegrationRepository integrationRepo;
@@ -299,7 +303,10 @@ public class NotificationDataFetcher {
 		if (oDelivery.isEmpty()) return null;
 		NotificationDelivery delivery = oDelivery.get();
 		authorizeOrgAdmin(delivery.getOrg());
-		return toDeliveryResult(delivery);
+		NotificationOutboxEvent event = delivery.getOutboxEventUuid() != null
+				? outboxRepo.findById(delivery.getOutboxEventUuid()).orElse(null)
+				: null;
+		return toDeliveryResult(delivery, event);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -330,8 +337,18 @@ public class NotificationDataFetcher {
 				orgUuid, eventUuid, channelUuid, subscriptionUuid, validatedStatus, validatedOrigin, effLimit, effOffset);
 		long total = deliveryRepo.countFiltered(
 				orgUuid, eventUuid, channelUuid, subscriptionUuid, validatedStatus, validatedOrigin);
+		// BUG 3: enrich each row with its outbox event's rendered payload so the
+		// audit surface can show what was sent. Batch-load the page's events in a
+		// single round-trip (mirrors the inbox projection; no per-row N+1).
+		List<UUID> deliveryOutboxUuids = rows.stream()
+				.map(NotificationDelivery::getOutboxEventUuid)
+				.filter(java.util.Objects::nonNull)
+				.distinct()
+				.toList();
+		Map<UUID, NotificationOutboxEvent> deliveryOutboxByUuid = new java.util.HashMap<>();
+		outboxRepo.findAllById(deliveryOutboxUuids).forEach(e -> deliveryOutboxByUuid.put(e.getUuid(), e));
 		List<NotificationDeliveryResult> items = rows.stream()
-				.map(NotificationDataFetcher::toDeliveryResult)
+				.map(d -> toDeliveryResult(d, deliveryOutboxByUuid.get(d.getOutboxEventUuid())))
 				.toList();
 		return new NotificationDeliveriesPage(items, total, effLimit, effOffset);
 	}
@@ -415,7 +432,7 @@ public class NotificationDataFetcher {
 		return Math.min(limit, MAX_PAGE_SIZE);
 	}
 
-	private static NotificationDeliveryResult toDeliveryResult(NotificationDelivery d) {
+	private static NotificationDeliveryResult toDeliveryResult(NotificationDelivery d, NotificationOutboxEvent event) {
 		return new NotificationDeliveryResult(
 				d.getUuid(),
 				d.getOrg(),
@@ -435,7 +452,8 @@ public class NotificationDataFetcher {
 				d.getLastError(),
 				d.getCreatedDate() != null
 						? d.getCreatedDate().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-						: null);
+						: null,
+				serializePayload(event));
 	}
 
 	/**
@@ -1008,9 +1026,45 @@ public class NotificationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UserData userData = oud.get();
-		boolean isOrgAdmin = computeIsOrgAdmin(userData, orgUuid);
-		List<UUID> perspectives = computeUserPerspectives(userData, orgUuid);
-		List<UUID> componentUuids = computeUserComponentUuids(userData, orgUuid);
+		// Resolve the user's COMBINED org permissions (own record + any
+		// UserGroups they belong to) once, and derive all three visibility
+		// arms from it. Using getOrgPermissions (own record only) here made
+		// the inbox blind to admin / perspective / component-team membership
+		// granted via a UserGroup, so a group-based team saw none of its
+		// notifications.
+		Set<UserPermission> perms = organizationService
+				.obtainCombinedUserOrgPermissions(userData, orgUuid).getOrgPermissionsAsSet(orgUuid);
+		boolean isOrgAdmin = computeIsOrgAdmin(perms);
+		List<UUID> perspectives = computeUserPerspectives(perms);
+		// Gate membership uses the FIXED >= READ_ONLY component floor (real view
+		// access), independent of the watcher lever below: a read-only viewer/
+		// approver stays a legitimate inbox user (passes the gate, sees their
+		// targeted rows) even when watchers are OFF and thus no component-arm
+		// delivery is shown to them. Keeping the gate at READ_ONLY still 403s a
+		// caller whose ONLY access is a sub-READ_ONLY COMPONENT grant
+		// (ESSENTIAL_READ / NONE) absent org-wide read -- intentional, those tiers
+		// confer no real view access (ESSENTIAL_READ is the machine/agent tier)
+		// and this preserves the #359 leak closure.
+		boolean componentMember = hasComponentMembership(perms, PermissionType.READ_ONLY);
+		// Watcher lever (org-level, default OFF): the component notification
+		// AUDIENCE floor is >= READ_WRITE by default (write-team + owner only),
+		// dropping to >= READ_ONLY only when the org opts read-only "watchers"
+		// into the audience; never below READ_ONLY. Resolve it (a DB fetch) ONLY
+		// when the caller actually holds a component grant -- a component-less
+		// caller (admin / perspective-only / org-read-only) has an empty audience
+		// at any floor, so it and the frequently-polled unread badge skip the org
+		// load entirely. Load is null-safe -> absent org / settings means OFF.
+		List<UUID> componentUuids;
+		if (componentMember) {
+			boolean watchersEnabled = getOrganizationService.getOrganizationData(orgUuid)
+					.map(od -> od.getSettings() != null && od.getSettings().isNotifyComponentWatchersEnabled())
+					.orElse(false);
+			PermissionType audienceFloor = watchersEnabled
+					? PermissionType.READ_ONLY : PermissionType.READ_WRITE;
+			componentUuids = computeUserComponentUuids(perms, audienceFloor);
+		} else {
+			componentUuids = Collections.emptyList();
+		}
 		// Inbox visibility gate: a caller may legitimately reach the inbox
 		// through ANY of the visibility arms the model below builds on. We
 		// deliberately do NOT use the ORGANIZATION-scoped
@@ -1029,7 +1083,7 @@ public class NotificationDataFetcher {
 		boolean orgWideRead = authorizationService
 				.isUserAuthorizedOrgWide(userData, orgUuid, CallType.READ)
 				== AuthorizationStatus.AUTHORIZED;
-		if (!isOrgAdmin && perspectives.isEmpty() && componentUuids.isEmpty() && !orgWideRead) {
+		if (!isOrgAdmin && perspectives.isEmpty() && !componentMember && !orgWideRead) {
 			throw new RelizaException("Not authorized");
 		}
 		return new InboxAuth(userData.getUuid(), isOrgAdmin, perspectives, componentUuids,
@@ -1052,11 +1106,10 @@ public class NotificationDataFetcher {
 	 * Org-admin tier = any permission at scope=ORGANIZATION with
 	 * type=ADMIN. Mirrors the authorization service's own admin check so
 	 * the inbox visibility branch stays in lockstep with the rest of the
-	 * auth model.
+	 * auth model. Operates on the caller's COMBINED org permissions (own
+	 * record + UserGroups), so admin granted via a group counts.
 	 */
-	private static boolean computeIsOrgAdmin(UserData userData, UUID orgUuid) {
-		if (userData == null || orgUuid == null) return false;
-		var perms = userData.getOrgPermissions(orgUuid);
+	private static boolean computeIsOrgAdmin(Set<UserPermission> perms) {
 		if (perms == null) return false;
 		for (UserPermission p : perms) {
 			if (p == null) continue;
@@ -1079,10 +1132,11 @@ public class NotificationDataFetcher {
 	 * codebase ships (the doc's "resource_group" doesn't exist as a
 	 * scope or payload field — see slice 5 plan §0 in the memory
 	 * {@code notifications-slice5-inbox-plan.md} for the reconciliation).
+	 *
+	 * <p>Operates on the caller's COMBINED org permissions (own record +
+	 * UserGroups), so perspective membership granted via a group counts.
 	 */
-	private static List<UUID> computeUserPerspectives(UserData userData, UUID orgUuid) {
-		if (userData == null || orgUuid == null) return Collections.emptyList();
-		var perms = userData.getOrgPermissions(orgUuid);
+	private static List<UUID> computeUserPerspectives(Set<UserPermission> perms) {
 		if (perms == null) return Collections.emptyList();
 		List<UUID> out = new java.util.ArrayList<>();
 		for (UserPermission p : perms) {
@@ -1104,19 +1158,53 @@ public class NotificationDataFetcher {
 	 * decision 2026-06-26: being on a component's team surfaces that
 	 * component's release notifications in the inbox, independent of
 	 * perspective membership.)
+	 *
+	 * <p>Operates on the caller's COMBINED org permissions (own record +
+	 * UserGroups), so component-team membership granted via a group counts.
+	 *
+	 * <p>Type floor is supplied by the caller (the org watcher lever): the
+	 * notification-AUDIENCE floor is {@code >= READ_WRITE} by default and drops
+	 * to {@code >= READ_ONLY} when the org enables watchers. Either way this
+	 * shares the {@link PermissionType#atLeast} comparison with the
+	 * {@code Component.team} DISPLAY rule ({@code ComponentTeamService}, fixed
+	 * {@code >= READ_WRITE}); both fold UserGroups and match COMPONENT scope and
+	 * differ only by the floor. The lever never lowers the floor below
+	 * {@code READ_ONLY}, so {@code ESSENTIAL_READ} (machine/agent-tier) and
+	 * {@code NONE} grants are always excluded from the audience.
 	 */
-	private static List<UUID> computeUserComponentUuids(UserData userData, UUID orgUuid) {
-		if (userData == null || orgUuid == null) return Collections.emptyList();
-		var perms = userData.getOrgPermissions(orgUuid);
+	private static List<UUID> computeUserComponentUuids(Set<UserPermission> perms, PermissionType floor) {
 		if (perms == null) return Collections.emptyList();
 		List<UUID> out = new java.util.ArrayList<>();
 		for (UserPermission p : perms) {
 			if (p == null) continue;
-			if (p.getScope() == PermissionScope.COMPONENT && p.getObject() != null) {
+			if (p.getScope() == PermissionScope.COMPONENT && p.getObject() != null
+					&& PermissionType.atLeast(p.getType(), floor)) {
 				out.add(p.getObject());
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * Whether the caller holds ANY COMPONENT-scoped grant at {@code floor} or
+	 * stronger -- the inbox authorization-GATE membership test (see
+	 * {@code authorizeOrgMember}). Kept separate from
+	 * {@link #computeUserComponentUuids} because the gate floor is the FIXED
+	 * {@code >= READ_ONLY} "real view access" bar, independent of the org
+	 * watcher lever that moves the audience floor: a read-only member may open
+	 * the inbox (and see targeted rows) even when watchers are OFF and no
+	 * component-arm delivery is shown to them. Shares {@link PermissionType#atLeast}
+	 * with the audience/team rules.
+	 */
+	private static boolean hasComponentMembership(Set<UserPermission> perms, PermissionType floor) {
+		if (perms == null) return false;
+		for (UserPermission p : perms) {
+			if (p != null && p.getScope() == PermissionScope.COMPONENT && p.getObject() != null
+					&& PermissionType.atLeast(p.getType(), floor)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -1126,10 +1214,18 @@ public class NotificationDataFetcher {
 			@InputArgument("unreadOnly") Boolean unreadOnly,
 			@InputArgument("status") String status,
 			@InputArgument("eventType") String eventType,
+			@InputArgument("inboxScope") NotificationInboxScope inboxScope,
 			@InputArgument("limit") Integer limit,
 			@InputArgument("offset") Integer offset) throws RelizaException {
 		if (orgUuid == null) throw new RelizaException("orgUuid is required");
 		InboxAuth ia = authorizeOrgMember(orgUuid);
+		// Inbox scope (Phase 2): PERSONAL (default) shows the caller's own
+		// component-team / perspective / targeted rows only, so the org-admin
+		// "see ALL org deliveries" arm is deliberately withheld even from an
+		// admin. ORG_ALL opts an admin into the org-wide firehose. A non-admin
+		// requesting ORG_ALL safely collapses to PERSONAL because ia.isOrgAdmin()
+		// is false. The org-wide audit view also remains in Delivery History.
+		boolean effectiveOrgAdmin = NotificationInboxScope.ORG_ALL == inboxScope && ia.isOrgAdmin();
 		String validatedStatus = normalizeStatusFilter(status);
 		String validatedEventType = normalizeEventTypeFilter(eventType);
 		boolean effUnreadOnly = unreadOnly == null ? true : unreadOnly;
@@ -1138,11 +1234,11 @@ public class NotificationDataFetcher {
 		String perspectivesArray = NotificationReadService.toPgUuidArrayLiteral(ia.perspectives());
 		String componentUuidsArray = NotificationReadService.toPgUuidArrayLiteral(ia.componentUuids());
 		List<NotificationDelivery> rows = deliveryRepo.findInboxPage(
-				orgUuid, ia.userUuid(), ia.isOrgAdmin(),
+				orgUuid, ia.userUuid(), effectiveOrgAdmin,
 				perspectivesArray, componentUuidsArray, effUnreadOnly, validatedStatus, validatedEventType,
 				effLimit, effOffset);
 		long total = deliveryRepo.countInbox(
-				orgUuid, ia.userUuid(), ia.isOrgAdmin(),
+				orgUuid, ia.userUuid(), effectiveOrgAdmin,
 				perspectivesArray, componentUuidsArray, effUnreadOnly, validatedStatus, validatedEventType);
 		// unreadCount carries the always-unread total irrespective of the
 		// unreadOnly filter so the badge stays correct when the user
@@ -1152,7 +1248,7 @@ public class NotificationDataFetcher {
 		long unread = effUnreadOnly
 				? total
 				: deliveryRepo.countInbox(
-						orgUuid, ia.userUuid(), ia.isOrgAdmin(),
+						orgUuid, ia.userUuid(), effectiveOrgAdmin,
 						perspectivesArray, componentUuidsArray, /*unreadOnly*/ true, validatedStatus,
 						validatedEventType);
 		// Bulk-resolve read-state (uuids + per-row read_at timestamps)
@@ -1199,11 +1295,16 @@ public class NotificationDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "notificationUnreadCount")
 	public int getNotificationUnreadCount(
-			@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("inboxScope") NotificationInboxScope inboxScope) throws RelizaException {
 		if (orgUuid == null) throw new RelizaException("orgUuid is required");
 		InboxAuth ia = authorizeOrgMember(orgUuid);
+		// Default PERSONAL scope (see getNotificationInbox): the badge reflects
+		// the caller's own actionable count, not the whole-org firehose, even
+		// for an org admin. ORG_ALL (admins only) opts into the org-wide count.
+		boolean effectiveOrgAdmin = NotificationInboxScope.ORG_ALL == inboxScope && ia.isOrgAdmin();
 		long count = readService.countUnread(ia.userUuid(), orgUuid, ia.perspectives(),
-				ia.componentUuids(), ia.isOrgAdmin());
+				ia.componentUuids(), effectiveOrgAdmin);
 		// Schema declares Int; safe cast — an org with 2.1B unread
 		// notifications is a different problem than overflow.
 		return (int) Math.min(count, Integer.MAX_VALUE);
@@ -1248,23 +1349,30 @@ public class NotificationDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "markAllNotificationsRead")
 	public MarkAllNotificationsReadResult markAllNotificationsRead(
-			@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("inboxScope") NotificationInboxScope inboxScope) throws RelizaException {
 		if (orgUuid == null) throw new RelizaException("orgUuid is required");
 		InboxAuth ia = authorizeOrgMember(orgUuid);
+		// The sweep must match the scope of the bell it is attached to (Phase 2):
+		// a mark-all under the default PERSONAL view clears only the caller's own
+		// component-team / perspective / targeted unread -- it must NOT firehose
+		// every org delivery an admin never saw. Only an admin who explicitly
+		// opened ORG_ALL sweeps org-wide; a non-admin's ORG_ALL collapses to
+		// PERSONAL (AND-gated on the real isOrgAdmin flag), same as the queries.
+		boolean effectiveOrgAdmin = NotificationInboxScope.ORG_ALL == inboxScope && ia.isOrgAdmin();
 		// Fetch MARK_ALL_CAP+1 unread+visible deliveries via the inbox
 		// query: the (cap+1)-th row, if present, is the cheap signal
 		// that "there's more left after this sweep" — we never sweep
 		// it, just check the size. This call goes straight to the
 		// repo, NOT through clampLimit() — so MARK_ALL_CAP+1 is the
 		// literal LIMIT and isn't silently truncated by MAX_PAGE_SIZE.
-		// Invariant: MARK_ALL_CAP <= MAX_PAGE_SIZE so an admin who
-		// asks the regular inbox query for the same page size sees
-		// the same row ceiling.
+		// Invariant: MARK_ALL_CAP <= MAX_PAGE_SIZE so the same-scope inbox
+		// query for the same page size sees the same row ceiling.
 		assert MARK_ALL_CAP <= MAX_PAGE_SIZE : "MARK_ALL_CAP must not exceed MAX_PAGE_SIZE";
 		String perspectivesArray = NotificationReadService.toPgUuidArrayLiteral(ia.perspectives());
 		String componentUuidsArray = NotificationReadService.toPgUuidArrayLiteral(ia.componentUuids());
 		List<NotificationDelivery> unreadRows = deliveryRepo.findInboxPage(
-				orgUuid, ia.userUuid(), ia.isOrgAdmin(),
+				orgUuid, ia.userUuid(), effectiveOrgAdmin,
 				perspectivesArray, componentUuidsArray, /*unreadOnly*/ true, /*status*/ null, /*eventType*/ null,
 				/*limit*/ MARK_ALL_CAP + 1, /*offset*/ 0);
 		boolean hasMore = unreadRows.size() > MARK_ALL_CAP;
@@ -1394,13 +1502,13 @@ public class NotificationDataFetcher {
 			String json = io.reliza.common.Utils.OM.writeValueAsString(event.getRecordData());
 			if (json != null
 					&& json.getBytes(StandardCharsets.UTF_8).length > PAYLOAD_JSON_MAX_BYTES) {
-				log.info("Inbox payload for outbox event {} exceeds {} bytes; returning truncation sentinel",
+				log.info("Notification payload for outbox event {} exceeds {} bytes; returning truncation sentinel",
 						event.getUuid(), PAYLOAD_JSON_MAX_BYTES);
 				return "{\"_truncated\":true,\"_maxBytes\":" + PAYLOAD_JSON_MAX_BYTES + "}";
 			}
 			return json;
 		} catch (Exception e) {
-			log.debug("Inbox payload serialization failed for outbox event {}: {}",
+			log.debug("Notification payload serialization failed for outbox event {}: {}",
 					event.getUuid(), e.getMessage());
 			return null;
 		}

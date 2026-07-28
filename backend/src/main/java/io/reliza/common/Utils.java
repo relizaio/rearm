@@ -991,6 +991,124 @@ public class Utils {
 	 * {@code sbom_components.canonical_purl}. Use this before looking up an
 	 * sbom_components row by purl supplied from outside.
 	 */
+	/**
+	 * Encoding-preserving variant of {@link #canonicalizePurl} for callers that
+	 * must produce the EXACT byte form rebom persists in
+	 * {@code sbom_components.canonical_purl}.
+	 *
+	 * <p>{@link #canonicalizePurl} round-trips through {@code PackageURL}, whose
+	 * {@code toString()} is not byte-identical to packageurl-js: e.g. a Debian
+	 * epoch colon comes back {@code %3A} where rebom stores {@code 1:2.5.2-3}
+	 * raw. For lookups that only feed an equality probe this is a silent miss;
+	 * for the canonical-qualifier sweep it is worse -- string-comparing a
+	 * round-tripped form against rebom's form declares correct rows stale and
+	 * mints encoding-variant duplicates (observed live on 2026-07-25: 95
+	 * duplicate components, 393 repointed mappings, from epoch-colon drift
+	 * alone).
+	 *
+	 * <p>This variant never re-encodes anything: it drops the subpath and the
+	 * non-preserved qualifiers by string surgery on the input, so every byte
+	 * that survives is a byte the caller supplied. When the input is a
+	 * rebom-normalized purl (e.g. {@code artifact_sbom_components.exact_purl}),
+	 * the output is byte-identical to what rebom's own canonicalization of it
+	 * would produce. Qualifier order is preserved, which for packageurl-js
+	 * output is already the spec's sorted order.
+	 *
+	 * @return the canonical form, or null when the input is not a pkg: purl.
+	 */
+	public static String canonicalizePurlPreservingEncoding(String purl) {
+		if (purl == null || !purl.startsWith("pkg:")) return null;
+		String base = purl;
+		int hash = base.indexOf('#');
+		if (hash >= 0) base = base.substring(0, hash);
+		int q = base.indexOf('?');
+		if (q < 0) return base;
+		String head = base.substring(0, q);
+		int slash = head.indexOf('/', 4);
+		String type = slash > 4 ? head.substring(4, slash) : null;
+		List<String> preserveKeys = type != null ? CANONICAL_PRESERVED_QUALIFIERS.get(type) : null;
+		if (preserveKeys == null) return head;
+		StringBuilder kept = new StringBuilder();
+		for (String pair : base.substring(q + 1).split("&")) {
+			int eq = pair.indexOf('=');
+			String key = eq >= 0 ? pair.substring(0, eq) : pair;
+			if (preserveKeys.contains(key)) {
+				if (kept.length() > 0) kept.append('&');
+				kept.append(pair);
+			}
+		}
+		return kept.length() > 0 ? head + "?" + kept : head;
+	}
+
+	/**
+	 * Whether two canonical purls denote the same identity once percent-encoding
+	 * differences are decoded away -- i.e. same type/namespace/name/version and
+	 * the same qualifier map. Guard for repair paths: an encoding-variant pair
+	 * ({@code 1:2.5.2-3} vs {@code 1%3A2.5.2-3}) must count as EQUAL, or the
+	 * repair manufactures the very duplicates it exists to remove. Unparseable
+	 * input compares equal only byte-for-byte (never treat what we cannot parse
+	 * as repairable).
+	 */
+	/**
+	 * Whether two purls share the same COORDINATES -- type/namespace/name/version
+	 * -- ignoring qualifiers and subpath entirely (and tolerating encoding
+	 * variants; raw {@code +} is pre-normalized like in
+	 * {@link #purlsSemanticallyEqual}).
+	 *
+	 * <p>Scope: LICENSE STAMPING ONLY. License metadata is qualifier-invariant --
+	 * the distro branch or registry does not change what license a package
+	 * carries -- so the enrichment stamp may legitimately cross qualifier
+	 * variants: a stripped-era stored canonical ({@code pkg:oci/node@latest})
+	 * must be stampable from a fresh qualifier-bearing parse
+	 * ({@code pkg:oci/node@latest?repository_url=...}). Diagnosed live
+	 * 2026-07-26: a 63k un-enriched backlog whose oldest components' BOMs were
+	 * all COMPLETED -- pulled every tick, stamping zero rows, because the
+	 * stricter comparator (rightly, for its own purpose) treats a missing
+	 * preserved qualifier as a different identity.
+	 *
+	 * <p>Do NOT use this for identity repair or advisory-matching logic --
+	 * there, qualifiers are load-bearing and {@link #purlsSemanticallyEqual}
+	 * (or byte equality) is the correct comparator.
+	 */
+	public static boolean purlsSameCoordinates(String a, String b) {
+		if (a == null || b == null) return java.util.Objects.equals(a, b);
+		if (a.equals(b)) return true;
+		try {
+			PackageURL pa = new PackageURL(a.replace("+", "%2B"));
+			PackageURL pb = new PackageURL(b.replace("+", "%2B"));
+			return java.util.Objects.equals(pa.getType(), pb.getType())
+					&& java.util.Objects.equals(pa.getNamespace(), pb.getNamespace())
+					&& java.util.Objects.equals(pa.getName(), pb.getName())
+					&& java.util.Objects.equals(pa.getVersion(), pb.getVersion());
+		} catch (MalformedPackageURLException e) {
+			return false;
+		}
+	}
+
+	public static boolean purlsSemanticallyEqual(String a, String b) {
+		if (a == null || b == null) return java.util.Objects.equals(a, b);
+		if (a.equals(b)) return true;
+		try {
+			// Raw '+' is normalized to %2B before parsing. The purl spec gives '+'
+			// no space semantics, but URL decoders disagree on it, and rebom's own
+			// persisted canonicals carry BOTH forms across eras (measured live:
+			// 12.4%2Bdeb12u13 vs 12.2.0-14+deb12u1). Pre-normalizing both sides
+			// makes the comparison independent of which era wrote the row and of
+			// how the parser treats a bare '+'.
+			PackageURL pa = new PackageURL(a.replace("+", "%2B"));
+			PackageURL pb = new PackageURL(b.replace("+", "%2B"));
+			return java.util.Objects.equals(pa.getType(), pb.getType())
+					&& java.util.Objects.equals(pa.getNamespace(), pb.getNamespace())
+					&& java.util.Objects.equals(pa.getName(), pb.getName())
+					&& java.util.Objects.equals(pa.getVersion(), pb.getVersion())
+					&& java.util.Objects.equals(
+							pa.getQualifiers() == null ? Map.of() : pa.getQualifiers(),
+							pb.getQualifiers() == null ? Map.of() : pb.getQualifiers());
+		} catch (MalformedPackageURLException e) {
+			return false;
+		}
+	}
+
 	public static String canonicalizePurl(String purl) {
 		if (purl == null || purl.isEmpty() || !purl.startsWith("pkg:")) {
 			return null;

@@ -13,6 +13,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,6 +55,8 @@ import io.reliza.model.NotificationDelivery;
 import io.reliza.model.NotificationDeliveryOrigin;
 import io.reliza.model.dto.notifications.NotificationDeliveryResult;
 import io.reliza.model.NotificationDeliveryStatus;
+import io.reliza.model.NotificationInboxScope;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.dto.notifications.NotificationInboxItem;
 import io.reliza.model.NotificationEventType;
 import io.reliza.model.NotificationOutboxEvent;
@@ -70,7 +73,9 @@ import io.reliza.repositories.IntegrationRepository;
 import io.reliza.repositories.NotificationDeliveryRepository;
 import io.reliza.repositories.NotificationOutboxEventRepository;
 import io.reliza.repositories.NotificationSubscriptionRepository;
+import io.reliza.model.UserPermission.Permissions;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.OrganizationService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.UserService;
 import io.reliza.model.dto.notifications.EvaluationMode;
@@ -100,6 +105,7 @@ class NotificationDataFetcherReadTest {
 
     private AuthorizationService authorizationService;
     private GetOrganizationService getOrganizationService;
+    private OrganizationService organizationService;
     private UserService userService;
     private IntegrationRepository integrationRepo;
     private NotificationDeliveryRepository deliveryRepo;
@@ -116,6 +122,7 @@ class NotificationDataFetcherReadTest {
     void wireMocks() throws Exception {
         authorizationService = mock(AuthorizationService.class);
         getOrganizationService = mock(GetOrganizationService.class);
+        organizationService = mock(OrganizationService.class);
         userService = mock(UserService.class);
         integrationRepo = mock(IntegrationRepository.class);
         deliveryRepo = mock(NotificationDeliveryRepository.class);
@@ -137,10 +144,18 @@ class NotificationDataFetcherReadTest {
         // missing-org behaviour can override.
         when(getOrganizationService.getOrganizationData(any()))
                 .thenReturn(Optional.of(mock(io.reliza.model.OrganizationData.class)));
+        // Default: combined org permissions (own record + UserGroups) resolve
+        // to empty, so tests that don't call stubUser keep the prior
+        // "no perms" behavior; stubUser overrides per test.
+        Permissions defaultPerms = mock(Permissions.class);
+        when(defaultPerms.getOrgPermissionsAsSet(any())).thenReturn(Set.of());
+        when(organizationService.obtainCombinedUserOrgPermissions(any(), any()))
+                .thenReturn(defaultPerms);
 
         fetcher = new NotificationDataFetcher();
         inject("authorizationService", authorizationService);
         inject("getOrganizationService", getOrganizationService);
+        inject("organizationService", organizationService);
         inject("userService", userService);
         inject("integrationRepo", integrationRepo);
         inject("deliveryRepo", deliveryRepo);
@@ -163,6 +178,73 @@ class NotificationDataFetcherReadTest {
         Field f = NotificationDataFetcher.class.getDeclaredField(field);
         f.setAccessible(true);
         f.set(fetcher, value);
+    }
+
+    // ---------------- notificationDeliveries payload enrich (BUG 3) ----------------
+
+    @Test
+    void notificationDeliveriesEnrichPayloadFromOutboxEvent() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID eventUuid = UUID.randomUUID();
+        NotificationDelivery d = newDelivery(UUID.randomUUID(), orgUuid);
+        d.setOutboxEventUuid(eventUuid);
+        NotificationOutboxEvent event = newOutboxEvent(eventUuid, orgUuid);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("title", "CVE-2025-1 affects 2 releases");
+        event.setRecordData(payload);
+
+        when(deliveryRepo.findFilteredPage(eq(orgUuid), any(), any(), any(), any(), any(), anyInt(), anyInt()))
+                .thenReturn(List.of(d));
+        when(deliveryRepo.countFiltered(eq(orgUuid), any(), any(), any(), any(), any())).thenReturn(1L);
+        when(outboxRepo.findAllById(any())).thenReturn(List.of(event));
+
+        NotificationDeliveriesPage page = fetcher.getNotificationDeliveries(
+                orgUuid, null, null, null, null, null, null, null);
+
+        assertEquals(1, page.items().size());
+        NotificationDeliveryResult row = page.items().get(0);
+        assertNotNull(row.payloadJson(), "history row should carry the outbox payload");
+        assertTrue(row.payloadJson().contains("CVE-2025-1"));
+        // Locks the no-N+1 contract: the page enriches via ONE batch fetch.
+        verify(outboxRepo, times(1)).findAllById(any());
+    }
+
+    @Test
+    void notificationDeliverySingleEnrichesPayloadFromEvent() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID deliveryUuid = UUID.randomUUID();
+        UUID eventUuid = UUID.randomUUID();
+        NotificationDelivery d = newDelivery(deliveryUuid, orgUuid);
+        d.setOutboxEventUuid(eventUuid);
+        when(deliveryRepo.findById(deliveryUuid)).thenReturn(Optional.of(d));
+        NotificationOutboxEvent event = newOutboxEvent(eventUuid, orgUuid);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("title", "single-row-payload");
+        event.setRecordData(payload);
+        when(outboxRepo.findById(eventUuid)).thenReturn(Optional.of(event));
+
+        NotificationDeliveryResult row = fetcher.getNotificationDelivery(deliveryUuid);
+
+        assertNotNull(row);
+        assertNotNull(row.payloadJson(), "single delivery should carry the outbox payload");
+        assertTrue(row.payloadJson().contains("single-row-payload"));
+    }
+
+    @Test
+    void notificationDeliveriesNullPayloadWhenEventMissing() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        NotificationDelivery d = newDelivery(UUID.randomUUID(), orgUuid);
+        when(deliveryRepo.findFilteredPage(eq(orgUuid), any(), any(), any(), any(), any(), anyInt(), anyInt()))
+                .thenReturn(List.of(d));
+        when(deliveryRepo.countFiltered(eq(orgUuid), any(), any(), any(), any(), any())).thenReturn(1L);
+        // Event not returned (deleted / not found) -> null payload, no NPE.
+        when(outboxRepo.findAllById(any())).thenReturn(List.of());
+
+        NotificationDeliveriesPage page = fetcher.getNotificationDeliveries(
+                orgUuid, null, null, null, null, null, null, null);
+
+        assertEquals(1, page.items().size());
+        assertNull(page.items().get(0).payloadJson());
     }
 
     // ---------------- notificationOutboxEvent ----------------
@@ -851,7 +933,7 @@ class NotificationDataFetcherReadTest {
         when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
                 anyBoolean(), any(), any())).thenReturn(0L);
 
-        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null);
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
 
         // Inbox query ran with isOrgAdmin=false and the perspective uuid
         // in the perspectives array literal.
@@ -862,6 +944,36 @@ class NotificationDataFetcherReadTest {
 
     @Test
     void notificationInboxAcceptsComponentOnlyMember() throws Exception {
+        // A write-team (>= READ_WRITE) component-only member is in the audience
+        // under the DEFAULT (watchers OFF -> READ_WRITE floor), with no
+        // admin/perspective arm. (READ_ONLY membership is watcher-gated; see the
+        // dedicated watcher tests below.)
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.READ_WRITE));
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{}"), eq("{" + component + "}"),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxWatchersOffExcludesReadOnlyFromAudienceButPassesGate() throws Exception {
+        // Watcher lever DEFAULT OFF: a read-only (>= READ_ONLY, < READ_WRITE)
+        // component member is NOT in the audience (component array empty), yet
+        // still PASSES the gate on the fixed READ_ONLY membership floor -- the
+        // query runs (no 403) and simply shows them targeted-only rows. This is
+        // the gate/audience decoupling: watchers-off un-notifies read-only
+        // viewers without locking them out of their inbox.
         UUID orgUuid = UUID.randomUUID();
         UUID component = UUID.randomUUID();
         UserData ud = stubUser(orgUuid,
@@ -873,10 +985,148 @@ class NotificationDataFetcherReadTest {
         when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
                 anyBoolean(), any(), any())).thenReturn(0L);
 
-        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null);
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
+
+        // Passes the gate (query runs) but the read-only component is withheld
+        // from the audience array.
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{}"), eq("{}"),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxWatchersOnIncludesReadOnlyInAudience() throws Exception {
+        // Watcher lever ON: the audience floor drops to READ_ONLY, so a read-only
+        // component member IS collected into the audience (component array
+        // carries the uuid) -- the opt-in "if you can see it, you hear about it".
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.READ_ONLY));
+        stubWatchers(orgUuid, true);
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
 
         verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
                 eq("{}"), eq("{" + component + "}"),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxExcludesSubReadOnlyComponentGrant() throws Exception {
+        // Gate membership floor: an ESSENTIAL_READ COMPONENT grant is BELOW the
+        // fixed READ_ONLY inbox-gate floor (real view access), so it is not a
+        // qualifying arm. With org-wide read FORBIDDEN and no perspective / admin
+        // arm, the gate 403s. ESSENTIAL_READ/NONE stay excluded regardless of the
+        // watcher lever, which only moves the audience floor at/above READ_ONLY.
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.ESSENTIAL_READ));
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+
+        assertThrows(RelizaException.class, () ->
+                fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null));
+
+        // The sub-floor component never reaches the visibility query.
+        verify(deliveryRepo, never()).findInboxPage(any(), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxExcludesNoneTierComponentGrant() throws Exception {
+        // NONE is the lowest tier and likewise below the READ_ONLY floor - same
+        // exclusion as ESSENTIAL_READ. A component grant of NONE puts nobody on
+        // the inbox audience.
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.NONE));
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+
+        assertThrows(RelizaException.class, () ->
+                fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null));
+
+        verify(deliveryRepo, never()).findInboxPage(any(), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxHonorsGroupGrantedComponentMembership() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        // Component-team membership that exists ONLY via a UserGroup: the
+        // COMBINED permission set carries the COMPONENT grant, but the user's
+        // OWN record has none. Pre-BUG-14 the inbox read own-record perms and
+        // showed this user nothing for their component; it must now key off
+        // the combined set. This verify fails if the fetcher reverts to
+        // getOrgPermissions(own-record).
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.READ_WRITE));
+        when(ud.getOrgPermissions(orgUuid)).thenReturn(Set.of());
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{}"), eq("{" + component + "}"),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxHonorsGroupGrantedOrgAdmin() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        // ORGANIZATION/ADMIN granted ONLY via a UserGroup (own record empty)
+        // must put the caller on the org-admin "see ALL org deliveries" arm.
+        // This has the largest blast radius of the three arms.
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.ORGANIZATION, null, PermissionType.ADMIN));
+        when(ud.getOrgPermissions(orgUuid)).thenReturn(Set.of());
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        // ORG_ALL scope opts the admin into the org-wide firehose.
+        fetcher.getNotificationInbox(orgUuid, null, null, null, NotificationInboxScope.ORG_ALL, null, null);
+
+        // The visibility query runs with isOrgAdmin=true.
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(true),
+                any(), any(), anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxHonorsGroupGrantedPerspectiveMembership() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID perspective = UUID.randomUUID();
+        // Perspective membership granted ONLY via a UserGroup (own record empty).
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.PERSPECTIVE, perspective, PermissionType.READ_ONLY));
+        when(ud.getOrgPermissions(orgUuid)).thenReturn(Set.of());
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{" + perspective + "}"), eq("{}"),
                 anyBoolean(), any(), any(), anyInt(), anyInt());
     }
 
@@ -889,7 +1139,7 @@ class NotificationDataFetcherReadTest {
                 .thenReturn(AuthorizationStatus.FORBIDDEN);
 
         assertThrows(RelizaException.class, () ->
-                fetcher.getNotificationInbox(orgUuid, null, null, null, null, null));
+                fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null));
 
         // The visibility query is never reached for a non-member.
         verify(deliveryRepo, never()).findInboxPage(any(), any(), anyBoolean(), any(), any(),
@@ -925,7 +1175,8 @@ class NotificationDataFetcherReadTest {
         when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
                 anyBoolean(), any(), any())).thenReturn(0L);
 
-        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null);
+        // ORG_ALL scope opts the admin into the org-wide firehose.
+        fetcher.getNotificationInbox(orgUuid, null, null, null, NotificationInboxScope.ORG_ALL, null, null);
 
         // Admin passes; isOrgAdmin=true plumbed into the visibility query.
         verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(true),
@@ -948,12 +1199,185 @@ class NotificationDataFetcherReadTest {
         when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
                 anyBoolean(), any(), any())).thenReturn(0L);
 
-        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null);
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
 
         // Not org-admin, empty perspective+component arrays — the org-wide
         // read arm is the only thing carrying this caller through.
         verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
                 eq("{}"), eq("{}"), anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxAdminPersonalScopeWithholdsFirehose() throws Exception {
+        // Phase 2 core behavior: PERSONAL scope (null default) withholds the
+        // org-admin "see ALL org deliveries" firehose even from a real admin,
+        // decluttering their bell to their own actionable rows. The admin
+        // still PASSES the gate (real isOrgAdmin), only the visibility scope
+        // is withheld -> the query receives isOrgAdmin=false.
+        UUID orgUuid = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.ORGANIZATION, null, PermissionType.ADMIN));
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, null, null, null, null, null, null);
+
+        // Admin passes the gate, but the firehose arm is withheld under PERSONAL.
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{}"), eq("{}"), anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxAdminOrgAllScopeShowsFirehose() throws Exception {
+        // ORG_ALL scope opts a real admin into the org-wide firehose ->
+        // the query receives isOrgAdmin=true.
+        UUID orgUuid = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.ORGANIZATION, null, PermissionType.ADMIN));
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, null, null, null, NotificationInboxScope.ORG_ALL, null, null);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(true),
+                eq("{}"), eq("{}"), anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void notificationInboxNonAdminOrgAllScopeCollapsesToPersonal() throws Exception {
+        // A non-admin (write-team component member) requesting ORG_ALL safely
+        // collapses to PERSONAL: effectiveOrgAdmin AND-gates on the REAL
+        // isOrgAdmin, so the query receives isOrgAdmin=false. The caller
+        // still qualifies via the component arm, so the query runs.
+        // (READ_WRITE so the member is in the audience under the default
+        // watchers-OFF floor; the collapse is what this test pins.)
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.READ_WRITE));
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, null, null, null, NotificationInboxScope.ORG_ALL, null, null);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{}"), eq("{" + component + "}"),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void unreadCountAdminPersonalWithholdsFirehose() throws Exception {
+        // Unread badge under PERSONAL (null default): a real admin's badge
+        // reflects their own actionable count, not the org-wide firehose ->
+        // countUnread receives isOrgAdmin=false.
+        UUID orgUuid = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.ORGANIZATION, null, PermissionType.ADMIN));
+        when(readService.countUnread(any(), any(), any(), any(), anyBoolean())).thenReturn(0L);
+
+        fetcher.getNotificationUnreadCount(orgUuid, null);
+
+        // isOrgAdmin is the trailing boolean on countUnread.
+        verify(readService).countUnread(any(), eq(orgUuid), any(), any(), eq(false));
+    }
+
+    @Test
+    void unreadCountAdminOrgAllShowsFirehose() throws Exception {
+        // ORG_ALL opts the admin's badge into the org-wide unread count ->
+        // countUnread receives isOrgAdmin=true.
+        UUID orgUuid = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.ORGANIZATION, null, PermissionType.ADMIN));
+        when(readService.countUnread(any(), any(), any(), any(), anyBoolean())).thenReturn(0L);
+
+        fetcher.getNotificationUnreadCount(orgUuid, NotificationInboxScope.ORG_ALL);
+
+        verify(readService).countUnread(any(), eq(orgUuid), any(), any(), eq(true));
+    }
+
+    @Test
+    void unreadCountNonAdminOrgAllCollapsesToPersonal() throws Exception {
+        // Badge-side no-escalation twin of the list test: a non-admin
+        // (component-only member) asking for the ORG_ALL badge safely
+        // collapses to PERSONAL -> countUnread receives isOrgAdmin=false.
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.READ_ONLY));
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+        when(readService.countUnread(any(), any(), any(), any(), anyBoolean())).thenReturn(0L);
+
+        fetcher.getNotificationUnreadCount(orgUuid, NotificationInboxScope.ORG_ALL);
+
+        verify(readService).countUnread(any(), eq(orgUuid), any(), any(), eq(false));
+    }
+
+    @Test
+    void markAllNotificationsReadPersonalScopeDoesNotFirehose() throws Exception {
+        // Phase 2 Medium fix: a mark-all under the default PERSONAL view must
+        // match the bell it is attached to and sweep only the caller's own
+        // unread -- NOT firehose every org delivery a real admin never saw.
+        // The sweep query runs with isOrgAdmin=false even for a real admin.
+        UUID orgUuid = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.ORGANIZATION, null, PermissionType.ADMIN));
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(readService.markManyRead(any(), any(), any())).thenReturn(0);
+
+        fetcher.markAllNotificationsRead(orgUuid, null);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{}"), eq("{}"), anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void markAllNotificationsReadOrgAllScopeSweepsFirehose() throws Exception {
+        // The explicit ORG_ALL sweep still lets an admin clear the org-wide
+        // firehose -> the sweep query runs with isOrgAdmin=true.
+        UUID orgUuid = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.ORGANIZATION, null, PermissionType.ADMIN));
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(readService.markManyRead(any(), any(), any())).thenReturn(0);
+
+        fetcher.markAllNotificationsRead(orgUuid, NotificationInboxScope.ORG_ALL);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(true),
+                eq("{}"), eq("{}"), anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void markAllNotificationsReadNonAdminOrgAllCollapsesToPersonal() throws Exception {
+        // No-escalation twin for the sweep: a non-admin asking for an ORG_ALL
+        // mark-all collapses to PERSONAL -> the sweep query runs with
+        // isOrgAdmin=false, so the mutation can never clear rows the caller
+        // was not entitled to see.
+        UUID orgUuid = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UserData ud = stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.COMPONENT, component, PermissionType.READ_WRITE));
+        when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
+                .thenReturn(AuthorizationStatus.FORBIDDEN);
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(readService.markManyRead(any(), any(), any())).thenReturn(0);
+
+        fetcher.markAllNotificationsRead(orgUuid, NotificationInboxScope.ORG_ALL);
+
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
+                eq("{}"), eq("{" + component + "}"),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
     }
 
     /**
@@ -965,7 +1389,12 @@ class NotificationDataFetcherReadTest {
     private UserData stubUser(UUID orgUuid, UserPermission... perms) {
         UserData ud = mock(UserData.class);
         when(ud.getUuid()).thenReturn(UUID.randomUUID());
-        when(ud.getOrgPermissions(orgUuid)).thenReturn(Set.of(perms));
+        // The inbox gate reads the user's COMBINED org permissions (own record
+        // + UserGroups) via obtainCombinedUserOrgPermissions, not the raw
+        // own-record getOrgPermissions (BUG 14). Stub that path.
+        Permissions combined = mock(Permissions.class);
+        when(combined.getOrgPermissionsAsSet(orgUuid)).thenReturn(Set.of(perms));
+        when(organizationService.obtainCombinedUserOrgPermissions(ud, orgUuid)).thenReturn(combined);
         when(userService.getUserDataByAuth(any(JwtAuthenticationToken.class)))
                 .thenReturn(Optional.of(ud));
         return ud;
@@ -974,6 +1403,20 @@ class NotificationDataFetcherReadTest {
     private static UserPermission perm(UUID orgUuid, PermissionScope scope,
             UUID object, PermissionType type) {
         return UserPermission.permissionFactory(orgUuid, scope, object, type, null, null);
+    }
+
+    /**
+     * Override the org lookup for {@code orgUuid} with an OrganizationData whose
+     * Settings expose the given {@code notifyComponentWatchers} value, so the
+     * inbox audience floor resolves to READ_ONLY (on) or READ_WRITE (off, the
+     * default the base wireMocks stub already yields via a settings-less mock).
+     */
+    private void stubWatchers(UUID orgUuid, boolean on) {
+        OrganizationData od = mock(OrganizationData.class);
+        OrganizationData.Settings settings = mock(OrganizationData.Settings.class);
+        when(settings.isNotifyComponentWatchersEnabled()).thenReturn(on);
+        when(od.getSettings()).thenReturn(settings);
+        when(getOrganizationService.getOrganizationData(orgUuid)).thenReturn(Optional.of(od));
     }
 
     // ---------------- helpers ----------------

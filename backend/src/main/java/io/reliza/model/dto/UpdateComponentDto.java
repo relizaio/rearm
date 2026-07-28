@@ -21,6 +21,7 @@ import io.reliza.common.CommonVariables.SidPurlOverride;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
+import io.reliza.model.ComponentData.ComponentOwner;
 import io.reliza.model.ComponentData.ComponentNature;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.DeviceClass;
@@ -154,6 +155,10 @@ public class UpdateComponentDto {
 	@JsonProperty
 	private List<FreeformContact> contacts;
 
+	/** Durable owner to set (RFC Phase 4b); validated server-side against the component's org. Null = unchanged. */
+	@JsonProperty
+	private ComponentOwner owner;
+
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
 			IntegrationType it) throws DatabindException, JacksonException {
 		var builder = ReleaseOutputEvent.builder()
@@ -228,6 +233,7 @@ public class UpdateComponentDto {
 								.isInternal(ucd.getIsInternal())
 								.leads(ucd.getLeads())
 								.contacts(ucd.getContacts())
+								.owner(ucd.getOwner())
 								.build();
 		return cdto;
 	}

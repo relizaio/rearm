@@ -46,6 +46,17 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	public record ComponentAuthentication (String login, String password, RearmCDAuthType type) {}
 
 	/**
+	 * The component's durable owner (RFC Phase 4, sec. 10.2): a reference to a
+	 * {@code UserGroup} (TEAM, the durable form) or a single user (USER, an
+	 * escape hatch, always non-durable). Stored on the component; {@code ownerRef}
+	 * is a plain UUID validated on write and asynchronously -- deliberately NOT a
+	 * DB foreign key. Null owner means "no explicit owner; derive a suggestion".
+	 * The computed {@code ComponentOwnership} view (status/durability) is never
+	 * stored -- see {@code ComponentOwnershipService.resolveOwnership}.
+	 */
+	public record ComponentOwner (ComponentOwnerType ownerType, UUID ownerRef) {}
+
+	/**
 	 * A freeform stakeholder contact for someone who is not a registered
 	 * ReARM user (e.g. an external owner reachable only by email/Slack handle).
 	 * Both fields are operator-supplied free text and are HTML-sanitized via
@@ -431,6 +442,15 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	/** Freeform stakeholder contacts for non-registered users; sanitized on write. */
 	@JsonProperty
 	private List<FreeformContact> contacts = new LinkedList<>();
+
+	/**
+	 * Durable owner (RFC Phase 4). Nullable -> no explicit owner, derive a
+	 * suggestion. Additive over the derived write-team; the computed status lives
+	 * in {@code ComponentOwnership}, never here. {@code leads} is retired into
+	 * this field on backfill.
+	 */
+	@JsonProperty
+	private ComponentOwner owner;
 
 	@JsonProperty
 	private VisibilitySetting visibilitySetting = VisibilitySetting.ORG_INTERNAL;

@@ -1,0 +1,32 @@
+-- Partial index for the BY_UPDATE metrics finder.
+--
+-- The finder's predicate is row-vs-row (last_updated_date compared against the
+-- row's own metrics.lastScanned), so no plain index serves it: eligible rows
+-- are the RECENTLY touched ones, which sort last in the ASC order, so every
+-- tick walked the existing idx_releases_last_updated_date skipping nearly the
+-- whole table -- measured 2,004,467 rows filtered / ~1.4GB of buffer traffic /
+-- ~1s per tick at 2M rows (perf lab, 2026-07-25), and past the finders' 10s
+-- fail-fast timeout on large production instances. With this index the same
+-- query walks only the pending set: 0.04ms, 29 rows filtered, at the same
+-- scale. Rows leave the index as computes stamp lastScanned, so it stays tiny
+-- (16 kB at 2M rows).
+--
+-- The predicate spelling MUST stay identical to
+-- FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE's first condition for the
+-- planner's implication proof; the fence condition is deliberately excluded
+-- (now() is not immutable). to_timestamp(double precision) is IMMUTABLE.
+--
+-- Deliberately a PLAIN (blocking) build, not CONCURRENTLY: the build is a
+-- single cheap scan -- measured 384ms at 2M rows -- so blocking release
+-- writes for it during a boot migration is a non-event. CONCURRENTLY in a
+-- Flyway migration is actively dangerous here: community Flyway holds its
+-- schema-history lock connection idle-in-transaction while running a
+-- non-transactional script on a second connection, and CREATE INDEX
+-- CONCURRENTLY waits on that virtualxid forever (self-deadlock, reproduced
+-- 2026-07-25 -- pg_blocking_pids pointed at Flyway's own lock session).
+-- IF NOT EXISTS: an operator may have hand-applied this index as an emergency
+-- mitigation before upgrading (it is safe to create on a running instance);
+-- the migration must tolerate that rather than fail boot.
+CREATE INDEX IF NOT EXISTS releases_metrics_pending_idx
+    ON rearm.releases (last_updated_date)
+    WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0));

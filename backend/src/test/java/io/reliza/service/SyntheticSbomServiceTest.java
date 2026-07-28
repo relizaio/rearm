@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -60,11 +61,13 @@ class SyntheticSbomServiceTest {
 	@Mock private SyntheticDtrackBucketRepository bucketRepository;
 	@Mock private ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	@Mock private ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
+	@Mock private io.reliza.repositories.ArtifactRepository artifactRepository;
 	@Mock private SharedArtifactService sharedArtifactService;
 	@Mock private DTrackService dTrackService;
 	@Mock private RebomService rebomService;
 	@Mock private IntegrationService integrationService;
 	@Mock private VulnAnalysisService vulnAnalysisService;
+	@Mock private SbomComponentService sbomComponentService;
 
 	@InjectMocks private SyntheticSbomService service;
 
@@ -416,12 +419,16 @@ class SyntheticSbomServiceTest {
 
 		SbomComponent scomp = new SbomComponent();
 		scomp.setUuid(sc); scomp.setOrg(ORG); scomp.setCanonicalPurl(canonical);
-		when(sbomComponentRepository.findByOrgAndCanonicalPurlIn(eq(ORG.toString()), any()))
-				.thenReturn(List.of(scomp));
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(scomp));
-		when(artifactSbomComponentRepository
-				.findDistinctCanonicalArtifactUuidsByOrgAndSbomComponentUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(canonicalArtifact));
+		UUID poolArtifactcano = UUID.randomUUID();
+		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
+				.thenReturn(List.of(poolArtifactcano));
+		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
+		poolMapcano.setOrg(ORG);
+		poolMapcano.setArtifactUuid(poolArtifactcano);
+		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
+		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
+				.thenReturn(List.of(poolMapcano));
 		ArtifactSbomComponent asc = mock(ArtifactSbomComponent.class);
 		when(asc.getSbomComponentUuid()).thenReturn(sc);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact))
@@ -452,10 +459,16 @@ class SyntheticSbomServiceTest {
 		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(ingestedBucket(new HashMap<>(), canonical)));
 		SbomComponent scomp = new SbomComponent();
 		scomp.setUuid(sc); scomp.setOrg(ORG); scomp.setCanonicalPurl(canonical);
-		when(sbomComponentRepository.findByOrgAndCanonicalPurlIn(eq(ORG.toString()), any())).thenReturn(List.of(scomp));
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(scomp));
-		when(artifactSbomComponentRepository.findDistinctCanonicalArtifactUuidsByOrgAndSbomComponentUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(canonicalArtifact));
+		UUID poolArtifactcano = UUID.randomUUID();
+		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
+				.thenReturn(List.of(poolArtifactcano));
+		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
+		poolMapcano.setOrg(ORG);
+		poolMapcano.setArtifactUuid(poolArtifactcano);
+		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
+		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
+				.thenReturn(List.of(poolMapcano));
 		ArtifactSbomComponent asc = mock(ArtifactSbomComponent.class);
 		when(asc.getSbomComponentUuid()).thenReturn(sc);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(asc));
@@ -482,10 +495,16 @@ class SyntheticSbomServiceTest {
 		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(ingestedBucket(new HashMap<>(), coveredPurl)));
 		SbomComponent c1 = new SbomComponent(); c1.setUuid(covered); c1.setOrg(ORG); c1.setCanonicalPurl(coveredPurl);
 		SbomComponent c2 = new SbomComponent(); c2.setUuid(uncovered); c2.setOrg(ORG); c2.setCanonicalPurl(uncoveredPurl);
-		when(sbomComponentRepository.findByOrgAndCanonicalPurlIn(eq(ORG.toString()), any())).thenReturn(List.of(c1));
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(c1, c2));
-		when(artifactSbomComponentRepository.findDistinctCanonicalArtifactUuidsByOrgAndSbomComponentUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(canonicalArtifact));
+		UUID poolArtifactcano = UUID.randomUUID();
+		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
+				.thenReturn(List.of(poolArtifactcano));
+		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
+		poolMapcano.setOrg(ORG);
+		poolMapcano.setArtifactUuid(poolArtifactcano);
+		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
+		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
+				.thenReturn(List.of(poolMapcano));
 		ArtifactSbomComponent a1 = mock(ArtifactSbomComponent.class); when(a1.getSbomComponentUuid()).thenReturn(covered);
 		ArtifactSbomComponent a2 = mock(ArtifactSbomComponent.class); when(a2.getSbomComponentUuid()).thenReturn(uncovered);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(a1, a2));
@@ -508,10 +527,16 @@ class SyntheticSbomServiceTest {
 		SbomComponent depC = new SbomComponent(); depC.setUuid(dep); depC.setOrg(ORG); depC.setCanonicalPurl(depPurl);
 		SbomComponent rootC = new SbomComponent(); rootC.setUuid(root); rootC.setOrg(ORG); rootC.setCanonicalPurl(rootPurl);
 		Map<String, Object> rootRd = new HashMap<>(); rootRd.put("isRoot", true); rootC.setRecordData(rootRd);
-		when(sbomComponentRepository.findByOrgAndCanonicalPurlIn(eq(ORG.toString()), any())).thenReturn(List.of(depC));
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(depC, rootC));
-		when(artifactSbomComponentRepository.findDistinctCanonicalArtifactUuidsByOrgAndSbomComponentUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(canonicalArtifact));
+		UUID poolArtifactcano = UUID.randomUUID();
+		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
+				.thenReturn(List.of(poolArtifactcano));
+		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
+		poolMapcano.setOrg(ORG);
+		poolMapcano.setArtifactUuid(poolArtifactcano);
+		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
+		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
+				.thenReturn(List.of(poolMapcano));
 		ArtifactSbomComponent aDep = mock(ArtifactSbomComponent.class); when(aDep.getSbomComponentUuid()).thenReturn(dep);
 		ArtifactSbomComponent aRoot = mock(ArtifactSbomComponent.class); when(aRoot.getSbomComponentUuid()).thenReturn(root);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(aDep, aRoot));
@@ -541,5 +566,82 @@ class SyntheticSbomServiceTest {
 
 	private static ComponentIdentity idEntry(String scheme, String value) {
 		return new ComponentIdentity(scheme, value);
+	}
+
+	// ---------------------------------------------------------------
+	// Fan-out stall reporting
+	// ---------------------------------------------------------------
+
+	private static Object[] stallRow(long staleCount, long unenriched) {
+		return new Object[] { staleCount, java.time.ZonedDateTime.now().minusHours(5), unenriched };
+	}
+
+	@Test
+	void stallReportStaysSilentWhenNothingIsStuck() {
+		when(sbomComponentRepository.summarizeStaleUnbucketedMatchable(eq(ORG.toString()), any()))
+				.thenReturn(stallRow(0L, 0L));
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of());
+
+		service.reportFanOutStallIfAny(ORG);
+
+		// Nothing to report -> no sample lookup, and (critically) no rate-limit
+		// entry recorded, so a stall appearing a minute later is reported at once.
+		verify(sbomComponentRepository, never()).findOldestStaleUnbucketedPurl(any(), any());
+		service.reportFanOutStallIfAny(ORG);
+		verify(sbomComponentRepository, times(2)).summarizeStaleUnbucketedMatchable(eq(ORG.toString()), any());
+	}
+
+	@Test
+	void stallReportFiresWhenComponentsAreStuckUnbucketed() {
+		when(sbomComponentRepository.summarizeStaleUnbucketedMatchable(eq(ORG.toString()), any()))
+				.thenReturn(stallRow(7L, 7L));
+		when(sbomComponentRepository.findOldestStaleUnbucketedPurl(eq(ORG.toString()), any()))
+				.thenReturn("pkg:npm/stuck@1.0.0");
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of());
+
+		service.reportFanOutStallIfAny(ORG);
+
+		// The sample purl is only fetched when we are actually reporting.
+		verify(sbomComponentRepository).findOldestStaleUnbucketedPurl(eq(ORG.toString()), any());
+	}
+
+	@Test
+	void stallReportIsRateLimitedPerOrg() {
+		when(sbomComponentRepository.summarizeStaleUnbucketedMatchable(eq(ORG.toString()), any()))
+				.thenReturn(stallRow(3L, 3L));
+		when(sbomComponentRepository.findOldestStaleUnbucketedPurl(eq(ORG.toString()), any()))
+				.thenReturn("pkg:npm/stuck@1.0.0");
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of());
+
+		service.reportFanOutStallIfAny(ORG);
+		service.reportFanOutStallIfAny(ORG);
+		service.reportFanOutStallIfAny(ORG);
+
+		// A permanent stall must be a heartbeat, not one ERROR per scheduler
+		// tick -- the second and third calls short-circuit before querying.
+		verify(sbomComponentRepository, times(1)).summarizeStaleUnbucketedMatchable(eq(ORG.toString()), any());
+	}
+
+	@Test
+	void stallReportToleratesNestedProjectionShape() {
+		// Some JPA/driver combinations hand back Object[]{Object[]{...}} for an
+		// aggregate projection; unwrapping must not throw.
+		when(sbomComponentRepository.summarizeStaleUnbucketedMatchable(eq(ORG.toString()), any()))
+				.thenReturn(new Object[] { stallRow(4L, 0L) });
+		when(sbomComponentRepository.findOldestStaleUnbucketedPurl(eq(ORG.toString()), any()))
+				.thenReturn("pkg:npm/stuck@1.0.0");
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of());
+
+		service.reportFanOutStallIfAny(ORG);
+
+		verify(sbomComponentRepository).findOldestStaleUnbucketedPurl(eq(ORG.toString()), any());
+	}
+
+	@Test
+	void stallReportNeverPropagatesFailure() {
+		// Diagnostics must not break the tick they are diagnosing.
+		when(sbomComponentRepository.summarizeStaleUnbucketedMatchable(eq(ORG.toString()), any()))
+				.thenThrow(new RuntimeException("db down"));
+		service.reportFanOutStallIfAny(ORG);
 	}
 }

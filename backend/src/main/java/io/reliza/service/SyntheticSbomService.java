@@ -5,12 +5,16 @@ package io.reliza.service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +78,30 @@ public class SyntheticSbomService {
 
 	/** Max components per synthetic SBOM / DTrack project. */
 	static final int BUCKET_SIZE = 500;
+
+	/**
+	 * Fan-out candidates processed per org per tick. Each candidate costs two
+	 * light per-artifact reads plus a metrics write, so this bounds the tick's
+	 * work; anything left over is picked up on the next tick, because an
+	 * unstamped artifact stays a candidate.
+	 */
+	static final int FANOUT_BATCH_LIMIT = 500;
+
+	/**
+	 * A matchable component unbucketed for longer than this is treated as a
+	 * stall, not transience: bucket assignment is local and immediate, so the
+	 * only way to stay unbucketed is for submitOrg to keep excluding it.
+	 */
+	static final Duration STALL_COMPONENT_AGE = Duration.ofHours(2);
+
+	/** A bucket that has not reached INGESTED in this long is stalled too. */
+	static final Duration STALL_BUCKET_AGE = Duration.ofHours(2);
+
+	/** Minimum gap between stall reports for the same org, so a long-running
+	 *  stall produces a periodic signal rather than one line per tick. */
+	static final Duration STALL_LOG_INTERVAL = Duration.ofHours(1);
+
+	private final Map<UUID, Instant> lastStallReport = new ConcurrentHashMap<>();
 	/** Cap on CPEs emitted per component (cpe[0] on the primary; companions TODO). */
 	static final int MAX_CPES = 3;
 
@@ -81,6 +109,8 @@ public class SyntheticSbomService {
 	@Autowired private SyntheticDtrackBucketRepository bucketRepository;
 	@Autowired private ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	@Autowired private ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
+	@Autowired private io.reliza.repositories.ArtifactRepository artifactRepository;
+	@Autowired @org.springframework.context.annotation.Lazy private SbomComponentService sbomComponentService;
 	@Autowired private SharedArtifactService sharedArtifactService;
 	@Autowired private DTrackService dTrackService;
 	@Autowired private RebomService rebomService;
@@ -653,13 +683,165 @@ public class SyntheticSbomService {
 	 * are covered, so an artifact with a still-PENDING/gated component isn't
 	 * prematurely reported as 0-vuln scanned.
 	 */
+	/**
+	 * Report a fan-out stall if one looks permanent.
+	 *
+	 * <p>Fan-out only stamps an artifact once EVERY one of its matchable
+	 * components is covered by an INGESTED bucket. Most gaps are transient (a
+	 * new dependency waiting a tick or two for submit + DTrack), and those
+	 * resolve on their own. Two conditions do not resolve on their own and
+	 * leave affected artifacts unscanned indefinitely, with nothing in the logs
+	 * today to say so:
+	 *
+	 * <ul>
+	 *   <li>components that never get bucketed at all -- almost always the BEAR
+	 *       enrichment gate in {@code submitOrg}, which only ships components
+	 *       whose {@code enriched_at} is set, so an org whose enrichment path
+	 *       is broken silently stops scanning;</li>
+	 *   <li>buckets that never reach INGESTED -- submission or DTrack ingest
+	 *       failing repeatedly.</li>
+	 * </ul>
+	 *
+	 * <p>Logged at ERROR because the user-visible symptom (releases stuck on
+	 * "Scan pending", vulnerabilities never appearing) is indistinguishable
+	 * from "nothing to report", and there is no other signal. Rate-limited per
+	 * org so a long stall is a heartbeat, not a flood.
+	 */
+	/**
+	 * Diagnostics for the FANOUT-STALL report: for up to {@code sampleSize} of
+	 * the org's oldest never-scanned mapped artifacts, classify the blocker --
+	 * un-enriched components (enrichment gate), other uncovered components, or
+	 * coverage-clear (candidate starvation suspects). Rate-limited cadence only.
+	 */
+	private String summarizeNeverScannedBlockers(UUID orgUuid, int sampleSize) {
+		try {
+			Set<String> covered = new HashSet<>();
+			for (SyntheticDtrackBucket bucket : bucketRepository.findByOrg(orgUuid)) {
+				if (IngestState.INGESTED != bucket.getIngestState() || bucket.getRefMap() == null) continue;
+				for (String k : bucket.getRefMap().keySet()) if (!"__token".equals(k)) covered.add(k);
+			}
+			List<UUID> sample = artifactCanonicalMapRepository
+					.findNeverScannedMappedArtifactCanonicalsOlderThan(
+							orgUuid, ZonedDateTime.now().minus(STALL_COMPONENT_AGE), sampleSize);
+			int blockedOnCoverage = 0;
+			int blockedOnEnrichment = 0;
+			int coverageClear = 0;
+			for (UUID canonicalArtifact : sample) {
+				List<ArtifactSbomComponent> ascs = artifactSbomComponentRepository
+						.findByOrgAndCanonicalArtifactUuid(orgUuid, canonicalArtifact);
+				Set<UUID> compUuids = new HashSet<>();
+				for (ArtifactSbomComponent asc : ascs) compUuids.add(asc.getSbomComponentUuid());
+				boolean missing = false;
+				boolean missingUnenriched = false;
+				for (SbomComponent sc : sbomComponentRepository.findAllById(compUuids)) {
+					if (sc.isRoot()) continue;
+					if (sc.isEnrichmentTerminal()) continue;
+					String pu = sc.getCanonicalPurl();
+					if (pu == null || !(pu.startsWith("pkg:") || pu.startsWith("cpe:"))) continue;
+					if (!covered.contains(pu)) {
+						missing = true;
+						if (sc.getEnrichedAt() == null) missingUnenriched = true;
+					}
+				}
+				if (!missing) coverageClear++;
+				else if (missingUnenriched) blockedOnEnrichment++;
+				else blockedOnCoverage++;
+			}
+			return String.format("of %d sampled: %d blocked on un-enriched components, "
+					+ "%d blocked on other uncovered components, %d coverage-clear (starvation suspects)",
+					sample.size(), blockedOnEnrichment, blockedOnCoverage, coverageClear);
+		} catch (Exception e) {
+			return "diagnostics unavailable: " + e.getMessage();
+		}
+	}
+
+	void reportFanOutStallIfAny(UUID orgUuid) {
+		try {
+			Instant last = lastStallReport.get(orgUuid);
+			if (last != null && last.isAfter(Instant.now().minus(STALL_LOG_INTERVAL))) return;
+
+			ZonedDateTime compCutoff = ZonedDateTime.now().minus(STALL_COMPONENT_AGE);
+			Object[] row = sbomComponentRepository.summarizeStaleUnbucketedMatchable(
+					orgUuid.toString(), compCutoff);
+			// Aggregate query: always one row, but the driver may nest it.
+			Object[] r = (row != null && row.length == 1 && row[0] instanceof Object[] inner) ? inner : row;
+			long staleCount = (r != null && r.length > 0 && r[0] != null) ? ((Number) r[0]).longValue() : 0L;
+
+			ZonedDateTime bucketCutoff = ZonedDateTime.now().minus(STALL_BUCKET_AGE);
+			long stuckBuckets = bucketRepository.findByOrg(orgUuid).stream()
+					.filter(b -> IngestState.INGESTED != b.getIngestState())
+					.filter(b -> b.getLastUpdatedDate() != null && b.getLastUpdatedDate().isBefore(bucketCutoff))
+					.count();
+
+			// Third stall class (prod 2026-07-25): artifacts never scanned long
+			// after upload while the org pipeline looks healthy -- unbucketed=0,
+			// all buckets INGESTED -- because the fan-out candidate batch was
+			// occupied by non-draining candidates. Log-only, like the other classes.
+			ZonedDateTime artifactCutoff = ZonedDateTime.now().minus(STALL_COMPONENT_AGE);
+			long neverScanned = artifactCanonicalMapRepository
+					.countNeverScannedMappedArtifactsOlderThan(orgUuid, artifactCutoff);
+
+			if (staleCount == 0 && stuckBuckets == 0 && neverScanned == 0) return;
+
+			if (neverScanned > 0) {
+				log.error("[FANOUT-STALL] org {}: {} mapped artifact(s) still never scanned {}h after upload. "
+						+ "Sampled blocking reasons: {}. "
+						+ "If none are blocked on coverage, suspect fan-out candidate starvation "
+						+ "(pool not draining past FANOUT_BATCH_LIMIT).",
+						orgUuid, neverScanned, STALL_COMPONENT_AGE.toHours(),
+						summarizeNeverScannedBlockers(orgUuid, 5));
+			}
+
+			if (staleCount > 0) {
+				long unenriched = (r != null && r.length > 2 && r[2] != null) ? ((Number) r[2]).longValue() : 0L;
+				Object oldest = (r != null && r.length > 1) ? r[1] : null;
+				String samplePurl = sbomComponentRepository
+						.findOldestStaleUnbucketedPurl(orgUuid.toString(), compCutoff);
+				// Diagnostics are defensively isolated: they must never break the
+				// report or its rate-limit stamp (which sits after the log calls).
+				String enrichDiag = "";
+				if (unenriched > 0) {
+					try {
+						enrichDiag = " Enrichment diagnostics: "
+								+ sbomComponentService.summarizeEnrichmentStall(orgUuid, 10) + ".";
+					} catch (Exception diagEx) {
+						enrichDiag = " (enrichment diagnostics unavailable: " + diagEx.getMessage() + ")";
+					}
+				}
+				log.error("[SYNTHETIC-STALL] org {}: {} matchable component(s) still unbucketed after {}h "
+						+ "({} un-enriched; oldest created {}; e.g. {}). Artifacts containing them can never "
+						+ "pass fan-out coverage, so their releases stay unscanned. {}{}",
+						orgUuid, staleCount, STALL_COMPONENT_AGE.toHours(), unenriched, oldest, samplePurl,
+						unenriched > 0
+							? "Most likely the BEAR enrichment gate: submitOrg only ships components with enriched_at set."
+							: "Components are enriched but not being assigned a bucket -- check submitOrg.",
+						enrichDiag);
+			}
+			if (stuckBuckets > 0) {
+				log.error("[SYNTHETIC-STALL] org {}: {} synthetic bucket(s) have not reached INGESTED in {}h; "
+						+ "components in them stay uncovered and their artifacts stay unscanned.",
+						orgUuid, stuckBuckets, STALL_BUCKET_AGE.toHours());
+			}
+			lastStallReport.put(orgUuid, Instant.now());
+		} catch (Exception e) {
+			// Diagnostics must never break the tick they are diagnosing.
+			log.warn("Fan-out stall check failed for org {}: {}", orgUuid, e.getMessage());
+		}
+	}
+
 	void fanOutOrg(UUID orgUuid) {
 		// From INGESTED buckets: the findings (by canonical purl) and the set of
 		// canonical purls DTrack has actually scanned (the bucket ref_map keys).
 		Map<String, FindingSet> global = new HashMap<>();
 		Set<String> coveredPurls = new HashSet<>();
+		// Newest INGESTED-bucket update = the candidate cutoff, computed here from
+		// the buckets this loop already iterates (previously an SQL subquery).
+		double cutoffEpoch = 0d;
 		for (SyntheticDtrackBucket bucket : bucketRepository.findByOrg(orgUuid)) {
 			if (IngestState.INGESTED != bucket.getIngestState()) continue;
+			if (bucket.getLastUpdatedDate() != null) {
+				cutoffEpoch = Math.max(cutoffEpoch, bucket.getLastUpdatedDate().toInstant().getEpochSecond());
+			}
 			if (bucket.getFindings() != null) mergeBucketFindings(global, bucket.getFindings());
 			if (bucket.getRefMap() != null) {
 				for (String k : bucket.getRefMap().keySet()) {
@@ -669,14 +851,29 @@ public class SyntheticSbomService {
 		}
 		if (coveredPurls.isEmpty()) return;
 
-		// Canonical artifacts that reference any covered component.
-		List<SbomComponent> coveredComps = sbomComponentRepository
-				.findByOrgAndCanonicalPurlIn(orgUuid.toString(), coveredPurls);
-		Set<UUID> coveredCompUuids = new HashSet<>();
-		for (SbomComponent sc : coveredComps) coveredCompUuids.add(sc.getUuid());
-		if (coveredCompUuids.isEmpty()) return;
-		List<UUID> canonicalArtifacts = artifactSbomComponentRepository
-				.findDistinctCanonicalArtifactUuidsByOrgAndSbomComponentUuidIn(orgUuid, coveredCompUuids);
+		// Two-query candidate resolution (see ArtifactRepository.findFanOutPoolSlice
+		// for why the previous joined query was replaced): first the pool slice of
+		// artifacts needing a scan pass -- never-scanned first, newest upload first
+		// within them -- then their canonicals via the unique artifact->canonical
+		// map lookup, deduplicated preserving the slice's priority order and capped
+		// at the batch limit. The old SQL EXISTS (>=1 covered component) is
+		// preserved semantically by the per-canonical gate below: a candidate with
+		// no matchable components is skipped WITHOUT stamping, exactly as before.
+		List<UUID> poolArtifacts = artifactRepository.findFanOutPoolSlice(
+				orgUuid, cutoffEpoch, FANOUT_BATCH_LIMIT * 4);
+		if (poolArtifacts.isEmpty()) return;
+		Map<UUID, UUID> artifactToCanonical = new HashMap<>();
+		for (ArtifactCanonicalMap m : artifactCanonicalMapRepository
+				.findByOrgAndArtifactUuidIn(orgUuid, poolArtifacts)) {
+			artifactToCanonical.put(m.getArtifactUuid(), m.getCanonicalArtifactUuid());
+		}
+		Set<UUID> canonicalArtifacts = new LinkedHashSet<>();
+		for (UUID artifactUuid : poolArtifacts) {
+			UUID canonical = artifactToCanonical.get(artifactUuid);
+			if (canonical != null) canonicalArtifacts.add(canonical);
+			if (canonicalArtifacts.size() >= FANOUT_BATCH_LIMIT) break;
+		}
+		if (canonicalArtifacts.isEmpty()) return;
 
 		for (UUID canonicalArtifact : canonicalArtifacts) {
 			List<ArtifactSbomComponent> ascs = artifactSbomComponentRepository
@@ -692,6 +889,10 @@ public class SyntheticSbomService {
 			Set<String> matchablePurls = new HashSet<>();
 			for (SbomComponent sc : sbomComponentRepository.findAllById(compUuids)) {
 				if (sc.isRoot()) continue;
+				// Terminal components never ship to DTrack, so requiring their
+				// coverage would scan-block the artifact forever -- excluded from
+				// the gate exactly like roots (see V75).
+				if (sc.isEnrichmentTerminal()) continue;
 				String p = sc.getCanonicalPurl();
 				if (p != null && (p.startsWith("pkg:") || p.startsWith("cpe:"))) matchablePurls.add(p);
 			}

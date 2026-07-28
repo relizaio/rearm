@@ -38,6 +38,7 @@ import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.SceDto;
+import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.SourceCodeEntryRepository;
 import io.reliza.versioning.VersionApi;
 import io.reliza.versioning.VersionApi.ActionEnum;
@@ -49,6 +50,9 @@ public class SourceCodeEntryService {
 	
 	@Autowired
 	private AcollectionService acollectionService;
+
+	@Autowired
+	private ReleaseRepository releaseRepository;
 	
 	@Autowired
 	private AuditService auditService;
@@ -490,6 +494,11 @@ public class SourceCodeEntryService {
 		sced.setArtifacts(artifacts);
 		Map<String,Object> recordData = Utils.dataToRecord(sced);
 		saveSourceCodeEntry(sce, recordData, wu);
+		// See DeliverableService.addArtifact: attaching an already-scanned artifact
+		// moves a release's rollup without touching the artifact's metrics or the
+		// release row, so the scan-time touch cannot fire. This replaces what the
+		// retired BY_SCE finder used to catch.
+		releaseRepository.touchReleasesByScannedSceArtifact(art.artifactUuid().toString());
 		return true;
 	}
 

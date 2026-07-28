@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.reliza.model.IntegrationData.DependencyTrackVersion;
 import io.reliza.model.IntegrationData.IntegrationCapability;
 import io.reliza.model.IntegrationData.IntegrationType;
 import lombok.Builder;
@@ -31,4 +32,6 @@ public class IntegrationWebDto {
 	private String note;
 	@JsonProperty
 	private List<IntegrationCapability> capabilities;
+	@JsonProperty
+	private DependencyTrackVersion dtrackVersion; // DEPENDENCYTRACK only; null == V4
 }

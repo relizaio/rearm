@@ -521,6 +521,20 @@ class VariableQueries {
 
 	protected static final String FIND_ALL_RELEASES_OF_ORG = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString";
+
+	// Approval-queue candidate scan (BUG 13): only releases under a policy-covered
+	// component, in a pending lifecycle, non-archived. Ordered newest-first and
+	// paginated so ApprovalNeedsService never deserialises the whole org into heap
+	// (the previous full-org scan OOM-crashed the backend on large instances).
+	protected static final String FIND_APPROVAL_CANDIDATE_RELEASES = """
+			SELECT * FROM rearm.releases r
+			WHERE r.record_data->>'org' = :orgUuidAsString
+			  AND r.record_data->>'component' IN (:componentUuidsAsStrings)
+			  AND r.record_data->>'lifecycle' IN (:lifecyclesAsStrings)
+			  AND (r.record_data->>'status' != 'ARCHIVED' OR r.record_data->>'status' IS NULL)
+			ORDER BY r.created_date DESC, r.uuid DESC
+			LIMIT cast(:limitAsStr as bigint) OFFSET cast(:offsetAsStr as bigint)
+			""";
 	
 	protected static final String FIND_ALL_PRODUCT_RELEASES_OF_ORG = """
 			SELECT * FROM rearm.releases r WHERE r.record_data->>'org' = :orgUuidAsString
@@ -762,51 +776,22 @@ class VariableQueries {
 	// is fenced out until its backoff expires. Without the fence such rows stamp
 	// no lastScanned, keep their old last_updated_date, and permanently occupy
 	// the head of the ASC order -- >= :limit of them starves everything younger.
-	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT = """
-		WITH releases_with_artifacts AS (
-			SELECT rlzs.*,
-			       coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0) AS rel_last_scanned,
-			       jsonb_array_elements_text(record_data->'artifacts')::uuid AS artifact_uuid
-			FROM rearm.releases rlzs WHERE rlzs.record_data->>'artifacts' != '[]'
-		)
-		SELECT DISTINCT rwa.uuid, rwa.revision, rwa.metrics_revision, rwa.schema_version, rwa.created_date, rwa.last_updated_date, rwa.record_data, rwa.metrics, rwa.approval_events, rwa.update_events, rwa.flow_control
-		FROM releases_with_artifacts rwa
-		INNER JOIN rearm.artifacts a ON a.uuid = rwa.artifact_uuid
-		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) > rwa.rel_last_scanned
-		  AND (rwa.flow_control->>'metricsComputeSkipUntil' IS NULL
-		       OR (rwa.flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
-		ORDER BY rwa.last_updated_date ASC
-		LIMIT :limit
-		""";
+	// RETIRED: FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT lived here.
+	// It expanded record_data->'artifacts' for EVERY release with artifacts on
+	// every tick -- the same whole-estate shape as the retired BY_SCE /
+	// BY_OUTBOUND_DELIVERABLES polls, and it hit the finders' 10s fail-fast
+	// timeout on large instances once touch traffic grew. Replaced by
+	// touchReleasesByScannedArtifactDirect fired from
+	// SharedArtifactService.saveArtifactMetrics; the historical comment above is
+	// kept because BY_UPDATE / the product finder still reference it for the
+	// LIMIT / ORDER BY / fence rationale.
+
 
 	/*
 	 * SCE variant of the above. Same per-release comparison, joined through the SCE link:
 	 * release.record_data->>'sourceCodeEntry' → sce.uuid → sce.record_data->'artifacts'[].artifactUuid.
 	 * See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
 	 */
-	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
-	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
-		SELECT rlzs.uuid, rlzs.revision, rlzs.metrics_revision, rlzs.schema_version, rlzs.created_date, rlzs.last_updated_date, rlzs.record_data, rlzs.metrics, rlzs.approval_events, rlzs.update_events, rlzs.flow_control
-		FROM rearm.releases rlzs
-		WHERE rlzs.record_data->>'sourceCodeEntry' IS NOT NULL
-		  AND EXISTS (
-		      SELECT 1
-		      FROM rearm.source_code_entries sce
-		      CROSS JOIN LATERAL jsonb_array_elements(
-		          CASE WHEN jsonb_typeof(sce.record_data->'artifacts') = 'array'
-		               THEN sce.record_data->'artifacts'
-		               ELSE '[]'::jsonb END
-		      ) AS art_element
-		      JOIN rearm.artifacts a ON a.uuid = (art_element->>'artifactUuid')::uuid
-		      WHERE sce.uuid::text = rlzs.record_data->>'sourceCodeEntry'
-		        AND coalesce(cast(a.metrics->>'lastScanned' as float), 0)
-		            > coalesce(cast(rlzs.metrics->>'lastScanned' as float), 0)
-		  )
-		  AND (rlzs.flow_control->>'metricsComputeSkipUntil' IS NULL
-		       OR (rlzs.flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
-		ORDER BY rlzs.last_updated_date ASC
-		LIMIT :limit
-		""";
 
 	/*
 	 * Outbound-deliverable variant. Same per-release comparison, joined through the
@@ -821,28 +806,6 @@ class VariableQueries {
 	 * This shape decomposes only one reasonable way (one variants scan, PK joins,
 	 * one merge with releases) and measures ~0.5s/tick on prod-scale data.
 	 */
-	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
-	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES = """
-		WITH release_outbound_arts AS (
-			SELECT (var.record_data->>'release')::uuid AS release_uuid,
-			       (art::uuid) AS artifact_uuid
-			FROM rearm.variants var,
-			     jsonb_array_elements_text(var.record_data->'outboundDeliverables') AS deliv,
-			     rearm.deliverables del,
-			     jsonb_array_elements_text(del.record_data->'artifacts') AS art
-			WHERE del.uuid = deliv::uuid
-		)
-		SELECT DISTINCT rlzs.uuid, rlzs.revision, rlzs.metrics_revision, rlzs.schema_version, rlzs.created_date, rlzs.last_updated_date, rlzs.record_data, rlzs.metrics, rlzs.approval_events, rlzs.update_events, rlzs.flow_control
-		FROM rearm.releases rlzs
-		INNER JOIN release_outbound_arts roa ON roa.release_uuid = rlzs.uuid
-		INNER JOIN rearm.artifacts a ON a.uuid = roa.artifact_uuid
-		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) >
-		      coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0)
-		  AND (rlzs.flow_control->>'metricsComputeSkipUntil' IS NULL
-		       OR (rlzs.flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
-		ORDER BY rlzs.last_updated_date ASC
-		LIMIT :limit
-		""";
 
 	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
 	protected static final String FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE = """
@@ -856,8 +819,15 @@ class VariableQueries {
 	    LIMIT :limit
 			""";
 	
-	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale and the
-	// metricsComputeSkipUntil fence.
+	// See the BY_ARTIFACT_DIRECT retirement comment above for LIMIT/ORDER BY
+	// rationale and the metricsComputeSkipUntil fence.
+	//
+	// The timestamp predicate is served by the V73 partial index
+	// releases_metrics_pending_idx -- its WHERE clause is spelled IDENTICALLY to
+	// the first condition here so the planner's implication proof matches. Do not
+	// reword one without the other: a mismatch silently degrades this finder back
+	// to a whole-table walk (the fence condition is deliberately NOT part of the
+	// index predicate; now() is not immutable).
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE = """
 		SELECT * FROM rearm.releases
 			 WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))

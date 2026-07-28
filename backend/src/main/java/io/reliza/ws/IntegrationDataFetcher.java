@@ -86,6 +86,21 @@ public class IntegrationDataFetcher {
 
 		return integrationService.listConfiguredBaseIntegrationTypesPerOrg(orgUuid);
 	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "dependencyTrackVersion")
+	public String getDependencyTrackVersion (@InputArgument("org") UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+
+		var odInt = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roInt = odInt.isPresent() ? odInt.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roInt), CallType.READ);
+
+		Optional<IntegrationData> oid = integrationService.getIntegrationDataByOrgTypeIdentifier(
+				orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		return oid.map(id -> id.getEffectiveDtrackVersion().name()).orElse(null);
+	}
 	
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record CreateIntegrationInput (UUID org, String identifier, String secret, IntegrationType type, URI uri, String schedule, URI frontendUri) {}
