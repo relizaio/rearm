@@ -110,6 +110,31 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		public static final int NOTIFICATION_RETENTION_DAYS_MAX = 730;
 
 		/**
+		 * Org-level "watchers" lever for the component notification audience.
+		 * When true, read-only ({@code >= READ_ONLY}) component members are also
+		 * an audience for that component's release notifications ("if you can see
+		 * it, you hear about it"). Default (null/false) = only the write-team
+		 * ({@code >= READ_WRITE}) plus the durable owner are the audience, so a
+		 * read-only viewer is neither on the Team display nor auto-notified. Never
+		 * lowers the floor below READ_ONLY (ESSENTIAL_READ/NONE stay excluded), and
+		 * never affects who may OPEN the inbox -- only which component-arm
+		 * deliveries populate it. See {@code NotificationDataFetcher} audience floor.
+		 */
+		@JsonProperty
+		private Boolean notifyComponentWatchers;
+
+		/**
+		 * @return true iff read-only component watchers are in the notification audience; default false.
+		 *         Named {@code ...Enabled} (not {@code isNotifyComponentWatchers}) so it does not shadow
+		 *         Lombok's raw {@code getNotifyComponentWatchers()} accessor -- preserving the
+		 *         null-vs-explicitly-set distinction the patch idiom relies on (see
+		 *         {@link #isFindingChangeRetentionEnabled()}).
+		 */
+		public boolean isNotifyComponentWatchersEnabled() {
+			return notifyComponentWatchers != null && notifyComponentWatchers;
+		}
+
+		/**
 		 * How long {@code finding_change_events} rows (the re-scan-driven "Finding changes over time"
 		 * diff table, board task #38) are kept before the daily retention sweep deletes them, age-based
 		 * on {@code change_date}. Resolved via {@link #isFindingChangeRetentionEnabled()} +
@@ -130,51 +155,12 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty
 		private Integer findingChangeRetentionDays;
 
-		/**
-		 * Watermark set to the completion instant when a FULL-range {@code finding_change_events} backfill
-		 * finishes for this org (board task #38). Null = the org has NOT been seeded, so the posture-diff
-		 * read path cannot trust reverse-replay (the event log is incomplete) and MUST fall back to the
-		 * legacy pairwise diff. Once set, the always-on live emit keeps the log current, so it stays seeded.
-		 * Makes the "backfill-before-read-flag" ordering safe-by-construction rather than operator-procedural.
-		 */
-		@JsonProperty
-		private ZonedDateTime findingChangeBackfillCompletedAt;
-
-		/**
-		 * The {@code FindingChangeKind} vocabulary version this org's event log was seeded/reseeded at
-		 * (see {@code ChangelogRecords.FINDING_CHANGE_EVENT_VOCAB_VERSION}). Null on orgs seeded before
-		 * versioning existed -- treated as version 1. The read gate requires the CURRENT version, so a
-		 * vocabulary widening automatically de-certifies seeded orgs until a full-range reseed re-diffs
-		 * their history with the new kinds.
-		 */
-		@JsonProperty
-		private Integer findingChangeBackfillVocabVersion;
-
-		/** @return true once a full-range finding_change_events backfill has completed for this org. */
-		public boolean isFindingChangeBackfillComplete() {
-			return findingChangeBackfillCompletedAt != null;
-		}
-
-		/** @return the vocabulary version the org was seeded at; 1 for pre-versioning watermarks. */
-		public int getFindingChangeBackfillVocabVersionOrDefault() {
-			return findingChangeBackfillVocabVersion != null ? findingChangeBackfillVocabVersion : 1;
-		}
-
-		/**
-		 * Historical watermark from the v2 ({@code finding_change_events_v2} + {@code finding_dim}) backfill
-		 * (board task #38 normalization, Stage 2). The v2 fact table was dropped in V64 (v3 decommission), so
-		 * this field is no longer read -- it is RETAINED (not removed) purely so existing orgs' settings JSONB
-		 * still deserializes. Superseded by {@link #findingChangeV3BackfillCompletedAt}.
-		 */
-		@JsonProperty
-		private ZonedDateTime findingChangeV2BackfillCompletedAt;
-
-		/**
-		 * Historical: the {@code FindingDimKey.KEY_VERSION} the org's v2 dimension was backfilled at. Retained
-		 * for settings-JSONB back-compat after the V64 v2 drop; no longer read.
-		 */
-		@JsonProperty
-		private Integer findingChangeV2BackfillKeyVersion;
+		// The pre-v3 (v1/v2) backfill watermark fields that used to live here
+		// (findingChangeBackfillCompletedAt/VocabVersion, findingChangeV2Backfill*) were
+		// removed with the legacy certification writers: nothing reads or writes them
+		// anymore, and Settings is @JsonIgnoreProperties(ignoreUnknown = true), so the
+		// stale keys still present in pre-decommission orgs' settings JSONB are simply
+		// ignored on deserialization.
 
 		/**
 		 * Watermark set when the org's BRANCH-GRAIN {@code finding_change_events_v3} (events-lite, fact-row

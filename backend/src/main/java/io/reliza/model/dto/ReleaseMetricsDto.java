@@ -637,7 +637,69 @@ public class ReleaseMetricsDto implements Cloneable {
 			this.weaknessDetails = updatedWeaknesses;
 		}
 	}
-	
+
+	/**
+	 * Raises any finding's attributedAt to {@code floor} when it is earlier. A finding cannot be
+	 * attributed to an entity before the entity existed -- but the synthetic-DTrack pipeline stamps
+	 * findings with the BUCKET's scan time (one bucket serves the whole org), so an artifact or
+	 * release created after that scan would otherwise inherit an attribution that predates it.
+	 * Callers pass the owning entity's creation date (artifact createdDate at the DTI write, release
+	 * createdDate at the release-metrics assembly). Null attributedAt is left for
+	 * {@link #setAttributedAtFallback}.
+	 */
+	public void clampAttributedAtFloor(ZonedDateTime floor) {
+		if (floor == null) {
+			return;
+		}
+
+		if (vulnerabilityDetails != null) {
+			List<VulnerabilityDto> updatedVulnerabilities = new ArrayList<>();
+			for (VulnerabilityDto vuln : vulnerabilityDetails) {
+				if (vuln.attributedAt() != null && vuln.attributedAt().isBefore(floor)) {
+					updatedVulnerabilities.add(new VulnerabilityDto(
+						vuln.purl(), vuln.vulnId(), vuln.severity(), vuln.aliases(),
+						vuln.sources(), vuln.severities(), vuln.analysisState(), vuln.analysisDate(), floor,
+						vuln.description(), vuln.cwes(), vuln.references(), vuln.published(), vuln.updated(),
+						vuln.knownExploited()
+					));
+				} else {
+					updatedVulnerabilities.add(vuln);
+				}
+			}
+			this.vulnerabilityDetails = updatedVulnerabilities;
+		}
+
+		if (violationDetails != null) {
+			List<ViolationDto> updatedViolations = new ArrayList<>();
+			for (ViolationDto violation : violationDetails) {
+				if (violation.attributedAt() != null && violation.attributedAt().isBefore(floor)) {
+					updatedViolations.add(new ViolationDto(
+						violation.purl(), violation.type(), violation.license(), violation.violationDetails(),
+						violation.sources(), violation.analysisState(), violation.analysisDate(), floor
+					));
+				} else {
+					updatedViolations.add(violation);
+				}
+			}
+			this.violationDetails = updatedViolations;
+		}
+
+		if (weaknessDetails != null) {
+			List<WeaknessDto> updatedWeaknesses = new ArrayList<>();
+			for (WeaknessDto weakness : weaknessDetails) {
+				if (weakness.attributedAt() != null && weakness.attributedAt().isBefore(floor)) {
+					updatedWeaknesses.add(new WeaknessDto(
+						weakness.cweId(), weakness.ruleId(), weakness.location(), weakness.fingerprint(),
+						weakness.severity(), weakness.sources(), weakness.analysisState(), weakness.analysisDate(), floor
+					));
+				} else {
+					updatedWeaknesses.add(weakness);
+				}
+			}
+			this.weaknessDetails = updatedWeaknesses;
+		}
+	}
+
 	public void enrichSourcesWithRelease(UUID releaseUuid) {
 		if (releaseUuid == null) {
 			return;

@@ -45,7 +45,6 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.oss.LicensingConstants;
-import io.reliza.dto.ChangelogRecords;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.model.SystemInfoData;
@@ -167,52 +166,10 @@ public class OrganizationService {
 	}
 
 	/**
-	 * Certifies the per-org {@code finding_change_events} backfill watermark (board task #38) so the
-	 * posture-diff read path can trust reverse-replay for this org, stamped with the CURRENT event
-	 * vocabulary version. Atomic + idempotent at the SQL level (conditional targeted {@code jsonb_set} --
-	 * never a whole-record save), so the scheduled backfill can never clobber a concurrent user settings
-	 * update, and re-runs keep the original completion instant. Persistence-only; the backfill service
-	 * decides WHEN to call this (full-range backfill, no per-release failures).
-	 */
-	@Transactional
-	public void certifyFindingChangeBackfill(UUID orgUuid, ZonedDateTime completedAt) {
-		certifyFindingChangeBackfill(orgUuid, completedAt,
-				ChangelogRecords.FINDING_CHANGE_EVENT_VOCAB_VERSION);
-	}
-
-	/**
-	 * As {@link #certifyFindingChangeBackfill(UUID, ZonedDateTime)} but stamping an EXPLICIT vocabulary
-	 * version: the backfill passes 1 (minimum) when covered-skips mean this run did not actually re-diff
-	 * all history, so an org is never certified for kinds its log may not contain.
-	 */
-	@Transactional
-	public void certifyFindingChangeBackfill(UUID orgUuid, ZonedDateTime completedAt, int vocabVersion) {
-		repository.certifyFindingChangeBackfill(orgUuid, completedAt.toInstant().toString(), vocabVersion);
-	}
-
-	/**
-	 * Bumps an already-certified org's watermark to the CURRENT event vocabulary version -- called only
-	 * after a FULL-RANGE RESEED backfill re-diffed the org's history with the widened vocabulary (a
-	 * non-reseed run skips covered releases and must never certify new kinds). Atomic conditional update;
-	 * no-op for uncertified or already-current orgs.
-	 */
-	@Transactional
-	public void bumpFindingChangeBackfillVocab(UUID orgUuid) {
-		repository.bumpFindingChangeBackfillVocab(orgUuid, ChangelogRecords.FINDING_CHANGE_EVENT_VOCAB_VERSION);
-	}
-
-	/**
-	 * Orgs with no backfill watermark AND no {@code RELEASE} metrics_audit history -- vacuously complete
-	 * (no re-scan transitions ever happened), eligible for immediate certification by the repair sweep.
-	 */
-	public List<UUID> listOrgsEligibleForVacuousFindingChangeCertification(MetricsAudit.MetricsEntityType entityType) {
-		return repository.findOrgsEligibleForVacuousFindingChangeCertification(entityType.name());
-	}
-
-	/**
-	 * Branch-grain v3 analogue of {@link #listOrgsEligibleForVacuousFindingChangeCertification}: gates on the
-	 * V3 watermark so a never-re-scanned org that already carries a legacy v1/v2 watermark is still eligible
-	 * for vacuous v3 certification.
+	 * Orgs with no BRANCH-GRAIN v3 watermark AND no {@code RELEASE} metrics_audit history -- vacuously
+	 * complete (no re-scan transitions ever happened), eligible for immediate v3 certification by the
+	 * repair sweep. A never-re-scanned org that still carries a stale legacy v1/v2 watermark in its
+	 * settings JSONB is eligible too (the gate reads only the v3 watermark).
 	 */
 	public List<UUID> listOrgsEligibleForVacuousFindingChangeV3Certification(MetricsAudit.MetricsEntityType entityType) {
 		return repository.findOrgsEligibleForVacuousFindingChangeV3Certification(entityType.name());

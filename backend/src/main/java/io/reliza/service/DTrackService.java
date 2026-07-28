@@ -275,7 +275,7 @@ public class DTrackService {
             String apiToken = encryptionService.decrypt(oid.get().getSecret());
             URI baseUri = oid.get().getUri();
             List<VulnerabilityDto> vulns = integrationService.fetchDependencyTrackVulnerabilityDetails(
-                baseUri, apiToken, projectId, null, orgUuid, null);
+                baseUri, apiToken, projectId, null, orgUuid, null, oid.get().getEffectiveDtrackVersion());
             List<ViolationDto> violations = integrationService.fetchDependencyTrackViolationDetails(
                 baseUri, apiToken, projectId, null, orgUuid, null);
             ArtifactData.DependencyTrackIntegration dti = new ArtifactData.DependencyTrackIntegration();
@@ -519,7 +519,7 @@ public class DTrackService {
         URI baseUri = oid.get().getUri();
         try {
             List<IntegrationService.VulnWithCpe> vulns = integrationService.fetchDependencyTrackVulnerabilityDetailsWithCpe(
-                baseUri, apiToken, projectId.toString(), null, orgUuid, null);
+                baseUri, apiToken, projectId.toString(), null, orgUuid, null, oid.get().getEffectiveDtrackVersion());
             List<IntegrationService.ViolationWithCpe> violations = integrationService.fetchDependencyTrackViolationDetailsWithCpe(
                 baseUri, apiToken, projectId.toString(), null, orgUuid, null);
             return new SyntheticFindings(vulns, violations);

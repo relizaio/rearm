@@ -1970,13 +1970,24 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Release", field = "branchDetails")
 	public BranchData branchOfRelease(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
-		BranchData bd = null;
+		// Degrade a dangling branch reference to null rather than .get()-throwing,
+		// which surfaced as a SERVICE_ERROR that failed the whole release query.
 		if (null != rd.getBranch()) {
-			bd = branchService.getBranchData(rd.getBranch()).get();
-		} else {
-			bd = BranchData.branchDataFromDbRecord(branchService.getBaseBranchOfComponent(rd.getComponent()).get());
+			Optional<BranchData> obd = branchService.getBranchData(rd.getBranch());
+			if (obd.isEmpty()) {
+				log.warn("Release {} references a missing branch {}; degrading branchDetails to null",
+						rd.getUuid(), rd.getBranch());
+				return null;
+			}
+			return obd.get();
 		}
-		return bd;
+		var obaseBranch = branchService.getBaseBranchOfComponent(rd.getComponent());
+		if (obaseBranch.isEmpty()) {
+			log.warn("Release {} component {} has no resolvable base branch; degrading branchDetails to null",
+					rd.getUuid(), rd.getComponent());
+			return null;
+		}
+		return BranchData.branchDataFromDbRecord(obaseBranch.get());
 	}
 	
 	@DgsData(parentType = "Release", field = "inProducts")
@@ -2023,16 +2034,41 @@ public class ReleaseDatafetcher {
 		if (rd.getSourceCodeEntry() == null) {
 			return null;
 		}
-		return getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get();
+		// Degrade a dangling source-code-entry reference to null rather than
+		// throwing: a missing SCE row previously .get()-threw here and surfaced
+		// as a SERVICE_ERROR that failed the WHOLE release query.
+		Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
+		if (osced.isEmpty()) {
+			log.warn("Release {} references a missing source code entry {}; degrading sourceCodeEntryDetails to null",
+					rd.getUuid(), rd.getSourceCodeEntry());
+			return null;
+		}
+		return osced.get();
 	}
-	
+
 	@DgsData(parentType = "Release", field = "commitsDetails")
 	public List<SourceCodeEntryData> commitsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
 		if (rd.getCommits() == null || rd.getCommits().isEmpty()) {
 			return new LinkedList<>();
 		}
-		return rd.getCommits().stream().map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).get()).collect(Collectors.toList());
+		// Skip dangling commit references rather than .get()-throwing on the
+		// first missing SCE, which failed the whole release query.
+		List<SourceCodeEntryData> out = new LinkedList<>();
+		int missing = 0;
+		for (UUID c : rd.getCommits()) {
+			Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(c);
+			if (osced.isPresent()) {
+				out.add(osced.get());
+			} else {
+				missing++;
+			}
+		}
+		if (missing > 0) {
+			log.warn("Release {} references {} missing commit source-code reference(s); omitted from commitsDetails",
+					rd.getUuid(), missing);
+		}
+		return out;
 	}
 
 	/**
@@ -2119,10 +2155,23 @@ public class ReleaseDatafetcher {
 		log.debug("fetching release deliverables for release: {}", rd);
 
 		List<DeliverableData> artList = new LinkedList<>();
+		if (null == rd.getInboundDeliverables()) {
+			return artList;
+		}
+		// Skip dangling deliverable references rather than .get()-throwing on the
+		// first missing one, which failed the whole release query.
+		int missing = 0;
 		for (UUID delUuid : rd.getInboundDeliverables()) {
-			artList.add(getDeliverableService
-										.getDeliverableData(delUuid)
-										.get());
+			Optional<DeliverableData> odd = getDeliverableService.getDeliverableData(delUuid);
+			if (odd.isPresent()) {
+				artList.add(odd.get());
+			} else {
+				missing++;
+			}
+		}
+		if (missing > 0) {
+			log.warn("Release {} references {} missing inbound deliverable(s); omitted from inboundDeliverableDetails",
+					rd.getUuid(), missing);
 		}
 		return artList;
 	}
@@ -2192,10 +2241,23 @@ public class ReleaseDatafetcher {
 		VariantData vd = dfe.getSource();
 
 		List<DeliverableData> artList = new LinkedList<>();
+		if (null == vd.getOutboundDeliverables()) {
+			return artList;
+		}
+		// Skip dangling deliverable references rather than .get()-throwing, which
+		// failed the whole enclosing release query.
+		int missing = 0;
 		for (UUID delUuid : vd.getOutboundDeliverables()) {
-			artList.add(getDeliverableService
-										.getDeliverableData(delUuid)
-										.get());
+			Optional<DeliverableData> odd = getDeliverableService.getDeliverableData(delUuid);
+			if (odd.isPresent()) {
+				artList.add(odd.get());
+			} else {
+				missing++;
+			}
+		}
+		if (missing > 0) {
+			log.warn("Variant {} references {} missing outbound deliverable(s); omitted from outboundDeliverableDetails",
+					vd.getUuid(), missing);
 		}
 		return artList;
 	}

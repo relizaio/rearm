@@ -256,6 +256,15 @@ public class ArtifactService {
 		return repository.findArtifactUuidsByDtrackProjects(dtrackProjectsForQuery);
 	}
 
+	/**
+	 * BOM-typed artifacts with an internalBom but no canonical-map row after
+	 * {@code olderThanMinutes} — drivers for the unmapped-BOM sweep in
+	 * {@code SbomComponentService.sweepUnmappedBomArtifacts}.
+	 */
+	public List<UUID> listUnmappedBomArtifactUuids (int olderThanMinutes, int lim) {
+		return repository.findUnmappedBomArtifactUuids(olderThanMinutes, lim);
+	}
+
 	//Creates or Updates existing artifact
 	@Transactional
 	public Artifact createArtifact(ArtifactDto artifactDto, WhoUpdated wu) throws RelizaException{

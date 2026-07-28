@@ -312,4 +312,61 @@ public class ReleaseMetricsDtoMergeTest {
 
 		assertEquals(2, rmd.getMedium(), "subpath must distinguish findings");
 	}
+
+	// ---- clampAttributedAtFloor: a finding cannot be attributed before the
+	// owning entity (artifact/release) existed. Synthetic-bucket findings carry
+	// the BUCKET's scan time, which predates any entity created after that scan.
+
+	private static VulnerabilityDto vulnAttributedAt(String vulnId, ZonedDateTime attributedAt) {
+		return new VulnerabilityDto("pkg:npm/foo@1.0.0", vulnId, VulnerabilitySeverity.MEDIUM,
+				Set.of(), Set.of(), Set.of(), null, null, attributedAt,
+				null, null, null, null, null, null);
+	}
+
+	@Test
+	void clampRaisesPreCreationAttribution() {
+		ZonedDateTime scanTime = ZonedDateTime.parse("2026-07-22T23:00:00Z");
+		ZonedDateTime entityCreated = ZonedDateTime.parse("2026-07-23T10:00:00Z");
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(vulnAttributedAt("CVE-2099-8001", scanTime))));
+		rmd.setViolationDetails(new LinkedList<>(List.of(new ViolationDto(
+				"pkg:npm/foo@1.0.0", ViolationType.LICENSE, "GPL-3.0", null, Set.of(), null, null, scanTime))));
+		rmd.setWeaknessDetails(new LinkedList<>(List.of(new ReleaseMetricsDto.WeaknessDto(
+				"CWE-79", "rule", "src/a.js", "fp", VulnerabilitySeverity.LOW, Set.of(), null, null, scanTime))));
+
+		rmd.clampAttributedAtFloor(entityCreated);
+
+		assertEquals(entityCreated, rmd.getVulnerabilityDetails().get(0).attributedAt(),
+				"bucket-scan attribution predating the entity must be floored at entity creation");
+		assertEquals(entityCreated, rmd.getViolationDetails().get(0).attributedAt());
+		assertEquals(entityCreated, rmd.getWeaknessDetails().get(0).attributedAt());
+	}
+
+	@Test
+	void clampLeavesPostCreationAttributionAndNulls() {
+		ZonedDateTime entityCreated = ZonedDateTime.parse("2026-07-23T10:00:00Z");
+		ZonedDateTime laterScan = ZonedDateTime.parse("2026-07-23T12:00:00Z");
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				vulnAttributedAt("CVE-2099-8002", laterScan),
+				vulnAttributedAt("CVE-2099-8003", null))));
+
+		rmd.clampAttributedAtFloor(entityCreated);
+
+		assertEquals(laterScan, rmd.getVulnerabilityDetails().get(0).attributedAt(),
+				"attribution after entity creation must be untouched");
+		assertNull(rmd.getVulnerabilityDetails().get(1).attributedAt(),
+				"null attribution is the fallback method's concern, not the clamp's");
+	}
+
+	@Test
+	void clampNullFloorIsNoOp() {
+		ZonedDateTime scanTime = ZonedDateTime.parse("2026-07-22T23:00:00Z");
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(vulnAttributedAt("CVE-2099-8004", scanTime))));
+
+		rmd.clampAttributedAtFloor(null);
+
+		assertEquals(scanTime, rmd.getVulnerabilityDetails().get(0).attributedAt());
+	}
 }

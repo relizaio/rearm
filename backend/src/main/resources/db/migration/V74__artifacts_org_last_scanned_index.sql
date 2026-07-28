@@ -1,0 +1,33 @@
+-- Org-scoped scan-stamp index for the fan-out candidate and stall-counter
+-- queries on rearm.artifacts.
+--
+-- findCanonicalArtifactsNeedingFanOut began timing out on large instances:
+-- the #344 ORDER BY removed the unordered LIMIT's early exit, so the query
+-- computes the full candidate pool every tick -- and without a usable index
+-- that means a per-row jsonb cast over every mapped artifact plus a
+-- correlated EXISTS per surviving row. Cost tracked estate size, not pool
+-- size (the same wrong shape as the retired metrics finders).
+--
+-- V18's existing index on (cast(metrics->>'lastScanned' as float)) cannot
+-- serve the query for two reasons:
+--   1. The IS-NULL arm was written against the raw text extraction
+--      (metrics->>'lastScanned' IS NULL) -- a DIFFERENT expression from the
+--      indexed cast, so the planner cannot BitmapOr the two arms. The arms
+--      are rewritten to the cast form (cast of NULL is NULL, so semantics
+--      are identical).
+--   2. It is not org-scoped, and the range arm (stamp < this-org's-cutoff)
+--      matches every OLDER org's artifacts instance-wide before the join
+--      filters them -- estate-sized again on any instance where one org's
+--      cutoff postdates other orgs' stamps.
+--
+-- This composite serves both arms org-scoped:
+--   (org = X AND cast < cutoff)  -> range scan
+--   (org = X AND cast IS NULL)   -> is-null scan (btree indexes NULLs)
+-- In steady state both ranges are empty (every stamp postdates its org's
+-- cutoff), so the per-tick cost is two empty index probes; after a mass
+-- re-ingest the cost is pool-sized and shrinks as the pool drains.
+--
+-- The cast is proven safe estate-wide: V18's index on the same expression
+-- could not have been built over an uncastable value.
+CREATE INDEX IF NOT EXISTS artifacts_org_last_scanned_idx
+    ON rearm.artifacts ((record_data->>'org'), (cast(metrics->>'lastScanned' as float)));

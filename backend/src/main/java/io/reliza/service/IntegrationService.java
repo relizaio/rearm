@@ -66,6 +66,7 @@ import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
+import io.reliza.model.IntegrationData.DependencyTrackVersion;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.VulnerabilityRecordData.CweEntry;
@@ -316,7 +317,45 @@ public class IntegrationService {
 		String encryptedSecret = encryptionService.encrypt(secret);
 		IntegrationData id = IntegrationData.integrationDataFactory(identifier, organization, type, uri, encryptedSecret, frontendUri);
 		if (StringUtils.isNotEmpty(schedule)) id.setSchedule(schedule.toString());
+		// Auto-detect the Dependency-Track generation from its /api/version so the
+		// vuln drain picks the right endpoint without the operator having to know
+		// or declare it. Best-effort: a probe failure leaves it null (== V4).
+		if (type == IntegrationType.DEPENDENCYTRACK && uri != null) {
+			id.setDtrackVersion(detectDtrackVersion(uri, secret));
+		}
 		return saveIntegration(i, Utils.dataToRecord(id), wu);
+	}
+
+	/**
+	 * Probe a Dependency-Track instance's {@code /api/version} and map its
+	 * reported version to a {@link DependencyTrackVersion}. Returns V5 when the
+	 * reported version starts with {@code 5.} (or greater), otherwise V4.
+	 * Never throws -- an unreachable / unparseable instance resolves to V4, the
+	 * historical default, and the operator can correct it on edit.
+	 */
+	protected DependencyTrackVersion detectDtrackVersion(URI baseUri, String apiToken) {
+		try {
+			URI versionUri = URI.create(baseUri.toString() + "/api/version");
+			var resp = dtrackWebClient.get().uri(versionUri).header("X-API-Key", apiToken)
+					.retrieve().toEntity(String.class).block();
+			if (resp == null || resp.getBody() == null) return DependencyTrackVersion.V4;
+			@SuppressWarnings("unchecked")
+			Map<String, Object> body = Utils.OM.readValue(resp.getBody(), Map.class);
+			Object version = body.get("version");
+			if (version != null) {
+				String vs = version.toString().trim();
+				int firstDot = vs.indexOf('.');
+				String major = firstDot > 0 ? vs.substring(0, firstDot) : vs;
+				try {
+					if (Integer.parseInt(major) >= 5) return DependencyTrackVersion.V5;
+				} catch (NumberFormatException nfe) {
+					log.warn("Unparseable Dependency-Track version '{}' from {}, defaulting to V4", vs, versionUri);
+				}
+			}
+		} catch (Exception e) {
+			log.warn("Could not detect Dependency-Track version at {}: {} -- defaulting to V4", baseUri, e.getMessage());
+		}
+		return DependencyTrackVersion.V4;
 	}
 	
 	private URI adoUrlEncode (@NonNull String baseUri) {
@@ -664,18 +703,28 @@ public class IntegrationService {
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
 	
 	protected List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned,
+			DependencyTrackVersion dtrackVersion) throws DatabindException, JacksonException, RelizaException {
 		return fetchDependencyTrackVulnerabilityDetailsWithCpe(dtrackBaseUri, apiToken, dtrackProject,
-				artifactUuid, orgUuid, lastScanned).stream().map(VulnWithCpe::vuln).collect(java.util.stream.Collectors.toList());
+				artifactUuid, orgUuid, lastScanned, dtrackVersion).stream().map(VulnWithCpe::vuln).collect(java.util.stream.Collectors.toList());
 	}
 
 	/**
 	 * Same as {@link #fetchDependencyTrackVulnerabilityDetails} but pairs each
 	 * finding with its component's CPE so the synthetic-SBOM ingest can map
 	 * cpe-only (purl-less) findings back to their canonical component.
+	 *
+	 * <p>Dispatches on {@code dtrackVersion}: V5 reads the finding endpoint
+	 * (see {@link #fetchDependencyTrackFindingDetailsWithCpe}), everything else
+	 * the historical vulnerability endpoint below.
 	 */
 	public List<VulnWithCpe> fetchDependencyTrackVulnerabilityDetailsWithCpe(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned,
+			DependencyTrackVersion dtrackVersion) throws DatabindException, JacksonException, RelizaException {
+		if (dtrackVersion == DependencyTrackVersion.V5) {
+			return fetchDependencyTrackFindingDetailsWithCpe(dtrackBaseUri, apiToken, dtrackProject,
+					artifactUuid, orgUuid, lastScanned);
+		}
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		// Use lastScanned (DTrack scan time) as attributedAt so findings are included in First Scanned VDR
@@ -750,6 +799,152 @@ public class IntegrationService {
 		}
 
 		return all;
+	}
+
+	// --- Dependency-Track 5 finding-endpoint shapes ---------------------------
+	// V5 dropped aliases from /api/v1/vulnerability/project and left it
+	// unpaginated; /api/v1/finding/project carries aliases and paginates, and
+	// pre-flattens to one row per (component, canonical vulnerability) -- the
+	// same dedup the V4 path reconstructs from per-source rows via aliases.
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private record DtrackFindingComponentRaw(String purl, String cpe) {}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private record DtrackFindingVulnRaw(String vulnId, String source, String title,
+			VulnerabilitySeverity severity, List<DtrackAliasRaw> aliases,
+			String description, List<DtrackCweRaw> cwes, String references,
+			Double cvssV3BaseScore, String cvssV3Vector, Double cvssV4Score, String cvssV4Vector,
+			Double epssScore, Double epssPercentile, String uuid, Date published) {}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private record DtrackFindingRaw(DtrackFindingComponentRaw component, DtrackFindingVulnRaw vulnerability) {}
+
+	/**
+	 * V5 vulnerability drain over {@code /api/v1/finding/project/{uuid}}.
+	 * Produces the same {@link VulnWithCpe} list and refreshes
+	 * {@code vulnerability_records} the same way the V4 path does, so every
+	 * downstream consumer (metrics, VDR, records) is version-agnostic.
+	 */
+	private List<VulnWithCpe> fetchDependencyTrackFindingDetailsWithCpe(URI dtrackBaseUri,
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned)
+			throws DatabindException, JacksonException, RelizaException {
+		String baseUri = dtrackBaseUri.toString() + "/api/v1/finding/project/" + dtrackProject;
+		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
+		final ZonedDateTime attributedAt = lastScanned != null ? lastScanned : ZonedDateTime.now();
+		final String fetcherEndpoint = dtrackBaseUri.toString();
+
+		Map<String, List<DtrackFindingVulnRaw>> rowsByCanonical = new java.util.LinkedHashMap<>();
+		Map<String, Set<String>> aliasesByCanonical = new java.util.LinkedHashMap<>();
+
+		List<VulnWithCpe> all = executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
+			List<VulnWithCpe> pageResults = new ArrayList<>();
+			for (Object fd : rawPage) {
+				DtrackFindingRaw dfr = Utils.OM.convertValue(fd, DtrackFindingRaw.class);
+				DtrackFindingVulnRaw v = dfr.vulnerability();
+				if (v == null || v.vulnId() == null) continue;
+
+				Set<VulnerabilityAliasDto> aliases = new LinkedHashSet<>();
+				Set<String> aliasStrings = new LinkedHashSet<>();
+				aliasStrings.add(v.vulnId());
+				if (null != v.aliases()) {
+					v.aliases().forEach(a -> {
+						if (a.cveId() != null && !a.cveId().trim().isEmpty()) {
+							aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.CVE, a.cveId()));
+							aliasStrings.add(a.cveId());
+						}
+						if (a.ghsaId() != null && !a.ghsaId().trim().isEmpty()) {
+							aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.GHSA, a.ghsaId()));
+							aliasStrings.add(a.ghsaId());
+						}
+					});
+				}
+
+				SeveritySourceDto severitySource = Utils.createSeveritySourceDto(v.vulnId(), v.severity());
+
+				String canonical = VulnerabilityRecordData.pickPrimaryVulnId(aliasStrings);
+				if (canonical != null) {
+					rowsByCanonical.computeIfAbsent(canonical, k -> new ArrayList<>()).add(v);
+					aliasesByCanonical.computeIfAbsent(canonical, k -> new LinkedHashSet<>()).addAll(aliasStrings);
+				}
+
+				String purl = (dfr.component() != null && dfr.component().purl() != null)
+						? dfr.component().purl().replace("%40", "@") : null;
+				String cpe = dfr.component() != null ? dfr.component().cpe() : null;
+				// Same as the V4 path: description / cwes / references / published
+				// live in vulnerability_records, not on the per-release finding row.
+				VulnerabilityDto vdto = new VulnerabilityDto(purl, v.vulnId(), v.severity(), aliases,
+						Set.of(source), Set.of(severitySource), null, null, attributedAt,
+						null, null, null, null, null, null);
+				pageResults.add(new VulnWithCpe(vdto, cpe));
+			}
+			return pageResults;
+		});
+
+		if (orgUuid != null && attributedAt.toLocalDate().equals(java.time.LocalDate.now(ZoneOffset.UTC))) {
+			refreshVulnerabilityRecordsFromFindings(orgUuid, rowsByCanonical, aliasesByCanonical, fetcherEndpoint);
+		}
+
+		return all;
+	}
+
+	/** V5 counterpart of {@link #refreshVulnerabilityRecords}, over finding rows. */
+	private void refreshVulnerabilityRecordsFromFindings(UUID orgUuid,
+			Map<String, List<DtrackFindingVulnRaw>> rowsByCanonical,
+			Map<String, Set<String>> aliasesByCanonical,
+			String fetcherEndpoint) {
+		if (rowsByCanonical.isEmpty()) return;
+		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
+		for (var entry : rowsByCanonical.entrySet()) {
+			String canonical = entry.getKey();
+			Set<String> aliases = aliasesByCanonical.getOrDefault(canonical, Set.of());
+			try {
+				List<VulnSourceSnapshot> snapshots = new ArrayList<>();
+				for (DtrackFindingVulnRaw v : entry.getValue()) {
+					VulnSourceSnapshot snap = toSnapshotFromFinding(v, fetcherEndpoint);
+					if (snap != null) snapshots.add(snap);
+				}
+				if (snapshots.isEmpty()) continue;
+				vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu);
+			} catch (Exception e) {
+				log.error("Failed to upsert vulnerability_record (V5) for org={} canonical={}: {}",
+						orgUuid, canonical, e.getMessage());
+			}
+		}
+	}
+
+	/** Build a {@link VulnSourceSnapshot} from a V5 finding's vulnerability object. */
+	private static VulnSourceSnapshot toSnapshotFromFinding(DtrackFindingVulnRaw v, String fetcherEndpoint) {
+		if (v.vulnId() == null) return null;
+		VulnSourceSnapshot s = new VulnSourceSnapshot();
+		s.setUpstreamSource(mapUpstreamSource(v.source()));
+		s.setUpstreamVulnId(v.vulnId());
+		s.setFetcher(Fetcher.DEPENDENCY_TRACK);
+		s.setFetcherRef(v.uuid());
+		s.setFetcherEndpoint(fetcherEndpoint);
+		s.setTitle(v.title());
+		s.setDescription(v.description());
+		s.setSeverity(v.severity());
+		s.setCvssV3BaseScore(v.cvssV3BaseScore());
+		s.setCvssV3Vector(v.cvssV3Vector());
+		s.setCvssV4Score(v.cvssV4Score());
+		s.setCvssV4Vector(v.cvssV4Vector());
+		s.setEpssScore(v.epssScore());
+		s.setEpssPercentile(v.epssPercentile());
+		s.setReferences(v.references());
+		if (v.published() != null) s.setPublished(v.published().toInstant().atZone(ZoneOffset.UTC));
+		List<CweEntry> cwes = new ArrayList<>();
+		if (v.cwes() != null) {
+			for (DtrackCweRaw raw : v.cwes()) {
+				if (raw == null || raw.cweId() == null) continue;
+				CweEntry e = new CweEntry();
+				e.setCweId(raw.cweId());
+				e.setName(raw.name());
+				cwes.add(e);
+			}
+		}
+		s.setCwes(cwes);
+		return s;
 	}
 
 	/**

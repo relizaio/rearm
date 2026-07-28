@@ -174,12 +174,18 @@ public class ChangeLogService {
 
 	/**
 	 * Whether the posture-diff READ path may run for {@code orgUuid}: the global flag must be on AND the
-	 * org's {@code finding_change_events} backfill must be complete at the CURRENT event vocabulary version
-	 * (board task #38). The reverse-replay reconstruction trusts the event log to be complete back to the
-	 * retention horizon; an un-seeded org (or one seeded before a vocabulary widening and not yet reseeded)
-	 * has an incomplete log, so it transparently falls back to the legacy pairwise diff until a full
-	 * backfill/reseed runs. Once seeded, the always-on live emit keeps it seeded. A missing org / missing
-	 * settings -- or ANY exception in the lookup -- reads as NOT seeded (fail-safe to legacy, never a 500).
+	 * org's {@code finding_change_events_v3} backfill must be certified at (or above) the CURRENT
+	 * {@link FindingDimKey#KEY_VERSION} (board task #38). The reverse-replay reconstruction trusts the
+	 * event log to be complete back to the retention horizon; an uncertified org (or one certified before
+	 * a key-version bump and not yet re-keyed) has an incomplete log, so it transparently falls back to
+	 * the legacy pairwise diff until a full backfill/reseed certifies it. Once certified, the always-on
+	 * live emit keeps it current. A missing org / missing settings -- or ANY exception in the lookup --
+	 * reads as NOT certified (fail-safe to legacy, never a 500).
+	 *
+	 * <p>Gates on the V3 watermark ({@code findingChangeV3BackfillCompletedAt} +
+	 * {@code findingChangeV3BackfillKeyVersion}) -- the pair {@code certifyFindingChangeV3Backfill}
+	 * writes. The pre-v3 watermark this used to read is no longer written by anything since the v1/v2
+	 * decommission, so orgs created after it could never enable the posture path.
 	 */
 	private boolean posturePathEnabled(UUID orgUuid) {
 		if (!changelogPostureDiffEnabled) {
@@ -188,9 +194,9 @@ public class ChangeLogService {
 		try {
 			return getOrganizationService.getOrganizationData(orgUuid)
 					.map(OrganizationData::getSettings)
-					.map(s -> s.isFindingChangeBackfillComplete()
-							&& s.getFindingChangeBackfillVocabVersionOrDefault()
-								>= ChangelogRecords.FINDING_CHANGE_EVENT_VOCAB_VERSION)
+					.map(s -> s.isFindingChangeV3BackfillComplete()
+							&& s.getFindingChangeV3BackfillKeyVersionOrDefault()
+								>= FindingDimKey.KEY_VERSION)
 					.orElse(false);
 		} catch (Exception e) {
 			log.error("posture-diff gate: org {} settings lookup failed; falling back to the legacy "

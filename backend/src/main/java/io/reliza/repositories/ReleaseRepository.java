@@ -51,6 +51,16 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG,
 			nativeQuery = true)
 	List<Release> findReleasesOfOrg(String orgUuidAsString);
+
+	@Query(
+			value = VariableQueries.FIND_APPROVAL_CANDIDATE_RELEASES,
+			nativeQuery = true)
+	List<Release> findApprovalCandidateReleases(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("componentUuidsAsStrings") Collection<String> componentUuidsAsStrings,
+			@Param("lifecyclesAsStrings") Collection<String> lifecyclesAsStrings,
+			@Param("limitAsStr") String limitAsStr,
+			@Param("offsetAsStr") String offsetAsStr);
 	
 	@Query(
 			value = VariableQueries.FIND_ALL_PRODUCT_RELEASES_OF_ORG,
@@ -245,21 +255,6 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Object[]> findOrgMetricsSignals();
 	
 	@Query(
-			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT,
-			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByArtifactDirect(int limit);
-
-	@Query(
-			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE,
-			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeBySce(int limit);
-
-	@Query(
-			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES,
-			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByOutboundDeliverables(int limit);
-
-	@Query(
 			value = VariableQueries.FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE,
 			nativeQuery = true)
 	List<Release> findProductReleasesForMetricsCompute(int limit);
@@ -268,6 +263,21 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE,
 			nativeQuery = true)
 	List<Release> findReleasesForMetricsComputeByUpdate(int limit);
+
+	/**
+	 * Backlog gauge for the hourly [METRICS-BACKLOG] log line: releases
+	 * currently eligible for the BY_UPDATE metrics compute. The timestamp
+	 * predicate is spelled identically to the finder's first condition so the
+	 * V73 partial index serves it -- the count is pool-sized, not table-sized.
+	 */
+	@Query(value = """
+			SELECT count(*) FROM rearm.releases
+			WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
+			  AND (flow_control->>'metricsComputeSkipUntil' IS NULL
+			       OR (flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
+			""", nativeQuery = true)
+	long countReleasesEligibleForMetricsCompute();
+
 	
 	@Query(
 		value = VariableQueries.FIND_RELEASES_SHARING_SCE_ARTIFACT,
@@ -492,6 +502,148 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "WHERE uuid = :uuid "
 			+ "AND flow_control->>'metricsComputeSkipUntil' IS NOT NULL", nativeQuery = true)
 	void clearMetricsComputeBackoff(@Param("uuid") UUID uuid);
+
+	/**
+	 * Force a release back into the {@code BY_UPDATE} metrics finder pool:
+	 * bump {@code last_updated_date} past {@code metrics.lastScanned} and drop
+	 * any compute fence in the same statement. Used to propagate a CHILD
+	 * release's metrics change to its containing PRODUCT releases — a settled
+	 * product (lastScanned stamped, row untouched since) is invisible to every
+	 * finder, so without this touch its aggregate freezes at whatever its
+	 * children looked like when it last computed (observed in prod: a product
+	 * release aggregated once at creation and ignored three days of new child
+	 * findings, including a new critical).
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET last_updated_date = now(), "
+			+ "    flow_control = NULLIF("
+			+ "    coalesce(flow_control, '{}'::jsonb) - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
+			+ "    '{}'::jsonb) "
+			+ "WHERE uuid = :uuid "
+			// No-op guard (all four touches): a row already past its lastScanned with no
+			// fence is queued for BY_UPDATE regardless; rewriting it again per scan event
+			// is pure write amplification (row churn + partial-index churn).
+			+ "AND (last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
+			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL)", nativeQuery = true)
+	void touchForMetricsRecompute(@Param("uuid") UUID uuid);
+
+	/**
+	 * Drain-mode product deferral: push an ALREADY-ELIGIBLE release to the back
+	 * of the oldest-first BY_UPDATE queue by bumping {@code last_updated_date},
+	 * changing nothing else. The predicate is the OPPOSITE of
+	 * {@link #touchForMetricsRecompute}'s no-op guard on purpose: that guard
+	 * no-ops exactly the eligible rows this method must reorder, while this one
+	 * refuses to bump a settled row (which would newly ENQUEUE it rather than
+	 * reorder it). Fences are left alone — a fenced row isn't being fetched in
+	 * the first place.
+	 *
+	 * @return 1 if the row was reordered, 0 if it was not eligible (settled
+	 *   concurrently — caller should just move on)
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET last_updated_date = now() "
+			+ "WHERE uuid = :uuid "
+			+ "AND last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))",
+			nativeQuery = true)
+	int deferMetricsRecompute(@Param("uuid") UUID uuid);
+
+	/**
+	 * Event-driven replacement for the BY_OUTBOUND_DELIVERABLES poll: when an
+	 * artifact's metrics land (scan result), push every release that carries
+	 * it as an outbound-deliverable artifact back into the {@code BY_UPDATE}
+	 * metrics finder pool — same touch semantics as
+	 * {@link #touchForMetricsRecompute} (bump past lastScanned + drop the
+	 * fence, which exists precisely to wait for this scan event). Resolved
+	 * via the V68 GIN indexes in two containment probes (~2.5ms at 300k
+	 * deliverables, measured) — the polling finder at that scale costs 1.7s
+	 * per tick and times out on large instances. No-op (empty IN-set) for
+	 * artifacts not attached to any deliverable.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET last_updated_date = now(), "
+			+ "    flow_control = NULLIF("
+			+ "    coalesce(flow_control, '{}'::jsonb) - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
+			+ "    '{}'::jsonb) "
+			+ "WHERE uuid IN ("
+			+ "    SELECT DISTINCT (var.record_data->>'release')::uuid "
+			+ "    FROM rearm.deliverables del "
+			+ "    JOIN rearm.variants var "
+			+ "      ON var.record_data->'outboundDeliverables' @> to_jsonb(del.uuid::text) "
+			+ "    WHERE del.record_data->'artifacts' @> to_jsonb(cast(:artifactUuidAsString as text))) "
+			+ "AND (last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
+			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL)",
+			nativeQuery = true)
+	void touchReleasesByScannedDeliverableArtifact(@Param("artifactUuidAsString") String artifactUuidAsString);
+
+	/**
+	 * SCE counterpart of {@link #touchReleasesByScannedDeliverableArtifact}: push
+	 * every release whose SOURCE-CODE-ENTRY carries this artifact back into the
+	 * {@code BY_UPDATE} metrics finder pool.
+	 *
+	 * <p>Component scoping is load-bearing. An SCE is canonical per
+	 * {@code (vcs, commit)} and shared by every component built from that commit,
+	 * with each per-component artifact tagged with the attaching component's
+	 * uuid. Touching on artifact identity alone would wake every sibling
+	 * component's release on a monorepo commit -- exactly the over-reach the
+	 * artifact-table filter (#206) was added to prevent on the read side. The
+	 * component match mirrors {@code FIND_RELEASES_SHARING_SCE_ARTIFACT}.
+	 *
+	 * <p>The containment predicate is index-friendly (V71 GIN on
+	 * {@code record_data->'artifacts'}); the componentUuid is then extracted by
+	 * expanding only the handful of SCE rows that matched.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET last_updated_date = now(), "
+			+ "    flow_control = NULLIF("
+			+ "    coalesce(flow_control, '{}'::jsonb) - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
+			+ "    '{}'::jsonb) "
+			+ "WHERE uuid IN ("
+			+ "    SELECT r.uuid "
+			+ "    FROM rearm.source_code_entries sce "
+			+ "    CROSS JOIN LATERAL jsonb_array_elements(sce.record_data->'artifacts') AS art "
+			+ "    JOIN rearm.releases r "
+			+ "      ON r.record_data->>'sourceCodeEntry' = sce.uuid::text "
+			+ "     AND ((art->>'componentUuid') IS NULL "
+			+ "          OR (r.record_data->>'component')::uuid = (art->>'componentUuid')::uuid) "
+			+ "    WHERE sce.record_data->'artifacts' @> jsonb_build_array("
+			+ "              jsonb_build_object('artifactUuid', cast(:artifactUuidAsString as text))) "
+			+ "      AND art->>'artifactUuid' = cast(:artifactUuidAsString as text)) "
+			+ "AND (last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
+			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL)",
+			nativeQuery = true)
+	void touchReleasesByScannedSceArtifact(@Param("artifactUuidAsString") String artifactUuidAsString);
+
+	/**
+	 * Direct-attachment counterpart, retiring the BY_ARTIFACT_DIRECT poll: when
+	 * an artifact's metrics land, push every release that carries it DIRECTLY in
+	 * {@code record_data->'artifacts'} back into the {@code BY_UPDATE} pool.
+	 * The whole-column containment probe rides {@code idx_releases_record_data_gin}
+	 * (V61, jsonb_path_ops). Unlike the deliverable/SCE cases there is no
+	 * attach-time counterpart call: attaching an artifact directly to a release
+	 * modifies the release row itself, so the ordinary save already bumps
+	 * {@code last_updated_date} and BY_UPDATE sees it.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET last_updated_date = now(), "
+			+ "    flow_control = NULLIF("
+			+ "    coalesce(flow_control, '{}'::jsonb) - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
+			+ "    '{}'::jsonb) "
+			+ "WHERE record_data @> jsonb_build_object("
+			+ "          'artifacts', jsonb_build_array(cast(:artifactUuidAsString as text))) "
+			+ "AND (last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
+			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL)",
+			nativeQuery = true)
+	void touchReleasesByScannedArtifactDirect(@Param("artifactUuidAsString") String artifactUuidAsString);
 
 	// ---------------------------------------------------------------------
 	// Auto-integrate queue -- same flow_control marker pattern as the SBOM

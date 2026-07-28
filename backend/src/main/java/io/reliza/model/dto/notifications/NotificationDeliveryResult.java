@@ -42,5 +42,10 @@ public record NotificationDeliveryResult(
         String nextAttemptAt,
         String sentAt,
         String lastError,
-        String createdDate) {
+        String createdDate,
+        // The delivery's outbox-event payload, rendered as JSON (BUG 3), so the
+        // Delivery History audit surface can show what was actually sent -- the
+        // same serializePayload projection the inbox uses (truncation sentinel
+        // past the byte cap). Null when the event is missing/unparseable.
+        String payloadJson) {
 }

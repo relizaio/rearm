@@ -7,6 +7,9 @@ import java.io.Serializable;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
+import org.hibernate.annotations.Type;
+
+import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -49,6 +52,14 @@ public class ArtifactCanonicalMap implements Serializable {
 	@Column(nullable = false)
 	private ZonedDateTime createdDate = ZonedDateTime.now();
 
+	/**
+	 * Per-artifact queue / sweep state. See {@link CanonicalMapFlowControl};
+	 * the artifact-level counterpart to {@code releases.flow_control}.
+	 */
+	@Type(JsonBinaryType.class)
+	@Column(name = "flow_control", columnDefinition = ModelProperties.JSONB)
+	private CanonicalMapFlowControl flowControl;
+
 	public UUID getUuid() { return uuid; }
 	public void setUuid(UUID uuid) { this.uuid = uuid; }
 
@@ -57,6 +68,9 @@ public class ArtifactCanonicalMap implements Serializable {
 
 	public UUID getArtifactUuid() { return artifactUuid; }
 	public void setArtifactUuid(UUID artifactUuid) { this.artifactUuid = artifactUuid; }
+
+	public CanonicalMapFlowControl getFlowControl() { return flowControl; }
+	public void setFlowControl(CanonicalMapFlowControl flowControl) { this.flowControl = flowControl; }
 
 	public UUID getCanonicalArtifactUuid() { return canonicalArtifactUuid; }
 	public void setCanonicalArtifactUuid(UUID canonicalArtifactUuid) {

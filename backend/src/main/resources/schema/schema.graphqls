@@ -24,6 +24,12 @@ type Query {
 	releaseTagKeys(orgUuid: ID!): [String]
 	component(componentUuid:ID!): Component
 	components(orgUuid:ID!, componentType:ComponentType!, perspective:ID): [Component]
+	"""
+	Durable-ownership report (RFC Phase 4c): every NON-OWNED component in the org
+	with its computed ownership status/suggestion. Org-admin only; read-only
+	governance view -- never blocks releases.
+	"""
+	componentOwnershipReport(orgUuid: ID!): [ComponentOwnershipReportRow!]!
 	branch(branchUuid:ID!): Branch
 	branchesOfComponent(componentUuid:ID!): [Branch]
 	releases(branchFilter:ID, orgFilter:ID, releaseFilter:[ID], numRecords:Int): [Release]
@@ -101,6 +107,9 @@ type Query {
 	getReleaseSbomComponentGraph(releaseUuid: ID!, sbomComponentUuid: ID!): ReleaseSbomComponent
 
 	configuredBaseIntegrations(org: ID!): [IntegrationType]
+	# Detected Dependency-Track generation ("V4"/"V5") of the org's base
+	# DEPENDENCYTRACK integration; null when none is configured.
+	dependencyTrackVersion(org: ID!): String
 	ciIntegrations(org: ID!): [CiIntegration]
 
 	# Inbound webhook reception. {org}/{slug} forms the public URL path
@@ -446,12 +455,20 @@ type Query {
 		# separately from VULNERABILITY_RECORD_UPDATED or
 		# VEX_STATE_CHANGED. Null = match all event types.
 		eventType: NotificationEventTypeEnum,
+		# Visibility scope. PERSONAL (default) shows the caller's own
+		# component-team + perspective + targeted rows and does NOT auto-show
+		# an org admin every delivery in the org; ORG_ALL is the org-wide
+		# firehose, honored only for org admins (a non-admin request collapses
+		# to PERSONAL). The org-wide audit view also lives in Delivery History.
+		inboxScope: NotificationInboxScope = PERSONAL,
 		limit: Int,
 		offset: Int): NotificationInboxPage!
 
 	# Count of unread deliveries the caller can see, for the inbox-tab
-	# badge. Same visibility filter as notificationInbox.
-	notificationUnreadCount(orgUuid: ID!): Int!
+	# badge. Same visibility filter as notificationInbox; defaults to the
+	# PERSONAL scope so an admin's badge reflects their own actionable
+	# count rather than the whole-org firehose.
+	notificationUnreadCount(orgUuid: ID!, inboxScope: NotificationInboxScope = PERSONAL): Int!
 
 	# CISA KEV catalog details for one CVE id (Phase 6a). The catalog is
 	# global (public CISA data, no org rows) -- orgUuid is for
@@ -1102,7 +1119,7 @@ type Mutation {
 	# kill-switch for the whole inbox-tab badge, not a scoped sweep.
 	# A future "Mark filtered as read" would land as a separate
 	# mutation that takes the same filter inputs as notificationInbox.
-	markAllNotificationsRead(orgUuid: ID!): MarkAllNotificationsReadResult!
+	markAllNotificationsRead(orgUuid: ID!, inboxScope: NotificationInboxScope = PERSONAL): MarkAllNotificationsReadResult!
 }
 
 # Curated synthetic event templates surfaced through the
@@ -1190,6 +1207,8 @@ type NotificationDeliveryResult {
 	sentAt: String
 	lastError: String
 	createdDate: String!
+	"""The outbox event's rendered payload as JSON (BUG 3); null when unavailable. Truncation sentinel past the byte cap."""
+	payloadJson: String
 }
 
 type NotificationDeliveriesPage {
@@ -1442,6 +1461,16 @@ enum NotificationSeverityEnum {
 enum NotificationEvaluationModeEnum {
 	PRESET
 	ADVANCED
+}
+
+# Inbox visibility scope for notificationInbox / notificationUnreadCount /
+# markAllNotificationsRead. PERSONAL (default) = the caller's own component-team
+# + perspective + targeted rows (an org admin is NOT auto-shown every delivery,
+# so the bell and badge stay relevant). ORG_ALL = the org-wide firehose, honored
+# only for admins; a non-admin request safely collapses to PERSONAL.
+enum NotificationInboxScope {
+	PERSONAL
+	ORG_ALL
 }
 
 # ---------------------------------------------------------------------
@@ -1780,12 +1809,59 @@ type Component {
 	component carries one or more approval-role grants. Same parent fallback as team.
 	"""
 	approvers: [OrgUserData!]
+	"""Stored durable owner (team-preferred, USER escape hatch); null = none set (RFC Phase 4)."""
+	owner: ComponentOwner
+	"""
+	Computed ownership resolution: status / durability / derived suggestion. Pure
+	recompute (never stored); a non-OWNED status drives a non-blocking banner + the
+	at-risk report and NEVER blocks releases.
+	"""
+	ownership: ComponentOwnership!
 }
 
 """A freeform stakeholder contact for someone who is not a registered ReARM user."""
 type ComponentContact {
 	name: String
 	contact: String
+}
+
+"""The kind of durable owner a component points at (RFC Phase 4)."""
+enum ComponentOwnerType {
+	TEAM
+	USER
+}
+
+"""Computed ownership state of a component. Pure recompute; never blocks releases."""
+enum ComponentOwnershipStatus {
+	OWNED
+	NON_DURABLE
+	DEGRADED
+	UNSET
+	ORPHANED
+}
+
+"""A component's stored durable owner reference (a Team/UserGroup or a single user)."""
+type ComponentOwner {
+	ownerType: ComponentOwnerType!
+	ownerRef: ID!
+}
+
+"""Resolved ownership view of a component (status/durability/derived suggestion)."""
+type ComponentOwnership {
+	ownerType: ComponentOwnerType
+	ownerRef: ID
+	durable: Boolean!
+	status: ComponentOwnershipStatus!
+	derived: Boolean!
+	reason: String
+}
+
+"""One NON-OWNED component in the durable-ownership report (RFC Phase 4c)."""
+type ComponentOwnershipReportRow {
+	componentUuid: ID!
+	componentName: String
+	componentType: ComponentType
+	ownership: ComponentOwnership!
 }
 
 enum ComponentKind {
@@ -3924,11 +4000,22 @@ input UpdateComponentInput {
 	leads: [ID!]
 	"""Freeform stakeholder contacts (HTML-sanitized server-side). Null leaves unchanged; empty list clears."""
 	contacts: [ComponentContactInput!]
+	"""
+	Set the durable owner (RFC Phase 4b). Validated server-side against this
+	component's org (no DB FK). Null leaves the existing owner unchanged.
+	"""
+	owner: ComponentOwnerInput
 }
 
 input ComponentContactInput {
 	name: String
 	contact: String
+}
+
+"""Input to set a component's durable owner (a Team/UserGroup or a single user)."""
+input ComponentOwnerInput {
+	ownerType: ComponentOwnerType!
+	ownerRef: ID!
 }
 
 input GlobalInputEventRefInput {

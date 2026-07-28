@@ -56,6 +56,9 @@ public class SharedArtifactService {
 	@Autowired
 	private MetricsAuditRepository metricsAuditRepository;
 
+	@Autowired
+	private io.reliza.repositories.ReleaseRepository releaseRepository;
+
     private final String url;
     private final WebClient webClient;
     private final String registryNamespace;
@@ -111,6 +114,28 @@ public class SharedArtifactService {
 			}
 			String metricsJson = Utils.OM.writeValueAsString(metrics);
 			repository.updateMetrics(a.getUuid(), metricsJson);
+			// Event-driven rollup push: this is the single chokepoint every
+			// artifact-metrics write goes through (synthetic fan-out, SARIF/VDR
+			// ingest, legacy DTrack fetch), so mark the releases carrying this
+			// artifact as an outbound-deliverable artifact for metrics
+			// recompute right here. This replaces reliance on the
+			// BY_OUTBOUND_DELIVERABLES polling finder, whose full jsonb
+			// expansion grows with total instance data and times out on large
+			// instances — the poll remains only as a bounded safety net. Two
+			// GIN probes (V68), ~2.5ms, no-op for non-deliverable artifacts.
+			releaseRepository.touchReleasesByScannedDeliverableArtifact(a.getUuid().toString());
+			// Same push for artifacts carried by a release's source-code entry.
+			// Together these two cover every way an artifact reaches a release,
+			// which is what allows the BY_SCE / BY_OUTBOUND_DELIVERABLES polling
+			// finders to be retired rather than merely bypassed.
+			releaseRepository.touchReleasesByScannedSceArtifact(a.getUuid().toString());
+			// And for artifacts attached DIRECTLY to a release. This retires the
+			// last artifact-driven poll (BY_ARTIFACT_DIRECT), which expanded every
+			// release's artifact array on every tick. Whole-column containment
+			// probe over idx_releases_record_data_gin (V61). No attach-time
+			// counterpart is needed: attaching directly modifies the release row,
+			// so the ordinary save already makes it visible to BY_UPDATE.
+			releaseRepository.touchReleasesByScannedArtifactDirect(a.getUuid().toString());
 		} catch (tools.jackson.core.JacksonException e) {
 			throw new IllegalStateException("Failed to serialize artifact metrics for artifact " + a.getUuid(), e);
 		}
@@ -122,15 +147,16 @@ public class SharedArtifactService {
 	
 	/**
 	 * Find artifact by stored digest (REARM scope)
-	 * Used for BOM deduplication
+	 * Used for BOM deduplication. Picks the OLDEST matching artifact so the
+	 * choice is deterministic as same-digest artifacts accumulate — the
+	 * previous first-row pick depended on unspecified row order, which made
+	 * the canonical-artifact selection wander between reconciles and
+	 * fragment dedup across several "canonical" roots.
 	 */
 	public Optional<Artifact> findArtifactByStoredDigest(UUID orgUuid, String digest) {
-		Optional<Artifact> a = Optional.empty();
 		List<Artifact> artifacts = repository.findArtifactsByStoredDigest(orgUuid.toString(), digest);
-		if (null != artifacts && artifacts.size() > 0) {
-			a = Optional.of(artifacts.get(0));
-		}
-		return a;
+		if (null == artifacts || artifacts.isEmpty()) return Optional.empty();
+		return artifacts.stream().min(java.util.Comparator.comparing(Artifact::getCreatedDate));
 	}
 	
 	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad) throws Exception{
@@ -331,12 +357,33 @@ public class SharedArtifactService {
 		// Now we write only when findings actually change (or on first scan).
 		if (existingDti != null && existingDti.getFirstScanned() != null
 				&& findingsSignature(existingDti).equals(findingsSignature(dti))) {
+			// Advance the scan stamp even when skipping the write. The fan-out
+			// candidate query pools every artifact whose stamp predates the newest
+			// bucket ingest, under the contract that a processed candidate drops
+			// out; returning without stamping made unchanged artifacts PERMANENT
+			// candidates after any mass re-ingest, and once more than
+			// FANOUT_BATCH_LIMIT of them looped, the unordered batch starved
+			// genuinely-unscanned artifacts forever (prod 2026-07-25). The
+			// targeted single-field update deliberately bypasses
+			// saveArtifactMetrics so no release touches fire and no metrics-audit
+			// row is written -- findings did not change, which is exactly the
+			// churn this guard exists to prevent.
+			repository.advanceLastScannedOnly(a.getUuid());
 			return a;
 		}
+
+		// A finding cannot be attributed before this artifact existed. The synthetic
+		// fan-out hands over bucket findings stamped with the BUCKET's DTrack scan
+		// time, so a new artifact whose components were already covered would
+		// otherwise inherit an attribution predating its own creation. Clamp the
+		// incoming side BEFORE the preserve-earlier merge below -- otherwise the
+		// merge would keep re-selecting the stale pre-creation timestamp.
+		dti.clampAttributedAtFloor(a.getCreatedDate());
 
 		if (existingDti != null) {
 			// Merge findings: keep only those in new dti, but preserve earlier attributedAt dates
 			existingDti.setAttributedAtFallback(a.getCreatedDate());
+			existingDti.clampAttributedAtFloor(a.getCreatedDate());
 			existingDti.updateFromAuthoritativeSource(dti);
 			// Copy DependencyTrack-specific fields from new dti
 			existingDti.setDependencyTrackProject(dti.getDependencyTrackProject());
