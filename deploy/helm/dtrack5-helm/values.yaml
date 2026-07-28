@@ -4,6 +4,29 @@ ingressHost: dtrack.localhost
 
 traefik_crd_api_version: traefik.io/v1alpha1
 
+# HSTS (Strict-Transport-Security) is emitted by Traefik at the TLS edge, since
+# TLS terminates at the ingress (useTraefikLe) or at an upstream LB
+# (traefikBehindLb) rather than the frontend nginx. The non-TLS headers (CSP,
+# X-Frame-Options, etc.) are set on that nginx instead, in
+# mounted_files/nginx-conf.
+#
+# Off by default, unlike the ReARM chart: a browser honours HSTS for the whole
+# max-age once it has seen it, so switching it on is effectively one-way for
+# anyone who has already loaded the site. Turn it on deliberately, per host.
+# includeSubdomains covers subdomains OF ingressHost only, not its siblings.
+#
+# NB: enabling this on an already-deployed release creates the Middleware
+# during an upgrade, which leaves it client-side owned. The first later change
+# to any value below then fails with a conflict against helm itself
+# (`.spec.headers.stsSeconds` and friends); one `helm upgrade
+# --force-conflicts` clears it permanently. Turning HSTS back off is
+# unaffected, since that deletes the Middleware rather than changing it.
+hsts:
+  enabled: false
+  maxAge: 31536000
+  includeSubdomains: true
+  preload: false
+
 # Chart-managed secrets. One mode governs BOTH the postgres credentials
 # (secret "pgpassword": POSTGRES_PASSWORD / username / password keys) and
 # the DT5 key-encryption-key (secret "dtrack5-rearm-kek": kek key):
