@@ -128,6 +128,14 @@ docker run --name rearm-postgres -d -p 5440:5432 -e POSTGRES_PASSWORD=relizaPass
 
 This part will be continued (TODO).
 
+## Licensing
+
+ReARM Community Edition is licensed under the [GNU AGPL v3](./LICENSE).
+
+The [`deploy`](./deploy) directory is an exception: everything in it - the Docker Compose stacks and the Helm charts - is licensed under the [MIT License](./deploy/LICENSE), so you can adapt and redistribute your deployment configuration without AGPL obligations. See [`deploy/README.md`](./deploy/README.md) for details.
+
+Third-party components redistributed in this repository keep their own licenses. In particular, the upstream [Dependency-Track Helm chart](https://github.com/DependencyTrack/helm-charts) vendored under `deploy/helm/dtrack5-helm/charts/` is Apache-2.0, with a copy of that license included alongside it.
+
 ## Contact Reliza
 Easiest way to contact us is through our [Discord Community](https://devopscommunity.org/) - find #rearm channel there and either post in this channel or send a direct message to maintainers.
 
