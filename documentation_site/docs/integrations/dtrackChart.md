@@ -30,7 +30,7 @@ The chart is published as an OCI artifact and is publicly readable, so no regist
 
 ```bash
 helm install dtrack5 oci://registry.rearmhq.com/library/dtrack5 \
-  --version 0.1.0 --create-namespace -n dtrack5 \
+  --create-namespace -n dtrack5 \
   -f dtrack5-values.yaml
 ```
 
