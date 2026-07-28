@@ -14,7 +14,7 @@
 
 # ReARM - Release Governance Platform - Community Edition
 
-#### ReARM CE governs your releases at agentic speed. It tells you what each product is made of with exact security posture and stores and manages per-release SBOMs, HBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts and Metadata.
+#### ReARM CE governs  releases at agentic speed. It tells you what each product is made of, its security posture and stores and manages per-release SBOMs, HBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts and Metadata.
 
 ## Next ReARM Community Engagement: [Demo](https://blackhat.com/us-26/arsenal/schedule/index.html#rearm-release-governance-platform-52805) at Black Hat USA Arsenal, August 6, 2026, 11:20am PDT
 
