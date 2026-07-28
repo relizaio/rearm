@@ -79,8 +79,12 @@ services:
      - KC_DB_USERNAME=postgres
      - KC_DB_PASSWORD=${KEYCLOAK_PG_PASS:-relizaPass}
      - KC_DB_URL=jdbc:postgresql://keycloak-postgres:5432/postgres
-     - KEYCLOAK_ADMIN=admin
-     - KEYCLOAK_ADMIN_PASSWORD=admin
+     # Bootstrapped on first start only, like the realm below -- set these
+     # in .env BEFORE bringing the stack up the first time. Changing them
+     # afterwards has no effect; change the password in the Keycloak admin
+     # console instead.
+     - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN_USER:-admin}
+     - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
      - KC_HTTP_RELATIVE_PATH=kauth
      - KC_HEALTH_ENABLED=true
     entrypoint:
