@@ -23,15 +23,15 @@ rebom_postgres_port: "5432"
 traefik_crd_api_version: traefik.containo.us/v1alpha1
 
 image:
-  backEndImage: registry.relizahub.com/library/rearm-backend:26.05.35@sha256:cb852201a6b6ba77b96908517712e29e1578c40e2b854161cdfff211a65bdf29
-  uiImage: registry.relizahub.com/library/rearm-ui:26.05.78@sha256:5cbfc333392b8db2e08c5e2aa0462f84ea93bb5bfce62e7b6111be28ff3c2b79
-  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:26.03.12@sha256:fc00a0d8e3dfbf513e6e2bdc18d93047f1b76da7014cbb9d1f2483a187bc69dc
-  keycloakImage: registry.relizahub.com/library/rearm-keycloak:26.03.5@sha256:ed3e5bab4642842612e20409704bdf09f0605e8f156069f4756396ef7afaa5b5
+  backEndImage: registry.relizahub.com/library/rearm-backend:26.07.6@sha256:73a7fafd9ed422f38353290ddb669757107e78554ac2b64fb7f9a533ca408879
+  uiImage: registry.relizahub.com/library/rearm-ui:26.07.42@sha256:844c0e05c11b47571455d509dc4be4b9af74537e8bd28a0ab45fa5e5fa636263
+  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:26.07.0@sha256:e5cde74f9ce4da0188e78f41e864ab8cd99736eae5ee2d74ad366df0fddf2759
+  keycloakImage: registry.relizahub.com/library/rearm-keycloak:26.06.1@sha256:5c73bda11adb9f0c387804e1c660f76f7aab3060b4c88a424b940dc216344706
   postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
-  rebomBackend: registry.relizahub.com/library/rebom-backend:0.20.4@sha256:1b75c28fe1fa2e28b25b2fdd80e2cbd1cc43751b64657020cf6e87c7428e6dc3
+  rebomBackend: registry.relizahub.com/library/rebom-backend:0.22.2@sha256:fab6c249fd1cf7aea95d5fa8cf97efc6c875e37dff57430ae344935295d6a85b
   flywayImage: docker.io/redgate/flyway:11.20.3-alpine@sha256:52cdd559dc8ae38a17b56615e3c7137d9b01470271112525b40373de470bb005
   zotImage: ghcr.io/project-zot/zot-minimal:v2.1.18@sha256:892f2a5a63dd99bdf85320fee5448506119328a6d5e1a2d14d4db876be595236
-  htpasswdImage: docker.io/library/httpd:2.4-alpine@sha256:1b766f17b84026429b7cb243317b142921b24432336e798bc881c43f45ed9567
+  htpasswdImage: docker.io/library/httpd:2.4.68-alpine3.24@sha256:1b766f17b84026429b7cb243317b142921b24432336e798bc881c43f45ed9567
   pullPolicy: IfNotPresent
 
 imagePullSecrets: [ {"name":"regcred"} ]
