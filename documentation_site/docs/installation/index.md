@@ -5,8 +5,11 @@ Open-source ReARM Community Edition (Licensed per AGPL 3.0) may be deployed usin
 Time it takes: 5 minutes.
 
 #### Pre-requisites
-1. You need to have an operational Docker engine with Docker Compose version 2.24.0 or newer on your local machine.
-2. ReARM uses [OCI](https://opencontainers.org/) compatible storage to store xBOM files and other artifacts. Examples include Docker Hub, ACR, ECR, GCR. One of the quickest options is to use Reliza Hub product which gives you 1GB of free storage - see instructions how to set up [here](https://docs.relizahub.com/registry/). You would need an account with push permissions, so you would need to know OCI repository `login`, `password`, `uri` and `namespace` (optional) property. `Namespace` means relative location of your storage, i.e. if you are planning to store artifacts under `https://registry.relizahub.com/430fcdde-d7bc-4542-ad5b-4f534f4942f0-private`, then your `uri` property is `https://registry.relizahub.com` and your `namespace` property is `430fcdde-d7bc-4542-ad5b-4f534f4942f0-private`. Samples are given in our docker compose file and would be further clarified below.
+You need an operational Docker engine with Docker Compose version 2.24.0 or newer.
+
+That is all. ReARM stores xBOM files and other artifacts in [OCI](https://opencontainers.org/) compatible storage, and the compose stack ships with a bundled [zot](https://zotregistry.dev) registry that is enabled by default - so no external registry, and no credentials of your own, are required to get started. The registry runs inside the stack and is not published on a host port.
+
+If you would rather keep artifacts in a registry you already run, see [using an external OCI registry](/installation/#optional-using-an-external-oci-registry) below.
 
 #### Prepare Installation
 1. Clone ReARM git repository:
@@ -18,30 +21,51 @@ git clone https://github.com/relizaio/rearm.git
 cd deploy/docker-compose
 ```
 
-#### Set up env files referencing OCI connectivity
-As discussed above, you need to have credentials ready for OCI storage. With that you need to create 3 env files in the docker-compose directory (note that .env files in this directory are added to .gitignore). Below are samples of possible credentials, you should modify the values according to your OCI storage.
-
-1. core.env
-```
-RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE="430fcdde-d7bc-4542-ad5b-4f534f4942f0-private"
-```
-
-2. oci.env
-```
-REGISTRY_HOST="registry.relizahub.com"
-REGISTRY_USERNAME="myusername"
-REGISTRY_TOKEN="mypassword"
-```
-
-3. rebom.env
-```
-OCIARTIFACTS_REGISTRY_NAMESPACE="430fcdde-d7bc-4542-ad5b-4f534f4942f0-private"
-```
-
 #### Start the docker compose stack
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+Open `http://localhost:8092` in your browser. No configuration file is needed for a localhost deployment: every setting has a working default.
+
+#### Reaching ReARM from another machine
+Browsers only expose the Web Crypto API - which the login flow requires - in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), meaning `https` or `localhost`. A deployment reached by IP or hostname therefore has to serve TLS, or login fails with `Web Crypto API is not available`.
+
+The stack includes an optional TLS front for this. Copy the template and set the host:
+
+```bash
+cp .env.example .env
+```
+
+```
+REARM_HOST=rearm.example.com     # what users type in the browser
+REARM_PROTOCOL=https
+REARM_TLS_HOST=rearm.example.com # bare host or IP, no port
+REARM_ACME_EMAIL=you@example.com # omit for a self-signed certificate
+COMPOSE_PROFILES=tls
+```
+
+With `REARM_ACME_EMAIL` set and ports 80/443 reachable from the internet, certificates come from Let's Encrypt; without it traefik serves a self-signed certificate, which is fine for an IP-based evaluation.
+
+Note that the Keycloak realm import happens on first boot only, so changing `REARM_HOST` afterwards means either wiping the Keycloak volume (`docker compose down -v`, which destroys local users) or editing the `login-app` client in the Keycloak admin console.
+
+#### Optional: using an external OCI registry
+Skip this if you are happy with the bundled registry.
+
+To store artifacts in your own registry, set the following in `.env`. `OCI_USE_PLAIN_HTTP=false` matters: the default of `true` suits only the in-network bundled registry and would otherwise send credentials in the clear.
+
+```
+OCI_REGISTRY_HOST=registry.example.com
+OCI_REGISTRY_USERNAME=myusername
+OCI_REGISTRY_TOKEN=mypassword
+OCI_REGISTRY_NAMESPACE=my-namespace
+OCI_USE_PLAIN_HTTP=false
+OCI_BUNDLED_REGISTRY_REPLICAS=0
+```
+
+`OCI_REGISTRY_NAMESPACE` is the relative location inside the registry: for artifacts under `https://registry.example.com/my-namespace`, the host is `registry.example.com` and the namespace is `my-namespace`. `OCI_BUNDLED_REGISTRY_REPLICAS=0` stops the bundled registry from starting, since nothing will be using it.
+
+`.env` is gitignored and carries credentials - keep it that way, and consider `chmod 600`. Earlier releases used separate `core.env`, `oci.env` and `rebom.env` files; those are still honoured for backward compatibility, but `.env` is the supported place for new installations. See [`.env.example`](https://github.com/relizaio/rearm/blob/main/deploy/docker-compose/.env.example) for every available setting.
 
 Then proceed to the [create administrative user](/installation/#create-your-administrative-user-and-log-in) section.
 
@@ -51,7 +75,11 @@ Pre-requisites: You need to have a running Kubernetes cluster.
 
 Note: below shows quick installation method and assumes stack running on http://rearm.localhost. For various options and hardening refer to the values file of ReARM helm chart in the [GitHub repository](https://github.com/relizaio/rearm).
 
-Create your local values file `rearm-values.yaml` specifying custom parameters, especially hostname and OCI registry credentials. Note that `registryNamespace` property means relative location of your storage, i.e. if you are planning to store artifacts under `https://registry.relizahub.com/430fcdde-d7bc-4542-ad5b-4f534f4942f0-private`, then your registry host property is `registry.relizahub.com` and your `registryNamespace` property is `430fcdde-d7bc-4542-ad5b-4f534f4942f0-private`. See sample below for the full example:
+Create your local values file `rearm-values.yaml` specifying custom parameters, especially the hostname and where artifacts are stored.
+
+As with the compose stack, the chart can run a bundled [zot](https://zotregistry.dev) registry in the cluster, so no external registry or credentials are needed. Unlike compose it is **off by default**, because switching it on for an existing installation would repoint it away from the registry it already uses. The two options are shown below - pick one.
+
+##### Option A: bundled registry (no external storage needed)
 
 ```yaml
 leHost: rearm.localhost
@@ -64,17 +92,46 @@ keycloak:
 
 ociArtifactService:
   enabled: true
-  registryHost: registry.relizahub.com
-  registryUser: registry_user
-  registryToken: registry_token
-  
+  bundledRegistry:
+    enabled: true
+    storage: 20Gi
+
 rebom:
   backend:
     oci:
       enabled: "true"
       serviceHost: http://rearm-oci-artifact
-      registryHost: registry.relizahub.com
-      registryNamespace: 430fcdde-d7bc-4542-ad5b-4f534f4942f0-private
+      registryNamespace: rearm
+```
+
+With the bundled registry, `registryNamespace` is a plain repository prefix such as `rearm`. A registry password is generated on first install and preserved across upgrades, so artifacts stay reachable; the credentials Secret and the registry volume both survive `helm uninstall`, since the stored artifacts outlive the release.
+
+##### Option B: external OCI registry
+
+Here `registryNamespace` is the relative location inside your registry: for artifacts under `https://registry.example.com/my-namespace`, the registry host is `registry.example.com` and the namespace is `my-namespace`.
+
+```yaml
+leHost: rearm.localhost
+projectHost: rearm.localhost
+projectProtocol: http
+
+keycloak:
+  strict_host: true
+  issuer_uri: http://rearm.localhost
+
+ociArtifactService:
+  enabled: true
+  registryHost: registry.example.com
+  registryUser: registry_user
+  registryToken: registry_token
+
+rebom:
+  backend:
+    oci:
+      enabled: "true"
+      serviceHost: http://rearm-oci-artifact
+      registryHost: registry.example.com
+      registryNamespace: my-namespace
 ```
 
 Note that there are other ways to set up the secrets in a more secure way, but we discuss the simplest approach here. In any case, make sure not to check in any secrets to a source code repository.

@@ -64,7 +64,11 @@ function sidebar() {
             },
             {text: 'Slack', link: '/integrations/slack'},
             {text: 'Microsoft Teams', link: '/integrations/msteams'},
-            {text: 'Dependency-Track', link: '/integrations/dtrack'},
+            {text: 'Dependency-Track', link: '/integrations/dtrack',
+              items: [
+                {text: 'Dependency-Track 5 Helm Chart', link: '/integrations/dtrackChart'}
+              ]
+            },
             {text: 'Identity Providers', link: '/integrations/identityProviders',
               items: [
                 {text: 'Microsoft', link: '/integrations/identityProviders/microsoft'}
