@@ -26,6 +26,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.cyclonedx.exception.ParseException;
 import org.cyclonedx.generators.BomGeneratorFactory;
 import org.cyclonedx.generators.json.BomJsonGenerator;
 import org.cyclonedx.model.Bom;
@@ -40,6 +41,7 @@ import org.cyclonedx.model.Property;
 import org.cyclonedx.model.vulnerability.Vulnerability;
 import org.cyclonedx.model.vulnerability.Vulnerability.Rating;
 import org.cyclonedx.model.vulnerability.Vulnerability.Source;
+import org.cyclonedx.parsers.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -2997,20 +2999,39 @@ public class ReleaseService {
 			// Build components list: PURLs as library components + releases as application components
 			List<Component> components = new ArrayList<>();
 			
-			// Try to get enriched components from merged SBOM
+			// Try to get enriched components from merged SBOM.
+			//
+			// The merged BOM is bound by CycloneDX's OWN parser, never by Utils.OM.
+			// cyclonedx-core-java is a Jackson 2 library: it models `licenses` as a
+			// single LicenseChoice while the spec serialises it as an ARRAY, and
+			// bridges the two with deserializers registered through Jackson 2
+			// annotations (org.cyclonedx.util.deserializer.*). Utils.OM is Jackson 3
+			// (tools.jackson), which cannot see those annotations -- so binding a
+			// component with it threw MismatchedInputException on the FIRST component
+			// carrying licenses, aborting this loop and silently degrading EVERY
+			// component in the VDR to the minimal purl-only fallback while the
+			// document still exported and still validated. Live since the Jackson 3
+			// upgrade (2026-05-22) until 2026-07-28.
+			//
+			// cyclonedx-core-java 13.0.0 does NOT fix this -- it is still Jackson 2
+			// (jackson-bom 2.22.x, licenses still a singular LicenseChoice), and
+			// upstream has no Jackson 3 migration open. So the rule stands: never
+			// bind org.cyclonedx.model.* with Utils.OM; round-trip through the
+			// library's own parser, which carries its own mapper. parse() does not
+			// schema-validate, so this is as lenient as the hand-rolled walk it
+			// replaces. Covered by @vdr_export in rearm-integration-tests.
 			Map<String, Component> purlComponentMap = new HashMap<>();
 			try {
 				JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(
-					releaseData.getUuid(), false, false, null, BomStructureType.FLAT, 
+					releaseData.getUuid(), false, false, null, BomStructureType.FLAT,
 					releaseData.getOrg(), WhoUpdated.getAutoWhoUpdated(), null
 				);
-				
-				// Extract components array from JsonNode and convert to Component objects
-				JsonNode componentsNode = mergedBomJsonNode.get("components");
-				if (componentsNode != null && componentsNode.isArray()) {
-					for (JsonNode compNode : componentsNode) {
-						// Convert JsonNode to Component using Jackson
-						Component comp = Utils.OM.treeToValue(compNode, Component.class);
+
+				Bom mergedBom = new JsonParser().parse(
+						Utils.OM.writeValueAsBytes(mergedBomJsonNode));
+				List<Component> mergedComponents = mergedBom.getComponents();
+				if (mergedComponents != null) {
+					for (Component comp : mergedComponents) {
 						if (comp != null && comp.getPurl() != null) {
 							// Normalize PURL for consistent lookups
 							String normalizedPurl = Utils.minimizePurl(comp.getPurl());
@@ -3029,6 +3050,10 @@ public class ReleaseService {
 					log.error("Failed to enrich VDR components from merged SBOM: {}", e.getMessage(), e);
 				}
 				// Continue with empty map - will use minimal components
+			} catch (ParseException e) {
+				// Merged BOM is not parseable as CycloneDX -- degrade to minimal
+				// components rather than failing the whole export.
+				log.error("Failed to parse merged SBOM while enriching VDR components: {}", e.getMessage(), e);
 			} catch (JacksonException e) {
 				log.error("JSON processing error while enriching VDR components: {}", e.getMessage(), e);
 				// Continue with empty map - will use minimal components
