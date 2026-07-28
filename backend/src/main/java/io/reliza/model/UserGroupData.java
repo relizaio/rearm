@@ -7,10 +7,16 @@ package io.reliza.model;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.StringUtils;
+import org.jsoup.Jsoup;
+import org.jsoup.safety.Safelist;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -29,7 +35,75 @@ import io.reliza.model.dto.UserGroupPermissionDto;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UserGroupData extends RelizaDataParent implements RelizaObject {
-	
+
+	/**
+	 * An addressing role attached to a registered ReARM user already on this
+	 * team's roster ({@link #getAllUsers()}). This is a pure annotation -- it
+	 * does NOT add anyone to the team, so the roster keeps exactly one source of
+	 * truth ({@code users} + {@code manualUsers}) and SSO sync stays untouched.
+	 * A {@code userRef} with no matching roster entry is rejected on write.
+	 *
+	 * <p>{@code customRole} carries the operator's label when {@code role} is
+	 * {@link TeamRole#CUSTOM}, and is null otherwise. See {@link TeamRole} --
+	 * roles never grant access.
+	 */
+	public record TeamMemberRole (UUID userRef, TeamRole role, String customRole) {}
+
+	/**
+	 * A team member who is not a registered ReARM user, reachable only by a
+	 * freeform contact (email / Slack handle) -- the team-level analogue of
+	 * {@code ComponentData.FreeformContact}, plus a role. Both freeform fields
+	 * are operator-supplied and are HTML-sanitized via
+	 * {@link #sanitizeExternalMembers} before persistence, since they render
+	 * back into the team UI.
+	 *
+	 * <p><strong>External members deliberately do NOT count toward the durability
+	 * bar</strong> (DECIDED 2026-07-28): they live outside {@code users} /
+	 * {@code manualUsers}, so {@link #getAllUsers()} -- and therefore
+	 * {@code ComponentOwnershipService.isTeamDurable} -- ignores them by
+	 * construction. Durability means "survives a departure", which needs
+	 * accountable, lifecycle-managed accounts; an external contact is
+	 * addressable but confers no durability.
+	 */
+	public record ExternalTeamMember (String name, String contact, TeamRole role, String customRole) {}
+
+	/**
+	 * Returns a sanitized copy of {@code externalMembers} with each freeform
+	 * field run through jsoup {@code Safelist.basic()} -- the same safelist the
+	 * component contact path uses for operator-supplied text. Null input yields
+	 * null; null individual fields are preserved as null. Role fields are
+	 * enum/label data and are passed through untouched apart from the label,
+	 * which is operator text and so is sanitized too.
+	 */
+	/**
+	 * Returns a sanitized copy of {@code memberRoles}. Only {@code customRole} is
+	 * operator-supplied free text ({@code userRef} is a UUID and {@code role} an
+	 * enum), but it is the same class of label as
+	 * {@link ExternalTeamMember#customRole} and renders into the same team UI, so
+	 * it gets the same treatment -- sanitize-on-write applies to the WHOLE new
+	 * surface, not just the external half.
+	 */
+	public static List<TeamMemberRole> sanitizeMemberRoles (List<TeamMemberRole> memberRoles) {
+		if (null == memberRoles) return null;
+		return memberRoles.stream()
+				.map(mr -> new TeamMemberRole(
+						mr.userRef(),
+						mr.role(),
+						StringUtils.isEmpty(mr.customRole()) ? mr.customRole() : Jsoup.clean(mr.customRole(), Safelist.basic())))
+				.collect(Collectors.toList());
+	}
+
+	public static List<ExternalTeamMember> sanitizeExternalMembers (List<ExternalTeamMember> externalMembers) {
+		if (null == externalMembers) return null;
+		return externalMembers.stream()
+				.map(m -> new ExternalTeamMember(
+						StringUtils.isEmpty(m.name()) ? m.name() : Jsoup.clean(m.name(), Safelist.basic()),
+						StringUtils.isEmpty(m.contact()) ? m.contact() : Jsoup.clean(m.contact(), Safelist.basic()),
+						m.role(),
+						StringUtils.isEmpty(m.customRole()) ? m.customRole() : Jsoup.clean(m.customRole(), Safelist.basic())))
+				.collect(Collectors.toList());
+	}
+
 	private UUID uuid;
 	@JsonProperty(CommonVariables.NAME_FIELD)
 	private String name;
@@ -47,6 +121,12 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 	private Set<UUID> manualUsers = new LinkedHashSet<>(); // manually added users (not managed by SSO sync)
 	@JsonProperty("connectedSsoGroups")
 	private Set<String> connectedSsoGroups = new LinkedHashSet<>(); // SSO groups connected to this user group
+	/** Addressing roles for roster users; annotation only -- never a roster of its own. */
+	@JsonProperty("memberRoles")
+	private List<TeamMemberRole> memberRoles = new LinkedList<>();
+	/** Non-ReARM team members; addressable, but excluded from durability by design. */
+	@JsonProperty("externalMembers")
+	private List<ExternalTeamMember> externalMembers = new LinkedList<>();
 	@JsonProperty
 	private UUID resourceGroup = CommonVariables.DEFAULT_RESOURCE_GROUP;
 
@@ -128,6 +208,42 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 		return allUsers;
 	}
 	
+	public List<TeamMemberRole> getMemberRoles() {
+		return new LinkedList<>(memberRoles);
+	}
+
+	private void setMemberRoles(Collection<TeamMemberRole> memberRoles) {
+		this.memberRoles = new LinkedList<>(memberRoles);
+	}
+
+	public List<ExternalTeamMember> getExternalMembers() {
+		return new LinkedList<>(externalMembers);
+	}
+
+	private void setExternalMembers(Collection<ExternalTeamMember> externalMembers) {
+		this.externalMembers = new LinkedList<>(externalMembers);
+	}
+
+	/**
+	 * The addressing role recorded for a roster user, if any. Used by the
+	 * escalation path ("notify the security specialist on this component's owner
+	 * team"); absence means the user is on the team with no declared role.
+	 *
+	 * <p>Deliberately re-checks {@link #hasUser} rather than trusting the stored
+	 * annotation: a role can outlive its member. Write-time validation only fires
+	 * when the caller sends {@code memberRoles}, so an update that shrinks the
+	 * roster with {@code memberRoles} omitted -- and SSO-driven removals via
+	 * {@code UserGroupService.removeUserFromGroupInternal}, which never touches
+	 * this field -- both leave a role pointing at an ex-member. Filtering on read
+	 * closes every such path by construction, so escalation can never target
+	 * someone who has left the team.
+	 */
+	@JsonIgnore
+	public Optional<TeamMemberRole> getRoleForUser(UUID userUuid) {
+		if (!hasUser(userUuid)) return Optional.empty();
+		return memberRoles.stream().filter(mr -> null != mr.userRef() && mr.userRef().equals(userUuid)).findFirst();
+	}
+
 	public Set<String> getConnectedSsoGroups() {
 		return new LinkedHashSet<>(connectedSsoGroups);
 	}
@@ -254,7 +370,23 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 		} else {
 			updatedUserGroupData.setConnectedSsoGroups(ugd.getConnectedSsoGroups());
 		}
-		
+
+		// Sanitize on write, not on read: the freeform custom-label / name /
+		// contact fields are operator text rendered back into the team UI. Both
+		// member lists get it -- sanitizing only the external half would leave
+		// memberRoles[].customRole as an unescaped sink.
+		if (null != updateUgd.getMemberRoles()) {
+			updatedUserGroupData.setMemberRoles(sanitizeMemberRoles(updateUgd.getMemberRoles()));
+		} else {
+			updatedUserGroupData.setMemberRoles(ugd.getMemberRoles());
+		}
+
+		if (null != updateUgd.getExternalMembers()) {
+			updatedUserGroupData.setExternalMembers(sanitizeExternalMembers(updateUgd.getExternalMembers()));
+		} else {
+			updatedUserGroupData.setExternalMembers(ugd.getExternalMembers());
+		}
+
 		return updatedUserGroupData;
 	}
 	
@@ -288,6 +420,8 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 				.users(ugd.getUsers())
 				.manualUsers(ugd.getManualUsers())
 				.connectedSsoGroups(ugd.getConnectedSsoGroups())
+				.memberRoles(ugd.getMemberRoles())
+				.externalMembers(ugd.getExternalMembers())
 				.build();
 	}
 

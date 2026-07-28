@@ -27,6 +27,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.common.Utils;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentOwner;
 import io.reliza.model.ComponentOwnerType;
@@ -122,6 +123,31 @@ class ComponentOwnershipServiceTest {
 		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
 		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
 		assertEquals(ComponentOwnershipStatus.NON_DURABLE, o.status());
+		assertFalse(o.durable());
+	}
+
+	/**
+	 * End-to-end counterpart to {@code UserGroupTeamMembersTest}: uses a REAL
+	 * (non-mocked) UserGroupData so {@code getAllUsers()} is the production
+	 * implementation, proving external members never reach the durability count.
+	 * DECIDED 2026-07-28 -- externals are addressable but confer no durability,
+	 * so a 1-real-member team stays NON_DURABLE no matter how many externals it
+	 * carries. Mocking {@code getAllUsers} (as the helper above does) could not
+	 * catch a regression that folded externals into the roster.
+	 */
+	@Test
+	void storedTeamWithExternalMembersStaysNonDurableOnOneRealMember() {
+		UUID t = UUID.randomUUID();
+		UserGroupData realTeam = Utils.OM.readValue("""
+				{"name":"Docs Team","org":"%s","status":"ACTIVE","manualUsers":["%s"],
+				 "externalMembers":[
+				   {"name":"Ext One","contact":"e1@vendor.example","role":"SECURITY_SPECIALIST"},
+				   {"name":"Ext Two","contact":"e2@vendor.example","role":"DEVELOPER"}]}
+				""".formatted(org, UUID.randomUUID()), UserGroupData.class);
+		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(realTeam));
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
+		assertEquals(ComponentOwnershipStatus.NON_DURABLE, o.status(),
+				"two external members must not lift a one-person team over the durability bar");
 		assertFalse(o.durable());
 	}
 

@@ -5,12 +5,15 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.StringUtils;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -23,9 +26,12 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.TeamRole;
 import io.reliza.model.UserData;
 import io.reliza.model.UserGroup;
 import io.reliza.model.UserGroupData;
+import io.reliza.model.UserGroupData.ExternalTeamMember;
+import io.reliza.model.UserGroupData.TeamMemberRole;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionType;
@@ -144,6 +150,18 @@ public class UserGroupService {
 			}
 		}
 		
+		// Team-member validation lives here, next to the other domain rules
+		// (name uniqueness / restore conflict) rather than in the data fetcher,
+		// so every caller of this method is held to the invariant -- not just the
+		// GraphQL one. Sanitize BEFORE validating so the checks see exactly what
+		// will persist: a customRole of "<script>x</script>" is non-empty on the
+		// way in but sanitizes to "", which is precisely the state the CUSTOM
+		// rule exists to reject.
+		updateUserGroupDto.setMemberRoles(UserGroupData.sanitizeMemberRoles(updateUserGroupDto.getMemberRoles()));
+		updateUserGroupDto.setExternalMembers(UserGroupData.sanitizeExternalMembers(updateUserGroupDto.getExternalMembers()));
+		validateMemberRoles(updateUserGroupDto.getMemberRoles(), effectiveRoster(ugd, updateUserGroupDto));
+		validateExternalMembers(updateUserGroupDto.getExternalMembers());
+
 		UserGroupData updatedUgd = UserGroupData.updateUserGroupData(ugd, updateUserGroupDto);
 
 		// check if group permissions are being elevated from read to write
@@ -183,6 +201,73 @@ public class UserGroupService {
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * The roster this update will LAND on -- mirrors
+	 * {@code UserGroupData.updateUserGroupData}'s merge (null means keep
+	 * existing, non-null replaces), so adding a user and giving them a role in
+	 * the same call works. Package-private for test access.
+	 */
+	static Set<UUID> effectiveRoster(UserGroupData existing, UpdateUserGroupDto dto) {
+		Set<UUID> roster = new LinkedHashSet<>(
+				null != dto.getUsers() ? dto.getUsers() : existing.getUsers());
+		roster.addAll(null != dto.getManualUsers() ? dto.getManualUsers() : existing.getManualUsers());
+		return roster;
+	}
+
+	/**
+	 * A role annotates an EXISTING roster member -- it must never be a back door
+	 * for adding someone to a team, which would fork the roster into two sources
+	 * of truth. Note this only fires when the caller SENDS memberRoles; a role
+	 * can still go stale when the roster shrinks separately, which is why
+	 * {@code UserGroupData.getRoleForUser} re-checks membership on read.
+	 */
+	static void validateMemberRoles(List<TeamMemberRole> memberRoles, Set<UUID> roster) throws RelizaException {
+		if (null == memberRoles) return;
+		Set<UUID> seen = new LinkedHashSet<>();
+		for (TeamMemberRole mr : memberRoles) {
+			if (null == mr.userRef() || !roster.contains(mr.userRef())) {
+				throw new RelizaException(
+						"A team role can only be assigned to an existing team member: " + mr.userRef());
+			}
+			if (!seen.add(mr.userRef())) {
+				// getRoleForUser returns a single Optional, so a second entry for
+				// the same user would be silently dropped -- reject instead of
+				// persisting a role that never takes effect.
+				throw new RelizaException("Duplicate team role for member: " + mr.userRef());
+			}
+			validateCustomRole(mr.role(), mr.customRole());
+		}
+	}
+
+	/** External members carry no roster identity, so identity/reachability is all we can check. */
+	static void validateExternalMembers(List<ExternalTeamMember> externalMembers) throws RelizaException {
+		if (null == externalMembers) return;
+		for (ExternalTeamMember em : externalMembers) {
+			// Checked post-sanitization: GraphQL String! rejects null but not "",
+			// and a pure-markup value sanitizes down to "". An external member
+			// without a contact is unreachable, which defeats the point of storing
+			// one at all.
+			if (StringUtils.isBlank(em.name()) || StringUtils.isBlank(em.contact())) {
+				throw new RelizaException("An external team member requires a non-blank name and contact");
+			}
+			validateCustomRole(em.role(), em.customRole());
+		}
+	}
+
+	/**
+	 * These are malformed-input errors, not authorization failures, so they go
+	 * through {@link RelizaException} -- the domain validation channel
+	 * {@code GraphQLExceptionHandlers.handleReliza} surfaces as BAD_REQUEST with
+	 * the actual message. Throwing AccessDeniedException here would flatten every
+	 * one of them to a generic "Not authorized", misleading both the operator
+	 * fixing their request and anyone reading the logs.
+	 */
+	static void validateCustomRole(TeamRole role, String customRole) throws RelizaException {
+		if (TeamRole.CUSTOM == role && StringUtils.isBlank(customRole)) {
+			throw new RelizaException("A CUSTOM team role requires a customRole label");
+		}
 	}
 
 	private boolean hasWritePermissions(UserGroupData ugd) {

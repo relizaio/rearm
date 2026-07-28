@@ -2193,8 +2193,40 @@ type UserGroupWebDto {
 	permissions: Permissions
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
+	# Addressing roles for roster users (annotation only -- a role never grants
+	# access, and listing a user here does NOT add them to the team).
+	memberRoles: [TeamMemberRole]
+	# Team members who are not registered ReARM users. Addressable for
+	# notification/escalation, but excluded from the durability bar by design.
+	externalMembers: [ExternalTeamMember]
 	createdDate: DateTime
 	lastUpdatedBy: ID
+}
+
+# The role a member plays on a Team. An addressing LABEL only -- never grants
+# access (membership stays decoupled from RBAC). CUSTOM carries an org-defined
+# label alongside in customRole.
+enum TeamRole {
+	TEAM_LEAD
+	SECURITY_SPECIALIST
+	DEVELOPER
+	QA
+	PROJECT_MANAGER
+	PRODUCT_MANAGER
+	CUSTOM
+}
+
+type TeamMemberRole {
+	userRef: ID
+	role: TeamRole
+	customRole: String
+}
+
+type ExternalTeamMember {
+	name: String
+	contact: String
+	role: TeamRole
+	customRole: String
 }
 
 type EmailObject {
@@ -4482,6 +4514,25 @@ input UpdateUserGroupInput {
 	approvals: [String]
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
+	# Each userRef must already be on the roster (users + manualUsers); a role
+	# annotates an existing member, it never adds one.
+	memberRoles: [TeamMemberRoleInput]
+	externalMembers: [ExternalTeamMemberInput]
+}
+
+input TeamMemberRoleInput {
+	userRef: ID!
+	role: TeamRole!
+	# Required when role is CUSTOM, ignored otherwise.
+	customRole: String
+}
+
+input ExternalTeamMemberInput {
+	name: String!
+	contact: String!
+	role: TeamRole!
+	# Required when role is CUSTOM, ignored otherwise.
+	customRole: String
 }
 
 input UserGroupPermissionInput {
