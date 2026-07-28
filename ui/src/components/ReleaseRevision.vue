@@ -188,10 +188,7 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
     let deployedRls: any[] = []
     if (release.value && release.value.parentReleases && release.value.parentReleases.length) {
         release.value.parentReleases.forEach((rl: any, index: number) => {
-            let deployedRl = parentReleasesMap.value.get(rl.release)
-            if(!deployedRl){
-                deployedRl = store.getters.getProxyRelease(rl.release)
-            }
+            const deployedRl = parentReleasesMap.value.get(rl.release)
             if (deployedRl) {
                 let deployedArt
                 if (deployedRl.artifactDetails && deployedRl.artifactDetails) {
@@ -208,8 +205,6 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
                     index: index,
                     namespace: rl.namespace,
                     state: rl.state,
-                    branch: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.name : undefined,
-                    branchUuid: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.uuid : undefined,
                     diff: false
                 }
                 if (!dRlObj.artifact) {
