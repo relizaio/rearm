@@ -11,6 +11,11 @@ That is all. ReARM stores xBOM files and other artifacts in [OCI](https://openco
 
 If you would rather keep artifacts in a registry you already run, see [using an external OCI registry](/installation/#optional-using-an-external-oci-registry) below.
 
+#### Recommended: a Dependency-Track instance
+ReARM runs perfectly well without one - you can store and version xBOMs, manage releases and track dependencies between them. What you do not get is SBOM analysis: vulnerability scanning and policy violations come from [Dependency-Track](https://dependencytrack.org), so without it releases carry no findings.
+
+Connecting one is highly recommended. If you already run an instance, see [Dependency-Track integration](/integrations/dtrack). If you do not, we publish a [Dependency-Track 5 Helm chart](/integrations/dtrackChart) that serves the UI and API on a single hostname. It can be added at any time, before or after installing ReARM.
+
 #### Prepare Installation
 1. Clone ReARM git repository:
 ```
@@ -74,6 +79,8 @@ Then proceed to the [create administrative user](/installation/#create-your-admi
 ## Installation Via Helm Chart
 Time it takes: 5 minutes.
 Pre-requisites: You need to have a running Kubernetes cluster.
+
+As with the compose installation, a [Dependency-Track](https://dependencytrack.org) instance is highly recommended but not required - without one ReARM works, but releases carry no vulnerability or policy-violation findings. See [Dependency-Track integration](/integrations/dtrack) to connect an existing instance, or our [Dependency-Track 5 Helm chart](/integrations/dtrackChart) to deploy one alongside ReARM.
 
 Note: below shows quick installation method and assumes stack running on http://rearm.localhost. For various options and hardening refer to the values file of ReARM helm chart in the [GitHub repository](https://github.com/relizaio/rearm).
 
