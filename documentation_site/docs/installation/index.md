@@ -162,6 +162,29 @@ helm upgrade --install --create-namespace -n rearm -f rearm-values.yaml rearm oc
 Unless you are deploying on the chart's default host, set the login URIs next - see [Configuring login URIs](/installation/#configuring-login-uris). Then proceed to creating your Administrative User.
 
 
+## Keycloak Admin Credentials
+Time it takes: 2 minutes.
+Applies to: every installation.
+
+ReARM delegates user management to Keycloak, whose admin console is served at your ReARM URI with the `/kauth/` suffix. Reliza ships `admin / admin` so that a first evaluation works out of the box.
+
+Keep those defaults only where nothing else can reach the deployment - a localhost evaluation on your own machine. Anywhere else, change them: the console is reachable wherever the deployment is, and whoever reaches it controls the identity provider that guards every ReARM account.
+
+Set them before the first start. They are bootstrapped once, so editing the configuration afterwards has no effect:
+
+- **Compose**: `KEYCLOAK_ADMIN_USER` and `KEYCLOAK_ADMIN_PASSWORD` in `.env`
+- **Helm**: `keycloak.secrets.adminpassword` in your values file
+
+If the deployment is already running, change the password from the console instead: log in, and in the `master` realm go to `Users` -> `admin` -> `Credentials` -> `Reset password`.
+
+### Rotating after the first login
+
+Whatever you configure above is bootstrap material, and it stays readable where you put it - in `.env` on the compose host, or in your values file and the Kubernetes Secret the chart renders from it, which is base64-encoded rather than encrypted. Anyone with the file, the repository it is committed to, or read access to Secrets in the namespace can recover it, and `docker inspect` will show it on a compose host.
+
+So for anything beyond a localhost evaluation we strongly recommend logging in once and rotating the password from the console, in the `master` realm: `Users` -> `admin` -> `Credentials` -> `Reset password`. That leaves the live credential somewhere the configuration never recorded it. Nothing enforces this, so it is worth doing while the installation is still fresh in mind.
+
+If you would rather not hold the bootstrap value in plain text at all, the Helm chart can take it as a SealedSecret instead - set `keycloak.create_secret_in_chart` to `sealed` and supply kubeseal ciphertext, or to `none` and provision the Secret yourself.
+
 ## Configuring Login URIs
 Time it takes: 2 minutes.
 Applies to: every Helm installation, and Docker Compose deployments whose `REARM_HOST` changed after first boot.
@@ -175,17 +198,7 @@ Keycloak only redirects back to URIs its `login-app` client already knows. If th
 To set them by hand:
 
 1. Navigate to the Keycloak login path at your ReARM URI with the `/kauth/` suffix - for example `https://rearm.example.com/kauth`.
-2. Log in with the Keycloak admin credentials from your compose or Helm configuration. Unless you changed them, Reliza ships `admin / admin`.
-
-   ::: warning Change these before exposing the deployment
-   The Keycloak admin console is reachable wherever your deployment is, so `admin / admin` on a non-localhost host hands anyone who finds it full control of your identity provider.
-
-   Set them before first start - they are bootstrapped once and later changes to the configuration have no effect:
-   - **Compose**: `KEYCLOAK_ADMIN_USER` and `KEYCLOAK_ADMIN_PASSWORD` in `.env`
-   - **Helm**: `keycloak.secrets.adminpassword` in your values file
-
-   If the deployment is already running, change the password in the Keycloak console instead, in the `master` realm you just logged into: `Users` -> `admin` -> `Credentials` -> `Reset password`.
-   :::
+2. Log in with your [Keycloak admin credentials](/installation/#keycloak-admin-credentials). This section applies to deployments that are not on localhost, so if they are still `admin / admin`, change them.
 3. In the upper left of the screen, switch realm from Keycloak to Reliza.
 4. Go to the `Clients` menu and click the `login-app` client. Add your user-facing URI to `Valid redirect URIs`, `Valid post logout redirect URIs` and `Web origins` - for example `https://rearm.example.com/*` in each. You may remove the existing preset defaults.
 
@@ -195,7 +208,7 @@ Pre-requisites: Installed ReARM via Docker Compose or a Helm chart.
 
 User management is done via Keycloak. To create your first user, navigate to the Keycloak login path at your ReARM URI with `/kauth/` suffix. In example, for the base local docker compose installation this would be `http://localhost:8092/kauth/` .
 
-Log in with default Keycloak credentials defined in docker compose or Helm configuration. The defaults provided by Reliza if you have no local modifications are `admin / admin`. You may also modify these credentials or switch to a different admin account after logging in.
+Log in with your [Keycloak admin credentials](/installation/#keycloak-admin-credentials). If this deployment is reachable by anyone other than you and they are still `admin / admin`, change them before going further.
 
 In the upper left part of the screen, switch realm from Keycloak to Reliza. Click on `Users`, then `Add user`. Set `Email verified` to on, enter your email and optionally First and Last Name and click 'Create'.
 
