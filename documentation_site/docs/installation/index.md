@@ -1,24 +1,26 @@
 # Installation of ReARM Community Edition
-Open-source ReARM Community Edition (Licensed per AGPL 3.0) can be installed two ways: with [Docker Compose](#installation-via-docker-compose), or with the [Helm chart](#installation-via-helm-chart) on Kubernetes. Both are fully supported, and neither is limited to local use - either can serve a single evaluation on your laptop or a deployment your whole team reaches at its own domain.
+Open-source ReARM Community Edition (Licensed per AGPL 3.0) can be installed two ways: with [Docker Compose](#installation-via-docker-compose), or with the [Helm chart](#installation-via-helm-chart) on Kubernetes.
 
-If you already run Kubernetes, the Helm chart is the recommended option for production. Docker Compose is the quickest way to get an instance running on a single host, and suits evaluations, demos and smaller self-hosted deployments.
+The Helm chart is the recommended option for production. Docker Compose is the quickest way to get an instance running on a single host, and suits evaluations, demos and smaller self-hosted deployments.
 
 ## Installation Via Docker Compose
 Time it takes: 5 minutes.
 
-The compose stack runs wherever Docker does - your laptop, a VM, or a server your team reaches at its own domain. The walkthrough below brings it up on localhost first because that needs no configuration at all; [deploying on a remote host or domain](#deploying-on-a-remote-host-or-domain) is a couple of settings on top.
+The compose stack runs wherever Docker does - your laptop, a VM, or a server your team reaches at its own domain. The walkthrough below brings it up on localhost first because that needs no configuration at all; deploying on a remote host or domain is a couple of settings on top that are described [below](#deploying-on-a-remote-host-or-domain).
 
 #### Pre-requisites
 You need an operational Docker engine with Docker Compose version 2.24.0 or newer.
 
-That is all. ReARM stores xBOM files and other artifacts in [OCI](https://opencontainers.org/) compatible storage, and the compose stack ships with a bundled [zot](https://zotregistry.dev) registry that is enabled by default - so no external registry, and no credentials of your own, are required to get started. The registry runs inside the stack and is not published on a host port.
+That is all. ReARM stores BOM files and other artifacts in [OCI](https://opencontainers.org/) compatible storage, and the compose stack ships with a bundled [zot](https://zotregistry.dev) registry that is enabled by default - so no external registry, and no credentials of your own, are required to get started. The registry runs inside the stack and is not published on a host port.
 
 If you would rather keep artifacts in a registry you already run, see [using an external OCI registry](/installation/#optional-using-an-external-oci-registry) below.
 
 #### Recommended: a Dependency-Track instance
-ReARM runs perfectly well without one - you can store and version xBOMs, manage releases and track dependencies between them. What you do not get is SBOM analysis: vulnerability scanning and policy violations come from [Dependency-Track](https://dependencytrack.org), so without it releases carry no findings.
+ReARM runs perfectly well without one - you can store and version BOMs, manage releases and track dependencies between them. What you do not get is SBOM analysis: vulnerability scanning and policy violations, including licensing policies, come either from [Dependency-Track](https://dependencytrack.org) or from VDR files imported from other sources - without any of these releases carry no findings.
 
-Connecting one is highly recommended. If you already run an instance, see [Dependency-Track integration](/integrations/dtrack). If you do not, we publish a [Dependency-Track 5 Helm chart](/integrations/dtrackChart) that serves the UI and API on a single hostname. It can be added at any time, before or after installing ReARM.
+Therefore, connecting Dependency-Track is highly recommended. If you already run an instance, see [Dependency-Track integration](/integrations/dtrack). If you do not, we publish a [Dependency-Track 5 Helm chart](/integrations/dtrackChart) that serves the UI and API on a single hostname. Alternatively, you can use Docker Compose installation, as described in Dependency-Track's own [Quick Start tutorial](https://dependencytrack.github.io/docs/next/tutorials/quickstart/). 
+
+Note, that Dependency-Track installation and integration can be added at any time, before or after installing ReARM.
 
 #### Prepare Installation
 1. Clone ReARM git repository:
