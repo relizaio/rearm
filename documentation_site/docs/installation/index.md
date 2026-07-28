@@ -42,9 +42,7 @@ Open `http://localhost:8092` in your browser. No configuration file is needed fo
 #### Deploying on a remote host or domain
 Nothing about the compose stack is localhost-only. To serve it to other machines, point it at the host users will type in the browser and enable the TLS front.
 
-Nothing in ReARM rejects plain http - this is a browser rule. Parts of the Web Crypto API are exposed only in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), and the Keycloak client library uses them to build the login request: `crypto.randomUUID` for the OIDC state and nonce, and `crypto.subtle` for the PKCE challenge. Over plain http they are undefined and the page fails immediately with `Web Crypto API is not available`.
-
-A secure context means `https`, or an origin on `localhost` / `127.0.0.1`. So the default localhost deployment above is fine over http, and so is a remote host tunnelled to a local port - but a deployment users reach at its own hostname or IP has to serve TLS.
+ReARM's security settings require TLS for anything outside localhost: the login flow depends on browser APIs that are unavailable on a plain-http page, so login fails immediately without it. An origin on `localhost` or `127.0.0.1` counts as secure, which is why the deployment above needs no TLS.
 
 The stack includes an optional TLS front for this. Copy the template and set the host:
 
@@ -62,7 +60,7 @@ COMPOSE_PROFILES=tls
 
 With `REARM_ACME_EMAIL` set and ports 80/443 reachable from the internet, certificates come from Let's Encrypt; without it traefik serves a self-signed certificate, which is fine for an IP-based evaluation.
 
-Note that the Keycloak realm import happens on first boot only, so changing `REARM_HOST` afterwards means either wiping the Keycloak volume (`docker compose down -v`, which destroys local users) or editing the `login-app` client in the Keycloak admin console.
+Set `REARM_HOST` before the stack first starts: the Keycloak realm is imported once, with the login URIs derived from it, so changing it later means either wiping the Keycloak volume (`docker compose down -v`, which destroys local users) or fixing the URIs by hand - see [Configuring login URIs](/installation/#configuring-login-uris).
 
 #### Optional: using an external OCI registry
 Skip this if you are happy with the bundled registry.
@@ -153,22 +151,32 @@ rebom:
 
 Note that there are other ways to set up the secrets in a more secure way, but we discuss the simplest approach here. In any case, make sure not to check in any secrets to a source code repository.
 
+#### Installing the chart
 Once your values file is ready, run the following command to install the helm chart:
 
 ```bash
 helm upgrade --install --create-namespace -n rearm -f rearm-values.yaml rearm oci://registry.relizahub.com/library/rearm
 ```
 
-Navigate to the keycloak login path at ReARM URI with `/kauth/` suffix. In this example, this should be `http://rearm.localhost/kauth`.
+Unless you are deploying on the chart's default host, set the login URIs next - see [Configuring login URIs](/installation/#configuring-login-uris). Then proceed to creating your Administrative User.
 
-Log in with default Keycloak credentials defined in Helm configuration. The defaults provided by Reliza if you have no local modifications are `admin / admin`. You may also modify these credentials or switch to a different admin account after logging in.
 
-In the upper left part of the screen, switch realm from Keycloak to Reliza.
+## Configuring Login URIs
+Time it takes: 2 minutes.
+Applies to: any deployment served on a host other than the default.
 
-Go to `Clients` menu and click on the `login-app` client. Add your user-facing URI to each section: `Valid redirect URIs`, `Valid post logout redirect URIs` and `Web origins`. In our case we will be adding `http://rearm.localhost/*` in each of these sections. You may remove existing preset defaults.
+Keycloak only redirects back to URIs its `login-app` client already knows. If those do not match the address users type in the browser, login fails with an invalid redirect error instead of returning to ReARM.
 
-Proceed to creating Administrative User.
+**Docker Compose** does this for you. The realm is imported with the URIs rewritten to your `REARM_PROTOCOL` and `REARM_HOST` on first boot, so nothing is needed provided those were set before the stack first started. They are seeded only once, so if you change `REARM_HOST` afterwards you must either wipe the Keycloak volume (`docker compose down -v`, which also destroys local users) or apply the manual steps below.
 
+**Helm** does not rewrite them, so this step is required whenever your host differs from the chart default.
+
+To set them by hand:
+
+1. Navigate to the Keycloak login path at your ReARM URI with the `/kauth/` suffix - for example `https://rearm.example.com/kauth`.
+2. Log in with the Keycloak credentials from your compose or Helm configuration. The defaults provided by Reliza, if you have made no local modifications, are `admin / admin`. You may change these or switch to a different admin account after logging in.
+3. In the upper left of the screen, switch realm from Keycloak to Reliza.
+4. Go to the `Clients` menu and click the `login-app` client. Add your user-facing URI to `Valid redirect URIs`, `Valid post logout redirect URIs` and `Web origins` - for example `https://rearm.example.com/*` in each. You may remove the existing preset defaults.
 
 ## Create Your Administrative User and Log In
 Time it takes: 5 minutes.
