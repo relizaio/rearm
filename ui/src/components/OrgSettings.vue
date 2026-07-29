@@ -586,6 +586,70 @@
                                 />
                             </n-space>
 
+                            <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Member Roles:
+                                    </n-text>
+                                </n-h5>
+                                <n-text depth="3" style="font-size: 12px;">
+                                    A role labels who to contact — for example, escalating a KEV finding to the
+                                    team's security specialist. Roles do not grant any permissions.
+                                </n-text>
+                                <n-text v-if="!rosterMembers.length" depth="3" style="font-size: 12px;">
+                                    Add users to the group first, then assign their roles here.
+                                </n-text>
+                                <div v-for="m in rosterMembers" :key="m.uuid"
+                                    style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
+                                    <span style="min-width: 240px;">{{ m.label }}</span>
+                                    <n-select
+                                        :value="teamRoles[m.uuid]?.role || null"
+                                        :options="constants.TeamRoles"
+                                        placeholder="No role"
+                                        clearable
+                                        style="width: 220px;"
+                                        @update:value="(v: string | null) => setMemberRole(m.uuid, v)"
+                                    />
+                                    <n-input
+                                        v-if="teamRoles[m.uuid]?.role === constants.TeamRoleCustom"
+                                        :value="teamRoles[m.uuid]?.customRole || ''"
+                                        placeholder="Custom role label (required)"
+                                        style="width: 240px;"
+                                        @update:value="(v: string) => setMemberCustomRole(m.uuid, v)"
+                                    />
+                                </div>
+                            </n-space>
+
+                            <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        External Members (no ReARM account):
+                                    </n-text>
+                                </n-h5>
+                                <n-text depth="3" style="font-size: 12px;">
+                                    People reachable only by email or handle, such as a vendor contact. They can be
+                                    notified, but do not count toward the team's durability.
+                                </n-text>
+                                <n-dynamic-input
+                                    v-model:value="teamExternalMembers"
+                                    :on-create="onAddExternalMember"
+                                >
+                                    <template #default="{ value }">
+                                        <div style="display: flex; gap: 8px; width: 100%;">
+                                            <n-input v-model:value="value.name"
+                                                placeholder="Name" style="width: 200px;" />
+                                            <n-input v-model:value="value.contact"
+                                                placeholder="Email or handle" style="width: 240px;" />
+                                            <n-select v-model:value="value.role" :options="constants.TeamRoles"
+                                                placeholder="No role" clearable style="width: 200px;" />
+                                            <n-input v-if="value.role === constants.TeamRoleCustom"
+                                                v-model:value="value.customRole"
+                                                placeholder="Custom role label" style="width: 200px;" />
+                                        </div>
+                                    </template>
+                                </n-dynamic-input>
+                            </n-space>
+
                             <ScopedPermissions
                                 v-model="userGroupScopedPermissions"
                                 :org-uuid="orgResolved"
@@ -597,10 +661,13 @@
                                 :clusters="orgClusters"
                             />
                         </n-flex>
+                        <n-alert v-if="teamMembersError" type="warning" style="margin-top: 16px;">
+                            {{ teamMembersError }}
+                        </n-alert>
                         <n-space style="margin-top: 20px;">
                             <n-button v-if="restoreMode" type="success" @click="confirmRestoreUserGroup">Restore Group</n-button>
                             <template v-else-if="userGroupPermissionsDirty">
-                                <n-button type="success" @click="updateUserGroup">Save Changes</n-button>
+                                <n-button type="success" :disabled="!!teamMembersError" @click="updateUserGroup">Save Changes</n-button>
                                 <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
                             </template>
                         </n-space>
@@ -1129,6 +1196,8 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
 import constants from '../utils/constants'
+import { isSchemaDriftError } from '../utils/graphqlDriftFallback'
+import { buildMemberRolesPayload, buildExternalMembersPayload, validateTeamMembers, type TeamRoleMap } from '../utils/teamMembers'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
@@ -1846,14 +1915,80 @@ const userPermissionsDirty = computed(() => {
     return commonFunctions.stableStringify(userScopedPermissions.value) !== commonFunctions.stableStringify(userScopedPermissionsOriginal.value)
 })
 
+// Projects the modal's editable state. NOTE the team-member keys come from
+// the module-level editor refs (teamRoles / teamExternalMembers), not from
+// `group` -- they are per-modal editor state, not part of the group record.
 function getUserGroupEditableState(group: any) {
     return {
         name: group?.name || '',
         description: group?.description || '',
         manualUsers: group?.manualUsers || [],
-        connectedSsoGroups: group?.connectedSsoGroups || []
+        connectedSsoGroups: group?.connectedSsoGroups || [],
+        // Compare the NORMALIZED payload, not the raw editor arrays -- otherwise
+        // an untouched blank row added by "+" (or stray whitespace) reads as
+        // dirty while producing nothing to save.
+        memberRoles: teamMemberRolesPayload(),
+        externalMembers: teamExternalMembersPayload()
     }
 }
+
+// Keyed by user uuid rather than held as a list: the backend rejects two roles
+// for the same member, and a per-member map makes that impossible to express.
+const teamRoles: Ref<TeamRoleMap> = ref({})
+const teamExternalMembers: Ref<any[]> = ref([])
+
+/**
+ * True only when we have actually loaded this group's team data. Guards both
+ * rendering and the save payload: hydrating an empty editor from a not-yet-
+ * loaded map and then saving would send [], which the backend applies as a
+ * REPLACE -- wiping the team's roles and external members.
+ */
+const teamMembersKnown = computed(() =>
+    teamFieldsSupported.value === true
+    && !!selectedUserGroup.value?.uuid
+    && !!groupTeamMembers.value[selectedUserGroup.value.uuid])
+
+/** Roster members eligible for a role: manually-added plus SSO-inherited. */
+const rosterMembers = computed(() => {
+    const ids = [
+        ...(selectedUserGroup.value?.manualUsers || []),
+        ...(selectedUserGroup.value?.users || [])
+    ]
+    return [...new Set(ids)].map((uuid: any) => ({
+        uuid,
+        label: userOptions.value.find((o: any) => o.value === uuid)?.label || uuid
+    }))
+})
+
+function memberLabelFor(uuid: string): string {
+    return rosterMembers.value.find(m => m.uuid === uuid)?.label || uuid
+}
+
+function teamMemberRolesPayload() {
+    return buildMemberRolesPayload(teamRoles.value, rosterMembers.value.map(m => m.uuid))
+}
+
+function teamExternalMembersPayload() {
+    return buildExternalMembersPayload(teamExternalMembers.value)
+}
+
+function setMemberRole(uuid: string, role: string | null) {
+    teamRoles.value[uuid] = { ...(teamRoles.value[uuid] || {}), role }
+}
+
+function setMemberCustomRole(uuid: string, customRole: string) {
+    teamRoles.value[uuid] = { ...(teamRoles.value[uuid] || {}), customRole }
+}
+
+function onAddExternalMember() {
+    return { name: '', contact: '', role: null, customRole: '' }
+}
+
+/** Pre-submit mirror of the backend rules, so an invalid row names itself
+ *  instead of failing the whole mutation with a generic server error. */
+const teamMembersError = computed(() => teamMembersKnown.value
+    ? validateTeamMembers(teamMemberRolesPayload(), teamExternalMembersPayload(), memberLabelFor)
+    : null)
 
 const userGroupPermissionsDirty = computed(() => {
     const scopedDirty = userGroupScopedPermissionsOriginal.value
@@ -1949,6 +2084,58 @@ async function loadUserGroups() {
     } catch (error: any) {
         console.error('Error loading user groups:', error)
         notify('error', 'Error', 'Failed to load user groups')
+    }
+    await loadTeamMemberFields()
+}
+
+// Team member roles + external members (T1) are loaded by a SEPARATE query on
+// purpose. Folding these fields into getUserGroups above would make the whole
+// User Groups tab fail against a backend that predates them -- the same
+// field-selection drift that has broken a tab before. Isolated here, a lagging
+// backend costs us only these two optional sections, which we then hide.
+//
+// null = not probed yet. The distinction matters: the backend treats a non-null
+// list as a REPLACE, so sending [] because we had not loaded yet would silently
+// delete every role and external member on the team. Unknown => render nothing
+// and send nothing (omitted = keep).
+const teamFieldsSupported: Ref<boolean | null> = ref(null)
+const groupTeamMembers: Ref<Record<string, any>> = ref({})
+
+async function loadTeamMemberFields() {
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query getUserGroupsTeamMembers($org: ID!) {
+                    getUserGroups(org: $org) {
+                        uuid
+                        memberRoles { userRef role customRole }
+                        externalMembers { name contact role customRole }
+                    }
+                }`,
+            variables: { org: orgResolved.value },
+            fetchPolicy: 'no-cache'
+        })
+        const map: Record<string, any> = {}
+        for (const g of (response.data.getUserGroups || [])) {
+            map[g.uuid] = {
+                memberRoles: g.memberRoles || [],
+                externalMembers: g.externalMembers || []
+            }
+        }
+        groupTeamMembers.value = map
+        teamFieldsSupported.value = true
+    } catch (error: any) {
+        // Only a schema-drift-shaped failure means "this backend is older".
+        // A 401/500/network blip must NOT be mistaken for that: this flag also
+        // gates the save payload, so misclassifying would strip roles and
+        // external members from the next save with no operator-visible signal.
+        if (isSchemaDriftError(error)) {
+            console.warn('Team member fields unavailable on this backend', error?.message)
+            teamFieldsSupported.value = false
+        } else {
+            groupTeamMembers.value = {}
+            notify('error', 'Error', 'Failed to load team member roles')
+        }
     }
 }
 
@@ -3956,6 +4143,10 @@ async function createUserGroup() {
 
 async function updateUserGroup() {
     if (!selectedUserGroup.value.uuid) return
+    if (teamMembersError.value) {
+        notify('error', 'Cannot save', teamMembersError.value)
+        return
+    }
     
     try {
         const scopedData = userGroupScopedPermissions.value
@@ -4000,6 +4191,13 @@ async function updateUserGroup() {
             status: selectedUserGroup.value.status,
             connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
             permissions
+        } as any
+        // Only send the team fields when this group's data was actually loaded.
+        // Omitting them means "keep existing" on the backend; sending [] would
+        // REPLACE, i.e. delete. Never send from an unknown state.
+        if (teamMembersKnown.value) {
+            updateInput.memberRoles = teamMemberRolesPayload()
+            updateInput.externalMembers = teamExternalMembersPayload()
         }
         
         const response = await graphqlClient.mutate({
@@ -4034,6 +4232,18 @@ async function editUserGroup(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (group) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
+        const tm = groupTeamMembers.value[groupUuid] || { memberRoles: [], externalMembers: [] }
+        const roleMap: Record<string, any> = {}
+        for (const mr of tm.memberRoles) {
+            roleMap[mr.userRef] = { role: mr.role, customRole: mr.customRole || '' }
+        }
+        teamRoles.value = roleMap
+        teamExternalMembers.value = commonFunctions.deepCopy(tm.externalMembers).map((e: any) => ({
+            name: e.name || '',
+            contact: e.contact || '',
+            role: e.role || null,
+            customRole: e.customRole || ''
+        }))
         await Promise.all([
             loadPerspectives(),
             store.dispatch('fetchComponents', orgResolved.value),
