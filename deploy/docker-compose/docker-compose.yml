@@ -32,7 +32,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:26.07.42@sha256:844c0e05c11b47571455d509dc4be4b9af74537e8bd28a0ab45fa5e5fa636263
+    image: registry.relizahub.com/library/rearm-ui:26.07.43@sha256:4708b58fed003940c44d24a5345502ba738c1ac97e77bb4d6ec5ae341615b985
     ports:
      - "8092:80"
     environment:
@@ -180,7 +180,7 @@ services:
       restart_policy:
         condition: on-failure
   rebom-backend:
-    image: registry.relizahub.com/library/rebom-backend:0.22.2@sha256:fab6c249fd1cf7aea95d5fa8cf97efc6c875e37dff57430ae344935295d6a85b
+    image: registry.relizahub.com/library/rebom-backend:0.22.3@sha256:f6dd989a98d511fa97134fd99d9079f33a85af44fb70d8934313d5ed6153c58c
     # Legacy rebom.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
