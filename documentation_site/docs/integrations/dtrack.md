@@ -6,7 +6,7 @@ ReARM relies on [Dependency-Track](https://dependencytrack.org) for SBOM analysi
 ## Pre-requisites
 You need to have a running instance of Dependency-Track. Any instance works, however it was deployed.
 
-If you do not have one yet, we publish a [Dependency-Track 5 Helm chart](/integrations/dtrackChart) that serves the UI and the API on a single hostname, which makes the URIs below simpler to fill in.
+If you do not have one yet, we publish a [Dependency-Track 5 Helm chart](/integrations/dtrackChart) that bundles PostgreSQL and proxies the API through the frontend, so both URIs below are the same value.
 
 ## Dependency-Track Part
 1. In your Dependency-Track instance, open `Administration` section in the menu bar on the left.
