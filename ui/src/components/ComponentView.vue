@@ -424,6 +424,12 @@
                                                     <n-button type="primary" size="small" :loading="savingOwner" :disabled="!ownerDraftRef" @click="saveOwner">
                                                         Set owner
                                                     </n-button>
+                                                    <!-- Only meaningful when a stored owner exists: clearing hands the
+                                                         component back to org team-assignment rules. -->
+                                                    <n-button v-if="componentOwnership && componentOwnership.owner && componentOwnership.owner.ownerRef"
+                                                        size="small" :loading="savingOwner" @click="clearOwner">
+                                                        Clear owner
+                                                    </n-button>
                                                 </div>
                                                 <span class="text-muted" style="margin-top: 4px;">
                                                     The durable owner accountable for this {{ words.component }}. A team is durable (survives members leaving); a single user is flagged non-durable.
@@ -3372,7 +3378,10 @@ const COMPONENT_OWNERSHIP_QUERY = gql`
         component(componentUuid: $componentUuid) {
             uuid
             owner { ownerType ownerRef }
-            ownership { status durable derived reason }
+            # ownerType/ownerRef are selected on ownership too: an owner can come
+            # from an org team-assignment rule, in which case the per-component
+            # stored owner is null but the component IS owned.
+            ownership { ownerType ownerRef status durable derived reason }
         }
     }`
 const GET_USER_GROUPS_QUERY = gql`
@@ -3396,7 +3405,17 @@ const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default
                 : 'error'                // ORPHANED (or unknown) -> needs attention
 
 const ownerLabel = computed<string | null>(() => {
-    const o = componentOwnership.value?.owner
+    // Fall back to the RESOLVED ownership when there is no per-component stored
+    // owner: an org team-assignment rule can own a component without anything
+    // being stored on it. Reading only `owner` showed a green OWNED badge with
+    // no name next to it -- "owned by whom?".
+    // UNSET means "no owner, here is a suggestion" -- ownership.ownerRef is
+    // populated for it, so falling back blindly would print the suggested team
+    // beside an UNSET tag as though it owned the component.
+    const resolved = componentOwnership.value?.ownership
+    const o = componentOwnership.value?.owner?.ownerRef
+        ? componentOwnership.value.owner
+        : (resolved && resolved.status !== 'UNSET' ? resolved : null)
     if (!o || !o.ownerRef) return null
     const list = o.ownerType === 'TEAM' ? userGroups.value : users.value
     const hit = list.find((x: any) => x.value === o.ownerRef)
@@ -3434,6 +3453,29 @@ async function loadUserGroups() {
             .map((g: any) => ({ label: g.name, value: g.uuid }))
     } catch {
         userGroups.value = []
+    }
+}
+
+/**
+ * Removes the stored owner so org team-assignment rules apply again. Sent as an
+ * explicit clearOwner flag because owner:null already means "no change" on the
+ * update input -- there is no way to express "remove it" with owner alone.
+ */
+async function clearOwner() {
+    const uuid = componentData.value?.uuid
+    if (!uuid) return
+    savingOwner.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: SET_COMPONENT_OWNER_MUTATION,
+            variables: { component: { uuid, name: componentData.value.name, clearOwner: true } }
+        })
+        notify('success', 'Owner cleared', 'Team assignment rules now apply to this ' + words.value.component + '.')
+        await loadOwnership()
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+    } finally {
+        savingOwner.value = false
     }
 }
 
