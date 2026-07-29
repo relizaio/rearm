@@ -18,7 +18,7 @@ If you would rather keep artifacts in a registry you already run, see [using an 
 #### Recommended: a Dependency-Track instance
 ReARM runs perfectly well without one - you can store and version BOMs, manage releases and track dependencies between them. What you do not get is SBOM analysis: vulnerability scanning and policy violations, including licensing policies, come either from [Dependency-Track](https://dependencytrack.org) or from VDR files imported from other sources - without any of these releases carry no findings.
 
-Therefore, connecting Dependency-Track is highly recommended. If you already run an instance, see [Dependency-Track integration](/integrations/dtrack). If you do not, we publish a [Dependency-Track 5 Helm chart](/integrations/dtrackChart) that serves the UI and API on a single hostname. Alternatively, you can use Docker Compose installation, as described in Dependency-Track's own [Quick Start tutorial](https://dependencytrack.github.io/docs/next/tutorials/quickstart/). 
+Therefore, connecting Dependency-Track is highly recommended. If you already run an instance, see [Dependency-Track integration](/integrations/dtrack). If you do not, we publish a [Dependency-Track 5 Helm chart](/integrations/dtrackChart) that bundles PostgreSQL and proxies the API through the frontend. Alternatively, you can use Docker Compose installation, as described in Dependency-Track's own [Quick Start tutorial](https://dependencytrack.github.io/docs/next/tutorials/quickstart/). 
 
 Note, that Dependency-Track installation and integration can be added at any time, before or after installing ReARM.
 

@@ -6,19 +6,12 @@ This page covers a convenience chart we publish for teams who do not already hav
 
 ## Why use this chart
 
-The wrapper exists mainly to solve one awkward part of a stock Dependency-Track deployment.
+The upstream chart already covers the basics well, including serving Dependency-Track on a single hostname: its ingress routes `/api` to the API server and `/` to the frontend, so one host and one certificate is the norm either way. This wrapper differs in how it gets there, and in what it brings with it.
 
-**A single hostname.** Dependency-Track is two services: an API server and a frontend. Deployed as-is they are separately exposed, so you end up publishing two hosts, obtaining two certificates and - because the browser calls the API directly - dealing with CORS between them. The ReARM integration form asks for an API Server URI *and* a Frontend URI precisely because they are usually different.
-
-**The backend is proxied through the UI.** In this chart the frontend's nginx proxies `/api` to the API server inside the cluster, so only the frontend is exposed. One host, one certificate, no cross-origin traffic, and both URIs you enter into ReARM are the same value.
-
-It also brings a few things you would otherwise assemble yourself:
-
-- a bundled PostgreSQL instance, with an optional backup CronJob to S3 or Azure
-- database credentials and the Dependency-Track key-encryption-key generated on first install and preserved across upgrades, with several handling modes (generated, plaintext, sealed, or provisioned out-of-band)
-- every image pinned by digest, including the ones inherited from the upstream chart
-- gzip compression and security headers on the frontend, and an optional HSTS toggle
-- a Traefik `IngressRoute` with Let's Encrypt, or a plain route for running behind an existing load balancer
+- **The backend is proxied through the frontend.** Rather than routing `/api` at the ingress, the frontend's nginx proxies it to the API server inside the cluster, so only one service is exposed. That is also where this chart configures gzip compression and security headers, and an optional HSTS toggle at the ingress. A side benefit is that the API server never needs to know where it is mounted.
+- **An optional bundled PostgreSQL**, with a simple backup CronJob to S3 or Azure. The upstream chart has no database dependency at all - you point it at one you already run.
+- **Optional Traefik `IngressRoute` support**, including a simple Let's Encrypt `certResolver` setup, or a plain route when TLS terminates at an upstream load balancer.
+- **Database credentials and the key-encryption-key generated on first install** and preserved across upgrades, with `generated` / `plaintext` / `sealed` / `none` handling modes. Upstream expects both values to be supplied.
 
 If none of that is useful to you, a stock Dependency-Track install is perfectly fine - ReARM does not care how it was deployed.
 

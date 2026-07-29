@@ -12,15 +12,12 @@ The upstream chart is Copyright (c) the Dependency-Track authors and licensed un
 
 ## What the wrapper adds
 
-**A single hostname.** Dependency-Track is two services. Deployed as-is they are separately exposed, so you publish two hosts, obtain two certificates, and the browser talks cross-origin to the API. Here the frontend's nginx proxies `/api` to the api-server inside the cluster and only the frontend is exposed, so the API Server URI and Frontend URI you give ReARM are the same value.
+The upstream chart already serves Dependency-Track on a single hostname - its ingress routes `/api` to the api-server and `/` to the frontend. This wrapper differs in how it gets there, and in what it brings with it.
 
-Alongside that:
-
-- a bundled PostgreSQL instance, with an optional backup CronJob to S3 or Azure
-- the database credentials and the Dependency-Track key-encryption-key generated on first install and preserved across upgrades, with `generated` / `plaintext` / `sealed` / `none` handling modes
-- every image pinned by digest, including the two inherited from upstream
-- gzip and security headers on the frontend nginx, and an optional HSTS toggle
-- a Traefik `IngressRoute`, either terminating TLS with Let's Encrypt or plain when running behind an existing load balancer
+- **The backend is proxied through the frontend.** Instead of routing `/api` at the ingress, the frontend's nginx proxies it to the api-server in-cluster, so only one service is exposed. That is also where gzip and security headers are configured, with an optional HSTS toggle at the ingress. It also means the api-server never has to know where it is mounted.
+- **An optional bundled PostgreSQL**, with a simple backup CronJob to S3 or Azure. Upstream declares no database dependency - you bring your own.
+- **Optional Traefik `IngressRoute` support**, with a simple Let's Encrypt `certResolver` configuration, or a plain route when TLS terminates at an upstream load balancer.
+- **Generated credentials.** The database password and the Dependency-Track key-encryption-key are generated on first install and preserved across upgrades, with `generated` / `plaintext` / `sealed` / `none` handling modes. Upstream expects both to be supplied.
 
 ## Installing
 
