@@ -2,7 +2,7 @@
 
 ReARM relies on [Dependency-Track](https://dependencytrack.org) for SBOM analysis. **Any Dependency-Track instance works** - if you already run one, or use a managed one, simply point ReARM at it as described in [Dependency-Track integration](/integrations/dtrack).
 
-This page covers a convenience chart we publish for teams who do not already have an instance and want one that fits ReARM without extra plumbing. It is a thin community wrapper around the official [Dependency-Track chart](https://github.com/DependencyTrack/helm-charts), published under AGPL 3.0 alongside ReARM Community Edition.
+This page covers a convenience chart we publish for teams who do not already have an instance and want one that fits ReARM without extra plumbing. It is a thin community wrapper around the official [Dependency-Track chart](https://github.com/DependencyTrack/helm-charts), [published](https://github.com/relizaio/rearm/tree/main/deploy/helm/dtrack5-helm) under MIT license inside ReARM Community Edition repository.
 
 ## Why use this chart
 
