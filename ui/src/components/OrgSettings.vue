@@ -673,6 +673,12 @@
                         </n-space>
                         </div>
                     </n-modal>
+
+                    <OrgTeamAssignmentRules
+                        :orgUuid="orgResolved"
+                        :isWritable="isWritable"
+                        :teams="userGroups"
+                        :components="allComponents"/>
                 </div>
             </n-tab-pane>
 
@@ -1208,6 +1214,7 @@ import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
+import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
@@ -1250,6 +1257,9 @@ async function loadTabSpecificData (tabName: string) {
         ])
         loadInvitedUsers(true)
     } else if (tabName === "userGroups") {
+        // Products as well as components: the team-assignment preview filters on
+        // type, so a PRODUCT/ANY rule would otherwise preview "matches 0".
+        store.dispatch('fetchProducts', orgResolved.value)
         await loadUsers() // Load users for the user selection dropdown
         if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
         loadUserGroups()
