@@ -297,12 +297,12 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && myUser.installationType === 'SAAS'">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && supportsComponentKind">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
                                             <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" clearable />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication  && myUser.installationType === 'SAAS')">
+                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication  && supportsComponentKind)">
                                             <label id="componentAuthTypeLabel" for="componentAuthType">Component Auth Type</label>
                                             <n-select v-if="isWritable" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.authentication.type" readonly/>
@@ -1259,6 +1259,11 @@ const isComponent : Ref<boolean> = ref(true)
 
 const myUser = store.getters.myuser
 const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
+// Component Kind, and the Helm authentication fields it unlocks, are Pro
+// features: available on every Pro installation type (SAAS, DEMO,
+// MANAGED_SERVICE) and absent only on OSS.
+const supportsComponentKind : boolean = myUser?.installationType !== 'OSS'
 
 const isAdmin : boolean = commonFunctions.isAdmin(orguuid.value, myUser)
 const isWritable : ComputedRef<boolean> = computed((): boolean => {
@@ -2617,7 +2622,7 @@ const componentAuthTypes = [
 const secrets = ref([])
 
 const fetchSecretsIfAllowed = async function() {
-    if (isWritable && myUser.installationType === 'SAAS') {
+    if (isWritable && supportsComponentKind) {
         secrets.value = await loadSecrets(componentData.value.org)
     }
 }
