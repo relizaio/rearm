@@ -650,6 +650,31 @@
                                 </n-dynamic-input>
                             </n-space>
 
+                            <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Notification Channels:
+                                    </n-text>
+                                </n-h5>
+                                <n-text depth="3" style="font-size: 12px;">
+                                    Where this team is reachable — for example its Slack channel. A subscription
+                                    can then target the team instead of a channel, and if the team moves channel,
+                                    every subscription follows automatically.
+                                </n-text>
+                                <n-alert v-if="orgChannelsFailed" type="warning" style="margin-bottom: 8px;">
+                                    Could not load this organization's channels, so the list below may be
+                                    incomplete. Other team edits still save normally; channel changes are
+                                    skipped until you reload.
+                                </n-alert>
+                                <n-select
+                                    v-model:value="teamChannels"
+                                    multiple
+                                    :options="teamChannelOptions"
+                                    placeholder="No channels — this team can only be reached by email"
+                                    style="width: 100%; min-width: 400px;"
+                                />
+                            </n-space>
+
                             <ScopedPermissions
                                 v-model="userGroupScopedPermissions"
                                 :org-uuid="orgResolved"
@@ -1203,6 +1228,8 @@ import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
 import constants from '../utils/constants'
 import { isSchemaDriftError } from '../utils/graphqlDriftFallback'
+import { buildChannelOptions } from '@/utils/channelOptions'
+import { TYPE_LABELS } from '@/utils/notificationsCommon'
 import { buildMemberRolesPayload, buildExternalMembersPayload, validateTeamMembers, type TeamRoleMap } from '../utils/teamMembers'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
@@ -1938,13 +1965,23 @@ function getUserGroupEditableState(group: any) {
         // an untouched blank row added by "+" (or stray whitespace) reads as
         // dirty while producing nothing to save.
         memberRoles: teamMemberRolesPayload(),
-        externalMembers: teamExternalMembersPayload()
+        externalMembers: teamExternalMembersPayload(),
+        notificationChannels: teamChannels.value
     }
 }
 
 // Keyed by user uuid rather than held as a list: the backend rejects two roles
 // for the same member, and a per-member map makes that impossible to express.
 const teamRoles: Ref<TeamRoleMap> = ref({})
+const teamChannels: Ref<string[]> = ref([])
+const orgChannels: Ref<any[]> = ref([])
+const orgChannelsFailed = ref(false)
+
+// Shared builder so a channel that was disabled or deleted after being picked
+// still renders a name here instead of a bare uuid (BUG 2) -- and stays
+// removable so the operator can clear it.
+const teamChannelOptions = computed(() =>
+    buildChannelOptions(orgChannels.value, teamChannels.value, TYPE_LABELS))
 const teamExternalMembers: Ref<any[]> = ref([])
 
 /**
@@ -2096,6 +2133,9 @@ async function loadUserGroups() {
         notify('error', 'Error', 'Failed to load user groups')
     }
     await loadTeamMemberFields()
+    // Outside loadTeamMemberFields' try: a channel-load failure must not reach
+    // its drift classifier and hide all three team sections.
+    await loadOrgChannels()
 }
 
 // Team member roles + external members (T1) are loaded by a SEPARATE query on
@@ -2111,6 +2151,29 @@ async function loadUserGroups() {
 const teamFieldsSupported: Ref<boolean | null> = ref(null)
 const groupTeamMembers: Ref<Record<string, any>> = ref({})
 
+/** Channel list for the Team editor's channel picker. */
+async function loadOrgChannels() {
+    orgChannelsFailed.value = false
+    try {
+        const res = await graphqlClient.query({
+            query: gql`
+                query notificationChannelsForTeams($orgUuid: ID!) {
+                    notificationChannels(orgUuid: $orgUuid) { uuid name type status }
+                }`,
+            variables: { orgUuid: orgResolved.value },
+            fetchPolicy: 'no-cache'
+        })
+        orgChannels.value = res.data?.notificationChannels || []
+    } catch (error: any) {
+        // Do NOT leave orgChannels empty on a transient failure: buildChannelOptions
+        // would then relabel every healthy saved channel as "(deleted channel)".
+        // Flag it instead so the picker can say so.
+        console.warn('Notification channels unavailable', error?.message)
+        orgChannels.value = []
+        orgChannelsFailed.value = true
+    }
+}
+
 async function loadTeamMemberFields() {
     try {
         const response = await graphqlClient.query({
@@ -2120,6 +2183,7 @@ async function loadTeamMemberFields() {
                         uuid
                         memberRoles { userRef role customRole }
                         externalMembers { name contact role customRole }
+                        notificationChannels
                     }
                 }`,
             variables: { org: orgResolved.value },
@@ -2129,7 +2193,8 @@ async function loadTeamMemberFields() {
         for (const g of (response.data.getUserGroups || [])) {
             map[g.uuid] = {
                 memberRoles: g.memberRoles || [],
-                externalMembers: g.externalMembers || []
+                externalMembers: g.externalMembers || [],
+                notificationChannels: g.notificationChannels || []
             }
         }
         groupTeamMembers.value = map
@@ -4206,6 +4271,10 @@ async function updateUserGroup() {
         // Omitting them means "keep existing" on the backend; sending [] would
         // REPLACE, i.e. delete. Never send from an unknown state.
         if (teamMembersKnown.value) {
+            // Omit when the channel list failed to load: sending the current value
+            // would be based on an incomplete picker, and disabling the picker
+            // instead would block every unrelated team edit (rename, members).
+            if (!orgChannelsFailed.value) updateInput.notificationChannels = teamChannels.value
             updateInput.memberRoles = teamMemberRolesPayload()
             updateInput.externalMembers = teamExternalMembersPayload()
         }
@@ -4248,6 +4317,7 @@ async function editUserGroup(groupUuid: string) {
             roleMap[mr.userRef] = { role: mr.role, customRole: mr.customRole || '' }
         }
         teamRoles.value = roleMap
+        teamChannels.value = [...(tm.notificationChannels || [])]
         teamExternalMembers.value = commonFunctions.deepCopy(tm.externalMembers).map((e: any) => ({
             name: e.name || '',
             contact: e.contact || '',
