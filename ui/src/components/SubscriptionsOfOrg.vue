@@ -155,6 +155,23 @@
                                         </n-form-item>
                                     </n-gi>
                                     <n-gi :span="22" :offset="0">
+                                        <n-form-item :label="i === 0 ? 'Teams (optional)' : ''" :show-feedback="false">
+                                            <n-select
+                                                v-model:value="r.teams"
+                                                :options="teamOptions"
+                                                multiple
+                                                placeholder="(none)"
+                                                clearable
+                                                data-testid="route-teams"
+                                            />
+                                        </n-form-item>
+                                        <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
+                                            Delivers to each team's own notification channels, resolved when the
+                                            event fires — so if a team changes its channel, this route follows
+                                            automatically.
+                                        </div>
+                                    </n-gi>
+                                    <n-gi :span="22" :offset="0">
                                         <n-form-item :label="i === 0 ? 'Perspectives (delivery filter)' : ''" :show-feedback="false">
                                             <n-select
                                                 v-model:value="r.perspectives"
@@ -248,6 +265,8 @@ import { CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabl
 import { useRouter } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
+import { buildChannelOptions, withGhosts } from '@/utils/channelOptions'
+import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import {
     ChannelRow, ChannelGroupRow, SubscriptionRow, TYPE_LABELS,
     subscriptionStatusOptions, eventTypeOptions, severityOptions,
@@ -287,6 +306,7 @@ interface SubscriptionRoute {
     whenSeverityAtLeast: string | null
     channels: string[]
     channelGroups: string[]
+    teams: string[]
     // Delivery filter: restricts which events this route's channels deliver
     // to the listed perspectives. NOT the inbox/bell visibility gate. Empty
     // = no restriction (all perspectives).
@@ -317,7 +337,7 @@ interface SubscriptionForm {
 }
 
 function freshRoute (): SubscriptionRoute {
-    return { whenSeverityAtLeast: null, channels: [], channelGroups: [], perspectives: [] }
+    return { whenSeverityAtLeast: null, channels: [], channelGroups: [], teams: [], perspectives: [] }
 }
 
 function freshSubscriptionForm (): SubscriptionForm {
@@ -363,30 +383,31 @@ const eventTypeOptionsForForm = computed(() =>
 )
 
 const channelOptions = computed(() => {
-    const enabled = channels.value
-        .filter(c => c.status === 'ENABLED')
-        .map(c => ({ label: `${c.name} (${TYPE_LABELS[c.type] || c.type})`, value: c.uuid }))
-    const known = new Set(enabled.map(o => o.value))
-    // BUG 2: a route can still reference a channel that is now DISABLED or
-    // DELETED -- neither is in the enabled option list, so the n-select tag would
-    // render a bare UUID. Add a labeled "ghost" option for each already-referenced
-    // value so the tag reads a name (disabled) or "(deleted channel) <short>",
-    // mirroring the Delivery History label. NOT marked `disabled`: a disabled
-    // option makes the selected tag non-removable in n-select, which would trap
-    // the very dangling ref the user came to clean up -- keep it removable.
-    const byUuid = new Map(channels.value.map(c => [c.uuid, c]))
+    // Ghost handling for already-referenced DISABLED/DELETED channels lives in
+    // the shared builder (BUG 2) -- the Team editor needs the identical
+    // behaviour, and a second copy is how that fix silently rots.
     const referenced = new Set<string>()
     for (const r of subForm.value.routes) for (const ch of (r.channels || [])) referenced.add(ch)
-    const ghosts = [...referenced]
-        .filter(u => !known.has(u))
-        .map(u => {
-            const c = byUuid.get(u)
-            const label = c
-                ? `${c.name} (${TYPE_LABELS[c.type] || c.type}) (disabled)`
-                : `(deleted channel) ${String(u).slice(0, 8)}`
-            return { label, value: u }
-        })
-    return [...enabled, ...ghosts]
+    return buildChannelOptions(channels.value, referenced, TYPE_LABELS)
+})
+
+const teams = ref<any[]>([])
+
+const teamOptions = computed(() => {
+    const selectable = teams.value
+        .filter((t: any) => t.status !== 'INACTIVE')
+        .map((t: any) => ({
+            // Surface the channel count: a team with none delivers nothing, and
+            // that is invisible otherwise.
+            label: `${t.name} (${(t.notificationChannels || []).length} ch)`,
+            value: t.uuid,
+        }))
+    const referenced = new Set<string>()
+    for (const r of subForm.value.routes) for (const t of (r.teams || [])) referenced.add(t)
+    // Same shared builder as the channel picker, so the "keep dangling refs
+    // visible and removable" behaviour cannot drift between the two.
+    return withGhosts(selectable, teams.value, referenced,
+        (t: any, uuid) => t ? `${t.name} (deactivated)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
 })
 
 const channelGroupOptions = computed(() =>
@@ -470,6 +491,33 @@ async function loadChannelGroups (): Promise<void> {
     }
 }
 
+async function loadTeams (): Promise<void> {
+    // Isolated query + soft failure: teams-with-channels is a newer field, and a
+    // backend predating it must cost only the Teams route target, not the whole
+    // subscription editor.
+    try {
+        const res = await graphqlClient.query({
+            query: gql`
+                query getUserGroupsForRoutes($org: ID!) {
+                    getUserGroups(org: $org) { uuid name status notificationChannels }
+                }`,
+            variables: { org: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        teams.value = res.data?.getUserGroups || []
+    } catch (e: any) {
+        // Only schema drift means "this backend is older". A 401/5xx must not
+        // blank the list: saved team targets have no ghost source then, and the
+        // route would render bare UUIDs.
+        if (isSchemaDriftError(e)) {
+            console.warn('Team route targets unavailable on this backend', e?.message)
+            teams.value = []
+        } else {
+            message.error(`Failed to load teams: ${extractError(e)}`)
+        }
+    }
+}
+
 async function loadSubscriptions (): Promise<void> {
     subscriptionsLoading.value = true
     try {
@@ -522,6 +570,7 @@ function openEditSubscription (row: SubscriptionRow): void {
                 whenSeverityAtLeast: r.whenSeverityAtLeast || null,
                 channels: Array.isArray(r.channels) ? [...r.channels] : [],
                 channelGroups: Array.isArray(r.channelGroups) ? [...r.channelGroups] : [],
+                teams: Array.isArray(r.teams) ? [...r.teams] : [],
                 perspectives: Array.isArray(r.perspectives) ? [...r.perspectives] : [],
                 _raw: r,
             }))
@@ -556,14 +605,16 @@ async function saveSubscription (): Promise<void> {
         subModalError.value = 'Name, at least one event type, and at least one route are required.'
         return
     }
-    // Every route must have at least one channel or one group; backend
-    // rejects empty {channels, channelGroups} anyway, but catch it
-    // client-side for a cleaner error path.
+    // Every route must have at least one channel, group or team; the backend
+    // rejects an empty {channels, channelGroups, teams} anyway, but catch it
+    // client-side for a cleaner error path. Teams count: naming a team INSTEAD
+    // of a channel is the point -- its channel is resolved at fan-out.
     const emptyRouteIdx = f.routes.findIndex(r =>
         (r.channels || []).length === 0 && (r.channelGroups || []).length === 0
+        && (r.teams || []).length === 0
     )
     if (emptyRouteIdx >= 0) {
-        subModalError.value = `Route ${emptyRouteIdx + 1} has no channels or groups — pick at least one.`
+        subModalError.value = `Route ${emptyRouteIdx + 1} has no channels, groups or teams — pick at least one.`
         return
     }
     // Build the filter input from ONLY the fields NotificationFilterInput
@@ -587,6 +638,7 @@ async function saveSubscription (): Promise<void> {
             whenSeverityAtLeast: r.whenSeverityAtLeast,
             channels: r.channels,
             channelGroups: r.channelGroups,
+            teams: r.teams,
             perspectives: r.perspectives,
         })),
         dedupWindowMinutes: f.dedupWindowMinutes,
@@ -869,6 +921,7 @@ onMounted(async () => {
     await Promise.all([
         loadChannels(),
         loadChannelGroups(),
+        loadTeams(),
         loadSubscriptions(),
         store.dispatch('fetchPerspectives', orgUuid.value),
     ])
