@@ -1,7 +1,9 @@
 <template>
     <div class="org-integrations">
-        <!-- Segmented sub-tab pill control. OSS hides Webhooks + PR Validation
-             (same scope as the previous "CI Integrations" + Webhooks hide). -->
+        <!-- Segmented sub-tab pill control. CE hides Webhooks + PR Validation
+             (the CI surface). Subscriptions + Channel groups stay: CE ships the
+             whole notification stack, and a channel with no subscription to
+             route events to it delivers nothing. -->
         <div class="subtab-bar">
             <button class="subtab-pill" :class="{ active: subTab === 'catalog' }" @click="switchSubTab('catalog')">
                 <n-icon size="16" class="subtab-icon"><LayoutGrid /></n-icon>
@@ -16,11 +18,11 @@
                 <n-icon size="16" class="subtab-icon"><ShieldCheck /></n-icon>
                 <span>PR Validation</span>
             </button>
-            <button v-if="showCiFeatures" class="subtab-pill" :class="{ active: subTab === 'subscriptions' }" @click="switchSubTab('subscriptions')">
+            <button class="subtab-pill" :class="{ active: subTab === 'subscriptions' }" @click="switchSubTab('subscriptions')">
                 <n-icon size="16" class="subtab-icon"><Bell /></n-icon>
                 <span>Subscriptions</span>
             </button>
-            <button v-if="showCiFeatures" class="subtab-pill" :class="{ active: subTab === 'channel-groups' }" @click="switchSubTab('channel-groups')">
+            <button class="subtab-pill" :class="{ active: subTab === 'channel-groups' }" @click="switchSubTab('channel-groups')">
                 <n-icon size="16" class="subtab-icon"><Users /></n-icon>
                 <span>Channel groups</span>
             </button>
@@ -84,7 +86,7 @@
                                     </template>
                                     Configured by an instance administrator in System Settings
                                 </n-tooltip>
-                                <n-button v-else size="small" :disabled="card.proOnly && !showCiFeatures" @click="openAddForCard(card)" :data-testid="`add-channel-${card.id}`">
+                                <n-button v-else size="small" :disabled="cardLockedByEdition(card)" @click="openAddForCard(card)" :data-testid="`add-channel-${card.id}`">
                                     <template #icon><n-icon><CirclePlus /></n-icon></template>
                                     {{ card.externalConfig ? 'Configure' : 'Add' }}
                                 </n-button>
@@ -128,7 +130,14 @@
                                                 @click="!testingChannels.has(ch.uuid) && sendChannelTest(ch)"
                                             ><Refresh v-if="testingChannels.has(ch.uuid)" /><Send v-else /></n-icon>
                                             <n-icon class="instance-icon" size="20" title="View delivery history for this channel" @click="viewChannelDeliveries(ch.uuid)"><History /></n-icon>
-                                            <n-icon class="instance-icon" size="20" :title="`Edit ${card.name} channel`" @click="openEditChannelForCard(card, ch)"><EditIcon /></n-icon>
+                                            <!-- Hidden when the edition cannot use this kind: a CE org
+                                                 holding an EMAIL/SENTINEL channel (seeded via API, or
+                                                 left by a downgrade) would otherwise open the full form
+                                                 and only learn at save that it needs a Pro licence --
+                                                 the "UI looser than backend" failure editionCapabilities
+                                                 warns about. Delete stays available so the row can be
+                                                 cleaned up. -->
+                                            <n-icon v-if="!cardLockedByEdition(card)" class="instance-icon" size="20" :title="`Edit ${card.name} channel`" @click="openEditChannelForCard(card, ch)"><EditIcon /></n-icon>
                                             <n-icon class="instance-icon danger" size="20" :title="`Delete ${card.name} channel`" @click="onDeleteChannel(card, ch)"><Trash /></n-icon>
                                         </div>
                                     </div>
@@ -187,8 +196,12 @@
                                 </template>
                             </div>
 
-                            <!-- + Add another for multi-instance only -->
-                            <button v-if="card.multiInstance" class="add-another" @click="openAddForCard(card)" :data-testid="`add-channel-${card.id}`">
+                            <!-- + Add another for multi-instance only. Also honours the
+                                 edition lock: EMAIL/SENTINEL are multiInstance, so a CE
+                                 org that already has one (seeded via API, or left behind
+                                 by a downgrade) would otherwise show a live-looking
+                                 button whose click openAddForCard silently discards. -->
+                            <button v-if="card.multiInstance && !cardLockedByEdition(card)" class="add-another" @click="openAddForCard(card)" :data-testid="`add-channel-${card.id}`">
                                 <n-icon size="14"><CirclePlus /></n-icon>
                                 <span>Add another {{ card.name }}</span>
                             </button>
@@ -197,14 +210,15 @@
                         <!-- Once a messaging channel is configured, events only
                              reach it when a subscription routes them there.
                              Applies to every channel card (Slack/Teams/Email/
-                             Webhook/Sentinel). Gated on Pro so the OSS catalog
-                             stays the same. -->
+                             Webhook/Sentinel) on every edition -- the dead-end
+                             this prevents is worse on CE, where Slack is the
+                             first channel most operators configure. -->
                         <div
-                            v-if="showCiFeatures && isChannelCard(card) && isCardConfigured(card)"
-                            class="card-pro-hint"
+                            v-if="isChannelCard(card) && isCardConfigured(card)"
+                            class="card-route-hint"
                         >
                             Events are delivered when a
-                            <a class="pro-hint-link" @click="switchSubTab('subscriptions')">subscription</a>
+                            <a class="route-hint-link" @click="switchSubTab('subscriptions')">subscription</a>
                             routes them to this channel →
                         </div>
                     </div>
@@ -262,7 +276,7 @@
         </div>
 
         <!-- ============================== SUBSCRIPTIONS ============================== -->
-        <div v-if="subTab === 'subscriptions' && showCiFeatures" class="subscriptions-pane-wrap">
+        <div v-if="subTab === 'subscriptions'" class="subscriptions-pane-wrap">
             <div class="info-banner">
                 <n-icon size="20"><Bell /></n-icon>
                 <div>
@@ -276,7 +290,7 @@
         </div>
 
         <!-- ============================== CHANNEL GROUPS ============================== -->
-        <div v-if="subTab === 'channel-groups' && showCiFeatures" class="channel-groups-pane-wrap">
+        <div v-if="subTab === 'channel-groups'" class="channel-groups-pane-wrap">
             <div class="info-banner">
                 <n-icon size="20"><Users /></n-icon>
                 <div>
@@ -863,6 +877,12 @@ import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
 import SubscriptionsOfOrg from './SubscriptionsOfOrg.vue'
 import ChannelGroupsOfOrg from './ChannelGroupsOfOrg.vue'
+import {
+    isChannelTypeAvailable,
+    isProEdition,
+    isIntegrationsSubTabAvailable,
+    type IntegrationsSubTab,
+} from '../utils/editionCapabilities'
 import { useNotification, NotificationType } from 'naive-ui'
 
 const props = defineProps<{
@@ -893,18 +913,35 @@ const notify = (type: NotificationType, title: string, content: string) => {
     notification[type]({ content, meta: title, duration: 3500, keepAliveOnHover: true })
 }
 
-const showCiFeatures = computed(() => props.installationType !== 'OSS')
+// Strictly the CI/SCM surface: GitHub/GitLab/Jenkins/ADO cards, inbound PR
+// Webhooks, PR Validation rules.
+//
+// It used to gate the notifications surface too, which was wrong -- CE ships
+// the entire notification stack (fan-out, delivery worker, Slack/Teams/Webhook
+// dispatchers, subscriptions, channel groups) and the backend allows all of it.
+// The edition predicates now live in utils/editionCapabilities so they are
+// unit-tested; the channel-type list there is additionally checked against the
+// backend's own gate. This flag is still read directly by the CI-surface
+// conditionals below, which is what it is for.
+const showCiFeatures = computed(() => isProEdition(props.installationType))
 const orguuid = computed(() => props.orguuid)
 const isOrgAdmin = computed(() => props.isOrgAdmin)
 const isGlobalAdmin = computed(() => props.isGlobalAdmin)
 const isWritable = computed(() => props.isWritable)
 
 // ---- Sub-tab state, URL-synced ---------------------------------------------
-type SubTab = 'catalog' | 'webhooks' | 'pr-validation' | 'subscriptions' | 'channel-groups'
-const subTab = ref<SubTab>((route.query.integrationsTab as SubTab) || 'catalog')
+type SubTab = IntegrationsSubTab
+
+function isSubTabAccessible(t: unknown): t is SubTab {
+    return isIntegrationsSubTabAvailable(t, props.installationType)
+}
+
+const subTab = ref<SubTab>(
+    isSubTabAccessible(route.query.integrationsTab) ? route.query.integrationsTab : 'catalog',
+)
 
 async function switchSubTab(t: SubTab) {
-    if (t !== 'catalog' && !showCiFeatures.value) return
+    if (!isSubTabAccessible(t)) return
     subTab.value = t
     await router.push({ query: { ...route.query, integrationsTab: t } })
 }
@@ -1058,9 +1095,6 @@ interface CardConfig {
     logoMark?: string
     iconComponent?: any
     multiInstance: boolean
-    // Pro-only kinds still show in the OSS catalog, but with a "Pro"
-    // pill and a disabled Add button instead of being hidden.
-    proOnly?: boolean
     // Instance-wide config that lives outside this per-org surface (e.g.
     // SendGrid, configured in System Settings). The card's action routes
     // to that page instead of opening a per-org modal, and its footer
@@ -1070,9 +1104,9 @@ interface CardConfig {
 
 const CARDS: CardConfig[] = [
     // Messaging
-    { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Send security and operational notifications to a Slack channel via an incoming-webhook URL.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: true, proOnly: true },
-    { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Send security and operational notifications to a Microsoft Teams channel via a Power Automate Workflows webhook URL.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: true, proOnly: true },
-    { id: 'EMAIL', name: 'Email', vendor: 'Reliza', category: 'messaging', description: 'Send security and operational notifications to a list of email recipients, batched into periodic digest emails.', logoBg: '#2D8F4E', iconComponent: Mail, multiInstance: true, proOnly: true },
+    { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Send security and operational notifications to a Slack channel via an incoming-webhook URL.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: true },
+    { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Send security and operational notifications to a Microsoft Teams channel via a Power Automate Workflows webhook URL.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: true },
+    { id: 'EMAIL', name: 'Email', vendor: 'Reliza', category: 'messaging', description: 'Send security and operational notifications to a list of email recipients, batched into periodic digest emails.', logoBg: '#2D8F4E', iconComponent: Mail, multiInstance: true },
     // SendGrid is not a per-org notification channel — it is the
     // instance-wide email delivery provider (EmailSendType.SENDGRID),
     // configured in System Settings → Email Sending Configuration. The
@@ -1081,8 +1115,8 @@ const CARDS: CardConfig[] = [
     // channel modal. The Email card above is the per-org recipient/digest
     // channel that rides on top of whichever provider this configures.
     { id: 'SENDGRID', name: 'SendGrid', vendor: 'Twilio SendGrid', category: 'messaging', description: 'Instance-wide email delivery provider used to send Email channel notifications and account emails. Configured in System Settings.', logoBg: '#1A82E2', logoMark: 'SG', multiInstance: false, externalConfig: true },
-    { id: 'WEBHOOK', name: 'Notification Webhook', vendor: 'Reliza', category: 'messaging', description: 'POST notification events to any HTTPS endpoint — PagerDuty, Opsgenie, Splunk, or in-house receivers — with optional bearer-token or HMAC-SHA256 signing.', logoBg: '#37474F', iconComponent: PlugConnected, multiInstance: true, proOnly: true },
-    { id: 'SENTINEL', name: 'Microsoft Sentinel', vendor: 'Microsoft', category: 'messaging', description: 'Stream notification events to Microsoft Sentinel (Azure Log Analytics) via the Logs Ingestion API.', logoBg: '#0078D4', iconComponent: ShieldCheck, multiInstance: true, proOnly: true },
+    { id: 'WEBHOOK', name: 'Notification Webhook', vendor: 'Reliza', category: 'messaging', description: 'POST notification events to any HTTPS endpoint — PagerDuty, Opsgenie, Splunk, or in-house receivers — with optional bearer-token or HMAC-SHA256 signing.', logoBg: '#37474F', iconComponent: PlugConnected, multiInstance: true },
+    { id: 'SENTINEL', name: 'Microsoft Sentinel', vendor: 'Microsoft', category: 'messaging', description: 'Stream notification events to Microsoft Sentinel (Azure Log Analytics) via the Logs Ingestion API.', logoBg: '#0078D4', iconComponent: ShieldCheck, multiInstance: true },
     // CI/CD & Source Control
     { id: 'GITHUB', name: 'GitHub', vendor: 'GitHub', category: 'ci', description: 'GitHub App for PR validation, inbound webhooks, and repository_dispatch.', logoBg: '#1F2328', iconComponent: BrandGithub, multiInstance: true },
     { id: 'GITLAB', name: 'GitLab', vendor: 'GitLab', category: 'ci', description: 'Trigger GitLab pipelines.', logoBg: '#FC6D26', iconComponent: BrandGitlab, multiInstance: true },
@@ -1125,6 +1159,24 @@ function channelTypeForCard(card: CardConfig): string {
     return card.id === 'MSTEAMS' ? 'MS_TEAMS' : card.id
 }
 
+/**
+ * Card visible in the catalog but unusable on this edition -- renders a "Pro"
+ * pill and a disabled Add button rather than being hidden, so the operator can
+ * still see the capability exists.
+ *
+ * Channel cards derive this from the single tested constant in
+ * utils/editionCapabilities, which mirrors the backend's licence check. That
+ * indirection is deliberate: the previous hand-maintained per-card flag drifted
+ * and marked CE-available Slack / Teams / Webhook as Pro.
+ *
+ * Non-channel cards are never edition-locked today -- the Pro-only CI kinds are
+ * hidden wholesale by visibleSections instead.
+ */
+function cardLockedByEdition(card: CardConfig): boolean {
+    if (!isChannelCard(card)) return false
+    return !isChannelTypeAvailable(channelTypeForCard(card), props.installationType)
+}
+
 function channelRowsForCard(card: CardConfig): ChannelCatalogRow[] {
     const t = channelTypeForCard(card)
     return notificationChannelRows.value.filter(c => c.type === t)
@@ -1149,7 +1201,7 @@ function ciInstancesForCard(card: CardConfig): any[] {
 }
 
 function cardStatusLabel(card: CardConfig): string {
-    if (card.proOnly && !showCiFeatures.value) return 'Pro'
+    if (cardLockedByEdition(card)) return 'Pro'
     if (!isCardConfigured(card)) return 'Available'
     if (isChannelCard(card)) {
         const n = channelRowsForCard(card).length
@@ -1177,7 +1229,7 @@ function cardName(id: CardConfig['id']): string {
 // point to where the setting actually lives instead.
 function cardFootHint(card: CardConfig): string {
     if (card.externalConfig) return 'Set in System Settings'
-    if (card.proOnly && !showCiFeatures.value) return 'Available in ReARM Pro'
+    if (cardLockedByEdition(card)) return 'Available in ReARM Pro'
     return 'Not configured'
 }
 
@@ -1218,7 +1270,7 @@ function kindLabel(t: string): string {
 
 // ---- Modal openers ---------------------------------------------------------
 function openAddForCard(card: CardConfig) {
-    if (card.proOnly && !showCiFeatures.value) return
+    if (cardLockedByEdition(card)) return
     if (card.id === 'SLACK') { openAddSlackChannel(); return }
     if (card.id === 'EMAIL') { openAddEmailChannel(); return }
     // SendGrid is instance-wide config, not a per-org channel — send the
@@ -2419,9 +2471,9 @@ const CATALOG_CHANNELS_FULL = gql`
     }`
 
 async function loadNotificationChannels(useCache: boolean) {
-    // Channel queries are a Pro surface — skip on OSS, where the
-    // EMAIL / WEBHOOK / SENTINEL cards render in their "Pro" state instead.
-    if (!showCiFeatures.value) return
+    // Runs on every edition. CE can create Slack / Teams / Webhook channels, so
+    // skipping this left those cards permanently "Available" even with channels
+    // configured -- and the Add button opening a form whose result never showed.
     const cachePolicy: FetchPolicy = useCache ? 'cache-first' : 'network-only'
     try {
         const { data, degraded } = await loadWithSchemaDriftFallback(
@@ -2632,18 +2684,18 @@ watch(() => props.orguuid, async () => {
 }
 .muted-12 { font-size: 12px; color: var(--muted); }
 
-.card-pro-hint {
+.card-route-hint {
     margin-top: 10px;
     font-size: 11.5px;
     color: var(--muted);
     line-height: 1.4;
 }
-.pro-hint-link {
+.route-hint-link {
     color: var(--n-color-primary, #2080f0);
     cursor: pointer;
     text-decoration: none;
 }
-.pro-hint-link:hover { text-decoration: underline; }
+.route-hint-link:hover { text-decoration: underline; }
 
 /* ---- instance rows ------------------------------------------------------ */
 .instance-list {

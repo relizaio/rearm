@@ -7,6 +7,7 @@
 
 import gql from 'graphql-tag'
 import commonFunctions from '@/utils/commonFunctions'
+import { PRO_ONLY_ROUTE_FIELDS } from '@/utils/editionCapabilities'
 
 export type NaiveTagType = 'success' | 'warning' | 'error' | 'info' | 'default'
 
@@ -318,6 +319,59 @@ function buildSubscriptionsQuery (fields: string) {
 }
 export const LIST_SUBSCRIPTIONS_QUERY = buildSubscriptionsQuery(`${SUBSCRIPTION_CORE_FIELDS} ${SUBSCRIPTION_ENRICHMENT_FIELDS}`)
 export const LIST_SUBSCRIPTIONS_CORE_QUERY = buildSubscriptionsQuery(SUBSCRIPTION_CORE_FIELDS)
+
+/**
+ * Build one `NotificationRouteInput` from a modeled route row.
+ *
+ * Same hazard as buildNotificationFilterInput below, one level down: GraphQL
+ * input coercion REJECTS unknown keys outright, so any field the server's
+ * NotificationRouteInput does not declare fails the whole mutation rather than
+ * being ignored.
+ *
+ * The offending fields are listed in PRO_ONLY_ROUTE_FIELDS (currently `teams`).
+ * Sending `teams: []` from a CE UI makes every subscription save -- including
+ * ones that use no teams at all -- fail with
+ *   `Field "teams" is not defined by type "NotificationRouteInput"`.
+ * Omitting the key when empty keeps CE saving while losing nothing on Pro, where
+ * an absent list and an empty list mean the same thing.
+ */
+export interface NotificationRouteInput {
+    whenSeverityAtLeast?: string | null
+    channels?: string[]
+    channelGroups?: string[]
+    perspectives?: string[]
+    teams?: string[]
+    // Unmodelled passthrough carried verbatim from `_raw` (andEnvIn,
+    // andLifecycleIn, rate-limit fields the editor does not surface yet).
+    [passthrough: string]: unknown
+}
+
+export function buildNotificationRouteInput (route: Record<string, any>): NotificationRouteInput {
+    const raw = { ...(route._raw || {}) }
+    // Strip the Pro-only fields from the passthrough as well.
+    //
+    // DEFENSIVE, not currently load-bearing: openEditSubscription models `teams`
+    // explicitly alongside `_raw`, so today the re-add below always restores
+    // whatever `_raw` carried and this loop changes nothing. It matters the
+    // moment a Pro-only field stops being modelled -- `_raw` becomes its only
+    // carrier, and without this the field would flow straight through to a CE
+    // backend and 400 every save. Kept because the failure it prevents is
+    // silent and total, and the cost is one shallow copy.
+    for (const f of PRO_ONLY_ROUTE_FIELDS) delete raw[f]
+    const out: NotificationRouteInput = {
+        ...raw,
+        whenSeverityAtLeast: route.whenSeverityAtLeast,
+        channels: route.channels,
+        channelGroups: route.channelGroups,
+        perspectives: route.perspectives,
+    }
+    // Send a Pro-only field only when it actually carries a value, so a CE
+    // backend never sees the key at all.
+    for (const f of PRO_ONLY_ROUTE_FIELDS) {
+        if ((route[f] || []).length > 0) out[f] = route[f]
+    }
+    return out
+}
 
 /**
  * Build the payload for `NotificationFilterInput` from the modeled UI fields

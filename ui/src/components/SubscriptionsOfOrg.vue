@@ -154,7 +154,13 @@
                                             />
                                         </n-form-item>
                                     </n-gi>
-                                    <n-gi :span="22" :offset="0">
+                                    <!-- Hidden when there is nothing to offer. Covers both "this org
+                                         has no teams" and "this backend has no team channels" (a CE
+                                         backend, where loadTeams soft-fails to []): an empty picker
+                                         under copy promising a feature that cannot work is worse
+                                         than no picker. teamOptions still keeps ghosts for teams
+                                         already saved on the route, so those stay removable. -->
+                                    <n-gi v-if="teamOptions.length" :span="22" :offset="0">
                                         <n-form-item :label="i === 0 ? 'Teams (optional)' : ''" :show-feedback="false">
                                             <n-select
                                                 v-model:value="r.teams"
@@ -273,7 +279,8 @@ import {
     LIST_CHANNELS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
     extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType,
-    buildNotificationFilterInput
+    buildNotificationFilterInput,
+    buildNotificationRouteInput
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 
@@ -614,7 +621,11 @@ async function saveSubscription (): Promise<void> {
         && (r.teams || []).length === 0
     )
     if (emptyRouteIdx >= 0) {
-        subModalError.value = `Route ${emptyRouteIdx + 1} has no channels, groups or teams — pick at least one.`
+        // Don't name a target the operator has no way to pick: on a backend
+        // without team channels the Teams picker is hidden, so "or teams"
+        // would send them hunting for a control that isn't there.
+        const targets = teamOptions.value.length ? 'channels, groups or teams' : 'channels or groups'
+        subModalError.value = `Route ${emptyRouteIdx + 1} has no ${targets} — pick at least one.`
         return
     }
     // Build the filter input from ONLY the fields NotificationFilterInput
@@ -630,17 +641,9 @@ async function saveSubscription (): Promise<void> {
         status: f.status,
         eventTypes: f.eventTypes,
         filter: filterInput,
-        // Spread the original route's still-unmodelled fields (andEnvIn,
-        // andLifecycleIn) so an Edit → Save round-trip doesn't silently
-        // strip them. The modeled fields overlay last and win.
-        routes: f.routes.map(r => ({
-            ...(r._raw || {}),
-            whenSeverityAtLeast: r.whenSeverityAtLeast,
-            channels: r.channels,
-            channelGroups: r.channelGroups,
-            teams: r.teams,
-            perspectives: r.perspectives,
-        })),
+        // Preserves the route's unmodelled fields and drops the Pro-only ones a
+        // CE backend would reject. See buildNotificationRouteInput.
+        routes: f.routes.map(r => buildNotificationRouteInput(r)),
         dedupWindowMinutes: f.dedupWindowMinutes,
     }
     if (f.rateLimitMaxPerWindow && f.rateLimitWindowMinutes) {
@@ -883,10 +886,17 @@ const subscriptionColumns = computed(() => [
             })
             return h(NSpace, { size: 'small' }, {
                 default: () => [
+                    // Disabled on a DEGRADED load. The core query omits filter /
+                    // routes / dedupWindowMinutes / rateLimit, so the editor
+                    // would open showing defaults for all of them, and saving
+                    // REPLACES the subscription wholesale -- silently wiping the
+                    // CEL expression, every route but one, and the rate limit.
+                    // The banner alone is not enough: the destructive action has
+                    // to be unavailable, not merely discouraged. Add is fine.
                     h(NButton, {
                         size: 'tiny', secondary: true,
                         onClick: () => openEditSubscription(row),
-                        disabled: !canWrite.value,
+                        disabled: !canWrite.value || subscriptionsDegraded.value,
                         'data-testid': 'edit-subscription',
                     }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
                     h(NButton, {

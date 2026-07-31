@@ -1149,7 +1149,10 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                     <n-tab-pane name="downloadLog" tab="Download Log">
                         <DownloadLogView />
                     </n-tab-pane>
-                    <n-tab-pane name="deliveryHistory" tab="Delivery History" v-if="myUser.installationType !== 'OSS'">
+                    <!-- Every edition: CE delivers to Slack / Teams / Webhook, and
+                         this is the only surface that answers "did it actually
+                         send?". The channel cards deep-link straight here. -->
+                    <n-tab-pane name="deliveryHistory" tab="Delivery History">
                         <NotificationHistory
                             :orguuid="orgResolved"
                             :initial-channel-uuid="(route.query.historyChannel as string) || null"
@@ -1526,7 +1529,7 @@ const currentTab = ref(isTabAccessible(requestedTab) ? requestedTab : defaultTab
 const DEFAULT_POLICY_SUBTAB = 'approvalPoliciesInner'
 const DEFAULT_AUDIT_SUBTAB = 'downloadLog'
 const policySubTab = ref(route.query.policyTab as string || DEFAULT_POLICY_SUBTAB)
-// Audit sub-tab: Download Log (all editions) + Delivery History (Pro).
+// Audit sub-tab: Download Log + Delivery History, both on all editions.
 const auditSubTab = ref(route.query.auditTab as string || DEFAULT_AUDIT_SUBTAB)
 
 // Keep the tab selection in sync when the URL query changes while OrgSettings
