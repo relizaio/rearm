@@ -16,7 +16,11 @@
             <n-grid :cols="2" x-gap="24">
                 <n-gi>
                     <n-h4>Original VEX statement</n-h4>
-                    <n-code language="json" :code="formatJson(proposal.sourceStatementJson)" />
+                    <!-- word-wrap: the statement JSON routinely carries long single-line
+                         string values (analysis.detail); without wrapping the pre keeps
+                         white-space: pre and overflows the grid cell, running underneath
+                         the proposed-analysis column. -->
+                    <n-code language="json" :code="formatJson(proposal.sourceStatementJson)" word-wrap />
                 </n-gi>
                 <n-gi>
                     <n-h4>
