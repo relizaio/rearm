@@ -11,10 +11,14 @@
                 <span v-if="props.branchprop && changelog.branches && changelog.branches.length === 1"> ({{ changelog.branches[0].branchName }}) - Changes</span>
                 <span v-else> - Component-wide Changes</span>
             </h2>
+            <!-- Toggle whenever a changelog came back at all: an AGGREGATED payload with no
+                 branch changes can still have a non-empty NONE view (e.g. a component whose
+                 only release is the baseline), so gating on branches.length locked users
+                 out of the NONE mode exactly when it was the only view with content. -->
             <ChangelogControls
                 v-model:dateRange="dateRange"
                 v-model:aggregationType="aggregationType"
-                :show-aggregation="!!(changelog && changelog.branches && changelog.branches.length > 0)"
+                :show-aggregation="!!changelog"
                 @apply="getAggregatedChangelog"
             />
         </div>
