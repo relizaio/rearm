@@ -195,6 +195,7 @@
                             :branch-uuid="entry.branch.branchUuid"
                             :branch-name="entry.branch.branchName"
                         />
+                        <p v-if="entry.release.baselineRelease" class="baseline-note">Baseline release — the component's first release, so there is no earlier release to diff against.</p>
                         <SbomChangesDisplay :sbom-changes="entry.release.sbomChanges" />
                     </div>
                 </div>
@@ -250,7 +251,19 @@
                             :branch-uuid="entry.branch.branchUuid"
                             :branch-name="entry.branch.branchName"
                         />
+                        <p v-if="entry.release.baselineRelease" class="baseline-note">Baseline release — the component's first release, so there is no earlier release to diff against; its findings are listed under re-scan changes below when they were detected later.</p>
                         <FindingChangesDisplay :finding-changes="entry.release.findingChanges" :org-uuid="changelog.orgUuid" />
+                    </div>
+                    <!-- Re-scan-driven changes (e.g. a newly published advisory matching an
+                         already-shipped release) never show in the pairwise per-release diffs
+                         above - the affected releases' CURRENT metrics both carry the finding,
+                         so consecutive diffs cancel out. Surface them from the event stream. -->
+                    <div v-if="changelog.overTimeFindingChanges && changelog.overTimeFindingChanges.length > 0" class="over-time-section">
+                        <h3 class="over-time-heading">Changes detected by re-scans</h3>
+                        <OverTimeFindingChanges
+                            :over-time-finding-changes="changelog.overTimeFindingChanges"
+                            :org-uuid="changelog.orgUuid"
+                        />
                     </div>
                 </div>
 
@@ -312,7 +325,8 @@ import {
     ReleaseHeader,
     ProductReleaseHeader,
     ChangelogControls,
-    SeverityFilter
+    SeverityFilter,
+    OverTimeFindingChanges
 } from './changelog'
 import {
     fetchComponentChangelogByDate,
@@ -562,5 +576,18 @@ function handleExportPdf() {
 <style scoped lang="scss">
 .product-release-group {
     margin-bottom: 20px;
+}
+.baseline-note {
+    margin: 4px 0 8px;
+    font-style: italic;
+    color: #888;
+}
+.over-time-section {
+    margin-top: 24px;
+    padding-top: 12px;
+    border-top: 1px solid #e0e0e0;
+}
+.over-time-heading {
+    margin-bottom: 4px;
 }
 </style>

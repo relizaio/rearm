@@ -80,6 +80,13 @@ export interface VulnerabilityWithAttribution {
     isStillPresent: boolean  // Org-wide: still present in some releases
     orgContext?: OrgLevelContext  // Optional org-level semantic context (only for multi-component views)
     analysisState?: string | null  // Analysis state: EXPLOITABLE, IN_TRIAGE, FALSE_POSITIVE, NOT_AFFECTED
+    // Re-scan arrival context (additive; absent on backends without the fields and
+    // on findings whose appearance has no finding-change event in the window).
+    // When set, the appearance is dated by the scan that detected it and
+    // earliest/latest carrier bound the releases whose CURRENT metrics carry it.
+    scanArrivalDate?: string | null
+    earliestCarrier?: ComponentAttribution | null
+    latestCarrier?: ComponentAttribution | null
 }
 
 /**
@@ -100,6 +107,10 @@ export interface ViolationWithAttribution {
     isStillPresent: boolean
     orgContext?: OrgLevelContext  // Optional org-level semantic context (only for multi-component views)
     analysisState?: string | null  // Analysis state: EXPLOITABLE, IN_TRIAGE, FALSE_POSITIVE, NOT_AFFECTED
+    // Re-scan arrival context - see VulnerabilityWithAttribution.
+    scanArrivalDate?: string | null
+    earliestCarrier?: ComponentAttribution | null
+    latestCarrier?: ComponentAttribution | null
 }
 
 /**
@@ -122,6 +133,10 @@ export interface WeaknessWithAttribution {
     isStillPresent: boolean
     orgContext?: OrgLevelContext  // Optional org-level semantic context (only for multi-component views)
     analysisState?: string | null  // Analysis state: EXPLOITABLE, IN_TRIAGE, FALSE_POSITIVE, NOT_AFFECTED
+    // Re-scan arrival context - see VulnerabilityWithAttribution.
+    scanArrivalDate?: string | null
+    earliestCarrier?: ComponentAttribution | null
+    latestCarrier?: ComponentAttribution | null
 }
 
 /**

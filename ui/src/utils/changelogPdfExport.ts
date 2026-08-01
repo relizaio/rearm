@@ -298,7 +298,44 @@ function buildFindingNoneTable(changelog: any): { headers: string[]; rows: PdfRo
     for (const { branchLabel, release } of flattenNoneReleases(changelog)) {
         rows.push(...emitFinding(branchLabel, release))
     }
+    rows.push(...buildOverTimeRows(changelog, headers.length))
     return { headers, rows, widths }
+}
+
+// Re-scan-driven changes (already-shipped releases hit by a later advisory) never
+// appear in the pairwise per-release rows above; mirror the on-screen
+// "Changes detected by re-scans" section from the event stream.
+function buildOverTimeRows(changelog: any, columnCount: number): PdfRow[] {
+    const events = changelog.overTimeFindingChanges
+    if (!events || events.length === 0) return []
+    const kindLabel: Record<string, string> = {
+        APPEARED: 'New',
+        RESOLVED: 'Resolved',
+        SEVERITY_INCREASED: 'Severity increased',
+        SEVERITY_DECREASED: 'Severity decreased',
+        KEV_ADDED: 'KEV listed',
+        KEV_REMOVED: 'KEV removed'
+    }
+    const rows: PdfRow[] = [sectionHeaderRow('Changes detected by re-scans', columnCount)]
+    for (const ev of events) {
+        const f = ev.vulnerability || ev.violation || ev.weakness
+        if (!f) continue
+        const type = ev.vulnerability ? 'Vulnerability' : ev.violation ? 'Violation' : 'Weakness'
+        const issueId = ev.vulnerability ? (f.vulnId || '') : ev.violation ? (f.type || '') : (f.cweId || f.ruleId || '')
+        const location = ev.weakness ? (f.location || '') : (f.purl || '')
+        const date = ev.changeDate ? new Date(ev.changeDate).toLocaleDateString('en-CA') : ''
+        const status = kindLabel[ev.changeKind] || ev.changeKind || ''
+        rows.push({ cells: [
+            { text: ev.componentName ? `${ev.componentName} / ${ev.branchName || ''}` : (ev.branchName || '') },
+            { text: date ? `${ev.version || ''} (${date})` : (ev.version || '') },
+            { text: status, color: getStatusColor(status) },
+            { text: type },
+            { text: issueId },
+            { text: location },
+            { text: f.severity || '', color: f.severity ? getSeverityColor(f.severity) : undefined }
+        ]})
+    }
+    return rows
 }
 
 function addNoneFindingRows(rows: PdfRow[], branchName: string, version: string, fc: any) {
@@ -375,7 +412,8 @@ function buildFindingAggregatedTable(changelog: any): { headers: string[]; rows:
     const widths = ['auto', 'auto', 'auto', '*', 'auto', 'auto']
     const rows: PdfRow[] = []
 
-    const fc = changelog.findingChanges
+    // Prefer the window posture-diff when present, matching the on-screen view.
+    const fc = changelog.postureFindingChanges ?? changelog.findingChanges
     if (!fc) return { headers, rows, widths }
 
     const allFindings: { finding: any; type: string; statusOrder: number }[] = []
@@ -441,7 +479,22 @@ function formatAttribution(addedIn: any[], removedIn: any[], addedInCount?: numb
     return parts.join('; ')
 }
 
+function carrierLabel(carrier: any): string {
+    return `${carrier.componentName || ''}@${carrier.releaseVersion || ''}`
+}
+
 function formatFindingAttribution(finding: any): string {
+    // Re-scan-dated appearance: date the detection and bound the carrier
+    // releases instead of implying the window-end anchor introduced it
+    // (mirrors getAppearedContextSegments in FindingChangesDisplayWithAttribution).
+    if (finding.scanArrivalDate && finding.earliestCarrier) {
+        const date = new Date(finding.scanArrivalDate).toLocaleDateString('en-CA')
+        let range = carrierLabel(finding.earliestCarrier)
+        if (finding.latestCarrier && finding.latestCarrier.releaseUuid !== finding.earliestCarrier.releaseUuid) {
+            range += ` – ${carrierLabel(finding.latestCarrier)}`
+        }
+        return `First detected ${date} — affects ${range}`
+    }
     const parts: string[] = []
     if (finding.appearedIn && finding.appearedIn.length > 0) {
         parts.push(finding.appearedIn.map((a: any) => `${a.componentName || ''}@${a.releaseVersion || ''}`).join(', ') + moreSuffix(finding.appearedInCount, finding.appearedIn))
