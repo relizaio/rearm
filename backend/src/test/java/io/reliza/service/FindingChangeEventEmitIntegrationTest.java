@@ -24,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.AopTestUtils;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -208,8 +209,17 @@ public class FindingChangeEventEmitIntegrationTest {
 		saveMetrics(releaseUuid, metricsWith());
 
 		// Force the REQUIRES_NEW emit to blow up on the next save (which WOULD emit APPEARED).
+		// Stub the UNWRAPPED spy, not the injected bean: emit() is
+		// @Transactional(REQUIRES_NEW), so the injected bean is a CGLIB
+		// transaction proxy around the Mockito spy, and depending on the
+		// wrapping order Spring picked for this context, when(proxy).emit(...)
+		// can fall THROUGH the proxy into the real emit() mid-stubbing --
+		// observed in CE container builds as UnfinishedStubbingException with
+		// the real emit() frames inside the when() call. Unwrapping targets
+		// the spy directly, immune to proxy pass-through.
+		FindingChangeEventEmitter emitterSpy = AopTestUtils.getUltimateTargetObject(findingChangeEventEmitter);
 		doThrow(new RuntimeException("simulated diff-emit failure"))
-				.when(findingChangeEventEmitter).emit(any(), any(), any(), any(), anyInt());
+				.when(emitterSpy).emit(any(), any(), any(), any(), anyInt());
 
 		ReleaseMetricsDto newMetrics = metricsWith(vuln(VulnerabilitySeverity.HIGH, false));
 		// Must NOT propagate -- the failure is swallowed (logged at ERROR).
