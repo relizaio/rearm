@@ -112,4 +112,13 @@ public class ComponentDto {
 	/** Durable owner to set on the component (RFC Phase 4b); validated on write. Null = no change. */
 	@JsonProperty
 	private ComponentOwner owner;
+	/**
+	 * Explicitly remove the stored owner (T2). Needed because {@code owner} null
+	 * already means "no change", so there is no way to express "clear it" with
+	 * that field alone. Clearing hands the component back to org team-assignment
+	 * rules -- without this, a manually-set owner could never return to
+	 * rule-based assignment.
+	 */
+	@JsonProperty
+	private Boolean clearOwner;
 }

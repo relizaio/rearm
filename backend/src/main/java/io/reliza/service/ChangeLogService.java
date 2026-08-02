@@ -117,7 +117,13 @@ public class ChangeLogService {
 		ReleaseData globalLast,
 		Map<UUID, String> branchNameMap,
 		String userTimeZone,
-		List<VcsRepositoryData> vcsRepoDataList
+		List<VcsRepositoryData> vcsRepoDataList,
+		// Date-window semantics (getComponentChangelogByDate / org changelog): show EVERY release in
+		// the window -- the oldest diffs against the branch's latest OUT-OF-WINDOW predecessor, and
+		// carries baselineRelease=true when no predecessor exists (the branch's first release ever).
+		// false = release1/release2 comparison semantics: globalFirst is the comparison base and is
+		// excluded from display.
+		boolean dateWindowSemantics
 	) {}
 	
 	/**
@@ -557,8 +563,8 @@ public class ChangeLogService {
 		List<VcsRepositoryData> vcsRepoDataList = vcsRepositoryService.listVcsRepoDataByOrg(org);
 		ChangelogContext ctx = new ChangelogContext(
 			releasesByBranch, component, org, globalFirst, globalLast,
-			branchNameMap, userTimeZone, vcsRepoDataList);
-		
+			branchNameMap, userTimeZone, vcsRepoDataList, false);
+
 		if (aggregationType == AggregationType.NONE) {
 			return computeNoneChangelog(ctx);
 		}
@@ -723,7 +729,7 @@ public class ChangeLogService {
 		List<VcsRepositoryData> vcsRepoDataList = vcsRepositoryService.listVcsRepoDataByOrg(org);
 		ChangelogContext ctx = new ChangelogContext(
 			releasesByBranch, component, org, globalFirstRelease, globalLastRelease,
-			branchNameMap, userTimeZone, vcsRepoDataList);
+			branchNameMap, userTimeZone, vcsRepoDataList, true);
 
 		List<ReleaseData> allReleases = releasesByBranch.values().stream().flatMap(List::stream).toList();
 
@@ -1274,7 +1280,7 @@ public class ChangeLogService {
 				
 				ChangelogContext ctx = new ChangelogContext(
 					releasesByBranch, component, orgUuid, globalFirst, globalLast,
-					branchNameMap, userTimeZone, vcsRepoDataList);
+					branchNameMap, userTimeZone, vcsRepoDataList, true);
 				
 				// Pre-fetch acollections once for all releases (used by both component-level and org-level SBOM)
 				Map<UUID, List<AcollectionData>> releaseAcollectionsMap = (aggregationType == AggregationType.AGGREGATED)
@@ -1649,14 +1655,16 @@ public class ChangeLogService {
 				continue;
 			}
 			
-			// Exclude baseline release from changelog - only show releases after baseline
+			// Comparison semantics (release1/release2): globalFirst is the comparison base and is
+			// excluded from display. Date-window semantics: show EVERY release in the window -- the
+			// oldest one diffs against the branch's out-of-window predecessor (fetched below).
 			UUID baselineUuid = ctx.globalFirst().getUuid();
-			
-			// Filter out baseline release by UUID
-			List<ReleaseData> releasesToShow = branchReleases.stream()
-				.filter(r -> !r.getUuid().equals(baselineUuid))
-				.collect(Collectors.toList());
-			
+			List<ReleaseData> releasesToShow = ctx.dateWindowSemantics()
+				? branchReleases
+				: branchReleases.stream()
+					.filter(r -> !r.getUuid().equals(baselineUuid))
+					.collect(Collectors.toList());
+
 			// Early return if no releases to show after excluding baseline
 			if (releasesToShow.isEmpty()) {
 				continue;  // Skip this branch - no changes to display
@@ -1676,19 +1684,31 @@ public class ChangeLogService {
 				}
 			}
 			
-			// IMPORTANT: Also fetch baseline release acollection for SBOM/finding comparison
-			// Although baseline is excluded from display, we need its acollection to compute
-			// SBOM and finding changes for the oldest release in releasesToShow (which compares against baseline)
-			// See computeSbomChangesFromAcollections and computeFindingChangesForRelease below
-			ReleaseData baselineRelease = ctx.globalFirst();
-			AcollectionData baselineAc = acollectionService.getLatestCollectionDataOfRelease(baselineRelease.getUuid());
-			if (baselineAc != null) {
-				acollectionByRelease.put(baselineRelease.getUuid(), baselineAc);
+			// Diff base for the OLDEST release in releasesToShow. Comparison semantics: globalFirst
+			// (excluded from display above). Date-window semantics: the branch's latest release
+			// created strictly before the oldest shown one -- null when none exists, i.e. the
+			// oldest shown release is the branch's first release EVER and renders as the baseline
+			// (empty diffs + baselineRelease=true) instead of being silently suppressed.
+			ReleaseData baselineRelease;
+			if (ctx.dateWindowSemantics()) {
+				ReleaseData oldestShown = releasesToShow.get(releasesToShow.size() - 1);
+				// minusNanos(1000): AtOrBefore is inclusive and Postgres stores microseconds; step
+				// one microsecond back so the oldest shown release cannot resolve as its own base.
+				baselineRelease = sharedReleaseService.getBranchLatestReleaseAtOrBeforeDate(
+					branchId, oldestShown.getCreatedDate().minusNanos(1000)).orElse(null);
 			} else {
-				// DEFENSIVE: Log warning if baseline acollection is missing
-				// This could cause incorrect SBOM/finding diffs for the first release after baseline
-				log.warn("Baseline acollection not found for release {} - SBOM/finding changes may be incomplete", 
-					baselineRelease.getUuid());
+				baselineRelease = ctx.globalFirst();
+			}
+			if (baselineRelease != null) {
+				AcollectionData baselineAc = acollectionService.getLatestCollectionDataOfRelease(baselineRelease.getUuid());
+				if (baselineAc != null) {
+					acollectionByRelease.put(baselineRelease.getUuid(), baselineAc);
+				} else {
+					// DEFENSIVE: Log warning if baseline acollection is missing
+					// This could cause incorrect SBOM/finding diffs for the first release after baseline
+					log.warn("Baseline acollection not found for release {} - SBOM/finding changes may be incomplete",
+						baselineRelease.getUuid());
+				}
 			}
 			
 			List<NoneReleaseChanges> releaseChangesList = new ArrayList<>();
@@ -1724,7 +1744,8 @@ public class ChangeLogService {
 					sbomChanges,
 					findingChanges,
 					currentRelease.getCreatedDate()
-				));
+				,
+					previousRelease == null));
 			}
 			
 			if (!releaseChangesList.isEmpty()) {
@@ -2312,7 +2333,7 @@ public class ChangeLogService {
 						if (aggregationType == AggregationType.NONE) {
 							allNoneBranchChanges.add(new NoneBranchChanges(
 								branchId, branchName, componentUuid, componentData.getName(),
-								List.of(new NoneReleaseChanges(targetReleaseUuid, targetRelease.getDecoratedVersionString(userTimeZone), targetRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES, targetRelease.getCreatedDate())),
+								List.of(new NoneReleaseChanges(targetReleaseUuid, targetRelease.getDecoratedVersionString(userTimeZone), targetRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES, targetRelease.getCreatedDate(), false)),
 								ChangeType.ADDED));
 						} else {
 							allAggregatedBranchChanges.add(new AggregatedBranchChanges(
@@ -2344,7 +2365,7 @@ public class ChangeLogService {
 						if (aggregationType == AggregationType.NONE) {
 							allNoneBranchChanges.add(new NoneBranchChanges(
 								branchId, branchName, componentUuid, componentData.getName(),
-								List.of(new NoneReleaseChanges(baselineReleaseUuid, baselineRelease.getDecoratedVersionString(userTimeZone), baselineRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES, baselineRelease.getCreatedDate())),
+								List.of(new NoneReleaseChanges(baselineReleaseUuid, baselineRelease.getDecoratedVersionString(userTimeZone), baselineRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES, baselineRelease.getCreatedDate(), false)),
 								ChangeType.REMOVED));
 						} else {
 							allAggregatedBranchChanges.add(new AggregatedBranchChanges(
@@ -2414,7 +2435,7 @@ public class ChangeLogService {
 				
 				ChangelogContext ctx = new ChangelogContext(
 					releasesByBranch, componentData, org, compFirst, compLast,
-					branchNameMap, userTimeZone, vcsRepoDataList);
+					branchNameMap, userTimeZone, vcsRepoDataList, false);
 				
 				// Pre-fetch acollections once for AGGREGATED mode
 				Map<UUID, List<AcollectionData>> releaseAcollectionsMap = (aggregationType == AggregationType.AGGREGATED)

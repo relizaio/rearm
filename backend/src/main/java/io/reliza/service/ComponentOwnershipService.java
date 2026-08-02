@@ -18,6 +18,7 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentOwner;
 import io.reliza.model.ComponentOwnerType;
 import io.reliza.model.ComponentOwnershipStatus;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.UserGroupData;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
@@ -52,6 +53,12 @@ public class ComponentOwnershipService {
 	@Autowired
 	private ComponentTeamService componentTeamService;
 
+	@Autowired
+	private GetOrganizationService getOrganizationService;
+
+	@Autowired
+	private OrgTeamAssignmentRuleService teamAssignmentRuleService;
+
 	/**
 	 * Convenience overload for the per-component read path. Skips the org-group
 	 * fetch entirely when a stored owner is present (the common case once ownership
@@ -59,10 +66,13 @@ public class ComponentOwnershipService {
 	 * stored-owner component costs no {@code getUserGroupsByOrganization}.
 	 */
 	public ComponentOwnership resolveOwnership (ComponentData cd) {
-		List<UserGroupData> orgGroups = hasStoredOwner(cd.getOwner())
+		boolean stored = hasStoredOwner(cd.getOwner());
+		List<UserGroupData> orgGroups = stored
 				? List.of()
 				: userGroupService.getUserGroupsByOrganization(cd.getOrg());
-		return resolveOwnership(cd, orgGroups);
+		// A stored owner short-circuits everything, so skip the org fetch too.
+		OrganizationData od = stored ? null : getOrganizationService.getOrganizationData(cd.getOrg()).orElse(null);
+		return resolveOwnership(cd, orgGroups, od);
 	}
 
 	/**
@@ -70,9 +80,50 @@ public class ComponentOwnershipService {
 	 * avoid an N+1 group fetch per component; sec. 10.5). {@code orgGroups} is only
 	 * consulted on the suggestion path (no stored owner).
 	 */
-	public ComponentOwnership resolveOwnership (ComponentData cd, List<UserGroupData> orgGroups) {
+	/**
+	 * Full form: also takes the org record so a batch caller can hoist BOTH the
+	 * group list and the org (which carries the team-assignment rules) out of the
+	 * per-component loop.
+	 *
+	 * <p>Precedence, highest first (T2, DECIDED 2026-07-29):
+	 * <ol>
+	 *   <li><b>Stored owner</b> -- someone chose it on this component; a rule
+	 *       never overrides a deliberate human choice.</li>
+	 *   <li><b>Team-assignment rule</b> -- first matching rule in org order. Sets
+	 *       the owner (not a parallel field), flagged {@code derived}.</li>
+	 *   <li><b>Candidate suggestion</b> -- no owner at all; suggest one.</li>
+	 * </ol>
+	 */
+	public ComponentOwnership resolveOwnership (ComponentData cd, List<UserGroupData> orgGroups,
+			OrganizationData od) {
 		ComponentOwner owner = cd.getOwner();
-		return hasStoredOwner(owner) ? resolveStored(cd, owner) : suggestFromCandidates(cd, orgGroups);
+		if (hasStoredOwner(owner)) return resolveStored(cd, owner);
+		var ruleMatch = teamAssignmentRuleService.matchFor(cd, od, orgGroups);
+		if (ruleMatch.isPresent()) return fromRule(ruleMatch.get());
+		return suggestFromCandidates(cd, orgGroups);
+	}
+
+	/**
+	 * A rule-assigned owner is a real owner -- same durability arithmetic as a
+	 * stored one, so a rule pointing at a one-person team is honestly reported
+	 * NON_DURABLE rather than laundering it into OWNED. {@code derived=true} plus
+	 * the rule name in the reason is how the UI shows provenance without a second
+	 * stored field.
+	 */
+	private ComponentOwnership fromRule (OrgTeamAssignmentRuleService.TeamAssignmentMatch match) {
+		UserGroupData team = match.team();
+		String via = " (via rule '" + match.rule().getName() + "')";
+		if (team.getStatus() != UserGroupStatus.ACTIVE) {
+			return new ComponentOwnership(ComponentOwnerType.TEAM, team.getUuid(), false,
+					ComponentOwnershipStatus.DEGRADED, true, "Owner team is archived/inactive" + via);
+		}
+		boolean durable = isTeamDurable(team);
+		return new ComponentOwnership(ComponentOwnerType.TEAM, team.getUuid(), durable,
+				durable ? ComponentOwnershipStatus.OWNED : ComponentOwnershipStatus.NON_DURABLE, true,
+				durable
+						? "Assigned by rule '" + match.rule().getName() + "'"
+						: "Owner team has fewer than " + DURABLE_MIN_MEMBERS
+								+ " members and is not SSO-backed" + via);
 	}
 
 	/**
@@ -87,9 +138,12 @@ public class ComponentOwnershipService {
 	 */
 	public List<ComponentOwnershipReportRow> ownershipReport (UUID orgUuid, List<ComponentData> components) {
 		List<UserGroupData> orgGroups = userGroupService.getUserGroupsByOrganization(orgUuid);
+		// Hoisted for the same reason as orgGroups: the org record carries the
+		// team-assignment rules, and re-fetching it per component would be an N+1.
+		OrganizationData od = getOrganizationService.getOrganizationData(orgUuid).orElse(null);
 		List<ComponentOwnershipReportRow> rows = new ArrayList<>();
 		for (ComponentData cd : components) {
-			ComponentOwnership o = resolveOwnership(cd, orgGroups);
+			ComponentOwnership o = resolveOwnership(cd, orgGroups, od);
 			if (o.status() != ComponentOwnershipStatus.OWNED) {
 				rows.add(new ComponentOwnershipReportRow(cd.getUuid(), cd.getName(), cd.getType(), o));
 			}

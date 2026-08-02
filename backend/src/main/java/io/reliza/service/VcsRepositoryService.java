@@ -94,6 +94,13 @@ public class VcsRepositoryService {
 	 * @return Optional of VcsRepositoryData
 	 */
 	public Optional<VcsRepositoryData> getVcsRepositoryDataByUri(UUID orgUuid, String uri) {
+		// Same canonicalization as the createIfMissing lookup below: rows are STORED
+		// in the cleaned form (no scheme/user@/git@/.git/scp-colon), so a read with
+		// the raw form -- notably the ordinary '.git' clone URL every CI passes --
+		// misses the row the create path finds. That split is what minted a new
+		// component per CI run against the same VCS row (30+ observed in prod):
+		// resolution never found the VCS, creation always did.
+		uri = Utils.cleanVcsUri(Utils.normalizeVcsUri(uri));
 		Optional<VcsRepositoryData> vcsData = Optional.empty();
 		Optional<VcsRepository> vr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
 		if (vr.isPresent()) {

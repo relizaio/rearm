@@ -335,6 +335,62 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		private UUID approvalPolicy;
 	}
 
+	/**
+	 * Org-wide team-assignment rule: assign a durable owner team to every
+	 * component whose name matches a pattern, instead of picking one by hand on
+	 * each component (RFC Phase 5 / T2). Deliberately shaped after
+	 * {@link GlobalApprovalPolicyRule} -- same anchoring, same type filter, same
+	 * first-match-wins contract -- so operators learn one rule model, not two.
+	 *
+	 * <p>A matching rule SETS the component's durable owner (DECIDED 2026-07-29):
+	 * there is exactly one answer to "who owns this", and a per-component owner
+	 * always wins over a rule. Deliberately NOT a second "assigned team" field --
+	 * two fields both answering that question is the ambiguity retiring
+	 * {@code leads} removed.
+	 *
+	 * <p>Resolution happens at READ time in
+	 * {@code ComponentOwnershipService.resolveOwnership}; nothing is written onto
+	 * the component. So editing a pattern takes effect immediately, a rule and a
+	 * stored value can never drift apart, and no bulk write can corrupt an
+	 * inventory. The resulting {@code ComponentOwnership} carries
+	 * {@code derived=true} plus the rule name in its reason, which is how the UI
+	 * distinguishes "someone chose this" from "a pattern matched".
+	 *
+	 * <p>The filter {@code componentType} value {@code ANY} matches both
+	 * {@code COMPONENT} and {@code PRODUCT} (there is no {@code ANY}-typed
+	 * component entity itself -- it's only a rule-side filter value).
+	 */
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class GlobalTeamAssignmentRule {
+		/** Display name; unique within the org. */
+		@JsonProperty
+		private String name;
+		/**
+		 * Java regex matched against {@code ComponentData.name} via
+		 * {@code Pattern.matcher(name).matches()} -- fully anchored, same
+		 * convention as {@code DependencyPatternService} and
+		 * {@link GlobalApprovalPolicyRule}. Operators write {@code frontend-.*}
+		 * (no leading {@code ^}, no trailing {@code $}).
+		 */
+		@JsonProperty
+		private String namePattern;
+		/**
+		 * Type filter. {@code COMPONENT} / {@code PRODUCT} restrict the match;
+		 * {@code ANY} (the default when null) matches both concrete types.
+		 */
+		@JsonProperty
+		private ComponentData.ComponentType componentType;
+		/**
+		 * Referenced owner team ({@code UserGroup}) UUID. Validation rejects
+		 * rules whose team doesn't exist or belongs to another org at write
+		 * time; the resolver re-checks at read time, so a team deleted later
+		 * degrades the component to ORPHANED rather than silently vanishing.
+		 */
+		@JsonProperty
+		private UUID ownerTeam;
+	}
+
 	public static class InvitedObject {
 		@JsonProperty(CommonVariables.SECRET_FIELD)
 		private String secret;
@@ -398,6 +454,13 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private List<GlobalApprovalPolicyRule> globalApprovalPolicyRules = new LinkedList<>();
+	/**
+	 * Org-wide team-assignment rules -- see {@link GlobalTeamAssignmentRule}.
+	 * Empty/null means "no org-wide assignments"; per-component owners behave
+	 * exactly as before. List order is the priority order (first match wins).
+	 */
+	@JsonProperty
+	private List<GlobalTeamAssignmentRule> globalTeamAssignmentRules = new LinkedList<>();
 
 
 	public void removeInvitee(String email, UUID whoInvited){

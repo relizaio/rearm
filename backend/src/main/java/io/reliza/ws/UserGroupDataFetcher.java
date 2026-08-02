@@ -103,7 +103,10 @@ public class UserGroupDataFetcher {
 
 		validateUsersInOrganization(userGroupInput.getUsers(), ugd.get().getOrg(), groupUuid);
 		validateUsersInOrganization(userGroupInput.getManualUsers(), ugd.get().getOrg(), groupUuid);
-		
+		// Team-member roles / external members are sanitized and validated inside
+		// UserGroupService.updateUserGroupComprehensive, so every caller of that
+		// service method is held to the same invariant, not just this fetcher.
+
 		var approvals = userGroupInput.getApprovals();
 		OrganizationData od = getOrganizationService.getOrganizationData(ugd.get().getOrg()).get();
 		

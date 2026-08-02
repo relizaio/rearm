@@ -1482,12 +1482,29 @@ public class ReleaseMetricsDto implements Cloneable {
 	}
 
 	public List<VulnViolationsChartDto> convertToChartDto (ZonedDateTime createdDate) {
+		return convertToChartDto(createdDate, true);
+	}
+
+	/**
+	 * {@code includeKevSeries=false} is for callers rehydrating from stored
+	 * numeric-metrics maps written before the {@code kevCount} key existed:
+	 * such a map cannot distinguish "0 KEV findings" from "not measured", so
+	 * the point is omitted and the series starts where the data starts.
+	 */
+	public List<VulnViolationsChartDto> convertToChartDto (ZonedDateTime createdDate, boolean includeKevSeries) {
 		List<VulnViolationsChartDto> vulnViolDtos = new LinkedList<>();
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getCritical(), "Critical Vulnerabilities"));
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getHigh(), "High Vulnerabilities"));
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getMedium(), "Medium Vulnerabilities"));
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getLow(), "Low Vulnerabilities"));
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getUnassigned(), "Unassigned Vulnerabilities"));
+		if (includeKevSeries) {
+			// kevCount is stamped by ReleaseMetricsComputeService and kept fresh by
+			// the KEV catalog sync (which re-stamps affected releases without a
+			// rescan), so as-of-now KEV membership is correct even for historical
+			// releases.
+			vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getKevCount(), "KEV Vulnerabilities"));
+		}
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getPolicyViolationsLicenseTotal(), "License Violations"));
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getPolicyViolationsOperationalTotal(), "Operational Violations"));
 		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getPolicyViolationsSecurityTotal(), "Security Violations"));

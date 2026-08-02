@@ -90,6 +90,8 @@ public class Utils {
 	// names (Spring Boot 4 keeps `-parameters` on by default) — that's
 	// what makes our many @Data @Builder DTOs round-trip without us
 	// having to annotate every single one with @NoArgsConstructor.
+	// DO NOT bind org.cyclonedx.model.* with this mapper -- use CDX_OM below.
+	// See the CDX_OM javadoc for why; both directions are affected.
 	public static final ObjectMapper OM = JsonMapper.builder()
 			.changeDefaultVisibility(vc -> vc.withCreatorVisibility(
 					com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.NON_PRIVATE))
@@ -97,6 +99,50 @@ public class Utils {
 			.enable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS)
 			.enable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
 			.build();
+
+	/**
+	 * The ONLY mapper that may bind {@code org.cyclonedx.model.*} types.
+	 *
+	 * <p>cyclonedx-core-java is a <b>Jackson 2</b> library and {@link #OM} is
+	 * Jackson 3 ({@code tools.jackson}). Annotations themselves are not the
+	 * problem -- {@code com.fasterxml.jackson.annotation.*} was never renamed, so
+	 * {@code @JsonProperty("bom-ref")} and friends still apply. What Jackson 3
+	 * cannot honour is {@code @JsonSerialize/@JsonDeserialize(using = ...)}
+	 * pointing at handlers that extend Jackson 2 databind classes, which 25 of the
+	 * library's model types rely on. Both directions break, differently:
+	 *
+	 * <ul>
+	 *   <li>Reading: {@code LicenseChoice} is a single object in Java but an ARRAY
+	 *       on the wire, bridged by {@code LicenseDeserializer}. Binding with OM
+	 *       threw MismatchedInputException on the first component carrying
+	 *       licenses -- loud, and fixed in ReleaseService.buildVdrBom.</li>
+	 *   <li>Writing: date fields are bridged by {@code CustomDateSerializer}.
+	 *       Binding with OM does NOT throw -- it silently emits epoch millis
+	 *       ({@code "published":1750000000000}) where the spec requires
+	 *       ISO-8601 ({@code "published":"2025-06-15T15:06:40Z"}), because OM
+	 *       enables WRITE_DATES_AS_TIMESTAMPS. Silent, so it survived far longer.</li>
+	 * </ul>
+	 *
+	 * <p>Upgrading the library does not remove the need for this: 13.0.0 is still
+	 * Jackson 2, and upstream has no Jackson 3 migration open.
+	 *
+	 * <p>Configured to match what the library's own {@code BomJsonGenerator}
+	 * emits: NON_NULL inclusion, plus {@code LicenseChoiceSerializer} so nested
+	 * licenses serialize as the wire array rather than the default bean shape.
+	 * ({@link CdxLicenseUtil} keeps its own narrower mapper on purpose -- it
+	 * round-trips license arrays through {@code convertValue}, where NON_NULL
+	 * would change the stored shape.)
+	 */
+	public static final com.fasterxml.jackson.databind.ObjectMapper CDX_OM;
+	static {
+		CDX_OM = new com.fasterxml.jackson.databind.ObjectMapper();
+		CDX_OM.setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL);
+		com.fasterxml.jackson.databind.module.SimpleModule cdxModule =
+				new com.fasterxml.jackson.databind.module.SimpleModule();
+		cdxModule.addSerializer(org.cyclonedx.model.LicenseChoice.class,
+				new org.cyclonedx.util.serializer.LicenseChoiceSerializer(false, org.cyclonedx.Version.VERSION_16));
+		CDX_OM.registerModule(cdxModule);
+	}
 	
 	public static final ZoneId UTC_ZONE_ID = ZoneId.of("UTC");
 	public static final ZoneOffset UTC_ZONE_OFFSET = ZoneOffset.of("Z");

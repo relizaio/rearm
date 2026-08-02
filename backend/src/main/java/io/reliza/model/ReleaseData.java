@@ -181,6 +181,18 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	@Setter(AccessLevel.PRIVATE)
 	private UUID branch = null; // project parent
 
+	/**
+	 * Re-parent this release under another component/branch. Exists SOLELY for
+	 * the duplicate-component repair (ComponentDuplicateRepairService), which
+	 * folds a duplicate's releases under the surviving leader: component and
+	 * branch are identity-adjacent and deliberately keep private setters, so
+	 * ordinary mutation paths cannot move a release between components.
+	 */
+	public void repointToComponentBranch(UUID componentUuid, UUID branchUuid) {
+		this.component = componentUuid;
+		this.branch = branchUuid;
+	}
+
 	@JsonProperty(CommonVariables.PARENT_RELEASES_FIELD)
 	private List<ParentRelease> parentReleases = new LinkedList<>();
 	

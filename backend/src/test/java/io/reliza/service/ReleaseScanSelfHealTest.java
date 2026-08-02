@@ -199,7 +199,7 @@ public class ReleaseScanSelfHealTest {
 	}
 
 	private static FlowControl fcWithFailures(int failureCount) {
-		return new FlowControl(null, null, null, null, null, null, null, null, failureCount);
+		return new FlowControl(null, null, null, null, null, null, null, null, null, failureCount);
 	}
 
 	// ---- helpers (local, mirroring ReleaseMetricsFinderQueryTest's fixture style) ----

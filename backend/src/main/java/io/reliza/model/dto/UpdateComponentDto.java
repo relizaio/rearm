@@ -158,6 +158,9 @@ public class UpdateComponentDto {
 	/** Durable owner to set (RFC Phase 4b); validated server-side against the component's org. Null = unchanged. */
 	@JsonProperty
 	private ComponentOwner owner;
+	/** Explicitly remove the stored owner; see {@code ComponentDto.clearOwner}. */
+	@JsonProperty
+	private Boolean clearOwner;
 
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
 			IntegrationType it) throws DatabindException, JacksonException {
@@ -234,6 +237,7 @@ public class UpdateComponentDto {
 								.leads(ucd.getLeads())
 								.contacts(ucd.getContacts())
 								.owner(ucd.getOwner())
+								.clearOwner(ucd.getClearOwner())
 								.build();
 		return cdto;
 	}

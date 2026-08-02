@@ -49,14 +49,13 @@ describe('changelog stripped selections vs the CE mirror schema (in-repo, always
         })
     }
 
-    // Once the CE mirror catches up (full documents validate clean there), the
-    // tagged lines should be untagged and the fallback retired for these
-    // fields -- this test surfacing as a failure is that reminder.
-    it('at least one full document is INVALID against the CE mirror (fallback is load-bearing)', () => {
-        if (!ceSchema) return
-        const anyRejected = queryEntries.some(([, text]) => validate(ceSchema, parse(text)).length > 0)
-        expect(anyRejected).toBe(true)
-    })
+    // NOTE: this suite used to also assert that at least one FULL document was
+    // INVALID against the CE mirror ("fallback is load-bearing") as a reminder
+    // to untag fields once the mirror caught up. It caught up with the re-scan
+    // visibility fields (2026-08 Pro sync), the lines were untagged, and the
+    // reminder test retired with them. The stripped-vs-CE invariant above stays:
+    // it is what guarantees the runtime fallback document remains valid if
+    // future Pro-first fields get tagged again.
 })
 
 describe('changelog full selections vs the Pro schema (skipped if rearm-core absent)', () => {

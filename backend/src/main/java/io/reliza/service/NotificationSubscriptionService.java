@@ -13,12 +13,14 @@ import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
+import io.reliza.model.UserGroupData;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
@@ -78,6 +80,10 @@ public class NotificationSubscriptionService {
 
     @Autowired
     private NotificationSubscriptionRepository subscriptionRepo;
+
+    @Autowired
+    @Lazy
+    private UserGroupService userGroupService;
 
     @Autowired
     private IntegrationRepository integrationRepo;
@@ -249,13 +255,19 @@ public class NotificationSubscriptionService {
     private void validateRoutes(UUID org, List<RouteConfig> routes) throws RelizaException {
         Set<UUID> referencedChannels = new HashSet<>();
         Set<UUID> referencedGroups = new HashSet<>();
+        Set<UUID> referencedTeams = new HashSet<>();
         for (RouteConfig route : routes) {
             if (route == null) continue;
+            // T3: a teams-only route is legitimate -- naming a team INSTEAD of a
+            // channel is the whole point (the team's channel is resolved at
+            // fan-out). Omitting teams from this gate made the Teams target
+            // unusable without also naming a channel, defeating the feature.
             boolean hasChannels = route.channels() != null && !route.channels().isEmpty();
             boolean hasGroups = route.channelGroups() != null && !route.channelGroups().isEmpty();
-            if (!hasChannels && !hasGroups) {
+            boolean hasTeams = route.teams() != null && !route.teams().isEmpty();
+            if (!hasChannels && !hasGroups && !hasTeams) {
                 throw new RelizaException(
-                        "route must reference at least one channel or channelGroup");
+                        "route must reference at least one channel, channelGroup or team");
             }
             if (route.channels() != null) {
                 for (UUID channelUuid : route.channels()) {
@@ -267,13 +279,19 @@ public class NotificationSubscriptionService {
                     if (groupUuid != null) referencedGroups.add(groupUuid);
                 }
             }
+            if (route.teams() != null) {
+                for (UUID teamUuid : route.teams()) {
+                    if (teamUuid != null) referencedTeams.add(teamUuid);
+                }
+            }
         }
-        if (referencedChannels.isEmpty() && referencedGroups.isEmpty()) {
+        if (referencedChannels.isEmpty() && referencedGroups.isEmpty() && referencedTeams.isEmpty()) {
             throw new RelizaException(
-                    "subscription routes must reference at least one channel or channelGroup");
+                    "subscription routes must reference at least one channel, channelGroup or team");
         }
         validateReferencedChannels(org, referencedChannels);
         validateReferencedGroups(org, referencedGroups);
+        validateReferencedTeams(org, referencedTeams);
     }
 
     /**
@@ -306,6 +324,46 @@ public class NotificationSubscriptionService {
         }
         if (!wrongOrg.isEmpty()) {
             throw new RelizaException("Routes reference channels in a different org: " + wrongOrg);
+        }
+    }
+
+    /**
+     * T3 -- same contract as {@link #validateReferencedGroups}: a route may only
+     * name teams that exist and belong to this org. Without this the fan-out's
+     * cross-org channel guard was the SOLE control, and that guard is conditional
+     * (a channel with a null org passes it) -- so this restores the two-layer
+     * property channels and groups already have.
+     *
+     * <p><b>Deliberately does NOT reject a DEACTIVATED team.</b> Writes are
+     * whole-list replace, so rejecting one would lock the operator out of the
+     * subscription entirely: they could neither keep the team (rejected here) nor
+     * drop it (an emptied route is rejected above), with no error hinting at the
+     * only escape. A deactivated team is already harmless --
+     * {@code UserGroupService.resolveTeamChannelUuids} skips non-ACTIVE teams so
+     * nothing is delivered, and the route editor labels it "(deactivated)" so it
+     * can be seen and removed. Verified live: the rejection made
+     * deactivate-then-clean-up impossible.
+     */
+    private void validateReferencedTeams(UUID org, Set<UUID> referenced) throws RelizaException {
+        if (referenced.isEmpty()) return;
+        List<UUID> notFound = new ArrayList<>();
+        List<UUID> wrongOrg = new ArrayList<>();
+        for (UUID teamUuid : referenced) {
+            Optional<UserGroupData> ougd = userGroupService.getUserGroupData(teamUuid);
+            if (ougd.isEmpty()) {
+                notFound.add(teamUuid);
+                continue;
+            }
+            UserGroupData ugd = ougd.get();
+            if (ugd.getOrg() == null || !ugd.getOrg().equals(org)) {
+                wrongOrg.add(teamUuid);
+            }
+        }
+        if (!notFound.isEmpty()) {
+            throw new RelizaException("Routes reference unknown teams: " + notFound);
+        }
+        if (!wrongOrg.isEmpty()) {
+            throw new RelizaException("Routes reference teams in a different org: " + wrongOrg);
         }
     }
 

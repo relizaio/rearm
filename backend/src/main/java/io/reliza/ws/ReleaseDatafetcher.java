@@ -1090,17 +1090,27 @@ public class ReleaseDatafetcher {
 			}
 		}
 
-		// First, try to resolve component normally
+		// Tri-state resolution: creation is legitimate ONLY on NOT_FOUND. The
+		// previous catch-based flow treated EVERY resolution failure as "not
+		// found" when createComponentIfMissing was set -- including AMBIGUOUS
+		// (duplicate registrations for the same VCS + repoPath) -- so once two
+		// duplicates existed, every CI run minted another instead of surfacing
+		// the operator problem (30+ observed in prod, one per run).
 		UUID componentId = null;
-		try {
-			componentId = componentService.resolveComponentIdFromInput(progReleaseInput, authCtx);
-		} catch (RelizaException e) {
-			Boolean createComponentIfMissing = (Boolean) progReleaseInput.get("createComponentIfMissing");
-			if (Boolean.TRUE.equals(createComponentIfMissing)) {
-				// Will create component after authorization is established
-				log.info("Component not found, will create due to createComponentIfMissing flag");
-			} else {
-				throw new RelizaException("Component cannot be resolved: " + e.getMessage());
+		ComponentService.ComponentResolution componentResolution =
+				componentService.resolveComponentResolutionFromInput(progReleaseInput, authCtx);
+		switch (componentResolution.status()) {
+			case FOUND -> componentId = componentResolution.componentId();
+			case AMBIGUOUS -> throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+			case NOT_FOUND -> {
+				Boolean createComponentIfMissing = (Boolean) progReleaseInput.get("createComponentIfMissing");
+				if (Boolean.TRUE.equals(createComponentIfMissing)) {
+					// Will create component after authorization is established
+					log.info("Component not found ({}), will create due to createComponentIfMissing flag",
+							componentResolution.detail());
+				} else {
+					throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+				}
 			}
 		}
 

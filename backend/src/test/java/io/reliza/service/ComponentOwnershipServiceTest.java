@@ -27,10 +27,12 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.common.Utils;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentOwner;
 import io.reliza.model.ComponentOwnerType;
 import io.reliza.model.ComponentOwnershipStatus;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.UserData;
 import io.reliza.model.UserGroupData;
 import io.reliza.model.UserPermission;
@@ -49,6 +51,8 @@ class ComponentOwnershipServiceTest {
 	private UserGroupService userGroupService;
 	private UserService userService;
 	private ComponentTeamService componentTeamService;
+	private GetOrganizationService getOrganizationService;
+	private OrgTeamAssignmentRuleService teamAssignmentRuleService;
 	private ComponentOwnershipService service;
 
 	private UUID org;
@@ -59,10 +63,20 @@ class ComponentOwnershipServiceTest {
 		userGroupService = mock(UserGroupService.class);
 		userService = mock(UserService.class);
 		componentTeamService = mock(ComponentTeamService.class);
+		getOrganizationService = mock(GetOrganizationService.class);
+		// Real rule service over a mocked group service: the matching logic is
+		// what these tests exercise, so stubbing it would test nothing.
+		teamAssignmentRuleService = new OrgTeamAssignmentRuleService();
+		ReflectionTestUtils.setField(teamAssignmentRuleService, "userGroupService", userGroupService);
 		service = new ComponentOwnershipService();
 		ReflectionTestUtils.setField(service, "userGroupService", userGroupService);
 		ReflectionTestUtils.setField(service, "userService", userService);
 		ReflectionTestUtils.setField(service, "componentTeamService", componentTeamService);
+		ReflectionTestUtils.setField(service, "getOrganizationService", getOrganizationService);
+		ReflectionTestUtils.setField(service, "teamAssignmentRuleService", teamAssignmentRuleService);
+		// Default: org resolves but carries no rules, so every pre-T2 test keeps
+		// its original meaning (stored owner / candidate suggestion only).
+		when(getOrganizationService.getOrganizationData(any())).thenReturn(Optional.empty());
 		org = UUID.randomUUID();
 		comp = UUID.randomUUID();
 	}
@@ -108,7 +122,7 @@ class ComponentOwnershipServiceTest {
 		UUID t = UUID.randomUUID();
 		UserGroupData tm = team(t, "Platform", org, UserGroupStatus.ACTIVE, 2, false, null);
 		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
-		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.OWNED, o.status());
 		assertTrue(o.durable());
 		assertFalse(o.derived());
@@ -120,8 +134,33 @@ class ComponentOwnershipServiceTest {
 		UUID t = UUID.randomUUID();
 		UserGroupData tm = team(t, "Solo", org, UserGroupStatus.ACTIVE, 1, false, null);
 		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
-		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.NON_DURABLE, o.status());
+		assertFalse(o.durable());
+	}
+
+	/**
+	 * End-to-end counterpart to {@code UserGroupTeamMembersTest}: uses a REAL
+	 * (non-mocked) UserGroupData so {@code getAllUsers()} is the production
+	 * implementation, proving external members never reach the durability count.
+	 * DECIDED 2026-07-28 -- externals are addressable but confer no durability,
+	 * so a 1-real-member team stays NON_DURABLE no matter how many externals it
+	 * carries. Mocking {@code getAllUsers} (as the helper above does) could not
+	 * catch a regression that folded externals into the roster.
+	 */
+	@Test
+	void storedTeamWithExternalMembersStaysNonDurableOnOneRealMember() {
+		UUID t = UUID.randomUUID();
+		UserGroupData realTeam = Utils.OM.readValue("""
+				{"name":"Docs Team","org":"%s","status":"ACTIVE","manualUsers":["%s"],
+				 "externalMembers":[
+				   {"name":"Ext One","contact":"e1@vendor.example","role":"SECURITY_SPECIALIST"},
+				   {"name":"Ext Two","contact":"e2@vendor.example","role":"DEVELOPER"}]}
+				""".formatted(org, UUID.randomUUID()), UserGroupData.class);
+		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(realTeam));
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of(), null);
+		assertEquals(ComponentOwnershipStatus.NON_DURABLE, o.status(),
+				"two external members must not lift a one-person team over the durability bar");
 		assertFalse(o.durable());
 	}
 
@@ -131,7 +170,7 @@ class ComponentOwnershipServiceTest {
 		// 0 direct members but SSO-backed -> durable (IdP membership materializes at login).
 		UserGroupData tm = team(t, "IdP Team", org, UserGroupStatus.ACTIVE, 0, true, null);
 		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
-		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.OWNED, o.status());
 		assertTrue(o.durable());
 	}
@@ -141,7 +180,7 @@ class ComponentOwnershipServiceTest {
 		UUID t = UUID.randomUUID();
 		UserGroupData tm = team(t, "Archived", org, UserGroupStatus.INACTIVE, 5, false, null);
 		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
-		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.DEGRADED, o.status());
 		assertFalse(o.durable());
 	}
@@ -150,7 +189,7 @@ class ComponentOwnershipServiceTest {
 	void storedTeamMissingIsOrphaned() {
 		UUID t = UUID.randomUUID();
 		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.empty());
-		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.ORPHANED, o.status());
 	}
 
@@ -159,7 +198,7 @@ class ComponentOwnershipServiceTest {
 		UUID t = UUID.randomUUID();
 		UserGroupData tm = team(t, "Other org", UUID.randomUUID(), UserGroupStatus.ACTIVE, 5, false, null);
 		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
-		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(teamOwner(t)), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.ORPHANED, o.status());
 	}
 
@@ -170,7 +209,7 @@ class ComponentOwnershipServiceTest {
 		UUID u = UUID.randomUUID();
 		when(userService.getUserDataWithOrg(u, org)).thenReturn(Optional.of(mock(UserData.class)));
 		ComponentOwner owner = new ComponentOwner(ComponentOwnerType.USER, u);
-		ComponentOwnership o = service.resolveOwnership(component(owner), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(owner), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.NON_DURABLE, o.status());
 		assertFalse(o.durable());
 		assertEquals(ComponentOwnerType.USER, o.ownerType());
@@ -181,7 +220,7 @@ class ComponentOwnershipServiceTest {
 		UUID u = UUID.randomUUID();
 		when(userService.getUserDataWithOrg(u, org)).thenReturn(Optional.empty());
 		ComponentOwner owner = new ComponentOwner(ComponentOwnerType.USER, u);
-		ComponentOwnership o = service.resolveOwnership(component(owner), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(owner), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.ORPHANED, o.status());
 	}
 
@@ -191,7 +230,7 @@ class ComponentOwnershipServiceTest {
 	void noOwnerWithOneCandidateTeamSuggestsItUnset() {
 		UUID t = UUID.randomUUID();
 		UserGroupData cand = team(t, "Writers", org, UserGroupStatus.ACTIVE, 3, false, PermissionType.READ_WRITE);
-		ComponentOwnership o = service.resolveOwnership(component(null), List.of(cand));
+		ComponentOwnership o = service.resolveOwnership(component(null), List.of(cand), null);
 		assertEquals(ComponentOwnershipStatus.UNSET, o.status());
 		assertTrue(o.derived());
 		assertEquals(t, o.ownerRef());
@@ -204,7 +243,7 @@ class ComponentOwnershipServiceTest {
 		UUID big = UUID.randomUUID();
 		UserGroupData smallDurable = team(small, "Small", org, UserGroupStatus.ACTIVE, 2, false, PermissionType.READ_WRITE);
 		UserGroupData bigDurable = team(big, "Big", org, UserGroupStatus.ACTIVE, 9, false, PermissionType.ADMIN);
-		ComponentOwnership o = service.resolveOwnership(component(null), List.of(smallDurable, bigDurable));
+		ComponentOwnership o = service.resolveOwnership(component(null), List.of(smallDurable, bigDurable), null);
 		assertEquals(ComponentOwnershipStatus.UNSET, o.status());
 		assertEquals(big, o.ownerRef(), "should suggest the largest durable candidate");
 	}
@@ -216,7 +255,7 @@ class ComponentOwnershipServiceTest {
 		UUID t = UUID.randomUUID();
 		UserGroupData readOnly = team(t, "Viewers", org, UserGroupStatus.ACTIVE, 4, false, PermissionType.READ_ONLY);
 		when(componentTeamService.deriveTeam(any(ComponentData.class))).thenReturn(List.of());
-		ComponentOwnership o = service.resolveOwnership(component(null), List.of(readOnly));
+		ComponentOwnership o = service.resolveOwnership(component(null), List.of(readOnly), null);
 		assertEquals(ComponentOwnershipStatus.ORPHANED, o.status());
 		assertNull(o.ownerRef());
 	}
@@ -225,7 +264,7 @@ class ComponentOwnershipServiceTest {
 	void noOwnerNoTeamButIndividualWritersSuggestsCreateTeam() {
 		when(componentTeamService.deriveTeam(any(ComponentData.class)))
 				.thenReturn(List.of(mock(UserData.class), mock(UserData.class)));
-		ComponentOwnership o = service.resolveOwnership(component(null), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(null), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.UNSET, o.status());
 		assertTrue(o.derived());
 		assertNull(o.ownerRef(), "no team to point at yet -- a create-team hint");
@@ -234,7 +273,7 @@ class ComponentOwnershipServiceTest {
 	@Test
 	void noOwnerNothingDerivableIsOrphaned() {
 		when(componentTeamService.deriveTeam(any(ComponentData.class))).thenReturn(List.of());
-		ComponentOwnership o = service.resolveOwnership(component(null), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(null), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.ORPHANED, o.status());
 		assertFalse(o.derived());
 	}
@@ -255,7 +294,7 @@ class ComponentOwnershipServiceTest {
 		// falls through to the suggestion path rather than NPE-ing.
 		when(componentTeamService.deriveTeam(any(ComponentData.class))).thenReturn(List.of());
 		ComponentOwner malformed = new ComponentOwner(ComponentOwnerType.TEAM, null);
-		ComponentOwnership o = service.resolveOwnership(component(malformed), List.of());
+		ComponentOwnership o = service.resolveOwnership(component(malformed), List.of(), null);
 		assertEquals(ComponentOwnershipStatus.ORPHANED, o.status());
 		assertFalse(o.derived());
 	}
@@ -270,7 +309,7 @@ class ComponentOwnershipServiceTest {
 				team(durableTeamUuid, "Durable", org, UserGroupStatus.ACTIVE, 2, false, PermissionType.READ_WRITE);
 		UserGroupData tiny =
 				team(tinyUuid, "Tiny", org, UserGroupStatus.ACTIVE, 1, false, PermissionType.READ_WRITE);
-		ComponentOwnership o = service.resolveOwnership(component(null), List.of(tiny, durableTeam));
+		ComponentOwnership o = service.resolveOwnership(component(null), List.of(tiny, durableTeam), null);
 		assertEquals(durableTeamUuid, o.ownerRef());
 		assertTrue(o.durable());
 	}
@@ -357,5 +396,125 @@ class ComponentOwnershipServiceTest {
 		when(userService.getUserDataWithOrg(u, org)).thenReturn(Optional.empty());
 		assertThrows(RelizaException.class,
 				() -> service.validateOwner(new ComponentOwner(ComponentOwnerType.USER, u), org));
+	}
+
+	// ---------- T2: team-assignment rules (Option A -- a rule SETS the owner) ----------
+
+	private OrganizationData orgWithRule(String ruleName, String pattern, UUID team) {
+		var r = new OrganizationData.GlobalTeamAssignmentRule();
+		r.setName(ruleName);
+		r.setNamePattern(pattern);
+		r.setOwnerTeam(team);
+		OrganizationData od = mock(OrganizationData.class);
+		when(od.getUuid()).thenReturn(org);
+		when(od.getGlobalTeamAssignmentRules()).thenReturn(List.of(r));
+		return od;
+	}
+
+	private ComponentData named(String name, ComponentOwner owner) {
+		ComponentData cd = component(owner);
+		cd.setName(name);
+		cd.setType(ComponentData.ComponentType.COMPONENT);
+		return cd;
+	}
+
+	@Test
+	void ruleAssignsOwnerWhenComponentHasNoStoredOwner() {
+		UUID t = UUID.randomUUID();
+		UserGroupData tm = team(t, "Rebom", org, UserGroupStatus.ACTIVE, 2, false, null);
+		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
+		ComponentOwnership o = service.resolveOwnership(
+				named("rebom-backend", null), List.of(), orgWithRule("rebom", "rebom-.*", t));
+		assertEquals(ComponentOwnershipStatus.OWNED, o.status());
+		assertEquals(t, o.ownerRef());
+		assertTrue(o.derived(), "a rule-assigned owner is derived, not hand-picked");
+		assertTrue(o.reason().contains("rebom"), "the reason names the rule for provenance: " + o.reason());
+	}
+
+	@Test
+	void storedOwnerBeatsAMatchingRule() {
+		// The whole point of Option A's precedence: a rule never overrides a
+		// deliberate per-component choice.
+		UUID stored = UUID.randomUUID();
+		UUID ruleTeam = UUID.randomUUID();
+		UserGroupData storedTeam = team(stored, "Chosen", org, UserGroupStatus.ACTIVE, 2, false, null);
+		when(userGroupService.getUserGroupData(stored)).thenReturn(Optional.of(storedTeam));
+		ComponentOwnership o = service.resolveOwnership(
+				named("rebom-backend", teamOwner(stored)), List.of(), orgWithRule("rebom", "rebom-.*", ruleTeam));
+		assertEquals(stored, o.ownerRef());
+		assertFalse(o.derived(), "a stored owner is not derived");
+	}
+
+	@Test
+	void ruleAssignedOneMemberTeamIsStillReportedNonDurable() {
+		// A rule must not launder a one-person team into OWNED.
+		UUID t = UUID.randomUUID();
+		UserGroupData tm = team(t, "Solo", org, UserGroupStatus.ACTIVE, 1, false, null);
+		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
+		ComponentOwnership o = service.resolveOwnership(
+				named("rebom-backend", null), List.of(), orgWithRule("rebom", "rebom-.*", t));
+		assertEquals(ComponentOwnershipStatus.NON_DURABLE, o.status());
+		assertFalse(o.durable());
+	}
+
+	@Test
+	void aMatchingRuleBeatsACandidateSuggestion() {
+		// Precedence tier 2 over tier 3: a durable candidate team exists AND a rule
+		// matches -- the rule must win, and the result must be OWNED (not an UNSET
+		// suggestion). Previously unverified.
+		UUID ruleTeam = UUID.randomUUID();
+		UserGroupData rt = team(ruleTeam, "Rule", org, UserGroupStatus.ACTIVE, 2, false, null);
+		when(userGroupService.getUserGroupData(ruleTeam)).thenReturn(Optional.of(rt));
+		UUID candidate = UUID.randomUUID();
+		UserGroupData cand = team(candidate, "Candidate", org, UserGroupStatus.ACTIVE, 3, false,
+				PermissionType.READ_WRITE);
+		ComponentOwnership o = service.resolveOwnership(
+				named("rebom-backend", null), List.of(cand), orgWithRule("rebom", "rebom-.*", ruleTeam));
+		assertEquals(ComponentOwnershipStatus.OWNED, o.status());
+		assertEquals(ruleTeam, o.ownerRef(), "the rule must win over a candidate suggestion");
+	}
+
+	@Test
+	void ruleTeamArchivedAfterTheRuleWasSavedReportsDegraded() {
+		// Writes reject archived teams, but a team can be archived later. The
+		// resolver must surface that as DEGRADED rather than silently skipping to
+		// the next rule -- an archived team is recoverable and worth telling the
+		// operator about.
+		UUID t = UUID.randomUUID();
+		UserGroupData tm = team(t, "Archived", org, UserGroupStatus.INACTIVE, 5, false, null);
+		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
+		ComponentOwnership o = service.resolveOwnership(
+				named("rebom-backend", null), List.of(), orgWithRule("rebom", "rebom-.*", t));
+		assertEquals(ComponentOwnershipStatus.DEGRADED, o.status());
+		assertTrue(o.derived());
+		assertTrue(o.reason().contains("rebom"), "reason names the rule: " + o.reason());
+	}
+
+	@Test
+	void nonMatchingRuleFallsThroughToTheCandidateSuggestion() {
+		UUID t = UUID.randomUUID();
+		UserGroupData tm = team(t, "Rebom", org, UserGroupStatus.ACTIVE, 2, false, null);
+		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
+		ComponentOwnership o = service.resolveOwnership(
+				named("unrelated-thing", null), List.of(), orgWithRule("rebom", "rebom-.*", t));
+		assertEquals(ComponentOwnershipStatus.ORPHANED, o.status(),
+				"no rule match and no candidate team -> orphaned, as before T2");
+	}
+
+	@Test
+	void clearingAStoredOwnerHandsTheComponentBackToTheRule() {
+		// The workflow clearOwner exists for: a component manually pinned to one
+		// team, then released back to org rules. Modeled here as owner -> null.
+		UUID t = UUID.randomUUID();
+		UserGroupData tm = team(t, "Rebom", org, UserGroupStatus.ACTIVE, 2, false, null);
+		when(userGroupService.getUserGroupData(t)).thenReturn(Optional.of(tm));
+		var od = orgWithRule("rebom", "rebom-.*", t);
+		ComponentData pinned = named("rebom-backend", teamOwner(UUID.randomUUID()));
+		assertFalse(service.resolveOwnership(pinned, List.of(), od).derived(),
+				"while pinned, the stored owner wins");
+		ComponentData cleared = named("rebom-backend", null);
+		ComponentOwnership after = service.resolveOwnership(cleared, List.of(), od);
+		assertTrue(after.derived(), "once cleared, the rule takes over again");
+		assertEquals(t, after.ownerRef());
 	}
 }

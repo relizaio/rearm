@@ -125,10 +125,18 @@ public class CdxVexParser implements VexFormatParser {
                 responses.add(AnalysisResponse.valueOf(r.name()));
             }
         }
+        // Utils.CDX_OM, never Utils.OM: this is a cyclonedx model type, and the
+        // Jackson 3 mapper cannot apply the library's CustomDateSerializer. It
+        // does not fail -- it silently writes epoch millis
+        // ("published":1750000000000) where the spec requires ISO-8601
+        // ("published":"2025-06-15T15:06:40Z"), because Utils.OM enables
+        // WRITE_DATES_AS_TIMESTAMPS. That wrong shape was persisted as the VEX
+        // statement's provenance record AND hashed as its dedup key.
         String stmtJson;
         try {
-            stmtJson = Utils.OM.writeValueAsString(v);
-        } catch (JacksonException e) {
+            stmtJson = Utils.CDX_OM.writeValueAsString(v);
+        } catch (com.fasterxml.jackson.core.JacksonException e) {
+            log.error("Failed to serialize VEX statement {} for provenance: {}", v.getId(), e.getMessage(), e);
             stmtJson = "{}";
         }
         VulnerabilitySeverity severity = highestSeverity(v);

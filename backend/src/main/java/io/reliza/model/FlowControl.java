@@ -61,6 +61,11 @@ public record FlowControl(
         String autoIntegrateRequestedAt,
         String autoIntegrateSkipUntil,
         Integer autoIntegrateFailureCount,
+        // Stamped by claimAutoIntegrate when a worker takes the lease. The
+        // post-run conditional clear compares it against autoIntegrateRequestedAt:
+        // a request newer than the claim arrived mid-run and must survive the
+        // clear (lost-wakeup guard), so only the lease/bookkeeping is dropped.
+        String autoIntegrateClaimedAt,
         // Metrics-compute backoff fence (mirrors the sbomReconcile*/autoIntegrate*
         // skip pattern). Set when a scannable release's metrics compute ends
         // incomplete (own BOM or a child release still unscanned) or throws, so

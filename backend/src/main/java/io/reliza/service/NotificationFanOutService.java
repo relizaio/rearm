@@ -129,6 +129,9 @@ public class NotificationFanOutService {
     @Autowired
     private NotificationChannelGroupService channelGroupService;
 
+    @Autowired
+    private UserGroupService userGroupService;
+
     // Defence-in-depth org guard (S-5). The save-time invariant
     // (channel.org == subscription.org checked at upsert) already
     // ensures fan-out can't write a cross-tenant delivery via the
@@ -305,12 +308,12 @@ public class NotificationFanOutService {
             if (!severityGateMatches(route, eventSeverity)) continue;
             if (!perspectiveGateMatches(route, event)) continue;
             // Phase 13b: expand channelGroups, then merge with direct
-            // channels. Dedup is first-seen across the merged list, so a
-            // channel referenced both directly and via a group still
-            // produces exactly one delivery row.
-            List<UUID> resolvedChannels = mergeRouteChannels(route);
+            // channels; T3 adds team expansion. Dedup is first-seen across the
+            // merged list, so a channel referenced directly, via a group AND via
+            // a team still produces exactly one delivery row.
+            List<UUID> resolvedChannels = mergeRouteChannels(route, event.getOrg());
             if (resolvedChannels.isEmpty()) {
-                // No direct channels AND no resolvable groups — log + skip.
+                // No direct channels, no resolvable groups, no team channels -- log + skip.
                 // Distinct from "all channels resolved but every one was
                 // dedup-suppressed" (that path still fires the insertDelivery
                 // dedup check). A zero-channel route is a save-time validation
@@ -327,14 +330,15 @@ public class NotificationFanOutService {
     }
 
     /**
-     * Phase 13b merge helper. Returns the deduplicated, first-seen-order
-     * union of {@code route.channels} and the channel UUIDs resolved
-     * from {@code route.channelGroups}. Direct channels are visited
+     * Merge helper. Returns the deduplicated, first-seen-order union of
+     * {@code route.channels}, the channel UUIDs resolved from
+     * {@code route.channelGroups} (Phase 13b), and the channels of the teams
+     * named in {@code route.teams} (T3). Direct channels are visited
      * first so an operator who explicitly listed a channel sees it
      * preserved even if a group later also contains it. Null entries
      * on either side are silently skipped.
      */
-    private List<UUID> mergeRouteChannels(RouteConfig route) {
+    private List<UUID> mergeRouteChannels(RouteConfig route, UUID eventOrg) {
         Set<UUID> seen = new HashSet<>();
         List<UUID> out = new ArrayList<>();
         if (route.channels() != null) {
@@ -345,6 +349,14 @@ public class NotificationFanOutService {
         if (route.channelGroups() != null && !route.channelGroups().isEmpty()) {
             List<UUID> expanded = channelGroupService.resolveChannelUuids(route.channelGroups());
             for (UUID ch : expanded) {
+                if (ch != null && seen.add(ch)) out.add(ch);
+            }
+        }
+        // T3: a route may target Teams; each contributes its own channels.
+        // Resolved late (here, not at save time) so retargeting a team's Slack
+        // channel takes effect without touching every subscription that names it.
+        if (route.teams() != null && !route.teams().isEmpty()) {
+            for (UUID ch : userGroupService.resolveTeamChannelUuids(route.teams(), eventOrg)) {
                 if (ch != null && seen.add(ch)) out.add(ch);
             }
         }

@@ -744,7 +744,8 @@ public class FindingComparisonService {
 					fa.resolvedInCount(), fa.appearedInCount(), fa.presentInCount(),
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
 					flags.orgContext(),
-					fa.finding.analysisState()
+					fa.finding.analysisState(),
+					null, null, null
 				);
 			})
 			.collect(Collectors.toList());
@@ -761,7 +762,8 @@ public class FindingComparisonService {
 					fa.resolvedInCount(), fa.appearedInCount(), fa.presentInCount(),
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
 					flags.orgContext(),
-					fa.finding.analysisState()
+					fa.finding.analysisState(),
+					null, null, null
 				);
 			})
 			.collect(Collectors.toList());
@@ -780,7 +782,8 @@ public class FindingComparisonService {
 					fa.resolvedInCount(), fa.appearedInCount(), fa.presentInCount(),
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
 					flags.orgContext(),
-					fa.finding.analysisState()
+					fa.finding.analysisState(),
+					null, null, null
 				);
 			})
 			.collect(Collectors.toList());
@@ -1308,7 +1311,8 @@ public class FindingComparisonService {
 		// ONE horizon per request: reuse the prefetch's snapshot so the degrade decision and the clamp
 		// disclosure share the same instant (no false clamp at the exact boundary, no extra org lookup).
 		ZonedDateTime horizon = prefetch != null ? prefetch.retentionHorizon() : retentionHorizon(org);
-		return assembleFromFoldedMaps(org, maps, inheritedInComponents, escalations,
+		return assembleFromFoldedMaps(componentReleases, componentNames, branchNameCache,
+			org, maps, inheritedInComponents, escalations,
 			allReleaseUuids, totalComponents, from, to, horizon);
 	}
 
@@ -1326,6 +1330,9 @@ public class FindingComparisonService {
 	 *                        so {@code isInheritedInAllComponents} degrades correctly per scope.
 	 */
 	private FindingChangesWithAttribution assembleFromFoldedMaps(
+			Map<UUID, List<ReleaseData>> scopeReleases,
+			Map<UUID, String> componentNames,
+			Map<UUID, String> branchNameCache,
 			UUID org,
 			AttributionMaps maps,
 			Map<String, Set<UUID>> inheritedInComponents,
@@ -1347,6 +1354,12 @@ public class FindingComparisonService {
 				flags = suppressCrossComponentInheritedNew(key, flags, inheritedInComponents);
 				return decorateWithOverlay(key, flags, overlay);
 			});
+
+		// Changelog re-scan visibility: stamp appeared findings that ARRIVED via an in-window
+		// finding_change_event with the arrival date and the earliest/latest in-window releases
+		// currently carrying them -- the honest carrier range, replacing the misleading
+		// single endpoint-anchor attribution ("first occurrence") for late-scan arrivals.
+		base = decorateScanArrivals(base, overlay.appearedAtByKey(), scopeReleases, componentNames, branchNameCache);
 
 		// DISCLOSURE: the from-endpoint degrades to current metrics for EVERY release when `from` predates
 		// the org's event-retention horizon (older events purged -> not reverse-reconstructable). That is a
@@ -1479,7 +1492,8 @@ public class FindingComparisonService {
 		}
 
 		int totalConstituents = allComponents.size();
-		return assembleFromFoldedMaps(org, maps, inheritedInComponents, escalations,
+		return assembleFromFoldedMaps(constituentReleases, java.util.Collections.emptyMap(), new HashMap<>(),
+			org, maps, inheritedInComponents, escalations,
 			allReleaseUuids, totalConstituents, from, to, prefetch.retentionHorizon());
 	}
 
@@ -1917,10 +1931,98 @@ public class FindingComparisonService {
 	 * so the badge count is legitimately lower than the raw KEV_ADDED / SEVERITY_INCREASED event count. The UI
 	 * labels/tooltips say "open findings ... in this period" to convey this.
 	 */
+	/**
+	 * Stamp scan-arrival facts onto appeared findings (changelog re-scan visibility).
+	 *
+	 * <p>For every finding key with an in-window APPEARED event (still-present at the window
+	 * end -- the overlay pre-filters), find the earliest and latest in-scope releases whose
+	 * CURRENT metrics carry the finding (membership by the same FROZEN key extractors the
+	 * attribution maps use) and copy the finding with {@code scanArrivalDate} + the carrier
+	 * range. Release-borne appearances also get stamped -- for them the earliest carrier IS
+	 * the introducing release, so the UI can distinguish the two arrival modes by comparing
+	 * the earliest carrier to the appearedIn anchor without any threshold heuristics.
+	 */
+	private FindingChangesWithAttribution decorateScanArrivals(
+			FindingChangesWithAttribution base,
+			Map<String, ZonedDateTime> appearedAtByKey,
+			Map<UUID, List<ReleaseData>> scopeReleases,
+			Map<UUID, String> componentNames,
+			Map<UUID, String> branchNameCache) {
+		if (appearedAtByKey == null || appearedAtByKey.isEmpty() || scopeReleases == null || scopeReleases.isEmpty()) {
+			return base;
+		}
+
+		record Carrier(UUID componentUuid, ReleaseData release) {}
+		Map<String, Carrier> earliest = new HashMap<>();
+		Map<String, Carrier> latest = new HashMap<>();
+		for (Map.Entry<UUID, List<ReleaseData>> entry : scopeReleases.entrySet()) {
+			UUID componentUuid = entry.getKey();
+			for (ReleaseData rd : entry.getValue()) {
+				if (rd == null || rd.getMetrics() == null || rd.getCreatedDate() == null) continue;
+				ReleaseMetricsDto m = rd.getMetrics();
+				List<String> keys = new ArrayList<>();
+				for (VulnerabilityDto v : nullSafe(m.getVulnerabilityDetails())) keys.add(VULN_KEY.apply(v));
+				for (ViolationDto v : nullSafe(m.getViolationDetails())) keys.add(VIOLATION_KEY.apply(v));
+				for (WeaknessDto w : nullSafe(m.getWeaknessDetails())) keys.add(WEAKNESS_KEY.apply(w));
+				for (String key : keys) {
+					if (!appearedAtByKey.containsKey(key)) continue;
+					Carrier c = new Carrier(componentUuid, rd);
+					earliest.merge(key, c, (a, b) ->
+							a.release().getCreatedDate().isBefore(b.release().getCreatedDate()) ? a : b);
+					latest.merge(key, c, (a, b) ->
+							a.release().getCreatedDate().isAfter(b.release().getCreatedDate()) ? a : b);
+				}
+			}
+		}
+
+		java.util.function.BiFunction<String, ZonedDateTime, ComponentAttribution[]> carriersOf = (key, at) -> {
+			Carrier e = earliest.get(key);
+			Carrier l = latest.get(key);
+			return new ComponentAttribution[] {
+				e == null ? null : toCarrierAttribution(e.componentUuid(), e.release(), componentNames, branchNameCache),
+				l == null ? null : toCarrierAttribution(l.componentUuid(), l.release(), componentNames, branchNameCache)
+			};
+		};
+
+		List<VulnerabilityWithAttribution> vulns = base.vulnerabilities().stream().map(v -> {
+			ZonedDateTime at = v.appearedInCount() > 0 ? appearedAtByKey.get(v.findingKey()) : null;
+			if (at == null) return v;
+			ComponentAttribution[] c = carriersOf.apply(v.findingKey(), at);
+			return v.withScanArrival(at, c[0], c[1]);
+		}).collect(Collectors.toList());
+		List<ViolationWithAttribution> viols = base.violations().stream().map(v -> {
+			ZonedDateTime at = v.appearedInCount() > 0 ? appearedAtByKey.get(v.findingKey()) : null;
+			if (at == null) return v;
+			ComponentAttribution[] c = carriersOf.apply(v.findingKey(), at);
+			return v.withScanArrival(at, c[0], c[1]);
+		}).collect(Collectors.toList());
+		List<WeaknessWithAttribution> weaks = base.weaknesses().stream().map(w -> {
+			ZonedDateTime at = w.appearedInCount() > 0 ? appearedAtByKey.get(w.findingKey()) : null;
+			if (at == null) return w;
+			ComponentAttribution[] c = carriersOf.apply(w.findingKey(), at);
+			return w.withScanArrival(at, c[0], c[1]);
+		}).collect(Collectors.toList());
+
+		return new FindingChangesWithAttribution(vulns, viols, weaks,
+				base.totalAppeared(), base.totalResolved(), base.totalNewlyKev(), base.totalSeverityIncreased(),
+				base.reconstructionClampedSince(), base.postureDiffApplied());
+	}
+
+	private ComponentAttribution toCarrierAttribution(UUID componentUuid, ReleaseData rd,
+			Map<UUID, String> componentNames, Map<UUID, String> branchNameCache) {
+		String componentName = componentNames != null ? componentNames.getOrDefault(componentUuid, "") : "";
+		UUID branchUuid = rd.getBranch();
+		String branchName = branchUuid != null ? cachedBranchName(branchUuid, branchNameCache) : null;
+		return new ComponentAttribution(componentUuid, componentName, rd.getUuid(), rd.getVersion(), branchUuid, branchName);
+	}
+
 	private record WorsenedOverlay(
 			Set<String> newlyKevKeys,
 			Set<String> severityIncreasedKeys,
-			Map<String, String> previousSeverityByKey) {}
+			Map<String, String> previousSeverityByKey,
+			// key -> earliest in-window APPEARED event date, present-at-to filtered. Feeds the
+			// scan-arrival decoration on appeared findings (changelog re-scan visibility).
+			Map<String, ZonedDateTime> appearedAtByKey) {}
 
 	private WorsenedOverlay buildWorsenedOverlay(
 			UUID org,
@@ -1933,9 +2035,10 @@ public class FindingComparisonService {
 		Set<String> newlyKev = new HashSet<>();
 		Set<String> sevInc = new HashSet<>();
 		Map<String, String> prevSevByKey = new HashMap<>();
+		Map<String, ZonedDateTime> appearedAt = new HashMap<>();
 
 		if (org == null || releaseUuids == null || releaseUuids.isEmpty()) {
-			return new WorsenedOverlay(newlyKev, sevInc, prevSevByKey);
+			return new WorsenedOverlay(newlyKev, sevInc, prevSevByKey, appearedAt);
 		}
 
 		// present-at-to keys: any finding key that has at least one presentIn attribution.
@@ -1967,11 +2070,21 @@ public class FindingComparisonService {
 							prevSevByKey.putIfAbsent(key, prevSev);
 						}
 					}
-					default -> { /* APPEARED / RESOLVED: not a worsened annotation */ }
+					case APPEARED -> {
+						// Earliest in-window arrival per key (still-present keys only, via the
+						// presentAtTo gate above): the date the finding was first DETECTED in the
+						// window, which the UI renders instead of implying the endpoint-anchor
+						// release introduced it.
+						if (ev.getChangeDate() != null) {
+							appearedAt.merge(key, ev.getChangeDate(),
+									(a, b) -> a.isBefore(b) ? a : b);
+						}
+					}
+					default -> { /* RESOLVED: not a worsened annotation */ }
 				}
 			}
 		}
-		return new WorsenedOverlay(newlyKev, sevInc, prevSevByKey);
+		return new WorsenedOverlay(newlyKev, sevInc, prevSevByKey, appearedAt);
 	}
 
 	private static <T> void collectPresentKeys(Map<String, FindingAttribution<T>> findingMap, Set<String> out) {

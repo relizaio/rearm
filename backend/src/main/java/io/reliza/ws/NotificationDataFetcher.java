@@ -816,7 +816,11 @@ public class NotificationDataFetcher {
 						// Phase 13b: channelGroups passes through as-is.
 						// Null preserves "no group expansion" on routes
 						// authored without the field.
-						r.channelGroups()))
+						r.channelGroups(),
+						// T3: teams passes through as-is. Null preserves
+						// "no team expansion" on routes authored without
+						// the field.
+						r.teams()))
 				.toList();
 	}
 

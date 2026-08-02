@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -161,6 +162,20 @@ public class OrganizationService {
 				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
 		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
 		od.setGlobalApprovalPolicyRules(validatedRules == null ? new java.util.LinkedList<>() : validatedRules);
+		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
+		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
+	/** Persist validated team-assignment rules (T2). Validation lives in
+	 *  {@code OrgTeamAssignmentRuleService}; this only stores. */
+	@Transactional
+	public OrganizationData setGlobalTeamAssignmentRules(UUID orgUuid,
+			List<OrganizationData.GlobalTeamAssignmentRule> validatedRules, WhoUpdated wu)
+			throws RelizaException {
+		Organization org = getOrganizationService.getOrganization(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		od.setGlobalTeamAssignmentRules(validatedRules == null ? new LinkedList<>() : validatedRules);
 		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
 		return OrganizationData.orgDataFromDbRecord(saved);
 	}
