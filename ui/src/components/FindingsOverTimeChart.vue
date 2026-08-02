@@ -81,6 +81,7 @@
             :component-type="props.componentType"
             :initial-severity-filter="directFindingsDate ? directFindingsSeverity : findingsPerDaySeverity"
             :initial-type-filter="directFindingsDate ? directFindingsType : findingsPerDayType"
+            :initial-kev-only="directFindingsDate ? directFindingsKev : findingsPerDayKev"
             :show-refresh-action="hasNoExtraContext && isGlobalAdmin"
             :on-refresh-action="refreshAnalyticsForCurrentDate"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
@@ -221,12 +222,14 @@ const showOrgChangelogModal: Ref<boolean> = ref(false)
 const directFindingsDate: Ref<string> = ref('')
 const directFindingsSeverity: Ref<string> = ref('')
 const directFindingsType: Ref<string> = ref('')
+const directFindingsKev: Ref<boolean> = ref(false)
 
 // Route-based query params for findings per day display
 const showFindingsPerDay = computed(() => route.query.display === 'findingsPerDay' && route.query.date)
 const findingsPerDayDate = computed(() => route.query.date as string || '')
 const findingsPerDaySeverity = computed(() => route.query.severity as string || '')
 const findingsPerDayType = computed(() => route.query.type as string || '')
+const findingsPerDayKev = computed(() => route.query.kev === 'true')
 
 const findingsPerDayModalTitle = computed(() => {
     const date = directFindingsDate.value || findingsPerDayDate.value
@@ -459,18 +462,20 @@ const fullPageViewUrl = computed(() => {
     return `/findingsOverTime/${orgUuid.value}${params.toString() ? '?' + params.toString() : ''}`
 })
 
-async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
+async function openFindingsModal(date: string, severity: string = '', typeParam: string = '', kevOnly: boolean = false) {
     directFindingsDate.value = date
     directFindingsSeverity.value = severity
     directFindingsType.value = typeParam
+    directFindingsKev.value = kevOnly
     showFindingsPerDayModal.value = true
-    
+
     // Update URL without triggering watchers so page reload works
     const params = new URLSearchParams()
     params.set('display', 'findingsPerDay')
     params.set('date', date)
     if (severity) params.set('severity', severity)
     if (typeParam) params.set('type', typeParam)
+    if (kevOnly) params.set('kev', 'true')
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
     
     await fetchFindingsPerDay(date)
@@ -737,11 +742,16 @@ function renderChart() {
                 const datum = item.datum
                 let severity = ''
                 let typeParam = ''
+                let kevOnly = false
                 if (datum.type === 'KEV Vulnerabilities') {
                     // KEV is not a severity, so a severity filter of 'KEV' would
-                    // match nothing in the per-day table. Open the day unfiltered;
-                    // the table flags known-exploited findings individually.
+                    // match nothing in the per-day table. Open with the modal's
+                    // KEV-only switch pre-enabled instead: the day view then
+                    // shows exactly the rows this series point counted (a
+                    // known-exploited MEDIUM otherwise hides below the
+                    // CRITICALs/HIGHs in the severity-sorted table).
                     typeParam = 'Vulnerability'
+                    kevOnly = true
                 } else if (datum.type && datum.type.indexOf('Vulnerabilities') >= 0) {
                     severity = datum.type.split(' ')[0].toUpperCase()
                     typeParam = 'Vulnerability'
@@ -751,7 +761,7 @@ function renderChart() {
                 const dateObj = new Date(datum.createdDate)
                 const date = dateObj.toISOString().split('T')[0]
                 if (date) {
-                    openFindingsModal(date, severity, typeParam)
+                    openFindingsModal(date, severity, typeParam, kevOnly)
                 }
             }
         })
