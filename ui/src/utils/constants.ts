@@ -16,10 +16,14 @@ const VIOLATION_COLORS = {
     OPERATIONAL: 'grey'
 }
 
+// KEV (known-exploited) series color: deliberately outside the severity
+// palette -- KEV is an exploitation signal, not a severity level.
+const KEV_SERIES_COLOR = '#7c3aed'
+
 // Combined findings colors for charts (domain/range arrays for Vega-Lite)
 const FINDINGS_CHART_COLORS = {
-    domain: ['Critical Vulnerabilities', 'High Vulnerabilities', 'Medium Vulnerabilities', 'Low Vulnerabilities', 'Unassigned Vulnerabilities', 'License Violations', 'Security Violations', 'Operational Violations'],
-    range: [VULNERABILITY_COLORS.CRITICAL, VULNERABILITY_COLORS.HIGH, VULNERABILITY_COLORS.MEDIUM, VULNERABILITY_COLORS.LOW, VULNERABILITY_COLORS.UNASSIGNED, VIOLATION_COLORS.LICENSE, VIOLATION_COLORS.SECURITY, VIOLATION_COLORS.OPERATIONAL]
+    domain: ['Critical Vulnerabilities', 'High Vulnerabilities', 'Medium Vulnerabilities', 'Low Vulnerabilities', 'Unassigned Vulnerabilities', 'KEV Vulnerabilities', 'License Violations', 'Security Violations', 'Operational Violations'],
+    range: [VULNERABILITY_COLORS.CRITICAL, VULNERABILITY_COLORS.HIGH, VULNERABILITY_COLORS.MEDIUM, VULNERABILITY_COLORS.LOW, VULNERABILITY_COLORS.UNASSIGNED, KEV_SERIES_COLOR, VIOLATION_COLORS.LICENSE, VIOLATION_COLORS.SECURITY, VIOLATION_COLORS.OPERATIONAL]
 }
 
 const PACKAGE_TYPES = ['MAVEN', 'NPM', 'NUGET', 'GEM', 'PYPI', 'CONTAINER']
