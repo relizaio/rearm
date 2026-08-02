@@ -1,5 +1,8 @@
 <template>
-    <div class="over-time-finding-changes">
+    <!-- finding-changes: the shared _finding-common.scss rules (row gap, in-label,
+         severity palette) are all nested under it; without it the finding rows
+         render with no spacing ("CVE-XinPkg"). -->
+    <div class="over-time-finding-changes finding-changes">
         <div v-if="dateBuckets.length > 0">
             <p class="over-time-note">
                 Finding changes detected by re-scans over the selected period, grouped by the date the change was observed.
