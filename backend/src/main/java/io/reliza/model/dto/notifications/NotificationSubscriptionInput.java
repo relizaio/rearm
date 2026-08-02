@@ -71,7 +71,15 @@ public record NotificationSubscriptionInput(
              * NotificationSubscriptionService: every UUID must resolve
              * to a group in the same org as the subscription.
              */
-            List<UUID> channelGroups) {
+            List<UUID> channelGroups,
+            /*
+             * T3 -- UUIDs of Teams (user groups) whose own
+             * notificationChannels are merged into this route at fan-out
+             * time. Null / empty = no team expansion. Resolved late, at
+             * fan-out rather than save, so retargeting a team's channel
+             * takes effect without editing every subscription naming it.
+             */
+            List<UUID> teams) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -96,7 +96,7 @@ public class AnalyticsMetricsService {
 	private List<VulnViolationsChartDto> mapChartDaoToChartDtos(VulnViolationsChartDao row, java.time.ZoneId zone) {
 		LocalDate localDate = LocalDate.parse(row.getDateKey());
 		ZonedDateTime date = localDate.atStartOfDay(zone);
-		return List.of(
+		List<VulnViolationsChartDto> dtos = new LinkedList<>(List.of(
 			new VulnViolationsChartDto(date, row.getCritical(), "Critical Vulnerabilities"),
 			new VulnViolationsChartDto(date, row.getHigh(), "High Vulnerabilities"),
 			new VulnViolationsChartDto(date, row.getMedium(), "Medium Vulnerabilities"),
@@ -105,7 +105,15 @@ public class AnalyticsMetricsService {
 			new VulnViolationsChartDto(date, row.getLicenseViolations(), "License Violations"),
 			new VulnViolationsChartDto(date, row.getOperationalViolations(), "Operational Violations"),
 			new VulnViolationsChartDto(date, row.getSecurityViolations(), "Security Violations")
-		);
+		));
+		// kevCount is deliberately NOT coalesced in the SQL: rows seeded before the
+		// key existed return null, and emitting 0 for them would draw a flat
+		// "no KEV exposure" line for days we simply have no data for. Omitting the
+		// point makes the series start where the data starts.
+		if (row.getKevCount() != null) {
+			dtos.add(new VulnViolationsChartDto(date, row.getKevCount(), "KEV Vulnerabilities"));
+		}
+		return dtos;
 	}
 	
 	public Optional<AnalyticsMetricsData> findAnalyticsMetricsByOrgPerspectiveDateKey(UUID org, UUID perspective, String dateKey) {
@@ -435,6 +443,7 @@ public class AnalyticsMetricsService {
 		nm.put("medium", metricInt(m.getMedium()));
 		nm.put("low", metricInt(m.getLow()));
 		nm.put("unassigned", metricInt(m.getUnassigned()));
+		nm.put("kevCount", metricInt(m.getKevCount()));
 		nm.put("weaknesses", metricInt(m.getWeaknesses()));
 		nm.put("policyViolationsTotal", metricInt(m.getPolicyViolationsTotal()));
 		nm.put("policyViolationsLicenseTotal", metricInt(m.getPolicyViolationsLicenseTotal()));
@@ -544,6 +553,7 @@ public class AnalyticsMetricsService {
 		m.setMedium(numOrZero(nm.get("medium")));
 		m.setLow(numOrZero(nm.get("low")));
 		m.setUnassigned(numOrZero(nm.get("unassigned")));
+		m.setKevCount(numOrZero(nm.get("kevCount")));
 		m.setWeaknesses(numOrZero(nm.get("weaknesses")));
 		m.setPolicyViolationsTotal(numOrZero(nm.get("policyViolationsTotal")));
 		m.setPolicyViolationsLicenseTotal(numOrZero(nm.get("policyViolationsLicenseTotal")));
@@ -673,7 +683,10 @@ public class AnalyticsMetricsService {
 		List<VulnViolationsChartDto> out = new LinkedList<>();
 		for (ComponentAnalyticsMetrics row : rows) {
 			ZonedDateTime date = LocalDate.parse(row.getDateKey()).atStartOfDay(zone);
-			out.addAll(metricsFromNumericMap(row.getNumericMetrics()).convertToChartDto(date));
+			// Rows written before the kevCount key existed cannot distinguish
+			// "0 KEV" from "not measured" -- omit the KEV point for those days.
+			boolean hasKev = row.getNumericMetrics() != null && row.getNumericMetrics().containsKey("kevCount");
+			out.addAll(metricsFromNumericMap(row.getNumericMetrics()).convertToChartDto(date, hasKev));
 		}
 		return out;
 	}
@@ -766,7 +779,7 @@ public class AnalyticsMetricsService {
 		Map<String, Object> metricsMap = (Map<String, Object>) recordData.get("metrics");
 		if (metricsMap != null) {
 			Map<String, Object> nm = new java.util.LinkedHashMap<>();
-			for (String field : List.of("critical", "high", "medium", "low", "unassigned",
+			for (String field : List.of("critical", "high", "medium", "low", "unassigned", "kevCount",
 					"policyViolationsLicenseTotal", "policyViolationsOperationalTotal",
 					"policyViolationsSecurityTotal")) {
 				Object v = metricsMap.get(field);

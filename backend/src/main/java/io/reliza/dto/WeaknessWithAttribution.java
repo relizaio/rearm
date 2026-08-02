@@ -37,5 +37,20 @@ public record WeaknessWithAttribution(
     OrgLevelContext orgContext,
     
     // Analysis state (FALSE_POSITIVE, NOT_AFFECTED, etc.)
-    AnalysisState analysisState
-) {}
+    AnalysisState analysisState,
+
+    // ADDITIVE (changelog re-scan visibility): when this finding ARRIVED inside the window per
+    // finding_change_events (APPEARED), the earliest in-window event date. Lets the UI say WHEN a
+    // finding was first detected instead of implying the endpoint-anchor release introduced it.
+    java.time.ZonedDateTime scanArrivalDate,
+    // Earliest / latest in-window releases (by creation) whose CURRENT metrics carry this finding --
+    // the honest carrier RANGE for an arrival, replacing the misleading single endpoint anchor.
+    ComponentAttribution earliestCarrier,
+    ComponentAttribution latestCarrier
+) {
+	/** Copy with the scan-arrival decoration set; every other field is preserved verbatim. */
+	public WeaknessWithAttribution withScanArrival(java.time.ZonedDateTime arrivalDate,
+			ComponentAttribution earliest, ComponentAttribution latest) {
+		return new WeaknessWithAttribution(findingKey(), cweId(), severity(), ruleId(), location(), resolvedIn(), appearedIn(), presentIn(), resolvedInCount(), appearedInCount(), presentInCount(), isNetResolved(), isNetAppeared(), isStillPresent(), orgContext(), analysisState(), arrivalDate, earliest, latest);
+	}
+}

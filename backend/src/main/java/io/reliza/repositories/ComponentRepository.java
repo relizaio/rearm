@@ -66,6 +66,11 @@ public interface ComponentRepository extends CrudRepository<Component, UUID> {
 			value = VariableQueries.FIND_COMPONENT_BY_VCS_AND_PATH,
 			nativeQuery = true)
 	List<Component> findAllComponentsByVcsAndPath(String vcsUuidAsString, String orgUuidAsString, String repoPath);
+
+	@Query(
+			value = VariableQueries.FIND_LIVE_VCS_COMPONENTS_OF_ORG,
+			nativeQuery = true)
+	List<Component> findLiveVcsComponentsOfOrg(String orgUuidAsString);
 	
 	@Query(
 			value = VariableQueries.FIND_COMPONENTS_BY_VCS,

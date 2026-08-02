@@ -130,6 +130,9 @@ public class ComponentDataFetcher {
 	private OrganizationService organizationService;
 
 	@Autowired
+	private io.reliza.service.ComponentDuplicateRepairService componentDuplicateRepairService;
+
+	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
 
 	@Autowired
@@ -253,17 +256,27 @@ public class ComponentDataFetcher {
 
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
 
-		// First, try to resolve component normally
+		// Tri-state resolution: creation is legitimate ONLY on NOT_FOUND. The
+		// previous catch-based flow treated EVERY resolution failure as "not
+		// found" when createComponentIfMissing was set -- including AMBIGUOUS
+		// (duplicate registrations for the same VCS + repoPath) -- so once two
+		// duplicates existed, every CI run minted another instead of surfacing
+		// the operator problem (30+ observed in prod, one per run).
 		UUID componentId = null;
-		try {
-			componentId = componentService.resolveComponentIdFromInput(getNewVersionInput, authCtx);
-		} catch (RelizaException e) {
-			Boolean createComponentIfMissing = (Boolean) getNewVersionInput.get("createComponentIfMissing");
-			if (Boolean.TRUE.equals(createComponentIfMissing)) {
-				// Will create component after authorization is established
-				log.info("Component not found, will create due to createComponentIfMissing flag");
-			} else {
-				throw new RelizaException("Component cannot be resolved: " + e.getMessage());
+		ComponentService.ComponentResolution componentResolution =
+				componentService.resolveComponentResolutionFromInput(getNewVersionInput, authCtx);
+		switch (componentResolution.status()) {
+			case FOUND -> componentId = componentResolution.componentId();
+			case AMBIGUOUS -> throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+			case NOT_FOUND -> {
+				Boolean createComponentIfMissing = (Boolean) getNewVersionInput.get("createComponentIfMissing");
+				if (Boolean.TRUE.equals(createComponentIfMissing)) {
+					// Will create component after authorization is established
+					log.info("Component not found ({}), will create due to createComponentIfMissing flag",
+							componentResolution.detail());
+				} else {
+					throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+				}
 			}
 		}
 
@@ -743,4 +756,23 @@ public class ComponentDataFetcher {
 				.filter(Objects::nonNull)
 				.toList();
 	}
+	/**
+	 * Org-ADMIN on-demand repair of duplicate component registrations. Same
+	 * routine the enforceUniqueComponents startup sweep runs, scoped to one org
+	 * -- lets an operator repair a known-affected org without a restart, and
+	 * lets e2e tests drive the sweep deterministically.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "repairDuplicateComponents")
+	public io.reliza.service.ComponentDuplicateRepairService.RepairSummary repairDuplicateComponents(
+			@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
+		return componentDuplicateRepairService.repairOrganization(orgUuid, WhoUpdated.getWhoUpdated(oud.get()));
+	}
+
 }

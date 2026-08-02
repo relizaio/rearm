@@ -12,14 +12,19 @@
 // but derived from one source instead of hand-maintained fragment pairs.
 // RULE: a tagged selection must be self-contained on its one line (inline the
 // object body, no multi-line fragment interpolation).
+// Currently NO line is tagged: the CE mirror caught up with the re-scan
+// visibility fields (scanArrivalDate/carriers/baselineRelease), so they were
+// untagged and the fallback is dormant. Tag future Pro-first fields the same
+// way to re-arm it; changelogSchemaDrift.spec.ts keeps the stripped documents
+// valid against the CE mirror either way.
 const ADDITIVE_FIELD_MARKER = '#additive-field'
 
 export function stripAdditiveFields(queryText: string): string {
     return queryText.split('\n').filter((line) => !line.includes(ADDITIVE_FIELD_MARKER)).join('\n')
 }
 
-// One-line ComponentAttribution selection for marker-tagged carrier fields
-// (the multi-line COMPONENT_ATTRIBUTION_FRAGMENT cannot sit on a tagged line).
+// One-line ComponentAttribution selection for single-line carrier fields
+// (a tagged line cannot interpolate the multi-line COMPONENT_ATTRIBUTION_FRAGMENT).
 const ATTRIBUTION_INLINE = 'componentUuid componentName releaseUuid releaseVersion branchUuid branchName'
 
 // Fragments selecting vulnerability findings inline the knownExploited field
@@ -150,7 +155,7 @@ const NONE_RELEASE_CHANGES_FRAGMENT = `
     version
     lifecycle
     createdDate
-    baselineRelease #additive-field
+    baselineRelease
     commits {
         ${CODE_COMMIT_FRAGMENT}
     }
@@ -244,9 +249,9 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
             ${ORG_LEVEL_CONTEXT_FRAGMENT}
         }
         analysisState
-        scanArrivalDate #additive-field
-        earliestCarrier { ${ATTRIBUTION_INLINE} } #additive-field
-        latestCarrier { ${ATTRIBUTION_INLINE} } #additive-field
+        scanArrivalDate
+        earliestCarrier { ${ATTRIBUTION_INLINE} }
+        latestCarrier { ${ATTRIBUTION_INLINE} }
     }
     violations {
         findingKey
@@ -271,9 +276,9 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
             ${ORG_LEVEL_CONTEXT_FRAGMENT}
         }
         analysisState
-        scanArrivalDate #additive-field
-        earliestCarrier { ${ATTRIBUTION_INLINE} } #additive-field
-        latestCarrier { ${ATTRIBUTION_INLINE} } #additive-field
+        scanArrivalDate
+        earliestCarrier { ${ATTRIBUTION_INLINE} }
+        latestCarrier { ${ATTRIBUTION_INLINE} }
     }
     weaknesses {
         findingKey
@@ -300,9 +305,9 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
             ${ORG_LEVEL_CONTEXT_FRAGMENT}
         }
         analysisState
-        scanArrivalDate #additive-field
-        earliestCarrier { ${ATTRIBUTION_INLINE} } #additive-field
-        latestCarrier { ${ATTRIBUTION_INLINE} } #additive-field
+        scanArrivalDate
+        earliestCarrier { ${ATTRIBUTION_INLINE} }
+        latestCarrier { ${ATTRIBUTION_INLINE} }
     }
 `
 

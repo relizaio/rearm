@@ -654,12 +654,19 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	// silently dropped. No migration: flow_control is JSONB.
 	// ---------------------------------------------------------------------
 
-	/** First-write-wins marker; idempotent re-marks are no-ops while queued. */
+	/**
+	 * Always bumps {@code autoIntegrateRequestedAt}. This used to be first-write-wins, which
+	 * combined with the unconditional clear below into a lost wake-up: a re-trigger arriving
+	 * while a worker held the lease was a no-op here, the claim was lost to the lease, and the
+	 * in-flight worker's clear then erased the queue entry -- the re-trigger was dropped
+	 * entirely (no scheduler retry). Bumping the timestamp lets the clear detect that a request
+	 * arrived after the claim and preserve it.
+	 */
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.releases "
 			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{autoIntegrateRequestedAt}', to_jsonb(now()), true) "
-			+ "WHERE uuid = :uuid AND (flow_control->>'autoIntegrateRequestedAt') IS NULL", nativeQuery = true)
+			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void markAutoIntegrateRequested(@Param("uuid") UUID uuid);
 
 	/**
@@ -676,8 +683,10 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.releases "
-			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{autoIntegrateSkipUntil}', "
-			+ "    to_jsonb((now() + (:leaseSeconds || ' seconds')::interval)::text), true) "
+			+ "SET flow_control = jsonb_set(jsonb_set(coalesce(flow_control, '{}'::jsonb), "
+			+ "    '{autoIntegrateSkipUntil}', "
+			+ "    to_jsonb((now() + (:leaseSeconds || ' seconds')::interval)::text), true), "
+			+ "    '{autoIntegrateClaimedAt}', to_jsonb(now()), true) "
 			+ "WHERE uuid = :uuid AND (flow_control->>'autoIntegrateRequestedAt') IS NOT NULL "
 			+ "AND ((flow_control->>'autoIntegrateSkipUntil') IS NULL "
 			+ "     OR (flow_control->>'autoIntegrateSkipUntil')::timestamptz < now())", nativeQuery = true)
@@ -692,12 +701,21 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "LIMIT :batchLimit", nativeQuery = true)
 	List<UUID> findUuidsOfReleasesPendingAutoIntegrate(@Param("batchLimit") int batchLimit);
 
-	/** Clear the marker after every feature set integrated (or no-op). */
+	/**
+	 * Clear the markers after every feature set integrated (or no-op) -- UNLESS a new request
+	 * arrived after this run's claim (requestedAt > claimedAt): then keep the queue entry and
+	 * drop only the lease/bookkeeping, so the scheduler drain re-processes on its next tick
+	 * instead of the re-trigger being silently lost. A NULL claimedAt (legacy in-flight rows)
+	 * compares as unknown and falls through to the full clear (pre-fix behavior).
+	 */
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.releases "
 			+ "SET flow_control = NULLIF("
-			+ "    flow_control - 'autoIntegrateRequestedAt' - 'autoIntegrateSkipUntil' - 'autoIntegrateFailureCount', "
+			+ "    CASE WHEN (flow_control->>'autoIntegrateRequestedAt')::timestamptz > (flow_control->>'autoIntegrateClaimedAt')::timestamptz "
+			+ "         THEN flow_control - 'autoIntegrateSkipUntil' - 'autoIntegrateFailureCount' - 'autoIntegrateClaimedAt' "
+			+ "         ELSE flow_control - 'autoIntegrateRequestedAt' - 'autoIntegrateSkipUntil' - 'autoIntegrateFailureCount' - 'autoIntegrateClaimedAt' "
+			+ "    END, "
 			+ "    '{}'::jsonb) "
 			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void clearAutoIntegrateRequested(@Param("uuid") UUID uuid);

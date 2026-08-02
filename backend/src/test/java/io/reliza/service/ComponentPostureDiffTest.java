@@ -370,4 +370,62 @@ public class ComponentPostureDiffTest {
                 "retired out-of-window from-baseline excluded -> absent at from, present at to -> net-appeared");
         assertEquals(1, result.totalAppeared());
     }
+    // ---- changelog re-scan visibility: arrival decoration ----
+
+    /**
+     * The prod case this feature exists for (mafia-express, 2026-08-01): a NEW ADVISORY lands via
+     * re-scan on packages present in EVERY release, so ALL in-window releases' current metrics carry
+     * it. The posture diff classifies it New (absent at from, present at to) -- and must now also
+     * stamp WHEN it arrived (earliest in-window APPEARED event) and the honest carrier RANGE
+     * (earliest/latest in-window release currently carrying it), instead of leaving only the
+     * endpoint-anchor attribution that reads as "0.0.4 introduced this".
+     */
+    @Test
+    void lateScanArrival_stampsArrivalDateAndCarrierRange() {
+        VulnerabilityDto cve = vuln("CVE-2024-10491", "pkg:npm/express@5.2.1", VulnerabilitySeverity.MEDIUM, false);
+        ReleaseData r3 = release(REL_FROM, BRANCH_A, "0.0.3",
+                ZonedDateTime.parse("2026-06-05T00:00:00Z"), metrics(cve));
+        ReleaseData r4 = release(REL_TO, BRANCH_A, "0.0.4",
+                ZonedDateTime.parse("2026-06-10T00:00:00Z"), metrics(cve));
+        ZonedDateTime arrival = ZonedDateTime.parse("2026-06-15T00:00:00Z");
+        lenient().when(findingDimBackfillService.hydrateInRangeV3(any(), any(), any(), any()))
+                .thenReturn(List.of(appeared(REL_TO, "CVE-2024-10491", "pkg:npm/express@5.2.1",
+                        VulnerabilitySeverity.MEDIUM, arrival)));
+
+        FindingChangesWithAttribution result = run(Map.of(COMPONENT_A, List.of(r3, r4)));
+
+        VulnerabilityWithAttribution v = findVuln(result, "CVE-2024-10491");
+        assertNotNull(v);
+        assertTrue(v.appearedInCount() > 0, "absent at from (event replays it away), present at to -> appeared");
+        assertEquals(arrival, v.scanArrivalDate(), "arrival = earliest in-window APPEARED event date");
+        assertNotNull(v.earliestCarrier());
+        assertNotNull(v.latestCarrier());
+        assertEquals(REL_FROM, v.earliestCarrier().releaseUuid(), "earliest carrier is 0.0.3, NOT the endpoint anchor");
+        assertEquals("0.0.3", v.earliestCarrier().releaseVersion());
+        assertEquals(REL_TO, v.latestCarrier().releaseUuid());
+        assertEquals("0.0.4", v.latestCarrier().releaseVersion());
+        assertEquals("comp-a", v.earliestCarrier().componentName());
+    }
+
+    /** Without an in-window APPEARED event the decoration stays null -- nothing fabricated. */
+    @Test
+    void noEvent_appearanceKeepsNullScanArrival() {
+        VulnerabilityDto cve = vuln("CVE-2026-7777", LODASH, VulnerabilitySeverity.HIGH, false);
+        // Only the newer release carries it; no events at all (release-borne appearance,
+        // from-anchor reconstructs identical to current -> the from-anchor release lacks it).
+        ReleaseData r1 = release(REL_FROM, BRANCH_A, "1.0",
+                ZonedDateTime.parse("2026-06-05T00:00:00Z"), metrics());
+        ReleaseData r2 = release(REL_TO, BRANCH_A, "2.0",
+                ZonedDateTime.parse("2026-06-10T00:00:00Z"), metrics(cve));
+        stubNoEvents();
+
+        FindingChangesWithAttribution result = run(Map.of(COMPONENT_A, List.of(r1, r2)));
+
+        VulnerabilityWithAttribution v = findVuln(result, "CVE-2026-7777");
+        assertNotNull(v);
+        assertTrue(v.appearedInCount() > 0);
+        assertNull(v.scanArrivalDate());
+        assertNull(v.earliestCarrier());
+        assertNull(v.latestCarrier());
+    }
 }

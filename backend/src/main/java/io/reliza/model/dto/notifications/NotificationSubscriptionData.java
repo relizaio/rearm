@@ -83,7 +83,27 @@ public record NotificationSubscriptionData(
              * pre-13b read semantics. Treat null and empty identically
              * at the consumer site (the fan-out helper does).
              */
-            List<UUID> channelGroups) {
+            List<UUID> channelGroups,
+            /*
+             * T3 -- team targeting. A route may name Teams (UserGroups);
+             * at fan-out time each team's own {@code notificationChannels}
+             * are resolved and merged into the route's channel set. Lets an
+             * operator say "tell the Payments Team" without knowing which
+             * Slack channel that is today, and keeps the answer correct when
+             * the team later changes channel.
+             *
+             * <p><b>null is load-bearing</b> exactly as for
+             * {@code channelGroups}: pre-T3 JSONB rows do not carry this key,
+             * and the back-compat constructors below default it to null so
+             * existing routes keep their "channels only" semantics on read.
+             * Treat null and empty identically at the consumer site.
+             *
+             * <p>Scope note: this expands to team CHANNELS only. It does not
+             * push rows into members' inboxes -- inbox visibility already has
+             * its own component-team / perspective arms, and adding a third
+             * targeting path would risk duplicate inbox rows for one event.
+             */
+            List<UUID> teams) {
 
         /**
          * Backwards-compat constructor for callers (tests, older
@@ -105,7 +125,7 @@ public record NotificationSubscriptionData(
                 List<String> andEnvIn,
                 List<ReleaseLifecycle> andLifecycleIn,
                 List<UUID> channels) {
-            this(whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, null, null);
+            this(whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, null, null, null);
         }
 
         /**
@@ -119,7 +139,21 @@ public record NotificationSubscriptionData(
                 List<ReleaseLifecycle> andLifecycleIn,
                 List<UUID> channels,
                 List<UUID> perspectives) {
-            this(whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, null);
+            this(whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, null, null);
+        }
+
+        /**
+         * Phase 13b back-compat constructor -- for callers that pre-date the
+         * T3 {@code teams} field but already pass {@code channelGroups}.
+         * Defaults {@code teams} to null (= no team expansion).
+         */
+        public RouteConfig(NotificationSeverity whenSeverityAtLeast,
+                List<String> andEnvIn,
+                List<ReleaseLifecycle> andLifecycleIn,
+                List<UUID> channels,
+                List<UUID> perspectives,
+                List<UUID> channelGroups) {
+            this(whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, channelGroups, null);
         }
     }
 

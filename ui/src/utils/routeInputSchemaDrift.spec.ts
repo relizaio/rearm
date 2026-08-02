@@ -62,14 +62,16 @@ describe('buildNotificationRouteInput vs the CE mirror schema (in-repo, always r
         expect(ceSchema).not.toBeNull()
     })
 
-    it('CE really does lack `teams` -- the premise of the omission', () => {
+    // The old premise test here asserted CE really DID lack `teams`, as the
+    // reminder to simplify the omission once CE caught up. The 2026-08 Pro sync
+    // brought `teams` into the CE mirror, so the premise flipped: assert the
+    // caught-up reality instead. The omit-when-empty behavior itself stays --
+    // it is harmless on both editions (absent and empty lists are equivalent)
+    // and still protects any deployed CE backend that predates the sync.
+    it('CE now models `teams` -- a route WITH teams coerces cleanly on CE too', () => {
         if (!ceSchema) return
-        // Guards against "fixed" meaning "CE caught up and we forgot". If CE
-        // gains `teams`, this fails and the omission can be simplified away.
-        const errs = coerceErrors(ceSchema, 'NotificationRouteInput', {
-            channels: ['ch-1'], teams: ['team-1'],
-        })
-        expect(errs.join(' ')).toMatch(/teams/)
+        expect(coerceErrors(ceSchema, 'NotificationRouteInput',
+            buildNotificationRouteInput(ROUTE_WITH_TEAMS))).toEqual([])
     })
 
     it('a route with NO teams coerces cleanly on CE', () => {

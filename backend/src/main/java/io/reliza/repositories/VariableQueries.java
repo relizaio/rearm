@@ -1101,6 +1101,14 @@ class VariableQueries {
 			(v.record_data->>'uri' = :uri or v.record_data->>'uri' = 'https://' || :uri or v.record_data->>'uri' = 'http://' || :uri)
 			""";
 	
+	protected static final String FIND_LIVE_VCS_COMPONENTS_OF_ORG = """
+			select * from rearm.components c
+			where c.record_data->>'org' = :orgUuidAsString
+			and c.record_data->>'vcs' is not null
+			and c.record_data->>'type' = 'COMPONENT'
+			and (c.record_data->>'status' != 'ARCHIVED' or c.record_data->>'status' is null)
+			""";
+
 	protected static final String FIND_COMPONENTS_BY_VCS = """
 			select * from rearm.components c
 			where c.record_data->>'vcs' = :vcsUuidAsString
@@ -1306,6 +1314,7 @@ class VariableQueries {
 				COALESCE((am.numeric_metrics->>'medium')::int, 0) as medium,
 				COALESCE((am.numeric_metrics->>'low')::int, 0) as low,
 				COALESCE((am.numeric_metrics->>'unassigned')::int, 0) as unassigned,
+				(am.numeric_metrics->>'kevCount')::int as kevCount,
 				COALESCE((am.numeric_metrics->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
 				COALESCE((am.numeric_metrics->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
 				COALESCE((am.numeric_metrics->>'policyViolationsSecurityTotal')::int, 0) as securityViolations
@@ -1339,6 +1348,7 @@ class VariableQueries {
 				COALESCE((am.numeric_metrics->>'medium')::int, 0) as medium,
 				COALESCE((am.numeric_metrics->>'low')::int, 0) as low,
 				COALESCE((am.numeric_metrics->>'unassigned')::int, 0) as unassigned,
+				(am.numeric_metrics->>'kevCount')::int as kevCount,
 				COALESCE((am.numeric_metrics->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
 				COALESCE((am.numeric_metrics->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
 				COALESCE((am.numeric_metrics->>'policyViolationsSecurityTotal')::int, 0) as securityViolations

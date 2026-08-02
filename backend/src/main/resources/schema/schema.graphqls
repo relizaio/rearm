@@ -476,6 +476,14 @@ type Query {
 	kevRecordDetails(orgUuid: ID!, cveId: String!): KevRecordDetails
 }
 
+type DuplicateComponentRepairSummary {
+	groupsExamined: Int!
+	releasesFolded: Int!
+	componentsArchived: Int!
+	branchesArchived: Int!
+	conflictGroups: Int!
+}
+
 type Mutation {
 	# user management
 	acceptUserPolicies(tosAccepted: Boolean!, marketingAccepted: Boolean!, email: String): User
@@ -584,6 +592,15 @@ type Mutation {
 	send the rules in the order you want first-match-wins to honour.
 	"""
 	setGlobalPrValidationTriggerRules(orgUuid: ID!, rules: [GlobalPrValidationTriggerRuleInput!]!): Organization
+	"""
+	Replace the org's team-assignment rules wholesale. Each rule needs a name
+	(unique within the org, case-insensitive), a compilable regex no longer than
+	512 characters, and an ownerTeam that exists, is ACTIVE and belongs to this
+	org. List order is the priority order; send the rules in the order you want
+	first-match-wins to honour. Pass an empty list to clear all rules.
+	Org-admin only.
+	"""
+	setGlobalTeamAssignmentRules(orgUuid: ID!, rules: [GlobalTeamAssignmentRuleInput!]!): Organization
 	"""
 	Replace the org's global approval-policy assignment rules
 	atomically. Each input rule must (a) carry a non-blank, org-unique
@@ -722,6 +739,15 @@ type Mutation {
 	# (e.g. an earlier async reconcile failed). Returns true on success; throws on failure so the
 	# caller sees the underlying error.
 	reconcileReleaseSbomComponents(releaseUuid: ID!): Boolean
+	"""
+	Org-ADMIN repair for duplicate component registrations: several live
+	COMPONENT-type components on one (vcs, repoPath) carrying the SAME name.
+	Folds non-conflicting releases under the oldest component and archives the
+	duplicates; on version conflicts archives without folding. Same-vcs groups
+	with differing names are reported but never auto-merged. Same routine the
+	enforceUniqueComponents startup sweep runs.
+	"""
+	repairDuplicateComponents(orgUuid: ID!): DuplicateComponentRepairSummary
 
 	# Programmatic
 	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
@@ -1314,9 +1340,10 @@ type NotificationSubscriptionResult {
 	# JSON-stringified filter config: { mode, presetConfig, celExpression }.
 	filter: String
 	# JSON-stringified route table:
-	# [{ whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, channelGroups }].
+	# [{ whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, channelGroups, teams }].
 	# perspectives is the Phase 12 list of UUIDs gating the route -- null/empty = no gate.
 	# channelGroups is the Phase 13b list of group UUIDs expanded to member channels at fan-out.
+	# teams is the T3 list of team UUIDs whose own channels are merged in at fan-out.
 	routes: String
 	dedupWindowMinutes: Int
 	# JSON-stringified rate limit config: { maxPerWindow, windowMinutes }. Nullable.
@@ -1647,6 +1674,15 @@ input NotificationRouteInput {
 	# Same null/[] equivalence as perspectives: both treated as "no group
 	# expansion."
 	channelGroups: [ID!]
+	# T3 team targeting. UUIDs of Teams (user groups) whose own
+	# notificationChannels are merged into this route at fan-out time. Lets an
+	# operator say "tell the Payments Team" without knowing which Slack channel
+	# that is today, and keeps it correct when the team later changes channel.
+	# Teams are resolved at fan-out, not at save: a team that no longer exists
+	# contributes nothing rather than failing the route. Expands to team
+	# CHANNELS only -- it does not push rows into members' inboxes, which have
+	# their own visibility arms. Same null/[] equivalence as the fields above.
+	teams: [ID!]
 }
 
 input NotificationRateLimitInput {
@@ -1937,6 +1973,43 @@ type Organization {
 	clean-up. SAAS-only.
 	"""
 	globalApprovalPolicyRules: [GlobalApprovalPolicyRule]
+	"""
+	Org-wide team-assignment rules. Each rule maps a regex over
+	{@code Component.name} (matched fully-anchored) plus a
+	{@code componentType} filter to an owner team. When a component has no
+	per-component owner, the resolver walks this list in order and the first
+	matching rule's team becomes the component's durable owner -- the result
+	is flagged derived and names the rule, so the UI can distinguish "someone
+	chose this" from "a pattern matched". A per-component owner always wins.
+	List order is the priority order -- first match wins.
+	"""
+	globalTeamAssignmentRules: [GlobalTeamAssignmentRule]
+}
+
+"""
+Org-wide team-assignment rule (T2). See
+{@link Organization.globalTeamAssignmentRules} for the priority contract.
+"""
+type GlobalTeamAssignmentRule {
+	"""Display name; unique within the org."""
+	name: String
+	"""
+	Java regex matched against {@code ComponentData.name} via
+	{@code Pattern.matcher(name).matches()} -- fully anchored. Operators write
+	{@code frontend-.*} (no leading {@code ^}, no trailing {@code $}).
+	"""
+	namePattern: String
+	"""Type filter; ANY (or null) matches both COMPONENT and PRODUCT."""
+	componentType: ComponentType
+	"""Owner team (UserGroup) UUID; must exist and be active in this org."""
+	ownerTeam: ID
+}
+
+input GlobalTeamAssignmentRuleInput {
+	name: String!
+	namePattern: String!
+	componentType: ComponentType
+	ownerTeam: ID!
 }
 
 """
@@ -2193,8 +2266,48 @@ type UserGroupWebDto {
 	permissions: Permissions
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
+	# Addressing roles for roster users (annotation only -- a role never grants
+	# access, and listing a user here does NOT add them to the team).
+	memberRoles: [TeamMemberRole]
+	# Team members who are not registered ReARM users. Addressable for
+	# notification/escalation, but excluded from the durability bar by design.
+	externalMembers: [ExternalTeamMember]
+	"""
+	Notification channels this team is reachable on (e.g. its Slack channel).
+	Direct channel references rather than a channel-group reference: a team
+	having its own channel is one idea, and routing it through a separate named
+	group would add an entity and a screen for no benefit. Channel groups remain
+	the org-level bundling concept for subscriptions.
+	"""
+	notificationChannels: [ID]
 	createdDate: DateTime
 	lastUpdatedBy: ID
+}
+
+# The role a member plays on a Team. An addressing LABEL only -- never grants
+# access (membership stays decoupled from RBAC). CUSTOM carries an org-defined
+# label alongside in customRole.
+enum TeamRole {
+	TEAM_LEAD
+	SECURITY_SPECIALIST
+	DEVELOPER
+	QA
+	PROJECT_MANAGER
+	PRODUCT_MANAGER
+	CUSTOM
+}
+
+type TeamMemberRole {
+	userRef: ID
+	role: TeamRole
+	customRole: String
+}
+
+type ExternalTeamMember {
+	name: String
+	contact: String
+	role: TeamRole
+	customRole: String
 }
 
 type EmailObject {
@@ -2360,6 +2473,8 @@ type NoneReleaseChanges {
 	sbomChanges: ReleaseSbomChanges!
 	findingChanges: ReleaseFindingChanges!
 	createdDate: DateTime!
+	"ADDITIVE (changelog re-scan visibility): true when this is the component's first release EVER -- its finding/SBOM sections are empty because there is no baseline to diff against, not because nothing changed."
+	baselineRelease: Boolean!
 }
 
 type CodeCommit {
@@ -2544,6 +2659,12 @@ type VulnerabilityWithAttribution {
 	analysisState: AnalysisState
 	"True when this vulnerability (by CVE id or alias) is in the CISA KEV catalog"
 	knownExploited: Boolean
+	"ADDITIVE (changelog re-scan visibility): earliest in-window APPEARED finding_change_event date for this finding; null when the appearance is not event-backed."
+	scanArrivalDate: DateTime
+	"ADDITIVE: earliest in-window release (by creation) whose current metrics carry this finding."
+	earliestCarrier: ComponentAttribution
+	"ADDITIVE: latest in-window release (by creation) whose current metrics carry this finding."
+	latestCarrier: ComponentAttribution
 }
 
 type VulnerabilityAlias {
@@ -2610,6 +2731,12 @@ type ViolationWithAttribution {
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
 	analysisState: AnalysisState
+	"ADDITIVE (changelog re-scan visibility): earliest in-window APPEARED finding_change_event date for this finding; null when the appearance is not event-backed."
+	scanArrivalDate: DateTime
+	"ADDITIVE: earliest in-window release (by creation) whose current metrics carry this finding."
+	earliestCarrier: ComponentAttribution
+	"ADDITIVE: latest in-window release (by creation) whose current metrics carry this finding."
+	latestCarrier: ComponentAttribution
 }
 
 type WeaknessWithAttribution {
@@ -2631,6 +2758,12 @@ type WeaknessWithAttribution {
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
 	analysisState: AnalysisState
+	"ADDITIVE (changelog re-scan visibility): earliest in-window APPEARED finding_change_event date for this finding; null when the appearance is not event-backed."
+	scanArrivalDate: DateTime
+	"ADDITIVE: earliest in-window release (by creation) whose current metrics carry this finding."
+	earliestCarrier: ComponentAttribution
+	"ADDITIVE: latest in-window release (by creation) whose current metrics carry this finding."
+	latestCarrier: ComponentAttribution
 }
 
 type OrgLevelContext {
@@ -4005,6 +4138,12 @@ input UpdateComponentInput {
 	component's org (no DB FK). Null leaves the existing owner unchanged.
 	"""
 	owner: ComponentOwnerInput
+	"""
+	Explicitly remove the stored owner. Needed because owner: null already means
+	"no change", so it cannot express removal. Clearing hands the component back
+	to org team-assignment rules. Takes precedence over owner when both are sent.
+	"""
+	clearOwner: Boolean
 }
 
 input ComponentContactInput {
@@ -4482,6 +4621,27 @@ input UpdateUserGroupInput {
 	approvals: [String]
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
+	# Each userRef must already be on the roster (users + manualUsers); a role
+	# annotates an existing member, it never adds one.
+	memberRoles: [TeamMemberRoleInput]
+	externalMembers: [ExternalTeamMemberInput]
+	# Channels must exist and belong to this org; validated on save.
+	notificationChannels: [ID]
+}
+
+input TeamMemberRoleInput {
+	userRef: ID!
+	role: TeamRole!
+	# Required when role is CUSTOM, ignored otherwise.
+	customRole: String
+}
+
+input ExternalTeamMemberInput {
+	name: String!
+	contact: String!
+	role: TeamRole!
+	# Required when role is CUSTOM, ignored otherwise.
+	customRole: String
 }
 
 input UserGroupPermissionInput {

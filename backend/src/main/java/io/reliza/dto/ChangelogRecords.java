@@ -241,7 +241,12 @@ public final class ChangelogRecords {
 		List<CodeCommit> commits,
 		ReleaseSbomChanges sbomChanges,
 		ReleaseFindingChanges findingChanges,
-		ZonedDateTime createdDate
+		ZonedDateTime createdDate,
+		// ADDITIVE (changelog re-scan visibility): true when this is the component's first release
+		// EVER (no predecessor exists at all, in-window or before it). Its finding/SBOM sections are
+		// empty because there is no baseline to diff against, NOT because nothing changed -- the UI
+		// labels the card instead of rendering a silently empty section.
+		boolean baselineRelease
 	) {}
 	
 	/**
