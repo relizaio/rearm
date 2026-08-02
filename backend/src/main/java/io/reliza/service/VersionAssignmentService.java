@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.BranchSuffixMode;
+import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.BranchType;
@@ -348,7 +349,7 @@ public class VersionAssignmentService {
 		// ("1.2.3-0", "1.2.3-1", ...). Up to 5 attempts after the scanned maximum.
 		if (getVersionAssignment(pd.getUuid(), versionString, versionType).isPresent()) {
 			final String baseVersion = versionString;
-			String likePattern = escapeForLike(baseVersion) + "-%";
+			String likePattern = Utils.escapeSqlLikeLiteral(baseVersion) + "-%";
 			List<VersionAssignment> existingVas = repository.findVersionAssignmentsByComponentAndVersionLike(
 					pd.getUuid(), versionType.name(), likePattern);
 			int maxSuffix = -1;
@@ -693,16 +694,6 @@ public class VersionAssignmentService {
 
 	public void saveAll(List<VersionAssignment> versionAssignments){
 		repository.saveAll(versionAssignments);
-	}
-
-	/**
-	 * Escapes SQL LIKE wildcard characters ('%', '_') and the escape character ('\')
-	 * so that the input string can be used as a literal prefix in a LIKE pattern
-	 * with {@code ESCAPE '\'}.
-	 */
-	private static String escapeForLike(String s) {
-		if (s == null) return "";
-		return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
 	}
 
 	public record GetNewVersionDto(

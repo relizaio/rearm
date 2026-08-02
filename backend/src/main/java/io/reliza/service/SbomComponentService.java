@@ -1843,6 +1843,36 @@ private static int currentReconcileFailureCount(Release r) {
 
 	public record ComponentPurlToSbom(String purl, List<UUID> sbomComponents) {}
 
+	/**
+	 * Org-wide search backing the "which releases ship this?" lookup. Each
+	 * query term is resolved one of two ways:
+	 *
+	 * <ul>
+	 * <li><b>Purl term</b> (starts with {@code pkg:}) -- resolved against
+	 *     {@code canonical_purl}. A purl that pins a version resolves to that
+	 *     one canonical row; a versionless purl resolves to every version of
+	 *     the coordinate.</li>
+	 * <li><b>Anything else</b> -- exact match on the component name, with the
+	 *     optional version filter, as before.</li>
+	 * </ul>
+	 *
+	 * <p>The purl arm exists because the search box has always advertised
+	 * "Name or Purl" while only the name path was wired up: pasting
+	 * {@code pkg:npm/lodash@4.17.21} matched nothing, since a purl is never
+	 * equal to a bare {@code record_data->>'name'}.
+	 *
+	 * <p>A purl term is self-contained, so the separate {@code version}
+	 * argument is ignored for it -- splicing a version into a purl that may
+	 * already carry qualifiers produces malformed input more often than it
+	 * helps. Pin the version inside the purl instead.
+	 *
+	 * <p><b>Purl is the only identifier scheme routed here.</b>
+	 * {@code canonical_purl} also stores {@code cpe:} (and, via
+	 * {@link #schemeOf}, other CDX identity schemes), but those are
+	 * deliberately out of scope: a pasted CPE falls through to the name path
+	 * and finds nothing. Adding one is a new arm on the scheme test plus its
+	 * own canonicalization -- not a behaviour change to the purl arm.
+	 */
 	public List<ComponentPurlToSbom> searchSbomComponentsBatch(
 			List<SbomComponentSearchQuery> queries, UUID orgUuid) {
 		if (queries == null || queries.isEmpty() || orgUuid == null) return List.of();
@@ -1850,8 +1880,11 @@ private static int currentReconcileFailureCount(Release r) {
 		Map<String, Set<UUID>> byCanonical = new LinkedHashMap<>();
 		for (SbomComponentSearchQuery q : queries) {
 			if (q == null || q.name() == null || q.name().isBlank()) continue;
-			List<SbomComponent> matches = sbomComponentRepository
-					.searchByOrgAndNameAndOptionalVersion(orgUuidStr, q.name(), q.version());
+			String term = q.name().strip();
+			List<SbomComponent> matches = Utils.isPurl(term)
+					? searchByPurlTerm(term, orgUuid, orgUuidStr)
+					: sbomComponentRepository
+							.searchByOrgAndNameAndOptionalVersion(orgUuidStr, term, q.version());
 			for (SbomComponent sc : matches) {
 				byCanonical.computeIfAbsent(sc.getCanonicalPurl(), k -> new LinkedHashSet<>())
 						.add(sc.getUuid());
@@ -1864,9 +1897,46 @@ private static int currentReconcileFailureCount(Release r) {
 		return out;
 	}
 
+	/**
+	 * Resolves a purl search term. Version-pinned purls take the unique-index
+	 * lookup; versionless ones fan out over the coordinate. An unparseable
+	 * purl yields no matches rather than falling back to a name lookup -- a
+	 * string starting with {@code pkg:} is never a package name, so a name
+	 * match would only ever produce confusing noise.
+	 */
+	private List<SbomComponent> searchByPurlTerm(String term, UUID orgUuid, String orgUuidStr) {
+		String base = Utils.purlCoordinateBase(term);
+		if (base == null) return List.of();
+		String pinnedVersion = Utils.purlVersion(term);
+		if (pinnedVersion == null || pinnedVersion.isEmpty()) {
+			return searchCoordinate(orgUuidStr, base);
+		}
+		String canonical = Utils.canonicalizePurl(term);
+		if (canonical != null) {
+			Optional<SbomComponent> exact = sbomComponentRepository
+					.findByOrgAndCanonicalPurl(orgUuid, canonical);
+			if (exact.isPresent()) return List.of(exact.get());
+		}
+		// The exact arm only hits when the pasted purl carries the same identity
+		// qualifiers the stored canonical does. Advisories quote the bare
+		// coordinate -- 'pkg:deb/debian/attr@1:2.5.2-3' against a stored
+		// '...@1:2.5.2-3?distro=debian-13' -- so fall back to the coordinate and
+		// match the version semantically. Comparing parsed versions rather than
+		// raw strings also absorbs encoding drift between eras of writer (a
+		// Debian epoch colon persists as both ':' and '%3A').
+		return searchCoordinate(orgUuidStr, base).stream()
+				.filter(sc -> pinnedVersion.equals(Utils.purlVersion(sc.getCanonicalPurl())))
+				.toList();
+	}
+
+	private List<SbomComponent> searchCoordinate(String orgUuidStr, String base) {
+		return sbomComponentRepository.searchByOrgAndCanonicalPurlCoordinate(
+				orgUuidStr, base, Utils.escapeSqlLikeLiteral(base));
+	}
+
 	public UUID searchSbomComponentByPurl(String purl, UUID orgUuid) {
 		if (orgUuid == null) return null;
-		String canonical = io.reliza.common.Utils.canonicalizePurl(purl);
+		String canonical = Utils.canonicalizePurl(purl);
 		if (canonical == null) return null;
 		return sbomComponentRepository.findByOrgAndCanonicalPurl(orgUuid, canonical)
 				.map(SbomComponent::getUuid)
