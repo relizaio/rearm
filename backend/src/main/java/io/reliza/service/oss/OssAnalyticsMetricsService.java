@@ -189,14 +189,11 @@ public class OssAnalyticsMetricsService {
 		@SuppressWarnings("unchecked")
 		Map<String, Object> metricsMap = (Map<String, Object>) recordData.get("metrics");
 		if (metricsMap != null) {
-			Map<String, Object> nm = new java.util.LinkedHashMap<>();
-			for (String field : List.of("critical", "high", "medium", "low", "unassigned",
-					"policyViolationsLicenseTotal", "policyViolationsOperationalTotal",
-					"policyViolationsSecurityTotal")) {
-				Object v = metricsMap.get(field);
-				if (v != null) nm.put(field, v);
-			}
-			am.setNumericMetrics(nm);
+			// Shared field list -- this save() is the one the midnight seed and
+			// the change-driven today-refresh actually write through; a field
+			// added only to AnalyticsMetricsService.save() never reaches the
+			// chart (the KEV series shipped that way).
+			am.setNumericMetrics(AnalyticsMetricsService.extractNumericMetrics(metricsMap));
 		}
 		// entity field initializer only stamps construction time; on re-save
 		// (the today-row upsert path) it must be bumped explicitly, matching

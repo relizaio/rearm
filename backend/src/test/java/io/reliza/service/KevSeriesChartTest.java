@@ -32,6 +32,7 @@ import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.repositories.AnalyticsMetricsRepository;
+import io.reliza.service.oss.OssAnalyticsMetricsService;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.ws.App;
 import io.reliza.ws.oss.TestInitializer;
@@ -61,6 +62,7 @@ public class KevSeriesChartTest {
 	@Autowired private ComponentService componentService;
 	@Autowired private BranchService branchService;
 	@Autowired private OssReleaseService ossReleaseService;
+	@Autowired private OssAnalyticsMetricsService ossAnalyticsMetricsService;
 	@Autowired private SharedReleaseService sharedReleaseService;
 	@Autowired private TestInitializer testInitializer;
 
@@ -156,5 +158,67 @@ public class KevSeriesChartTest {
 		assertTrue(kev.isPresent(), "branch chart must emit the KEV series");
 		assertEquals(1, kev.get().num());
 		assertEquals(9, dtos.size(), "compute path emits all nine series");
+	}
+
+	/**
+	 * Goes through the PRODUCTION org-row writer -- the OssAnalyticsMetricsService
+	 * save() that the midnight seed and the change-driven today-refresh use --
+	 * rather than writing rows via the repository. The KEV series originally
+	 * shipped with kevCount added only to AnalyticsMetricsService.save(), a
+	 * duplicated whitelist the production path never calls, so the field was
+	 * never persisted by a real compute; a repository-written fixture cannot
+	 * catch that class of bug.
+	 */
+	@Test
+	public void productionOrgComputePersistsKevCount() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		String slug = "it-kevprod-" + UUID.randomUUID().toString().substring(0, 8);
+		UUID componentUuid = componentService.createComponent(CreateComponentDto.builder()
+				.organization(org.getUuid())
+				.name(slug)
+				.type(ComponentType.COMPONENT)
+				.versionSchema("semver")
+				.featureBranchVersioning("Branch.Micro")
+				.build(), WU).getUuid();
+		Branch branch = branchService.findBranchByName(componentUuid, "main", true, WU).get();
+		UUID releaseUuid = ossReleaseService.createRelease(ReleaseDto.builder()
+				.component(componentUuid)
+				.branch(branch.getUuid())
+				.org(org.getUuid())
+				.status(ReleaseData.ReleaseStatus.ACTIVE)
+				.lifecycle(ReleaseData.ReleaseLifecycle.ASSEMBLED)
+				.version("1.0.0")
+				.build(), WU).getUuid();
+
+		Release r = sharedReleaseService.getRelease(releaseUuid).orElseThrow();
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(List.of(
+				new ReleaseMetricsDto.VulnerabilityDto(
+						"pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1", "CVE-2021-44228",
+						ReleaseMetricsDto.VulnerabilitySeverity.CRITICAL,
+						null, null, null, null, null, null, null, null, null, null, null,
+						Boolean.TRUE),
+				new ReleaseMetricsDto.VulnerabilityDto(
+						"pkg:maven/org.springframework/spring-beans@5.3.17", "CVE-2022-22965",
+						ReleaseMetricsDto.VulnerabilitySeverity.HIGH,
+						null, null, null, null, null, null, null, null, null, null, null,
+						Boolean.FALSE)));
+		rmd.computeMetricsFromFacts();
+		sharedReleaseService.saveReleaseMetrics(r, rmd);
+
+		ZonedDateTime now = ZonedDateTime.now();
+		String todayKey = now.toLocalDate().toString();
+		ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForOrgAndDate(org.getUuid(), todayKey, WU);
+
+		List<VulnViolationsChartDto> dtos = analyticsMetricsService.listChartDataByOrgDates(
+				org.getUuid(), now.minusDays(1), now.plusDays(1));
+		Optional<VulnViolationsChartDto> kev = kevPointOn(dtos, todayKey);
+		assertTrue(kev.isPresent(),
+				"the production seed/refresh writer must persist kevCount so the chart emits the KEV point");
+		assertEquals(1, kev.get().num());
+		// and the rest of the row is intact
+		assertTrue(dtos.stream().anyMatch(d -> "Critical Vulnerabilities".equals(d.type())
+				&& d.createdDate().toLocalDate().toString().equals(todayKey) && d.num() == 1),
+				"critical count must persist alongside kevCount");
 	}
 }

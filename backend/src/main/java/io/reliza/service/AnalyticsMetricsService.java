@@ -93,6 +93,30 @@ public class AnalyticsMetricsService {
 		return rows.stream().flatMap(r -> mapChartDaoToChartDtos(r, zone).stream()).toList();
 	}
 	
+	/**
+	 * The numeric-metrics fields persisted onto analytics_metrics rows and read
+	 * back by the findings-over-time chart SQL. SHARED between this service's
+	 * save() and OssAnalyticsMetricsService.save() -- the production seed and
+	 * today-refresh write through the latter, and a field present in only one
+	 * copy silently never reaches the chart (which is exactly how the KEV
+	 * series shipped without kevCount ever being persisted by the real write
+	 * path).
+	 */
+	static final List<String> NUMERIC_METRIC_FIELDS = List.of(
+			"critical", "high", "medium", "low", "unassigned", "kevCount",
+			"policyViolationsLicenseTotal", "policyViolationsOperationalTotal",
+			"policyViolationsSecurityTotal");
+
+	/** Copy the whitelisted numeric fields out of a serialized metrics map. */
+	public static Map<String, Object> extractNumericMetrics(Map<String, Object> metricsMap) {
+		Map<String, Object> nm = new java.util.LinkedHashMap<>();
+		for (String field : NUMERIC_METRIC_FIELDS) {
+			Object v = metricsMap.get(field);
+			if (v != null) nm.put(field, v);
+		}
+		return nm;
+	}
+
 	private List<VulnViolationsChartDto> mapChartDaoToChartDtos(VulnViolationsChartDao row, java.time.ZoneId zone) {
 		LocalDate localDate = LocalDate.parse(row.getDateKey());
 		ZonedDateTime date = localDate.atStartOfDay(zone);
@@ -778,14 +802,7 @@ public class AnalyticsMetricsService {
 		@SuppressWarnings("unchecked")
 		Map<String, Object> metricsMap = (Map<String, Object>) recordData.get("metrics");
 		if (metricsMap != null) {
-			Map<String, Object> nm = new java.util.LinkedHashMap<>();
-			for (String field : List.of("critical", "high", "medium", "low", "unassigned", "kevCount",
-					"policyViolationsLicenseTotal", "policyViolationsOperationalTotal",
-					"policyViolationsSecurityTotal")) {
-				Object v = metricsMap.get(field);
-				if (v != null) nm.put(field, v);
-			}
-			am.setNumericMetrics(nm);
+			am.setNumericMetrics(extractNumericMetrics(metricsMap));
 		}
 		// entity field initializer only stamps construction time; on re-save
 		// (the today-row upsert path) it must be bumped explicitly, matching
