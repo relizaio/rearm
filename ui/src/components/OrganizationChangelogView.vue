@@ -48,6 +48,18 @@
                     
                     <n-tab-pane name="findings" tab="🔒 Finding Changes">
                         <div v-if="aggregationType === 'NONE' && changelog.__typename === 'NoneOrganizationChangelog'">
+                            <!-- Re-scan-driven changes (e.g. a newly published advisory matching
+                                 already-shipped releases) never show in the pairwise per-release
+                                 diffs below - both sides of every consecutive diff carry the
+                                 finding, so they cancel out. Surface them from the event stream,
+                                 same as the component-scope NONE view (ChangelogView). -->
+                            <div v-if="changelog.overTimeFindingChanges && changelog.overTimeFindingChanges.length > 0" class="over-time-section">
+                                <h3 class="over-time-heading">Changes detected by re-scans</h3>
+                                <OverTimeFindingChanges
+                                    :over-time-finding-changes="changelog.overTimeFindingChanges"
+                                    :org-uuid="orgUuid"
+                                />
+                            </div>
                             <div v-for="component in changelog.components" :key="component.componentUuid">
                                 <ComponentHeader
                                     :org-uuid="orgUuid"
@@ -106,7 +118,8 @@ import {
     FindingChangesDisplayWithAttribution,
     SbomChangesDisplay,
     ComponentHeader,
-    ReleaseHeader
+    ReleaseHeader,
+    OverTimeFindingChanges
 } from './changelog'
 import { fetchOrganizationChangelogByDate } from '../utils/changelogQueries'
 import type { OrganizationChangelog } from '../types/changelog-sealed'
@@ -222,6 +235,16 @@ function handleExportPdf() {
         text-align: center;
         color: #999;
         font-style: italic;
+    }
+
+    .over-time-section {
+        margin-bottom: 24px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .over-time-heading {
+        margin-bottom: 4px;
     }
 }
 </style>
