@@ -2510,4 +2510,31 @@ public class ReleaseDatafetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
 		return sharedReleaseService.listReleaseDataOfBranchBetweenDates(branchUuid, startDate, endDate, limit);
 	}
+
+	/**
+	 * Refresh a release's findings metrics from CURRENT scan + KEV state: full
+	 * rebuild from the release's artifacts' (fan-out-maintained) metrics, then
+	 * analysis overlay and known-exploited re-stamp against kev_assertions. No
+	 * Dependency-Track round-trip -- the org-wide {@code forceReuploadDtrackData}
+	 * remains the escalation for a true re-analysis. Main operator use: stored
+	 * release metrics gone stale relative to KEV state (e.g. findings that were
+	 * already KEV at the org's bootstrap catalog sync, which deliberately skips
+	 * the re-stamp storm). WRITE on the release; component- and org-scoped WRITE
+	 * permissions satisfy this through the scope hierarchy.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "recomputeReleaseFindings")
+	public Boolean recomputeReleaseFindings(
+			@InputArgument("releaseUuid") UUID releaseUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(
+				oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE,
+				releaseUuid, List.of(ro), CallType.WRITE);
+		log.info("User {} requested findings recompute for release {}", oud.get().getUuid(), releaseUuid);
+		releaseService.computeReleaseMetrics(releaseUuid, true);
+		return true;
+	}
 }

@@ -740,6 +740,16 @@ type Mutation {
 	# caller sees the underlying error.
 	reconcileReleaseSbomComponents(releaseUuid: ID!): Boolean
 	"""
+	Recompute a release's findings metrics from CURRENT scan and KEV state:
+	re-gathers the release's artifacts, merges their (fan-out-maintained)
+	metrics, re-applies the analysis overlay and re-stamps known-exploited
+	membership against kev_assertions. No Dependency-Track round-trip -- this
+	refreshes from data already ingested, so it is cheap and idempotent. Use
+	forceReuploadDtrackData for a true org-wide re-analysis. Requires WRITE on
+	the release (satisfied by component/org-scoped WRITE permissions).
+	"""
+	recomputeReleaseFindings(releaseUuid: ID!): Boolean
+	"""
 	Org-ADMIN repair for duplicate component registrations: several live
 	COMPONENT-type components on one (vcs, repoPath) carrying the SAME name.
 	Folds non-conflicting releases under the oldest component and archives the
