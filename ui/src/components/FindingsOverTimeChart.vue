@@ -27,6 +27,10 @@
                     </n-icon>
                 </template>
                 <div class="series-filter-list">
+                    <div class="series-filter-actions">
+                        <a class="clickable" @click="setAllSeries(true)">Select all</a>
+                        <a class="clickable" @click="setAllSeries(false)">Deselect all</a>
+                    </div>
                     <n-checkbox
                         v-for="s in seriesOptions"
                         :key="s.name"
@@ -47,6 +51,10 @@
                     </n-icon>
                 </template>
                 <div class="series-filter-list">
+                    <div class="series-filter-actions">
+                        <a class="clickable" @click="setAllSeries(true)">Select all</a>
+                        <a class="clickable" @click="setAllSeries(false)">Deselect all</a>
+                    </div>
                     <n-checkbox
                         v-for="s in seriesOptions"
                         :key="s.name"
@@ -186,6 +194,12 @@ function syncSeriesSelection() {
 function applySeriesFilter() {
     analyticsMetrics.value.data.values = rawChartValues.value.filter(
         (v: any) => selectedSeries.value.includes(v.type))
+}
+
+function setAllSeries(checked: boolean) {
+    selectedSeries.value = checked ? seriesOptions.value.map(s => s.name) : []
+    applySeriesFilter()
+    renderChart()
 }
 
 function toggleSeries(name: string, checked: boolean) {
@@ -785,6 +799,14 @@ watch(showFindingsPerDay, (newVal) => {
     display: flex;
     flex-direction: column;
     gap: 4px;
+}
+
+.series-filter-actions {
+    display: flex;
+    gap: 12px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #eee;
+    font-size: 0.85em;
 }
 
 .series-color-dot {

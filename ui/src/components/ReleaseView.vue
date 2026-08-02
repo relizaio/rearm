@@ -658,6 +658,15 @@
                             <span title="Licensing Policy Violations" class="circle" :style="{background: constants.ViolationColors.LICENSE, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
                             <span title="Security Policy Violations" class="circle" :style="{background: constants.ViolationColors.SECURITY, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
                             <span title="Operational Policy Violations" class="circle" :style="{background: constants.ViolationColors.OPERATIONAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
+                            <Icon
+                                v-if="isWritable"
+                                class="clickable"
+                                size="18"
+                                title="Recompute findings from current scan and KEV state (no re-scan)"
+                                :style="{ opacity: recomputeFindingsPending ? 0.5 : 1, marginLeft: '10px' }"
+                                @click="recomputeFindings">
+                                <Refresh/>
+                            </Icon>
                         </n-space>
                     </n-gi>
                     <n-gi span="1">
@@ -2692,6 +2701,31 @@ async function saveApprovedEnvOverride () {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     } finally {
         approvedEnvOverridePending.value = false
+    }
+}
+
+// Findings recompute: refreshes this release's metrics from CURRENT scan +
+// KEV state (no Dependency-Track re-scan) -- the per-release remedy for
+// stored metrics gone stale, e.g. KEV membership that arrived after the
+// release was last scanned.
+const recomputeFindingsPending: Ref<boolean> = ref(false)
+async function recomputeFindings () {
+    if (recomputeFindingsPending.value) return
+    recomputeFindingsPending.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation recomputeReleaseFindings($releaseUuid: ID!) {
+                    recomputeReleaseFindings(releaseUuid: $releaseUuid)
+                }`,
+            variables: { releaseUuid: updatedRelease.value.uuid }
+        })
+        notify('success', 'Recomputed', 'Findings recomputed from current scan and KEV state.')
+        await fetchRelease()
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        recomputeFindingsPending.value = false
     }
 }
 
