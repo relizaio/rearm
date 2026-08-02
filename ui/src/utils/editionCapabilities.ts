@@ -50,7 +50,7 @@ export const PRO_ONLY_CHANNEL_TYPES: readonly string[] = ['EMAIL', 'SENTINEL']
  * notificationsCommon, which strips them, and routeInputSchemaDrift.spec.ts,
  * which coerces the result against both real schemas.
  */
-export const PRO_ONLY_ROUTE_FIELDS: readonly string[] = ['teams']
+export const PRO_ONLY_ROUTE_FIELDS: readonly string[] = ['teams', 'notifyComponentOwner']
 
 /**
  * Pro (licensed) edition, as far as the UI can tell. Every non-OSS

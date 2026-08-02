@@ -12,6 +12,7 @@ import { print } from 'graphql'
 import {
     relativeTime,
     buildNotificationFilterInput,
+    routeHasTarget,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
 } from './notificationsCommon'
@@ -119,5 +120,47 @@ describe('buildNotificationFilterInput', () => {
     })
     it('tolerates a null/undefined rawFilter (Create path)', () => {
         expect(buildNotificationFilterInput(null, 'PRESET', '')).toEqual({ mode: 'PRESET', celExpression: null })
+    })
+})
+
+describe('routeHasTarget (client-side mirror of the backend route-emptiness gate)', () => {
+    const empty = { channels: [], channelGroups: [], teams: [], notifyComponentOwner: false }
+
+    it('accepts any of the fixed targets, on either edition', () => {
+        for (const isPro of [true, false]) {
+            expect(routeHasTarget({ ...empty, channels: ['ch-1'] }, isPro)).toBe(true)
+            expect(routeHasTarget({ ...empty, channelGroups: ['g-1'] }, isPro)).toBe(true)
+            expect(routeHasTarget({ ...empty, teams: ['t-1'] }, isPro)).toBe(true)
+        }
+    })
+
+    it('accepts an owner-only route on Pro -- naming no target is the point of T4a', () => {
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: true }, true)).toBe(true)
+    })
+
+    it('REJECTS an owner-only route on CE, where the field would fail the whole save', () => {
+        // The compounding half of the CE gating bug: the control is hidden on
+        // CE, but if the flag is somehow set, counting it as a target lets the
+        // operator author a route guaranteed to 400 the subscription mutation
+        // -- including the edits that have nothing to do with owner routing.
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: true }, false)).toBe(false)
+    })
+
+    it('rejects a genuinely empty route on both editions', () => {
+        expect(routeHasTarget(empty, true)).toBe(false)
+        expect(routeHasTarget(empty, false)).toBe(false)
+        expect(routeHasTarget({}, true)).toBe(false)
+    })
+
+    it('does not treat a false/absent owner flag as a target', () => {
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: undefined }, true)).toBe(false)
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: null }, true)).toBe(false)
+    })
+
+    it('still accepts a Pro route carrying teams even when the owner flag is off', () => {
+        // teams is NOT edition-gated here: CE soft-fails the teams query to [],
+        // so a CE route cannot carry them anyway, and gating would wrongly
+        // reject a Pro route whose team list loaded fine.
+        expect(routeHasTarget({ ...empty, teams: ['t-1'] }, true)).toBe(true)
     })
 })
