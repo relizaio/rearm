@@ -13,7 +13,29 @@
         </template>
         <n-spin :show="loading">
             <div v-if="record && primary">
-                <n-descriptions label-placement="left" :column="1" bordered size="small">
+                <!-- Without this the table layout squeezes the label cell to fit
+                     the value and the longer labels below wrap mid-label. 200px
+                     because the widest of them, "Ransomware campaign use",
+                     shrink-to-fits at 199px -- the 160px used by
+                     MitigationAttestationReview / VexProposalReview still wraps
+                     it.
+
+                     A width, NOT white-space: nowrap. nowrap makes 199px a hard
+                     floor, and naive-ui's bordered wrapper is overflow: hidden
+                     (descriptions/src/styles/index.cssr.mjs), so once the dialog
+                     is narrower than the table it clips values with no scrollbar
+                     -- measured 41px cut off every value cell at a 320px
+                     viewport, where nothing was clipped before. A specified
+                     width is honoured when there is room and collapses when
+                     there is not, so narrow viewports degrade to the old
+                     cosmetic wrap instead of losing content. -->
+                <n-descriptions
+                    label-placement="left"
+                    :column="1"
+                    bordered
+                    size="small"
+                    :label-style="{ width: '200px' }"
+                >
                     <n-descriptions-item v-if="primary.vulnerabilityName" label="Name">
                         {{ primary.vulnerabilityName }}
                     </n-descriptions-item>
