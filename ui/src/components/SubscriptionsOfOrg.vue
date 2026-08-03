@@ -177,6 +177,34 @@
                                             automatically.
                                         </div>
                                     </n-gi>
+                                    <!-- T4a. Pro-only: notifyComponentOwner does not exist in the CE
+                                         schema, and GraphQL input coercion rejects unknown keys
+                                         outright, so letting a CE operator tick this would fail the
+                                         WHOLE subscription save -- including edits that never touch
+                                         it. Gated on the real edition signal rather than on
+                                         teamOptions.length like the Teams picker above: that proxy
+                                         is empty on a Pro org with no teams yet, and non-empty on CE
+                                         whenever ghosts survive for a route's saved teams. -->
+                                    <n-gi v-if="isPro" :span="22" :offset="0">
+                                        <n-form-item :label="i === 0 ? 'Component owner' : ''" :show-feedback="false">
+                                            <n-checkbox
+                                                v-model:checked="r.notifyComponentOwner"
+                                                data-testid="route-notify-owner"
+                                            >
+                                                Also notify the team that owns the affected component
+                                            </n-checkbox>
+                                        </n-form-item>
+                                        <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
+                                            Resolved when the event fires, from the component's owner — set
+                                            directly or by an assignment rule. Unlike picking a team above,
+                                            this follows ownership changes on its own, so reassigning a
+                                            component never means editing this subscription.
+                                            <template v-if="!teamOptions.length">
+                                                This org has no teams yet, and only a team can own a
+                                                component, so this delivers nothing until one exists.
+                                            </template>
+                                        </div>
+                                    </n-gi>
                                     <n-gi :span="22" :offset="0">
                                         <n-form-item :label="i === 0 ? 'Perspectives (delivery filter)' : ''" :show-feedback="false">
                                             <n-select
@@ -265,7 +293,7 @@ import { useStore } from 'vuex'
 import {
     NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
     NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag, NDropdown, NTooltip,
-    NRadioGroup, NRadioButton, useDialog, useMessage
+    NRadioGroup, NRadioButton, NCheckbox, useDialog, useMessage
 } from 'naive-ui'
 import { CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
 import { useRouter } from 'vue-router'
@@ -280,13 +308,22 @@ import {
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
     extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType,
     buildNotificationFilterInput,
-    buildNotificationRouteInput
+    buildNotificationRouteInput,
+    routeHasTarget
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
+import { isProEdition } from '@/utils/editionCapabilities'
 
 const props = defineProps<{
     orguuid: string
     isWritable: boolean
+    // T4a: needed for the owner-routing control, which is a Pro-only route
+    // field. Unlike the Teams picker next to it, teamOptions.length is NOT a
+    // usable proxy here -- it is empty on a Pro org that simply has no teams
+    // yet, and non-empty on CE when ghosts are kept for a route's saved teams.
+    // Sending a Pro-only key to a CE backend fails the WHOLE mutation, so this
+    // gate uses the real edition signal. See editionCapabilities.ts.
+    installationType: string
 }>()
 
 const dialog = useDialog()
@@ -314,6 +351,10 @@ interface SubscriptionRoute {
     channels: string[]
     channelGroups: string[]
     teams: string[]
+    // T4a: deliver to whatever team OWNS each affected component, resolved at
+    // fan-out. Distinct from `teams` above, which is a fixed list the operator
+    // must keep in step with ownership by hand.
+    notifyComponentOwner: boolean
     // Delivery filter: restricts which events this route's channels deliver
     // to the listed perspectives. NOT the inbox/bell visibility gate. Empty
     // = no restriction (all perspectives).
@@ -344,7 +385,8 @@ interface SubscriptionForm {
 }
 
 function freshRoute (): SubscriptionRoute {
-    return { whenSeverityAtLeast: null, channels: [], channelGroups: [], teams: [], perspectives: [] }
+    return { whenSeverityAtLeast: null, channels: [], channelGroups: [], teams: [],
+        notifyComponentOwner: false, perspectives: [] }
 }
 
 function freshSubscriptionForm (): SubscriptionForm {
@@ -399,6 +441,11 @@ const channelOptions = computed(() => {
 })
 
 const teams = ref<any[]>([])
+
+// T4a: owner routing is a Pro-only route field. The control, the client-side
+// "route has a target" check and the error copy all gate on this one flag, so
+// a CE operator can neither author an owner-only route nor be told to.
+const isPro = computed(() => isProEdition(props.installationType))
 
 const teamOptions = computed(() => {
     const selectable = teams.value
@@ -578,6 +625,7 @@ function openEditSubscription (row: SubscriptionRow): void {
                 channels: Array.isArray(r.channels) ? [...r.channels] : [],
                 channelGroups: Array.isArray(r.channelGroups) ? [...r.channelGroups] : [],
                 teams: Array.isArray(r.teams) ? [...r.teams] : [],
+                notifyComponentOwner: r.notifyComponentOwner === true,
                 perspectives: Array.isArray(r.perspectives) ? [...r.perspectives] : [],
                 _raw: r,
             }))
@@ -612,20 +660,24 @@ async function saveSubscription (): Promise<void> {
         subModalError.value = 'Name, at least one event type, and at least one route are required.'
         return
     }
-    // Every route must have at least one channel, group or team; the backend
-    // rejects an empty {channels, channelGroups, teams} anyway, but catch it
-    // client-side for a cleaner error path. Teams count: naming a team INSTEAD
-    // of a channel is the point -- its channel is resolved at fan-out.
-    const emptyRouteIdx = f.routes.findIndex(r =>
-        (r.channels || []).length === 0 && (r.channelGroups || []).length === 0
-        && (r.teams || []).length === 0
-    )
+    // Every route needs at least one target; the backend rejects an empty route
+    // anyway, but catch it client-side for a cleaner error path. Teams and the
+    // owner flag both count: naming a team -- or nobody at all, and letting
+    // ownership decide -- INSTEAD of a channel is the point, since the actual
+    // channel is resolved at fan-out. The owner flag counts ONLY on Pro: on CE
+    // the control is hidden and the key would fail the mutation, so accepting
+    // it as the sole target would wave through a route guaranteed to 400.
+    const emptyRouteIdx = f.routes.findIndex(r => !routeHasTarget(r, isPro.value))
     if (emptyRouteIdx >= 0) {
-        // Don't name a target the operator has no way to pick: on a backend
-        // without team channels the Teams picker is hidden, so "or teams"
-        // would send them hunting for a control that isn't there.
-        const targets = teamOptions.value.length ? 'channels, groups or teams' : 'channels or groups'
-        subModalError.value = `Route ${emptyRouteIdx + 1} has no ${targets} — pick at least one.`
+        // Don't name a target the operator has no way to pick: the Teams picker
+        // is hidden without team channels and the owner checkbox is hidden on
+        // CE, so naming either would send them hunting for a control that
+        // isn't there.
+        const targets = ['channels', 'groups']
+        if (teamOptions.value.length) targets.push('teams')
+        if (isPro.value) targets.push('the component owner')
+        const targetList = `${targets.slice(0, -1).join(', ')} or ${targets[targets.length - 1]}`
+        subModalError.value = `Route ${emptyRouteIdx + 1} has no ${targetList} — pick at least one.`
         return
     }
     // Build the filter input from ONLY the fields NotificationFilterInput
@@ -804,6 +856,31 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
     }
 }
 
+/**
+ * Why a test produced no delivery.
+ *
+ * The default answer names the filter and the severity gate, which is right for
+ * every route target that resolves to a fixed channel. It is WRONG for an
+ * owner-routed route: that resolves through the affected component's owner, so
+ * an unowned component, or an owner team with no channel, yields zero
+ * deliveries with the filter and severity gate working perfectly. Sending the
+ * operator to audit those instead is worse than saying nothing.
+ */
+function noDeliveryExplanation (row: SubscriptionRow): string {
+    const base = 'The synthetic event was injected but produced no delivery for this subscription.'
+    let ownerRouted = false
+    try {
+        const routes = row.routes ? JSON.parse(row.routes) : []
+        ownerRouted = Array.isArray(routes) && routes.some((r: any) => r?.notifyComponentOwner === true)
+    } catch { /* unparseable routes: fall back to the generic explanation */ }
+    if (ownerRouted) {
+        return `${base} A route delivers to the component owner, so this is also what you see when the`
+            + ' affected component has no owner, or its owner team has no notification channel --'
+            + " check those before the subscription's filter or a route's minimum-severity gate."
+    }
+    return `${base} Its filter, or a route's minimum-severity gate, likely excluded it.`
+}
+
 function reportSubscriptionTestResult (
     row: SubscriptionRow,
     items: Array<{ channelUuid: string | null, status: string, lastError: string | null }>,
@@ -815,7 +892,7 @@ function reportSubscriptionTestResult (
             title: `Test result -- ${row.name}`,
             content: timedOut
                 ? 'Still waiting on a delivery after 60s. The event may still be processing -- check Notification History for the result.'
-                : "The synthetic event was injected but produced no delivery for this subscription. Its filter, or a route's minimum-severity gate, likely excluded it.",
+                : noDeliveryExplanation(row),
         })
         return
     }

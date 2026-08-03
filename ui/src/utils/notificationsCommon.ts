@@ -368,9 +368,49 @@ export function buildNotificationRouteInput (route: Record<string, any>): Notifi
     // Send a Pro-only field only when it actually carries a value, so a CE
     // backend never sees the key at all.
     for (const f of PRO_ONLY_ROUTE_FIELDS) {
-        if ((route[f] || []).length > 0) out[f] = route[f]
+        if (carriesValue(route[f])) out[f] = route[f]
     }
     return out
+}
+
+/**
+ * Does this route field carry a value worth sending?
+ *
+ * Pro-only fields are omitted when empty so a CE backend never sees the key at
+ * all. "Empty" depends on the shape: `[]` for the list-valued fields (`teams`),
+ * `false` for the boolean ones (`notifyComponentOwner`).
+ *
+ * Worth stating because the list-only version of this check silently broke the
+ * boolean: `(true || []).length > 0` is `undefined > 0`, i.e. false, so the
+ * field was never sent and owner routing could not be turned on from the UI --
+ * a failure that looks like a backend bug from the operator's side.
+ */
+function carriesValue (v: unknown): boolean {
+    if (Array.isArray(v)) return v.length > 0
+    if (typeof v === 'boolean') return v
+    return v !== null && v !== undefined
+}
+
+/**
+ * Does this route name at least one delivery target?
+ *
+ * Mirrors the backend's per-route emptiness gate so the operator gets a clean
+ * client-side error instead of a mutation failure. Lives here, not inline in
+ * the form, because `isPro` is load-bearing and easy to get wrong: on CE the
+ * owner checkbox is hidden and `notifyComponentOwner` is not in the schema, so
+ * counting it as a target there would wave through a route that is GUARANTEED
+ * to fail the save -- and the save it fails is the whole subscription, not just
+ * that route.
+ *
+ * `teams` is deliberately NOT gated on edition: a CE backend soft-fails the
+ * teams query to `[]`, so a CE route cannot carry teams in the first place,
+ * and gating it would wrongly reject a Pro route whose team list loaded fine.
+ */
+export function routeHasTarget (route: Record<string, any>, isPro: boolean): boolean {
+    if ((route.channels || []).length > 0) return true
+    if ((route.channelGroups || []).length > 0) return true
+    if ((route.teams || []).length > 0) return true
+    return isPro && route.notifyComponentOwner === true
 }
 
 /**

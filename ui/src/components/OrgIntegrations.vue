@@ -286,7 +286,7 @@
                     </div>
                 </div>
             </div>
-            <SubscriptionsOfOrg :orguuid="orguuid" :isWritable="isWritable" />
+            <SubscriptionsOfOrg :orguuid="orguuid" :isWritable="isWritable" :installationType="installationType" />
         </div>
 
         <!-- ============================== CHANNEL GROUPS ============================== -->

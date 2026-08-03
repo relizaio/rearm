@@ -127,3 +127,58 @@ describe('buildNotificationRouteInput vs the Pro schema (skipped when rearm-core
         expect(buildNotificationRouteInput(ROUTE_WITH_TEAMS).teams).toEqual(['team-1'])
     })
 })
+
+describe('Pro-only BOOLEAN route fields (notifyComponentOwner)', () => {
+    const ownerRoute = {
+        _raw: { andEnvIn: ['prod'] },
+        whenSeverityAtLeast: 'HIGH',
+        channels: [],
+        channelGroups: [],
+        perspectives: [],
+        teams: [],
+        notifyComponentOwner: true,
+    }
+
+    it('sends the flag when it is on -- Pro must actually receive it', () => {
+        // Guards the shape bug the list-only omit check had: `true.length` is
+        // undefined, so a boolean Pro-only field was silently never sent and
+        // owner routing could not be enabled from the UI at all.
+        expect(buildNotificationRouteInput(ownerRoute).notifyComponentOwner).toBe(true)
+    })
+
+    it('omits the flag when it is off, so CE never sees the key', () => {
+        expect(buildNotificationRouteInput({ ...ownerRoute, notifyComponentOwner: false }))
+            .not.toHaveProperty('notifyComponentOwner')
+        expect(buildNotificationRouteInput({ ...ownerRoute, notifyComponentOwner: undefined }))
+            .not.toHaveProperty('notifyComponentOwner')
+    })
+
+    // runIf, not an early return -- see the comment above the Pro describe
+    // block: an early return reports PASSED when rearm-core is absent, hiding
+    // that Pro went unchecked.
+    it.runIf(proSchema)('an owner-routed route coerces cleanly on Pro', () => {
+        expect(coerceErrors(proSchema!, 'NotificationRouteInput',
+            buildNotificationRouteInput(ownerRoute))).toEqual([])
+    })
+
+    it('CE lacks the field, and the off-state payload still coerces there', () => {
+        if (!ceSchema) return
+        expect(coerceErrors(ceSchema, 'NotificationRouteInput',
+            { channels: ['ch-1'], notifyComponentOwner: true }).join(' '))
+            .toMatch(/notifyComponentOwner/)
+        expect(coerceErrors(ceSchema, 'NotificationRouteInput',
+            buildNotificationRouteInput({ ...ownerRoute, notifyComponentOwner: false, channels: ['ch-1'] })))
+            .toEqual([])
+    })
+
+    it('strips the flag from the _raw passthrough too', () => {
+        // A route created on Pro with owner routing, edited on CE where the
+        // control is absent: _raw is its only carrier.
+        const built = buildNotificationRouteInput({
+            _raw: { notifyComponentOwner: true, andEnvIn: ['prod'] },
+            channels: ['ch-1'],
+        })
+        expect(built).not.toHaveProperty('notifyComponentOwner')
+        expect(built.andEnvIn).toEqual(['prod'])
+    })
+})
