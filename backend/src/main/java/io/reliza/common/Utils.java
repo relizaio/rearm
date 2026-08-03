@@ -1180,4 +1180,79 @@ public class Utils {
 			return null;
 		}
 	}
+
+	/** Scheme prefix every purl carries, per the purl spec. */
+	public static final String PURL_SCHEME_PREFIX = "pkg:";
+
+	/**
+	 * Whether a string is shaped like a purl, i.e. carries the purl scheme.
+	 * A cheap prefix test, not a parse -- {@link #canonicalizePurl} still
+	 * returns null for a well-prefixed but malformed purl.
+	 */
+	public static boolean isPurl(String value) {
+		return value != null && value.startsWith(PURL_SCHEME_PREFIX);
+	}
+
+	/**
+	 * Escapes SQL LIKE wildcards ({@code %}, {@code _}) and the escape
+	 * character itself so the input matches literally under {@code ESCAPE '\'}.
+	 * Backslash is escaped first, or it would double-escape the escapes the
+	 * later replacements add.
+	 */
+	public static String escapeSqlLikeLiteral(String value) {
+		if (value == null) return "";
+		return value.replace("\\", "\\\\")
+				.replace("%", "\\%")
+				.replace("_", "\\_");
+	}
+
+	/**
+	 * The bare type/namespace/name coordinate of a purl, with version,
+	 * qualifiers and subpath all dropped -- {@code pkg:npm/lodash@4.17.21?foo=bar}
+	 * becomes {@code pkg:npm/lodash}.
+	 *
+	 * <p>This is the anchor for a version-agnostic search: canonical purls are
+	 * stored as {@code <coordinate>@<version>[?qualifiers]}, so the coordinate
+	 * plus an {@code '@'} is a safe prefix for "every version of this package".
+	 * Qualifiers are deliberately dropped rather than preserved (unlike
+	 * {@link #canonicalizePurl}) because they sort *after* the version in a
+	 * purl, so keeping them would break the prefix.
+	 *
+	 * @return the coordinate, or null if {@code purl} is not a parseable purl
+	 */
+	public static String purlCoordinateBase(String purl) {
+		if (!isPurl(purl)) {
+			return null;
+		}
+		try {
+			PackageURL packageUrl = new PackageURL(purl);
+			return PackageURLBuilder.aPackageURL()
+					.withType(packageUrl.getType())
+					.withNamespace(packageUrl.getNamespace())
+					.withName(packageUrl.getName())
+					.build().toString();
+		} catch (MalformedPackageURLException e) {
+			log.warn("Failed to parse PURL for coordinate base: {}", purl, e);
+			return null;
+		}
+	}
+
+	/**
+	 * The version component of a purl, or null when the purl carries none
+	 * (or does not parse). Lets callers distinguish "this purl pins a version"
+	 * from "this purl names a package" without re-implementing purl parsing.
+	 *
+	 * @return the version, or null if absent or {@code purl} does not parse
+	 */
+	public static String purlVersion(String purl) {
+		if (!isPurl(purl)) {
+			return null;
+		}
+		try {
+			return new PackageURL(purl).getVersion();
+		} catch (MalformedPackageURLException e) {
+			log.warn("Failed to parse PURL for version extraction: {}", purl, e);
+			return null;
+		}
+	}
 }

@@ -71,6 +71,44 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			@Param("version") String version);
 
 	/**
+	 * Version-agnostic purl search: every canonical component sharing one
+	 * type/namespace/name coordinate, whatever its version. Backs a pasted
+	 * versionless purl ({@code pkg:npm/lodash}), which is the shape advisories
+	 * quote.
+	 *
+	 * <p>The {@code '@'} anchor on the LIKE is load-bearing -- without it
+	 * {@code pkg:npm/lodash} would also match {@code pkg:npm/lodash-es@1.0.0}.
+	 * The equality arm catches a stored component that genuinely has no version.
+	 *
+	 * <p>Two forms of the same coordinate are passed deliberately:
+	 * {@code basePurl} raw for the equality arm, {@code basePurlLike}
+	 * LIKE-escaped for the pattern arm. Purls routinely contain {@code _},
+	 * which is a single-character LIKE wildcard, so the pattern arm would
+	 * otherwise over-match.
+	 *
+	 * <p>Bounded by LIMIT: a prefix LIKE cannot use the
+	 * {@code (org, canonical_purl)} unique btree under a non-C collation, so
+	 * this is a scan of the org's components. The cap keeps a pathological
+	 * coordinate (thousands of versions) from returning an unbounded payload
+	 * to a search box.
+	 */
+	@Query(
+		value = """
+			SELECT *
+			FROM rearm.sbom_components
+			WHERE org = CAST(:orgUuidAsString AS uuid)
+			AND (canonical_purl = :basePurl
+			     OR canonical_purl LIKE :basePurlLike || '@%' ESCAPE '\\')
+			ORDER BY canonical_purl ASC
+			LIMIT 500
+		""",
+		nativeQuery = true)
+	List<SbomComponent> searchByOrgAndCanonicalPurlCoordinate(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("basePurl") String basePurl,
+			@Param("basePurlLike") String basePurlLike);
+
+	/**
 	 * The matchable population for an org's synthetic Dependency-Track buckets:
 	 * canonical components keyed on a purl or cpe (the only schemes DTrack can
 	 * match advisories against). Ordered by canonical_purl so bucket membership
