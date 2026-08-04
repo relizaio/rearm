@@ -1,6 +1,7 @@
 import FormData from 'form-data';
 import { logger } from '../../logger';
 import { createHash } from 'crypto';
+import { OciNotFoundError, DigestValidationError } from '../../types/errors';
 
 const baseURL = (): string => process.env.OCI_ARTIFACT_SERVICE_HOST ? process.env.OCI_ARTIFACT_SERVICE_HOST : `http://[::1]:8083/`;
 
@@ -116,6 +117,13 @@ export async function fetchFromOci(tag: string, repositoryName?: string, expecte
         });
 
         if (!response.ok) {
+            // 404 is an authoritative "this tag does not exist in this repo" --
+            // typed so callers (rawBomResolver) can distinguish it from
+            // transport/server errors before making durable decisions.
+            if (response.status === 404) {
+                throw new OciNotFoundError(
+                    `OCI artifact not found: tag ${tag} in repository ${repo}`, tag, repo);
+            }
             throw new Error(`OCI fetch returned HTTP ${response.status}: ${response.statusText}`);
         }
 
@@ -133,9 +141,11 @@ export async function fetchFromOci(tag: string, repositoryName?: string, expecte
             const actualDigest = createHash('sha256').update(rawContent).digest('hex');
 
             if (actualDigest !== expectedDigest) {
-                const error = new Error(`Digest validation failed for artifact. Expected: ${expectedDigest}, Actual: ${actualDigest}`);
-                logger.error({ 
-                    tag, 
+                const error = new DigestValidationError(
+                    `Digest validation failed for artifact ${tag} in repository ${repo}. Expected: ${expectedDigest}, Actual: ${actualDigest}`,
+                    tag, repo, expectedDigest, actualDigest);
+                logger.error({
+                    tag,
                     repository: repo,
                     expectedDigest,
                     actualDigest

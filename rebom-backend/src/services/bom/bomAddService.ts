@@ -177,6 +177,11 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   rebomOptions.originalFileDigest = rawPushResult.fileSHA256Digest;  // Actual file digest from OCI
   rebomOptions.originalFileSize = rawPushResult.originalSize;
   rebomOptions.originalMediaType = rawPushResult.originalMediaType;
+  // Pin the raw copy's repository: enrichment later re-pushes the PROCESSED
+  // BOM to the then-current month's repository (bom.ociRepositoryName moves
+  // with it), but the raw copy stays here -- without its own pointer a
+  // cross-month enrichment strands it (see rawBomResolver).
+  rebomOptions.rawOciRepositoryName = rawPushResult.ociRepositoryName;
   
   // Track processed/augmented BOM metadata for validation
   rebomOptions.processedFileDigest = pushResult.fileSHA256Digest;  // Augmented BOM digest

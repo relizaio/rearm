@@ -1,17 +1,20 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	ociSpecv1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2/errdef"
 )
 
 func main() {
@@ -205,6 +208,15 @@ func downloadFile(c *gin.Context) {
 	dirToDownload := uuid.New().String()
 	_, err = oc.PullArtifact(c, form.Tag, dirToDownload)
 	if err != nil {
+		// Surface a definitive registry not-found as 404 so callers can
+		// distinguish "this tag does not exist in this repo" (safe to probe
+		// elsewhere / record as missing) from transient server errors.
+		// Previously every pull failure was a 500, which forced rebom's
+		// legacy fallback to guess.
+		if errors.Is(err, errdef.ErrNotFound) || strings.Contains(err.Error(), "not found") {
+			c.String(http.StatusNotFound, "Artifact not found: ", err)
+			return
+		}
 		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
 		return
 	}

@@ -10,7 +10,7 @@ import {
   extractRepositoryNameFromBom,
   extractRepositoryNameFromSpdxOciResponse,
   validateOciPushResult,
-  fetchRawBomWithFallback
+  resolveAndFetchRawBom
 } from '../oci';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
@@ -1020,9 +1020,7 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
  */
 async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> {
   try {
-    const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
-    const expectedDigest = bomRecord.meta?.originalFileDigest;
-    const rawBom = await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
+    const rawBom = await resolveAndFetchRawBom(bomRecord);
 
     // Apply the same 1.7→1.6 downgrade shim that addCycloneDxBom uses on
     // ingest. Forced re-enrichment is the recovery path for artifacts that

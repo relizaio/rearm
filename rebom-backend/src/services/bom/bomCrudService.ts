@@ -3,7 +3,7 @@ import { BomDto, BomMetaDto, BomRecord, BomSearch, SearchObject } from '../../ty
 import { BomNotFoundError, BomDataIntegrityError } from '../../types/errors';
 import { BomMapper } from './bomMapper';
 import { logger } from '../../logger';
-import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse, fetchRawBomWithFallback } from '../oci';
+import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse, resolveAndFetchRawBom } from '../oci';
 import { parseBom, ParsedBom, ParsedBomComponent, parseHbom, ParsedHbom } from './bomComponentExtractor';
 
 export async function findAllBoms(): Promise<BomDto[]> {
@@ -134,10 +134,9 @@ export async function findBomBySerialNumberAndVersion(serialNumber: string, vers
                 return await fetchFromOci(fetchId, spdxRepositoryName, spdxDigest);
             }
         }
-        // Native CycloneDX - fetch raw BOM with automatic fallback for legacy BOMs
+        // Native CycloneDX - resolve raw BOM repository (digest-verified)
         logger.debug({ bomUuid: bomRecord.uuid, version, serialNumber }, "Fetching raw CycloneDX BOM by version");
-        const expectedDigest = bomRecord.meta?.originalFileDigest;
-        return await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
+        return await resolveAndFetchRawBom(bomRecord);
     } else {
         // Augmented/processed BOM requested - validate using processedFileDigest
         logger.debug({ uuid: bomRecord.uuid, version, serialNumber }, "Fetching augmented BOM by version");
@@ -214,8 +213,7 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
         
         // Native CycloneDX - fetch raw BOM with automatic fallback for legacy BOMs
         logger.debug({ bomUuid: bomById.uuid }, "Fetching raw CycloneDX BOM");
-        const expectedDigest = bomById.meta?.originalFileDigest;
-        return await fetchRawBomWithFallback(bomById.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
+        return await resolveAndFetchRawBom(bomById);
     } 
     else if (format === 'SPDX') {
         if (bomById.source_format === 'SPDX' && bomById.source_spdx_uuid) {
@@ -258,12 +256,11 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
             }
         }
         
-        // Not SPDX-sourced - return raw CycloneDX BOM with automatic fallback for legacy BOMs
+        // Not SPDX-sourced - resolve raw CycloneDX BOM repository (digest-verified)
         if (bomById.source_format === 'CYCLONEDX' || !bomById.source_spdx_uuid) {
-            logger.debug({ bomUuid: bomById.uuid, sourceFormat: bomById.source_format }, 
+            logger.debug({ bomUuid: bomById.uuid, sourceFormat: bomById.source_format },
                 "Fetching raw CycloneDX BOM (no format specified)");
-            const expectedDigest = bomById.meta?.originalFileDigest;
-            return await fetchRawBomWithFallback(bomById.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
+            return await resolveAndFetchRawBom(bomById);
         }
         
         // Fallback to primary UUID (processed/augmented BOM) - validate using processedFileDigest

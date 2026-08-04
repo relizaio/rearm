@@ -85,6 +85,43 @@ export class OciStorageError extends Error {
     }
 }
 
+/**
+ * Artifact/tag does not exist in the OCI registry (authoritative HTTP 404 from
+ * the OCI artifact service). Distinct from transport/server errors so callers
+ * can make durable decisions (e.g. probe another repository, stamp a
+ * raw-missing marker) ONLY on a definitive not-found.
+ */
+export class OciNotFoundError extends Error {
+    constructor(
+        message: string,
+        public tag?: string,
+        public repository?: string
+    ) {
+        super(message);
+        this.name = 'OciNotFoundError';
+        Error.captureStackTrace(this, this.constructor);
+    }
+}
+
+/**
+ * Downloaded artifact bytes do not hash to the stored digest. Must NEVER be
+ * swallowed or retried against a different artifact -- it names the exact
+ * artifact whose integrity check failed.
+ */
+export class DigestValidationError extends Error {
+    constructor(
+        message: string,
+        public tag?: string,
+        public repository?: string,
+        public expectedDigest?: string,
+        public actualDigest?: string
+    ) {
+        super(message);
+        this.name = 'DigestValidationError';
+        Error.captureStackTrace(this, this.constructor);
+    }
+}
+
 export class BomDataIntegrityError extends Error {
     constructor(
         message: string,
