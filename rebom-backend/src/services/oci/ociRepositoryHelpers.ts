@@ -162,35 +162,9 @@ export function validateDualBomPush(
     validateRepositoryMatch(rawResult, processedResult, context, uuid);
 }
 
-/**
- * Fetches raw BOM with automatic fallback for legacy BOMs.
- * First tries to fetch with '-raw' suffix, then falls back to UUID without suffix.
- * @param bomUuid - BOM UUID (without -raw suffix)
- * @param repositoryName - Repository name to fetch from
- * @param fetchFromOci - fetchFromOci function to use
- * @param expectedDigest - Optional expected SHA256 digest for validation
- * @returns Raw BOM content
- * @throws Error if both attempts fail
- */
-export async function fetchRawBomWithFallback(
-    bomUuid: string,
-    repositoryName: string | undefined,
-    fetchFromOci: (tag: string, repo?: string, digest?: string) => Promise<any>,
-    expectedDigest?: string
-): Promise<any> {
-    const rawBomUuid = bomUuid + '-raw';
-    
-    try {
-        logger.debug({ rawBomUuid, bomUuid, repositoryName }, 'Fetching raw CycloneDX BOM');
-        return await fetchFromOci(rawBomUuid, repositoryName, expectedDigest);
-    } catch (error) {
-        // Fallback for older BOMs without -raw suffix
-        logger.warn({ 
-            rawBomUuid, 
-            bomUuid, 
-            repositoryName,
-            error: error instanceof Error ? error.message : String(error) 
-        }, 'Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM');
-        return await fetchFromOci(bomUuid, repositoryName, expectedDigest);
-    }
-}
+// NOTE: fetchRawBomWithFallback used to live here. It retried the processed
+// tag on ANY raw-fetch error while validating against the RAW digest -- which
+// surfaced misplaced raw copies (enrichment re-push moves the processed BOM to
+// the current month's repository; the raw copy stays in the upload month) as
+// "Digest validation failed", and could mask a genuinely corrupt raw artifact.
+// Replaced by resolveAndFetchRawBom in ./rawBomResolver.
