@@ -4,14 +4,20 @@ sidebarDepth: 2
 
 # Notifications
 
-::: warning ReARM Pro only
-Everything on this page -- channels, subscriptions, routes, and KEV alerts --
-is part of ReARM Pro's security-and-operational notification framework,
-configured under **Organization Settings -> Integrations -> Notifications**.
-This is separate from the CE-level Slack/Teams **release** notifications
-described on the [Slack](../integrations/slack) and [Microsoft
-Teams](../integrations/msteams) pages -- see the callout on the Microsoft
-Teams page if you're not sure which one you need.
+The security-and-operational notification framework is configured under
+**Organization Settings -> Integrations**. It is separate from the Slack/Teams
+**release** notifications described on the [Slack](../integrations/slack) and
+[Microsoft Teams](../integrations/msteams) pages -- see the callout on the
+Microsoft Teams page if you're not sure which one you need.
+
+::: tip What Community Edition includes
+Subscriptions, routes, and channel groups are available on **both** editions,
+as are the **Slack**, **Microsoft Teams**, and **Webhook** channel types.
+
+Pro adds two channel types -- **Email** and
+[**Microsoft Sentinel**](../integrations/sentinel) -- and two route targets,
+**teams** and **notify the component owner**. Everything else on this page
+works the same on either edition.
 :::
 
 ## How it fits together
@@ -20,11 +26,11 @@ Teams page if you're not sure which one you need.
    webhook, email, or [Microsoft Sentinel](../integrations/sentinel). Add one
    from the **Integrations -> Catalog** tab -- each channel type is a card
    there; click **Add** on the card to configure a destination.
-2. A **subscription** decides which events go to which channels. Add one from
-   the **Notifications -> Subscriptions** tab: pick the event types you care
-   about, an optional filter, and one or more **routes** -- each route pairs a
-   minimum severity with a set of channels (or channel groups).
-3. A **channel group** (Notifications -> Channel Groups) is just a named,
+2. A **subscription** decides which events go where. Add one from the
+   **Integrations -> Subscriptions** tab: pick the event types you care about,
+   an optional filter, and one or more **routes** -- each route pairs a minimum
+   severity with one or more [targets](#route-targets).
+3. A **channel group** (Integrations -> Channel groups) is just a named,
    reusable list of channels you can reference from a route instead of
    repeating the same channels on every subscription.
 
@@ -55,7 +61,51 @@ A subscription's `eventTypes` list controls what it can match:
   that exceeds its budget fails that one delivery rather than blocking others.
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
-  sent to its channels.
+  sent to its targets.
+
+### Route targets
+
+A route can deliver to any combination of these. A route with no target at all
+delivers nothing, so the editor will not let you save one.
+
+| Target | Delivers to | Edition |
+|---|---|---|
+| **Channels** | The channels you name explicitly | CE and Pro |
+| **Channel groups** | Every channel in the named group | CE and Pro |
+| **Teams** | The named team's own notification channels | Pro |
+| **Notify the component owner** | The channels of whichever team owns the affected component | Pro |
+
+The last two are what let a route describe *who* should hear about something
+rather than *where* to send it. That distinction matters most for owner
+routing, described next.
+
+### Notifying the component owner
+
+Tick **notify the component owner** on a route and you do not name a
+destination at all. When an event arrives, ReARM works out which components it
+affects, resolves each one's owner, and delivers to that owner team's channels.
+
+Because this is resolved at delivery time rather than stored on the
+subscription, the route keeps working when ownership changes: reassign a
+component to a different team, or change an
+[assignment rule](./component-ownership#assignment-rules), and the next event
+goes to the new owner with no edit to the subscription.
+
+For a delivery to happen, the affected component's owner must be:
+
+- a **team** (an individual owner has no channels of its own -- see
+  [Component ownership](./component-ownership)), and
+- in the `OWNED` or `NON_DURABLE` state (a `DEGRADED`, `UNSET`, or `ORPHANED`
+  component has no usable owner), and
+- a team that has at least one notification channel configured.
+
+If none of those hold, the route contributes no delivery. It does **not** fall
+back to sending anywhere else, so an unowned component is silent rather than
+noisy -- worth remembering when a test produces nothing (see
+[Testing](#testing-channels-and-subscriptions)).
+
+One event can affect several components with different owners; each owner team
+is resolved independently and every one of them is notified.
 
 ## Duplicate delivery protection
 
@@ -78,9 +128,9 @@ app's built-in limits) in the meantime.
 ## Retention
 
 Notification history (deliveries and inbox rows) is retained for a
-configurable number of days per organization, with an enforced 14-day floor --
-an org can't set retention short enough to delete a row that might still be
-scheduled to send (e.g. one parked in an email digest).
+configurable number of days per organization -- 90 by default, with an enforced
+14-day floor. An org can't set retention short enough to delete a row that
+might still be scheduled to send (e.g. one parked in an email digest).
 
 ## Testing channels and subscriptions
 
@@ -103,6 +153,14 @@ event, straight from the UI:
 
 Both bypass the dedup window described above, so a test always produces a
 delivery you can see in **Delivery History**.
+
+::: tip A test on an owner-routed subscription can legitimately show nothing
+If the only route on the subscription
+[notifies the component owner](#notifying-the-component-owner), a test that
+reports no delivery usually means the component the test event landed on has no
+owner, or its owner team has no channel -- not that your filter or severity
+gate is wrong. Check ownership first; the result dialog says so too.
+:::
 
 ## KEV (Known Exploited Vulnerabilities) notifications
 
