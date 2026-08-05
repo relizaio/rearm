@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -141,6 +143,17 @@ func (o *OrasClient) PullArtifact(ctx context.Context, tagDigest string, dirName
 		descriptor, lastErr = oras.Copy(ctx, o.Repository, tagDigest, fs, tagDigest, oras.DefaultCopyOptions)
 		if lastErr == nil {
 			return descriptor, nil
+		}
+
+		// A definitive registry not-found will not change on retry -- fail
+		// fast so callers probing multiple repositories (rebom's raw-BOM
+		// resolver) don't pay the full backoff (~7.5s) per absent candidate.
+		if errors.Is(lastErr, errdef.ErrNotFound) {
+			getLogger().Infow("Artifact not found; not retrying",
+				"tag_digest", tagDigest,
+				"error", lastErr,
+			)
+			return v1.Descriptor{}, lastErr
 		}
 
 		getLogger().Warnw("Pull attempt failed",

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -212,8 +211,13 @@ func downloadFile(c *gin.Context) {
 		// distinguish "this tag does not exist in this repo" (safe to probe
 		// elsewhere / record as missing) from transient server errors.
 		// Previously every pull failure was a 500, which forced rebom's
-		// legacy fallback to guess.
-		if errors.Is(err, errdef.ErrNotFound) || strings.Contains(err.Error(), "not found") {
+		// legacy fallback to guess. errors.Is ONLY: oras-go wraps
+		// errdef.ErrNotFound for MANIFEST_UNKNOWN / NAME_UNKNOWN, and the 404
+		// must stay authoritative -- rebom makes DURABLE decisions on it
+		// (permanent rawBomMissing stamp), so a substring match over
+		// arbitrary error text (proxy bodies, future oras phrasing) could
+		// poison a stamp with no self-healing path.
+		if errors.Is(err, errdef.ErrNotFound) {
 			c.String(http.StatusNotFound, "Artifact not found: ", err)
 			return
 		}
