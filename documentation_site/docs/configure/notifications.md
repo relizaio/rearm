@@ -15,9 +15,9 @@ Subscriptions, routes, and channel groups are available on **both** editions,
 as are the **Slack**, **Microsoft Teams**, and **Webhook** channel types.
 
 Pro adds two channel types -- **Email** and
-[**Microsoft Sentinel**](../integrations/sentinel) -- and two route targets,
-**teams** and **notify the component owner**. Everything else on this page
-works the same on either edition.
+[**Microsoft Sentinel**](../integrations/sentinel) -- two route targets,
+**teams** and **notify the component owner**, and
+[subscription filtering](#filters-severity-and-routes).
 :::
 
 ## How it fits together
@@ -43,11 +43,11 @@ A subscription's `eventTypes` list controls what it can match:
 
 | Event | Fires when |
 |---|---|
-| `NEW_VULN_AFFECTS_RELEASES` | A vulnerability is newly linked to one of your releases |
+| `NEW_VULN_AFFECTS_RELEASES` | A vulnerability record is created for your organization. The releases it affects are resolved when the event is delivered, and that list can legitimately be empty -- the event still fires, so treat "affects releases" as the intent rather than a guarantee |
 | `VULNERABILITY_RECORD_UPDATED` | An existing vulnerability record changes -- including a CVE newly appearing on the KEV catalog (see [KEV notifications](#kev-known-exploited-vulnerabilities-notifications) below) |
 | `VEX_STATE_CHANGED` | Reserved for VEX (exploitability) status changes. No event source emits this yet, so a subscription on it will not fire today -- prefer `VULNERABILITY_RECORD_UPDATED` for vulnerability-state changes |
 | `RELEASE_CREATED` | A new release is created |
-| `RELEASE_LIFECYCLE_CHANGED` | A release moves lifecycle stage |
+| `RELEASE_LIFECYCLE_CHANGED` | A release enters `DRAFT`, `ASSEMBLED`, `CANCELLED` or `REJECTED`. **Only those four**, matching what the older Slack/Teams release notifications sent -- later stages such as `READY_TO_SHIP`, `GENERAL_AVAILABILITY` and the end-of-life stages emit nothing |
 | `RELEASE_BOM_DIFF` | A release's BOM diff is computed |
 | `APPROVAL_REQUESTED` | Someone requests approval on a release -- see [Approval queues](./approval-queues) |
 | `APPROVAL_RESOLVED` | An approval request is satisfied or disapproved |
@@ -55,13 +55,24 @@ A subscription's `eventTypes` list controls what it can match:
 ## Filters, severity, and routes
 
 - A subscription can carry an optional filter, built either with the preset
-  toggles or as an advanced expression. Advanced filters run under limits
-  (size, nesting depth, iteration count, and a short evaluation timeout) so a
-  runaway expression can't stall delivery for the rest of the org -- a filter
-  that exceeds its budget fails that one delivery rather than blocking others.
+  toggles or as an advanced expression. Filters run under limits (size, nesting
+  depth, iteration count, and a short evaluation timeout) so a runaway
+  expression can't stall delivery for the rest of the org -- a filter that
+  exceeds its budget fails that one delivery rather than blocking others.
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
   sent to its targets.
+
+::: warning Filters are not applied on Community Edition
+Filter evaluation is a Pro capability. On CE the evaluator is absent, and
+rather than dropping subscriptions it cannot evaluate, ReARM delivers them
+**unfiltered** -- a filter you save is accepted and then ignored, so the
+subscription fires on every event of its type.
+
+This applies to the preset toggles as well as advanced expressions, since the
+toggles compile down to the same expression. Minimum severity, event types and
+route targets are all still enforced on CE; only the filter is not.
+:::
 
 ### Route targets
 
