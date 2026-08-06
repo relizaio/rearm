@@ -164,4 +164,39 @@ public class VexProposalScopeResolverTest {
 		assertNull(batch.get(3).getScopeComponentName());
 		assertNull(batch.get(4).getScopeReleaseVersion());
 	}
+
+	/**
+	 * Defence-in-depth: a proposal must never surface names from another org's
+	 * objects. Not reachable through today's write paths (scope targets are
+	 * assigned server-side from the org's own objects), so this pins the guard
+	 * for any future path that accepts a caller-supplied scopeUuid. Fails
+	 * without the sameOrg() checks in the resolver.
+	 */
+	@Test
+	public void crossOrgScopeResolvesToNothing() throws RelizaException {
+		Fx owner = fixture();
+		Fx foreign = fixture();
+		// Proposal belongs to `owner`'s org but points at `foreign`'s release.
+		var dto = proposal(owner.org(), AnalysisScope.RELEASE, foreign.release());
+		resolver.resolveScopeNames(dto);
+
+		assertNull(dto.getScopeReleaseVersion(), "must not leak another org's release version");
+		assertNull(dto.getScopeBranchName(), "must not leak another org's branch name");
+		assertNull(dto.getScopeComponentName(), "must not leak another org's component name");
+	}
+
+	/**
+	 * The component behind a cross-org BRANCH scope must stay hidden too -- the
+	 * component is reached indirectly there, so it needs its own guard.
+	 */
+	@Test
+	public void crossOrgBranchScopeHidesComponentToo() throws RelizaException {
+		Fx owner = fixture();
+		Fx foreign = fixture();
+		var dto = proposal(owner.org(), AnalysisScope.BRANCH, foreign.branch());
+		resolver.resolveScopeNames(dto);
+
+		assertNull(dto.getScopeBranchName());
+		assertNull(dto.getScopeComponentName());
+	}
 }

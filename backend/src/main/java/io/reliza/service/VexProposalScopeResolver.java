@@ -38,13 +38,18 @@ import io.reliza.model.dto.VexStatementProposalWebDto;
  *       branches, so nothing is fetched twice.</li>
  * </ol>
  *
- * <p>Branches have no batch reader, so they are fetched individually behind a
- * per-call cache -- bounded by the number of DISTINCT branch-bearing scopes on
- * the page, not by the proposal count.
+ * <p>Branches are batched the same way, via
+ * {@link BranchService#getBranchDataList(Iterable)}.
  *
- * <p>Resolution is best-effort display data: a scope pointing at a deleted or
- * inaccessible object simply leaves the fields null and the UI falls back to
- * the raw uuid. It never fails the query.
+ * <p>Every resolved object is checked to belong to the proposal's own org
+ * before its name is used. Scope targets are set server-side today and cannot
+ * point across orgs, so this is defence-in-depth for future write paths: a
+ * cross-org mismatch is treated as unresolvable rather than leaking another
+ * org's component / branch / release names to this org's viewers.
+ *
+ * <p>Resolution is best-effort display data: a scope pointing at a deleted,
+ * inaccessible or cross-org object simply leaves the fields null and the UI
+ * falls back to the raw uuid. It never fails the query.
  */
 @Service
 public class VexProposalScopeResolver {
@@ -88,14 +93,19 @@ public class VexProposalScopeResolver {
 
 		// Branches: the scope-level ones, plus every branch a resolved release
 		// points at (so a RELEASE-scoped proposal can show its branch too).
+		// RELEASE is the dominant scope kind and distinct releases mean distinct
+		// branches, so this MUST be batched -- resolving one at a time here would
+		// reinstate the per-proposal lookup this class exists to avoid.
 		Map<UUID, BranchData> branches = new HashMap<>();
 		Set<UUID> branchesToLoad = new LinkedHashSet<>(branchUuids);
 		releases.values().stream()
 				.map(ReleaseData::getBranch)
 				.filter(java.util.Objects::nonNull)
 				.forEach(branchesToLoad::add);
-		for (UUID branchUuid : branchesToLoad) {
-			branchService.getBranchData(branchUuid).ifPresent(bd -> branches.put(branchUuid, bd));
+		if (!branchesToLoad.isEmpty()) {
+			for (BranchData bd : branchService.getBranchDataList(branchesToLoad)) {
+				branches.put(bd.getUuid(), bd);
+			}
 		}
 
 		// Components: the scope-level ones, plus the parents of everything above.
@@ -129,7 +139,9 @@ public class VexProposalScopeResolver {
 
 		if (scope == AnalysisScope.RELEASE) {
 			ReleaseData rd = releases.get(scopeUuid);
-			if (rd == null) return; // deleted / not visible -- leave nulls, UI shows the uuid
+			// null => deleted / not visible; org mismatch => never surface another
+			// org's names here. Both leave nulls and the UI shows the raw uuid.
+			if (rd == null || !sameOrg(dto, rd.getOrg())) return;
 			dto.setScopeReleaseUuid(rd.getUuid());
 			dto.setScopeReleaseVersion(rd.getVersion());
 			branchUuid = rd.getBranch();
@@ -144,7 +156,7 @@ public class VexProposalScopeResolver {
 
 		if (branchUuid != null) {
 			BranchData bd = branches.get(branchUuid);
-			if (bd != null) {
+			if (bd != null && sameOrg(dto, bd.getOrg())) {
 				dto.setScopeBranchUuid(branchUuid);
 				dto.setScopeBranchName(bd.getName());
 				// A release's component is denormalized onto the release, but a
@@ -154,10 +166,20 @@ public class VexProposalScopeResolver {
 		}
 		if (componentUuid != null) {
 			Optional<ComponentData> ocd = Optional.ofNullable(components.get(componentUuid));
-			if (ocd.isPresent()) {
+			if (ocd.isPresent() && sameOrg(dto, ocd.get().getOrg())) {
 				dto.setScopeComponentUuid(componentUuid);
 				dto.setScopeComponentName(ocd.get().getName());
 			}
 		}
+	}
+
+	/**
+	 * Guards every resolved level against cross-org leakage. Scope targets are
+	 * assigned server-side from the org's own objects today, so a mismatch is
+	 * not currently reachable -- this keeps it unreachable if a future write
+	 * path ever accepts a caller-supplied scopeUuid.
+	 */
+	private static boolean sameOrg(VexStatementProposalWebDto dto, UUID resolvedOrg) {
+		return dto.getOrg() != null && dto.getOrg().equals(resolvedOrg);
 	}
 }
