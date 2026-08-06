@@ -6133,6 +6133,20 @@ type VexStatementProposalWebDto {
 	userImportMode: VexImportMode
 	userIssuerClassOverride: IssuerClass
 	demotionReason: String
+	"""
+	Human-readable resolution of scope + scopeUuid, filled server-side (batched)
+	because the client would otherwise need one to three lookups per proposal on
+	an org-wide list. All nullable: a RELEASE-scoped proposal fills all three
+	levels, BRANCH fills branch + component, COMPONENT fills only the component,
+	and ORG / RESOURCE_GROUP fill none. Null also when the scoped object no
+	longer resolves -- render the raw scopeUuid in that case.
+	"""
+	scopeComponentUuid: ID
+	scopeComponentName: String
+	scopeBranchUuid: ID
+	scopeBranchName: String
+	scopeReleaseUuid: ID
+	scopeReleaseVersion: String
 }
 
 enum ProposalStatus {

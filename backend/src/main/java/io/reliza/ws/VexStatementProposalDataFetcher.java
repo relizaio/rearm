@@ -35,6 +35,7 @@ import io.reliza.model.VexStatementProposalData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.VexStatementProposalWebDto;
 import io.reliza.service.ArtifactService;
+import io.reliza.service.VexProposalScopeResolver;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.SharedReleaseService;
@@ -64,6 +65,9 @@ public class VexStatementProposalDataFetcher {
 	@Autowired
 	private ArtifactService artifactService;
 
+	@Autowired
+	private VexProposalScopeResolver vexProposalScopeResolver;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getVexStatementProposals")
 	public List<VexStatementProposalWebDto> getVexStatementProposals(
@@ -75,7 +79,7 @@ public class VexStatementProposalDataFetcher {
 		List<VexStatementProposalData> data = (status == null)
 			? proposalService.listForOrg(org)
 			: proposalService.listForOrgAndStatus(org, status);
-		return data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList());
+		return resolved(data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList()));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -85,7 +89,7 @@ public class VexStatementProposalDataFetcher {
 		Optional<VexStatementProposalData> opt = proposalService.getProposal(uuid);
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
 		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
-		return VexStatementProposalWebDto.fromData(opt.get());
+		return resolved(VexStatementProposalWebDto.fromData(opt.get()));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -101,10 +105,10 @@ public class VexStatementProposalDataFetcher {
 		if (oad.isEmpty()) {
 			// Proposals exist but artifact is gone — fall back to org gate on first proposal's org.
 			gateOrg(oud, data.get(0).getOrg(), PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
-			return data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList());
+			return resolved(data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList()));
 		}
 		gateArtifact(oud, oad.get(), PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
-		return data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList());
+		return resolved(data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList()));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -114,8 +118,8 @@ public class VexStatementProposalDataFetcher {
 			@InputArgument("release") UUID release) throws RelizaException {
 		UserData oud = currentUser();
 		gateRelease(oud, org, release, PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
-		return proposalService.listForRelease(org, release).stream()
-			.map(VexStatementProposalWebDto::fromData).collect(Collectors.toList());
+		return resolved(proposalService.listForRelease(org, release).stream()
+			.map(VexStatementProposalWebDto::fromData).collect(Collectors.toList()));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -128,7 +132,7 @@ public class VexStatementProposalDataFetcher {
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
 		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud);
-		return VexStatementProposalWebDto.fromData(proposalService.accept(uuid, comment, wu));
+		return resolved(VexStatementProposalWebDto.fromData(proposalService.accept(uuid, comment, wu)));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -141,7 +145,7 @@ public class VexStatementProposalDataFetcher {
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
 		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud);
-		return VexStatementProposalWebDto.fromData(proposalService.reject(uuid, wu, reason));
+		return resolved(VexStatementProposalWebDto.fromData(proposalService.reject(uuid, wu, reason)));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -154,7 +158,7 @@ public class VexStatementProposalDataFetcher {
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
 		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud);
-		return VexStatementProposalWebDto.fromData(proposalService.updateProposal(uuid, updates, wu));
+		return resolved(VexStatementProposalWebDto.fromData(proposalService.updateProposal(uuid, updates, wu)));
 	}
 
 	private UserData currentUser() {
@@ -211,5 +215,20 @@ public class VexStatementProposalDataFetcher {
 		// surfaces its component/release linkage for the authorizer.
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
 			PermissionScope.ORGANIZATION, ad.getOrg(), List.of((RelizaObject) ad), callType);
+	}
+
+	/**
+	 * Fill the human-readable scope fields before handing dtos to the client.
+	 * Batched across the list -- see {@link VexProposalScopeResolver} for why
+	 * this cannot sensibly be done client-side.
+	 */
+	private List<VexStatementProposalWebDto> resolved(List<VexStatementProposalWebDto> dtos) {
+		vexProposalScopeResolver.resolveScopeNames(dtos);
+		return dtos;
+	}
+
+	private VexStatementProposalWebDto resolved(VexStatementProposalWebDto dto) {
+		vexProposalScopeResolver.resolveScopeNames(dto);
+		return dto;
 	}
 }
