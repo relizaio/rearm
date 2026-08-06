@@ -33,6 +33,7 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.UserData;
 import io.reliza.model.VexStatementProposalData;
 import io.reliza.service.ArtifactService;
+import io.reliza.service.VexProposalScopeResolver;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.SharedReleaseService;
@@ -68,6 +69,7 @@ class VexStatementProposalDataFetcherAuthzNullSafetyTest {
 	private GetOrganizationService getOrganizationService;
 	private SharedReleaseService sharedReleaseService;
 	private ArtifactService artifactService;
+	private VexProposalScopeResolver vexProposalScopeResolver;
 	private VexStatementProposalDataFetcher fetcher;
 
 	@BeforeEach
@@ -78,6 +80,9 @@ class VexStatementProposalDataFetcherAuthzNullSafetyTest {
 		getOrganizationService = mock(GetOrganizationService.class);
 		sharedReleaseService = mock(SharedReleaseService.class);
 		artifactService = mock(ArtifactService.class);
+		// Scope resolution is display-only enrichment; the mock keeps this
+		// authz-focused test from depending on resolver behaviour.
+		vexProposalScopeResolver = mock(VexProposalScopeResolver.class);
 
 		when(userService.getUserDataByAuth(any(JwtAuthenticationToken.class)))
 				.thenReturn(Optional.of(mock(UserData.class)));
@@ -93,6 +98,7 @@ class VexStatementProposalDataFetcherAuthzNullSafetyTest {
 		inject("getOrganizationService", getOrganizationService);
 		inject("sharedReleaseService", sharedReleaseService);
 		inject("artifactService", artifactService);
+		inject("vexProposalScopeResolver", vexProposalScopeResolver);
 
 		SecurityContext ctx = mock(SecurityContext.class);
 		when(ctx.getAuthentication()).thenReturn(mock(JwtAuthenticationToken.class));
