@@ -3,6 +3,7 @@ import { runQuery } from '../../utils';
 import { OciNotFoundError, DigestValidationError } from '../../types/errors';
 import { fetchFromOci as defaultFetchFromOci, getMonthlyRepositoryName } from './index';
 import { extractRepositoryNameFromBom } from './ociRepositoryHelpers';
+import { fetchProcessedBomWithRetry } from './processedBomFetcher';
 import type { BomRecord } from '../../types/bom.types';
 
 /**
@@ -127,19 +128,20 @@ function buildCandidateRepos(
     return candidates;
 }
 
-/** The processed BOM served in place of a missing raw copy -- validated with ITS digest. */
+/** The processed BOM served in place of a missing raw copy -- validated with ITS
+ * digest, via the race-tolerant fetch (a concurrent enrichment push must not
+ * turn the substitute into a spurious digest failure either). */
 async function fetchProcessedSubstitute(
     bomRecord: BomRecord,
     recordedRepo: string | undefined,
     fetchFromOci: (tag: string, repo?: string, digest?: string) => Promise<any>
 ): Promise<any> {
-    const processedDigest = bomRecord.meta?.processedFileDigest;
     logger.info({
         bomUuid: bomRecord.uuid,
         repository: recordedRepo,
-        validated: !!processedDigest
+        validated: !!bomRecord.meta?.processedFileDigest
     }, 'Serving processed BOM as substitute for unavailable raw BOM');
-    return fetchFromOci(bomRecord.uuid, recordedRepo, processedDigest);
+    return fetchProcessedBomWithRetry(bomRecord, fetchFromOci);
 }
 
 async function stampRawRepository(bomUuid: string, repositoryName: string): Promise<void> {

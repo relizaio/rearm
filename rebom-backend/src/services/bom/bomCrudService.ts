@@ -3,7 +3,7 @@ import { BomDto, BomMetaDto, BomRecord, BomSearch, SearchObject } from '../../ty
 import { BomNotFoundError, BomDataIntegrityError } from '../../types/errors';
 import { BomMapper } from './bomMapper';
 import { logger } from '../../logger';
-import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse, resolveAndFetchRawBom } from '../oci';
+import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse, resolveAndFetchRawBom, fetchProcessedBomWithRetry } from '../oci';
 import { parseBom, ParsedBom, ParsedBomComponent, parseHbom, ParsedHbom } from './bomComponentExtractor';
 
 export async function findAllBoms(): Promise<BomDto[]> {
@@ -48,11 +48,11 @@ export async function findBomObjectById(id: string, org: string): Promise<Object
     // Extract repository name from bom field (OASResponse)
     const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
     
-    // Fetch the actual BOM content from OCI storage using the BOM's UUID
-    // Use stored repository name, or fall back to default 'rebom-artifacts' for legacy records
-    // Validate using processedFileDigest (augmented BOM digest)
-    const expectedDigest = bomRecord.meta?.processedFileDigest;
-    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest);
+    // Fetch the actual BOM content from OCI storage using the BOM's UUID.
+    // Digest-validated with a one-shot retry against a fresh row read, so a
+    // concurrent enrichment push (bytes overwritten before the row's digest
+    // update lands) does not surface as a spurious validation failure.
+    const bomContent = await fetchProcessedBomWithRetry(bomRecord);
     return bomContent;
 }
 
@@ -138,10 +138,9 @@ export async function findBomBySerialNumberAndVersion(serialNumber: string, vers
         logger.debug({ bomUuid: bomRecord.uuid, version, serialNumber }, "Fetching raw CycloneDX BOM by version");
         return await resolveAndFetchRawBom(bomRecord);
     } else {
-        // Augmented/processed BOM requested - validate using processedFileDigest
+        // Augmented/processed BOM requested - digest-validated, race-tolerant
         logger.debug({ uuid: bomRecord.uuid, version, serialNumber }, "Fetching augmented BOM by version");
-        const expectedDigest = bomRecord.meta?.processedFileDigest;
-        return await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest);
+        return await fetchProcessedBomWithRetry(bomRecord);
     }
 }
 
@@ -206,9 +205,8 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
                 bomUuid: bomById.uuid, 
                 sourceSpdxUuid: bomById.source_spdx_uuid 
             }, "Fetching converted CycloneDX from SPDX source");
-            // Converted BOMs are processed versions - validate using processedFileDigest
-            const expectedDigest = bomById.meta?.processedFileDigest;
-            return await fetchFromOci(bomById.uuid, storedRepositoryName, expectedDigest);
+            // Converted BOMs are processed versions - digest-validated, race-tolerant
+            return await fetchProcessedBomWithRetry(bomById);
         }
         
         // Native CycloneDX - fetch raw BOM with automatic fallback for legacy BOMs
@@ -263,9 +261,8 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
             return await resolveAndFetchRawBom(bomById);
         }
         
-        // Fallback to primary UUID (processed/augmented BOM) - validate using processedFileDigest
+        // Fallback to primary UUID (processed/augmented BOM) - digest-validated, race-tolerant
         logger.debug({ uuid: bomById.uuid }, "Falling back to primary BOM UUID");
-        const expectedDigest = bomById.meta?.processedFileDigest;
-        return await fetchFromOci(bomById.uuid, storedRepositoryName, expectedDigest);
+        return await fetchProcessedBomWithRetry(bomById);
     }
 }
