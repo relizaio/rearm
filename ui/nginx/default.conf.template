@@ -61,6 +61,12 @@ server {
 
     location /tea {
         proxy_pass http://backend;
+        # TEA is a machine API: its 404 is a structured TeaErrorResponse
+        # (OBJECT_UNKNOWN) that clients are specified to read. The server-level
+        # proxy_intercept_errors swaps upstream error bodies for the branded
+        # static pages, which turned every TEA error into 132 bytes of HTML and
+        # made backend faults indistinguishable from edge ones while debugging.
+        proxy_intercept_errors off;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host            $host;
@@ -74,6 +80,8 @@ server {
 
     location /.well-known/tea {
         proxy_pass http://backend;
+        # Same rationale as /tea above -- keep upstream JSON intact.
+        proxy_intercept_errors off;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host            $host;

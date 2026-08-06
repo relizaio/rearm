@@ -27,8 +27,6 @@ import org.springframework.web.context.request.NativeWebRequest;
 import jakarta.validation.constraints.*;
 import jakarta.validation.Valid;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,9 +57,16 @@ public class DiscoveryApiController implements DiscoveryApi {
     public ResponseEntity<List<TeaDiscoveryInfo>> discoveryByTei(
             @NotNull @Parameter(name = "tei", description = "Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.", required = true, in = ParameterIn.QUERY) @Valid @RequestParam(value = "tei", required = true) String tei
         ) {
-    		String decodedTEI = URLDecoder.decode(tei, StandardCharsets.UTF_8);
-    		
-            var tdiList = teaTransformerService.performTeiDiscovery(decodedTEI);
+            // NB: do NOT decode here. Spring already percent-decodes @RequestParam,
+            // so a second URLDecoder pass ate one level of escaping: a purl whose
+            // canonical form contains a literal '%' -- every sid PURL for a component
+            // whose name has a space, e.g.
+            // pkg:sid/example.com/My%20Product@1.0.0 -- arrived at the lookup with
+            // '%20' collapsed to a space and never matched the stored identifier.
+            // Spec-correct single escaping (what `rearm tea discovery` sends via
+            // url.QueryEscape) now resolves; only a triple-escaped URL, which was
+            // the workaround for this bug, stops working.
+            var tdiList = teaTransformerService.performTeiDiscovery(tei);
             if (tdiList.isEmpty()) {
             	TeaErrorResponse errorResponse = new TeaErrorResponse(TeaUnknownErrorType.OBJECT_UNKNOWN);
             	return (ResponseEntity<List<TeaDiscoveryInfo>>) (ResponseEntity<?>) ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
