@@ -59,6 +59,19 @@ public class VexStatementProposalWebDto {
 	private IssuerClass userIssuerClassOverride;
 	private String demotionReason;
 
+	// --- resolved scope display (see VexProposalScopeResolver) ---
+	// scopeUuid alone is unreadable in the UI, and the client cannot resolve it
+	// without one query per proposal on an org-wide list. These are filled in
+	// batch by the datafetcher and are all nullable: a RELEASE-scoped proposal
+	// fills all three levels, BRANCH fills branch + component, COMPONENT fills
+	// only the component, and ORG / RESOURCE_GROUP fill none.
+	private UUID scopeComponentUuid;
+	private String scopeComponentName;
+	private UUID scopeBranchUuid;
+	private String scopeBranchName;
+	private UUID scopeReleaseUuid;
+	private String scopeReleaseVersion;
+
 	public static VexStatementProposalWebDto fromData(VexStatementProposalData d) {
 		VexStatementProposalWebDto w = new VexStatementProposalWebDto();
 		w.uuid = d.getUuid();

@@ -11,6 +11,7 @@ export const GET_VEX_PROPOSALS = gql`
             actedAt actedBy
             translationNotes
             issuerClass userImportMode userIssuerClassOverride demotionReason
+            scopeComponentUuid scopeComponentName scopeBranchUuid scopeBranchName scopeReleaseUuid scopeReleaseVersion
         }
     }
 `
@@ -23,6 +24,7 @@ export const GET_VEX_PROPOSALS_BY_RELEASE = gql`
             analysisState analysisJustification
             status actedAt
             issuerClass demotionReason
+            scopeComponentUuid scopeComponentName scopeBranchUuid scopeBranchName scopeReleaseUuid scopeReleaseVersion
         }
     }
 `
@@ -38,6 +40,7 @@ export const GET_VEX_PROPOSAL = gql`
             actedAt actedBy
             translationNotes
             issuerClass userImportMode userIssuerClassOverride demotionReason
+            scopeComponentUuid scopeComponentName scopeBranchUuid scopeBranchName scopeReleaseUuid scopeReleaseVersion
         }
     }
 `

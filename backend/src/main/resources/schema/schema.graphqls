@@ -6133,6 +6133,24 @@ type VexStatementProposalWebDto {
 	userImportMode: VexImportMode
 	userIssuerClassOverride: IssuerClass
 	demotionReason: String
+	# Human-readable resolution of scope + scopeUuid, filled server-side and
+	# batched across the page (the client would otherwise need one to three
+	# lookups per proposal on an org-wide list). A RELEASE-scoped proposal fills
+	# all three levels, BRANCH fills branch + component, COMPONENT fills only the
+	# component, ORG / RESOURCE_GROUP fill none. Every field below is also null
+	# when the scoped object no longer resolves -- render the raw scopeUuid then.
+	"""Component owning this proposal's scope; null for ORG / RESOURCE_GROUP scope or when unresolvable."""
+	scopeComponentUuid: ID
+	"""Display name of scopeComponentUuid; null whenever that is null."""
+	scopeComponentName: String
+	"""Branch of this proposal's scope; null for COMPONENT / ORG / RESOURCE_GROUP scope or when unresolvable."""
+	scopeBranchUuid: ID
+	"""Display name of scopeBranchUuid; null whenever that is null."""
+	scopeBranchName: String
+	"""Release of this proposal's scope; set only for RELEASE scope, and null when unresolvable."""
+	scopeReleaseUuid: ID
+	"""Version string of scopeReleaseUuid; null whenever that is null."""
+	scopeReleaseVersion: String
 }
 
 enum ProposalStatus {
