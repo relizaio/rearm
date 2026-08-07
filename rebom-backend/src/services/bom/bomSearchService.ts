@@ -1,7 +1,7 @@
 import { logger } from '../../logger';
 import { BomSearch, BomDto, BomMetaDto, RebomOptions, SearchObject, BomRecord } from '../../types';
 import { BomNotFoundError } from '../../types/errors';
-import { fetchFromOci, extractRepositoryNameFromBom } from '../oci';
+import { fetchProcessedBomWithRetry } from '../oci';
 import { augmentBomWithComponentContext, attachRebomToolToBom } from './bomProcessingService';
 import { runQuery } from '../../utils';
 import { BomMapper } from './bomMapper';
@@ -90,10 +90,8 @@ async function bomRecordToDto(bomRecord: BomRecord, rootOverride: boolean = true
   let name = ''
   let bomVersion = ''
   
-  // Fetch BOM content from OCI storage (augmented BOM - validate with processedFileDigest)
-  const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
-  const expectedDigest = bomRecord.meta?.processedFileDigest;
-  bomRecord.bom = await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest)
+  // Fetch BOM content from OCI storage (augmented BOM - digest-validated, race-tolerant)
+  bomRecord.bom = await fetchProcessedBomWithRetry(bomRecord)
   
   if (rootOverride)
     bomRecord.bom = rootComponentOverride(bomRecord)

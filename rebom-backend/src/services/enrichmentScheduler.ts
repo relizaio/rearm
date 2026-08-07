@@ -1,7 +1,7 @@
 import { logger } from '../logger';
 import { EnrichmentStatus, IntegrationType } from '../types';
 import * as BomRepository from '../bomRepository';
-import { fetchFromOci, extractRepositoryNameFromBom } from './oci';
+import { fetchProcessedBomWithRetry } from './oci';
 import { enrichBomAsync } from './bom/bomProcessingService';
 import { getBearCredentials } from './integrationService';
 import { runQuery } from '../utils';
@@ -136,10 +136,10 @@ async function runEnrichmentCycle(): Promise<void> {
         
         logger.info({ bomUuid: bom.uuid, serialNumber: bom.serialNumber }, 'Enrichment scheduler: Triggering enrichment');
         
-        // Fetch BOM content from OCI (augmented BOM - validate with processedFileDigest)
-        const storedRepositoryName = extractRepositoryNameFromBom(bom);
-        const expectedDigest = bom.meta?.processedFileDigest;
-        const bomContent = await fetchFromOci(bom.uuid, storedRepositoryName, expectedDigest);
+        // Fetch BOM content from OCI (augmented BOM). The candidate list was
+        // loaded at cycle start, so this row's digest can be minutes stale --
+        // the race-tolerant fetch re-reads the row once on a digest mismatch.
+        const bomContent = await fetchProcessedBomWithRetry(bom);
         
         await enrichBomAsync(bom.uuid, bomContent, bom.organization, credentialsByOrg.get(bom.organization)).catch(err => {
           logger.error({ err, bomUuid: bom.uuid }, 'Enrichment scheduler: Async enrichment failed');

@@ -10,7 +10,8 @@ import {
   extractRepositoryNameFromBom,
   extractRepositoryNameFromSpdxOciResponse,
   validateOciPushResult,
-  resolveAndFetchRawBom
+  resolveAndFetchRawBom,
+  fetchProcessedBomWithRetry
 } from '../oci';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
@@ -938,10 +939,10 @@ export async function triggerEnrichment(id: string, org: string, force: boolean 
       logger.error({ err, bomUuid: bomRecord.uuid }, 'Forced re-enrichment failed');
     });
   } else {
-    // Normal enrichment - fetch current augmented BOM (validate with processedFileDigest)
-    const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
-    const expectedDigest = bomRecord.meta?.processedFileDigest;
-    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest);
+    // Normal enrichment - fetch current augmented BOM. Race-tolerant: a manual
+    // trigger's most likely collision is ANOTHER enrichment finishing its push
+    // just before its row update lands.
+    const bomContent = await fetchProcessedBomWithRetry(bomRecord);
     enrichBomAsync(bomRecord.uuid, bomContent, org).catch(err => {
       logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
     });
