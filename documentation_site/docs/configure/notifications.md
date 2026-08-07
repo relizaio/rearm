@@ -62,6 +62,11 @@ A subscription's `eventTypes` list controls what it can match:
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
   sent to its targets.
+- A route can also carry a **perspectives** list. Left empty it means "any
+  perspective". Set, it gates delivery: the event only goes out on that route
+  when an affected release's component belongs to one of the named
+  perspectives. This gates **delivery only** -- it does not change what appears
+  in the in-app inbox or the bell.
 
 ::: warning Filters are not applied on Community Edition
 Filter evaluation is a Pro capability. On CE the evaluator is absent, and
