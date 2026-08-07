@@ -195,6 +195,18 @@ event, straight from the UI:
 Both bypass the dedup window described above, so a test always produces a
 delivery you can see in **Delivery History**.
 
+::: warning Not every event type can be tested
+Synthetic scenarios exist only for `NEW_VULN_AFFECTS_RELEASES`,
+`VULNERABILITY_RECORD_UPDATED` and `VEX_STATE_CHANGED`. A subscription on any
+of the release or approval event types has no scenario to inject, so its
+**Test** control is disabled and hovering it explains why.
+
+That is deliberate -- injecting would fire a real org-wide event that could
+never match the subscription you are testing -- but it does mean a
+release-lifecycle or approval subscription can only be verified by causing the
+real event: transition a release, or open an actual approval request.
+:::
+
 ::: tip A test on an owner-routed subscription can legitimately show nothing
 If the only route on the subscription
 [notifies the component owner](#notifying-the-component-owner), a test that
