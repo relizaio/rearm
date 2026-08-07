@@ -15,9 +15,9 @@ Subscriptions, routes, and channel groups are available on **both** editions,
 as are the **Slack**, **Microsoft Teams**, and **Webhook** channel types.
 
 Pro adds two channel types -- **Email** and
-[**Microsoft Sentinel**](../integrations/sentinel) -- and two route targets,
-**teams** and **notify the component owner**. Everything else on this page
-works the same on either edition.
+[**Microsoft Sentinel**](../integrations/sentinel) -- two route targets,
+**teams** and **notify the component owner**, and
+[subscription filtering](#filters-severity-and-routes).
 :::
 
 ## How it fits together
@@ -43,11 +43,11 @@ A subscription's `eventTypes` list controls what it can match:
 
 | Event | Fires when |
 |---|---|
-| `NEW_VULN_AFFECTS_RELEASES` | A vulnerability is newly linked to one of your releases |
+| `NEW_VULN_AFFECTS_RELEASES` | A vulnerability record is created for your organization **and** at least one of your releases carries it. The affected releases are resolved at delivery time, not when the record is written, so an event whose set is still empty is retried for a short while and then withheld rather than delivered (see [below](#vulnerability-events-that-affect-nothing)) |
 | `VULNERABILITY_RECORD_UPDATED` | An existing vulnerability record changes -- including a CVE newly appearing on the KEV catalog (see [KEV notifications](#kev-known-exploited-vulnerabilities-notifications) below) |
 | `VEX_STATE_CHANGED` | Reserved for VEX (exploitability) status changes. No event source emits this yet, so a subscription on it will not fire today -- prefer `VULNERABILITY_RECORD_UPDATED` for vulnerability-state changes |
 | `RELEASE_CREATED` | A new release is created |
-| `RELEASE_LIFECYCLE_CHANGED` | A release moves lifecycle stage |
+| `RELEASE_LIFECYCLE_CHANGED` | A release enters `DRAFT`, `ASSEMBLED`, `CANCELLED` or `REJECTED`. **Only those four**, matching what the older Slack/Teams release notifications sent -- later stages such as `READY_TO_SHIP`, `GENERAL_AVAILABILITY` and the end-of-life stages emit nothing |
 | `RELEASE_BOM_DIFF` | A release's BOM diff is computed |
 | `APPROVAL_REQUESTED` | Someone requests approval on a release -- see [Approval queues](./approval-queues) |
 | `APPROVAL_RESOLVED` | An approval request is satisfied or disapproved |
@@ -55,13 +55,36 @@ A subscription's `eventTypes` list controls what it can match:
 ## Filters, severity, and routes
 
 - A subscription can carry an optional filter, built either with the preset
-  toggles or as an advanced expression. Advanced filters run under limits
-  (size, nesting depth, iteration count, and a short evaluation timeout) so a
-  runaway expression can't stall delivery for the rest of the org -- a filter
-  that exceeds its budget fails that one delivery rather than blocking others.
+  toggles or as an advanced expression. Filters run under limits (size, nesting
+  depth, iteration count, and a 50 ms evaluation budget) so a runaway
+  expression can't stall delivery for the rest of the org. A filter that
+  exceeds its budget -- or fails to evaluate for any other reason -- causes
+  that subscription to be **skipped for that event**; other subscriptions on
+  the same event are unaffected.
+
+  Note that a skip is silent: no delivery row is written, so a filter that
+  never evaluates shows up in [Delivery History](#delivery-history) as
+  *nothing at all*, not as a failure. If a subscription you expect to fire
+  produces no rows whatsoever, an unevaluatable filter is a candidate cause.
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
   sent to its targets.
+- A route can also carry a **perspectives** list. Left empty it means "any
+  perspective". Set, it gates delivery: the event only goes out on that route
+  when an affected release's component belongs to one of the named
+  perspectives. This gates **delivery only** -- it does not change what appears
+  in the in-app inbox or the bell.
+
+::: warning Filters are not applied on Community Edition
+Filter evaluation is a Pro capability. On CE the evaluator is absent, and
+rather than dropping subscriptions it cannot evaluate, ReARM delivers them
+**unfiltered** -- a filter you save is accepted and then ignored, so the
+subscription fires on every event of its type.
+
+This applies to the preset toggles as well as advanced expressions, since the
+toggles compile down to the same expression. Minimum severity, event types and
+route targets are all still enforced on CE; only the filter is not.
+:::
 
 ### Route targets
 
@@ -125,12 +148,143 @@ delivery cap today, use your destination's own rate limiting (e.g. a Slack
 app's built-in limits) in the meantime.
 :::
 
+## Email digest batching
+
+Email channels do not send one message per event by default. They apply a
+**rolling cap**: the first non-actionable event after a quiet period sends
+immediately and anchors a window; anything arriving within the configured
+interval of that send is held and flushed as a **single digest email** when
+the window expires.
+
+Configure it on the Email channel itself (**Integrations -> Catalog ->
+Email**):
+
+- **Digest** (the default) -- batch routine notifications into at most one
+  email per interval. The interval ranges from **every 5 minutes** to
+  **weekly**; the accepted bounds are 5 minutes to 7 days.
+- **Immediate** -- disable batching; every event sends its own email.
+
+The channel card shows the current setting as a chip, so you can see at a
+glance which mode a channel is in.
+
+Two things always bypass the digest and send immediately regardless of mode:
+
+- **Approval events** (`APPROVAL_REQUESTED`, `APPROVAL_RESOLVED`). These ask a
+  specific person to act now, so holding them for a digest window would defeat
+  the point.
+- **Test and synthetic events** -- see the caveat below.
+
+Only EMAIL channels batch. Slack, Microsoft Teams, webhook, and Sentinel
+channels always dispatch as soon as the worker picks the delivery up.
+
+::: warning The default is a 24-hour digest
+An email channel created without touching these settings is in **rolling
+digest mode with a 24-hour interval**. That means the first event of a window
+arrives immediately and everything after it can be held for up to a day.
+
+This surprises people who expect an alerting channel to be chatty by default.
+If you want per-event email, set the channel to **Immediate** explicitly, or
+shorten the interval.
+:::
+
+::: warning A channel test will not show you digest behaviour
+Test and synthetic events skip the digest unconditionally, so **Send test**
+always produces an immediate email. A channel can therefore pass its test
+perfectly while real traffic is being held for up to 24 hours.
+
+To see batching, cause two real events in quick succession and watch the
+second land in [Delivery History](#delivery-history) as `BATCHED`.
+:::
+
+## Delivery History
+
+**Organization Settings -> Audit -> Delivery History** lists every delivery
+ReARM has attempted, with the channel, the subscription that caused it, the
+attempt count, and any error.
+
+One event produces **one row per (subscription, channel) pair**. That is worth
+internalising, because it explains the most common "why did I get this twice?"
+question: two subscriptions that both route to the same channel produce two
+rows and two messages. [Duplicate protection](#duplicate-delivery-protection)
+is scoped per subscription, so it does not collapse them. This is easy to hit
+without noticing when one subscription names a channel directly and another
+reaches the same channel indirectly through a team or the
+[component owner](#notifying-the-component-owner).
+
+The **Origin** column separates `REAL` traffic from `SYNTHETIC` rows produced
+by the test actions, so a history full of test runs stays legible.
+
+Statuses you will see:
+
+| Status | Meaning |
+|---|---|
+| `PENDING` | Queued; the channel worker has not attempted it yet |
+| `SENT` | The channel transport accepted it |
+| `BATCHED` | Held in an email channel's [digest window](#email-digest-batching); flushed with the next digest. All rows in one digest flip to `SENT` together, sharing a timestamp |
+| `FAILED` | Retries exhausted, or a non-retriable error. Terminal |
+| `ACKED` | Acknowledged by a user in the in-app inbox |
+
+An event that produced **no rows at all** is a different situation from a
+failed row, and the outbox event's own status tells you which: `FANNED_OUT`
+with no deliveries means "offered, and no subscription wanted it", while
+`SUPPRESSED` means ReARM withheld it deliberately -- today that means a
+[vulnerability event naming no release](#vulnerability-events-that-affect-nothing).
+
+## Vulnerability events that affect nothing
+
+A vulnerability record is written the moment ReARM learns the CVE is new to
+your organization, but the link from that CVE to your releases lives in
+artifact metrics, which are written slightly later. So at the instant the
+event is produced, "which releases does this affect?" genuinely has no answer
+yet.
+
+ReARM therefore resolves the affected releases at **delivery** time. If the set
+comes back empty, the event is not delivered immediately and not discarded --
+it is deferred and retried (roughly 30s, then 60s, then every 2 minutes).
+
+What happens after those retries depends on whether the empty answer can be
+**trusted**, because "this affects nothing" and "we could not work out what
+this affects" are different claims:
+
+- **The empty result is trustworthy.** ReARM checks whether the pipeline that
+  writes the CVE-to-release link has actually run for your organization since
+  the event was emitted. If it has, then "we found nothing" really does mean
+  "there is nothing", and the event is **withheld** after about 3 attempts --
+  a vulnerability notification naming no release is not actionable.
+- **The empty result cannot be proven.** If those artifact metrics have *not*
+  been refreshed since the event, elapsed time proves nothing: the scan may
+  simply be lagging. ReARM keeps retrying for roughly 15 minutes and then
+  **delivers the notification anyway**, naming no releases, rather than
+  dropping it. Silently discarding a real vulnerability alert is the worse
+  failure.
+
+::: tip "Affects 0 releases" means your scan pipeline is behind
+Receiving a vulnerability notification that names no release is the second
+case above, and it is a signal worth acting on: it means the vulnerability
+scan / SBOM fan-out had not run for your organization in the ~15 minutes
+after the CVE was recorded. ReARM logs this at ERROR with the event id and
+the time it gave up, so it is greppable in the backend logs.
+
+The notification itself is not wrong -- the CVE really is new to your
+organization. It just could not be attributed to releases yet.
+:::
+
+Withheld events are recorded as `SUPPRESSED` rather than failed. That is
+deliberately distinct from an event that fanned out and simply matched no
+subscription: the first means "we chose not to send this", the second means
+"nobody asked for it".
+
 ## Retention
 
 Notification history (deliveries and inbox rows) is retained for a
-configurable number of days per organization -- 90 by default, with an enforced
-14-day floor. An org can't set retention short enough to delete a row that
-might still be scheduled to send (e.g. one parked in an email digest).
+configurable number of days per organization -- **90 by default**, and settable
+anywhere from **14 to 730**. The floor exists so an org can't set retention
+short enough to delete a row that might still be scheduled to send (e.g. one
+parked in an email digest).
+
+There is no screen for this yet: retention is set through the
+`updateOrganizationSettings` GraphQL mutation (`notificationRetentionDays`),
+not from Organization Settings.
 
 ## Testing channels and subscriptions
 
@@ -154,12 +308,40 @@ event, straight from the UI:
 Both bypass the dedup window described above, so a test always produces a
 delivery you can see in **Delivery History**.
 
+::: warning Not every event type can be tested
+Synthetic scenarios exist only for `NEW_VULN_AFFECTS_RELEASES`,
+`VULNERABILITY_RECORD_UPDATED` and `VEX_STATE_CHANGED`. A subscription on any
+of the release or approval event types has no scenario to inject, so its
+**Test** control is disabled and hovering it explains why.
+
+That is deliberate -- injecting would fire a real org-wide event that could
+never match the subscription you are testing -- but it does mean a
+release-lifecycle or approval subscription can only be verified by causing the
+real event: transition a release, or open an actual approval request.
+:::
+
 ::: tip A test on an owner-routed subscription can legitimately show nothing
 If the only route on the subscription
 [notifies the component owner](#notifying-the-component-owner), a test that
 reports no delivery usually means the component the test event landed on has no
 owner, or its owner team has no channel -- not that your filter or severity
 gate is wrong. Check ownership first; the result dialog says so too.
+:::
+
+::: warning A passing owner-routing test does not mean production will deliver
+The reverse case is the one that bites. When a test event is injected, ReARM
+deliberately stamps it onto a component that **has a routable owner**, so that
+the test exercises owner routing rather than reporting a confusing nothing.
+
+A real event has no such courtesy: it lands on whatever component actually
+carries the vulnerability. If that component has no owner -- no stored owner,
+and no matching [assignment rule](./component-ownership#assignment-rules) --
+the route contributes nothing and the event is silent.
+
+So an owner-routed subscription can pass its test every single time and still
+never fire in production. The test proves the *route* is wired correctly; it
+does not prove your *components are owned*. Use the ownership report to check
+coverage across the inventory, not the Test button.
 :::
 
 ## KEV (Known Exploited Vulnerabilities) notifications

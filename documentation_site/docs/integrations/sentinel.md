@@ -17,6 +17,14 @@ Before adding a Sentinel channel in ReARM, you need, in the Azure portal:
 2. **A Data Collection Rule (DCR)** that targets your Sentinel/Log Analytics table,
    its **immutable ID** (`dcr-...`), and the **stream name** it exposes
    (typically `Custom-<TableName>_CL`).
+
+   You do **not** need a new table if you already have a DCE and DCR -- ReARM
+   needs three values, not three new resources. But the stream's declared
+   columns decide what survives: Azure silently drops any property the stream
+   does not declare, so a DCR built for a different purpose (or a built-in
+   table such as `CommonSecurityLog`, whose schema is fixed) will accept the
+   batch and quietly discard most of it. `PayloadJson` carries the full event
+   regardless, so declaring at least that column means nothing is ever lost.
 3. **An Azure AD app registration (service principal)** with the **Monitoring
    Metrics Publisher** role assigned on the DCR, giving you a **tenant ID**,
    **client ID**, and **client secret**.
@@ -58,10 +66,25 @@ haven't changed).
 Adding the channel doesn't send anything by itself -- you also need a
 **subscription** with a route pointing at it. See
 [Notifications](../configure/notifications) for event types, severity gates,
-and how routes work. ReARM doesn't currently offer a UI button to send a test
-event to a Sentinel channel; the only way to confirm delivery today is to
-route a real (or synthetic, via the API) event to it and check your Log
-Analytics table for the resulting rows.
+and how routes work.
+
+To confirm the six values are right before wiring any of that up, use the
+**Send test notification** (paper-plane) action on the channel instance in the
+catalog. It posts straight to your DCE, so a `SENT` delivery proves the whole
+chain -- service principal, DCE, DCR immutable ID and stream name. Worth doing
+first: a Sentinel channel saves successfully even when every credential is
+wrong, because ReARM cannot verify them against Azure at save time.
+
+`SENT` means Azure accepted the batch, not that the row is queryable yet --
+ingestion is asynchronous and the first write to a table can lag a few
+minutes. Confirm with a query against your table:
+
+```kusto
+ReARMNotifications_CL
+| where TimeGenerated > ago(30m)
+| project TimeGenerated, EventType, Severity, Origin, PayloadJson
+| order by TimeGenerated desc
+```
 
 ## What gets sent
 
