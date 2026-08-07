@@ -240,10 +240,34 @@ yet.
 
 ReARM therefore resolves the affected releases at **delivery** time. If the set
 comes back empty, the event is not delivered immediately and not discarded --
-it is deferred and retried (roughly 30s, then 60s, then every 2 minutes). Only
-if the set is still empty after those attempts is the event **withheld**, on
-the grounds that a vulnerability notification naming no release is not
-actionable.
+it is deferred and retried (roughly 30s, then 60s, then every 2 minutes).
+
+What happens after those retries depends on whether the empty answer can be
+**trusted**, because "this affects nothing" and "we could not work out what
+this affects" are different claims:
+
+- **The empty result is trustworthy.** ReARM checks whether the pipeline that
+  writes the CVE-to-release link has actually run for your organization since
+  the event was emitted. If it has, then "we found nothing" really does mean
+  "there is nothing", and the event is **withheld** after about 3 attempts --
+  a vulnerability notification naming no release is not actionable.
+- **The empty result cannot be proven.** If those artifact metrics have *not*
+  been refreshed since the event, elapsed time proves nothing: the scan may
+  simply be lagging. ReARM keeps retrying for roughly 15 minutes and then
+  **delivers the notification anyway**, naming no releases, rather than
+  dropping it. Silently discarding a real vulnerability alert is the worse
+  failure.
+
+::: tip "Affects 0 releases" means your scan pipeline is behind
+Receiving a vulnerability notification that names no release is the second
+case above, and it is a signal worth acting on: it means the vulnerability
+scan / SBOM fan-out had not run for your organization in the ~15 minutes
+after the CVE was recorded. ReARM logs this at ERROR with the event id and
+the time it gave up, so it is greppable in the backend logs.
+
+The notification itself is not wrong -- the CVE really is new to your
+organization. It just could not be attributed to releases yet.
+:::
 
 Withheld events are recorded as `SUPPRESSED` rather than failed. That is
 deliberately distinct from an event that fanned out and simply matched no
@@ -302,6 +326,22 @@ If the only route on the subscription
 reports no delivery usually means the component the test event landed on has no
 owner, or its owner team has no channel -- not that your filter or severity
 gate is wrong. Check ownership first; the result dialog says so too.
+:::
+
+::: warning A passing owner-routing test does not mean production will deliver
+The reverse case is the one that bites. When a test event is injected, ReARM
+deliberately stamps it onto a component that **has a routable owner**, so that
+the test exercises owner routing rather than reporting a confusing nothing.
+
+A real event has no such courtesy: it lands on whatever component actually
+carries the vulnerability. If that component has no owner -- no stored owner,
+and no matching [assignment rule](./component-ownership#assignment-rules) --
+the route contributes nothing and the event is silent.
+
+So an owner-routed subscription can pass its test every single time and still
+never fire in production. The test proves the *route* is wired correctly; it
+does not prove your *components are owned*. Use the ownership report to check
+coverage across the inventory, not the Test button.
 :::
 
 ## KEV (Known Exploited Vulnerabilities) notifications
