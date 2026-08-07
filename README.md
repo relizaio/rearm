@@ -16,7 +16,7 @@
 
 #### ReARM CE governs  releases at agentic speed. It tells you what each product is made of, its security posture and stores and manages per-release SBOMs, HBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts and Metadata.
 
-## Next ReARM Community Engagement: [Demo](https://blackhat.com/us-26/arsenal/schedule/index.html#rearm-release-governance-platform-52805) at Black Hat USA Arsenal, August 6, 2026, 11:20am PDT
+## Next ReARM Community Engagement: ReARM is presenting online talk [The Human is the Loop](https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/315615348), August 11, 2026, 12:00pm EDT
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
