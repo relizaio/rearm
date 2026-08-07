@@ -56,9 +56,16 @@ A subscription's `eventTypes` list controls what it can match:
 
 - A subscription can carry an optional filter, built either with the preset
   toggles or as an advanced expression. Filters run under limits (size, nesting
-  depth, iteration count, and a short evaluation timeout) so a runaway
-  expression can't stall delivery for the rest of the org -- a filter that
-  exceeds its budget fails that one delivery rather than blocking others.
+  depth, iteration count, and a 50 ms evaluation budget) so a runaway
+  expression can't stall delivery for the rest of the org. A filter that
+  exceeds its budget -- or fails to evaluate for any other reason -- causes
+  that subscription to be **skipped for that event**; other subscriptions on
+  the same event are unaffected.
+
+  Note that a skip is silent: no delivery row is written, so a filter that
+  never evaluates shows up in [Delivery History](#delivery-history) as
+  *nothing at all*, not as a failure. If a subscription you expect to fire
+  produces no rows whatsoever, an unevaluatable filter is a candidate cause.
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
   sent to its targets.
@@ -140,6 +147,88 @@ gap, not a bug you need to work around; if you're relying on a specific
 delivery cap today, use your destination's own rate limiting (e.g. a Slack
 app's built-in limits) in the meantime.
 :::
+
+## Email digest batching
+
+Email channels do not send one message per event by default. They apply a
+**rolling cap**: the first non-actionable event after a quiet period sends
+immediately and anchors a window; anything arriving within the configured
+interval of that send is held and flushed as a **single digest email** when
+the window expires.
+
+Configure it on the Email channel itself (**Integrations -> Catalog ->
+Email**):
+
+- **Digest** (the default) -- batch routine notifications into at most one
+  email per interval. The interval ranges from **every 5 minutes** to
+  **weekly**; the accepted bounds are 5 minutes to 7 days.
+- **Immediate** -- disable batching; every event sends its own email.
+
+The channel card shows the current setting as a chip, so you can see at a
+glance which mode a channel is in.
+
+Two things always bypass the digest and send immediately regardless of mode:
+
+- **Approval events** (`APPROVAL_REQUESTED`, `APPROVAL_RESOLVED`). These ask a
+  specific person to act now, so holding them for a digest window would defeat
+  the point.
+- **Test and synthetic events** -- see the caveat below.
+
+Only EMAIL channels batch. Slack, Microsoft Teams, webhook, and Sentinel
+channels always dispatch as soon as the worker picks the delivery up.
+
+::: warning The default is a 24-hour digest
+An email channel created without touching these settings is in **rolling
+digest mode with a 24-hour interval**. That means the first event of a window
+arrives immediately and everything after it can be held for up to a day.
+
+This surprises people who expect an alerting channel to be chatty by default.
+If you want per-event email, set the channel to **Immediate** explicitly, or
+shorten the interval.
+:::
+
+::: warning A channel test will not show you digest behaviour
+Test and synthetic events skip the digest unconditionally, so **Send test**
+always produces an immediate email. A channel can therefore pass its test
+perfectly while real traffic is being held for up to 24 hours.
+
+To see batching, cause two real events in quick succession and watch the
+second land in [Delivery History](#delivery-history) as `BATCHED`.
+:::
+
+## Delivery History
+
+**Organization Settings -> Audit -> Delivery History** lists every delivery
+ReARM has attempted, with the channel, the subscription that caused it, the
+attempt count, and any error.
+
+One event produces **one row per (subscription, channel) pair**. That is worth
+internalising, because it explains the most common "why did I get this twice?"
+question: two subscriptions that both route to the same channel produce two
+rows and two messages. [Duplicate protection](#duplicate-delivery-protection)
+is scoped per subscription, so it does not collapse them. This is easy to hit
+without noticing when one subscription names a channel directly and another
+reaches the same channel indirectly through a team or the
+[component owner](#notifying-the-component-owner).
+
+The **Origin** column separates `REAL` traffic from `SYNTHETIC` rows produced
+by the test actions, so a history full of test runs stays legible.
+
+Statuses you will see:
+
+| Status | Meaning |
+|---|---|
+| `PENDING` | Queued; the channel worker has not attempted it yet |
+| `SENT` | The channel transport accepted it |
+| `BATCHED` | Held in an email channel's [digest window](#email-digest-batching); flushed with the next digest. All rows in one digest flip to `SENT` together, sharing a timestamp |
+| `FAILED` | Retries exhausted, or a non-retriable error. Terminal |
+| `ACKED` | Acknowledged by a user in the in-app inbox |
+
+An event that produced **no rows at all** is a different situation from a
+failed row, and the outbox event's own status tells you which: `FANNED_OUT`
+with no deliveries means "offered, and no subscription wanted it", while
+`SUPPRESSED` means ReARM withheld it deliberately -- today that means a
+[vulnerability event naming no release](#vulnerability-events-that-affect-nothing).
 
 ## Vulnerability events that affect nothing
 
