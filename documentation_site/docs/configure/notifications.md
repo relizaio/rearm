@@ -43,7 +43,7 @@ A subscription's `eventTypes` list controls what it can match:
 
 | Event | Fires when |
 |---|---|
-| `NEW_VULN_AFFECTS_RELEASES` | A vulnerability record is created for your organization. The releases it affects are resolved when the event is delivered, and that list can legitimately be empty -- the event still fires, so treat "affects releases" as the intent rather than a guarantee |
+| `NEW_VULN_AFFECTS_RELEASES` | A vulnerability record is created for your organization **and** at least one of your releases carries it. The affected releases are resolved at delivery time, not when the record is written, so an event whose set is still empty is retried for a short while and then withheld rather than delivered (see [below](#vulnerability-events-that-affect-nothing)) |
 | `VULNERABILITY_RECORD_UPDATED` | An existing vulnerability record changes -- including a CVE newly appearing on the KEV catalog (see [KEV notifications](#kev-known-exploited-vulnerabilities-notifications) below) |
 | `VEX_STATE_CHANGED` | Reserved for VEX (exploitability) status changes. No event source emits this yet, so a subscription on it will not fire today -- prefer `VULNERABILITY_RECORD_UPDATED` for vulnerability-state changes |
 | `RELEASE_CREATED` | A new release is created |
@@ -135,6 +135,26 @@ gap, not a bug you need to work around; if you're relying on a specific
 delivery cap today, use your destination's own rate limiting (e.g. a Slack
 app's built-in limits) in the meantime.
 :::
+
+## Vulnerability events that affect nothing
+
+A vulnerability record is written the moment ReARM learns the CVE is new to
+your organization, but the link from that CVE to your releases lives in
+artifact metrics, which are written slightly later. So at the instant the
+event is produced, "which releases does this affect?" genuinely has no answer
+yet.
+
+ReARM therefore resolves the affected releases at **delivery** time. If the set
+comes back empty, the event is not delivered immediately and not discarded --
+it is deferred and retried (roughly 30s, then 60s, then every 2 minutes). Only
+if the set is still empty after those attempts is the event **withheld**, on
+the grounds that a vulnerability notification naming no release is not
+actionable.
+
+Withheld events are recorded as `SUPPRESSED` rather than failed. That is
+deliberately distinct from an event that fanned out and simply matched no
+subscription: the first means "we chose not to send this", the second means
+"nobody asked for it".
 
 ## Retention
 
