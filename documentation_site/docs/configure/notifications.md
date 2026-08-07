@@ -139,9 +139,14 @@ app's built-in limits) in the meantime.
 ## Retention
 
 Notification history (deliveries and inbox rows) is retained for a
-configurable number of days per organization -- 90 by default, with an enforced
-14-day floor. An org can't set retention short enough to delete a row that
-might still be scheduled to send (e.g. one parked in an email digest).
+configurable number of days per organization -- **90 by default**, and settable
+anywhere from **14 to 730**. The floor exists so an org can't set retention
+short enough to delete a row that might still be scheduled to send (e.g. one
+parked in an email digest).
+
+There is no screen for this yet: retention is set through the
+`updateOrganizationSettings` GraphQL mutation (`notificationRetentionDays`),
+not from Organization Settings.
 
 ## Testing channels and subscriptions
 
