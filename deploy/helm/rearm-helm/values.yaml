@@ -95,6 +95,8 @@ backendService:
       cpu: "4000m"
 
 uiService:
+  preStopSleepSeconds: 10            # drain window after endpoint removal, before SIGTERM
+  terminationGracePeriodSeconds: 30  # >= preStopSleep + nginx exit
   type: ClusterIP
   port: 80
   targetPort: 80
