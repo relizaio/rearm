@@ -49,7 +49,23 @@
 # an hs_err_pid log to /app before exit for forensics. K8s then
 # restarts the pod within ~10–15s.
 cd /app
-java -Djava.security.egd=file:/dev/./urandom \
+# Keep in sync with rearm-core/backend/start-core.sh (hand-synced: copy-src.sh
+# mirrors backend/src only).
+# exec, so the JVM REPLACES this shell as PID 1 and receives SIGTERM directly.
+# Without it the shell stays PID 1 and java runs as its child, and the signal is not
+# merely un-forwarded -- it is never delivered at all: the kernel gives PID 1 in a
+# namespace SIGNAL_UNKILLABLE and DISCARDS any signal whose disposition is SIG_DFL, which
+# a plain sh running a script has. So neither the shell nor the JVM ever sees SIGTERM,
+# Spring's shutdown hook never fires (no graceful drain, no afterCommit completion,
+# nothing logged), the pod sits out the whole terminationGracePeriodSeconds, and the
+# kubelet then SIGKILLs it -- which cannot be caught. That makes
+# `server.shutdown: graceful`, spring.lifecycle.timeout-per-shutdown-phase and the
+# chart's grace period dead configuration.
+# Verified on the sandbox: PID 1 was `/bin/sh /app/start-core.sh` with java at PID 7,
+# and a terminating pod emitted no shutdown lines at all. With exec, the same SIGTERM
+# produces the full shutdown sequence in ~30s, so termination gets FASTER (a 45s wait
+# for SIGKILL becomes a 40s drain including the chart's 10s preStop).
+exec java -Djava.security.egd=file:/dev/./urandom \
      -Dlog4j2.formatMsgNoLookups=true \
      -XX:+ShowCodeDetailsInExceptionMessages \
      -XX:+ExitOnOutOfMemoryError \
