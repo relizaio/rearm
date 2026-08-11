@@ -309,7 +309,11 @@ import {
     extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType,
     buildNotificationFilterInput,
     buildNotificationRouteInput,
-    routeHasTarget
+    routeHasTarget,
+    classifySubscriptionTest,
+    isOwnerRouted,
+    ownerRoutedSuccessCaveat,
+    type SubscriptionTestOutcome
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 import { isProEdition } from '@/utils/editionCapabilities'
@@ -504,6 +508,18 @@ const DELETE_SUBSCRIPTION_MUTATION = gql`
 const INJECT_SYNTHETIC_EVENT_MUTATION = gql`
     mutation injectSyntheticEvent($orgUuid: ID!, $template: SyntheticEventTemplateEnum!) {
         injectSyntheticEvent(orgUuid: $orgUuid, template: $template) {
+            uuid status
+        }
+    }
+`
+
+// Fan-out status for the injected event. Polled alongside the deliveries so a
+// test that produces NO delivery can be reported the moment fan-out finishes,
+// instead of waiting out the full poll budget and calling a settled event
+// "still processing".
+const OUTBOX_EVENT_STATUS_QUERY = gql`
+    query notificationOutboxEventForSubscriptionTest($uuid: ID!) {
+        notificationOutboxEvent(uuid: $uuid) {
             uuid status
         }
     }
@@ -829,10 +845,26 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
             return
         }
         const channelNameById = buildNameMap(channels.value)
+        // Last non-empty delivery set seen, so a timeout can report what it
+        // actually observed rather than an empty list.
+        let lastSeenItems: Array<any> = []
         const maxAttempts = 40
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 1500))
             if (isUnmounted || orgUuid.value !== testOrgUuid) return
+            // ORDER MATTERS -- event status FIRST. Fan-out writes the delivery
+            // rows and flips the event terminal in ONE transaction. Reading
+            // deliveries first leaves a one-round-trip window in which that
+            // commit lands between the two queries, so we would see an empty
+            // set alongside a terminal status and confidently report "produced
+            // nothing" for a subscription that had just delivered. Reading the
+            // status first makes terminal imply the rows are already visible.
+            const evtRes = await graphqlClient.query({
+                query: OUTBOX_EVENT_STATUS_QUERY,
+                variables: { uuid: eventUuid },
+                fetchPolicy: 'no-cache',
+            })
+            const eventStatus = evtRes.data?.notificationOutboxEvent?.status ?? null
             const pollRes = await graphqlClient.query({
                 query: DELIVERIES_FOR_EVENT_QUERY,
                 variables: { orgUuid: testOrgUuid, eventUuid },
@@ -840,13 +872,20 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
             })
             const items = (pollRes.data?.notificationDeliveries?.items || [])
                 .filter((d: any) => d.subscriptionUuid === row.uuid)
-            if (items.length > 0 && items.every((d: any) => d.status !== 'PENDING')) {
-                if (!isUnmounted) reportSubscriptionTestResult(row, items, channelNameById)
+            if (items.length > 0) lastSeenItems = items
+            const outcome = classifySubscriptionTest(eventStatus, items)
+            if (outcome !== 'IN_FLIGHT') {
+                if (!isUnmounted && orgUuid.value === testOrgUuid) {
+                    reportSubscriptionTestResult(row, items, channelNameById, false, outcome)
+                }
                 return
             }
         }
         if (!isUnmounted && orgUuid.value === testOrgUuid) {
-            reportSubscriptionTestResult(row, [], channelNameById, true)
+            // Hand over whatever we last saw. A timeout with rows already
+            // present is the "fan-out done, dispatch still queued" case, and
+            // showing those rows is the single most useful thing we know.
+            reportSubscriptionTestResult(row, lastSeenItems, channelNameById, true)
         }
     } catch (err: any) {
         if (!isUnmounted) message.error(`Test failed: ${extractError(err)}`)
@@ -868,12 +907,7 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
  */
 function noDeliveryExplanation (row: SubscriptionRow): string {
     const base = 'The synthetic event was injected but produced no delivery for this subscription.'
-    let ownerRouted = false
-    try {
-        const routes = row.routes ? JSON.parse(row.routes) : []
-        ownerRouted = Array.isArray(routes) && routes.some((r: any) => r?.notifyComponentOwner === true)
-    } catch { /* unparseable routes: fall back to the generic explanation */ }
-    if (ownerRouted) {
+    if (isOwnerRouted(row.routes)) {
         return `${base} A route delivers to the component owner, so this is also what you see when the`
             + ' affected component has no owner, or its owner team has no notification channel --'
             + " check those before the subscription's filter or a route's minimum-severity gate."
@@ -886,13 +920,35 @@ function reportSubscriptionTestResult (
     items: Array<{ channelUuid: string | null, status: string, lastError: string | null }>,
     channelNameById: Record<string, string>,
     timedOut = false,
+    outcome: SubscriptionTestOutcome | null = null,
 ): void {
+    if (timedOut && items.length > 0) {
+        // Fan-out finished and produced rows; the channel worker just has not
+        // dispatched them yet (webhook backoff, a slow endpoint). Saying "the
+        // event had not finished fanning out" here would be false, and the
+        // pending rows are the most useful thing we know.
+        dialog.info({
+            title: `Test result -- ${row.name}`,
+            content: `Still waiting on delivery after 60s. ${items.length} row(s) were created and are`
+                + ' queued for dispatch -- check Notification History for the eventual status.',
+        })
+        return
+    }
     if (items.length === 0) {
         dialog.info({
             title: `Test result -- ${row.name}`,
-            content: timedOut
-                ? 'Still waiting on a delivery after 60s. The event may still be processing -- check Notification History for the result.'
-                : noDeliveryExplanation(row),
+            // Three distinct endings, deliberately not collapsed: fan-out
+            // errored, fan-out finished and chose to send nothing, or we gave
+            // up while it was still running. The old code said "may still be
+            // processing" for all of them.
+            content: outcome === 'FANOUT_FAILED'
+                ? 'Fan-out FAILED for this test event, so nothing was delivered. This is a backend'
+                    + " error, not a problem with the subscription's filter or routes -- check"
+                    + ' Notification History and the server logs before changing this subscription.'
+                : timedOut
+                    ? 'Gave up waiting after 60s -- the event had not finished fanning out.'
+                        + ' Check Notification History for the eventual result.'
+                    : noDeliveryExplanation(row),
         })
         return
     }
@@ -907,9 +963,16 @@ function reportSubscriptionTestResult (
     // otherwise fall through a FAILED-only check and render green.
     const tagTypes = items.map(d => deliveryStatusTagType(d.status))
     const dialogType = tagTypes.includes('error') ? 'warning' : (tagTypes.every(t => t === 'success') ? 'success' : 'info')
+    // A green owner-routed test proves less than it looks: injection picks a
+    // component that HAS an owner on purpose. Say so here rather than let the
+    // result imply production routing is covered.
+    const caveat = ownerRoutedSuccessCaveat(row.routes)
     dialog[dialogType]({
         title: `Test result -- ${row.name}`,
-        content: () => h('div', lines.map((l, i) => h('div', { key: i }, l))),
+        content: () => h('div', [
+            ...lines.map((l, i) => h('div', { key: i }, l)),
+            ...(caveat ? [h('div', { style: 'margin-top: 10px; font-size: 12px; color: var(--n-text-color-3, #888);' }, caveat)] : []),
+        ]),
     })
 }
 

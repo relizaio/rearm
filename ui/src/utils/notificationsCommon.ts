@@ -441,3 +441,90 @@ export function buildNotificationFilterInput (
     }
     return out
 }
+
+// ---------------------------------------------------------------------------
+// Subscription-test result classification.
+//
+// Split out of SubscriptionsOfOrg.vue so it can be unit-tested: the polling
+// loop there previously exited early ONLY when a delivery row existed, so a
+// test that legitimately produced NO delivery -- an unowned component, a filter
+// that excluded it, a severity gate -- could never take the "finished" branch.
+// It burned all 40 polls and then reported a timeout, which reads as "still
+// working on it" for an event that finished seconds earlier. Worse, the
+// accurate no-delivery explanation was written for exactly that case and was
+// unreachable.
+// ---------------------------------------------------------------------------
+
+/**
+ * Outbox statuses meaning fan-out is DONE for this event, so the set of
+ * delivery rows it produced is final and will not grow. Mirrors
+ * NotificationOutboxStatus: PENDING is the only non-terminal value.
+ */
+export const TERMINAL_OUTBOX_STATUSES: readonly string[] = ['FANNED_OUT', 'SUPPRESSED', 'FAILED']
+
+export type SubscriptionTestOutcome = 'DELIVERED' | 'NO_DELIVERY' | 'FANOUT_FAILED' | 'IN_FLIGHT'
+
+/**
+ * What a poll tick learned.
+ *
+ * - `DELIVERED`     rows exist and none is still PENDING -- render them.
+ * - `NO_DELIVERY`   fan-out finished and produced nothing for this
+ *                   subscription. A real, final answer, NOT a timeout.
+ * - `FANOUT_FAILED` fan-out itself errored. Kept separate from NO_DELIVERY
+ *                   because the no-delivery copy blames the subscription's
+ *                   filter or severity gate, and sending an operator to audit
+ *                   a perfectly good filter while a backend failure goes
+ *                   unmentioned is worse than saying nothing.
+ * - `IN_FLIGHT`     keep polling.
+ *
+ * Ordering is deliberate. Non-empty rows win over the event status: rows that
+ * exist but are still PENDING stay IN_FLIGHT even once fan-out is terminal,
+ * because the channel worker dispatches AFTER fan-out commits. Only an EMPTY
+ * set is final at that point.
+ *
+ * CALLER CONTRACT: read the event status BEFORE the deliveries. Fan-out writes
+ * the delivery rows and flips the event terminal in one transaction, so a
+ * status read first that comes back terminal guarantees a deliveries read
+ * issued after it sees those rows. Reading deliveries first opens a
+ * one-round-trip window where the commit lands between the two queries, and
+ * this function would then be handed an empty set with a terminal status and
+ * confidently report NO_DELIVERY for a subscription that did deliver.
+ */
+export function classifySubscriptionTest (
+    eventStatus: string | null | undefined,
+    items: Array<{ status: string }>,
+): SubscriptionTestOutcome {
+    if (items.length > 0) {
+        return items.every(d => d.status !== 'PENDING') ? 'DELIVERED' : 'IN_FLIGHT'
+    }
+    if (eventStatus === 'FAILED') return 'FANOUT_FAILED'
+    const fanOutFinished = !!eventStatus && TERMINAL_OUTBOX_STATUSES.includes(eventStatus)
+    return fanOutFinished ? 'NO_DELIVERY' : 'IN_FLIGHT'
+}
+
+/** True when any route on the subscription delivers to the component owner. */
+export function isOwnerRouted (routesJson: string | null | undefined): boolean {
+    try {
+        const routes = routesJson ? JSON.parse(routesJson) : []
+        return Array.isArray(routes) && routes.some((r: any) => r?.notifyComponentOwner === true)
+    } catch {
+        return false  // unparseable routes: fall back to the generic wording
+    }
+}
+
+/**
+ * Caveat shown on a SUCCESSFUL owner-routed test.
+ *
+ * Injection deliberately stamps the event onto a component that HAS a routable
+ * owner, so an owner-routed subscription passes its test almost regardless of
+ * how much of the inventory is actually owned. A real event lands on whichever
+ * component carries the finding. Without this note a green test reads as proof
+ * that production routing works, which it is not.
+ */
+export function ownerRoutedSuccessCaveat (routesJson: string | null | undefined): string | null {
+    if (!isOwnerRouted(routesJson)) return null
+    return 'Note: test events are deliberately stamped onto a component that has an owner,'
+        + ' so an owner-routed subscription will usually pass this test. A real event lands on'
+        + ' whichever component actually carries the finding, which may be unowned -- check the'
+        + ' ownership report for coverage rather than relying on this result.'
+}
