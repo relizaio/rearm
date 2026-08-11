@@ -8,11 +8,18 @@ vi.mock('@/utils/commonFunctions', () => ({
     default: { dateDisplay: (s: string) => `ABS:${s}` },
 }))
 
+import { readFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'url'
+
 import { print } from 'graphql'
 import {
     relativeTime,
     buildNotificationFilterInput,
     routeHasTarget,
+    classifySubscriptionTest,
+    TERMINAL_OUTBOX_STATUSES,
+    isOwnerRouted,
+    ownerRoutedSuccessCaveat,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
 } from './notificationsCommon'
@@ -162,5 +169,99 @@ describe('routeHasTarget (client-side mirror of the backend route-emptiness gate
         // so a CE route cannot carry them anyway, and gating would wrongly
         // reject a Pro route whose team list loaded fine.
         expect(routeHasTarget({ ...empty, teams: ['t-1'] }, true)).toBe(true)
+    })
+})
+
+describe('subscription test classification', () => {
+    const done = [{ status: 'SENT' }]
+    const mixed = [{ status: 'SENT' }, { status: 'PENDING' }]
+
+    it('reports DELIVERED once rows exist and none is still PENDING', () => {
+        expect(classifySubscriptionTest('FANNED_OUT', done)).toBe('DELIVERED')
+        // Fan-out status is irrelevant once settled rows exist.
+        expect(classifySubscriptionTest('PENDING', done)).toBe('DELIVERED')
+    })
+
+    it('keeps polling while a row is still PENDING, even after fan-out finished', () => {
+        // The channel worker dispatches AFTER fan-out, so terminal + pending row
+        // is normal and must not be reported as a final result.
+        expect(classifySubscriptionTest('FANNED_OUT', mixed)).toBe('IN_FLIGHT')
+    })
+
+    it('calls an empty set final ONLY once fan-out is terminal', () => {
+        expect(classifySubscriptionTest('PENDING', [])).toBe('IN_FLIGHT')
+        expect(classifySubscriptionTest(null, [])).toBe('IN_FLIGHT')
+        expect(classifySubscriptionTest(undefined, [])).toBe('IN_FLIGHT')
+        for (const s of ['FANNED_OUT', 'SUPPRESSED']) {
+            expect(classifySubscriptionTest(s, [])).toBe('NO_DELIVERY')
+        }
+        // FAILED is terminal too, but gets its own outcome -- see below.
+        expect(classifySubscriptionTest('FAILED', [])).toBe('FANOUT_FAILED')
+    })
+
+    it('an unknown outbox status is not treated as terminal', () => {
+        // Fail safe: a status this UI has not heard of keeps us polling rather
+        // than declaring a premature "produced nothing".
+        expect(classifySubscriptionTest('SOME_NEW_STATUS', [])).toBe('IN_FLIGHT')
+    })
+
+    it('separates a fan-out FAILURE from a deliberate no-delivery', () => {
+        // Both end with zero rows, but the no-delivery copy blames the
+        // subscription's filter / severity gate. Saying that after a backend
+        // fan-out error sends the operator to audit a filter that is fine.
+        expect(classifySubscriptionTest('FAILED', [])).toBe('FANOUT_FAILED')
+        expect(classifySubscriptionTest('FANNED_OUT', [])).toBe('NO_DELIVERY')
+        expect(classifySubscriptionTest('SUPPRESSED', [])).toBe('NO_DELIVERY')
+        // A failure that still produced rows is reported from the rows.
+        expect(classifySubscriptionTest('FAILED', done)).toBe('DELIVERED')
+    })
+})
+
+// Drift pin against the mirrored backend enum, so the UI's notion of "fan-out
+// is finished" cannot drift silently -- an unrecognised status degrades the
+// test dialog back to a 60s timeout with nothing to point at.
+//
+// SUPERSET, not equality, and deliberately so: this UI is shared between CE
+// and Pro, and the enum mirrored into this repo is the CE one, which currently
+// trails Pro (Pro has SUPPRESSED, added with the vuln-withholding work; CE does
+// not). The UI must handle every status the backend it is talking to can emit,
+// so covering MORE than CE declares is correct and covering less is the bug.
+const OUTBOX_STATUS_SRC_PATH = fileURLToPath(new URL(
+    '../../../backend/src/main/java/io/reliza/model/NotificationOutboxStatus.java',
+    import.meta.url))
+
+describe('TERMINAL_OUTBOX_STATUSES tracks the backend enum', () => {
+    it('has the backend source available', () => {
+        expect(existsSync(OUTBOX_STATUS_SRC_PATH)).toBe(true)
+    })
+
+    it('covers at least every mirrored NotificationOutboxStatus except PENDING', () => {
+        if (!existsSync(OUTBOX_STATUS_SRC_PATH)) return
+        const src = readFileSync(OUTBOX_STATUS_SRC_PATH, 'utf8')
+        const body = src.slice(src.indexOf('public enum NotificationOutboxStatus'))
+        const declared = [...body.matchAll(/^\t([A-Z_]+)[,;]/gm)].map(m => m[1])
+        expect(declared.length).toBeGreaterThan(1)
+        expect(declared).toContain('PENDING')
+        for (const terminal of declared.filter(v => v !== 'PENDING')) {
+            expect(TERMINAL_OUTBOX_STATUSES).toContain(terminal)
+        }
+        expect(TERMINAL_OUTBOX_STATUSES).not.toContain('PENDING')
+    })
+})
+
+describe('owner-routed test caveat', () => {
+    const ownerRoute = JSON.stringify([{ channels: [], notifyComponentOwner: true }])
+    const plainRoute = JSON.stringify([{ channels: ['abc'], notifyComponentOwner: null }])
+
+    it('detects an owner-routed subscription', () => {
+        expect(isOwnerRouted(ownerRoute)).toBe(true)
+        expect(isOwnerRouted(plainRoute)).toBe(false)
+        expect(isOwnerRouted(null)).toBe(false)
+        expect(isOwnerRouted('not json')).toBe(false)
+    })
+
+    it('warns only for owner-routed subscriptions', () => {
+        expect(ownerRoutedSuccessCaveat(ownerRoute)).toContain('deliberately stamped')
+        expect(ownerRoutedSuccessCaveat(plainRoute)).toBeNull()
     })
 })
