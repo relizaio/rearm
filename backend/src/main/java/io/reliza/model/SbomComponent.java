@@ -73,6 +73,11 @@ public class SbomComponent implements Serializable, RelizaEntity {
 	@Column
 	private ZonedDateTime enrichedAt;
 
+	/** Per-component queue/terminal state. See {@link SbomComponentFlowControl} and V75. */
+	@Type(JsonBinaryType.class)
+	@Column(name = "flow_control", columnDefinition = ModelProperties.JSONB)
+	private SbomComponentFlowControl flowControl;
+
 	// Sticky synthetic-DTrack bucket assignment (null = not yet assigned). Set
 	// once when the component first becomes submittable and never changed, so a
 	// new/enriched component only ever re-submits ITS bucket — unlike the old
@@ -149,6 +154,14 @@ public class SbomComponent implements Serializable, RelizaEntity {
 	 * Stored as a boolean flag inside {@link #recordData} (there is no dedicated
 	 * column), so it's exposed here rather than read ad-hoc at call sites.
 	 */
+	public SbomComponentFlowControl getFlowControl() { return flowControl; }
+	public void setFlowControl(SbomComponentFlowControl flowControl) { this.flowControl = flowControl; }
+
+	/** Terminal = no mechanism can ever enrich this row; excluded from the matchable universe like roots. */
+	public boolean isEnrichmentTerminal() {
+		return flowControl != null && flowControl.enrichmentTerminalAt() != null;
+	}
+
 	public boolean isRoot() {
 		return recordData != null && Boolean.TRUE.equals(recordData.get("isRoot"));
 	}

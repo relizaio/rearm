@@ -90,6 +90,8 @@ public class Utils {
 	// names (Spring Boot 4 keeps `-parameters` on by default) — that's
 	// what makes our many @Data @Builder DTOs round-trip without us
 	// having to annotate every single one with @NoArgsConstructor.
+	// DO NOT bind org.cyclonedx.model.* with this mapper -- use CDX_OM below.
+	// See the CDX_OM javadoc for why; both directions are affected.
 	public static final ObjectMapper OM = JsonMapper.builder()
 			.changeDefaultVisibility(vc -> vc.withCreatorVisibility(
 					com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.NON_PRIVATE))
@@ -97,6 +99,50 @@ public class Utils {
 			.enable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS)
 			.enable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
 			.build();
+
+	/**
+	 * The ONLY mapper that may bind {@code org.cyclonedx.model.*} types.
+	 *
+	 * <p>cyclonedx-core-java is a <b>Jackson 2</b> library and {@link #OM} is
+	 * Jackson 3 ({@code tools.jackson}). Annotations themselves are not the
+	 * problem -- {@code com.fasterxml.jackson.annotation.*} was never renamed, so
+	 * {@code @JsonProperty("bom-ref")} and friends still apply. What Jackson 3
+	 * cannot honour is {@code @JsonSerialize/@JsonDeserialize(using = ...)}
+	 * pointing at handlers that extend Jackson 2 databind classes, which 25 of the
+	 * library's model types rely on. Both directions break, differently:
+	 *
+	 * <ul>
+	 *   <li>Reading: {@code LicenseChoice} is a single object in Java but an ARRAY
+	 *       on the wire, bridged by {@code LicenseDeserializer}. Binding with OM
+	 *       threw MismatchedInputException on the first component carrying
+	 *       licenses -- loud, and fixed in ReleaseService.buildVdrBom.</li>
+	 *   <li>Writing: date fields are bridged by {@code CustomDateSerializer}.
+	 *       Binding with OM does NOT throw -- it silently emits epoch millis
+	 *       ({@code "published":1750000000000}) where the spec requires
+	 *       ISO-8601 ({@code "published":"2025-06-15T15:06:40Z"}), because OM
+	 *       enables WRITE_DATES_AS_TIMESTAMPS. Silent, so it survived far longer.</li>
+	 * </ul>
+	 *
+	 * <p>Upgrading the library does not remove the need for this: 13.0.0 is still
+	 * Jackson 2, and upstream has no Jackson 3 migration open.
+	 *
+	 * <p>Configured to match what the library's own {@code BomJsonGenerator}
+	 * emits: NON_NULL inclusion, plus {@code LicenseChoiceSerializer} so nested
+	 * licenses serialize as the wire array rather than the default bean shape.
+	 * ({@link CdxLicenseUtil} keeps its own narrower mapper on purpose -- it
+	 * round-trips license arrays through {@code convertValue}, where NON_NULL
+	 * would change the stored shape.)
+	 */
+	public static final com.fasterxml.jackson.databind.ObjectMapper CDX_OM;
+	static {
+		CDX_OM = new com.fasterxml.jackson.databind.ObjectMapper();
+		CDX_OM.setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL);
+		com.fasterxml.jackson.databind.module.SimpleModule cdxModule =
+				new com.fasterxml.jackson.databind.module.SimpleModule();
+		cdxModule.addSerializer(org.cyclonedx.model.LicenseChoice.class,
+				new org.cyclonedx.util.serializer.LicenseChoiceSerializer(false, org.cyclonedx.Version.VERSION_16));
+		CDX_OM.registerModule(cdxModule);
+	}
 	
 	public static final ZoneId UTC_ZONE_ID = ZoneId.of("UTC");
 	public static final ZoneOffset UTC_ZONE_OFFSET = ZoneOffset.of("Z");
@@ -260,9 +306,29 @@ public class Utils {
 	}
 
 	public static boolean uriEquals(String uri1, String uri2) {
-		String uri1Edited = uri1.replace("https://", "").replace("http://", ""); 
-		String uri2Edited = uri1.replace("https://", "").replace("http://", "");
-		return uri1Edited.equalsIgnoreCase(uri2Edited);
+		// Canonicalize both sides to the VCS repository storage key form so
+		// every spelling of the same repository compares equal. NB: this used
+		// to compare uri1 against itself and always returned true, which left
+		// the VCS mismatch check in populateSourceCodeEntryByVcsAndCommit dead.
+		// Known limitation: provider-specific split forms that differ in path
+		// structure (e.g. Azure DevOps 'dev.azure.com/org/proj/_git/repo' vs
+		// 'ssh.dev.azure.com/v3/org/proj/repo') are not equated -- callers
+		// must not treat a false result as proof of a different repository.
+		return StringUtils.equalsIgnoreCase(canonicalVcsUriForComparison(uri1), canonicalVcsUriForComparison(uri2));
+	}
+
+	/**
+	 * Canonicalize a VCS URI for equality comparison only (not for storage or
+	 * lookup keys): strips the ssh scheme on top of what
+	 * {@link #normalizeVcsUri} (http/https scheme, user@) and
+	 * {@link #cleanVcsUri} (git@, trailing .git, scp-style colon) remove, and
+	 * drops a trailing slash.
+	 */
+	private static String canonicalVcsUriForComparison(String uri) {
+		if (uri == null) return null;
+		String canonical = RegExUtils.replaceFirst(uri, "^ssh://", "");
+		canonical = cleanVcsUri(normalizeVcsUri(canonical));
+		return StringUtils.stripEnd(canonical, "/");
 	}
 	
 	/**
@@ -620,7 +686,7 @@ public class Utils {
 		oe.setContacts(List.of(oc));
 		rearmComponent.setSupplier(oe);
 		rearmComponent.setAuthors(List.of(oc));
-		rearmComponent.setDescription("Supply Chain Evidence Store");
+		rearmComponent.setDescription("Release Governance Platform");
 		ExternalReference erRelizaVcs = new ExternalReference();
 		erRelizaVcs.setType(org.cyclonedx.model.ExternalReference.Type.VCS);
 		erRelizaVcs.setUrl("ssh://git@github.com/relizaio/rearm.git");
@@ -650,26 +716,26 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.05.5";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.07.4";
 
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "efd34f252b3bd980edf1b1537eec283d269b152f2d677ae72d9479222c1d898a";
-    private static final String REARM_CD_HELM_VERSION = "0.3.20";
-    private static final String REARM_CD_HELM_COMMIT = "85c23cf809f6a6d7fda06e3629a0f01ce1ac5d60";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.3.20 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "6d17397b4a43772ce716ae65522a9b26f26e0c4ca9ce0b1ba7e2e4a2717e91ca";
+    private static final String REARM_CD_HELM_VERSION = "0.3.22";
+    private static final String REARM_CD_HELM_COMMIT = "35504f0b07bc905c3450b92318253182e7428390";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.3.22 [skip ci]";
 
-    public static final String REARM_CD_CONTAINER_DIGEST = "19e0f949eb9f0d7714e275dbc594edaa5d3653f20a53b03c2c22c935f6b6a340";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.46";
-    public static final String REARM_CD_CONTAINER_COMMIT = "bddef1ff4cedb7ca76f56059577c203797e756b0";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd): trigger build";
+    public static final String REARM_CD_CONTAINER_DIGEST = "2cb74272852a4922a52536197e1f5c8399a87fd37afa481c43396dee91073ca2";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.48";
+    public static final String REARM_CD_CONTAINER_COMMIT = "16184724dd87351839f0bcef53d01b181eebd852";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "rearm-cd: bump go deps, rearm-cli 26.07.2, kubectl 1.35.6, helm 4.2.3, kubeseal 0.38.4, base images (#5)";
 
     // ReARM Watcher container — sibling to rearm-cd-app under the same ReARM CD product.
     // Was missing from the hard-coded fallback prior to the 26.05.5 BOM update.
     public static final String REARM_WATCHER_CONTAINER_NAME = "registry.relizahub.com/library/rearm-watcher-app";
-    public static final String REARM_WATCHER_CONTAINER_DIGEST = "f4aa18fa67bcc41475eca41e750d954dcfe534d396e015440e7e388ca3ddf0dd";
-    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.03.14";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT = "ebc0c5a0eb24d22c1e32f0a2814d17528259fc3c";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "chore: bump dependencies";
+    public static final String REARM_WATCHER_CONTAINER_DIGEST = "90606bb8920e43bdf3ebaf90e37f8235a97f9fb874efb1e4b1df8bbda1a74756";
+    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.07.0";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT = "21ec41d85f3febcd03468ed37f7c7cfce12480d1";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "watcher: rearm-cli 26.07.2, kubectl 1.35.6 (#4)";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
@@ -929,13 +995,233 @@ public class Utils {
 	}
 
 	/**
-	 * Canonicalizes a PURL by stripping qualifiers AND subpath, matching the
-	 * canonical-purl form computed by rebom and persisted in
+	 * Canonical qualifier-free PURL identity used as the content-dedup and
+	 * analysis-match key for findings: {@link #minimizePurl} reduced to
+	 * type/namespace/name/version/subpath. Different scanners emit the same
+	 * installed package under qualifier-bearing and bare purls (e.g.
+	 * {@code pkg:deb/debian/systemd@257.9-1~deb13u1?arch=amd64&distro=debian-13}
+	 * vs the bare {@code pkg:deb/debian/systemd@257.9-1~deb13u1}); keying on the
+	 * raw purl treats those as distinct findings and double-counts the same
+	 * vulnerability. On a null or unparseable purl this falls back to the raw
+	 * value (or "" when null) so non-pkg locators still dedup by their own
+	 * string instead of all collapsing into one null bucket.
+	 */
+	public static String purlIdentity(String purl) {
+		String minimized = minimizePurl(purl);
+		return minimized != null ? minimized : (purl != null ? purl : "");
+	}
+
+	/**
+	 * Identity-bearing qualifiers retained by canonicalization, per purl type.
+	 * MUST stay in sync with {@code PRESERVED_QUALIFIERS} in rebom's
+	 * bomComponentExtractor.ts — rebom computes the canonical form persisted in
+	 * {@code sbom_components.canonical_purl}; this mirror only re-derives it for
+	 * lookups. julia/swid carry spec-required qualifiers, oci needs the registry
+	 * to disambiguate the image, and Linux distro packages (apk/deb/rpm/bitnami)
+	 * need {@code distro} so advisory matching can scope to the release branch
+	 * (plus rpm {@code epoch}, part of RPM version identity).
+	 */
+	private static final Map<String, List<String>> CANONICAL_PRESERVED_QUALIFIERS = Map.of(
+			"julia", List.of("uuid"),
+			"swid", List.of("tag_id"),
+			"oci", List.of("repository_url"),
+			"apk", List.of("distro"),
+			"deb", List.of("distro"),
+			"rpm", List.of("distro", "epoch"),
+			"bitnami", List.of("distro"));
+
+	/**
+	 * Canonicalizes a PURL by stripping the subpath and all qualifiers except the
+	 * identity-bearing ones in {@link #CANONICAL_PRESERVED_QUALIFIERS}, matching
+	 * the canonical-purl form computed by rebom and persisted in
 	 * {@code sbom_components.canonical_purl}. Use this before looking up an
 	 * sbom_components row by purl supplied from outside.
 	 */
+	/**
+	 * Encoding-preserving variant of {@link #canonicalizePurl} for callers that
+	 * must produce the EXACT byte form rebom persists in
+	 * {@code sbom_components.canonical_purl}.
+	 *
+	 * <p>{@link #canonicalizePurl} round-trips through {@code PackageURL}, whose
+	 * {@code toString()} is not byte-identical to packageurl-js: e.g. a Debian
+	 * epoch colon comes back {@code %3A} where rebom stores {@code 1:2.5.2-3}
+	 * raw. For lookups that only feed an equality probe this is a silent miss;
+	 * for the canonical-qualifier sweep it is worse -- string-comparing a
+	 * round-tripped form against rebom's form declares correct rows stale and
+	 * mints encoding-variant duplicates (observed live on 2026-07-25: 95
+	 * duplicate components, 393 repointed mappings, from epoch-colon drift
+	 * alone).
+	 *
+	 * <p>This variant never re-encodes anything: it drops the subpath and the
+	 * non-preserved qualifiers by string surgery on the input, so every byte
+	 * that survives is a byte the caller supplied. When the input is a
+	 * rebom-normalized purl (e.g. {@code artifact_sbom_components.exact_purl}),
+	 * the output is byte-identical to what rebom's own canonicalization of it
+	 * would produce. Qualifier order is preserved, which for packageurl-js
+	 * output is already the spec's sorted order.
+	 *
+	 * @return the canonical form, or null when the input is not a pkg: purl.
+	 */
+	public static String canonicalizePurlPreservingEncoding(String purl) {
+		if (purl == null || !purl.startsWith("pkg:")) return null;
+		String base = purl;
+		int hash = base.indexOf('#');
+		if (hash >= 0) base = base.substring(0, hash);
+		int q = base.indexOf('?');
+		if (q < 0) return base;
+		String head = base.substring(0, q);
+		int slash = head.indexOf('/', 4);
+		String type = slash > 4 ? head.substring(4, slash) : null;
+		List<String> preserveKeys = type != null ? CANONICAL_PRESERVED_QUALIFIERS.get(type) : null;
+		if (preserveKeys == null) return head;
+		StringBuilder kept = new StringBuilder();
+		for (String pair : base.substring(q + 1).split("&")) {
+			int eq = pair.indexOf('=');
+			String key = eq >= 0 ? pair.substring(0, eq) : pair;
+			if (preserveKeys.contains(key)) {
+				if (kept.length() > 0) kept.append('&');
+				kept.append(pair);
+			}
+		}
+		return kept.length() > 0 ? head + "?" + kept : head;
+	}
+
+	/**
+	 * Whether two canonical purls denote the same identity once percent-encoding
+	 * differences are decoded away -- i.e. same type/namespace/name/version and
+	 * the same qualifier map. Guard for repair paths: an encoding-variant pair
+	 * ({@code 1:2.5.2-3} vs {@code 1%3A2.5.2-3}) must count as EQUAL, or the
+	 * repair manufactures the very duplicates it exists to remove. Unparseable
+	 * input compares equal only byte-for-byte (never treat what we cannot parse
+	 * as repairable).
+	 */
+	/**
+	 * Whether two purls share the same COORDINATES -- type/namespace/name/version
+	 * -- ignoring qualifiers and subpath entirely (and tolerating encoding
+	 * variants; raw {@code +} is pre-normalized like in
+	 * {@link #purlsSemanticallyEqual}).
+	 *
+	 * <p>Scope: LICENSE STAMPING ONLY. License metadata is qualifier-invariant --
+	 * the distro branch or registry does not change what license a package
+	 * carries -- so the enrichment stamp may legitimately cross qualifier
+	 * variants: a stripped-era stored canonical ({@code pkg:oci/node@latest})
+	 * must be stampable from a fresh qualifier-bearing parse
+	 * ({@code pkg:oci/node@latest?repository_url=...}). Diagnosed live
+	 * 2026-07-26: a 63k un-enriched backlog whose oldest components' BOMs were
+	 * all COMPLETED -- pulled every tick, stamping zero rows, because the
+	 * stricter comparator (rightly, for its own purpose) treats a missing
+	 * preserved qualifier as a different identity.
+	 *
+	 * <p>Do NOT use this for identity repair or advisory-matching logic --
+	 * there, qualifiers are load-bearing and {@link #purlsSemanticallyEqual}
+	 * (or byte equality) is the correct comparator.
+	 */
+	public static boolean purlsSameCoordinates(String a, String b) {
+		if (a == null || b == null) return java.util.Objects.equals(a, b);
+		if (a.equals(b)) return true;
+		try {
+			PackageURL pa = new PackageURL(a.replace("+", "%2B"));
+			PackageURL pb = new PackageURL(b.replace("+", "%2B"));
+			return java.util.Objects.equals(pa.getType(), pb.getType())
+					&& java.util.Objects.equals(pa.getNamespace(), pb.getNamespace())
+					&& java.util.Objects.equals(pa.getName(), pb.getName())
+					&& java.util.Objects.equals(pa.getVersion(), pb.getVersion());
+		} catch (MalformedPackageURLException e) {
+			return false;
+		}
+	}
+
+	public static boolean purlsSemanticallyEqual(String a, String b) {
+		if (a == null || b == null) return java.util.Objects.equals(a, b);
+		if (a.equals(b)) return true;
+		try {
+			// Raw '+' is normalized to %2B before parsing. The purl spec gives '+'
+			// no space semantics, but URL decoders disagree on it, and rebom's own
+			// persisted canonicals carry BOTH forms across eras (measured live:
+			// 12.4%2Bdeb12u13 vs 12.2.0-14+deb12u1). Pre-normalizing both sides
+			// makes the comparison independent of which era wrote the row and of
+			// how the parser treats a bare '+'.
+			PackageURL pa = new PackageURL(a.replace("+", "%2B"));
+			PackageURL pb = new PackageURL(b.replace("+", "%2B"));
+			return java.util.Objects.equals(pa.getType(), pb.getType())
+					&& java.util.Objects.equals(pa.getNamespace(), pb.getNamespace())
+					&& java.util.Objects.equals(pa.getName(), pb.getName())
+					&& java.util.Objects.equals(pa.getVersion(), pb.getVersion())
+					&& java.util.Objects.equals(
+							pa.getQualifiers() == null ? Map.of() : pa.getQualifiers(),
+							pb.getQualifiers() == null ? Map.of() : pb.getQualifiers());
+		} catch (MalformedPackageURLException e) {
+			return false;
+		}
+	}
+
 	public static String canonicalizePurl(String purl) {
 		if (purl == null || purl.isEmpty() || !purl.startsWith("pkg:")) {
+			return null;
+		}
+		try {
+			PackageURL packageUrl = new PackageURL(purl);
+			PackageURLBuilder builder = PackageURLBuilder.aPackageURL()
+					.withType(packageUrl.getType())
+					.withNamespace(packageUrl.getNamespace())
+					.withName(packageUrl.getName())
+					.withVersion(packageUrl.getVersion());
+			List<String> preserveKeys = CANONICAL_PRESERVED_QUALIFIERS.get(packageUrl.getType());
+			Map<String, String> qualifiers = packageUrl.getQualifiers();
+			if (preserveKeys != null && qualifiers != null) {
+				for (String key : preserveKeys) {
+					String value = qualifiers.get(key);
+					if (value != null) builder.withQualifier(key, value);
+				}
+			}
+			return builder.build().toString();
+		} catch (MalformedPackageURLException e) {
+			log.warn("Failed to parse PURL for canonicalization: {}", purl, e);
+			return null;
+		}
+	}
+
+	/** Scheme prefix every purl carries, per the purl spec. */
+	public static final String PURL_SCHEME_PREFIX = "pkg:";
+
+	/**
+	 * Whether a string is shaped like a purl, i.e. carries the purl scheme.
+	 * A cheap prefix test, not a parse -- {@link #canonicalizePurl} still
+	 * returns null for a well-prefixed but malformed purl.
+	 */
+	public static boolean isPurl(String value) {
+		return value != null && value.startsWith(PURL_SCHEME_PREFIX);
+	}
+
+	/**
+	 * Escapes SQL LIKE wildcards ({@code %}, {@code _}) and the escape
+	 * character itself so the input matches literally under {@code ESCAPE '\'}.
+	 * Backslash is escaped first, or it would double-escape the escapes the
+	 * later replacements add.
+	 */
+	public static String escapeSqlLikeLiteral(String value) {
+		if (value == null) return "";
+		return value.replace("\\", "\\\\")
+				.replace("%", "\\%")
+				.replace("_", "\\_");
+	}
+
+	/**
+	 * The bare type/namespace/name coordinate of a purl, with version,
+	 * qualifiers and subpath all dropped -- {@code pkg:npm/lodash@4.17.21?foo=bar}
+	 * becomes {@code pkg:npm/lodash}.
+	 *
+	 * <p>This is the anchor for a version-agnostic search: canonical purls are
+	 * stored as {@code <coordinate>@<version>[?qualifiers]}, so the coordinate
+	 * plus an {@code '@'} is a safe prefix for "every version of this package".
+	 * Qualifiers are deliberately dropped rather than preserved (unlike
+	 * {@link #canonicalizePurl}) because they sort *after* the version in a
+	 * purl, so keeping them would break the prefix.
+	 *
+	 * @return the coordinate, or null if {@code purl} is not a parseable purl
+	 */
+	public static String purlCoordinateBase(String purl) {
+		if (!isPurl(purl)) {
 			return null;
 		}
 		try {
@@ -944,10 +1230,28 @@ public class Utils {
 					.withType(packageUrl.getType())
 					.withNamespace(packageUrl.getNamespace())
 					.withName(packageUrl.getName())
-					.withVersion(packageUrl.getVersion())
 					.build().toString();
 		} catch (MalformedPackageURLException e) {
-			log.warn("Failed to parse PURL for canonicalization: {}", purl, e);
+			log.warn("Failed to parse PURL for coordinate base: {}", purl, e);
+			return null;
+		}
+	}
+
+	/**
+	 * The version component of a purl, or null when the purl carries none
+	 * (or does not parse). Lets callers distinguish "this purl pins a version"
+	 * from "this purl names a package" without re-implementing purl parsing.
+	 *
+	 * @return the version, or null if absent or {@code purl} does not parse
+	 */
+	public static String purlVersion(String purl) {
+		if (!isPurl(purl)) {
+			return null;
+		}
+		try {
+			return new PackageURL(purl).getVersion();
+		} catch (MalformedPackageURLException e) {
+			log.warn("Failed to parse PURL for version extraction: {}", purl, e);
 			return null;
 		}
 	}

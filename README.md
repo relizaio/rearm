@@ -14,24 +14,27 @@
 
 # ReARM - Release Governance Platform - Community Edition
 
-#### ReARM CE governs your releases at agentic speed. It tells you what each product is made of, its exact security posture.
+#### ReARM CE governs  releases at agentic speed. It tells you what each product is made of, its security posture and stores and manages per-release SBOMs, HBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts and Metadata.
 
-#### ReARM CE stores and manages per-release SBOMs, HBOMs, other xBOMs, other Metadata, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts.
-
-## Next ReARM Community Engagement: [Demo](https://blackhat.com/us-26/arsenal/schedule/index.html#rearm-release-governance-platform-52805) at Black Hat USA Arsenal, August 6, 2026, 11:20am PDT
+## Next ReARM Community Engagement: ReARM is presenting online talk [The Human is the Loop](https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/315615348), August 11, 2026, 12:00pm EDT
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
 View ReARM CE Demo made for SecTor 2025 Arsenal on [YouTube](https://www.youtube.com/watch?v=PNGxlvV-EsM) (23 minutes).
 
 ## About
-ReARM is an abbreviation for "Reliza's Artifact and Release Management".  It is a Release Governance Platform to manage lifecycle for product and component releases and organize release metadata, including SBOMs, xBOMs, other security artifacts, vulnerability, weakness and violation data.
+ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a Release Governance Platform to manage lifecycle for product and component releases and organize release metadata, including SBOMs, xBOMs, other security artifacts, vulnerability, weakness, policy and license violation data. See [here](https://rearmhq.com/comparisons/) how ReARM compares with other tools
 
-ReARM maintains security documents and findings per each release. See [here](https://rearmhq.com/comparisons/) how ReARM compares with other tools
-
-ReARM stores xBOMs and other security artifacts on OCI-compatible storage. ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
+ReARM may use any OCI-compatible storage. 
 
 ReARM was the first project that introduced the principles of [Product-Component relationship within release metadata organization](https://worklifenotes.com/2024/10/08/release-metadata-organization-model/) which is seeing increasing market adoption.
+
+ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
+
+## Installation
+Minimum installation only requires operational Docker with Docker Compose. Production installation is recommended on Kubernetes using included ReARM Helm chart.
+
+To install ReARM, follow documentation [here](https://docs.rearmhq.com/installation/).
 
 ## Project links
 - Documentation: https://docs.rearmhq.com
@@ -101,11 +104,6 @@ ReARM currently supports most of TEA v 0.4.0 functionality and we are working to
 ## Public Demo
 Public Demo is available at https://demo.rearmhq.com. When you register for the demo, you get read-only account for the Demo organization and can browse several existing demo Components, Products, Releases. You may then also create your own organization and try organizing storage for your own release metadata - refer to the tutorial [Upload Your First BOM](https://docs.rearmhq.com/tutorials/first-bom.html). Note, that while your data on Public Demo is private, it is subject to deletion at any time and without notice.
 
-## Installation, Tutorials, Documentation
-Refer to the project documentation: https://docs.rearmhq.com
-
-This documentation is built using vitepress and checked in to this repository under `documentation_site`. If you spot any issues or would like to propose additions, please open issues or Pull Requests accordingly.
-
 ## Developing ReARM
 
 ### Generate TEA-overlay from TEA OpenAPI spec
@@ -127,6 +125,14 @@ docker run --name rearm-postgres -d -p 5440:5432 -e POSTGRES_PASSWORD=relizaPass
 ```
 
 This part will be continued (TODO).
+
+## Licensing
+
+ReARM Community Edition is licensed under the [GNU AGPL v3](./LICENSE).
+
+The [`deploy`](./deploy) directory is an exception: everything in it - the Docker Compose stacks and the Helm charts - is licensed under the [MIT License](./deploy/LICENSE), so you can adapt and redistribute your deployment configuration without AGPL obligations. See [`deploy/README.md`](./deploy/README.md) for details.
+
+Third-party components redistributed in this repository keep their own licenses. In particular, the upstream [Dependency-Track Helm chart](https://github.com/DependencyTrack/helm-charts) vendored under `deploy/helm/dtrack5-helm/charts/` is Apache-2.0, with a copy of that license included alongside it.
 
 ## Contact Reliza
 Easiest way to contact us is through our [Discord Community](https://devopscommunity.org/) - find #rearm channel there and either post in this channel or send a direct message to maintainers.

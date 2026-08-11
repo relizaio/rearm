@@ -355,6 +355,15 @@ public class OssReleaseService {
 		
 		return Optional.of(previousRelease);
 	}
+	/**
+	 * Release trigger processing - PART OF REARM PRO. Kept
+	 * {@code @Transactional} (REQUIRED) regardless: the scheduled metrics
+	 * recompute invokes this with no ambient transaction, and the contract
+	 * (guarded by ScheduledTriggerTransactionGuardTest) is that
+	 * processRelease is the transaction boundary above the MANDATORY
+	 * ReleaseChangeHook hooks for anything this method ever does.
+	 */
+	@Transactional
 	public void processRelease (UUID releaseId) {
 	}
 	@Transactional

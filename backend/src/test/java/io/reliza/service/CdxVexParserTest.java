@@ -111,6 +111,29 @@ class CdxVexParserTest {
     }
 
     @Test
+    void vulnerabilityWithoutAnalysisIsCountedAsSkipped() {
+        String doc = """
+        {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
+         "vulnerabilities": [
+            {"id": "CVE-2024-0001",
+             "affects": [{"ref": "pkg:npm/left-pad@1.3.0"}]},
+            {"id": "CVE-2024-0002",
+             "affects": [{"ref": "pkg:npm/left-pad@1.3.0"}],
+             "analysis": {"state": "not_affected", "justification": "code_not_reachable"}}
+         ]}
+        """;
+        CdxVexParseResult r = p.parseRaw(doc);
+        assertEquals(1, r.statements().size());
+        assertEquals(1, r.skippedNoAnalysis());
+        // and the format-level parse() surfaces them as invalid statements with a message
+        var parsed = p.parse(doc);
+        assertEquals(1, parsed.entries().size());
+        assertEquals(1, parsed.invalidStatements());
+        assertEquals(1, parsed.errorMessages().size());
+        assertTrue(parsed.errorMessages().get(0).contains("no analysis block"));
+    }
+
+    @Test
     void capturesSeverityFromSingleRating() {
         String doc = """
         {

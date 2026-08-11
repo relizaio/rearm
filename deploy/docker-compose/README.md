@@ -22,10 +22,17 @@ so the login flow works over plain http.
 
 ## Scenario 2: remote host by IP (eval)
 
-Browsers only expose the Web Crypto API -- which the PKCE login flow
-requires -- in secure contexts (https or localhost). A deployment
-reached by IP or hostname therefore **must** run the TLS profile;
-plain http will fail at login with `Web Crypto API is not available`.
+Nothing here blocks plain http; browsers do. Parts of the Web Crypto API
+are exposed only in secure contexts, and keycloak-js uses them to build
+the login request -- `crypto.randomUUID` for the OIDC state and nonce,
+`crypto.subtle` for the PKCE challenge. A secure context means https, or
+an origin on localhost / 127.0.0.1, so a deployment users reach at its
+own hostname or IP **must** run the TLS profile; over plain http the page
+fails immediately with `Web Crypto API is not available`.
+
+Note the state and nonce are generated before PKCE is even considered, so
+this is not a consequence of the S256 setting -- turning PKCE off would
+not make plain http work (and keycloak-js 26 accepts no other value).
 
 ```bash
 cp .env.example .env
@@ -91,11 +98,36 @@ U=$(/opt/keycloak/bin/kcadm.sh get users -r Reliza -q email=you@example.com --fi
 /opt/keycloak/bin/kcadm.sh set-password -r Reliza --userid "$U" --new-password "ChangeMe12345!"'
 ```
 
-## OCI artifact storage (optional)
+## OCI artifact storage
 
-BOMs and artifacts can be stored in an OCI registry. Set the four
-`OCI_*` variables in `.env` (see `.env.example`); the registry
-namespace is declared once and used by both consumers.
+BOMs and artifacts are stored in an OCI registry. By default a bundled
+single-container [zot](https://zotregistry.dev) registry runs as part of
+the stack, so artifact storage works out of the box with no
+configuration: it lives only on the compose network (no published
+ports), credentials default to `rearm` / `zotRegistryPass` (override
+with `OCI_REGISTRY_USERNAME` / `OCI_REGISTRY_TOKEN` in `.env`; the
+htpasswd file is regenerated from these on every start), and artifacts
+persist in the `rearm-zot-data` volume. The storage profile matches
+ReARM's access pattern (push once, fetch by digest, no deletes):
+deduplication and garbage collection are off, and the minimal zot image
+ships no UI/search extensions.
+
+To use an external registry instead, set in `.env`:
+
+```sh
+OCI_REGISTRY_NAMESPACE=your-namespace
+OCI_REGISTRY_HOST=registry.example.com
+OCI_REGISTRY_USERNAME=myusername
+OCI_REGISTRY_TOKEN=mypassword
+OCI_USE_PLAIN_HTTP=false      # the plain-http default only suits the bundled zot
+OCI_BUNDLED_REGISTRY_REPLICAS=0   # optional: don't run the (unused) bundled zot
+```
+
+Note: like traefik (see the comment in `docker-compose.yml`), zot needs
+an inotify instance at startup; on hosts with exhausted inotify
+instances it exits with "couldn't initialize inotify: too many open
+files" -- raise `fs.inotify.max_user_instances` (e.g.
+`sysctl -w fs.inotify.max_user_instances=512`).
 
 The legacy per-service files (`core.env`, `oci.env`, `rebom.env`) are
 still honored for backward compatibility, but new deployments should

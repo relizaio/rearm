@@ -109,6 +109,86 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		public static final int NOTIFICATION_RETENTION_DAYS_MIN = 14;
 		public static final int NOTIFICATION_RETENTION_DAYS_MAX = 730;
 
+		/**
+		 * Org-level "watchers" lever for the component notification audience.
+		 * When true, read-only ({@code >= READ_ONLY}) component members are also
+		 * an audience for that component's release notifications ("if you can see
+		 * it, you hear about it"). Default (null/false) = only the write-team
+		 * ({@code >= READ_WRITE}) plus the durable owner are the audience, so a
+		 * read-only viewer is neither on the Team display nor auto-notified. Never
+		 * lowers the floor below READ_ONLY (ESSENTIAL_READ/NONE stay excluded), and
+		 * never affects who may OPEN the inbox -- only which component-arm
+		 * deliveries populate it. See {@code NotificationDataFetcher} audience floor.
+		 */
+		@JsonProperty
+		private Boolean notifyComponentWatchers;
+
+		/**
+		 * @return true iff read-only component watchers are in the notification audience; default false.
+		 *         Named {@code ...Enabled} (not {@code isNotifyComponentWatchers}) so it does not shadow
+		 *         Lombok's raw {@code getNotifyComponentWatchers()} accessor -- preserving the
+		 *         null-vs-explicitly-set distinction the patch idiom relies on (see
+		 *         {@link #isFindingChangeRetentionEnabled()}).
+		 */
+		public boolean isNotifyComponentWatchersEnabled() {
+			return notifyComponentWatchers != null && notifyComponentWatchers;
+		}
+
+		/**
+		 * How long {@code finding_change_events} rows (the re-scan-driven "Finding changes over time"
+		 * diff table, board task #38) are kept before the daily retention sweep deletes them, age-based
+		 * on {@code change_date}. Resolved via {@link #isFindingChangeRetentionEnabled()} +
+		 * {@link #getFindingChangeRetentionDays()}.
+		 *
+		 * <p>DEFAULT = FULL HISTORY (no purge). Unset (null) -- the default -- OR a non-positive value
+		 * means retention is DISABLED: rows are never purged and the over-time / posture-reconstruction
+		 * reads never clamp their lower bound. The Finding Changes history (esp. resolved findings, whose
+		 * only record is this table) is the org's remediation track record, so completeness is the
+		 * default; a POSITIVE value opts an org into a bounded window (both a shorter row lifetime AND a
+		 * shorter changelog lookback) -- only for a tenant that explicitly wants to cap this table's disk.
+		 *
+		 * <p>The physical purge sweep was retired with the v1/v2 tables (V64); this value now solely bounds
+		 * the over-time / posture-reconstruction reads -- {@code FindingComparisonService} clamps the query
+		 * lower bound to {@code now - findingChangeRetentionDays} when enabled (a windowed org simply does
+		 * not surface older v3 rows; they are retained).
+		 */
+		@JsonProperty
+		private Integer findingChangeRetentionDays;
+
+		// The pre-v3 (v1/v2) backfill watermark fields that used to live here
+		// (findingChangeBackfillCompletedAt/VocabVersion, findingChangeV2Backfill*) were
+		// removed with the legacy certification writers: nothing reads or writes them
+		// anymore, and Settings is @JsonIgnoreProperties(ignoreUnknown = true), so the
+		// stale keys still present in pre-decommission orgs' settings JSONB are simply
+		// ignored on deserialization.
+
+		/**
+		 * Watermark set when the org's BRANCH-GRAIN {@code finding_change_events_v3} (events-lite, fact-row
+		 * dedup) backfill completes. v3 is the SOLE finding-change store (v1/v2 dropped in V64). Null = the
+		 * org's v3 table is not yet fully populated, so historical windows read whatever v3 rows exist so far
+		 * (there is no v1/v2 fallback); the boot backfill + daily repair sweep converge it.
+		 */
+		@JsonProperty
+		private ZonedDateTime findingChangeV3BackfillCompletedAt;
+
+		/**
+		 * The {@code FindingDimKey.KEY_VERSION} the org's v3 fact was backfilled at (v3 shares the v2
+		 * {@code finding_dim}). Null -> version 1. A re-key de-certifies the org so the v3 backfill re-runs
+		 * before its reads are trusted -- the same self-heal pattern as v2.
+		 */
+		@JsonProperty
+		private Integer findingChangeV3BackfillKeyVersion;
+
+		/** @return true once the branch-grain v3 backfill has completed for this org. */
+		public boolean isFindingChangeV3BackfillComplete() {
+			return findingChangeV3BackfillCompletedAt != null;
+		}
+
+		/** @return the dimension key version the org's v3 was backfilled at; 1 for pre-versioning marks. */
+		public int getFindingChangeV3BackfillKeyVersionOrDefault() {
+			return findingChangeV3BackfillKeyVersion != null ? findingChangeV3BackfillKeyVersion : 1;
+		}
+
 		public static Settings getDefault() {
 			return new Settings();
 		}
@@ -119,6 +199,19 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		public int getNotificationRetentionDaysOrDefault() {
 			return notificationRetentionDays != null
 					? notificationRetentionDays : NOTIFICATION_RETENTION_DAYS_DEFAULT;
+		}
+
+		/**
+		 * @return true when the org has opted into a BOUNDED finding-change window (a positive
+		 *         {@code findingChangeRetentionDays}). False -- the default -- means FULL history: the
+		 *         purge is skipped and reads never clamp. Callers must guard their read of the raw
+		 *         {@code getFindingChangeRetentionDays()} value with this (it is null / non-positive when
+		 *         disabled). Deliberately NOT a {@code getXxx} name: a getter matching the bean property
+		 *         would shadow Lombok's raw accessor and make Jackson serialize a coerced value, erasing
+		 *         the null-vs-explicitly-set distinction the patch idiom relies on.
+		 */
+		public boolean isFindingChangeRetentionEnabled() {
+			return findingChangeRetentionDays != null && findingChangeRetentionDays > 0;
 		}
 
 		/**
@@ -153,7 +246,7 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	 * this list in order and the first rule whose {@code uriPattern}
 	 * fully matches the repo's URI contributes its {@link #trigger} as
 	 * the effective EXTERNAL_VALIDATION trigger. Per-repo triggers
-	 * always win when present. The list itself is the priority order —
+	 * always win when present. The list itself is the priority order --
 	 * earlier rules win over later ones, and the loser names are
 	 * surfaced in the per-VCS provenance UI so operators can clean up
 	 * accidental overlap.
@@ -171,7 +264,7 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		private String name;
 		/**
 		 * Java regex matched against {@code VcsRepositoryData.uri} via
-		 * {@code Pattern.matcher(uri).matches()} — fully anchored, same
+		 * {@code Pattern.matcher(uri).matches()} -- fully anchored, same
 		 * convention as {@code DependencyPatternService}. Operators
 		 * write {@code github.com/myorg/.*} (no leading {@code ^},
 		 * no trailing {@code $}) and the engine anchors automatically.
@@ -202,7 +295,7 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	 *
 	 * The filter {@code componentType} value {@code ANY} matches both
 	 * {@code COMPONENT} and {@code PRODUCT} (there is no {@code ANY}-
-	 * typed component entity itself — it's only a rule-side filter
+	 * typed component entity itself -- it's only a rule-side filter
 	 * value).
 	 *
 	 * SAAS-only feature: the resolver and write paths live in
@@ -218,7 +311,7 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		private String name;
 		/**
 		 * Java regex matched against {@code ComponentData.name} via
-		 * {@code Pattern.matcher(name).matches()} — fully anchored,
+		 * {@code Pattern.matcher(name).matches()} -- fully anchored,
 		 * same convention as {@code DependencyPatternService}.
 		 * Operators write {@code frontend-.*} (no leading {@code ^},
 		 * no trailing {@code $}) and the engine anchors automatically.
@@ -240,6 +333,62 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 */
 		@JsonProperty
 		private UUID approvalPolicy;
+	}
+
+	/**
+	 * Org-wide team-assignment rule: assign a durable owner team to every
+	 * component whose name matches a pattern, instead of picking one by hand on
+	 * each component (RFC Phase 5 / T2). Deliberately shaped after
+	 * {@link GlobalApprovalPolicyRule} -- same anchoring, same type filter, same
+	 * first-match-wins contract -- so operators learn one rule model, not two.
+	 *
+	 * <p>A matching rule SETS the component's durable owner (DECIDED 2026-07-29):
+	 * there is exactly one answer to "who owns this", and a per-component owner
+	 * always wins over a rule. Deliberately NOT a second "assigned team" field --
+	 * two fields both answering that question is the ambiguity retiring
+	 * {@code leads} removed.
+	 *
+	 * <p>Resolution happens at READ time in
+	 * {@code ComponentOwnershipService.resolveOwnership}; nothing is written onto
+	 * the component. So editing a pattern takes effect immediately, a rule and a
+	 * stored value can never drift apart, and no bulk write can corrupt an
+	 * inventory. The resulting {@code ComponentOwnership} carries
+	 * {@code derived=true} plus the rule name in its reason, which is how the UI
+	 * distinguishes "someone chose this" from "a pattern matched".
+	 *
+	 * <p>The filter {@code componentType} value {@code ANY} matches both
+	 * {@code COMPONENT} and {@code PRODUCT} (there is no {@code ANY}-typed
+	 * component entity itself -- it's only a rule-side filter value).
+	 */
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class GlobalTeamAssignmentRule {
+		/** Display name; unique within the org. */
+		@JsonProperty
+		private String name;
+		/**
+		 * Java regex matched against {@code ComponentData.name} via
+		 * {@code Pattern.matcher(name).matches()} -- fully anchored, same
+		 * convention as {@code DependencyPatternService} and
+		 * {@link GlobalApprovalPolicyRule}. Operators write {@code frontend-.*}
+		 * (no leading {@code ^}, no trailing {@code $}).
+		 */
+		@JsonProperty
+		private String namePattern;
+		/**
+		 * Type filter. {@code COMPONENT} / {@code PRODUCT} restrict the match;
+		 * {@code ANY} (the default when null) matches both concrete types.
+		 */
+		@JsonProperty
+		private ComponentData.ComponentType componentType;
+		/**
+		 * Referenced owner team ({@code UserGroup}) UUID. Validation rejects
+		 * rules whose team doesn't exist or belongs to another org at write
+		 * time; the resolver re-checks at read time, so a team deleted later
+		 * degrades the component to ORPHANED rather than silently vanishing.
+		 */
+		@JsonProperty
+		private UUID ownerTeam;
 	}
 
 	public static class InvitedObject {
@@ -289,7 +438,7 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private Settings settings;
 	/**
-	 * Org-wide PR-validation trigger rules — see
+	 * Org-wide PR-validation trigger rules -- see
 	 * {@link GlobalPrValidationTriggerRule}. Empty/null means "no
 	 * org-wide rules"; per-repo triggers behave exactly as before.
 	 * The list itself is the priority order (first match wins).
@@ -297,7 +446,7 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private List<GlobalPrValidationTriggerRule> globalPrValidationTriggerRules = new LinkedList<>();
 	/**
-	 * Org-wide approval-policy assignment rules — see
+	 * Org-wide approval-policy assignment rules -- see
 	 * {@link GlobalApprovalPolicyRule}. Empty/null means "no org-wide
 	 * assignments"; per-component approvalPolicy references behave
 	 * exactly as before. List order is the priority order (first match
@@ -305,6 +454,13 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private List<GlobalApprovalPolicyRule> globalApprovalPolicyRules = new LinkedList<>();
+	/**
+	 * Org-wide team-assignment rules -- see {@link GlobalTeamAssignmentRule}.
+	 * Empty/null means "no org-wide assignments"; per-component owners behave
+	 * exactly as before. List order is the priority order (first match wins).
+	 */
+	@JsonProperty
+	private List<GlobalTeamAssignmentRule> globalTeamAssignmentRules = new LinkedList<>();
 
 
 	public void removeInvitee(String email, UUID whoInvited){

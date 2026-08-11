@@ -40,4 +40,16 @@ public class CveSearchResultDto {
 			@JsonProperty("versionSchema") String versionSchema,
 			@JsonProperty("branches") List<BranchWithReleases> branches
 	) {}
+
+	/**
+	 * Bounded CVE search response: the hierarchy built from the
+	 * {@code shownReleases} newest matches, plus the total match count so the
+	 * UI can tell the user when the result was truncated.
+	 */
+	public static record CveSearchResult(
+			@JsonProperty("components") List<ComponentWithBranches> components,
+			@JsonProperty("totalReleases") int totalReleases,
+			@JsonProperty("shownReleases") int shownReleases,
+			@JsonProperty("truncated") boolean truncated
+	) {}
 }

@@ -43,6 +43,16 @@ import lombok.extern.slf4j.Slf4j;
  * KEV (by primary id or alias). Scheduled by the edition's scheduling
  * service under the {@code SYNC_KEV_CATALOG} advisory lock.
  *
+ * <p><b>Upstream fetch is deduplicated per pass.</b> The catalog a source
+ * returns depends only on its {@code (source, credential)}, not on the org,
+ * so a pass fetches each distinct pair exactly once and reuses the parsed
+ * result for every org that shares it (see {@link #fetchCached}). This
+ * matters because {@code CISA_KEV} is default-enabled for every org and its
+ * public feed ignores the credential: without dedup, N orgs would each GET
+ * the identical feed from one egress IP and trip CISA's rate limit / WAF
+ * (403). Token-gated sources collapse per shared token; distinct tokens
+ * still fetch separately.
+ *
  * <p><b>Fail-closed.</b> A connector returns an empty list on a failed or
  * empty fetch; the orchestrator then skips that (org, source) reconcile,
  * so a truncated response never revokes live assertions for the org.
@@ -122,6 +132,10 @@ public class KevCatalogSyncService {
 		Map<KevSource, KevSourceConnector> bySource = new HashMap<>();
 		for (KevSourceConnector c : connectors) bySource.put(c.source(), c);
 
+		// One upstream fetch per (source, credential) for the whole pass --
+		// collapses the per-org CISA fan-out to a single GET. See fetchCached.
+		Map<FetchKey, List<KevAssertionData>> catalogCache = new HashMap<>();
+
 		int totalNew = 0;
 		for (IntegrationType type : List.of(IntegrationType.CISA_KEV, IntegrationType.VULNCHECK_KEV)) {
 			KevSourceConnector connector = bySource.get(toSource(type));
@@ -131,13 +145,29 @@ public class KevCatalogSyncService {
 				try {
 					IntegrationData id = IntegrationData.dataFromRecord(row);
 					if (id.getOrg() == null) continue;
-					totalNew += syncOneOrgSource(id.getOrg(), connector, decryptCredential(id));
+					List<KevAssertionData> entries = fetchCached(catalogCache, connector, decryptCredential(id));
+					totalNew += syncOneOrgSource(id.getOrg(), connector, entries);
 				} catch (Exception e) {
 					log.error("KEV sync failed for integration {} ({})", row.getUuid(), type, e);
 				}
 			}
 		}
 		return totalNew;
+	}
+
+	/** Fetch de-dup key: the catalog depends only on the source and its credential. */
+	private record FetchKey(KevSource source, String credential) {}
+
+	/**
+	 * Fetch a source's catalog at most once per pass, memoized by
+	 * {@code (source, credential)}. Empty (failed) results are cached too, so
+	 * a bad upstream fails closed for every sharing org without re-hitting it
+	 * this pass -- the fan-out is removed on the failure path as well.
+	 */
+	private List<KevAssertionData> fetchCached(Map<FetchKey, List<KevAssertionData>> cache,
+			KevSourceConnector connector, String credential) {
+		return cache.computeIfAbsent(new FetchKey(connector.source(), credential),
+				k -> connector.fetchCatalog(credential));
 	}
 
 	/**
@@ -165,7 +195,8 @@ public class KevCatalogSyncService {
 		}
 		try {
 			IntegrationData id = IntegrationData.dataFromRecord(row);
-			syncOneOrgSource(orgUuid, connector, decryptCredential(id));
+			// Single org, single fetch -- no cross-org dedup needed here.
+			syncOneOrgSource(orgUuid, connector, connector.fetchCatalog(decryptCredential(id)));
 		} catch (Exception e) {
 			log.error("KEV async sync failed for {}/{}", orgUuid, type, e);
 		}
@@ -182,13 +213,18 @@ public class KevCatalogSyncService {
 		}
 	}
 
-	private int syncOneOrgSource(UUID orgUuid, KevSourceConnector connector, String credential) {
-		boolean bootstrap = kevAssertionService.countRecordsForOrg(orgUuid) == 0;
-		List<KevAssertionData> entries = connector.fetchCatalog(credential);
+	/**
+	 * Reconcile one source's already-fetched catalog into one org. The fetch
+	 * is done by the caller (deduplicated per pass in {@link #syncCatalog()},
+	 * or a single fetch in the async configure-flow path) so the public feed
+	 * is not re-requested per org.
+	 */
+	private int syncOneOrgSource(UUID orgUuid, KevSourceConnector connector, List<KevAssertionData> entries) {
 		if (entries.isEmpty()) {
 			// Connector already logged the cause; skip reconcile (fail-closed).
 			return 0;
 		}
+		boolean bootstrap = kevAssertionService.countRecordsForOrg(orgUuid) == 0;
 		TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
 		KevCatalogApplyOutcome outcome = txTemplate.execute(status -> {
 			KevCatalogApplyOutcome applied = kevAssertionService.applyCatalog(

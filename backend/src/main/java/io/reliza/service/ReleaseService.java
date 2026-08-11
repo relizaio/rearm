@@ -22,9 +22,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.cyclonedx.exception.ParseException;
 import org.cyclonedx.generators.BomGeneratorFactory;
 import org.cyclonedx.generators.json.BomJsonGenerator;
 import org.cyclonedx.model.Bom;
@@ -39,12 +41,18 @@ import org.cyclonedx.model.Property;
 import org.cyclonedx.model.vulnerability.Vulnerability;
 import org.cyclonedx.model.vulnerability.Vulnerability.Rating;
 import org.cyclonedx.model.vulnerability.Vulnerability.Source;
+import org.cyclonedx.parsers.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -52,6 +60,7 @@ import com.github.packageurl.PackageURL;
 
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
+import io.reliza.common.HeapPressureGuard;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisResponse;
@@ -66,6 +75,8 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityReferenceDto;
 import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.VulnerabilityRecordData.CvssScore;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
+import io.reliza.model.dto.VexImportResult;
+import io.reliza.model.dto.VexImportSummary;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -122,7 +133,13 @@ import io.reliza.service.oss.OssReleaseService;
 
 @Service
 public class ReleaseService {
-	
+
+	@PersistenceContext
+	private EntityManager entityManager;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
+
 	@Autowired
 	private DeliverableService deliverableService;
 	
@@ -246,6 +263,23 @@ public class ReleaseService {
 	public List<Release> listReleasesOfOrg (UUID orgUuid) {
 		return repository.findReleasesOfOrg(orgUuid
 															.toString());
+	}
+
+	/**
+	 * Newest-first, paginated candidate scan for the approval queue: releases
+	 * of {@code orgUuid} whose component is in {@code componentUuidsAsStrings}
+	 * and whose lifecycle is in {@code lifecyclesAsStrings}, non-archived. Backs
+	 * {@code ApprovalNeedsService} so it can page instead of loading the whole
+	 * org into memory (BUG 13).
+	 */
+	public List<ReleaseData> listApprovalCandidateReleases (UUID orgUuid,
+			Collection<String> componentUuidsAsStrings, Collection<String> lifecyclesAsStrings,
+			int limit, int offset) {
+		return repository.findApprovalCandidateReleases(orgUuid.toString(), componentUuidsAsStrings,
+						lifecyclesAsStrings, String.valueOf(limit), String.valueOf(offset))
+						.stream()
+						.map(ReleaseData::dataFromRecord)
+						.collect(Collectors.toList());
 	}
 	
 	private String extractTimezone(ZonedDateTime zdt) {
@@ -1159,7 +1193,20 @@ public class ReleaseService {
 	public void rejectPendingReleases(int limit){
 		getPendingReleases(limit).stream().forEach(rd -> {
 			log.debug("cancelling pending release : uuid {}",rd.getUuid());
-			ossReleaseService.updateReleaseLifecycle(rd.getUuid(), ReleaseLifecycle.CANCELLED, WhoUpdated.getAutoWhoUpdated());
+			try {
+				ossReleaseService.updateReleaseLifecycle(rd.getUuid(), ReleaseLifecycle.CANCELLED, WhoUpdated.getAutoWhoUpdated());
+			} catch (Exception e) {
+				// Per-release isolation (same contract as computeMetricsForReleaseList):
+				// without it one failure aborts every release left in the batch, which
+				// then waits a full cadence. The likeliest failure is a transaction
+				// rollback from racing the metrics compute for the row lock -- the two
+				// run on separate scheduler threads by design -- and the release is
+				// simply retried on the next run. Still log.error: a swallowed
+				// exception that only shows at debug is invisible in prod, and a
+				// RISING rate here is the signal that the collision stopped being rare.
+				log.error("cancelling pending release {} failed, retrying next run: {}",
+						rd.getUuid(), e.getMessage(), e);
+			}
 		});
 	}
 	
@@ -1177,7 +1224,10 @@ public class ReleaseService {
 			WhoUpdated wu) throws IOException, RelizaException {
 		UUID orgUuid = bd.getOrg();
 		List<SCEArtifact> sceArts= new LinkedList<>();
-		if (null != artIds) sceArts = artIds.stream().map(x -> new SCEArtifact(x, bd.getComponent())).toList();
+		if (null != artIds) sceArts = artIds.stream().map(x -> new SCEArtifact(x,
+				SourceCodeEntryData.sceArtifactComponentTag(
+						artifactService.getArtifactData(x).map(ArtifactData::getType).orElse(null),
+						bd.getComponent()))).toList();
 		sceDto.setArtifacts(sceArts);
 		sceDto.setBranch(bd.getUuid());
 		sceDto.setOrganizationUuid(orgUuid);
@@ -1406,8 +1456,11 @@ public class ReleaseService {
 			dispatchDto.setVexImportMode(vu.inputDto().getVexImportMode());
 			dispatchDto.setUserIssuerClassOverride(vu.inputDto().getUserIssuerClassOverride());
 			try {
-				vexImportService.dispatchFromArtifact(
+				VexImportResult vexResult = vexImportService.dispatchFromArtifact(
 					artId, dispatchDto, rd, belongsTo, vu.content(), wu);
+				// Stamp the outcome on the artifact so consumers can report
+				// matched / unmatched counts (mirrors the manual upload path).
+				artifactService.saveArtifactVexImportSummary(artId, VexImportSummary.fromResult(vexResult), wu);
 			} catch (Exception e) {
 				log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
 					artId, rd.getUuid(), e.getMessage());
@@ -1559,7 +1612,10 @@ public class ReleaseService {
 
 			// Attach artifacts to SCE
 			for (UUID artId : artIds) {
-				SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+				SCEArtifact sceArt = new SCEArtifact(artId,
+						SourceCodeEntryData.sceArtifactComponentTag(
+								artifactService.getArtifactData(artId).map(ArtifactData::getType).orElse(null),
+								cd.getUuid()));
 				sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
 			}
 
@@ -1862,13 +1918,79 @@ public class ReleaseService {
 	}
 	
 	/**
+	 * Run one metrics-compute finder in its own transaction with JIT disabled
+	 * for that transaction only (SET LOCAL). The finders' jsonb-heavy plans
+	 * carry wildly inflated cost estimates — set-returning jsonb functions
+	 * default to 100 rows and jsonb operator selectivities are flat guesses —
+	 * which pushes every tick's plan over jit_above_cost and pays 40-315ms of
+	 * LLVM compile per execution for queries that usually return zero rows.
+	 * SET LOCAL reverts at commit, so nothing else on the connection is
+	 * affected when it returns to the pool.
+	 */
+	private List<Release> findForMetricsComputeJitOff (Supplier<List<Release>> finder) {
+		TransactionTemplate tx = new TransactionTemplate(transactionManager);
+		return tx.execute(status -> {
+			entityManager.createNativeQuery("SET LOCAL jit = off").executeUpdate();
+			// Bound every finder: these run on the shared scheduler thread, so a
+			// pathological plan on one instance (observed: the deliverables
+			// expansion timing out) must fail fast into its path's catch instead
+			// of stretching the whole tick — and with it scanning, reconciles,
+			// and every other metrics path — by the full DB-side timeout.
+			// Healthy instances finish these in milliseconds.
+			entityManager.createNativeQuery("SET LOCAL statement_timeout = '10s'").executeUpdate();
+			return finder.get();
+		});
+	}
+
+	/**
 	 * Per-tick metrics compute. Each of the five constituent finders is capped at
 	 * {@code limit} rows so the worst-case in-memory batch is bounded to 5*limit releases
 	 * (typically ~100 with limit=20). Whichever rows don't fit this tick land on the next
 	 * — the ORDER BY ASC on stalest-scan in each query guarantees forward progress and no
 	 * starvation under a backlog.
 	 */
+	/** Last [METRICS-BACKLOG] emission; null => eligible to fire on the first pressured tick. */
+	private final java.util.concurrent.atomic.AtomicReference<java.time.Instant> lastMetricsBacklogReport =
+			new java.util.concurrent.atomic.AtomicReference<>();
+
+	/**
+	 * Backlog size above which the metrics queue counts as UNDER PRESSURE. Two
+	 * things key off it: products are deferred to the back of the queue so every
+	 * compute slot goes to components (see the drain-mode block below), and the
+	 * hourly [METRICS-BACKLOG] gauge is emitted. Below it the queue is draining
+	 * within a few ticks and needs neither, so the backend stays silent.
+	 */
+	private static final long METRICS_BACKLOG_PRESSURE_THRESHOLD = 1000;
+
 	protected void computeMetricsForAllUnprocessedReleases (int limit) {
+		// One eligible-count per tick, shared by the pressure gauge and the
+		// drain-mode gate below (the count is served by the V73 partial index, so
+		// it is pool-sized rather than table-sized -- but there is no reason to
+		// pay for it twice). -1 => the count failed; treated as "no pressure",
+		// which keeps a failing count from silently enabling drain mode.
+		long eligibleBefore = -1;
+		try {
+			eligibleBefore = repository.countReleasesEligibleForMetricsCompute();
+		} catch (Exception e) {
+			log.error("metrics backlog count failed: {}", e.getMessage(), e);
+		}
+
+		// Backlog gauge: hourly, and ONLY under pressure. A queue below the
+		// threshold drains within a few ticks, so reporting it is noise -- the
+		// signal an operator wants is "the backlog is not keeping up". A release
+		// genuinely stuck (rather than merely queued) is reported independently by
+		// the per-release incomplete-attempts warning in ReleaseMetricsComputeService,
+		// which does not depend on this gauge. log.error by request: monitored signal.
+		if (eligibleBefore > METRICS_BACKLOG_PRESSURE_THRESHOLD) {
+			java.time.Instant lastReport = lastMetricsBacklogReport.get();
+			if (lastReport == null
+					|| lastReport.isBefore(java.time.Instant.now().minus(java.time.Duration.ofHours(1)))) {
+				log.error("[METRICS-BACKLOG] {} release(s) eligible for metrics compute (drained up to {} per tick)",
+						eligibleBefore, limit);
+				lastMetricsBacklogReport.set(java.time.Instant.now());
+			}
+		}
+
 		log.debug("[compute metrics scheduler]: start compute metrics run (limit={})", limit);
 		// The artifact-driven finders compare art.lastScanned against each release's own
 		// lastScanned (per-release, no global cutoff). See VariableQueries comments for
@@ -1881,53 +2003,99 @@ public class ReleaseService {
 		// per-release loop in computeMetricsForReleaseList already isolates failures
 		// for individual releases; this layer adds the same protection across the
 		// finder/path boundary.
-		Set<UUID> dedupProcessedReleases = new HashSet<>();
+		// Concurrent: shared across the parallel compute workers.
+		Set<UUID> dedupProcessedReleases = java.util.concurrent.ConcurrentHashMap.newKeySet();
+		// Drain mode: while the eligible backlog dwarfs the window, spend every
+		// compute slot on COMPONENT releases and defer products to the back of
+		// the oldest-first queue (deferMetricsRecompute bump). Rationale: each
+		// component compute touches its containing products anyway, so a product
+		// computed mid-drain is recomputed after every later child -- during a
+		// large backlog that is almost pure waste. Deferred products are each
+		// computed exactly once, after their children settle. Below the
+		// threshold (steady state) behavior is unchanged: products compute
+		// eagerly for freshness. eligibleBefore == -1 (count failed) stays out
+		// of drain mode by construction.
+		boolean drainMode = eligibleBefore > METRICS_BACKLOG_PRESSURE_THRESHOLD;
+
+		// RETIRED: the BY_ARTIFACT_DIRECT, BY_SCE and BY_OUTBOUND_DELIVERABLES
+		// finders used to live here (BY_ARTIFACT_DIRECT last, after it too began
+		// hitting the 10s fail-fast timeout under grown touch traffic).
+		//
+		// All three asked the same question by brute force -- "does any artifact reachable
+		// from this release have a newer lastScanned than the release?" -- by expanding
+		// the entire variants x deliverables x artifacts (and source_code_entries x
+		// artifacts) jsonb topology on EVERY tick, before any selective filter. Their
+		// cost therefore grew with total instance data rather than with what changed,
+		// and on large instances both timed out every minute, stretching the whole
+		// shared scheduler tick by the DB timeout.
+		//
+		// They are replaced by event-driven pushes that mark exactly the affected
+		// releases at the moment the answer changes, leaving BY_UPDATE to pick them up:
+		//   * artifact scanned   -> SharedArtifactService.saveArtifactMetrics calls
+		//                           touchReleasesByScannedDeliverableArtifact +
+		//                           touchReleasesByScannedSceArtifact (the single
+		//                           chokepoint every artifact-metrics write passes);
+		//   * artifact attached  -> DeliverableService.addArtifact and
+		//                           SourceCodeEntryService.addArtifact call the same
+		//                           touches, covering an ALREADY-scanned artifact being
+		//                           attached later (no metrics write, release row
+		//                           otherwise untouched -- the one case the polls caught
+		//                           that the scan-time touch alone does not).
+		//
+		// Do not reintroduce a poll here without first checking whether a touch point is
+		// missing instead: a poll that scans the whole estate to find the few rows that
+		// changed is the shape that failed. See
+		// backend/ai-plans/metrics-finder-retirement.md.
 
 		try {
-			var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(limit);
-			log.debug("[compute metrics scheduler]: releases by art size = " + releasesByArt.size());
-			// for (var r : releasesByArt) log.debug("[compute metrics scheduler]: release by art uuid = " + r.getUuid());
-			computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases);
-		} catch (Exception e) {
-			log.error("[compute metrics scheduler]: byArtifactDirect path failed", e);
-		}
-
-		try {
-			var releasesBySce = repository.findReleasesForMetricsComputeBySce(limit);
-			log.debug("[compute metrics scheduler]: releases by sce size = " + releasesBySce.size());
-			// for (var r : releasesBySce) log.debug("[compute metrics scheduler]: release by sce uuid = " + r.getUuid());
-			computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases);
-		} catch (Exception e) {
-			log.error("[compute metrics scheduler]: bySce path failed", e);
-		}
-
-		try {
-			var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(limit);
-			log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByOutboundDel.size());
-			// for (var r : releasesByOutboundDel) log.debug("[compute metrics scheduler]: release by od uuid = " + r.getUuid());
-			computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases);
-		} catch (Exception e) {
-			log.error("[compute metrics scheduler]: byOutboundDeliverables path failed", e);
-		}
-
-		try {
-			var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate(limit);
+			var releasesByUpdateDate = findForMetricsComputeJitOff(() -> repository.findReleasesForMetricsComputeByUpdate(limit));
 			log.debug("[compute metrics scheduler]: releases by updated date del size = " + releasesByUpdateDate.size());
 			// for (var r : releasesByUpdateDate) log.debug("[compute metrics scheduler]: release by upd uuid = " + r.getUuid());
-			computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases);
+			if (drainMode) {
+				List<Release> componentReleases = new LinkedList<>();
+				List<Release> productReleases = new LinkedList<>();
+				for (Release r : releasesByUpdateDate) {
+					if (isProductRelease(r)) productReleases.add(r);
+					else componentReleases.add(r);
+				}
+				if (componentReleases.isEmpty()) {
+					// Tail of the drain: the window is products-only, so there is
+					// nothing left to defer BEHIND -- deferring now would only
+					// recycle the same rows forever (livelock). Compute them.
+					computeMetricsForReleaseListParallel(productReleases, dedupProcessedReleases);
+				} else {
+					for (Release p : productReleases) {
+						repository.deferMetricsRecompute(p.getUuid());
+					}
+					computeMetricsForReleaseListParallel(componentReleases, dedupProcessedReleases);
+				}
+			} else {
+				computeMetricsForReleaseListParallel(releasesByUpdateDate, dedupProcessedReleases);
+			}
 		} catch (Exception e) {
 			log.error("[compute metrics scheduler]: byUpdate path failed", e);
 		}
 
 		log.debug("processed releases size for metrics = " + dedupProcessedReleases.size());
 
-		try {
-			var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases, limit);
-			computeMetricsForReleaseList(productReleases, dedupProcessedReleases);
-			log.debug("processed product releases size for metrics = " + productReleases.size());
-		} catch (Exception e) {
-			log.error("[compute metrics scheduler]: productReleases cascade failed", e);
+		if (drainMode) {
+			// Eager product pass skipped: it recomputes the just-touched products
+			// IMMEDIATELY, every tick -- during a drain a product whose children
+			// trickle across N ticks would be recomputed ~N times. The touch that
+			// markContainingProductsStale already wrote sends each product to the
+			// back of the oldest-first queue, where BY_UPDATE computes it exactly
+			// once after its children settle.
+			log.debug("[compute metrics scheduler]: drain mode -- eager product pass skipped");
+		} else {
+			try {
+				var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases, limit);
+				computeMetricsForReleaseList(productReleases, dedupProcessedReleases);
+				log.debug("processed product releases size for metrics = " + productReleases.size());
+			} catch (Exception e) {
+				log.error("[compute metrics scheduler]: productReleases cascade failed", e);
+			}
 		}
+
 
 		log.debug("[compute metrics scheduler]: end compute metrics run");
 	}
@@ -1938,6 +2106,29 @@ public class ReleaseService {
 	 * past the cap waits for the next tick — fairness comes from the FIFO walk over the
 	 * already-bounded input set.
 	 */
+	/**
+	 * Drain-mode classifier: a release with parent (component) releases is a
+	 * product release. Purely in-memory -- parentReleases is already in the
+	 * loaded record_data, no component lookup. Verified against live data
+	 * (psclaude, 2026-07-27): of 3607 releases under COMPONENT-typed
+	 * components, ZERO carry a non-empty parentReleases (no false positives);
+	 * of 895 under PRODUCT-typed components, 732 carry it -- the remainder
+	 * (products with nothing integrated yet) classify as components and
+	 * compute normally, which is benign: with no children their compute is
+	 * cheap and nothing ever re-touches them mid-drain. Any classification
+	 * failure also computes normally, so a bad row can never be starved by
+	 * the drain-mode partition.
+	 */
+	private boolean isProductRelease (Release r) {
+		try {
+			ReleaseData rd = ReleaseData.dataFromRecord(r);
+			return rd.getParentReleases() != null && !rd.getParentReleases().isEmpty();
+		} catch (Exception e) {
+			log.error("isProductRelease classification failed for release {}: {}", r.getUuid(), e.getMessage(), e);
+			return false;
+		}
+	}
+
 	private List<Release> findProductReleasesFromComponentsForMetrics (Set<UUID> dedupProcessedReleases, int limit) {
 		Set<UUID> dedupReleases = new HashSet<>();
 		List<Release> productReleases = new LinkedList<>();
@@ -1961,6 +2152,63 @@ public class ReleaseService {
 		return productReleases;
 	}
 
+	/** Worker count for the parallel metrics pass; the batch limit in
+	 * SchedulingService (102) is kept divisible by this so shards stay even. */
+	private static final int METRICS_COMPUTE_WORKERS = 3;
+
+	/** Dedicated pool -- thread naming is load-bearing for ops (thread dumps
+	 * must attribute compute work); daemon so it never blocks shutdown. */
+	private final java.util.concurrent.ExecutorService metricsComputePool =
+			java.util.concurrent.Executors.newFixedThreadPool(METRICS_COMPUTE_WORKERS, runnable -> {
+				Thread t = new Thread(runnable);
+				t.setName("metrics-compute-" + t.threadId());
+				t.setDaemon(true);
+				return t;
+			});
+
+	/**
+	 * Parallel wrapper over {@link #computeMetricsForReleaseList}: round-robins
+	 * the batch across {@value #METRICS_COMPUTE_WORKERS} workers and blocks
+	 * until all shards finish, so the tick still ends when the whole batch is done. Safe because each release's compute is
+	 * an independent transaction with its own row lock, the dedup set is
+	 * concurrent, and markContainingProductsStale acquires product-row locks in
+	 * UUID order (cross-worker deadlock ordering). Tiny batches skip the
+	 * dispatch overhead and run inline.
+	 */
+	private void computeMetricsForReleaseListParallel(List<Release> releaseList,
+			Set<UUID> dedupProcessedReleases) {
+		if (releaseList.isEmpty()) return;
+		if (releaseList.size() <= METRICS_COMPUTE_WORKERS) {
+			computeMetricsForReleaseList(releaseList, dedupProcessedReleases);
+			return;
+		}
+		List<List<Release>> shards = new ArrayList<>(METRICS_COMPUTE_WORKERS);
+		for (int i = 0; i < METRICS_COMPUTE_WORKERS; i++) shards.add(new LinkedList<>());
+		int i = 0;
+		for (Release r : releaseList) shards.get(i++ % METRICS_COMPUTE_WORKERS).add(r);
+		List<java.util.concurrent.Callable<Void>> tasks = new ArrayList<>(METRICS_COMPUTE_WORKERS);
+		for (List<Release> shard : shards) {
+			tasks.add(() -> {
+				computeMetricsForReleaseList(shard, dedupProcessedReleases);
+				return null;
+			});
+		}
+		try {
+			for (var f : metricsComputePool.invokeAll(tasks)) {
+				try {
+					f.get();
+				} catch (java.util.concurrent.ExecutionException ee) {
+					// computeMetricsForReleaseList isolates per-release failures,
+					// so a shard-level throw is unexpected -- surface it loudly.
+					log.error("metrics compute worker shard failed", ee.getCause());
+				}
+			}
+		} catch (InterruptedException ie) {
+			Thread.currentThread().interrupt();
+			log.error("parallel metrics pass interrupted; unprocessed releases retried next tick");
+		}
+	}
+
 	private void computeMetricsForReleaseList(List<Release> releaseList,
 			Set<UUID> dedupProcessedReleases) {
 		// Per-release try/catch — without this, a single bad release in the
@@ -1975,14 +2223,36 @@ public class ReleaseService {
 		// failure surface (logged here) is enough for an operator to find
 		// the actual problem release.
 		for (Release r : releaseList) {
-			if (dedupProcessedReleases.contains(r.getUuid())) continue;
-			dedupProcessedReleases.add(r.getUuid());
+			// Heap guard (same contract as the SbomComponentService sweeps):
+			// releases carry fat metrics jsonb and the batch limit is 100, so
+			// under heap pressure we stop the batch here -- every unprocessed
+			// release still matches its finder predicate and is re-picked next
+			// tick, exactly like the poison-pill skip below.
+			if (HeapPressureGuard.checkAndMaybeGc(log, "release metrics compute",
+					"remaining releases in this batch retried next tick.")) {
+				return;
+			}
+			// Atomic check-and-claim: with the parallel pass the set is shared
+			// across workers, and contains-then-add is a race window.
+			if (!dedupProcessedReleases.add(r.getUuid())) continue;
 			try {
 				boolean metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(r);
 				if (metricsChanged) ossReleaseService.processRelease(r.getUuid());
 			} catch (Exception e) {
 				log.error("Metrics compute failed for release {} — continuing with batch: {}",
 						r.getUuid(), e.getMessage(), e);
+				// Poison-pill fence: a throwing compute leaves no state change, so the
+				// same row is re-picked at the head of the finder order every tick —
+				// grinding the same exception and starving younger rows behind it.
+				// Escalating backoff (same schedule as incomplete computes; first
+				// attempts free) keeps it retrying without monopolizing the batch.
+				try {
+					repository.recordMetricsComputeIncomplete(r.getUuid(),
+							ReleaseMetricsComputeService.nextMetricsComputeBackoffSeconds(r.getFlowControl()));
+				} catch (Exception fenceEx) {
+					log.error("Failed to fence release {} after metrics compute failure",
+							r.getUuid(), fenceEx);
+				}
 			}
 		}
 	}
@@ -2729,20 +2999,39 @@ public class ReleaseService {
 			// Build components list: PURLs as library components + releases as application components
 			List<Component> components = new ArrayList<>();
 			
-			// Try to get enriched components from merged SBOM
+			// Try to get enriched components from merged SBOM.
+			//
+			// The merged BOM is bound by CycloneDX's OWN parser, never by Utils.OM.
+			// cyclonedx-core-java is a Jackson 2 library: it models `licenses` as a
+			// single LicenseChoice while the spec serialises it as an ARRAY, and
+			// bridges the two with deserializers registered through Jackson 2
+			// annotations (org.cyclonedx.util.deserializer.*). Utils.OM is Jackson 3
+			// (tools.jackson), which cannot see those annotations -- so binding a
+			// component with it threw MismatchedInputException on the FIRST component
+			// carrying licenses, aborting this loop and silently degrading EVERY
+			// component in the VDR to the minimal purl-only fallback while the
+			// document still exported and still validated. Live since the Jackson 3
+			// upgrade (2026-05-22) until 2026-07-28.
+			//
+			// cyclonedx-core-java 13.0.0 does NOT fix this -- it is still Jackson 2
+			// (jackson-bom 2.22.x, licenses still a singular LicenseChoice), and
+			// upstream has no Jackson 3 migration open. So the rule stands: never
+			// bind org.cyclonedx.model.* with Utils.OM; round-trip through the
+			// library's own parser, which carries its own mapper. parse() does not
+			// schema-validate, so this is as lenient as the hand-rolled walk it
+			// replaces. Covered by @vdr_export in rearm-integration-tests.
 			Map<String, Component> purlComponentMap = new HashMap<>();
 			try {
 				JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(
-					releaseData.getUuid(), false, false, null, BomStructureType.FLAT, 
+					releaseData.getUuid(), false, false, null, BomStructureType.FLAT,
 					releaseData.getOrg(), WhoUpdated.getAutoWhoUpdated(), null
 				);
-				
-				// Extract components array from JsonNode and convert to Component objects
-				JsonNode componentsNode = mergedBomJsonNode.get("components");
-				if (componentsNode != null && componentsNode.isArray()) {
-					for (JsonNode compNode : componentsNode) {
-						// Convert JsonNode to Component using Jackson
-						Component comp = Utils.OM.treeToValue(compNode, Component.class);
+
+				Bom mergedBom = new JsonParser().parse(
+						Utils.OM.writeValueAsBytes(mergedBomJsonNode));
+				List<Component> mergedComponents = mergedBom.getComponents();
+				if (mergedComponents != null) {
+					for (Component comp : mergedComponents) {
 						if (comp != null && comp.getPurl() != null) {
 							// Normalize PURL for consistent lookups
 							String normalizedPurl = Utils.minimizePurl(comp.getPurl());
@@ -2761,6 +3050,10 @@ public class ReleaseService {
 					log.error("Failed to enrich VDR components from merged SBOM: {}", e.getMessage(), e);
 				}
 				// Continue with empty map - will use minimal components
+			} catch (ParseException e) {
+				// Merged BOM is not parseable as CycloneDX -- degrade to minimal
+				// components rather than failing the whole export.
+				log.error("Failed to parse merged SBOM while enriching VDR components: {}", e.getMessage(), e);
 			} catch (JacksonException e) {
 				log.error("JSON processing error while enriching VDR components: {}", e.getMessage(), e);
 				// Continue with empty map - will use minimal components
@@ -3094,7 +3387,7 @@ public class ReleaseService {
 	}
 
 	static String computeAnalysisKey(String purl, String vulnId) {
-		return Utils.minimizePurl(purl) + "|" + vulnId;
+		return Utils.purlIdentity(purl) + "|" + vulnId;
 	}
 	
 	/**

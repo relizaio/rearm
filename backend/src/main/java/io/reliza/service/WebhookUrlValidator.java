@@ -33,7 +33,8 @@ public final class WebhookUrlValidator {
      */
     public static boolean isHttps(String url) {
         if (StringUtils.isBlank(url)) return false;
-        String trimmed = url.trim();
+        // strip() (Unicode-aware) to match the Slack/Teams webhook validators.
+        String trimmed = url.strip();
         if (trimmed.length() < HTTPS_PREFIX.length()) return false;
         return trimmed.regionMatches(true /* ignoreCase */, 0,
                 HTTPS_PREFIX, 0, HTTPS_PREFIX.length());

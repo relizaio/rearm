@@ -4,6 +4,7 @@
 package io.reliza.ws;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -102,7 +103,7 @@ public class SignatureDataFetcher {
 		Optional<CommitterData> ocd = committerService.getCommitterData(uuid);
 		RelizaObject ro = ocd.orElse(null);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return ocd.orElse(null);
 	}
 
@@ -112,7 +113,7 @@ public class SignatureDataFetcher {
 		var oud = userService.getUserDataByAuth(currentAuth());
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(od.orElse(null)), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(od.orElse(null)), CallType.READ);
 		return committerService.listByOrg(orgUuid);
 	}
 
@@ -123,7 +124,7 @@ public class SignatureDataFetcher {
 		Optional<SigningKeyData> okd = signingKeyService.getSigningKeyData(uuid);
 		RelizaObject ro = okd.orElse(null);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return okd.orElse(null);
 	}
 
@@ -135,7 +136,7 @@ public class SignatureDataFetcher {
 		var oud = userService.getUserDataByAuth(currentAuth());
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(od.orElse(null)), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(od.orElse(null)), CallType.READ);
 		return signingKeyService.listByOwner(orgUuid, ownerType, ownerUuid);
 	}
 
@@ -145,7 +146,7 @@ public class SignatureDataFetcher {
 		var oud = userService.getUserDataByAuth(currentAuth());
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(od.orElse(null)), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(od.orElse(null)), CallType.READ);
 		return signingKeyService.listByOrg(orgUuid);
 	}
 
@@ -156,7 +157,7 @@ public class SignatureDataFetcher {
 		Optional<SignatureVerificationData> ovd = signatureVerificationService.getData(uuid);
 		RelizaObject ro = ovd.orElse(null);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return ovd.orElse(null);
 	}
 
@@ -233,7 +234,7 @@ public class SignatureDataFetcher {
 		CommitterData seed = Utils.OM.convertValue(input, CommitterData.class);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(seed.getOrg());
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, seed.getOrg(), List.of(od.orElse(null)), CallType.WRITE);
+				PermissionScope.ORGANIZATION, seed.getOrg(), Collections.singletonList(od.orElse(null)), CallType.WRITE);
 		return committerService.upsert(seed, WhoUpdated.getWhoUpdated(oud.get()));
 	}
 
@@ -244,7 +245,7 @@ public class SignatureDataFetcher {
 		Optional<CommitterData> ocd = committerService.getCommitterData(uuid);
 		RelizaObject ro = ocd.orElse(null);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.WRITE);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.WRITE);
 		return committerService.setStatus(uuid, CommitterData.CommitterStatus.ARCHIVED, WhoUpdated.getWhoUpdated(oud.get()));
 	}
 
@@ -255,7 +256,7 @@ public class SignatureDataFetcher {
 		SigningKeyData seed = Utils.OM.convertValue(input, SigningKeyData.class);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(seed.getOrg());
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, seed.getOrg(), List.of(od.orElse(null)), CallType.WRITE);
+				PermissionScope.ORGANIZATION, seed.getOrg(), Collections.singletonList(od.orElse(null)), CallType.WRITE);
 		// owner sanity check — owner must exist and belong to the org
 		ensureOwnerInOrg(seed);
 		return signingKeyService.enrol(seed, WhoUpdated.getWhoUpdated(oud.get()));
@@ -363,7 +364,7 @@ public class SignatureDataFetcher {
 		Optional<SigningKeyData> okd = signingKeyService.getSigningKeyData(uuid);
 		RelizaObject ro = okd.orElse(null);
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.WRITE);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.WRITE);
 		return signingKeyService.revoke(uuid, WhoUpdated.getWhoUpdated(oud.get()));
 	}
 
@@ -378,7 +379,7 @@ public class SignatureDataFetcher {
 		// what the verifier will accept, so it's a tighter gate than the
 		// WRITE used for enrol/revoke.
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.ADMIN);
 		return signingKeyService.updateIdentity(uuid, identity, WhoUpdated.getWhoUpdated(oud.get()));
 	}
 

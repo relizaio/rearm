@@ -1,0 +1,73 @@
+server {
+  listen      8080;
+  server_name _;
+
+  port_in_redirect off;
+  absolute_redirect off;
+
+  # The frontend image ships nginx.conf with `#gzip on;` commented out and
+  # server_tokens at its default, and this ConfigMap only owns the server
+  # block -- so both are set here. Both are valid in the server context.
+  server_tokens off;
+
+  gzip on;
+  gzip_proxied any;
+  gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+  gzip_min_length 256;
+  gzip_vary on;
+
+  # Security headers, matching the ReARM UI. HSTS is intentionally NOT set
+  # here -- TLS terminates at the Traefik ingress, which owns
+  # Strict-Transport-Security.
+  #
+  # Set at server level so every location inherits them. NB: nginx inherits
+  # add_header into a block only when that block declares no add_header of
+  # its own, so the cache-control location below has to repeat them.
+  add_header X-Frame-Options "SAMEORIGIN" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  # Report-Only first, as on the ReARM UI, so the policy can be validated in a
+  # browser before it is enforced -- switch the directive name to
+  # Content-Security-Policy to enforce. style-src allows 'unsafe-inline' for
+  # the SPA's runtime-injected styles; img-src allows data:/blob: for
+  # generated content and client-side downloads. If the browser console
+  # reports script-src violations, the frontend needs 'unsafe-eval' adding
+  # here before this can be enforced.
+  add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" always;
+
+  location / {
+    root      /opt/owasp/dependency-track-frontend;
+    index     index.html;
+    try_files $uri $uri/ /index.html;
+
+    location ~ (config\.json|index\.html)$ {
+      add_header Cache-Control "max-age=0, no-cache, no-store, must-revalidate";
+      add_header Pragma "no-cache";
+      add_header Expires 0;
+      # Repeated deliberately: declaring add_header here drops everything
+      # inherited from the server block, and this location serves the SPA
+      # shell itself -- the response that most needs them.
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" always;
+    }
+
+    sub_filter '<base href=/'  '<base href=${BASE_PATH}';
+    sub_filter_once on;
+  }
+
+  location /api {
+        client_max_body_size 300M;
+        proxy_pass http://${DTRACK_API_SERVICE}:8080;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+  }
+
+  error_page 500 502 503 504 /50x.html;
+
+  location = /50x.html {
+    root /usr/share/nginx/html;
+  }
+}

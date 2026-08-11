@@ -270,7 +270,11 @@ class KevCatalogSyncServiceTest {
 	}
 
 	@Test
-	void twoOrgsBothWithCisaCallConnectorTwiceAndApplyPerOrg() {
+	void twoOrgsBothWithCisaFetchFeedOnceButApplyPerOrg() {
+		// Regression guard for the per-org CISA fan-out that tripped CISA's
+		// WAF (403). The public feed is identical for every org, so a pass
+		// must GET it ONCE and reuse the parsed catalog for each org's
+		// reconcile -- not once per org.
 		UUID orgA = UUID.randomUUID();
 		UUID orgB = UUID.randomUUID();
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.CISA_KEV.name()))
@@ -285,9 +289,60 @@ class KevCatalogSyncServiceTest {
 
 		assertEquals(0, service.syncCatalog());
 
-		verify(cisaConnector, times(2)).fetchCatalog(isNull());
+		// Exactly one upstream fetch for the whole pass...
+		verify(cisaConnector, times(1)).fetchCatalog(isNull());
+		// ...but still reconciled independently under each org.
 		verify(kevAssertionService).applyCatalog(eq(orgA), eq(KevSource.CISA), any());
 		verify(kevAssertionService).applyCatalog(eq(orgB), eq(KevSource.CISA), any());
+	}
+
+	@Test
+	void twoOrgsSharingAVulnCheckTokenFetchOnceButApplyPerOrg() {
+		// Token-gated source dedups by credential: orgs on the same token
+		// (same contract) collapse to one fetch, still reconciled per org.
+		UUID orgA = UUID.randomUUID();
+		UUID orgB = UUID.randomUUID();
+		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.VULNCHECK_KEV.name()))
+				.thenReturn(List.of(
+						integrationRow(orgA, IntegrationType.VULNCHECK_KEV, "enc-shared"),
+						integrationRow(orgB, IntegrationType.VULNCHECK_KEV, "enc-shared")));
+		when(encryptionService.decrypt("enc-shared")).thenReturn("plain-shared");
+		when(vulnCheckConnector.fetchCatalog(eq("plain-shared"))).thenReturn(oneEntry());
+		when(kevAssertionService.countRecordsForOrg(any(UUID.class))).thenReturn(1L);
+		when(kevAssertionService.applyCatalog(any(UUID.class), eq(KevSource.VULNCHECK), any())).thenReturn(
+				new KevCatalogApplyOutcome(List.of(), 0, 0, 0, 1));
+
+		service.syncCatalog();
+
+		verify(vulnCheckConnector, times(1)).fetchCatalog(eq("plain-shared"));
+		verify(kevAssertionService).applyCatalog(eq(orgA), eq(KevSource.VULNCHECK), any());
+		verify(kevAssertionService).applyCatalog(eq(orgB), eq(KevSource.VULNCHECK), any());
+	}
+
+	@Test
+	void twoOrgsWithDistinctVulnCheckTokensFetchPerToken() {
+		// Distinct tokens are distinct credentials -> must fetch separately;
+		// dedup keys on (source, credential), not just source.
+		UUID orgA = UUID.randomUUID();
+		UUID orgB = UUID.randomUUID();
+		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.VULNCHECK_KEV.name()))
+				.thenReturn(List.of(
+						integrationRow(orgA, IntegrationType.VULNCHECK_KEV, "enc-a"),
+						integrationRow(orgB, IntegrationType.VULNCHECK_KEV, "enc-b")));
+		when(encryptionService.decrypt("enc-a")).thenReturn("token-a");
+		when(encryptionService.decrypt("enc-b")).thenReturn("token-b");
+		when(vulnCheckConnector.fetchCatalog(eq("token-a"))).thenReturn(oneEntry());
+		when(vulnCheckConnector.fetchCatalog(eq("token-b"))).thenReturn(oneEntry());
+		when(kevAssertionService.countRecordsForOrg(any(UUID.class))).thenReturn(1L);
+		when(kevAssertionService.applyCatalog(any(UUID.class), eq(KevSource.VULNCHECK), any())).thenReturn(
+				new KevCatalogApplyOutcome(List.of(), 0, 0, 0, 1));
+
+		service.syncCatalog();
+
+		verify(vulnCheckConnector, times(1)).fetchCatalog(eq("token-a"));
+		verify(vulnCheckConnector, times(1)).fetchCatalog(eq("token-b"));
+		verify(kevAssertionService).applyCatalog(eq(orgA), eq(KevSource.VULNCHECK), any());
+		verify(kevAssertionService).applyCatalog(eq(orgB), eq(KevSource.VULNCHECK), any());
 	}
 
 	@Test

@@ -1266,6 +1266,36 @@ const storeObject : any = {
             const found = orgs.find((o: any) => o.uuid === orgUuid)
             return found?.globalApprovalPolicyRules || []
         },
+        async fetchOrgTeamAssignmentRules (context: any, orgUuid: string) {
+            // organizations (plural, no args) is the resolver the org-settings
+            // surfaces use -- the single-org organization(orgUuid:) query returns
+            // null here. Same shape as fetchOrgApprovalPolicyRules above.
+            const response = await graphqlClient.query({
+                query: gql`
+                    query orgTeamAssignmentRules {
+                        organizations {
+                            uuid
+                            globalTeamAssignmentRules { name namePattern componentType ownerTeam }
+                        }
+                    }`,
+                fetchPolicy: 'no-cache'
+            })
+            const orgs = response.data.organizations || []
+            return orgs.find((o: any) => o.uuid === orgUuid)?.globalTeamAssignmentRules || []
+        },
+        async setGlobalTeamAssignmentRules (context: any, payload: { orgUuid: string, rules: any[] }) {
+            const data = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setGlobalTeamAssignmentRules($orgUuid: ID!, $rules: [GlobalTeamAssignmentRuleInput!]!) {
+                        setGlobalTeamAssignmentRules(orgUuid: $orgUuid, rules: $rules) {
+                            uuid
+                            globalTeamAssignmentRules { name namePattern componentType ownerTeam }
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, rules: payload.rules }
+            })
+            return data.data.setGlobalTeamAssignmentRules.globalTeamAssignmentRules || []
+        },
         async setGlobalApprovalPolicyRules (context: any, payload: { orgUuid: string, rules: any[] }) {
             const data = await graphqlClient.mutate({
                 mutation: gql`

@@ -131,4 +131,62 @@ public class UtilTest
 		String minimized = Utils.minimizePurl(multiQualPurl);
 		Assertions.assertEquals("pkg:nuget/Newtonsoft.Json@13.0.1", minimized);
 	}
+
+	// canonicalizePurl must produce the exact canonical_purl form rebom computes
+	// (see PRESERVED_QUALIFIERS in rebom's bomComponentExtractor.ts) — these
+	// mirror rebom's unit tests for the shared cases.
+
+	@Test
+	public void testCanonicalizePurl_apkPreservesDistroStripsArch() {
+		String purl = "pkg:apk/alpine/openssl@3.5.7-r0?arch=x86_64&distro=alpine-3.24.1";
+		Assertions.assertEquals("pkg:apk/alpine/openssl@3.5.7-r0?distro=alpine-3.24.1",
+				Utils.canonicalizePurl(purl));
+	}
+
+	@Test
+	public void testCanonicalizePurl_debPreservesDistro() {
+		String purl = "pkg:deb/debian/curl@7.50.3-1?arch=i386&distro=debian-9";
+		Assertions.assertEquals("pkg:deb/debian/curl@7.50.3-1?distro=debian-9",
+				Utils.canonicalizePurl(purl));
+	}
+
+	@Test
+	public void testCanonicalizePurl_rpmPreservesDistroAndEpoch() {
+		String purl = "pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25&epoch=1";
+		Assertions.assertEquals("pkg:rpm/fedora/curl@7.50.3-1.fc25?distro=fedora-25&epoch=1",
+				Utils.canonicalizePurl(purl));
+	}
+
+	@Test
+	public void testCanonicalizePurl_apkWithoutDistroStaysBare() {
+		String purl = "pkg:apk/alpine/openssl@3.5.7-r0?arch=x86_64";
+		Assertions.assertEquals("pkg:apk/alpine/openssl@3.5.7-r0", Utils.canonicalizePurl(purl));
+	}
+
+	@Test
+	public void testCanonicalizePurl_juliaPreservesUuid() {
+		String purl = "pkg:julia/Dates@1.9.0?uuid=ade2ca70-3b73-5b8e-9b35-2c0d1c0e1f2a&os=linux";
+		Assertions.assertEquals("pkg:julia/Dates@1.9.0?uuid=ade2ca70-3b73-5b8e-9b35-2c0d1c0e1f2a",
+				Utils.canonicalizePurl(purl));
+	}
+
+	@Test
+	public void testCanonicalizePurl_stripsQualifiersAndSubpathForOtherTypes() {
+		String purl = "pkg:golang/github.com/gorilla/mux@1.8.0?os=linux#pkg/mux";
+		Assertions.assertEquals("pkg:golang/github.com/gorilla/mux@1.8.0",
+				Utils.canonicalizePurl(purl));
+	}
+
+	@Test
+	public void testCanonicalizePurl_qualifierOrderIndependent() {
+		String expected = "pkg:rpm/fedora/curl@7.50.3-1.fc25?distro=fedora-25&epoch=1";
+		List<String> permutations = List.of(
+				"pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25&epoch=1",
+				"pkg:rpm/fedora/curl@7.50.3-1.fc25?epoch=1&arch=i386&distro=fedora-25",
+				"pkg:rpm/fedora/curl@7.50.3-1.fc25?epoch=1&distro=fedora-25&arch=i386",
+				"pkg:rpm/fedora/curl@7.50.3-1.fc25?distro=fedora-25&epoch=1&arch=i386");
+		for (String purl : permutations) {
+			Assertions.assertEquals(expected, Utils.canonicalizePurl(purl));
+		}
+	}
 }

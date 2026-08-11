@@ -62,13 +62,17 @@ import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
+import io.reliza.model.ComponentOwnershipStatus;
 import io.reliza.model.dto.ComponentDto;
+import io.reliza.model.dto.ComponentOwnership;
+import io.reliza.model.dto.ComponentOwnershipReportRow;
 import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
+import io.reliza.service.ComponentOwnershipService;
 import io.reliza.service.ComponentTeamService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
@@ -99,6 +103,9 @@ public class ComponentDataFetcher {
 	private ComponentTeamService componentTeamService;
 
 	@Autowired
+	private ComponentOwnershipService componentOwnershipService;
+
+	@Autowired
 	private BranchService branchService;
 	
 	@Autowired
@@ -121,6 +128,9 @@ public class ComponentDataFetcher {
 
 	@Autowired
 	private OrganizationService organizationService;
+
+	@Autowired
+	private io.reliza.service.ComponentDuplicateRepairService componentDuplicateRepairService;
 
 	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
@@ -246,17 +256,27 @@ public class ComponentDataFetcher {
 
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
 
-		// First, try to resolve component normally
+		// Tri-state resolution: creation is legitimate ONLY on NOT_FOUND. The
+		// previous catch-based flow treated EVERY resolution failure as "not
+		// found" when createComponentIfMissing was set -- including AMBIGUOUS
+		// (duplicate registrations for the same VCS + repoPath) -- so once two
+		// duplicates existed, every CI run minted another instead of surfacing
+		// the operator problem (30+ observed in prod, one per run).
 		UUID componentId = null;
-		try {
-			componentId = componentService.resolveComponentIdFromInput(getNewVersionInput, authCtx);
-		} catch (RelizaException e) {
-			Boolean createComponentIfMissing = (Boolean) getNewVersionInput.get("createComponentIfMissing");
-			if (Boolean.TRUE.equals(createComponentIfMissing)) {
-				// Will create component after authorization is established
-				log.info("Component not found, will create due to createComponentIfMissing flag");
-			} else {
-				throw new RelizaException("Component cannot be resolved: " + e.getMessage());
+		ComponentService.ComponentResolution componentResolution =
+				componentService.resolveComponentResolutionFromInput(getNewVersionInput, authCtx);
+		switch (componentResolution.status()) {
+			case FOUND -> componentId = componentResolution.componentId();
+			case AMBIGUOUS -> throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+			case NOT_FOUND -> {
+				Boolean createComponentIfMissing = (Boolean) getNewVersionInput.get("createComponentIfMissing");
+				if (Boolean.TRUE.equals(createComponentIfMissing)) {
+					// Will create component after authorization is established
+					log.info("Component not found ({}), will create due to createComponentIfMissing flag",
+							componentResolution.detail());
+				} else {
+					throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+				}
 			}
 		}
 
@@ -685,10 +705,74 @@ public class ComponentDataFetcher {
 		return toOrgUserData(componentTeamService.deriveApprovers(cd), cd.getOrg());
 	}
 
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "componentOwnershipReport")
+	public List<ComponentOwnershipReportRow> componentOwnershipReport (
+			@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var odOrg = getOrganizationService.getOrganizationData(orgUuid);
+		if (odOrg.isEmpty()) {
+			// Reject a missing org with a clean BAD_REQUEST rather than the NPE
+			// List.of(null) would throw inside the authz call. Fails closed either
+			// way (no data), but this is the legible error.
+			throw new RelizaException("Organization not found");
+		}
+		RelizaObject roOrg = odOrg.get();
+		// Governance surface -> org ADMIN, mirroring the org-wide integration admin
+		// ops. Throws AccessDenied when the caller is not an org admin.
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(roOrg), CallType.ADMIN);
+		List<ComponentData> comps = componentService.listComponentDataByOrganization(orgUuid, ComponentType.ANY);
+		return componentOwnershipService.ownershipReport(orgUuid, comps);
+	}
+
+	@DgsData(parentType = "Component", field = "owner")
+	public ComponentData.ComponentOwner owner (DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		return null == cd ? null : cd.getOwner();
+	}
+
+	// Same trust model as team/approvers: fires only for a ComponentData the
+	// caller was already authorized to load. Pure read (resolveOwnership has no
+	// side effects); a non-OWNED status is informational and never blocks anything.
+	@DgsData(parentType = "Component", field = "ownership")
+	public ComponentOwnership ownership (DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		// Defensive parity with the sibling resolvers: DGS never fires a child
+		// resolver on a null parent, but this field is non-null (ComponentOwnership!),
+		// so we must not return null -- yield a well-defined ORPHANED rather than NPE.
+		if (null == cd) {
+			return new ComponentOwnership(null, null, false, ComponentOwnershipStatus.ORPHANED, false,
+					"No component context");
+		}
+		return componentOwnershipService.resolveOwnership(cd);
+	}
+
 	private static List<OrgUserData> toOrgUserData (List<UserData> uds, UUID org) {
 		return uds.stream()
 				.map(ud -> UserData.convertUserDataToOrgUserData(ud, org))
 				.filter(Objects::nonNull)
 				.toList();
 	}
+	/**
+	 * Org-ADMIN on-demand repair of duplicate component registrations. Same
+	 * routine the enforceUniqueComponents startup sweep runs, scoped to one org
+	 * -- lets an operator repair a known-affected org without a restart, and
+	 * lets e2e tests drive the sweep deterministically.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "repairDuplicateComponents")
+	public io.reliza.service.ComponentDuplicateRepairService.RepairSummary repairDuplicateComponents(
+			@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
+		return componentDuplicateRepairService.repairOrganization(orgUuid, WhoUpdated.getWhoUpdated(oud.get()));
+	}
+
 }

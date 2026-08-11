@@ -37,6 +37,17 @@ public class SchedulingService {
      * because each row is a cheap dedupe and the operation is non-IO-bound.
      */
     private static final int SCHEDULER_TICK_BATCH_LIMIT = 20;
+    // Metrics-compute batch, split from the general tick limit when the compute
+    // moved to the enrichment scheduler (operator decision): 100 releases/tick.
+    // Constraint ranking behind the number: shared-tick time no longer applies
+    // (own scheduler); heap is the batch of full release entities held at once
+    // (fat metrics jsonb -- ~100 stays comfortably inside pod margins); DB churn
+    // is a non-issue at this scale. Sequential with the enrichment pull on the
+    // same tick, deliberately: less concurrent stress, and enrichment cost
+    // collapses to a dirty-check once its backlog drains. 102, not 100: the
+    // compute shards across ReleaseService.METRICS_COMPUTE_WORKERS (3) parallel
+    // workers, and a divisible batch keeps the shards even.
+    private static final int METRICS_COMPUTE_BATCH_LIMIT = 102;
 
     @Autowired
     private DataSource dataSource;
@@ -120,6 +131,25 @@ public class SchedulingService {
         }
     }
 
+    /**
+     * Cancel abandoned PENDING releases, on its OWN scheduler at
+     * {@code relizaprops.rejectPendingReleasesRate} (PT15M by default).
+     *
+     * <p>Deliberately NOT folded into the per-minute enrichment tick: this job's
+     * finder ({@code record_data->>'lifecycle' = 'PENDING'} ordered by created_date)
+     * has no supporting index, so it seq-scans {@code releases} -- and the steady
+     * state, where nothing is abandoned, is the worst case because the LIMIT can
+     * never be satisfied early. At PT15M that scan is affordable; per-minute it
+     * would be the same "poll the whole estate to find the few changed rows"
+     * shape the metrics finders were retired for.
+     *
+     * <p>Running on a separate thread from the metrics compute means it can
+     * collide with it: both do read-modify-write on release rows, and
+     * {@code updateReleaseLifecycle} can roll back when the compute holds the row
+     * (observed live on the .8 build). Accepted: the window is small at this
+     * cadence, and the per-release isolation in {@link ReleaseService#rejectPendingReleases}
+     * keeps a collision to one skipped release, retried next run.
+     */
     @Scheduled(fixedRateString = "${relizaprops.rejectPendingReleasesRate}")
     public void scheduleCanceltPendingReleases(){
         try {
@@ -172,35 +202,45 @@ public class SchedulingService {
 					// rebom config probe, the full matchable scan, and the per-bucket re-hash.
 					// ingest + fan-out always run: DTrack finishes asynchronously, so in-flight
 					// (SUBMITTED) buckets must be polled every tick regardless of dirtiness.
-					try {
-						for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
-							if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
-								sbomComponentService.pullEnrichmentForOrg(orgUuid);
-							}
-						}
-					} catch (Exception e) {
-						log.error("synthetic enrichment pull failed", e);
-					}
+					// Enrichment pull moved to its own scheduler
+					// (scheduleEnrichmentPull): the [ENRICH-TICK] telemetry
+					// measured the pass at ~25s/org during a backlog drain,
+					// which stretched THIS shared tick ~4.4x and quartered the
+					// cadence of everything on it (submit/ingest/fan-out/
+					// reconciles). Isolated, both recover: this tick returns to
+					// ~1/min and the pull gets a true per-minute cadence.
 
 					// Submit changed buckets (idempotent via content-hash), poll submitted
 					// buckets, fan findings out.
+					// Per-org try/catch: one org with a pathological data shape must not
+					// abort the remaining orgs' submit/ingest/fan-out for the whole tick.
+					// Previously a single failure here (e.g. a query timeout) skipped every
+					// org after it, so one bad org silently stalled synthetic scanning
+					// estate-wide.
 					try {
 						for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
-							if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
-								syntheticSbomService.submitOrg(orgUuid);
+							try {
+								if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
+									syntheticSbomService.submitOrg(orgUuid);
+								}
+								syntheticSbomService.ingestOrgBuckets(orgUuid);
+								syntheticSbomService.fanOutOrg(orgUuid);
+								// Rate-limited internally; surfaces a stall that would otherwise
+								// be silent (artifacts never reaching "scanned").
+								syntheticSbomService.reportFanOutStallIfAny(orgUuid);
+							} catch (Exception e) {
+								log.error("synthetic DTrack submit/ingest/fan-out failed for org {}", orgUuid, e);
 							}
-							syntheticSbomService.ingestOrgBuckets(orgUuid);
-							syntheticSbomService.fanOutOrg(orgUuid);
 						}
 					} catch (Exception e) {
 						log.error("synthetic DTrack submit/ingest/fan-out failed", e);
 					}
 
-						try {
-							releaseService.computeMetricsForAllUnprocessedReleases(SCHEDULER_TICK_BATCH_LIMIT);
-					} catch (Exception e) {
-						log.error("computeMetricsForAllUnprocessedReleases failed", e);
-					}
+						// Metrics compute moved to scheduleEnrichmentPull (operator
+					// decision): it and the synthetic per-org loop were the only two
+					// heavyweight tenants of this tick, and sequencing it with the
+					// enrichment pull on the dedicated scheduler keeps system-wide
+					// concurrency lower while freeing this tick for fan-out/ingest.
 
 					// processPendingReconciles already takes an explicit batch limit; tuned higher (50)
 					// because each row is a cheap dedupe and the operation is non-IO-bound.
@@ -208,6 +248,41 @@ public class SchedulingService {
 						sbomComponentService.processPendingReconciles(50);
 					} catch (Exception e) {
 						log.error("processPendingReconciles failed", e);
+					}
+
+					// Safety net for BOM artifacts no reconcile pass ever mapped
+					// (2026-07-12 prod incident class): map + parse them directly
+					// so bucketing/scanning picks them up. Steady state is an
+					// empty indexed probe; any hit is warn-logged as an anomaly.
+					try {
+						sbomComponentService.sweepUnmappedBomArtifacts(25);
+					} catch (Exception e) {
+						log.error("sweepUnmappedBomArtifacts failed", e);
+					}
+
+					// GC orphaned canonical components (unreferenced + unbucketed):
+					// post-sweep stripped-era leftovers that otherwise occupy the
+					// enrichment window and stall counts forever with no pull path
+					// able to reach them. Bounded; steady state deletes nothing.
+					try {
+						int gcd = sbomComponentService.gcOrphanedComponents(500);
+						if (gcd > 0) log.info("Orphaned-component GC removed {} unreferenced unbucketed canonical component(s)", gcd);
+					} catch (Exception e) {
+						log.error("gcOrphanedComponents failed", e);
+					}
+
+					// Repoint component mappings written under the old
+					// qualifier-stripping canonicalization onto qualifier-bearing
+					// canonicals (the OSV fixed:0 false-positive class). Ordered
+					// after the unmapped sweep so an artifact healed above is
+					// verifiable on the same tick. Steady state is an empty index
+					// range scan; each canonical is stamped once and never
+					// revisited. Replaces V66's DELETE + org-wide re-enqueue,
+					// which timed out on large instances.
+					try {
+						sbomComponentService.sweepStaleCanonicalQualifiers(200);
+					} catch (Exception e) {
+						log.error("sweepStaleCanonicalQualifiers failed", e);
 					}
 
 					// Retry releases whose after-commit product auto-integration didn't fully
@@ -227,6 +302,48 @@ public class SchedulingService {
 		}
     }
     
+    /**
+     * Dedicated enrichment-pull tick, split from the shared synthetic tick after
+     * [ENRICH-TICK] telemetry measured the pass at ~25s/org mid-drain -- on the
+     * shared tick that stretched every other synthetic phase's cadence ~4.4x.
+     * Own advisory lock; per-org dirty gate unchanged. Budgets are raised in
+     * SbomComponentService relative to the shared-tick era, which is safe only
+     * because this pass no longer taxes anyone else's cadence.
+     */
+    @Scheduled(fixedRateString = "PT1M")
+    public void scheduleEnrichmentPull () {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.ENRICHMENT_PULL);
+            if (lock) {
+                try {
+                    for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
+                        try {
+                            if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
+                                sbomComponentService.pullEnrichmentForOrg(orgUuid);
+                            }
+                        } catch (Exception e) {
+                            log.error("enrichment pull failed for org {}", orgUuid, e);
+                        }
+                    }
+                    // Metrics compute runs here sequentially after the pull
+                    // (operator decision): the two heavyweights share this
+                    // dedicated tick instead of competing with fan-out/ingest,
+                    // and post-drain the pull collapses to a dirty-check so the
+                    // compute effectively owns the tick.
+                    try {
+                        releaseService.computeMetricsForAllUnprocessedReleases(METRICS_COMPUTE_BATCH_LIMIT);
+                    } catch (Exception e) {
+                        log.error("computeMetricsForAllUnprocessedReleases failed", e);
+                    }
+                } finally {
+                    releaseLock(AdvisoryLockKey.ENRICHMENT_PULL);
+                }
+            }
+        } catch (Exception e) {
+            log.error("scheduleEnrichmentPull failed", e);
+        }
+    }
+
     @Scheduled(cron="1 0 0 * * *") // once daily at 00:00:01 (1 second past midnight)
     public void computeAnalyticsMetrics () {
         try {
@@ -243,6 +360,33 @@ public class SchedulingService {
 			}
 		} catch (Exception e) {
 			log.error("Compute analytics metrics run failed with an error", e);
+		}
+    }
+    
+    /**
+     * Change-driven refresh of the "today" analytics rows backing the
+     * findings-over-time chart (DB-only read path). Cheap when idle: one
+     * grouped signal query over releases; only orgs whose signal moved since
+     * their last refresh get recomputed (org-wide + all perspectives). Rate is
+     * env-tunable (ANALYTICS_TODAY_REFRESH_RATE) -- default 15 min, which is
+     * the chart's worst-case staleness after a metrics change.
+     */
+    @Scheduled(fixedRateString = "${relizaprops.analyticsTodayRefreshRate:PT15M}")
+    public void refreshTodayAnalytics () {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS);
+            log.debug("refresh today analytics lock acquired {}", lock);
+			if (lock) {
+				try {
+					ossAnalyticsMetricsService.refreshTodayAnalyticsForChangedOrgs();
+				} catch (Exception e) {
+					log.error("Exception in refreshing today analytics", e);
+				} finally {
+					releaseLock(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS);
+				}
+			}
+		} catch (Exception e) {
+			log.error("Refresh today analytics run failed with an error", e);
 		}
     }
     
@@ -424,6 +568,217 @@ public class SchedulingService {
             }
         } catch (Exception e) {
             log.error("KEV catalog sync run failed with an error", e);
+        }
+    }
+
+    // =====================================================================
+    // Notification pipeline + finding-change v3 drains. These drive shared
+    // services (NotificationFanOutService, NotificationDeliveryWorker,
+    // NotificationRetentionService, FindingChangeEventBackfillService), so
+    // their ticks live here in the shared scheduler — both editions run
+    // them. Edition-specific jobs (email digest, webhook prune, license,
+    // perspective analytics) stay in the SAAS-side scheduler.
+    // =====================================================================
+
+    @Autowired
+    NotificationFanOutService notificationFanOutService;
+
+    @Autowired
+    NotificationDeliveryWorker notificationDeliveryWorker;
+
+    @Autowired
+    NotificationRetentionService notificationRetentionService;
+
+    @Autowired
+    FindingChangeEventBackfillService findingChangeEventBackfillService;
+
+    /**
+     * Number of outbox events drained per tick. Tuned: enough to make
+     * progress on realistic per-org volumes without holding the advisory
+     * lock unnecessarily long. Configurable via
+     * {@code relizaprops.notificationOutboxBatch} for operator tuning
+     * without a redeploy.
+     */
+    @Value("${relizaprops.notificationOutboxBatch:50}")
+    private int notificationOutboxBatch;
+
+    /**
+     * Number of channel deliveries dispatched per tick. Sized similarly to
+     * the outbox batch -- same "make progress on realistic volumes; don't
+     * hold the lock unnecessarily long" trade-off.
+     */
+    @Value("${relizaprops.notificationDeliveryBatch:50}")
+    private int notificationDeliveryBatch;
+
+    /**
+     * Outbox fan-out drain. Every 5 seconds, claim the
+     * {@code DRAIN_NOTIFICATION_OUTBOX} advisory lock; if successful, hand
+     * a batch of PENDING events to {@link NotificationFanOutService} which
+     * writes per-channel delivery rows and flips event status to
+     * FANNED_OUT in the same transaction.
+     *
+     * <p>{@code fixedDelay} (not {@code fixedRate}) so a slow batch doesn't
+     * pile up ticks -- next tick begins 5 s after the previous one returns.
+     * The advisory lock cross-replica-serialises the work; a single
+     * batch that takes longer than the tick interval is bounded by the
+     * lock anyway.
+     */
+    @Scheduled(fixedDelayString = "PT5S")
+    public void drainNotificationOutbox() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.DRAIN_NOTIFICATION_OUTBOX);
+            log.debug("notification outbox lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    int processed = notificationFanOutService.drainBatch(notificationOutboxBatch);
+                    if (processed > 0) {
+                        log.debug("Notification outbox fan-out processed {} events", processed);
+                    }
+                } catch (Exception e) {
+                    log.error("Exception during notification outbox fan-out", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.DRAIN_NOTIFICATION_OUTBOX);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Notification outbox drain run failed with an error", e);
+        }
+    }
+
+    /**
+     * Channel delivery drain. Every 5 seconds, claim the
+     * {@code DRAIN_NOTIFICATION_DELIVERIES} advisory lock; if successful,
+     * hand a batch of PENDING deliveries (whose {@code next_attempt_at}
+     * has elapsed) to {@link NotificationDeliveryWorker}, which dispatches
+     * each through the channel-specific dispatcher.
+     *
+     * <p>Two ticks run in parallel -- this one and the outbox drain -- on
+     * separate advisory locks. They feed each other: outbox drain writes
+     * PENDING delivery rows; this drain reads them.
+     */
+    @Scheduled(fixedDelayString = "PT5S")
+    public void drainNotificationDeliveries() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.DRAIN_NOTIFICATION_DELIVERIES);
+            log.debug("notification deliveries lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    int processed = notificationDeliveryWorker.drainBatch(notificationDeliveryBatch);
+                    if (processed > 0) {
+                        log.debug("Notification delivery worker processed {} rows", processed);
+                    }
+                } catch (Exception e) {
+                    log.error("Exception during notification delivery dispatch", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.DRAIN_NOTIFICATION_DELIVERIES);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Notification delivery drain run failed with an error", e);
+        }
+    }
+
+    /**
+     * Daily 04:45 UTC retention sweep over the notifications tables
+     * (Phase 6c, S-2): events, deliveries and read marks older than each
+     * org's {@code notificationRetentionDays} window. Slotted after the
+     * 04:30 api_key_access purge to keep the nightly maintenance crons
+     * staggered.
+     */
+    @Scheduled(cron = "0 45 4 * * *")
+    public void purgeNotificationRows() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.PURGE_NOTIFICATION_ROWS);
+            log.debug("notification retention lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    int deleted = notificationRetentionService.purgeExpired();
+                    if (deleted > 0) {
+                        log.info("Notification retention sweep deleted {} rows", deleted);
+                    }
+                } finally {
+                    releaseLock(AdvisoryLockKey.PURGE_NOTIFICATION_ROWS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Notification retention sweep failed", e);
+        }
+    }
+
+    /**
+     * Kill switch for the resumable v3 (events-lite) backfill drain. Defaults on; an operator can disable it
+     * via {@code relizaprops.findingChangeV3BackfillDrainEnabled=false} (e.g. to pause the drain during a
+     * controlling-instance rollout without stopping the daily repair sweep).
+     */
+    @Value("${relizaprops.findingChangeV3BackfillDrainEnabled:true}")
+    private boolean findingChangeV3BackfillDrainEnabled;
+
+    /**
+     * Max branches the v3 backfill drain processes per tick -- the per-tick CPU bound. Conservative default
+     * (25); raise once the marker-table drain rate is observed to be safe on the target instance.
+     */
+    @Value("${relizaprops.findingChangeV3BackfillBatchPerTick:25}")
+    private int findingChangeV3BackfillBatchPerTick;
+
+    /**
+     * RESUMABLE, bounded per-tick BRANCH-GRAIN v3 (events-lite) backfill DRAIN (board task #38 follow-on) --
+     * supersedes the former one-shot boot backfill, which re-walked every uncertified org from ZERO on each
+     * boot and (org-grain all-or-nothing certification) never certified a very large instance. Each minute,
+     * claim the {@code BACKFILL_FINDING_CHANGE_V3} advisory lock (REUSED so this and the daily repair sweep
+     * stay mutually exclusive cluster-wide); if acquired, drain up to
+     * {@code findingChangeV3BackfillBatchPerTick} un-marked branches, marking each cleanly-completed branch
+     * durably so the next tick resumes instead of restarting. Certified orgs / a wholly-drained fleet are a
+     * cheap no-op (per-org {@code needsV3Backfill} short-circuit). {@code fixedDelay} (not {@code fixedRate})
+     * so a slow tick does not pile up.
+     */
+    @Scheduled(fixedDelayString = "PT60S")
+    public void drainFindingChangeV3() {
+        if (!findingChangeV3BackfillDrainEnabled) {
+            return;
+        }
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+            log.debug("finding_change_events v3 drain lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    findingChangeEventBackfillService.drainV3Backfill(findingChangeV3BackfillBatchPerTick);
+                } catch (Exception e) {
+                    log.error("Exception during finding_change_events v3 drain", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+                }
+            }
+        } catch (Exception e) {
+            log.error("finding_change_events v3 drain run failed with an error", e);
+        }
+    }
+
+    /** Repair-sweep lookback: covers >1 full day between daily runs with overlap, so every transition is
+     * re-checked by at least two consecutive sweeps. */
+    private static final int FINDING_CHANGE_REPAIR_LOOKBACK_DAYS = 2;
+
+    /**
+     * DAILY v3 (events-lite) repair sweep -- v3 is the sole finding-change store and its best-effort live
+     * emit needs a self-heal (a dropped v3 row is otherwise a permanent hole reverse-replay reconstructs
+     * across). Bounded reseed of releases re-scanned in the last {@value #FINDING_CHANGE_REPAIR_LOOKBACK_DAYS}
+     * days, re-diffed from {@code metrics_audit}; any hole self-heals within a day and is logged at ERROR
+     * when found. Also vacuously v3-certifies never-re-scanned orgs. Shares the {@code BACKFILL_FINDING_CHANGE_V3}
+     * advisory lock with the v3 backfill drain so the two never run concurrently. 03:35.
+     */
+    @Scheduled(cron = "0 35 3 * * *")
+    public void repairFindingChangeV3() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+            log.debug("finding_change_events v3 repair sweep lock acquired {}", lock);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    findingChangeEventBackfillService.repairSweepV3(FINDING_CHANGE_REPAIR_LOOKBACK_DAYS);
+                } finally {
+                    releaseLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
+                }
+            }
+        } catch (Exception e) {
+            log.error("finding_change_events v3 repair sweep failed", e);
         }
     }
 

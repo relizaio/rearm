@@ -64,6 +64,24 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	}
 
 	/**
+	 * Protocol generation of a {@link IntegrationType#DEPENDENCYTRACK}
+	 * integration. Only one DEPENDENCYTRACK base integration exists per org
+	 * (keyed on {@code (org, DEPENDENCYTRACK, 'base')}), so this models the
+	 * one integration's version rather than a second integration type. The
+	 * two versions are API-compatible for upload / project / violation /
+	 * metrics; they diverge only in the vulnerability drain -- V4 reads
+	 * {@code /api/v1/vulnerability/project} (aliases inline), V5 reads
+	 * {@code /api/v1/finding/project} (V5 dropped aliases from the vuln
+	 * endpoint and left it unpaginated; the finding endpoint carries aliases
+	 * and paginates). Absent on a stored record means V4 -- see
+	 * {@link IntegrationData#getEffectiveDtrackVersion()}.
+	 */
+	public enum DependencyTrackVersion {
+		V4,
+		V5;
+	}
+
+	/**
 	 * Capabilities a GITHUB integration is wired up to perform. Each is
 	 * an assertion of intent the user picks; the outbound dispatch paths
 	 * (EXTERNAL_VALIDATION, PR_COMMENT) and inbound webhook intake gate
@@ -117,6 +135,21 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	private String name; // user-facing display name (notification-channel integrations; null for legacy CI types)
 	@JsonProperty
 	private UUID resourceGroup; // perspective/resource-group scoping (notification-channel integrations)
+	@JsonProperty
+	private String disabledReason; // operator-facing reason set when a channel is auto-disabled (e.g. bad webhook URL); null when enabled or manually disabled
+	@JsonProperty
+	private DependencyTrackVersion dtrackVersion; // DEPENDENCYTRACK integrations only; null == V4 (see getEffectiveDtrackVersion)
+
+	/**
+	 * Version of the linked Dependency-Track for a DEPENDENCYTRACK
+	 * integration, defaulting to V4 when unset so records predating the
+	 * field (and every non-DTrack integration) resolve to the historical
+	 * behaviour.
+	 */
+	@JsonIgnore
+	public DependencyTrackVersion getEffectiveDtrackVersion() {
+		return dtrackVersion == null ? DependencyTrackVersion.V4 : dtrackVersion;
+	}
 
 	@JsonIgnore
 	public boolean hasCapability(IntegrationCapability cap) {
@@ -137,6 +170,7 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 				.type(this.type)
 				.note(this.note)
 				.capabilities(this.capabilities)
+				.dtrackVersion(this.dtrackVersion)
 				.build();
 	}
 	

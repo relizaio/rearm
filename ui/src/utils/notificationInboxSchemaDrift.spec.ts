@@ -33,16 +33,13 @@ describe('inbox core selection vs the CE mirror schema (in-repo, always runs)', 
         expect(validate(ceSchema, INBOX_QUERY_CORE).map(e => e.message)).toEqual([])
     })
 
-    // Proves the core/enrichment split is actually doing something: at least
-    // one enrichment field is genuinely absent from the CE mirror, so FULL is
-    // rejected there. If FULL ever validates clean against CE, the split has
-    // silently become meaningless (enrichment caught up, or a field was
-    // miscategorised) -- surface that so the partition gets revisited.
-    it('the FULL inbox selection is INVALID against the CE mirror (split is load-bearing)', () => {
-        if (!ceSchema) return
-        expect(INBOX_ENRICHMENT_ITEM_FIELDS.length).toBeGreaterThan(0)
-        expect(validate(ceSchema, INBOX_QUERY_FULL).length).toBeGreaterThan(0)
-    })
+    // NOTE: this suite used to also assert that the FULL selection was INVALID
+    // against the CE mirror ("split is load-bearing"). The mirror caught up with
+    // the enrichment fields (Pro sync), so that canary fired and was retired --
+    // the FULL/CORE split is now dormant at runtime (FULL succeeds everywhere).
+    // The split machinery stays: move future Pro-first fields into
+    // INBOX_ENRICHMENT_ITEM_FIELDS to re-arm it; the CORE-vs-CE invariant above
+    // keeps the fallback document valid either way.
 })
 
 describe('inbox full selection vs the Pro schema (skipped if rearm-core absent)', () => {

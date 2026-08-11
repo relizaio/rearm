@@ -16,10 +16,14 @@ const VIOLATION_COLORS = {
     OPERATIONAL: 'grey'
 }
 
+// KEV (known-exploited) series color: deliberately outside the severity
+// palette -- KEV is an exploitation signal, not a severity level.
+const KEV_SERIES_COLOR = '#7c3aed'
+
 // Combined findings colors for charts (domain/range arrays for Vega-Lite)
 const FINDINGS_CHART_COLORS = {
-    domain: ['Critical Vulnerabilities', 'High Vulnerabilities', 'Medium Vulnerabilities', 'Low Vulnerabilities', 'Unassigned Vulnerabilities', 'License Violations', 'Security Violations', 'Operational Violations'],
-    range: [VULNERABILITY_COLORS.CRITICAL, VULNERABILITY_COLORS.HIGH, VULNERABILITY_COLORS.MEDIUM, VULNERABILITY_COLORS.LOW, VULNERABILITY_COLORS.UNASSIGNED, VIOLATION_COLORS.LICENSE, VIOLATION_COLORS.SECURITY, VIOLATION_COLORS.OPERATIONAL]
+    domain: ['Critical Vulnerabilities', 'High Vulnerabilities', 'Medium Vulnerabilities', 'Low Vulnerabilities', 'Unassigned Vulnerabilities', 'KEV Vulnerabilities', 'License Violations', 'Security Violations', 'Operational Violations'],
+    range: [VULNERABILITY_COLORS.CRITICAL, VULNERABILITY_COLORS.HIGH, VULNERABILITY_COLORS.MEDIUM, VULNERABILITY_COLORS.LOW, VULNERABILITY_COLORS.UNASSIGNED, KEV_SERIES_COLOR, VIOLATION_COLORS.LICENSE, VIOLATION_COLORS.SECURITY, VIOLATION_COLORS.OPERATIONAL]
 }
 
 const PACKAGE_TYPES = ['MAVEN', 'NPM', 'NUGET', 'GEM', 'PYPI', 'CONTAINER']
@@ -223,6 +227,19 @@ const BATCH_MODE_HELP = {
     exampleJson: '[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
 }
 
+// Team member roles (backend TeamRole enum). A role is an addressing LABEL --
+// it never grants access. CUSTOM carries an operator-supplied label alongside.
+const TEAM_ROLE_CUSTOM = 'CUSTOM'
+const TEAM_ROLES = [
+    { label: 'Team Lead', value: 'TEAM_LEAD' },
+    { label: 'Security Specialist', value: 'SECURITY_SPECIALIST' },
+    { label: 'Developer', value: 'DEVELOPER' },
+    { label: 'QA', value: 'QA' },
+    { label: 'Project Manager', value: 'PROJECT_MANAGER' },
+    { label: 'Product Manager', value: 'PRODUCT_MANAGER' },
+    { label: 'Custom...', value: TEAM_ROLE_CUSTOM }
+]
+
 export default {
     VersionTypes: VERSION_TYPES,
     BranchVersionTypes: BRANCH_VERSION_TYPES,
@@ -258,5 +275,7 @@ export default {
     PermissionTypes: PERMISSION_TYPES,
     PermissionTypesWithAdmin: PERMISSION_TYPES_WITH_ADMIN,
     PermissionFunctions: PERMISSION_FUNCTIONS,
-    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS
+    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS,
+    TeamRoles: TEAM_ROLES,
+    TeamRoleCustom: TEAM_ROLE_CUSTOM
 }

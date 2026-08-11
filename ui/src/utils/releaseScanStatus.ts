@@ -101,11 +101,34 @@ function rejectedStatus (): ReleaseScanStatus {
     }
 }
 
-function collectArtifactsForStatus (release: any): any[] {
+/** Commit-scoped SCE artifact types — properties of the commit, not of any
+ *  one component; shown (and counted) on every release sharing the SCE. */
+const COMMIT_SCOPED_ARTIFACT_TYPES = ['SIGNATURE', 'SIGNED_PAYLOAD']
+
+/**
+ * Collect the artifacts that should drive this release's scan-status badge.
+ *
+ * SCE artifacts are component-scoped to match the release-view artifact
+ * table: SCEs are canonical per (vcs, commit) and shared across every
+ * component built from that commit, with per-component artifacts tagged
+ * with the attaching component's uuid. Another component's still-scanning
+ * BOM must not pin this release's badge on "DTrack pending" — the table
+ * doesn't even display that artifact, so the badge would point at nothing
+ * (observed in prod: one component's stuck fs-BOM kept every release
+ * sharing the commit on a permanent pending badge). Falls back to
+ * including everything when the row lacks component attribution fields
+ * (older data / slimmer fragments).
+ */
+export function collectArtifactsForStatus (release: any): any[] {
     const out: any[] = []
     if (Array.isArray(release?.artifactDetails)) out.push(...release.artifactDetails)
     if (Array.isArray(release?.sourceCodeEntryDetails?.artifactDetails)) {
-        out.push(...release.sourceCodeEntryDetails.artifactDetails)
+        const releaseComponent = release?.componentDetails?.uuid || release?.component
+        out.push(...release.sourceCodeEntryDetails.artifactDetails.filter((ad: any) =>
+            !ad?.componentUuid
+            || !releaseComponent
+            || ad.componentUuid === releaseComponent
+            || COMMIT_SCOPED_ARTIFACT_TYPES.includes(ad?.type)))
     }
     if (Array.isArray(release?.variantDetails)) {
         for (const v of release.variantDetails) {

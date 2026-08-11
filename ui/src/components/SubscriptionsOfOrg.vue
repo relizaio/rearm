@@ -155,6 +155,57 @@
                                             />
                                         </n-form-item>
                                     </n-gi>
+                                    <!-- Hidden when there is nothing to offer. Covers both "this org
+                                         has no teams" and "this backend has no team channels" (a CE
+                                         backend, where loadTeams soft-fails to []): an empty picker
+                                         under copy promising a feature that cannot work is worse
+                                         than no picker. teamOptions still keeps ghosts for teams
+                                         already saved on the route, so those stay removable. -->
+                                    <n-gi v-if="teamOptions.length" :span="22" :offset="0">
+                                        <n-form-item :label="i === 0 ? 'Teams (optional)' : ''" :show-feedback="false">
+                                            <n-select
+                                                v-model:value="r.teams"
+                                                :options="teamOptions"
+                                                multiple
+                                                placeholder="(none)"
+                                                clearable
+                                                data-testid="route-teams"
+                                            />
+                                        </n-form-item>
+                                        <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
+                                            Delivers to each team's own notification channels, resolved when the
+                                            event fires — so if a team changes its channel, this route follows
+                                            automatically.
+                                        </div>
+                                    </n-gi>
+                                    <!-- T4a. Pro-only: notifyComponentOwner does not exist in the CE
+                                         schema, and GraphQL input coercion rejects unknown keys
+                                         outright, so letting a CE operator tick this would fail the
+                                         WHOLE subscription save -- including edits that never touch
+                                         it. Gated on the real edition signal rather than on
+                                         teamOptions.length like the Teams picker above: that proxy
+                                         is empty on a Pro org with no teams yet, and non-empty on CE
+                                         whenever ghosts survive for a route's saved teams. -->
+                                    <n-gi v-if="isPro" :span="22" :offset="0">
+                                        <n-form-item :label="i === 0 ? 'Component owner' : ''" :show-feedback="false">
+                                            <n-checkbox
+                                                v-model:checked="r.notifyComponentOwner"
+                                                data-testid="route-notify-owner"
+                                            >
+                                                Also notify the team that owns the affected component
+                                            </n-checkbox>
+                                        </n-form-item>
+                                        <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
+                                            Resolved when the event fires, from the component's owner — set
+                                            directly or by an assignment rule. Unlike picking a team above,
+                                            this follows ownership changes on its own, so reassigning a
+                                            component never means editing this subscription.
+                                            <template v-if="!teamOptions.length">
+                                                This org has no teams yet, and only a team can own a
+                                                component, so this delivers nothing until one exists.
+                                            </template>
+                                        </div>
+                                    </n-gi>
                                     <n-gi :span="22" :offset="0">
                                         <n-form-item :label="i === 0 ? 'Perspectives (delivery filter)' : ''" :show-feedback="false">
                                             <n-select
@@ -243,24 +294,41 @@ import { useStore } from 'vuex'
 import {
     NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
     NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag, NDropdown, NTooltip,
-    NRadioGroup, NRadioButton, useDialog, useMessage
+    NRadioGroup, NRadioButton, NCheckbox, useDialog, useMessage
 } from 'naive-ui'
 import { CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
 import { useRouter } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
+import { buildChannelOptions, withGhosts } from '@/utils/channelOptions'
+import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import {
     ChannelRow, ChannelGroupRow, SubscriptionRow, TYPE_LABELS,
     subscriptionStatusOptions, eventTypeOptions, severityOptions,
     LIST_CHANNELS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
-    extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType
+    extractError, isConflictError, templatesForEventTypes, buildNameMap, deliveryStatusTagType,
+    buildNotificationFilterInput,
+    buildNotificationRouteInput,
+    routeHasTarget,
+    classifySubscriptionTest,
+    isOwnerRouted,
+    ownerRoutedSuccessCaveat,
+    type SubscriptionTestOutcome
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
+import { isProEdition } from '@/utils/editionCapabilities'
 
 const props = defineProps<{
     orguuid: string
     isWritable: boolean
+    // T4a: needed for the owner-routing control, which is a Pro-only route
+    // field. Unlike the Teams picker next to it, teamOptions.length is NOT a
+    // usable proxy here -- it is empty on a Pro org that simply has no teams
+    // yet, and non-empty on CE when ghosts are kept for a route's saved teams.
+    // Sending a Pro-only key to a CE backend fails the WHOLE mutation, so this
+    // gate uses the real edition signal. See editionCapabilities.ts.
+    installationType: string
 }>()
 
 const dialog = useDialog()
@@ -287,6 +355,11 @@ interface SubscriptionRoute {
     whenSeverityAtLeast: string | null
     channels: string[]
     channelGroups: string[]
+    teams: string[]
+    // T4a: deliver to whatever team OWNS each affected component, resolved at
+    // fan-out. Distinct from `teams` above, which is a fixed list the operator
+    // must keep in step with ownership by hand.
+    notifyComponentOwner: boolean
     // Delivery filter: restricts which events this route's channels deliver
     // to the listed perspectives. NOT the inbox/bell visibility gate. Empty
     // = no restriction (all perspectives).
@@ -317,7 +390,8 @@ interface SubscriptionForm {
 }
 
 function freshRoute (): SubscriptionRoute {
-    return { whenSeverityAtLeast: null, channels: [], channelGroups: [], perspectives: [] }
+    return { whenSeverityAtLeast: null, channels: [], channelGroups: [], teams: [],
+        notifyComponentOwner: false, perspectives: [] }
 }
 
 function freshSubscriptionForm (): SubscriptionForm {
@@ -362,11 +436,38 @@ const eventTypeOptionsForForm = computed(() =>
             : o)
 )
 
-const channelOptions = computed(() =>
-    channels.value
-        .filter(c => c.status === 'ENABLED')
-        .map(c => ({ label: `${c.name} (${TYPE_LABELS[c.type] || c.type})`, value: c.uuid }))
-)
+const channelOptions = computed(() => {
+    // Ghost handling for already-referenced DISABLED/DELETED channels lives in
+    // the shared builder (BUG 2) -- the Team editor needs the identical
+    // behaviour, and a second copy is how that fix silently rots.
+    const referenced = new Set<string>()
+    for (const r of subForm.value.routes) for (const ch of (r.channels || [])) referenced.add(ch)
+    return buildChannelOptions(channels.value, referenced, TYPE_LABELS)
+})
+
+const teams = ref<any[]>([])
+
+// T4a: owner routing is a Pro-only route field. The control, the client-side
+// "route has a target" check and the error copy all gate on this one flag, so
+// a CE operator can neither author an owner-only route nor be told to.
+const isPro = computed(() => isProEdition(props.installationType))
+
+const teamOptions = computed(() => {
+    const selectable = teams.value
+        .filter((t: any) => t.status !== 'INACTIVE')
+        .map((t: any) => ({
+            // Surface the channel count: a team with none delivers nothing, and
+            // that is invisible otherwise.
+            label: `${t.name} (${(t.notificationChannels || []).length} ch)`,
+            value: t.uuid,
+        }))
+    const referenced = new Set<string>()
+    for (const r of subForm.value.routes) for (const t of (r.teams || [])) referenced.add(t)
+    // Same shared builder as the channel picker, so the "keep dangling refs
+    // visible and removable" behaviour cannot drift between the two.
+    return withGhosts(selectable, teams.value, referenced,
+        (t: any, uuid) => t ? `${t.name} (deactivated)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
+})
 
 const channelGroupOptions = computed(() =>
     channelGroups.value.map(g => ({
@@ -413,6 +514,18 @@ const INJECT_SYNTHETIC_EVENT_MUTATION = gql`
     }
 `
 
+// Fan-out status for the injected event. Polled alongside the deliveries so a
+// test that produces NO delivery can be reported the moment fan-out finishes,
+// instead of waiting out the full poll budget and calling a settled event
+// "still processing".
+const OUTBOX_EVENT_STATUS_QUERY = gql`
+    query notificationOutboxEventForSubscriptionTest($uuid: ID!) {
+        notificationOutboxEvent(uuid: $uuid) {
+            uuid status
+        }
+    }
+`
+
 const DELIVERIES_FOR_EVENT_QUERY = gql`
     query notificationDeliveriesForSubscriptionTest($orgUuid: ID!, $eventUuid: ID!) {
         notificationDeliveries(orgUuid: $orgUuid, eventUuid: $eventUuid, limit: 200) {
@@ -446,6 +559,33 @@ async function loadChannelGroups (): Promise<void> {
         channelGroups.value = res.data?.notificationChannelGroups || []
     } catch (e: any) {
         message.error(`Failed to load channel groups: ${extractError(e)}`)
+    }
+}
+
+async function loadTeams (): Promise<void> {
+    // Isolated query + soft failure: teams-with-channels is a newer field, and a
+    // backend predating it must cost only the Teams route target, not the whole
+    // subscription editor.
+    try {
+        const res = await graphqlClient.query({
+            query: gql`
+                query getUserGroupsForRoutes($org: ID!) {
+                    getUserGroups(org: $org) { uuid name status notificationChannels }
+                }`,
+            variables: { org: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        teams.value = res.data?.getUserGroups || []
+    } catch (e: any) {
+        // Only schema drift means "this backend is older". A 401/5xx must not
+        // blank the list: saved team targets have no ghost source then, and the
+        // route would render bare UUIDs.
+        if (isSchemaDriftError(e)) {
+            console.warn('Team route targets unavailable on this backend', e?.message)
+            teams.value = []
+        } else {
+            message.error(`Failed to load teams: ${extractError(e)}`)
+        }
     }
 }
 
@@ -501,6 +641,8 @@ function openEditSubscription (row: SubscriptionRow): void {
                 whenSeverityAtLeast: r.whenSeverityAtLeast || null,
                 channels: Array.isArray(r.channels) ? [...r.channels] : [],
                 channelGroups: Array.isArray(r.channelGroups) ? [...r.channelGroups] : [],
+                teams: Array.isArray(r.teams) ? [...r.teams] : [],
+                notifyComponentOwner: r.notifyComponentOwner === true,
                 perspectives: Array.isArray(r.perspectives) ? [...r.perspectives] : [],
                 _raw: r,
             }))
@@ -535,23 +677,31 @@ async function saveSubscription (): Promise<void> {
         subModalError.value = 'Name, at least one event type, and at least one route are required.'
         return
     }
-    // Every route must have at least one channel or one group; backend
-    // rejects empty {channels, channelGroups} anyway, but catch it
-    // client-side for a cleaner error path.
-    const emptyRouteIdx = f.routes.findIndex(r =>
-        (r.channels || []).length === 0 && (r.channelGroups || []).length === 0
-    )
+    // Every route needs at least one target; the backend rejects an empty route
+    // anyway, but catch it client-side for a cleaner error path. Teams and the
+    // owner flag both count: naming a team -- or nobody at all, and letting
+    // ownership decide -- INSTEAD of a channel is the point, since the actual
+    // channel is resolved at fan-out. The owner flag counts ONLY on Pro: on CE
+    // the control is hidden and the key would fail the mutation, so accepting
+    // it as the sole target would wave through a route guaranteed to 400.
+    const emptyRouteIdx = f.routes.findIndex(r => !routeHasTarget(r, isPro.value))
     if (emptyRouteIdx >= 0) {
-        subModalError.value = `Route ${emptyRouteIdx + 1} has no channels or groups — pick at least one.`
+        // Don't name a target the operator has no way to pick: the Teams picker
+        // is hidden without team channels and the owner checkbox is hidden on
+        // CE, so naming either would send them hunting for a control that
+        // isn't there.
+        const targets = ['channels', 'groups']
+        if (teamOptions.value.length) targets.push('teams')
+        if (isPro.value) targets.push('the component owner')
+        const targetList = `${targets.slice(0, -1).join(', ')} or ${targets[targets.length - 1]}`
+        subModalError.value = `Route ${emptyRouteIdx + 1} has no ${targetList} — pick at least one.`
         return
     }
-    // Overlay the modeled filter fields on top of the original blob so
-    // `presetConfigJson` survives instead of being nulled on every edit.
-    const filterInput: any = {
-        ...(f._rawFilter || {}),
-        mode: f.filterMode,
-        celExpression: f.filterMode === 'ADVANCED' ? f.celExpression : null,
-    }
+    // Build the filter input from ONLY the fields NotificationFilterInput
+    // accepts (mode / presetConfigJson / celExpression); the as-loaded blob
+    // carries an unmodelled `presetConfig` object that must not leak into the
+    // input (it 400s the mutation). See buildNotificationFilterInput.
+    const filterInput = buildNotificationFilterInput(f._rawFilter, f.filterMode, f.celExpression)
     const input: any = {
         uuid: f.uuid || undefined,
         expectedRevision: f.expectedRevision,
@@ -560,16 +710,9 @@ async function saveSubscription (): Promise<void> {
         status: f.status,
         eventTypes: f.eventTypes,
         filter: filterInput,
-        // Spread the original route's still-unmodelled fields (andEnvIn,
-        // andLifecycleIn) so an Edit → Save round-trip doesn't silently
-        // strip them. The modeled fields overlay last and win.
-        routes: f.routes.map(r => ({
-            ...(r._raw || {}),
-            whenSeverityAtLeast: r.whenSeverityAtLeast,
-            channels: r.channels,
-            channelGroups: r.channelGroups,
-            perspectives: r.perspectives,
-        })),
+        // Preserves the route's unmodelled fields and drops the Pro-only ones a
+        // CE backend would reject. See buildNotificationRouteInput.
+        routes: f.routes.map(r => buildNotificationRouteInput(r)),
         dedupWindowMinutes: f.dedupWindowMinutes,
     }
     if (f.rateLimitMaxPerWindow && f.rateLimitWindowMinutes) {
@@ -704,10 +847,26 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
             return
         }
         const channelNameById = buildNameMap(channels.value)
+        // Last non-empty delivery set seen, so a timeout can report what it
+        // actually observed rather than an empty list.
+        let lastSeenItems: Array<any> = []
         const maxAttempts = 40
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 1500))
             if (isUnmounted || orgUuid.value !== testOrgUuid) return
+            // ORDER MATTERS -- event status FIRST. Fan-out writes the delivery
+            // rows and flips the event terminal in ONE transaction. Reading
+            // deliveries first leaves a one-round-trip window in which that
+            // commit lands between the two queries, so we would see an empty
+            // set alongside a terminal status and confidently report "produced
+            // nothing" for a subscription that had just delivered. Reading the
+            // status first makes terminal imply the rows are already visible.
+            const evtRes = await graphqlClient.query({
+                query: OUTBOX_EVENT_STATUS_QUERY,
+                variables: { uuid: eventUuid },
+                fetchPolicy: 'no-cache',
+            })
+            const eventStatus = evtRes.data?.notificationOutboxEvent?.status ?? null
             const pollRes = await graphqlClient.query({
                 query: DELIVERIES_FOR_EVENT_QUERY,
                 variables: { orgUuid: testOrgUuid, eventUuid },
@@ -715,13 +874,20 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
             })
             const items = (pollRes.data?.notificationDeliveries?.items || [])
                 .filter((d: any) => d.subscriptionUuid === row.uuid)
-            if (items.length > 0 && items.every((d: any) => d.status !== 'PENDING')) {
-                if (!isUnmounted) reportSubscriptionTestResult(row, items, channelNameById)
+            if (items.length > 0) lastSeenItems = items
+            const outcome = classifySubscriptionTest(eventStatus, items)
+            if (outcome !== 'IN_FLIGHT') {
+                if (!isUnmounted && orgUuid.value === testOrgUuid) {
+                    reportSubscriptionTestResult(row, items, channelNameById, false, outcome)
+                }
                 return
             }
         }
         if (!isUnmounted && orgUuid.value === testOrgUuid) {
-            reportSubscriptionTestResult(row, [], channelNameById, true)
+            // Hand over whatever we last saw. A timeout with rows already
+            // present is the "fan-out done, dispatch still queued" case, and
+            // showing those rows is the single most useful thing we know.
+            reportSubscriptionTestResult(row, lastSeenItems, channelNameById, true)
         }
     } catch (err: any) {
         if (!isUnmounted) message.error(`Test failed: ${extractError(err)}`)
@@ -731,18 +897,60 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
     }
 }
 
+/**
+ * Why a test produced no delivery.
+ *
+ * The default answer names the filter and the severity gate, which is right for
+ * every route target that resolves to a fixed channel. It is WRONG for an
+ * owner-routed route: that resolves through the affected component's owner, so
+ * an unowned component, or an owner team with no channel, yields zero
+ * deliveries with the filter and severity gate working perfectly. Sending the
+ * operator to audit those instead is worse than saying nothing.
+ */
+function noDeliveryExplanation (row: SubscriptionRow): string {
+    const base = 'The synthetic event was injected but produced no delivery for this subscription.'
+    if (isOwnerRouted(row.routes)) {
+        return `${base} A route delivers to the component owner, so this is also what you see when the`
+            + ' affected component has no owner, or its owner team has no notification channel --'
+            + " check those before the subscription's filter or a route's minimum-severity gate."
+    }
+    return `${base} Its filter, or a route's minimum-severity gate, likely excluded it.`
+}
+
 function reportSubscriptionTestResult (
     row: SubscriptionRow,
     items: Array<{ channelUuid: string | null, status: string, lastError: string | null }>,
     channelNameById: Record<string, string>,
     timedOut = false,
+    outcome: SubscriptionTestOutcome | null = null,
 ): void {
+    if (timedOut && items.length > 0) {
+        // Fan-out finished and produced rows; the channel worker just has not
+        // dispatched them yet (webhook backoff, a slow endpoint). Saying "the
+        // event had not finished fanning out" here would be false, and the
+        // pending rows are the most useful thing we know.
+        dialog.info({
+            title: `Test result -- ${row.name}`,
+            content: `Still waiting on delivery after 60s. ${items.length} row(s) were created and are`
+                + ' queued for dispatch -- check Notification History for the eventual status.',
+        })
+        return
+    }
     if (items.length === 0) {
         dialog.info({
             title: `Test result -- ${row.name}`,
-            content: timedOut
-                ? 'Still waiting on a delivery after 60s. The event may still be processing -- check Notification History for the result.'
-                : "The synthetic event was injected but produced no delivery for this subscription. Its filter, or a route's minimum-severity gate, likely excluded it.",
+            // Three distinct endings, deliberately not collapsed: fan-out
+            // errored, fan-out finished and chose to send nothing, or we gave
+            // up while it was still running. The old code said "may still be
+            // processing" for all of them.
+            content: outcome === 'FANOUT_FAILED'
+                ? 'Fan-out FAILED for this test event, so nothing was delivered. This is a backend'
+                    + " error, not a problem with the subscription's filter or routes -- check"
+                    + ' Notification History and the server logs before changing this subscription.'
+                : timedOut
+                    ? 'Gave up waiting after 60s -- the event had not finished fanning out.'
+                        + ' Check Notification History for the eventual result.'
+                    : noDeliveryExplanation(row),
         })
         return
     }
@@ -757,9 +965,16 @@ function reportSubscriptionTestResult (
     // otherwise fall through a FAILED-only check and render green.
     const tagTypes = items.map(d => deliveryStatusTagType(d.status))
     const dialogType = tagTypes.includes('error') ? 'warning' : (tagTypes.every(t => t === 'success') ? 'success' : 'info')
+    // A green owner-routed test proves less than it looks: injection picks a
+    // component that HAS an owner on purpose. Say so here rather than let the
+    // result imply production routing is covered.
+    const caveat = ownerRoutedSuccessCaveat(row.routes)
     dialog[dialogType]({
         title: `Test result -- ${row.name}`,
-        content: () => h('div', lines.map((l, i) => h('div', { key: i }, l))),
+        content: () => h('div', [
+            ...lines.map((l, i) => h('div', { key: i }, l)),
+            ...(caveat ? [h('div', { style: 'margin-top: 10px; font-size: 12px; color: var(--n-text-color-3, #888);' }, caveat)] : []),
+        ]),
     })
 }
 
@@ -817,10 +1032,17 @@ const subscriptionColumns = computed(() => [
             })
             return h(NSpace, { size: 'small' }, {
                 default: () => [
+                    // Disabled on a DEGRADED load. The core query omits filter /
+                    // routes / dedupWindowMinutes / rateLimit, so the editor
+                    // would open showing defaults for all of them, and saving
+                    // REPLACES the subscription wholesale -- silently wiping the
+                    // CEL expression, every route but one, and the rate limit.
+                    // The banner alone is not enough: the destructive action has
+                    // to be unavailable, not merely discouraged. Add is fine.
                     h(NButton, {
                         size: 'tiny', secondary: true,
                         onClick: () => openEditSubscription(row),
-                        disabled: !canWrite.value,
+                        disabled: !canWrite.value || subscriptionsDegraded.value,
                         'data-testid': 'edit-subscription',
                     }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
                     h(NButton, {
@@ -855,6 +1077,7 @@ onMounted(async () => {
     await Promise.all([
         loadChannels(),
         loadChannelGroups(),
+        loadTeams(),
         loadSubscriptions(),
         store.dispatch('fetchPerspectives', orgUuid.value),
     ])

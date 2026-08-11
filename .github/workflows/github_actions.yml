@@ -132,6 +132,32 @@ jobs:
           rearm_mirror_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
           limit_to_branches: main
+  build-dependency-track-helm:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      id-token: write
+    name: Build And Push ReARM Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build And Submit ReARM Helm to ReARM
+        uses: relizaio/rearm-helm-action@9261ed4cd8235eeae69d75589f17ebcb5fe457b5 # v1.10.2
+        with:
+          registry_username: ${{ secrets.REARM_REGISTRY_LOGIN }}
+          registry_password: ${{ secrets.REARM_REGISTRY_TOKEN }}
+          registry_host: registry.rearmhq.com/library
+          helm_chart_name: dtrack5
+          rearm_api_id: ${{ secrets.RELIZA_DTRACK_HELM_API_ID }}
+          rearm_api_key: ${{ secrets.RELIZA_DTRACK_HELM_API_KEY }}
+          rearm_api_url: https://reliza.rearmhq.com
+          path: deploy/helm/dtrack5-helm
+          enable_sbom: true
+          enable_public_cosign_sigstore: true
+          push_to_rearm_mirror: 'true'
+          rearm_mirror_api_id: ${{ secrets.REARM_DTRACK_HELM_API_ID }}
+          rearm_mirror_api_key: ${{ secrets.REARM_DTRACK_HELM_API_KEY }}
+          rearm_mirror_api_url: https://demo.rearmhq.com
+          limit_to_branches: main
   build-ui:
     needs: detect
     if: needs.detect.outputs.ui == 'true' || github.ref == 'refs/heads/main'

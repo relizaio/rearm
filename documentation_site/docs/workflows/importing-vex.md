@@ -1,6 +1,6 @@
 # Importing VEX
 
-VEX (Vulnerability Exploitability eXchange) lets you record analysis decisions about a CVE — whether it's exploitable, why a workaround applies, what mitigation is in place — in a structured machine-readable form. ReARM imports VEX documents from CycloneDX-VEX 1.6 and OpenVEX 0.2.0, matches each statement to your release inventory, and turns it into a Finding Analysis (or stages it for human review when policy or context warrants).
+VEX (Vulnerability Exploitability eXchange) lets you record analysis decisions about a CVE — whether it's exploitable, why a workaround applies, what mitigation is in place — in a structured machine-readable form. ReARM imports VEX documents from CycloneDX-VEX 1.4 – 1.7 and OpenVEX 0.2.0, matches each statement to your release inventory, and turns it into a Finding Analysis (or stages it for human review when policy or context warrants). (The VEX subset ReARM reads — `vulnerabilities[]` with `analysis`, `affects`, `ratings` — is unchanged in CycloneDX 1.7; constructs introduced in 1.7 outside that subset are ignored on import.)
 
 For the underlying triage model and how Finding Analysis records work, start with [Auditing Findings](./auditing-findings).
 

@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -84,6 +85,12 @@ public class ComponentService {
 
 	@Autowired
 	private io.reliza.repositories.ReleaseRepository releaseRepository;
+
+	// @Lazy breaks a construction cycle: ComponentService -> ComponentOwnershipService
+	// -> UserService -> ComponentService. Only used at runtime in updateComponent.
+	@Autowired
+	@Lazy
+	private ComponentOwnershipService componentOwnershipService;
 
 	private static final Logger log = LoggerFactory.getLogger(ComponentService.class);
 			
@@ -501,6 +508,18 @@ public class ComponentService {
 			}
 			if (null != cdto.getIsInternal()) cd.setIsInternal(cdto.getIsInternal());
 			if (null != cdto.getLeads()) cd.setLeads(cdto.getLeads());
+			// Durable owner (RFC Phase 4b): validate the ref synchronously (no DB
+			// FK backs it) against the component's org before storing. Null = no
+			// change; an invalid ref throws before any save.
+			// clearOwner wins over owner: an explicit "remove it" should not be
+			// silently ignored because a stale owner object rode along in the
+			// same payload.
+			if (Boolean.TRUE.equals(cdto.getClearOwner())) {
+				cd.setOwner(null);
+			} else if (null != cdto.getOwner()) {
+				componentOwnershipService.validateOwner(cdto.getOwner(), cd.getOrg());
+				cd.setOwner(cdto.getOwner());
+			}
 			// Contacts are operator free text rendered back into the team UI, so
 			// HTML-sanitize at this chokepoint (covers every updateComponent caller,
 			// not just the GraphQL boundary) before they hit the JSONB record.
@@ -714,37 +733,77 @@ public class ComponentService {
 	}
 	
 	/**
-	 * Find component data by VCS repository UUID and repository path within an organization.
-	 * Throws RelizaException if component not found or if multiple components match (ambiguous).
-	 * 
-	 * @param vcsUuid VCS repository UUID
-	 * @param orgUuid Organization UUID
-	 * @param repoPath Repository path (can be null for root)
-	 * @return ComponentData matching the VCS and repoPath
-	 * @throws RelizaException if component not found or multiple components found
+	 * Outcome of VCS-based component resolution, modeled as data rather than
+	 * exceptions so callers that may CREATE on absence can tell the three cases
+	 * apart without catch-based control flow. The prod failure mode this
+	 * prevents: a caller holding createComponentIfMissing caught EVERY
+	 * resolution exception as "not found" -- including AMBIGUOUS -- so once two
+	 * duplicate registrations existed, every CI run minted another (30+
+	 * observed, one per run). AMBIGUOUS is an operator problem to surface,
+	 * never a license to create component N+1.
 	 */
-	public ComponentData findComponentDataByVcsAndPath(UUID vcsUuid, UUID orgUuid, String repoPath) throws RelizaException {
+	public static enum ComponentResolutionStatus { FOUND, NOT_FOUND, AMBIGUOUS }
+
+	public static record ComponentResolution(ComponentResolutionStatus status, UUID componentId, String detail) {
+		public static ComponentResolution found(UUID componentId) {
+			return new ComponentResolution(ComponentResolutionStatus.FOUND, componentId, null);
+		}
+		public static ComponentResolution notFound(String detail) {
+			return new ComponentResolution(ComponentResolutionStatus.NOT_FOUND, null, detail);
+		}
+		public static ComponentResolution ambiguous(String detail) {
+			return new ComponentResolution(ComponentResolutionStatus.AMBIGUOUS, null, detail);
+		}
+	}
+
+	/**
+	 * Tri-state component lookup by VCS repository UUID and repo path within an
+	 * organization. Never throws for a resolution outcome.
+	 */
+	private ComponentResolution componentResolutionByVcsAndPath(UUID vcsUuid, UUID orgUuid, String repoPath) {
 		List<Component> components = repository.findAllComponentsByVcsAndPath(vcsUuid.toString(), orgUuid.toString(), repoPath);
-		
+
 		log.debug("Found {} components for vcsUuid={}, orgUuid={}, repoPath={}", components.size(), vcsUuid, orgUuid, repoPath);
-		
+
 		if (components.isEmpty()) {
-			throw new RelizaException(String.format(
+			return ComponentResolution.notFound(String.format(
 				"Component not found for VCS UUID '%s' and repo path '%s'", vcsUuid, repoPath));
 		}
-		
+
 		if (components.size() > 1) {
 			String componentIds = components.stream()
 				.map(c -> c.getUuid().toString())
 				.collect(java.util.stream.Collectors.joining(", "));
 			log.error("Multiple components found (ambiguous): vcsUuid={}, orgUuid={}, repoPath={}, count={}, componentIds={}", 
 				vcsUuid, orgUuid, repoPath, components.size(), componentIds);
-			throw new RelizaException(String.format(
+			return ComponentResolution.ambiguous(String.format(
 				"Multiple components found for VCS UUID '%s' and repo path '%s'. Component IDs: %s. Please use component UUID instead.", 
 				vcsUuid, repoPath, componentIds));
 		}
-		
-		return ComponentData.dataFromRecord(components.get(0));
+
+		return ComponentResolution.found(components.get(0).getUuid());
+	}
+
+	/**
+	 * Every live (non-archived) component of the org that is bound to a VCS
+	 * repository -- the candidate universe for duplicate-registration repair.
+	 */
+	public List<Component> listLiveVcsComponentsOfOrg(UUID orgUuid) {
+		return repository.findLiveVcsComponentsOfOrg(orgUuid.toString());
+	}
+
+	/**
+	 * Throwing convenience over {@link #componentResolutionByVcsAndPath} for
+	 * callers with no create-on-missing semantics (e.g. versionFeatureSet
+	 * override resolution): NOT_FOUND and AMBIGUOUS both surface as errors.
+	 */
+	public ComponentData findComponentDataByVcsAndPath(UUID vcsUuid, UUID orgUuid, String repoPath) throws RelizaException {
+		ComponentResolution resolution = componentResolutionByVcsAndPath(vcsUuid, orgUuid, repoPath);
+		if (resolution.status() != ComponentResolutionStatus.FOUND) {
+			throw new RelizaException(resolution.detail());
+		}
+		return getComponentService.getComponentData(resolution.componentId())
+				.orElseThrow(() -> new RelizaException("Component " + resolution.componentId() + " not found"));
 	}
 	
 	/**
@@ -759,6 +818,21 @@ public class ComponentService {
 	 * @throws RelizaException if component resolution fails
 	 */
 	public UUID resolveComponentIdFromInput(Map<String, Object> inputMap, ProgrammaticAuthContext authCtx) throws RelizaException {
+		ComponentResolution resolution = resolveComponentResolutionFromInput(inputMap, authCtx);
+		if (resolution.status() == ComponentResolutionStatus.FOUND) return resolution.componentId();
+		throw new RelizaException(resolution.detail());
+	}
+
+	/**
+	 * Tri-state variant of {@link #resolveComponentIdFromInput} for callers that
+	 * may CREATE the component when it does not exist (addRelease / getNewVersion
+	 * with {@code createComponentIfMissing}). Resolution outcomes come back as
+	 * data -- creation is only legitimate on {@code NOT_FOUND}, and {@code
+	 * AMBIGUOUS} (duplicate registrations for the same VCS + repoPath) must fail
+	 * the call rather than mint another duplicate. Genuine errors that are not
+	 * resolution outcomes (wrong key type, VCS/component mismatch) still throw.
+	 */
+	public ComponentResolution resolveComponentResolutionFromInput(Map<String, Object> inputMap, ProgrammaticAuthContext authCtx) throws RelizaException {
 		CommonVariables.AuthHeaderParse ahp = authCtx == null ? null : authCtx.ahp();
 		UUID orgUuid = authCtx == null ? null : authCtx.orgUuid();
 		String vcsUri = Utils.normalizeVcsUri((String) inputMap.get("vcsUri"));
@@ -787,17 +861,16 @@ public class ComponentService {
 					}
 				}
 			}
-			return componentId;
+			return ComponentResolution.found(componentId);
 		}
 
 		// Only attempt VCS-based resolution if componentId is not provided
 		if (vcsUri != null) {
-			if (orgUuid == null) throw new RelizaException("Component not found");
-			ComponentData componentData = resolveComponentByVcsUriAndPath(orgUuid, vcsUri, repoPath);
-			return componentData.getUuid();
+			if (orgUuid == null) return ComponentResolution.notFound("Component not found");
+			return resolveComponentResolutionByVcsUriAndPath(orgUuid, vcsUri, repoPath);
 		}
 
-		throw new RelizaException("Component not found");
+		return ComponentResolution.notFound("Component not found");
 	}
 	
 	/**
@@ -823,8 +896,10 @@ public class ComponentService {
 
 	public ComponentData createComponentFromVcsUri(UUID orgUuid, String vcsUri, String repoPath, String vcsDisplayName, VcsType vcsType,
 			String versionSchema, String featureBranchVersionSchema, String componentNameOverride, WhoUpdated wu) throws RelizaException {
-		// Strip username from URI if present (e.g., https://relizaio@dev.azure.com/ -> https://dev.azure.com/)
-		String cleanVcsUri = Utils.normalizeVcsUri(vcsUri);
+		// Full canonical form (scheme, user@, git@, trailing .git, scp colon): the
+		// VCS row is stored in this form, and deriving the component NAME from a
+		// lesser form leaked '.git' into names (e.g. 'repo.git-alpha').
+		String cleanVcsUri = Utils.cleanVcsUri(Utils.normalizeVcsUri(vcsUri));
 
 		// Find or create VCS repository
 		VcsType effectiveVcsType = (vcsType != null) ? vcsType : VcsType.GIT;
@@ -875,33 +950,31 @@ public class ComponentService {
 	 * @return ComponentData matching the VCS URI and repoPath
 	 * @throws RelizaException if VCS not found, component not found, or multiple components found
 	 */
-	public ComponentData resolveComponentByVcsUriAndPath(UUID orgUuid, String vcsUri, String repoPath) throws RelizaException {
+	public ComponentResolution resolveComponentResolutionByVcsUriAndPath(UUID orgUuid, String vcsUri, String repoPath) {
+		// Full canonicalization happens inside getVcsRepositoryDataByUri, matching
+		// the form rows are stored in (see that method for the prod incident this
+		// alignment fixes -- the resolve side used to canonicalize LESS than the
+		// create side, so '.git'-suffixed CI URIs never resolved and re-created).
+		String cleanVcsUri = Utils.cleanVcsUri(Utils.normalizeVcsUri(vcsUri));
 
-		String cleanVcsUri = Utils.normalizeVcsUri(vcsUri);
-		
 		log.debug("VCS-based component resolution : vcsUri={}, repoPath={}, orgUuid={}", cleanVcsUri, repoPath, orgUuid);
-		
+
 		// Find VCS repository within organization
 		Optional<VcsRepositoryData> vcsRepoData = vcsRepositoryService.getVcsRepositoryDataByUri(orgUuid, cleanVcsUri);
 		if (!vcsRepoData.isPresent()) {
 			log.warn("VCS repository not found : vcsUri={}, orgUuid={}", vcsUri, orgUuid);
-			throw new RelizaException("VCS repository " + cleanVcsUri + " not found in this organization");
+			return ComponentResolution.notFound("VCS repository " + cleanVcsUri + " not found in this organization");
 		}
-		
+
 		log.debug("VCS repository found : uuid={}, name={}", 
 		 vcsRepoData.get().getUuid(), vcsRepoData.get().getName());
-		
-		// Find component by VCS UUID + orgUuid + repoPath (org-scoped)
-		try {
-			ComponentData componentData = findComponentDataByVcsAndPath(vcsRepoData.get().getUuid(), orgUuid, repoPath);
-			log.debug("Component resolved : componentId={}, componentName={}, repoPath={}",
-			 componentData.getUuid(), componentData.getName(), repoPath);
-			return componentData;
-		} catch (RelizaException e) {
+
+		ComponentResolution resolution = componentResolutionByVcsAndPath(vcsRepoData.get().getUuid(), orgUuid, repoPath);
+		if (resolution.status() != ComponentResolutionStatus.FOUND) {
 			log.error("Component resolution failed : vcsUri={}, repoPath={}, vcsUuid={}, orgUuid={}, error={}",
-			 vcsUri, repoPath, vcsRepoData.get().getUuid(), orgUuid, e.getMessage());
-			throw e;
+			 vcsUri, repoPath, vcsRepoData.get().getUuid(), orgUuid, resolution.detail());
 		}
+		return resolution;
 	}
 
 	/**

@@ -16,7 +16,11 @@
             <n-grid :cols="2" x-gap="24">
                 <n-gi>
                     <n-h4>Original VEX statement</n-h4>
-                    <n-code language="json" :code="formatJson(proposal.sourceStatementJson)" />
+                    <!-- word-wrap: the statement JSON routinely carries long single-line
+                         string values (analysis.detail); without wrapping the pre keeps
+                         white-space: pre and overflows the grid cell, running underneath
+                         the proposed-analysis column. -->
+                    <n-code language="json" :code="formatJson(proposal.sourceStatementJson)" word-wrap />
                 </n-gi>
                 <n-gi>
                     <n-h4>
@@ -31,7 +35,16 @@
                     <!-- Read-only view -->
                     <n-descriptions v-if="!editing" :column="1" bordered label-placement="left" :label-style="{ width: '160px', minWidth: '160px' }">
                         <n-descriptions-item label="Vulnerability">{{ proposal.findingId }}</n-descriptions-item>
-                        <n-descriptions-item label="Component">{{ proposal.rawLocation }}</n-descriptions-item>
+                        <n-descriptions-item label="Location">{{ proposal.rawLocation }}</n-descriptions-item>
+                        <n-descriptions-item label="Scope">
+                            <n-tag size="small" round style="margin-right: 6px;">{{ proposal.scope }}</n-tag>
+                            <router-link v-if="scopeLink" :to="scopeLink.to" target="_blank">{{ scopeLink.text }}</router-link>
+                            <span v-else-if="proposal.scope !== 'ORG' && proposal.scope !== 'RESOURCE_GROUP'"
+                                class="text-muted">{{ proposal.scopeUuid }}</span>
+                            <span v-if="scopePath && scopePath !== scopeLink?.text" class="text-muted" style="margin-left: 8px;">
+                                ({{ scopePath }})
+                            </span>
+                        </n-descriptions-item>
                         <n-descriptions-item label="State">{{ proposal.analysisState }}</n-descriptions-item>
                         <n-descriptions-item label="Justification">{{ proposal.analysisJustification ?? '—' }}</n-descriptions-item>
                         <n-descriptions-item label="Responses">{{ (proposal.responses?.length ? proposal.responses.join(', ') : '—') }}</n-descriptions-item>
@@ -185,7 +198,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
     NAlert, NButton, NCard, NCode, NDataTable, NDescriptions, NDescriptionsItem, NDivider,
-    NForm, NFormItem, NGi, NGrid, NH4, NInput, NList, NListItem, NSelect, NSpace, NSpin, NText, useMessage
+    NForm, NFormItem, NGi, NGrid, NH4, NInput, NList, NListItem, NSelect, NSpace, NSpin, NTag, NText, useMessage
 } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import { useOrgUsersIndex } from '@/utils/userLookup'
@@ -277,6 +290,34 @@ function hasDemotion (reason: string): boolean {
     if (!raw) return false
     return raw.split(';').map((s: string) => s.trim()).includes(reason)
 }
+
+// Scope display: the backend resolves scope+scopeUuid into component / branch /
+// release names. Link text is the MOST SPECIFIC name; the fuller path is shown
+// beside it. Falls back to the raw uuid when the scoped object no longer
+// resolves, and to the bare enum for ORG scope.
+const scopePath = computed(() => {
+    const p: any = proposal.value
+    if (!p) return ''
+    return [p.scopeComponentName, p.scopeBranchName, p.scopeReleaseVersion].filter(Boolean).join(' / ')
+})
+
+const scopeLink = computed(() => {
+    const p: any = proposal.value
+    if (!p) return null
+    if (p.scope === 'RELEASE' && p.scopeReleaseUuid) {
+        return { text: p.scopeReleaseVersion || p.scopeReleaseUuid, to: `/release/show/${p.scopeReleaseUuid}` }
+    }
+    if (p.scope === 'BRANCH' && p.scopeBranchUuid && p.scopeComponentUuid) {
+        return {
+            text: p.scopeBranchName || p.scopeBranchUuid,
+            to: `/componentsOfOrg/${p.org}/${p.scopeComponentUuid}/${p.scopeBranchUuid}`
+        }
+    }
+    if (p.scope === 'COMPONENT' && p.scopeComponentUuid) {
+        return { text: p.scopeComponentName || p.scopeComponentUuid, to: `/componentsOfOrg/${p.org}/${p.scopeComponentUuid}` }
+    }
+    return null
+})
 
 const otherAnalyses = computed(() => {
     if (!proposal.value) return []

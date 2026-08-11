@@ -31,6 +31,39 @@ function translateFunctionName(fn: string): string {
     }
 }
 
+// Help-tooltip text for each permission function, keyed by the backend
+// PermissionFunction enum value. Rendered by PermissionFunctionLabel next to
+// the function's checkbox. Plain text; blank lines become paragraph breaks
+// (the label renders with white-space: pre-line). Keep in sync with the
+// PermissionFunction enum in the backend (model/UserPermission.java).
+const PERMISSION_FUNCTION_DESCRIPTIONS: Record<string, string> = {
+    FINDING_ANALYSIS_READ:
+        'View existing finding analysis records - VEX statements, suppressions, and justifications on vulnerabilities and policy violations.',
+    FINDING_ANALYSIS_WRITE:
+        'Create and edit finding analysis (VEX / suppression / justification). Requires "Finding Analysis Read" to also view existing finding records.',
+    ARTIFACT_DOWNLOAD:
+        'Download release artifacts - SBOMs, attestations, and other stored files.',
+    LIFECYCLE_UPDATE:
+        'Advance a release through its lifecycle (e.g. Draft to Assembled to Rejected). Requires Read & Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.',
+    SBOM_PROBING:
+        'Upload a temporary SBOM to get vulnerability and policy stats on it, without creating a persistent Dependency-Track project or a release.',
+    DEVOPS_READ:
+        'View the DevOps surface - instances, clusters, and their current deployment state.',
+    DEVOPS_WRITE:
+        'Modify the DevOps surface - register instances and clusters and submit deployment state. Requires Read & Write permission to take effect.',
+    VERSION_FEATURESET:
+        'Create a new product feature set with selected dependency-branch overrides applied on top of the base feature set. Typically granted to a CI/CD (FREEFORM) key on the product.',
+    AGENT:
+        'The "I am an agent" marker - grants a key the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, and spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or managing agent policies.\n\n' +
+        'Carve-out: a key with this function (even Read Only) can also enrol its own SSH/GPG public signing key via "rearm agent enrollkey" - needed so an agent can sign its first commit without operator intervention. The backend enforces that the key being enrolled targets the calling key\'s own agent identity; cross-agent enrolment is rejected.',
+    DISTRIBUTION:
+        'Access the Distribution module - clients, sites, shipments, devices, and device events. Organization admins have this implicitly.',
+}
+
+function translateFunctionDescription(fn: string): string | null {
+    return PERMISSION_FUNCTION_DESCRIPTIONS[fn] ?? null
+}
+
 function getUserPermission (org : string, myUser: any) {
     let userPermission = {
         org: '',
@@ -345,6 +378,7 @@ export default {
     getUserPermission,
     translatePermissionName,
     translateFunctionName,
+    translateFunctionDescription,
     deepCopy,
     isAdmin,
     isWritable,

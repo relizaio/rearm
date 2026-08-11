@@ -6,6 +6,7 @@ package io.reliza.ws;
 import java.io.IOException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,9 +21,13 @@ import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -234,9 +239,95 @@ public class App {
     	return http.build();
 	}
 
+	/**
+	 * The pool that runs every {@code @Scheduled} job. MUST be declared
+	 * explicitly in this app: the {@code scheduledExecutorService} bean below
+	 * makes Spring Boot's {@code TaskSchedulingAutoConfiguration} back off
+	 * ({@code @ConditionalOnMissingBean} covers {@code ScheduledExecutorService}),
+	 * so the auto-configured scheduler that
+	 * {@code spring.task.scheduling.pool.size} configures is never created.
+	 * Without this bean, {@code ScheduledAnnotationBeanPostProcessor} finds no
+	 * {@code TaskScheduler} and no unambiguous {@code ScheduledExecutorService}
+	 * (DGS contributes a second one), so it silently creates its own local
+	 * single-thread default for ALL {@code @Scheduled} work -- observed in
+	 * prod as every scheduled job serialized onto one generic
+	 * {@code pool-4-thread-1} thread, where a ~40-min finding_change_events
+	 * boot backfill froze the release-metrics tick, SBOM reconciles,
+	 * notifications and every other scheduled subsystem, while
+	 * {@code pool.size: 3} in application.yaml silently did nothing.
+	 *
+	 * <p>{@code @Scheduled} resolution prefers a {@link TaskScheduler} bean
+	 * over a {@code ScheduledExecutorService}, so declaring this pool routes
+	 * all scheduled jobs here deterministically; the finalizer executor below
+	 * stays dedicated to {@code ReleaseFinalizerService}. The pool size keys
+	 * off the same property/env var application.yaml documents, so ops tuning
+	 * keeps one knob. Thread naming ({@code scheduling-N}) is load-bearing
+	 * for ops: it's how a thread dump proves which pool scheduled work runs
+	 * on -- keep it. No explicit {@code initialize()}: Spring calls
+	 * {@code afterPropertiesSet()} on the bean, and initializing twice
+	 * creates and orphans an extra executor.
+	 */
+	@Bean
+	public TaskScheduler taskScheduler(@Value("${spring.task.scheduling.pool.size:3}") int poolSize) {
+		ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+		scheduler.setPoolSize(poolSize);
+		scheduler.setThreadNamePrefix("scheduling-");
+		return scheduler;
+	}
+
+	/**
+	 * Default executor for unqualified {@code @Async} methods (vuln-analysis
+	 * fan-out, download logging, KEV recompute fan-out, etc.). Declared
+	 * explicitly because the resolution was otherwise accidental twice over:
+	 * Boot's {@code applicationTaskExecutor} backs off (other {@code Executor}
+	 * beans exist), so before this bean the only {@code TaskExecutor}-typed
+	 * bean was {@code autoIntegrateExecutor} -- every unqualified
+	 * {@code @Async} method silently ran on auto-integrate's 2-3 threads and
+	 * inherited its {@code DiscardPolicy} (silent drops under load). And since
+	 * {@link ThreadPoolTaskScheduler} above is itself a {@code TaskExecutor},
+	 * adding it would have made by-type resolution ambiguous and flipped the
+	 * default to an UNBOUNDED {@code SimpleAsyncTaskExecutor} (thread per
+	 * task). {@code @Primary} makes {@code @Async}'s by-type lookup resolve
+	 * here deterministically, and the default becomes deliberate: bounded,
+	 * named ({@code async-N}), and CallerRunsPolicy so overflow degrades to
+	 * backpressure instead of dropped work or thread explosions.
+	 * {@code @Async("autoIntegrateExecutor")} callers are unaffected (name
+	 * qualifier). Property keys mirror Boot's canonical
+	 * {@code spring.task.execution.pool.*} (documented in application.yaml).
+	 *
+	 * <p>Deliberately NOT named {@code taskExecutor}: the test classpath's
+	 * {@code TestAsyncConfig} owns that bean name (a {@code @Primary}
+	 * {@code SyncTaskExecutor} that makes test {@code @Async} synchronous).
+	 * In test contexts the two primaries make the by-type lookup ambiguous
+	 * and {@code @Async} falls back to the bean NAMED {@code taskExecutor}
+	 * -- the test-sync executor -- so test semantics stay intact while prod
+	 * resolves this bean as the single primary.
+	 */
+	@Bean
+	@Primary
+	public ThreadPoolTaskExecutor defaultAsyncExecutor(
+			@Value("${spring.task.execution.pool.core-size:4}") int coreSize,
+			@Value("${spring.task.execution.pool.max-size:8}") int maxSize,
+			@Value("${spring.task.execution.pool.queue-capacity:1000}") int queueCapacity) {
+		ThreadPoolTaskExecutor ex = new ThreadPoolTaskExecutor();
+		ex.setCorePoolSize(coreSize);
+		ex.setMaxPoolSize(maxSize);
+		ex.setQueueCapacity(queueCapacity);
+		ex.setThreadNamePrefix("async-");
+		ex.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+		return ex;
+	}
+
+	/**
+	 * Dedicated single-thread executor for {@link io.reliza.service.ReleaseFinalizerService}'s
+	 * delayed finalize hops. NOT the {@code @Scheduled} pool (see
+	 * {@link #taskScheduler(int)} -- this bean's existence is exactly why that
+	 * one must be explicit). Named thread so it's attributable in dumps.
+	 */
 	@Bean
 	public ScheduledExecutorService scheduledExecutorService() {
-		return Executors.newSingleThreadScheduledExecutor();
+		return Executors.newSingleThreadScheduledExecutor(
+				Thread.ofPlatform().name("release-finalizer").factory());
 	}
 
 	/**

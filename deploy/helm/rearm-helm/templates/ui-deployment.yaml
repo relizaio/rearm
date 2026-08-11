@@ -20,6 +20,7 @@ spec:
         servicehook: {{ .Release.Name }}-ui
         name: rearm-ui-pod
     spec:
+      terminationGracePeriodSeconds: {{ .Values.uiService.terminationGracePeriodSeconds | default 30 }}
     {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -53,11 +54,29 @@ spec:
             - name: http
               containerPort: 80
               protocol: TCP
+          lifecycle:
+            preStop:
+              # Sleep after the pod is removed from Service endpoints so in-flight and
+              # just-routed requests still land here. Needed now that nginx actually
+              # RECEIVES SIGTERM: for nginx SIGTERM means FAST shutdown (SIGQUIT is the
+              # graceful one), so without this window it exits in milliseconds while
+              # endpoint removal is still propagating, and the ingress serves 502s
+              # mid-rollout -- costly for an SPA pulling many chunked assets.
+              exec:
+                command: ["sh", "-c", "sleep {{ .Values.uiService.preStopSleepSeconds | default 10 }}"]
           livenessProbe:
             httpGet:
               path: /error_pages/generic.html
               port: http
             failureThreshold: 1
             periodSeconds: 10
+          readinessProbe:
+            # Absent before: with only a livenessProbe the pod counted as Ready the
+            # instant it started, so a rollout could route traffic at an nginx that was
+            # not yet serving.
+            httpGet:
+              path: /error_pages/generic.html
+              port: http
+            periodSeconds: 5
           resources:
             {{- toYaml .Values.uiService.resources | nindent 12 }}

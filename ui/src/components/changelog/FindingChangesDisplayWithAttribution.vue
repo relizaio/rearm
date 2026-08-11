@@ -226,7 +226,8 @@ import type {
     VulnerabilityWithAttribution,
     ViolationWithAttribution,
     WeaknessWithAttribution,
-    OrgLevelContext
+    OrgLevelContext,
+    ComponentAttribution
 } from '../../types/changelog-attribution'
 import type { MetricsRevisionFindingChange } from '../../types/changelog-sealed'
 
@@ -463,6 +464,9 @@ type NormalizedFinding = {
     isStillPresent: boolean
     orgContext?: OrgLevelContext
     analysisState?: string | null
+    scanArrivalDate?: string | null
+    earliestCarrier?: ComponentAttribution | null
+    latestCarrier?: ComponentAttribution | null
 }
 
 const sortBySeverity = (findings: NormalizedFinding[]) => {
@@ -492,7 +496,10 @@ const normalizeVulnerability = (vuln: VulnerabilityWithAttribution): NormalizedF
     isNetResolved: vuln.isNetResolved,
     isStillPresent: vuln.isStillPresent,
     orgContext: vuln.orgContext,
-    analysisState: vuln.analysisState
+    analysisState: vuln.analysisState,
+    scanArrivalDate: vuln.scanArrivalDate,
+    earliestCarrier: vuln.earliestCarrier,
+    latestCarrier: vuln.latestCarrier
 })
 
 const normalizeViolation = (violation: ViolationWithAttribution): NormalizedFinding => ({
@@ -511,7 +518,10 @@ const normalizeViolation = (violation: ViolationWithAttribution): NormalizedFind
     isNetResolved: violation.isNetResolved,
     isStillPresent: violation.isStillPresent,
     orgContext: violation.orgContext,
-    analysisState: violation.analysisState
+    analysisState: violation.analysisState,
+    scanArrivalDate: violation.scanArrivalDate,
+    earliestCarrier: violation.earliestCarrier,
+    latestCarrier: violation.latestCarrier
 })
 
 const normalizeWeakness = (weakness: WeaknessWithAttribution): NormalizedFinding => ({
@@ -531,7 +541,10 @@ const normalizeWeakness = (weakness: WeaknessWithAttribution): NormalizedFinding
     isNetResolved: weakness.isNetResolved,
     isStillPresent: weakness.isStillPresent,
     orgContext: weakness.orgContext,
-    analysisState: weakness.analysisState
+    analysisState: weakness.analysisState,
+    scanArrivalDate: weakness.scanArrivalDate,
+    earliestCarrier: weakness.earliestCarrier,
+    latestCarrier: weakness.latestCarrier
 })
 
 const allFindings = computed(() => {
@@ -659,9 +672,39 @@ function getEarliestRelease(finding: NormalizedFinding): { version: string, rele
     return { version: sorted[0].releaseVersion, releaseUuid: sorted[0].releaseUuid }
 }
 
+function formatArrivalDate(iso: string): string {
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return iso
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+}
+
+function carrierSegment(carrier: ComponentAttribution): AttributionSegment {
+    const version = carrier.releaseVersion || ''
+    const text = carrier.componentName ? `${carrier.componentName}@${version}`
+        : carrier.branchName ? `${carrier.branchName} ${version}` : `@${version}`
+    return { text, releaseUuid: carrier.releaseUuid }
+}
+
 function getAppearedContextSegments(finding: NormalizedFinding): AttributionSegment[] {
     if (finding.appearedIn.length === 0) return []
-    
+
+    // Re-scan-dated appearance: the finding-change event pins WHEN the finding
+    // was first detected, and earliest/latest carrier bound the releases whose
+    // current metrics carry it. Rendering the anchor release as "Appeared in
+    // <endpoint> (first occurrence...)" would misattribute a late advisory that
+    // also affects earlier releases, so this replaces the anchor list entirely.
+    if (finding.scanArrivalDate && finding.earliestCarrier) {
+        const segments: AttributionSegment[] = [
+            { text: `First detected ${formatArrivalDate(finding.scanArrivalDate)} — affects ` },
+            carrierSegment(finding.earliestCarrier)
+        ]
+        if (finding.latestCarrier && finding.latestCarrier.releaseUuid !== finding.earliestCarrier.releaseUuid) {
+            segments.push({ text: ' – ' })
+            segments.push(carrierSegment(finding.latestCarrier))
+        }
+        return segments
+    }
+
     if (finding.orgContext) {
         const segments: AttributionSegment[] = [{ text: 'Appeared in ' }]
         finding.appearedIn.forEach((a, i) => {

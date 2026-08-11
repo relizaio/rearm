@@ -19,6 +19,8 @@ function sidebar() {
         {text: 'Workflows', link: '/workflows/', items: [
           {text: 'Bootstrap an AI Agent', link: '/workflows/agentic'},
           {text: 'Bundling & Auto-Integrate', link: '/workflows/bundling'},
+          {text: 'Monorepos', link: '/workflows/monorepos'},
+          {text: 'Self-Registering Components', link: '/workflows/self-registration'},
           {text: 'DevOps: Instances & Delivery', link: '/workflows/devops'},
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'},
@@ -29,7 +31,10 @@ function sidebar() {
           {text: 'Committers & Commit Signing', link: '/workflows/committers'}
         ]},
         {text: 'Configure', link: '/configure/', items: [
-          {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'}
+          {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'},
+          {text: 'Component Ownership', link: '/configure/component-ownership'},
+          {text: 'Notifications', link: '/configure/notifications'},
+          {text: 'Approval Queues', link: '/configure/approval-queues'}
         ]},
         {text: 'Transparency Exchange API', link: '/tea/' },
         {text: 'Integrations', link: '/integrations/',
@@ -62,7 +67,12 @@ function sidebar() {
             },
             {text: 'Slack', link: '/integrations/slack'},
             {text: 'Microsoft Teams', link: '/integrations/msteams'},
-            {text: 'Dependency-Track', link: '/integrations/dtrack'},
+            {text: 'Microsoft Sentinel', link: '/integrations/sentinel'},
+            {text: 'Dependency-Track', link: '/integrations/dtrack',
+              items: [
+                {text: 'Dependency-Track 5 Helm Chart', link: '/integrations/dtrackChart'}
+              ]
+            },
             {text: 'Identity Providers', link: '/integrations/identityProviders',
               items: [
                 {text: 'Microsoft', link: '/integrations/identityProviders/microsoft'}

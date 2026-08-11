@@ -3,6 +3,7 @@
 */
 package io.reliza.ws;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -97,7 +98,7 @@ public class AgentDataFetcher {
 		Optional<AgentData> oad = agentService.getAgentData(uuid);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return oad.orElse(null);
 	}
 
@@ -109,7 +110,7 @@ public class AgentDataFetcher {
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
 		return agentService.listByOrg(orgUuid);
 	}
 
@@ -121,7 +122,7 @@ public class AgentDataFetcher {
 		Optional<AgentData> ad = agentService.getAgentData(rootAgentUuid);
 		RelizaObject ro = ad.isPresent() ? ad.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return agentService.listByRoot(rootAgentUuid);
 	}
 
@@ -133,7 +134,7 @@ public class AgentDataFetcher {
 		Optional<AgentSessionData> osd = agentSessionService.getSessionData(uuid);
 		RelizaObject ro = osd.isPresent() ? osd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return osd.orElse(null);
 	}
 
@@ -146,7 +147,7 @@ public class AgentDataFetcher {
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
 		return agentSessionService.listByOrg(orgUuid, statuses);
 	}
 
@@ -159,7 +160,7 @@ public class AgentDataFetcher {
 		Optional<AgentData> ad = agentService.getAgentData(rootAgentUuid);
 		RelizaObject ro = ad.isPresent() ? ad.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return agentSessionService.listByAgent(rootAgentUuid, statuses);
 	}
 
@@ -171,7 +172,7 @@ public class AgentDataFetcher {
 		Optional<ModelOntologyData> omd = modelOntologyService.getModelOntologyData(uuid);
 		RelizaObject ro = omd.isPresent() ? omd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
 		return omd.orElse(null);
 	}
 
@@ -183,7 +184,7 @@ public class AgentDataFetcher {
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
 		return modelOntologyService.listByOrg(orgUuid);
 	}
 
@@ -210,7 +211,7 @@ public class AgentDataFetcher {
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
 		return agentMonitoringService.computeDashboardKpis(orgUuid);
 	}
 

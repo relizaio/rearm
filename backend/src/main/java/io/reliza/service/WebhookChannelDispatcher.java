@@ -126,17 +126,22 @@ public class WebhookChannelDispatcher extends AbstractHttpChannelDispatcher impl
             return ChannelDispatchResult.nonRetriable(
                     "Channel " + channel.getUuid() + " decrypted webhook URL is blank");
         }
+        // Strip a pasted trailing newline / surrounding spaces so the value we
+        // validate AND post is clean: parseUri below is a byte-for-byte
+        // URI.create that throws on a stray control char (mirrors the Slack /
+        // Teams dispatchers).
+        String url = secret.url().strip();
         // Defense-in-depth: refuse plaintext HTTP. Save-time validator
         // already enforces this; dispatcher re-checks so a legacy or
         // tampered row never leaks vuln data over the wire. Shared
         // validator so save + dispatch can't disagree.
-        if (!WebhookUrlValidator.isHttps(secret.url())) {
+        if (!WebhookUrlValidator.isHttps(url)) {
             return ChannelDispatchResult.nonRetriable(
                     "Channel " + channel.getUuid() + " webhook URL is not HTTPS"
                             + " — refusing to POST vuln payload over plaintext");
         }
 
-        UriParseResult parsed = parseUri(secret.url(), channel.getUuid());
+        UriParseResult parsed = parseUri(url, channel.getUuid());
         if (parsed.isError()) {
             return parsed.error();
         }

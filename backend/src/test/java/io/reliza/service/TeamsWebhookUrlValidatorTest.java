@@ -65,4 +65,42 @@ class TeamsWebhookUrlValidatorTest {
         assertTrue(TeamsWebhookUrlValidator.isValid(
                 "https://PROD-12.EastUS.Logic.Azure.Com/workflows/abc"));
     }
+
+    @Test
+    void rejectsUserinfoSmuggling() {
+        // SSRF bypass: substring parse reads userinfo as host; real host is evil.com.
+        assertFalse(TeamsWebhookUrlValidator.isValid(
+                "https://logic.azure.com:x@evil.com/workflows/abc"));
+        assertFalse(TeamsWebhookUrlValidator.isValid(
+                "https://logic.azure.com@evil.com/workflows/abc"));
+    }
+
+    @Test
+    void rejectsLookalikeSuffixHost() {
+        // A bare-suffix endsWith check would wrongly accept these; the dot
+        // boundary requires the accepted host to be the suffix or a true
+        // subdomain of it.
+        assertFalse(TeamsWebhookUrlValidator.isValid(
+                "https://evilpowerplatform.com/workflows/abc"));
+        assertFalse(TeamsWebhookUrlValidator.isValid(
+                "https://notlogic.azure.com.evil.com/workflows/abc"));
+    }
+
+    @Test
+    void toleratesSurroundingWhitespace() {
+        // Pasted trailing newline / surrounding spaces must still validate --
+        // otherwise new URI() throws on the control char and false-rejects a
+        // real Workflows URL (mirrors the Slack validator).
+        assertTrue(TeamsWebhookUrlValidator.isValid(
+                "https://prod-12.eastus.logic.azure.com/workflows/abc\n"));
+        assertTrue(TeamsWebhookUrlValidator.isValid(
+                "  https://prod-12.eastus.logic.azure.com/workflows/abc  "));
+    }
+
+    @Test
+    void stillRejectsInternalWhitespace() {
+        // Stripping is edges-only: a space inside the URL stays invalid.
+        assertFalse(TeamsWebhookUrlValidator.isValid(
+                "https://prod-12.eastus.logic.azure.com/work flows/abc"));
+    }
 }

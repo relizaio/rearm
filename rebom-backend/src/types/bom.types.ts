@@ -90,6 +90,16 @@ export type RebomOptions = {
     originalMediaType?: string,
     processedFileDigest?: string,  // SHA256 of augmented/processed BOM file
     processedFileSize?: number,
+    // Repository holding the '-raw' copy. The processed BOM's repository
+    // (bom.ociRepositoryName) moves to the CURRENT month on enrichment
+    // re-push, but the raw copy stays where it was uploaded -- one pointer
+    // cannot describe both. Stamped at upload; resolved-and-stamped on
+    // demand for legacy rows (see rawBomResolver).
+    rawOciRepositoryName?: string,
+    // True when no '-raw' copy exists anywhere (pre-2026-01 uploads, or
+    // removed by retention). Raw requests then serve the processed BOM as
+    // an explicit substitute instead of re-probing repositories every time.
+    rawBomMissing?: boolean,
     stripBom: string,
     bomVersion: string,
     purl?: string,

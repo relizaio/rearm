@@ -8,10 +8,19 @@ vi.mock('@/utils/commonFunctions', () => ({
     default: { dateDisplay: (s: string) => `ABS:${s}` },
 }))
 
+import { readFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'url'
+
 import { print } from 'graphql'
 import {
     relativeTime,
     subscriptionStatusOptions, eventTypeOptions,
+    buildNotificationFilterInput,
+    routeHasTarget,
+    classifySubscriptionTest,
+    TERMINAL_OUTBOX_STATUSES,
+    isOwnerRouted,
+    ownerRoutedSuccessCaveat,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
 } from './notificationsCommon'
@@ -104,5 +113,183 @@ describe('relativeTime', () => {
         const out = relativeTime(ago(40 * DAY), now)
         expect(out).not.toMatch(/ago$/)
         expect(out.length).toBeGreaterThan(0)
+    })
+})
+
+// Edit -> Save of a subscription 400'd because the as-loaded filter blob
+// (output shape) carries a `presetConfig` object that was spread into
+// NotificationFilterInput, which only accepts mode/presetConfigJson/celExpression.
+describe('buildNotificationFilterInput', () => {
+    it('never leaks the output-only presetConfig key into the input', () => {
+        const out = buildNotificationFilterInput(
+            { mode: 'PRESET', celExpression: null, presetConfig: { sev: 'CRITICAL' } },
+            'PRESET', '')
+        expect('presetConfig' in out).toBe(false)
+        expect(Object.keys(out).sort()).toEqual(['celExpression', 'mode', 'presetConfigJson'])
+    })
+    it('maps an output presetConfig object into presetConfigJson (stringified)', () => {
+        const out = buildNotificationFilterInput(
+            { presetConfig: { sev: 'CRITICAL', envs: ['prod'] } }, 'PRESET', '')
+        expect(out.presetConfigJson).toBe(JSON.stringify({ sev: 'CRITICAL', envs: ['prod'] }))
+    })
+    it('passes through an already-string presetConfigJson unchanged', () => {
+        const out = buildNotificationFilterInput({ presetConfigJson: '{"sev":"HIGH"}' }, 'PRESET', '')
+        expect(out.presetConfigJson).toBe('{"sev":"HIGH"}')
+    })
+    it('omits presetConfigJson when neither preset field is present', () => {
+        const out = buildNotificationFilterInput({}, 'PRESET', '')
+        expect('presetConfigJson' in out).toBe(false)
+    })
+    it('load -> resave-unchanged round-trip is a valid input (no invalid keys)', () => {
+        // Simulate the loaded output blob then a save with no user edits.
+        const loaded = { mode: 'PRESET', celExpression: null, presetConfig: { sev: 'CRITICAL' } }
+        const out = buildNotificationFilterInput(loaded, 'PRESET', '')
+        const allowed = new Set(['mode', 'presetConfigJson', 'celExpression'])
+        Object.keys(out).forEach(k => expect(allowed.has(k), `unexpected input field ${k}`).toBe(true))
+    })
+    it('carries celExpression only in ADVANCED mode', () => {
+        expect(buildNotificationFilterInput({}, 'ADVANCED', 'event.kevListed == true').celExpression)
+            .toBe('event.kevListed == true')
+        expect(buildNotificationFilterInput({}, 'PRESET', 'event.kevListed == true').celExpression)
+            .toBe(null)
+    })
+    it('tolerates a null/undefined rawFilter (Create path)', () => {
+        expect(buildNotificationFilterInput(null, 'PRESET', '')).toEqual({ mode: 'PRESET', celExpression: null })
+    })
+})
+
+describe('routeHasTarget (client-side mirror of the backend route-emptiness gate)', () => {
+    const empty = { channels: [], channelGroups: [], teams: [], notifyComponentOwner: false }
+
+    it('accepts any of the fixed targets, on either edition', () => {
+        for (const isPro of [true, false]) {
+            expect(routeHasTarget({ ...empty, channels: ['ch-1'] }, isPro)).toBe(true)
+            expect(routeHasTarget({ ...empty, channelGroups: ['g-1'] }, isPro)).toBe(true)
+            expect(routeHasTarget({ ...empty, teams: ['t-1'] }, isPro)).toBe(true)
+        }
+    })
+
+    it('accepts an owner-only route on Pro -- naming no target is the point of T4a', () => {
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: true }, true)).toBe(true)
+    })
+
+    it('REJECTS an owner-only route on CE, where the field would fail the whole save', () => {
+        // The compounding half of the CE gating bug: the control is hidden on
+        // CE, but if the flag is somehow set, counting it as a target lets the
+        // operator author a route guaranteed to 400 the subscription mutation
+        // -- including the edits that have nothing to do with owner routing.
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: true }, false)).toBe(false)
+    })
+
+    it('rejects a genuinely empty route on both editions', () => {
+        expect(routeHasTarget(empty, true)).toBe(false)
+        expect(routeHasTarget(empty, false)).toBe(false)
+        expect(routeHasTarget({}, true)).toBe(false)
+    })
+
+    it('does not treat a false/absent owner flag as a target', () => {
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: undefined }, true)).toBe(false)
+        expect(routeHasTarget({ ...empty, notifyComponentOwner: null }, true)).toBe(false)
+    })
+
+    it('still accepts a Pro route carrying teams even when the owner flag is off', () => {
+        // teams is NOT edition-gated here: CE soft-fails the teams query to [],
+        // so a CE route cannot carry them anyway, and gating would wrongly
+        // reject a Pro route whose team list loaded fine.
+        expect(routeHasTarget({ ...empty, teams: ['t-1'] }, true)).toBe(true)
+    })
+})
+
+describe('subscription test classification', () => {
+    const done = [{ status: 'SENT' }]
+    const mixed = [{ status: 'SENT' }, { status: 'PENDING' }]
+
+    it('reports DELIVERED once rows exist and none is still PENDING', () => {
+        expect(classifySubscriptionTest('FANNED_OUT', done)).toBe('DELIVERED')
+        // Fan-out status is irrelevant once settled rows exist.
+        expect(classifySubscriptionTest('PENDING', done)).toBe('DELIVERED')
+    })
+
+    it('keeps polling while a row is still PENDING, even after fan-out finished', () => {
+        // The channel worker dispatches AFTER fan-out, so terminal + pending row
+        // is normal and must not be reported as a final result.
+        expect(classifySubscriptionTest('FANNED_OUT', mixed)).toBe('IN_FLIGHT')
+    })
+
+    it('calls an empty set final ONLY once fan-out is terminal', () => {
+        expect(classifySubscriptionTest('PENDING', [])).toBe('IN_FLIGHT')
+        expect(classifySubscriptionTest(null, [])).toBe('IN_FLIGHT')
+        expect(classifySubscriptionTest(undefined, [])).toBe('IN_FLIGHT')
+        for (const s of ['FANNED_OUT', 'SUPPRESSED']) {
+            expect(classifySubscriptionTest(s, [])).toBe('NO_DELIVERY')
+        }
+        // FAILED is terminal too, but gets its own outcome -- see below.
+        expect(classifySubscriptionTest('FAILED', [])).toBe('FANOUT_FAILED')
+    })
+
+    it('an unknown outbox status is not treated as terminal', () => {
+        // Fail safe: a status this UI has not heard of keeps us polling rather
+        // than declaring a premature "produced nothing".
+        expect(classifySubscriptionTest('SOME_NEW_STATUS', [])).toBe('IN_FLIGHT')
+    })
+
+    it('separates a fan-out FAILURE from a deliberate no-delivery', () => {
+        // Both end with zero rows, but the no-delivery copy blames the
+        // subscription's filter / severity gate. Saying that after a backend
+        // fan-out error sends the operator to audit a filter that is fine.
+        expect(classifySubscriptionTest('FAILED', [])).toBe('FANOUT_FAILED')
+        expect(classifySubscriptionTest('FANNED_OUT', [])).toBe('NO_DELIVERY')
+        expect(classifySubscriptionTest('SUPPRESSED', [])).toBe('NO_DELIVERY')
+        // A failure that still produced rows is reported from the rows.
+        expect(classifySubscriptionTest('FAILED', done)).toBe('DELIVERED')
+    })
+})
+
+// Drift pin against the mirrored backend enum, so the UI's notion of "fan-out
+// is finished" cannot drift silently -- an unrecognised status degrades the
+// test dialog back to a 60s timeout with nothing to point at.
+//
+// SUPERSET, not equality, and deliberately so: this UI is shared between CE
+// and Pro, and the enum mirrored into this repo is the CE one, which currently
+// trails Pro (Pro has SUPPRESSED, added with the vuln-withholding work; CE does
+// not). The UI must handle every status the backend it is talking to can emit,
+// so covering MORE than CE declares is correct and covering less is the bug.
+const OUTBOX_STATUS_SRC_PATH = fileURLToPath(new URL(
+    '../../../backend/src/main/java/io/reliza/model/NotificationOutboxStatus.java',
+    import.meta.url))
+
+describe('TERMINAL_OUTBOX_STATUSES tracks the backend enum', () => {
+    it('has the backend source available', () => {
+        expect(existsSync(OUTBOX_STATUS_SRC_PATH)).toBe(true)
+    })
+
+    it('covers at least every mirrored NotificationOutboxStatus except PENDING', () => {
+        if (!existsSync(OUTBOX_STATUS_SRC_PATH)) return
+        const src = readFileSync(OUTBOX_STATUS_SRC_PATH, 'utf8')
+        const body = src.slice(src.indexOf('public enum NotificationOutboxStatus'))
+        const declared = [...body.matchAll(/^\t([A-Z_]+)[,;]/gm)].map(m => m[1])
+        expect(declared.length).toBeGreaterThan(1)
+        expect(declared).toContain('PENDING')
+        for (const terminal of declared.filter(v => v !== 'PENDING')) {
+            expect(TERMINAL_OUTBOX_STATUSES).toContain(terminal)
+        }
+        expect(TERMINAL_OUTBOX_STATUSES).not.toContain('PENDING')
+    })
+})
+
+describe('owner-routed test caveat', () => {
+    const ownerRoute = JSON.stringify([{ channels: [], notifyComponentOwner: true }])
+    const plainRoute = JSON.stringify([{ channels: ['abc'], notifyComponentOwner: null }])
+
+    it('detects an owner-routed subscription', () => {
+        expect(isOwnerRouted(ownerRoute)).toBe(true)
+        expect(isOwnerRouted(plainRoute)).toBe(false)
+        expect(isOwnerRouted(null)).toBe(false)
+        expect(isOwnerRouted('not json')).toBe(false)
+    })
+
+    it('warns only for owner-routed subscriptions', () => {
+        expect(ownerRoutedSuccessCaveat(ownerRoute)).toContain('deliberately stamped')
+        expect(ownerRoutedSuccessCaveat(plainRoute)).toBeNull()
     })
 })

@@ -78,7 +78,7 @@
                     <div>
                         <a href="#" @click="$event => {$event.preventDefault(); selectedReleaseUuid = drl.release.uuid; showReleaseViewModal = true; }" class="clickable">{{ drl.release.version }}</a>
                     </div>
-                    <div>{{ drl.artifact === 'Not Set' ? 'Not Set' : (drl.artifact.identifier || 'Not Set') }}</div>
+                    <div>{{ drl.artifact === 'Not Set' ? 'Not Set' : (drl.artifact.displayIdentifier || 'Not Set') }}</div>
                     <div>{{ drl.namespace }}</div>
                     <div>{{ drl.state || '—' }}</div>
                 </div>
@@ -132,10 +132,10 @@
                                 <template #trigger>
                                     <n-icon
                                         class="clickable icons"
-                                        @click="copyToClipboard(drl.artifact.identifier + (drl.artifact.digests.length ?  '@' + drl.artifact.digests[0] : ''))"
+                                        @click="copyToClipboard(drl.artifact.displayIdentifier + (drl.artifact.digestRecords?.length ?  '@' + drl.artifact.digestRecords[0].digest : ''))"
                                         size="20"><Box /></n-icon>
                                 </template>
-                                {{ drl.artifact.identifier + (drl.artifact.digests.length ?  '@' + drl.artifact.digests[0] : '') }}
+                                {{ drl.artifact.displayIdentifier + (drl.artifact.digestRecords?.length ?  '@' + drl.artifact.digestRecords[0].digest : '') }}
                             </n-tooltip>
                         </span>
                         <span v-else>Not Set</span>
@@ -230,7 +230,7 @@ const targetIndividualReleases: ComputedRef<any> = computed((): any => {
     if (!list || !list.length) return targetRls
     list.forEach((rl: any) => {
         if (selectedNamespace.value && selectedNamespace.value !== 'ALL' && selectedNamespace.value !== rl.namespace) return
-        let tgtRl = store.getters.releaseById(rl.release) || store.getters.getProxyRelease(rl.release)
+        let tgtRl = store.getters.releaseById(rl.release)
         if (!tgtRl) return
         let tgtArt: any = 'Not Set'
         if (tgtRl.artifactDetails) {
@@ -266,10 +266,7 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
     if (updatedInstance.value && updatedInstance.value.releases && updatedInstance.value.releases.length) {
         updatedInstance.value.releases.forEach((rl: any, index: number) => {
             if (!selectedNamespace.value || selectedNamespace.value === 'ALL' || selectedNamespace.value === rl.namespace) {
-                let deployedRl = store.getters.releaseById(rl.release)
-                if(!deployedRl){
-                    deployedRl = store.getters.getProxyRelease(rl.release)
-                }
+                const deployedRl = store.getters.releaseById(rl.release)
                 if (deployedRl) {
                     let deployedArt
                     if (deployedRl.artifactDetails && deployedRl.artifactDetails) {
@@ -286,8 +283,6 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
                         index: index,
                         namespace: rl.namespace,
                         state: rl.state,
-                        branch: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails.name : undefined,
-                        branchUuid: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails.uuid : undefined,
                         diff: false
                     }
                     if (!dRlObj.artifact) {

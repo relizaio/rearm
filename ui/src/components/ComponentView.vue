@@ -297,12 +297,12 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && myUser.installationType === 'SAAS'">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && supportsComponentKind">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
                                             <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" clearable />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication  && myUser.installationType === 'SAAS')">
+                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication  && supportsComponentKind)">
                                             <label id="componentAuthTypeLabel" for="componentAuthType">Component Auth Type</label>
                                             <n-select v-if="isWritable" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.authentication.type" readonly/>
@@ -395,6 +395,45 @@
                                                     <code v-for="(n, i) in effectiveApprovalPolicy.alsoMatchedRuleNames" :key="n">{{ i ? ', ' : '' }}{{ n }}</code>.
                                                     First-match-wins; reorder in <em>Org Settings &rarr; Policies &rarr; Global Policy Assignment</em> to change priority.
                                                 </div>
+                                            </div>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && ownershipSupported">
+                                            <label>Owner</label>
+                                            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                <div v-if="componentOwnership && componentOwnership.ownership">
+                                                    <n-tag :type="ownershipTagType(componentOwnership.ownership.status)" size="small">
+                                                        {{ componentOwnership.ownership.status }}
+                                                    </n-tag>
+                                                    <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
+                                                    <span v-if="componentOwnership.ownership.reason" class="text-muted" style="display: block; margin-top: 4px;">
+                                                        {{ componentOwnership.ownership.reason }}
+                                                    </span>
+                                                </div>
+                                                <div v-if="isWritable" style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+                                                    <n-select
+                                                        style="width: 110px;"
+                                                        v-model:value="ownerDraftType"
+                                                        :options="[{label: 'Team', value: 'TEAM'}, {label: 'User', value: 'USER'}]"
+                                                        @update:value="ownerDraftRef = null" />
+                                                    <n-select
+                                                        style="flex: 1; min-width: 0;"
+                                                        filterable
+                                                        v-model:value="ownerDraftRef"
+                                                        :options="ownerDraftType === 'TEAM' ? userGroups : users"
+                                                        :placeholder="ownerDraftType === 'TEAM' ? 'Pick a team (user group)' : 'Pick a user'" />
+                                                    <n-button type="primary" size="small" :loading="savingOwner" :disabled="!ownerDraftRef" @click="saveOwner">
+                                                        Set owner
+                                                    </n-button>
+                                                    <!-- Only meaningful when a stored owner exists: clearing hands the
+                                                         component back to org team-assignment rules. -->
+                                                    <n-button v-if="componentOwnership && componentOwnership.owner && componentOwnership.owner.ownerRef"
+                                                        size="small" :loading="savingOwner" @click="clearOwner">
+                                                        Clear owner
+                                                    </n-button>
+                                                </div>
+                                                <span class="text-muted" style="margin-top: 4px;">
+                                                    The durable owner accountable for this {{ words.component }}. A team is durable (survives members leaving); a single user is flagged non-durable.
+                                                </span>
                                             </div>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
@@ -1221,6 +1260,11 @@ const isComponent : Ref<boolean> = ref(true)
 const myUser = store.getters.myuser
 const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
+// Component Kind, and the Helm authentication fields it unlocks, are Pro
+// features: available on every Pro installation type (SAAS, DEMO,
+// MANAGED_SERVICE) and absent only on OSS.
+const supportsComponentKind : boolean = myUser?.installationType !== 'OSS'
+
 const isAdmin : boolean = commonFunctions.isAdmin(orguuid.value, myUser)
 const isWritable : ComputedRef<boolean> = computed((): boolean => {
     if (commonFunctions.isWritable(orguuid.value, myUser, 'COMPONENT')) return true
@@ -1470,6 +1514,10 @@ async function fetchApprovalPolicies () {
 const openComponentSettings = async function() {
     await fetchApprovalPolicies()
     await fetchEffectiveApprovalPolicy()
+    // Durable ownership (Phase 4 UI): load the owner picker's team list + the
+    // computed ownership status when the settings panel opens.
+    loadUserGroups()
+    loadOwnership()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     showComponentSettingsModal.value = true
     
@@ -2574,7 +2622,7 @@ const componentAuthTypes = [
 const secrets = ref([])
 
 const fetchSecretsIfAllowed = async function() {
-    if (isWritable && myUser.installationType === 'SAAS') {
+    if (isWritable && supportsComponentKind) {
         secrets.value = await loadSecrets(componentData.value.org)
     }
 }
@@ -3324,6 +3372,137 @@ const users: Ref<any[]> = ref([])
 async function loadUsers() {
     const usersRaw = await store.dispatch('fetchUsers', orguuid.value)
     users.value = usersRaw.map((ur: any) => {return {label: ur.name || ur.email, value: ur.uuid}} )
+}
+
+// ---- Durable ownership (RFC Phase 4 UI): read owner/ownership + set an owner ----
+// Fetched via a DEDICATED query so a backend that predates these Pro fields (a CE
+// mirror) fails only THIS query -> we hide the section, rather than breaking the
+// shared component load.
+const COMPONENT_OWNERSHIP_QUERY = gql`
+    query componentOwnership($componentUuid: ID!) {
+        component(componentUuid: $componentUuid) {
+            uuid
+            owner { ownerType ownerRef }
+            # ownerType/ownerRef are selected on ownership too: an owner can come
+            # from an org team-assignment rule, in which case the per-component
+            # stored owner is null but the component IS owned.
+            ownership { ownerType ownerRef status durable derived reason }
+        }
+    }`
+const GET_USER_GROUPS_QUERY = gql`
+    query getUserGroups($org: ID!) { getUserGroups(org: $org) { uuid name } }`
+const SET_COMPONENT_OWNER_MUTATION = gql`
+    mutation setComponentOwner($component: UpdateComponentInput!) {
+        updateComponent(component: $component) { uuid }
+    }`
+
+const componentOwnership = ref<any>(null)
+const ownershipSupported = ref<boolean>(true)
+const userGroups = ref<{ label: string, value: string }[]>([])
+const ownerDraftType = ref<'TEAM' | 'USER'>('TEAM')
+const ownerDraftRef = ref<string | null>(null)
+const savingOwner = ref<boolean>(false)
+
+const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default' =>
+    s === 'OWNED' ? 'success'
+        : (s === 'NON_DURABLE' || s === 'DEGRADED') ? 'warning'
+            : s === 'UNSET' ? 'default'  // no owner yet -> neutral, not alarming
+                : 'error'                // ORPHANED (or unknown) -> needs attention
+
+const ownerLabel = computed<string | null>(() => {
+    // Fall back to the RESOLVED ownership when there is no per-component stored
+    // owner: an org team-assignment rule can own a component without anything
+    // being stored on it. Reading only `owner` showed a green OWNED badge with
+    // no name next to it -- "owned by whom?".
+    // UNSET means "no owner, here is a suggestion" -- ownership.ownerRef is
+    // populated for it, so falling back blindly would print the suggested team
+    // beside an UNSET tag as though it owned the component.
+    const resolved = componentOwnership.value?.ownership
+    const o = componentOwnership.value?.owner?.ownerRef
+        ? componentOwnership.value.owner
+        : (resolved && resolved.status !== 'UNSET' ? resolved : null)
+    if (!o || !o.ownerRef) return null
+    const list = o.ownerType === 'TEAM' ? userGroups.value : users.value
+    const hit = list.find((x: any) => x.value === o.ownerRef)
+    return `${hit?.label || o.ownerRef} (${o.ownerType === 'TEAM' ? 'team' : 'user'})`
+})
+
+async function loadOwnership() {
+    const uuid = componentData.value?.uuid
+    if (!uuid) return
+    try {
+        const res = await graphqlClient.query({
+            query: COMPONENT_OWNERSHIP_QUERY,
+            variables: { componentUuid: uuid },
+            fetchPolicy: 'network-only',
+        })
+        componentOwnership.value = res.data?.component || null
+        ownershipSupported.value = true
+        const o = componentOwnership.value?.owner
+        if (o && o.ownerType && o.ownerRef) { ownerDraftType.value = o.ownerType; ownerDraftRef.value = o.ownerRef }
+    } catch {
+        // Backend without the ownership fields (older / CE mirror) -> hide the section.
+        ownershipSupported.value = false
+    }
+}
+
+async function loadUserGroups() {
+    try {
+        const res = await graphqlClient.query({
+            query: GET_USER_GROUPS_QUERY,
+            variables: { org: orguuid.value },
+            fetchPolicy: 'network-only',
+        })
+        userGroups.value = (res.data?.getUserGroups || [])
+            .filter((g: any) => g)
+            .map((g: any) => ({ label: g.name, value: g.uuid }))
+    } catch {
+        userGroups.value = []
+    }
+}
+
+/**
+ * Removes the stored owner so org team-assignment rules apply again. Sent as an
+ * explicit clearOwner flag because owner:null already means "no change" on the
+ * update input -- there is no way to express "remove it" with owner alone.
+ */
+async function clearOwner() {
+    const uuid = componentData.value?.uuid
+    if (!uuid) return
+    savingOwner.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: SET_COMPONENT_OWNER_MUTATION,
+            variables: { component: { uuid, name: componentData.value.name, clearOwner: true } }
+        })
+        notify('success', 'Owner cleared', 'Team assignment rules now apply to this ' + words.value.component + '.')
+        await loadOwnership()
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+    } finally {
+        savingOwner.value = false
+    }
+}
+
+async function saveOwner() {
+    if (!ownerDraftRef.value || !componentData.value?.uuid) return
+    savingOwner.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: SET_COMPONENT_OWNER_MUTATION,
+            variables: { component: {
+                uuid: componentData.value.uuid,
+                name: componentData.value.name,
+                owner: { ownerType: ownerDraftType.value, ownerRef: ownerDraftRef.value },
+            } },
+        })
+        notify('success', 'Owner updated', 'Component owner set.')
+        await loadOwnership()
+    } catch (err: any) {
+        notify('error', 'Failed to set owner', commonFunctions.parseGraphQLError(err.toString()))
+    } finally {
+        savingOwner.value = false
+    }
 }
 
 async function initLoad() {

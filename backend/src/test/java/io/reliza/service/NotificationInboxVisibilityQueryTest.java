@@ -62,6 +62,7 @@ public class NotificationInboxVisibilityQueryTest {
 	@Autowired private TestInitializer testInitializer;
 
 	private static final String NO_PERSPECTIVES = "{}";
+	private static final String NO_COMPONENTS = "{}";
 
 	/**
 	 * Cross-org isolation can't be meaningfully exercised on the OSS/CE
@@ -91,9 +92,9 @@ public class NotificationInboxVisibilityQueryTest {
 				+ "one request snapshots N recipients into N rows and the admin "
 				+ "already sees the event once via its subscription-routed delivery");
 
-		assertTrue(deliveryRepo.existsDeliveryVisibleToUser(org, targeted.getUuid(), alice, false, NO_PERSPECTIVES),
+		assertTrue(deliveryRepo.existsDeliveryVisibleToUser(org, targeted.getUuid(), alice, false, NO_PERSPECTIVES, NO_COMPONENTS),
 				"mark-read auth check must agree: target user can act on the row");
-		assertFalse(deliveryRepo.existsDeliveryVisibleToUser(org, targeted.getUuid(), bob, true, NO_PERSPECTIVES),
+		assertFalse(deliveryRepo.existsDeliveryVisibleToUser(org, targeted.getUuid(), bob, true, NO_PERSPECTIVES, NO_COMPONENTS),
 				"mark-read auth check must agree: even an admin cannot act on someone else's targeted row");
 	}
 
@@ -108,7 +109,7 @@ public class NotificationInboxVisibilityQueryTest {
 
 		assertFalse(inbox(orgB, alice, true, NO_PERSPECTIVES).contains(targeted.getUuid()),
 				"a delivery must never surface in another org's inbox, even for its target user as admin");
-		assertFalse(deliveryRepo.existsDeliveryVisibleToUser(orgB, targeted.getUuid(), alice, true, NO_PERSPECTIVES),
+		assertFalse(deliveryRepo.existsDeliveryVisibleToUser(orgB, targeted.getUuid(), alice, true, NO_PERSPECTIVES, NO_COMPONENTS),
 				"mark-read auth check must reject a delivery uuid presented under the wrong org");
 	}
 
@@ -129,12 +130,51 @@ public class NotificationInboxVisibilityQueryTest {
 		assertFalse(inbox(org, outsider, false, NO_PERSPECTIVES).contains(routed.getUuid()),
 				"non-admin with no perspective membership sees nothing");
 
-		assertTrue(deliveryRepo.existsDeliveryVisibleToUser(org, routed.getUuid(), member, false, memberPerspectives));
-		assertFalse(deliveryRepo.existsDeliveryVisibleToUser(org, routed.getUuid(), outsider, false, NO_PERSPECTIVES));
+		assertTrue(deliveryRepo.existsDeliveryVisibleToUser(org, routed.getUuid(), member, false, memberPerspectives, NO_COMPONENTS));
+		assertFalse(deliveryRepo.existsDeliveryVisibleToUser(org, routed.getUuid(), outsider, false, NO_PERSPECTIVES, NO_COMPONENTS));
+	}
+
+	/**
+	 * Component-team arm (Finding #2, product decision 2026-06-26): a
+	 * release-scoped delivery whose payload carries
+	 * {@code affectedReleases[*].componentUuid} is visible to a user who
+	 * holds a COMPONENT-scoped permission on that component — EVEN WITH NO
+	 * perspective membership. Without this arm, release/lifecycle/BOM
+	 * notifications were invisible to a component's own maintainers unless
+	 * they were also in its perspective.
+	 */
+	@Test
+	public void componentTeamMemberSeesRowViaComponentArm() {
+		UUID org = testInitializer.obtainOrganization().getUuid();
+		UUID teamMember = UUID.randomUUID();
+		UUID outsider = UUID.randomUUID();
+		UUID componentUuid = UUID.randomUUID();
+		// Release event payload: a component UUID, but NO perspectives — so
+		// only the component-team arm (not the perspective arm) can match.
+		NotificationOutboxEvent event = saveReleaseEventWithComponent(org, componentUuid);
+		NotificationDelivery routed = saveSubscriptionRoutedDelivery(event);
+
+		String memberComponents = "{" + componentUuid + "}";
+		// Team member: no perspective, but holds the component → visible.
+		assertTrue(inbox(org, teamMember, false, NO_PERSPECTIVES, memberComponents).contains(routed.getUuid()),
+				"component-team member sees the component's release notification with no perspective");
+		// Outsider: neither perspective nor component → nothing.
+		assertFalse(inbox(org, outsider, false, NO_PERSPECTIVES, NO_COMPONENTS).contains(routed.getUuid()),
+				"a user on neither the perspective nor the component team sees nothing");
+
+		// mark-read auth path agrees with the listing.
+		assertTrue(deliveryRepo.existsDeliveryVisibleToUser(org, routed.getUuid(), teamMember, false,
+				NO_PERSPECTIVES, memberComponents));
+		assertFalse(deliveryRepo.existsDeliveryVisibleToUser(org, routed.getUuid(), outsider, false,
+				NO_PERSPECTIVES, NO_COMPONENTS));
 	}
 
 	private Set<UUID> inbox(UUID org, UUID user, boolean isOrgAdmin, String perspectives) {
-		return deliveryRepo.findInboxPage(org, user, isOrgAdmin, perspectives,
+		return inbox(org, user, isOrgAdmin, perspectives, NO_COMPONENTS);
+	}
+
+	private Set<UUID> inbox(UUID org, UUID user, boolean isOrgAdmin, String perspectives, String components) {
+		return deliveryRepo.findInboxPage(org, user, isOrgAdmin, perspectives, components,
 						/*unreadOnly*/ false, /*status*/ null, /*eventType*/ null, 100, 0)
 				.stream().map(NotificationDelivery::getUuid).collect(Collectors.toSet());
 	}
@@ -148,6 +188,23 @@ public class NotificationInboxVisibilityQueryTest {
 		event.setRecordData(perspectives == null
 				? Map.of()
 				: Map.of("affectedReleases", List.of(Map.of("perspectives", perspectives))));
+		return outboxRepo.save(event);
+	}
+
+	/**
+	 * Release-scoped event carrying a componentUuid (and NO perspectives) on
+	 * its affectedReleases entry — mirrors what
+	 * {@code ReleaseNotificationSupport.buildAffectedReleases} stamps for
+	 * RELEASE_CREATED / RELEASE_LIFECYCLE_CHANGED / RELEASE_BOM_DIFF.
+	 */
+	private NotificationOutboxEvent saveReleaseEventWithComponent(UUID org, UUID componentUuid) {
+		NotificationOutboxEvent event = new NotificationOutboxEvent();
+		event.setOrg(org);
+		event.setEventType(NotificationEventType.RELEASE_LIFECYCLE_CHANGED);
+		event.setStatus(NotificationOutboxStatus.FANNED_OUT);
+		event.setDedupKey("release:lc:" + UUID.randomUUID() + ":ASSEMBLED");
+		event.setRecordData(Map.of("affectedReleases",
+				List.of(Map.of("componentUuid", componentUuid.toString()))));
 		return outboxRepo.save(event);
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	ociSpecv1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2/errdef"
 )
 
 func main() {
@@ -166,7 +168,7 @@ func uploadFile(c *gin.Context) {
 		return
 	}
 
-	resp, err := oc.PushArtifact(c, fileToUpload, form.Tag, compressionMetadata)
+	resp, err := oc.PushArtifact(c, fileToUpload, form.Tag, mimeType, compressionMetadata)
 	if err != nil {
 		getLogger().Errorw("Error Pushing Artifact", "error", err, "repo", form.Repo, "tag", form.Tag)
 		c.String(http.StatusBadRequest, "Error Pushing Artifact: ", err)
@@ -203,8 +205,22 @@ func downloadFile(c *gin.Context) {
 		return
 	}
 	dirToDownload := uuid.New().String()
-	descriptor, err := oc.PullArtifact(c, form.Tag, dirToDownload)
+	_, err = oc.PullArtifact(c, form.Tag, dirToDownload)
 	if err != nil {
+		// Surface a definitive registry not-found as 404 so callers can
+		// distinguish "this tag does not exist in this repo" (safe to probe
+		// elsewhere / record as missing) from transient server errors.
+		// Previously every pull failure was a 500, which forced rebom's
+		// legacy fallback to guess. errors.Is ONLY: oras-go wraps
+		// errdef.ErrNotFound for MANIFEST_UNKNOWN / NAME_UNKNOWN, and the 404
+		// must stay authoritative -- rebom makes DURABLE decisions on it
+		// (permanent rawBomMissing stamp), so a substring match over
+		// arbitrary error text (proxy bodies, future oras phrasing) could
+		// poison a stamp with no self-healing path.
+		if errors.Is(err, errdef.ErrNotFound) {
+			c.String(http.StatusNotFound, "Artifact not found: ", err)
+			return
+		}
 		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
 		return
 	}
@@ -219,28 +235,18 @@ func downloadFile(c *gin.Context) {
 	targetFile := files[0]
 	targetPath := filepath.Join("/tmp", dirToDownload, targetFile.Name())
 
-	// Check if file is compressed based on annotations or magic number
+	// Detect compression by the zstd magic number. The compression
+	// annotations live on the LAYER descriptor, but the pull returns the
+	// MANIFEST descriptor, so they are not visible here -- and older
+	// artifacts carry a wrong io.reliza.original.mediatype value anyway
+	// (the pre-fix push detected it on the already-compressed blob).
 	isCompressed := false
-	originalMediaType := ""
-	if descriptor.Annotations != nil {
-		if algo, ok := descriptor.Annotations["io.reliza.compression.algorithm"]; ok && algo == "zstd" {
+	file, err := os.Open(targetPath)
+	if err == nil {
+		defer file.Close()
+		compressed, err := IsFileCompressed(file)
+		if err == nil && compressed {
 			isCompressed = true
-		}
-		// Retrieve original media type from annotations
-		if mediaType, ok := descriptor.Annotations["io.reliza.original.mediatype"]; ok {
-			originalMediaType = mediaType
-		}
-	}
-
-	// If not detected from annotations, check file magic number
-	if !isCompressed {
-		file, err := os.Open(targetPath)
-		if err == nil {
-			defer file.Close()
-			compressed, err := IsFileCompressed(file)
-			if err == nil && compressed {
-				isCompressed = true
-			}
 		}
 	}
 
@@ -267,25 +273,14 @@ func downloadFile(c *gin.Context) {
 		finalPath = decompressedFile.Name()
 	}
 
-	// Use original media type from annotations if available, otherwise detect
-	var mimeTypeStr string
-	var extension string
-	if originalMediaType != "" {
-		mimeTypeStr = originalMediaType
-		// Try to get extension from mimetype library
-		mt := mimetype.Lookup(originalMediaType)
-		if mt != nil {
-			extension = mt.Extension()
-		}
-	} else {
-		mimeType, err := mimetype.DetectFile(finalPath)
-		if err != nil {
-			c.String(http.StatusInternalServerError, "Error Determining mimetype: ", err)
-			return
-		}
-		mimeTypeStr = mimeType.String()
-		extension = mimeType.Extension()
+	// Detect the media type on the (decompressed) content being served
+	mimeType, err := mimetype.DetectFile(finalPath)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Error Determining mimetype: ", err)
+		return
 	}
+	mimeTypeStr := mimeType.String()
+	extension := mimeType.Extension()
 
 	c.Header("Content-Description", "File Transfer")
 	c.Header("Content-type", mimeTypeStr)

@@ -18,6 +18,10 @@ public class VexImportResult {
     private int proposalsCreated;
     private int proposalsAutoAccepted;
     private int proposalsAutoRejected;
+    // AUTO_ACCEPT statements whose VulnAnalysis write was deferred behind a
+    // PENDING MitigationAttestation (conditional claims: environmental
+    // justifications or workarounds). Subset of proposalsAutoAccepted.
+    private int attestationsDeferred;
     private int proposalsDemoted;
     private int statementsErrored;
     private int statementsUnmatched;

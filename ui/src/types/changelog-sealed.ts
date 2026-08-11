@@ -125,6 +125,10 @@ export interface NoneReleaseChanges {
     commits: CodeCommit[]
     sbomChanges: ReleaseSbomChanges
     findingChanges: ReleaseFindingChanges
+    // True when this is the component's first release EVER: its empty SBOM/finding
+    // diffs mean "nothing to compare against", not "no changes". Optional so a
+    // backend without the field (CE mirror lag) degrades to no label.
+    baselineRelease?: boolean
 }
 
 /**
@@ -215,6 +219,10 @@ export interface AggregatedChangelog {
     branches: AggregatedBranchChanges[]
     sbomChanges: SbomChangesWithAttribution
     findingChanges: FindingChangesWithAttribution
+    // Window posture-diff (New/Resolved/StillPresent anchored on finding-change
+    // event dates). Null when the org is not v3-certified or the flag is off;
+    // when present the UI prefers it over the release-pairwise findingChanges.
+    postureFindingChanges?: FindingChangesWithAttribution | null
     overTimeFindingChanges: MetricsRevisionFindingChange[]
 }
 
@@ -246,6 +254,10 @@ export interface AggregatedOrganizationChangelog {
     components: ComponentChangelog[]
     sbomChanges: SbomChangesWithAttribution
     findingChanges: FindingChangesWithAttribution
+    // Window posture-diff (New/Resolved/StillPresent anchored on finding-change
+    // event dates). Null when the org is not v3-certified or the flag is off;
+    // when present the UI prefers it over the release-pairwise findingChanges.
+    postureFindingChanges?: FindingChangesWithAttribution | null
     overTimeFindingChanges: MetricsRevisionFindingChange[]
 }
 

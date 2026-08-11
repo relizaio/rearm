@@ -16,6 +16,10 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 import io.reliza.model.AnalysisState;
+import io.reliza.model.dto.ReleaseMetricsDto.SeveritySource;
+import io.reliza.model.dto.ReleaseMetricsDto.SeveritySourceDto;
+import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
+import io.reliza.model.dto.ReleaseMetricsDto.ViolationType;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityReferenceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
@@ -189,5 +193,180 @@ public class ReleaseMetricsDtoMergeTest {
 		rmd.computeMetricsFromFacts();
 
 		assertEquals(0, rmd.getKevCount(), "kevCount must be 0 when no finding is KEV-listed");
+	}
+
+	// ---- purl-qualifier dedup -------------------------------------------------
+	// Synthetic Dependency-Track emits Syft distro purls carrying ?arch=&distro=
+	// qualifiers, while another scan of the same base image emits the bare purl.
+	// Both name the same installed package@version; keying content-dedup on the
+	// raw purl treated them as distinct findings and double-counted the shared
+	// CVE (observed ~20% org-wide inflation after the synthetic-DT rollout).
+	// Dedup keys now run through Utils.minimizePurl (qualifier-stripped coordinate).
+
+	private static final String SYSTEMD_BARE = "pkg:deb/debian/systemd@257.9-1~deb13u1";
+	private static final String SYSTEMD_QUALIFIED =
+			SYSTEMD_BARE + "?arch=amd64&distro=debian-13&distro_name=trixie";
+
+	private static VulnerabilityDto medVuln(String purl, String vulnId) {
+		// Carry a real severity source -- alias/group collapse re-derives severity
+		// from the severities set via selectBestSeverity (empty would reseverity to
+		// UNASSIGNED), so production findings always populate it.
+		return new VulnerabilityDto(purl, vulnId, VulnerabilitySeverity.MEDIUM,
+				Set.of(), Set.of(),
+				Set.of(new SeveritySourceDto(SeveritySource.NVD, VulnerabilitySeverity.MEDIUM)),
+				null, null, null,
+				null, null, null, null, null, null);
+	}
+
+	@Test
+	void qualifierOnlyPurlVariantsCollapseInMerge() {
+		ReleaseMetricsDto merged = mergeViaPublicSurface(
+				medVuln(SYSTEMD_BARE, "DEBIAN-CVE-2023-31437"),
+				medVuln(SYSTEMD_QUALIFIED, "DEBIAN-CVE-2023-31437"));
+
+		assertEquals(1, merged.getVulnerabilityDetails().size(),
+				"bare and qualifier-bearing purls for the same package@version must dedup to one finding");
+		assertEquals(1, merged.getMedium(),
+				"the shared CVE must be tallied once, not once per purl qualifier spelling");
+	}
+
+	@Test
+	void qualifierOnlyPurlVariantsCollapseInOrganize() {
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				medVuln(SYSTEMD_BARE, "DEBIAN-CVE-2023-31437"),
+				medVuln(SYSTEMD_QUALIFIED, "DEBIAN-CVE-2023-31437"))));
+		rmd.computeMetricsFromFacts();
+
+		assertEquals(1, rmd.getVulnerabilityDetails().size(),
+				"organizeVulnerabilitiesWithAliases must group qualifier variants of the same package");
+		assertEquals(1, rmd.getMedium(), "the shared CVE must be tallied once");
+	}
+
+	@Test
+	void qualifierOnlyPurlVariantsCollapseForViolations() {
+		// deduplicateViolations (runs inside computeMetricsFromFacts) must apply the
+		// same qualifier-blind dedup as the vuln path, so violation totals stay
+		// consistent with vuln totals.
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setViolationDetails(new LinkedList<>(List.of(
+				new ViolationDto(SYSTEMD_BARE,
+						ViolationType.OPERATIONAL, null, null, Set.of(), null, null, null),
+				new ViolationDto(SYSTEMD_QUALIFIED,
+						ViolationType.OPERATIONAL, null, null, Set.of(), null, null, null))));
+		rmd.computeMetricsFromFacts();
+
+		assertEquals(1, rmd.getPolicyViolationsOperationalTotal(),
+				"bare and qualifier-bearing purls for the same package+type must dedup to one violation");
+	}
+
+	@Test
+	void genuinelyDifferentVersionsStayDistinct() {
+		// Guard against over-merge: qualifier-stripping must keep the version, so
+		// two releases pinning different versions remain two findings.
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				medVuln("pkg:apk/alpine/postgresql18@18.2-r0", "CVE-2026-6637"),
+				medVuln("pkg:apk/alpine/postgresql18@18.3-r0", "CVE-2026-6637"))));
+		rmd.computeMetricsFromFacts();
+
+		assertEquals(2, rmd.getMedium(),
+				"qualifier-stripping must not collapse genuinely different versions");
+	}
+
+	@Test
+	void nullPurlFindingsDedupByVulnId() {
+		// purlIdentity falls back to "" for a null purl, so two findings with no
+		// purl and the same vulnId still collapse rather than both surviving.
+		ReleaseMetricsDto merged = mergeViaPublicSurface(
+				medVuln(null, "CVE-2099-7000"),
+				medVuln(null, "CVE-2099-7000"));
+
+		assertEquals(1, merged.getVulnerabilityDetails().size(),
+				"null-purl findings with the same vulnId must dedup to one");
+		assertEquals(1, merged.getMedium(), "the shared CVE must be tallied once");
+	}
+
+	@Test
+	void nonPkgLocatorsStayDistinct() {
+		// Non-pkg locators are not minimizable; purlIdentity falls back to the raw
+		// string so two different locators remain two distinct findings.
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				medVuln("/usr/lib/libfoo.so", "CVE-2099-7001"),
+				medVuln("/usr/lib/libbar.so", "CVE-2099-7001"))));
+		rmd.computeMetricsFromFacts();
+
+		assertEquals(2, rmd.getMedium(), "distinct non-pkg locators must not collapse");
+	}
+
+	@Test
+	void subpathDistinguishesFindings() {
+		// purlIdentity preserves subpath, so purls differing only by subpath stay
+		// distinct (consistent with Utils.minimizePurl used for analysis matching).
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				medVuln("pkg:golang/github.com/x/y@1.0.0#cmd/a", "CVE-2099-7002"),
+				medVuln("pkg:golang/github.com/x/y@1.0.0#cmd/b", "CVE-2099-7002"))));
+		rmd.computeMetricsFromFacts();
+
+		assertEquals(2, rmd.getMedium(), "subpath must distinguish findings");
+	}
+
+	// ---- clampAttributedAtFloor: a finding cannot be attributed before the
+	// owning entity (artifact/release) existed. Synthetic-bucket findings carry
+	// the BUCKET's scan time, which predates any entity created after that scan.
+
+	private static VulnerabilityDto vulnAttributedAt(String vulnId, ZonedDateTime attributedAt) {
+		return new VulnerabilityDto("pkg:npm/foo@1.0.0", vulnId, VulnerabilitySeverity.MEDIUM,
+				Set.of(), Set.of(), Set.of(), null, null, attributedAt,
+				null, null, null, null, null, null);
+	}
+
+	@Test
+	void clampRaisesPreCreationAttribution() {
+		ZonedDateTime scanTime = ZonedDateTime.parse("2026-07-22T23:00:00Z");
+		ZonedDateTime entityCreated = ZonedDateTime.parse("2026-07-23T10:00:00Z");
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(vulnAttributedAt("CVE-2099-8001", scanTime))));
+		rmd.setViolationDetails(new LinkedList<>(List.of(new ViolationDto(
+				"pkg:npm/foo@1.0.0", ViolationType.LICENSE, "GPL-3.0", null, Set.of(), null, null, scanTime))));
+		rmd.setWeaknessDetails(new LinkedList<>(List.of(new ReleaseMetricsDto.WeaknessDto(
+				"CWE-79", "rule", "src/a.js", "fp", VulnerabilitySeverity.LOW, Set.of(), null, null, scanTime))));
+
+		rmd.clampAttributedAtFloor(entityCreated);
+
+		assertEquals(entityCreated, rmd.getVulnerabilityDetails().get(0).attributedAt(),
+				"bucket-scan attribution predating the entity must be floored at entity creation");
+		assertEquals(entityCreated, rmd.getViolationDetails().get(0).attributedAt());
+		assertEquals(entityCreated, rmd.getWeaknessDetails().get(0).attributedAt());
+	}
+
+	@Test
+	void clampLeavesPostCreationAttributionAndNulls() {
+		ZonedDateTime entityCreated = ZonedDateTime.parse("2026-07-23T10:00:00Z");
+		ZonedDateTime laterScan = ZonedDateTime.parse("2026-07-23T12:00:00Z");
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(
+				vulnAttributedAt("CVE-2099-8002", laterScan),
+				vulnAttributedAt("CVE-2099-8003", null))));
+
+		rmd.clampAttributedAtFloor(entityCreated);
+
+		assertEquals(laterScan, rmd.getVulnerabilityDetails().get(0).attributedAt(),
+				"attribution after entity creation must be untouched");
+		assertNull(rmd.getVulnerabilityDetails().get(1).attributedAt(),
+				"null attribution is the fallback method's concern, not the clamp's");
+	}
+
+	@Test
+	void clampNullFloorIsNoOp() {
+		ZonedDateTime scanTime = ZonedDateTime.parse("2026-07-22T23:00:00Z");
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		rmd.setVulnerabilityDetails(new LinkedList<>(List.of(vulnAttributedAt("CVE-2099-8004", scanTime))));
+
+		rmd.clampAttributedAtFloor(null);
+
+		assertEquals(scanTime, rmd.getVulnerabilityDetails().get(0).attributedAt());
 	}
 }

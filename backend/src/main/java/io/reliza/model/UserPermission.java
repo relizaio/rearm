@@ -68,9 +68,22 @@ public class UserPermission {
 					break;
 			}
 			return pt;
-				
+
 		}
-		
+
+		/**
+		 * Null-safe tier floor test: {@code true} iff {@code type} is granted at
+		 * {@code floor} or stronger (by enum ordinal). Single home for the
+		 * {@code getType().ordinal() >= FLOOR.ordinal()} idiom the component
+		 * team/audience membership rules share ({@code ComponentTeamService} write-team
+		 * floor and the notification-inbox audience floor), so a floor or ordering
+		 * change cannot drift between the two sites. A null {@code type} or
+		 * {@code floor} yields {@code false}.
+		 */
+		public static boolean atLeast (PermissionType type, PermissionType floor) {
+			return type != null && floor != null && type.ordinal() >= floor.ordinal();
+		}
+
 		private PermissionType () {}
 	}
 

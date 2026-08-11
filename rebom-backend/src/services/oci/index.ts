@@ -30,15 +30,23 @@ export const clearMockOciStorage = useMock
 export const getMonthlyRepositoryName = realService.getMonthlyRepositoryName;
 
 // Re-export repository helper functions
-export { 
+export {
   extractRepositoryNameFromBom,
   extractRepositoryNameFromSpdxOciResponse,
   validateOciPushResult,
   validateRepositoryMatch,
-  fetchRawBomWithFallback,
   validateDualBomPush,
   getValidatedRepositoryName
 } from './ociRepositoryHelpers';
+
+// Raw-BOM fetch with verified repository resolution (replaces the old
+// fetchRawBomWithFallback, which masked misplaced raw copies as digest errors)
+export { resolveAndFetchRawBom, logRawRepositoryCensus } from './rawBomResolver';
+
+// Processed-BOM fetch tolerant of the enrichment two-step write (bytes
+// overwritten before the row's digest update lands): one retry against a
+// fresh row read; unchanged row => genuine corruption, original error rethrown.
+export { fetchProcessedBomWithRetry } from './processedBomFetcher';
 
 // Re-export types
 export type { OASResponse, OciResponse } from './ociService';

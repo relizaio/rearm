@@ -44,6 +44,7 @@ import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.RearmIdentifier;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.repositories.DeliverableRepository;
+import io.reliza.repositories.ReleaseRepository;
 import lombok.extern.slf4j.Slf4j;
 
 
@@ -53,6 +54,9 @@ public class DeliverableService {
 	
 	@Autowired
     private AuditService auditService;
+
+	@Autowired
+	private ReleaseRepository releaseRepository;
 	
 	@Autowired
     private BranchService branchService;
@@ -232,6 +236,12 @@ public class DeliverableService {
 		dd.setArtifacts(artifacts);
 		Map<String,Object> recordData = Utils.dataToRecord(dd);
 		saveDeliverable(deliverable, recordData, wu);
+		// Attaching an ALREADY-SCANNED artifact changes a release's rollup without
+		// changing the artifact's metrics, so the scan-time touch never fires and
+		// the release row itself is untouched (only the deliverable is saved). The
+		// retired BY_OUTBOUND_DELIVERABLES finder used to catch this by comparing
+		// artifact.lastScanned against release.lastScanned; this touch replaces it.
+		releaseRepository.touchReleasesByScannedDeliverableArtifact(artifactUuid.toString());
 		return true;
 	}
 	@Transactional

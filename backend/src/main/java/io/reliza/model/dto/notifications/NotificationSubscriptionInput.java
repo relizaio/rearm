@@ -55,14 +55,31 @@ public record NotificationSubscriptionInput(
             List<ReleaseLifecycle> andLifecycleIn,
             List<UUID> channels,
             /*
-             * Phase 13b — UUIDs of NotificationChannelGroups whose
+             * Phase 12 perspective scoping. UUIDs of perspectives that
+             * gate this route's deliveries: an event is delivered only
+             * when the affected release touches at least one of these
+             * perspectives. Null / empty = no perspective gate (match
+             * anything) -- the fan-out gate (perspectiveGateMatches in
+             * NotificationFanOutService) treats both shapes identically.
+             */
+            List<UUID> perspectives,
+            /*
+             * Phase 13b -- UUIDs of NotificationChannelGroups whose
              * members are merged with {@code channels} at fan-out time.
              * Null / empty = no group expansion (deliver to direct
              * channels only). Validated at save time by
              * NotificationSubscriptionService: every UUID must resolve
              * to a group in the same org as the subscription.
              */
-            List<UUID> channelGroups) {
+            List<UUID> channelGroups,
+            /*
+             * T3 -- UUIDs of Teams (user groups) whose own
+             * notificationChannels are merged into this route at fan-out
+             * time. Null / empty = no team expansion. Resolved late, at
+             * fan-out rather than save, so retargeting a team's channel
+             * takes effect without editing every subscription naming it.
+             */
+            List<UUID> teams) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

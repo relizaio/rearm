@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.CrudRepository;
 
 import io.reliza.model.ArtifactSbomComponent;
@@ -54,4 +55,31 @@ public interface ArtifactSbomComponentRepository extends CrudRepository<Artifact
 			+ "WHERE a.org = :org AND a.sbomComponentUuid IN :sbomComponentUuids")
 	List<UUID> findDistinctCanonicalArtifactUuidsByOrgAndSbomComponentUuidIn(
 			UUID org, Collection<UUID> sbomComponentUuids);
+
+	/**
+	 * Fan-out candidate selection, server-side: distinct canonical artifacts
+	 * containing any component whose sticky bucket is INGESTED. Replaces the
+	 * two-step in-memory flow (covered purls → components → giant JDBC
+	 * {@code IN (?,?,...)} of every covered component uuid in the org), whose
+	 * bind-parameter explosion grew with org size and timed out on large
+	 * instances, deterministically stalling that org's fan-out every tick.
+	 * Bucket-membership granularity is a superset of the refMap purl set only
+	 * in the sub-minute window between a membership change and its
+	 * resubmission — and the per-artifact {@code containsAll} gate in
+	 * fanOutOrg (still driven by the in-memory refMap purls) filters any such
+	 * candidate, so semantics are unchanged. Driven by the V69 partial index
+	 * on (org, synthetic_bucket_index).
+	 */
+	@Query(value = """
+			SELECT DISTINCT ascx.canonical_artifact_uuid
+			FROM rearm.synthetic_dtrack_bucket b
+			JOIN rearm.sbom_components sc
+			  ON sc.org = b.org AND sc.synthetic_bucket_index = b.bucket_index
+			JOIN rearm.artifact_sbom_components ascx
+			  ON ascx.sbom_component_uuid = sc.uuid
+			WHERE b.org = :org
+			  AND b.ingest_state = 'INGESTED'
+			  AND ascx.org = :org
+			""", nativeQuery = true)
+	List<UUID> findDistinctCanonicalArtifactUuidsCoveredByIngestedBuckets(@Param("org") UUID org);
 }

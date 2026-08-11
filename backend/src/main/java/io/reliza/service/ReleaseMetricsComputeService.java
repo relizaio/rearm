@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.FlowControl;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -124,8 +125,17 @@ public class ReleaseMetricsComputeService {
 			// KEV stamp for the persisted metrics. orgUuid scopes the probe to
 			// this org's kev_assertions (V54 per-org refactor).
 			stampKnownExploited(rd.getOrg(), rmd);
+			// A finding cannot be attributed to this release before the release
+			// existed. Artifact-borne findings can carry earlier stamps (a shared
+			// SCE artifact attached to a newer release, or synthetic-bucket
+			// findings stamped with the bucket's scan time), and product rollups
+			// inherit children's stamps -- floor them all at release creation.
+			// Runs on the final merged shape so every contribution is covered,
+			// and is idempotent across recomputes (assembly is rebuilt fresh).
+			rmd.clampAttributedAtFloor(rd.getCreatedDate());
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
-			rmd.setLastScanned(lastScanned);
+			// lastScanned is stamped further down, gated on scanIncomplete: a still-pending
+			// scan must not record a lastScanned (see the gate after firstScanned resolves).
 			// Merge artifact firstScanned into whatever rollUpProductReleaseMetrics contributed.
 			// Do NOT unconditionally overwrite: for product releases with no artifacts of
 			// their own, releaseFirstScanned[0] is null and would wipe the value propagated
@@ -154,6 +164,30 @@ public class ReleaseMetricsComputeService {
 			boolean childrenIncomplete = hasChildren && rolledUp.getFirstScanned() == null;
 			if (childrenIncomplete) {
 				rmd.setFirstScanned(null);
+			}
+			// Only stamp lastScanned for a *complete* scan. A scan is incomplete while a
+			// BOM on this release, or a child release, still lacks firstScanned. Recording
+			// a lastScanned in that state advances it past last_updated_date, which evicts
+			// the release from the BY_UPDATE self-heal finder
+			// (ReleaseService.computeMetricsForAllUnprocessedReleases) — and nothing would
+			// ever re-derive it: the lagging input's own scan-completion recomputes that
+			// input, not this parent. Leaving lastScanned null keeps the release "dirty" so
+			// the every-minute sweep re-picks it until firstScanned can actually be set.
+			// This is the single guard that makes stuck product/aggregate releases
+			// self-heal; see the matching skip of touchReleaseLastScanned below.
+			//
+			// Lifecycle gate: only *scannable* (ASSEMBLED+) releases wait. A CANCELLED /
+			// REJECTED / PENDING / DRAFT release with unscanned inputs has nothing to
+			// wait for — its BOM will never be scanned (rejectPendingReleases
+			// auto-cancels abandoned CI runs every tick, minting exactly these rows) —
+			// so it settles (stamps lastScanned, leaves the finders) instead of
+			// squatting at the head of the finders' ASC order forever. If it's ever
+			// revived, the lifecycle transition bumps last_updated_date and it
+			// re-enters the queue naturally.
+			boolean scanIncomplete = (anyBomUnscanned[0] || childrenIncomplete)
+					&& isScannableLifecycle(rd.getLifecycle());
+			if (!scanIncomplete) {
+				rmd.setLastScanned(lastScanned);
 			}
 			// No-BOM anchor: a release that has reached a scannable lifecycle
 			// (ASSEMBLED or beyond) but has no BOM artifacts attached anywhere
@@ -192,11 +226,58 @@ public class ReleaseMetricsComputeService {
 					&& !childrenIncomplete) {
 				rmd.setFirstScanned(originalMetrics.getFirstScanned());
 			}
+			// Backoff fence: an incomplete compute is waiting on an external event
+			// (DTrack scan, child release completion). Fence the release out of the
+			// metrics finders for an escalating interval so it stops consuming one of
+			// the per-tick finder slots every minute — without a fence, permanently
+			// waiting rows are the oldest entries in every finder's ASC order and
+			// starve younger rows behind them. The first attempts are free (grace
+			// window, fence of 0s) so the healthy path — DTrack returns within a few
+			// minutes — keeps today's per-minute retry latency. A complete compute
+			// drops the fence so any future wait starts fresh.
+			if (scanIncomplete) {
+				repository.recordMetricsComputeIncomplete(r.getUuid(),
+						nextMetricsComputeBackoffSeconds(r.getFlowControl()));
+				// Surface long-running stalls: the fence is by-design silent
+				// (waiting on an external event is normal), but a release
+				// that has been incomplete for ~a day of hourly retries is
+				// stuck on something that will not arrive by itself — e.g. a
+				// BOM artifact that never reached scanning (2026-07-12 prod
+				// incident sat like this for 11 days / 266 attempts with no
+				// signal). Warn once per ~24 capped-backoff attempts.
+				FlowControl fcNow = r.getFlowControl();
+				int attemptsNow = (fcNow != null && fcNow.metricsComputeFailureCount() != null)
+						? fcNow.metricsComputeFailureCount() : 0;
+				if (attemptsNow > 0 && attemptsNow % 24 == 0) {
+					log.warn("Metrics compute for release {} has been incomplete for {} attempts — "
+							+ "likely waiting on an artifact that never reached scanning; "
+							+ "check its BOM artifacts' scan state", r.getUuid(), attemptsNow);
+				}
+			} else {
+				repository.clearMetricsComputeBackoff(r.getUuid());
+			}
+			// Child-change push: ANY metrics delta on this release must reach its
+			// containing products, not just the firstScanned transition. Products
+			// re-derive their aggregate from children only when a finder selects
+			// them, and a settled product (lastScanned stamped, row untouched) is
+			// outside every finder pool — so without this push a product's
+			// aggregate freezes at whatever its children looked like when it last
+			// computed, silently ignoring later child rescans that add or resolve
+			// findings. touchForMetricsRecompute bumps the product row back into
+			// the BY_UPDATE pool and drops its fence in one statement; multi-level
+			// products chain one level per tick, and the chain terminates as soon
+			// as a level's aggregate comes out unchanged.
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
 				sharedReleaseService.saveReleaseMetrics(r, rmd);
+				markContainingProductsStale(rd);
 				return true;
-			} else {
+			} else if (!scanIncomplete) {
+				// Complete + unchanged: settle by stamping lastScanned so the release
+				// leaves the BY_UPDATE finder. While the scan is still incomplete we skip
+				// the touch entirely — touchReleaseLastScanned bumps last_updated_date and
+				// lastScanned together, which would evict the release before the pending
+				// child/BOM finishes and strand it in "Scan pending".
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
@@ -222,7 +303,13 @@ public class ReleaseMetricsComputeService {
 				rd.setMetrics(clonedMetrics);
 				sharedReleaseService.saveReleaseMetrics(r, clonedMetrics);
 				return true;
-			} else {
+			} else if (originalMetrics.getFirstScanned() != null) {
+				// Settle only releases whose initial scan has completed. Touching a
+				// still-scan-pending release stamps lastScanned + last_updated_date
+				// together, which evicts it from the BY_UPDATE finder before its BOM /
+				// children finish — and the rescan path (which owns firstScanned)
+				// would never see it again. This non-rescan path runs on analysis
+				// (triage) updates, which can land while the initial scan is pending.
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
@@ -307,6 +394,61 @@ public class ReleaseMetricsComputeService {
 	private static boolean isScannableLifecycle(ReleaseLifecycle lc) {
 		if (lc == null) return false;
 		return lc.ordinal() >= ReleaseLifecycle.ASSEMBLED.ordinal();
+	}
+
+	// Escalating fence for incomplete metrics computes; mirrors the SBOM
+	// reconcile backoff in SbomComponentService. The first GRACE attempts are
+	// free (0s fence — per-minute retries) so the healthy path, where DTrack
+	// returns within a few minutes, keeps today's latency. After the grace
+	// window the fence doubles from BASE up to MAX, so a release waiting on
+	// something that never arrives retries forever without occupying finder
+	// slots: 5 free ticks, then 60, 120, 240, 480, 960, 1920, 3600, 3600...
+	private static final int METRICS_BACKOFF_GRACE_ATTEMPTS = 5;
+	private static final int METRICS_BACKOFF_BASE_SECONDS = 60;
+	private static final int METRICS_BACKOFF_MAX_SECONDS = 3600;
+
+	/**
+	 * Next fence interval given the release's current flow_control. Package
+	 * visible so the poison-pill catch in
+	 * {@code ReleaseService.computeMetricsForReleaseList} escalates on the
+	 * same schedule.
+	 */
+	static int nextMetricsComputeBackoffSeconds(FlowControl fc) {
+		int priorAttempts = (fc != null && fc.metricsComputeFailureCount() != null)
+				? fc.metricsComputeFailureCount() : 0;
+		if (priorAttempts < METRICS_BACKOFF_GRACE_ATTEMPTS) return 0;
+		int escalation = priorAttempts - METRICS_BACKOFF_GRACE_ATTEMPTS;
+		return Math.min(METRICS_BACKOFF_BASE_SECONDS << Math.min(escalation, 7),
+				METRICS_BACKOFF_MAX_SECONDS);
+	}
+
+	/**
+	 * Push this release's metrics change to every product release that bundles
+	 * {@code rd}: bump each product back into the {@code BY_UPDATE} finder pool
+	 * (and drop its fence) so its aggregate is re-derived from current child
+	 * state on the next scheduler tick. Replaces the old fence-only clear,
+	 * which (a) fired only on the firstScanned transition and (b) did not
+	 * touch {@code last_updated_date}, so a settled product stayed outside
+	 * every finder and its aggregate went permanently stale. Best-effort: a
+	 * failure here only delays the parent, never strands it — the next child
+	 * change retries.
+	 */
+	private void markContainingProductsStale(ReleaseData rd) {
+		try {
+			List<Release> products = repository.findProductsByRelease(
+					rd.getOrg().toString(), rd.getUuid().toString());
+			// UUID order: these touches run inside the caller's open compute
+			// transaction, and the parallel metrics workers can touch
+			// overlapping product sets concurrently -- a consistent lock
+			// acquisition order across workers makes deadlock impossible.
+			products.sort(java.util.Comparator.comparing(Release::getUuid));
+			for (Release p : products) {
+				repository.touchForMetricsRecompute(p.getUuid());
+			}
+		} catch (Exception e) {
+			log.error("Failed to mark containing products stale for release {}",
+					rd.getUuid(), e);
+		}
 	}
 
 	private ReleaseMetricsDto rollUpProductReleaseMetrics(ReleaseData rd) {

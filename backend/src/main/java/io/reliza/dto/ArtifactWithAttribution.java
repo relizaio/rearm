@@ -12,10 +12,15 @@ public record ArtifactWithAttribution(
     String name,
     String version,
     
-    // Attribution lists - which releases contributed to this artifact's lifecycle
-    List<ComponentAttribution> addedIn,    // Releases that added this artifact
-    List<ComponentAttribution> removedIn,  // Releases that removed this artifact
-    
+    // Attribution PREVIEW lists - capped at FindingComparisonService.ATTRIBUTION_PREVIEW_CAP.
+    // The *Count fields carry the true totals (UI: preview inline + "+N more" -> drill-down).
+    List<ComponentAttribution> addedIn,    // Releases that added this artifact (preview)
+    List<ComponentAttribution> removedIn,  // Releases that removed this artifact (preview)
+
+    // True totals (may exceed the preview list sizes above)
+    int addedInCount,
+    int removedInCount,
+
     // Org-wide state flags
     boolean isNetAdded,      // True if newly added to org (not removed anywhere)
     boolean isNetRemoved     // True if removed from all components

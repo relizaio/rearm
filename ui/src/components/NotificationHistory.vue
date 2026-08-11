@@ -73,12 +73,22 @@
             Some delivery details are unavailable on this server version, so a few columns (such as error and retry info) may be missing. Your delivery history is shown below.
         </n-alert>
 
+        <!-- BUG 4: active event-scope indicator. Deep-linking from an inbox row
+             filters to that ONE event; make it visible + clearable so the view
+             doesn't read as "why am I seeing all these rows?". -->
+        <div v-if="historyFilters.eventUuid" class="history-active-filter">
+            <n-tag type="info" size="small" closable @close="clearEventFilter" data-testid="history-event-chip">
+                Showing deliveries for one event: {{ historyFilters.eventUuid.slice(0, 8) }}...
+            </n-tag>
+        </div>
+
         <n-data-table
             :data="deliveries"
             :columns="deliveryColumns"
             :loading="deliveriesLoading"
             :single-line="false"
             :bordered="false"
+            :row-key="(row) => row.uuid"
         />
 
         <div v-if="historyTotalCount > historyPageSize" class="history-pagination">
@@ -119,6 +129,7 @@ const props = defineProps<{
     // remounts this component when they change (keyed on the deep-link), so a
     // fresh seed always takes effect. Manual filter changes are independent.
     initialChannelUuid?: string | null
+    initialEventUuid?: string | null
     initialStatus?: string | null
     initialSubscriptionUuid?: string | null
 }>()
@@ -139,11 +150,14 @@ const historyTotalCount = ref<number>(0)
 const historyPageCount = computed<number>(() =>
     Math.max(1, Math.ceil(historyTotalCount.value / historyPageSize.value))
 )
-const historyFilters = ref<{ status: string | null, origin: string | null, channelUuid: string | null, subscriptionUuid: string | null }>({
+const historyFilters = ref<{ status: string | null, origin: string | null, channelUuid: string | null, subscriptionUuid: string | null, eventUuid: string | null }>({
     status: null,
     origin: null,
     channelUuid: null,
     subscriptionUuid: null,
+    // Event filter (BUG 4): deep-link only (no dropdown) -- surfaced as a
+    // clearable chip so the scope is obvious ("why am I seeing these rows?").
+    eventUuid: null,
 })
 
 // History channel filter spans ALL channels (incl. disabled) so a user
@@ -173,21 +187,30 @@ const channelStatusById = computed<Record<string, string>>(() => {
 // ENRICHMENT = retry/error detail; if a backend lacks one of these (CE mirror
 // lagging Pro) the history table degrades to core rows instead of blanking.
 const HISTORY_CORE_ITEM_FIELDS = 'uuid org outboxEventUuid subscriptionUuid channelUuid status origin createdDate'
-const HISTORY_ENRICHMENT_ITEM_FIELDS = 'dedupKey attemptCount nextAttemptAt sentAt lastError'
+// payloadJson (BUG 3) is Pro-ahead of a lagging CE mirror; as an ENRICHMENT field
+// it degrades to absent (expand shows "unavailable") instead of blanking the table.
+const HISTORY_ENRICHMENT_ITEM_FIELDS = 'dedupKey attemptCount nextAttemptAt sentAt lastError payloadJson'
 // withSub gates the subscriptionUuid ARGUMENT, which only newer backends accept.
 // We include it ONLY when the subscription filter is active, so the default
 // History query never sends an unknown arg (which would fail the whole query
 // and blank the table on a CE mirror lagging the Pro schema -- the same
 // blanking the field-level drift fallback guards against, but args can't
 // degrade to core since a missing arg rejects the document outright).
-function buildHistoryQuery (itemFields: string, withSub = false): DocumentNode {
+function buildHistoryQuery (itemFields: string, withSub = false, withEvent = false): DocumentNode {
     const subVar = withSub ? '$subscriptionUuid: ID,' : ''
     const subArg = withSub ? 'subscriptionUuid: $subscriptionUuid,' : ''
+    // eventUuid (BUG 4) is gated the same way as subscriptionUuid: only sent when
+    // that filter is active, so the default query never ships an arg a lagging
+    // backend might reject (a missing arg rejects the whole document, and args
+    // can't degrade to core the way fields can).
+    const eventVar = withEvent ? '$eventUuid: ID,' : ''
+    const eventArg = withEvent ? 'eventUuid: $eventUuid,' : ''
     return gql`
         query notificationDeliveriesPage(
             $orgUuid: ID!,
             $channelUuid: ID,
             ${subVar}
+            ${eventVar}
             $status: NotificationDeliveryStatusEnum,
             $origin: NotificationDeliveryOriginEnum,
             $limit: Int,
@@ -197,6 +220,7 @@ function buildHistoryQuery (itemFields: string, withSub = false): DocumentNode {
                 orgUuid: $orgUuid,
                 channelUuid: $channelUuid,
                 ${subArg}
+                ${eventArg}
                 status: $status,
                 origin: $origin,
                 limit: $limit,
@@ -209,11 +233,6 @@ function buildHistoryQuery (itemFields: string, withSub = false): DocumentNode {
     `
 }
 const FULL_FIELDS = `${HISTORY_CORE_ITEM_FIELDS} ${HISTORY_ENRICHMENT_ITEM_FIELDS}`
-const HISTORY_DELIVERIES_FULL = buildHistoryQuery(FULL_FIELDS)
-const HISTORY_DELIVERIES_CORE = buildHistoryQuery(HISTORY_CORE_ITEM_FIELDS)
-// Variants that also filter by subscriptionUuid (used only when that filter is set).
-const HISTORY_DELIVERIES_FULL_SUB = buildHistoryQuery(FULL_FIELDS, true)
-const HISTORY_DELIVERIES_CORE_SUB = buildHistoryQuery(HISTORY_CORE_ITEM_FIELDS, true)
 
 async function loadChannels (): Promise<void> {
     try {
@@ -256,9 +275,14 @@ async function loadDeliveries (): Promise<void> {
     try {
         const offset = (historyPage.value - 1) * historyPageSize.value
         const subUuid = historyFilters.value.subscriptionUuid
+        const eventUuid = historyFilters.value.eventUuid
+        // Build the query from the active optional args so an unused arg is never
+        // declared (drift-safe). Cheap: gql parses a handful of times per session.
+        const fullQuery = buildHistoryQuery(FULL_FIELDS, !!subUuid, !!eventUuid)
+        const coreQuery = buildHistoryQuery(HISTORY_CORE_ITEM_FIELDS, !!subUuid, !!eventUuid)
         const { data: page, degraded } = await loadWithSchemaDriftFallback(graphqlClient, {
-            fullQuery: subUuid ? HISTORY_DELIVERIES_FULL_SUB : HISTORY_DELIVERIES_FULL,
-            coreQuery: subUuid ? HISTORY_DELIVERIES_CORE_SUB : HISTORY_DELIVERIES_CORE,
+            fullQuery,
+            coreQuery,
             variables: {
                 orgUuid: orgUuid.value,
                 channelUuid: historyFilters.value.channelUuid,
@@ -267,6 +291,7 @@ async function loadDeliveries (): Promise<void> {
                 limit: historyPageSize.value,
                 offset,
                 ...(subUuid ? { subscriptionUuid: subUuid } : {}),
+                ...(eventUuid ? { eventUuid } : {}),
             },
             extractPath: (d: any) => d?.notificationDeliveries,
         })
@@ -291,7 +316,31 @@ function applyHistoryFilters (): void {
     loadDeliveries()
 }
 
+// BUG 4: clear the deep-link event filter (the chip's x) and reload.
+function clearEventFilter (): void {
+    historyFilters.value.eventUuid = null
+    applyHistoryFilters()
+}
+
+// BUG 3: the expanded row's rendered payload -- reuses the inbox drawer's
+// "what was sent" view. payloadJson is drift-tolerant (absent on a lagging
+// backend), so show a clear "unavailable" note rather than a blank expander.
+function renderDeliveryPayload (row: DeliveryRow) {
+    const raw = row.payloadJson
+    if (!raw) {
+        return h('span', { class: 'muted-12' },
+            'No payload available (older server version, or the event was purged).')
+    }
+    let pretty = raw
+    try { pretty = JSON.stringify(JSON.parse(raw), null, 2) } catch { /* not JSON -- show raw text */ }
+    return h('pre', { class: 'history-payload' }, pretty)
+}
+
 const deliveryColumns = computed(() => [
+    {
+        type: 'expand',
+        renderExpand: (row: DeliveryRow) => renderDeliveryPayload(row),
+    },
     {
         title: 'When', key: 'createdDate',
         render: (row: DeliveryRow) => formatHistoryTimestamp(row.sentAt || row.createdDate),
@@ -359,6 +408,7 @@ onMounted(async () => {
     // Seed filters from a deep-link BEFORE the first load so the initial
     // query is already scoped (no flash of the full list, no extra fetch).
     if (props.initialChannelUuid) historyFilters.value.channelUuid = props.initialChannelUuid
+    if (props.initialEventUuid) historyFilters.value.eventUuid = props.initialEventUuid
     if (props.initialStatus) historyFilters.value.status = props.initialStatus
     if (props.initialSubscriptionUuid) historyFilters.value.subscriptionUuid = props.initialSubscriptionUuid
     // Channels + subscriptions feed the name-resolution maps; deliveries
@@ -380,4 +430,14 @@ onMounted(async () => {
 .hist-chan-disabled { color: #f0a020; font-weight: 600; }
 .history-filters { margin-bottom: 12px; }
 .history-pagination { margin-top: 12px; display: flex; justify-content: flex-end; }
+.history-active-filter { margin-bottom: 8px; }
+.history-payload {
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+}
 </style>

@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,6 +49,7 @@ import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.model.SystemInfoData;
+import io.reliza.model.MetricsAudit;
 import io.reliza.model.Organization;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
@@ -124,7 +126,7 @@ public class OrganizationService {
 	/**
 	 * Replace the org's global PR-validation trigger rule list. Persistence-only:
 	 * the caller is responsible for validating each rule (regex compile, name
-	 * uniqueness, integration scope/capability) — typically the SAAS-only
+	 * uniqueness, integration scope/capability) -- typically the SAAS-only
 	 * {@code OrgValidationTriggerService.setRules}, which handles those checks
 	 * before delegating here. Lives on the shared service so the data field
 	 * round-trip stays in one place; the validation that gates writes lives in
@@ -145,7 +147,7 @@ public class OrganizationService {
 	/**
 	 * Replace the org's global approval-policy assignment rule list.
 	 * Persistence-only: the caller is responsible for validating each
-	 * rule (regex compile, name uniqueness, policy exists in same org) —
+	 * rule (regex compile, name uniqueness, policy exists in same org) --
 	 * typically the SAAS-only {@code OrgApprovalPolicyService.setRules},
 	 * which handles those checks before delegating here. Lives on the
 	 * shared service so the data field round-trip stays in one place;
@@ -162,6 +164,42 @@ public class OrganizationService {
 		od.setGlobalApprovalPolicyRules(validatedRules == null ? new java.util.LinkedList<>() : validatedRules);
 		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
 		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
+	/** Persist validated team-assignment rules (T2). Validation lives in
+	 *  {@code OrgTeamAssignmentRuleService}; this only stores. */
+	@Transactional
+	public OrganizationData setGlobalTeamAssignmentRules(UUID orgUuid,
+			List<OrganizationData.GlobalTeamAssignmentRule> validatedRules, WhoUpdated wu)
+			throws RelizaException {
+		Organization org = getOrganizationService.getOrganization(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		od.setGlobalTeamAssignmentRules(validatedRules == null ? new LinkedList<>() : validatedRules);
+		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
+		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
+	/**
+	 * Orgs with no BRANCH-GRAIN v3 watermark AND no {@code RELEASE} metrics_audit history -- vacuously
+	 * complete (no re-scan transitions ever happened), eligible for immediate v3 certification by the
+	 * repair sweep. A never-re-scanned org that still carries a stale legacy v1/v2 watermark in its
+	 * settings JSONB is eligible too (the gate reads only the v3 watermark).
+	 */
+	public List<UUID> listOrgsEligibleForVacuousFindingChangeV3Certification(MetricsAudit.MetricsEntityType entityType) {
+		return repository.findOrgsEligibleForVacuousFindingChangeV3Certification(entityType.name());
+	}
+
+	/**
+	 * Certifies the org's BRANCH-GRAIN {@code finding_change_events_v3} (events-lite) backfill watermark at
+	 * the CURRENT {@link io.reliza.service.FindingDimKey#KEY_VERSION} (v3 shares the {@code finding_dim}
+	 * dimension). Called only when a full v3 backfill of the org completed with no per-release failures.
+	 * Overwrites on re-run so a re-key backfill re-certifies at the new version.
+	 */
+	@Transactional
+	public void certifyFindingChangeV3Backfill(UUID orgUuid, ZonedDateTime completedAt) {
+		repository.certifyFindingChangeV3Backfill(orgUuid, completedAt.toInstant().toString(),
+				FindingDimKey.KEY_VERSION);
 	}
 	
 	private List<Organization> listAllOrganizations() {
@@ -699,7 +737,7 @@ public class OrganizationService {
 		SidPurlMode effectiveMode = patchMode != null ? patchMode : settings.getSidPurlMode();
 		List<String> effectiveSegments = patchSegments != null ? patchSegments : settings.getSidAuthoritySegments();
 
-		// Validate any non-empty patch segments — otherwise invalid values could be
+		// Validate any non-empty patch segments -- otherwise invalid values could be
 		// persisted while sid is off and "go live" later when an admin flips the mode.
 		if (patchSegments != null && !patchSegments.isEmpty()) {
 			SidPurlUtils.ValidationResult vr = SidPurlUtils.validateAuthoritySegments(patchSegments);
@@ -721,12 +759,12 @@ public class OrganizationService {
 		}
 		if (patchSegments != null) {
 			// Normalize empty list to null for symmetry with ComponentService
-			// (ComponentService.java:~372) and PerspectiveService.updateSidPurl — stored
+			// (ComponentService.java:~372) and PerspectiveService.updateSidPurl -- stored
 			// shape is consistently `null` for "no segments", never `[]`.
 			settings.setSidAuthoritySegments(patchSegments.isEmpty() ? null : patchSegments);
 		}
 
-		// DISABLED means no segments — clear so stale data can't go live on a future toggle.
+		// DISABLED means no segments -- clear so stale data can't go live on a future toggle.
 		if (settings.getSidPurlModeOrDefault() == SidPurlMode.DISABLED) {
 			settings.setSidAuthoritySegments(null);
 		}

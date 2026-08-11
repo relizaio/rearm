@@ -1,5 +1,5 @@
 import { BomDto, BomMetaDto, BomRecord } from '../../types';
-import { fetchFromOci, extractRepositoryNameFromBom } from '../oci';
+import { fetchProcessedBomWithRetry } from '../oci';
 
 export class BomMapper {
     /**
@@ -32,10 +32,8 @@ export class BomMapper {
      */
     static async toDtoWithContent(record: BomRecord): Promise<BomDto> {
         const dto = this.toDto(record);
-        const storedRepositoryName = extractRepositoryNameFromBom(record);
-        // Validate augmented/processed BOM using processedFileDigest
-        const expectedDigest = record.meta?.processedFileDigest;
-        dto.bom = await fetchFromOci(record.uuid, storedRepositoryName, expectedDigest);
+        // Digest-validated, race-tolerant (see fetchProcessedBomWithRetry)
+        dto.bom = await fetchProcessedBomWithRetry(record);
         return dto;
     }
 

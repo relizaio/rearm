@@ -30,7 +30,11 @@ public class ArtifactGatherService {
 		Set<UUID> artifactIds = new HashSet<>(rd.getArtifacts());
 		if (null != rd.getSourceCodeEntry()) {
 			var sce = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get();
-			List<UUID> sceArtIds = sce.getArtifacts().stream().filter(scea -> rd.getComponent().equals(scea.componentUuid())).map(scea -> scea.artifactUuid()).toList();
+			// null component tag = commit-scoped artifact (signature / signed
+			// payload) -- belongs to every release referencing this SCE.
+			List<UUID> sceArtIds = sce.getArtifacts().stream()
+					.filter(scea -> scea.componentUuid() == null || rd.getComponent().equals(scea.componentUuid()))
+					.map(scea -> scea.artifactUuid()).toList();
 			artifactIds.addAll(sceArtIds);
 		}
 		// skip inbound deliverables

@@ -368,14 +368,25 @@ const onSubmit = async () => {
         createArtifactInput.sce = props.inputSce
     }
 
+    // Capture the display id we submitted so we can locate the resulting VEX
+    // artifact (and its import summary) in the mutation response below.
+    const submittedDisplayId = artifact.value.displayIdentifier
+    const isVex = artifact.value.type === 'VEX'
+    // For a VEX upload, ask the mutation for the resulting artifacts + their
+    // import summary so we can report matched / unmatched counts.
+    const releaseBody = isVex
+        ? `uuid artifactDetails { uuid displayIdentifier type vexImportSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected attestationsDeferred statementsUnmatched statementsErrored errorMessages } }`
+        : `uuid`
+
     isUploading.value = true
     try{
+        let mutationResult: any
         if(props.isUpdateExistingBom){
-            const response = await graphqlClient.mutate({
+            mutationResult = await graphqlClient.mutate({
                 mutation: gql`
                     mutation addArtifactManual($artifactInput: CreateArtifactInput, $artifactUuid: ID!) {
                         addArtifactManual(artifactInput: $artifactInput, artifactUuid: $artifactUuid) {
-                            uuid
+                            ${releaseBody}
                         }
                     }`,
                 variables: {
@@ -386,11 +397,11 @@ const onSubmit = async () => {
             })
             emit('addArtifact')
         }else {
-            const response = await graphqlClient.mutate({
+            mutationResult = await graphqlClient.mutate({
                 mutation: gql`
                     mutation addArtifactManual($artifactInput: CreateArtifactInput) {
                         addArtifactManual(artifactInput: $artifactInput) {
-                            uuid
+                            ${releaseBody}
                         }
                     }`,
                 variables: {
@@ -401,14 +412,8 @@ const onSubmit = async () => {
             emit('addArtifact')
         }
 
-        if (artifact.value.type === 'VEX') {
-            Swal.fire({
-                icon: 'success',
-                title: 'VEX uploaded',
-                text: 'Statements are being processed in the background. Open the VEX tab on this release (or the org-wide VEX Proposals inbox) to review proposals.',
-                timer: 6000,
-                showConfirmButton: true,
-            })
+        if (isVex) {
+            showVexOutcome(mutationResult?.data?.addArtifactManual, submittedDisplayId)
         }
 
     }   catch (err: any) {
@@ -421,6 +426,82 @@ const onSubmit = async () => {
         isUploading.value = false
     }
 };
+
+// Report the VEX import outcome. VEX import is synchronous, so the counts are
+// final by the time the mutation returns -- if nothing matched the release's
+// SBOM inventory, say so instead of pointing the user at an empty VEX tab.
+function showVexOutcome(release: any, displayId: string) {
+    const artifacts = release?.artifactDetails ?? []
+    const vexArtifact = artifacts
+        .filter((a: any) => a?.type === 'VEX' && a?.displayIdentifier === displayId)
+        .find((a: any) => a?.vexImportSummary)
+    const s = vexArtifact?.vexImportSummary
+
+    if (!s) {
+        // No summary available (older backend, or nothing to summarize): keep it
+        // truthful -- processing is already done, direct the user to the tab.
+        Swal.fire({
+            icon: 'success', title: 'VEX uploaded',
+            text: 'Open the VEX tab on this release (or the org-wide VEX Proposals inbox) to review proposals.',
+            timer: 6000, showConfirmButton: true,
+        })
+        return
+    }
+
+    const total = s.statementsTotal ?? 0
+    const staged = s.proposalsCreated ?? 0
+    const accepted = s.proposalsAutoAccepted ?? 0
+    const rejected = s.proposalsAutoRejected ?? 0
+    const deferred = s.attestationsDeferred ?? 0
+    const unmatched = s.statementsUnmatched ?? 0
+    const errored = s.statementsErrored ?? 0
+    const matched = staged + accepted + rejected
+    // First few backend messages (e.g. "N entries skipped: no analysis block",
+    // doc parse errors) -- the concrete "why", not just counts.
+    const details = (s.errorMessages ?? []).slice(0, 3).join(' ')
+
+    if (total === 0) {
+        // Nothing to import at all: doc-level parse failure, or the document
+        // contains no VEX statements ReARM can read.
+        const text = details
+            ? `No VEX statements could be imported from this document. ${details}`
+            : 'No VEX statements found in this document. For CycloneDX VEX, ReARM imports vulnerabilities[] entries that carry an analysis block (state / justification); entries without analysis are plain vulnerability reports, not VEX statements.'
+        Swal.fire({ icon: 'warning', title: 'No VEX statements imported', text, showConfirmButton: true })
+        return
+    }
+
+    if (matched === 0) {
+        const parts = [`${total} VEX statement${total === 1 ? '' : 's'} uploaded, but none produced a proposal, so nothing was added to the VEX tab.`]
+        if (unmatched > 0) parts.push(`${unmatched} unmatched: the VEX product PURLs / versions do not correspond to any component in this release's SBOM -- check that the VEX targets the same PURLs (including version) that appear in the SBOM.`)
+        if (errored > 0) parts.push(`${errored} could not be processed.`)
+        if (details) parts.push(details)
+        Swal.fire({ icon: 'warning', title: 'No VEX statements matched', text: parts.join(' '), showConfirmButton: true })
+        return
+    }
+
+    const parts = []
+    if (staged > 0) parts.push(`${staged} staged for review`)
+    // Deferred statements are accepted but their analysis write waits on a
+    // mitigation attestation -- report them separately so a conditional claim
+    // (e.g. not_affected / requires_environment) doesn't look silently ignored.
+    const applied = accepted - deferred
+    if (applied > 0) parts.push(`${applied} auto-accepted`)
+    if (deferred > 0) parts.push(`${deferred} deferred pending mitigation attestation`)
+    if (rejected > 0) parts.push(`${rejected} auto-rejected`)
+    if (unmatched > 0) parts.push(`${unmatched} unmatched`)
+    if (errored > 0) parts.push(`${errored} could not be processed`)
+    const breakdown = parts.length ? `: ${parts.join(', ')}` : ' processed'
+    const deferredHint = deferred > 0
+        ? ' Conditional claims apply after their control is attested in the Mitigation Attestations inbox.'
+        : ''
+    const suffix = details && errored > 0 ? ` ${details}` : ''
+    Swal.fire({
+        icon: 'success', title: 'VEX processed',
+        text: `${total} statement${total === 1 ? '' : 's'}${breakdown}. Open the VEX tab to review.${deferredHint}${suffix}`,
+        timer: deferred > 0 ? 10000 : 7000, showConfirmButton: true,
+    })
+}
+
 const onCreateDownloadLinks = () => {
     return {
         uri: '',

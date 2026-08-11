@@ -84,6 +84,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.entry.AggregationType;
+import io.reliza.model.changelog.entry.FindingChangeScope;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CveSearchResultDto;
@@ -101,8 +102,12 @@ import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.dto.ChangelogFindingKind;
 import io.reliza.dto.ChangelogRecords.ComponentChangelog;
 import io.reliza.dto.ChangelogRecords.OrganizationChangelog;
+import io.reliza.dto.ComponentAttributionPage;
+import io.reliza.dto.FindingAttributionBucket;
+import io.reliza.service.FindingComparisonService.FindingChangeTimelinePage;
 import io.reliza.service.ChangeLogService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.DownloadLogService;
@@ -120,6 +125,8 @@ import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
+import io.reliza.model.dto.VexImportResult;
+import io.reliza.model.dto.VexImportSummary;
 import io.reliza.service.VexImportService;
 import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.oss.OssReleaseService;
@@ -268,6 +275,10 @@ public class ReleaseDatafetcher {
 	 * fail we surface the agent-path denial (it carries the richer
 	 * sessionUuid/clientSessionId context) rather than the generic
 	 * "not authorized for this resource" from the RESOURCE path.
+	 * Individual path denials log at INFO inside AuthorizationService;
+	 * the SECURITY-level log fires here, only once BOTH paths have
+	 * denied — an agent-path miss that the RESOURCE path authorizes is
+	 * a legitimate read, not an alertable event.
 	 */
 	@DgsData(parentType = "Query", field = "agenticReleaseProgrammatic")
 	public ReleaseData agenticReleaseProgrammatic(
@@ -292,6 +303,9 @@ public class ReleaseDatafetcher {
 						ahp, PermissionFunction.RESOURCE, PermissionScope.RELEASE,
 						releaseUuid, List.of(rd), CallType.READ);
 			} catch (AccessDeniedException resourceDenied) {
+				log.error("SECURITY: agentic release read denied on both paths — release {} (sessionUuid={}, clientSessionId={}, org={}; agent path: {}; resource path: {})",
+						releaseUuid, sessionUuid, clientSessionId, ahp.getOrgUuid(),
+						agentDenied.getMessage(), resourceDenied.getMessage());
 				throw agentDenied;
 			}
 		}
@@ -651,7 +665,78 @@ public class ReleaseDatafetcher {
 
 		return oc;
 	}
-	
+
+	/**
+	 * Paginated drill-down for ONE finding's attribution bucket (the "+N more" expansion behind the
+	 * preview-capped inline lists on the changelog *WithAttribution types). Authorizes at org / perspective
+	 * scope exactly like organizationChangelogByDate; component/branch narrowing is a display filter within
+	 * that boundary.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "findingAttributionByDate")
+	public ComponentAttributionPage findingAttributionByDate(DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo,
+			@InputArgument("findingKind") ChangelogFindingKind findingKind,
+			@InputArgument("findingKey") String findingKey,
+			@InputArgument("bucket") FindingAttributionBucket bucket,
+			@InputArgument("page") Integer page,
+			@InputArgument("pageSize") Integer pageSize
+		) throws RelizaException {
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+		}
+		return changelogService.getFindingAttributionPage(orgUuid, componentUuid, branchUuid, perspectiveUuid,
+			dateFrom, dateTo, findingKind, findingKey, bucket, page == null ? 0 : page, pageSize == null ? 0 : pageSize);
+	}
+
+	/**
+	 * Paginated over-time timeline behind the capped inline overTimeFindingChanges (drawer source).
+	 * Optional findingKey narrows to one finding. Authorizes at org / perspective scope like the changelog.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "findingChangeTimelineByDate")
+	public FindingChangeTimelinePage findingChangeTimelineByDate(
+			DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo,
+			@InputArgument("findingKey") String findingKey,
+			@InputArgument("page") Integer page,
+			@InputArgument("pageSize") Integer pageSize,
+			@InputArgument("scope") FindingChangeScope scope
+		) throws RelizaException {
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+		}
+		return changelogService.getFindingChangeTimelinePage(orgUuid, componentUuid, branchUuid, perspectiveUuid,
+			dateFrom, dateTo, findingKey, page == null ? 0 : page, pageSize == null ? 0 : pageSize,
+			scope == null ? FindingChangeScope.RELEASE_ANCHORED : scope);
+	}
+
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addReleaseManual")
@@ -1005,17 +1090,27 @@ public class ReleaseDatafetcher {
 			}
 		}
 
-		// First, try to resolve component normally
+		// Tri-state resolution: creation is legitimate ONLY on NOT_FOUND. The
+		// previous catch-based flow treated EVERY resolution failure as "not
+		// found" when createComponentIfMissing was set -- including AMBIGUOUS
+		// (duplicate registrations for the same VCS + repoPath) -- so once two
+		// duplicates existed, every CI run minted another instead of surfacing
+		// the operator problem (30+ observed in prod, one per run).
 		UUID componentId = null;
-		try {
-			componentId = componentService.resolveComponentIdFromInput(progReleaseInput, authCtx);
-		} catch (RelizaException e) {
-			Boolean createComponentIfMissing = (Boolean) progReleaseInput.get("createComponentIfMissing");
-			if (Boolean.TRUE.equals(createComponentIfMissing)) {
-				// Will create component after authorization is established
-				log.info("Component not found, will create due to createComponentIfMissing flag");
-			} else {
-				throw new RelizaException("Component cannot be resolved: " + e.getMessage());
+		ComponentService.ComponentResolution componentResolution =
+				componentService.resolveComponentResolutionFromInput(progReleaseInput, authCtx);
+		switch (componentResolution.status()) {
+			case FOUND -> componentId = componentResolution.componentId();
+			case AMBIGUOUS -> throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+			case NOT_FOUND -> {
+				Boolean createComponentIfMissing = (Boolean) progReleaseInput.get("createComponentIfMissing");
+				if (Boolean.TRUE.equals(createComponentIfMissing)) {
+					// Will create component after authorization is established
+					log.info("Component not found ({}), will create due to createComponentIfMissing flag",
+							componentResolution.detail());
+				} else {
+					throw new RelizaException("Component cannot be resolved: " + componentResolution.detail());
+				}
 			}
 		}
 
@@ -1410,7 +1505,8 @@ public class ReleaseDatafetcher {
 					deliverableService.addArtifact(deliverableId, artId, wu);
 				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
 					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
-					SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+					SCEArtifact sceArt = new SCEArtifact(artId,
+							SourceCodeEntryData.sceArtifactComponentTag(artDto.getType(), cd.getUuid()));
 					sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
 				} else { //default case, attach to the release
 					releaseService.addArtifact(artId, ord.get().getUuid(),  wu);
@@ -1423,7 +1519,8 @@ public class ReleaseDatafetcher {
 					deliverableService.replaceArtifact(deliverableId,inputArtifactUuid, artId, wu);
 				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
 					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
-					SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+					SCEArtifact sceArt = new SCEArtifact(artId,
+							SourceCodeEntryData.sceArtifactComponentTag(artDto.getType(), cd.getUuid()));
 					SCEArtifact replaceArt = new SCEArtifact(inputArtifactUuid, cd.getUuid());
 					sourceCodeEntryService.replaceArtifact(sceUuid, replaceArt, sceArt, wu);
 				} else { //default case, attach to the release
@@ -1441,9 +1538,12 @@ public class ReleaseDatafetcher {
 
 			if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
 				try {
-					vexImportService.dispatchFromArtifact(
+					VexImportResult vexResult = vexImportService.dispatchFromArtifact(
 						artId, artDto, rd, belongsTo,
 						multipartFile.getBytes(), wu);
+					// Stamp the outcome on the artifact so the UI can report
+					// matched / unmatched counts instead of a silently empty VEX tab.
+					artifactService.saveArtifactVexImportSummary(artId, VexImportSummary.fromResult(vexResult), wu);
 				} catch (Exception e) {
 					log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
 						artId, rd.getUuid(), e.getMessage());
@@ -1480,14 +1580,32 @@ public class ReleaseDatafetcher {
 		if (ord.isEmpty()) {
 			throw new RelizaException("Release not found. Provide either 'release' UUID or 'component' + 'version'.");
 		}
-		
+
+		// When the caller resolved the release by UUID alone, no version was
+		// supplied in the input map. Fall back to the resolved release's
+		// version so it flows through to RebomOptions -- rebom rejects a null
+		// version during PURL generation otherwise.
+		if (StringUtils.isEmpty(version)) {
+			version = ord.get().getVersion();
+		}
+
 		// Authorization
 		if (null == componentId) componentId = ord.get().getComponent();
-		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		if (null != ro) {
+		if (null != ro && ahp.getType() == ApiTypeEnum.FREEFORM) {
+			// FREEFORM keys carry scope/function permission tuples; authorize a
+			// WRITE on the resolved component the same way PR upsert does --
+			// COMPONENT-scoped READ_WRITE on this component, a PERSPECTIVE
+			// permission containing it, or org-wide READ_WRITE all match.
+			FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp,
+					PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ro.getUuid(),
+					List.of(ro), CallType.WRITE);
+			ar = AuthorizationResponse.initialize(InitType.ALLOW);
+			ar.setWhoUpdated(fkv.whoUpdated());
+		} else if (null != ro) {
+			List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 			ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 		} else {
 			authorizationService.gqlValidateAuthorizationResponse(ar);
@@ -1862,13 +1980,24 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Release", field = "branchDetails")
 	public BranchData branchOfRelease(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
-		BranchData bd = null;
+		// Degrade a dangling branch reference to null rather than .get()-throwing,
+		// which surfaced as a SERVICE_ERROR that failed the whole release query.
 		if (null != rd.getBranch()) {
-			bd = branchService.getBranchData(rd.getBranch()).get();
-		} else {
-			bd = BranchData.branchDataFromDbRecord(branchService.getBaseBranchOfComponent(rd.getComponent()).get());
+			Optional<BranchData> obd = branchService.getBranchData(rd.getBranch());
+			if (obd.isEmpty()) {
+				log.warn("Release {} references a missing branch {}; degrading branchDetails to null",
+						rd.getUuid(), rd.getBranch());
+				return null;
+			}
+			return obd.get();
 		}
-		return bd;
+		var obaseBranch = branchService.getBaseBranchOfComponent(rd.getComponent());
+		if (obaseBranch.isEmpty()) {
+			log.warn("Release {} component {} has no resolvable base branch; degrading branchDetails to null",
+					rd.getUuid(), rd.getComponent());
+			return null;
+		}
+		return BranchData.branchDataFromDbRecord(obaseBranch.get());
 	}
 	
 	@DgsData(parentType = "Release", field = "inProducts")
@@ -1915,16 +2044,41 @@ public class ReleaseDatafetcher {
 		if (rd.getSourceCodeEntry() == null) {
 			return null;
 		}
-		return getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get();
+		// Degrade a dangling source-code-entry reference to null rather than
+		// throwing: a missing SCE row previously .get()-threw here and surfaced
+		// as a SERVICE_ERROR that failed the WHOLE release query.
+		Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
+		if (osced.isEmpty()) {
+			log.warn("Release {} references a missing source code entry {}; degrading sourceCodeEntryDetails to null",
+					rd.getUuid(), rd.getSourceCodeEntry());
+			return null;
+		}
+		return osced.get();
 	}
-	
+
 	@DgsData(parentType = "Release", field = "commitsDetails")
 	public List<SourceCodeEntryData> commitsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
 		if (rd.getCommits() == null || rd.getCommits().isEmpty()) {
 			return new LinkedList<>();
 		}
-		return rd.getCommits().stream().map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).get()).collect(Collectors.toList());
+		// Skip dangling commit references rather than .get()-throwing on the
+		// first missing SCE, which failed the whole release query.
+		List<SourceCodeEntryData> out = new LinkedList<>();
+		int missing = 0;
+		for (UUID c : rd.getCommits()) {
+			Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(c);
+			if (osced.isPresent()) {
+				out.add(osced.get());
+			} else {
+				missing++;
+			}
+		}
+		if (missing > 0) {
+			log.warn("Release {} references {} missing commit source-code reference(s); omitted from commitsDetails",
+					rd.getUuid(), missing);
+		}
+		return out;
 	}
 
 	/**
@@ -2011,10 +2165,23 @@ public class ReleaseDatafetcher {
 		log.debug("fetching release deliverables for release: {}", rd);
 
 		List<DeliverableData> artList = new LinkedList<>();
+		if (null == rd.getInboundDeliverables()) {
+			return artList;
+		}
+		// Skip dangling deliverable references rather than .get()-throwing on the
+		// first missing one, which failed the whole release query.
+		int missing = 0;
 		for (UUID delUuid : rd.getInboundDeliverables()) {
-			artList.add(getDeliverableService
-										.getDeliverableData(delUuid)
-										.get());
+			Optional<DeliverableData> odd = getDeliverableService.getDeliverableData(delUuid);
+			if (odd.isPresent()) {
+				artList.add(odd.get());
+			} else {
+				missing++;
+			}
+		}
+		if (missing > 0) {
+			log.warn("Release {} references {} missing inbound deliverable(s); omitted from inboundDeliverableDetails",
+					rd.getUuid(), missing);
 		}
 		return artList;
 	}
@@ -2084,10 +2251,23 @@ public class ReleaseDatafetcher {
 		VariantData vd = dfe.getSource();
 
 		List<DeliverableData> artList = new LinkedList<>();
+		if (null == vd.getOutboundDeliverables()) {
+			return artList;
+		}
+		// Skip dangling deliverable references rather than .get()-throwing, which
+		// failed the whole enclosing release query.
+		int missing = 0;
 		for (UUID delUuid : vd.getOutboundDeliverables()) {
-			artList.add(getDeliverableService
-										.getDeliverableData(delUuid)
-										.get());
+			Optional<DeliverableData> odd = getDeliverableService.getDeliverableData(delUuid);
+			if (odd.isPresent()) {
+				artList.add(odd.get());
+			} else {
+				missing++;
+			}
+		}
+		if (missing > 0) {
+			log.warn("Variant {} references {} missing outbound deliverable(s); omitted from outboundDeliverableDetails",
+					vd.getUuid(), missing);
 		}
 		return artList;
 	}
@@ -2220,7 +2400,7 @@ public class ReleaseDatafetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchReleasesByCveId")
-	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByCveId(
+	public CveSearchResultDto.CveSearchResult searchReleasesByCveId(
 			@InputArgument("org") UUID orgUuid,
 			@InputArgument("cveId") String cveId,
 			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
@@ -2329,5 +2509,32 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
 		return sharedReleaseService.listReleaseDataOfBranchBetweenDates(branchUuid, startDate, endDate, limit);
+	}
+
+	/**
+	 * Refresh a release's findings metrics from CURRENT scan + KEV state: full
+	 * rebuild from the release's artifacts' (fan-out-maintained) metrics, then
+	 * analysis overlay and known-exploited re-stamp against kev_assertions. No
+	 * Dependency-Track round-trip -- the org-wide {@code forceReuploadDtrackData}
+	 * remains the escalation for a true re-analysis. Main operator use: stored
+	 * release metrics gone stale relative to KEV state (e.g. findings that were
+	 * already KEV at the org's bootstrap catalog sync, which deliberately skips
+	 * the re-stamp storm). WRITE on the release; component- and org-scoped WRITE
+	 * permissions satisfy this through the scope hierarchy.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "recomputeReleaseFindings")
+	public Boolean recomputeReleaseFindings(
+			@InputArgument("releaseUuid") UUID releaseUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(
+				oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE,
+				releaseUuid, List.of(ro), CallType.WRITE);
+		log.info("User {} requested findings recompute for release {}", oud.get().getUuid(), releaseUuid);
+		releaseService.computeReleaseMetrics(releaseUuid, true);
+		return true;
 	}
 }

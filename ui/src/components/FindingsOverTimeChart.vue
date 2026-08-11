@@ -12,16 +12,60 @@
                     <ArrowExpand20Regular />
                 </n-icon>
             </router-link>
-            <n-icon 
-                class="clickable" 
-                size="20" 
+            <n-icon
+                class="clickable"
+                size="20"
                 title="View Organization Changelog"
                 @click="showOrgChangelogModal = true"
             >
                 <AppsList20Regular />
             </n-icon>
+            <n-popover trigger="click" placement="bottom-start">
+                <template #trigger>
+                    <n-icon class="clickable" size="20" title="Filter chart series">
+                        <Filter20Regular />
+                    </n-icon>
+                </template>
+                <div class="series-filter-list">
+                    <div class="series-filter-actions">
+                        <a class="clickable" @click="setAllSeries(true)">Select all</a>
+                        <a class="clickable" @click="setAllSeries(false)">Deselect all</a>
+                    </div>
+                    <n-checkbox
+                        v-for="s in seriesOptions"
+                        :key="s.name"
+                        :checked="selectedSeries.includes(s.name)"
+                        @update:checked="(val: boolean) => toggleSeries(s.name, val)"
+                    >
+                        <span class="series-color-dot" :style="{ backgroundColor: s.color }"></span>{{ s.name }}
+                    </n-checkbox>
+                </div>
+            </n-popover>
         </div>
-        <h3 v-else class="chart-title">Findings Over Time</h3>
+        <div v-else style="display: flex; align-items: center; gap: 8px;">
+            <h3 class="chart-title" style="margin: 0;">Findings Over Time</h3>
+            <n-popover trigger="click" placement="bottom-start">
+                <template #trigger>
+                    <n-icon class="clickable" size="20" title="Filter chart series">
+                        <Filter20Regular />
+                    </n-icon>
+                </template>
+                <div class="series-filter-list">
+                    <div class="series-filter-actions">
+                        <a class="clickable" @click="setAllSeries(true)">Select all</a>
+                        <a class="clickable" @click="setAllSeries(false)">Deselect all</a>
+                    </div>
+                    <n-checkbox
+                        v-for="s in seriesOptions"
+                        :key="s.name"
+                        :checked="selectedSeries.includes(s.name)"
+                        @update:checked="(val: boolean) => toggleSeries(s.name, val)"
+                    >
+                        <span class="series-color-dot" :style="{ backgroundColor: s.color }"></span>{{ s.name }}
+                    </n-checkbox>
+                </div>
+            </n-popover>
+        </div>
         <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
         <n-empty v-else-if="hasNoData" style="height: 220px;" :description="`No findings reported for the last ${props.daysBack} days`" size="large" />
         <div v-else id="findingsOverTimeVis"></div>
@@ -37,6 +81,7 @@
             :component-type="props.componentType"
             :initial-severity-filter="directFindingsDate ? directFindingsSeverity : findingsPerDaySeverity"
             :initial-type-filter="directFindingsDate ? directFindingsType : findingsPerDayType"
+            :initial-kev-only="directFindingsDate ? directFindingsKev : findingsPerDayKev"
             :show-refresh-action="hasNoExtraContext && isGlobalAdmin"
             :on-refresh-action="refreshAnalyticsForCurrentDate"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
@@ -65,7 +110,7 @@ export default {
 import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { NSkeleton, NEmpty, NModal, useNotification, NotificationType } from 'naive-ui'
+import { NSkeleton, NEmpty, NModal, NPopover, NCheckbox, useNotification, NotificationType } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
@@ -73,7 +118,7 @@ import constants from '@/utils/constants'
 import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 import OrganizationChangelogView from './OrganizationChangelogView.vue'
-import { AppsList20Regular, ArrowExpand20Regular } from '@vicons/fluent'
+import { AppsList20Regular, ArrowExpand20Regular, Filter20Regular } from '@vicons/fluent'
 import { NIcon } from 'naive-ui'
 
 const props = withDefaults(defineProps<{
@@ -117,6 +162,56 @@ const notify = (type: NotificationType, title: string, content: string) => {
 
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
 const isLoading = ref(true)
+
+// Series filter: raw values as fetched; the chart renders only selected
+// series. Everything is checked by default; a series stays unchecked across
+// refetches once the user unchecks it (seenSeries tracks which types have
+// already been defaulted, so only genuinely new series get auto-checked).
+const rawChartValues: Ref<any[]> = ref([])
+const selectedSeries: Ref<string[]> = ref([])
+const seenSeries = new Set<string>()
+
+const seriesOptions = computed(() => {
+    const present = new Set(rawChartValues.value.map((v: any) => v.type))
+    const domain: string[] = constants.FindingsChartColors.domain
+    const range: string[] = constants.FindingsChartColors.range
+    return domain
+        .map((name: string, i: number) => ({ name, color: range[i] }))
+        .filter(s => present.has(s.name))
+})
+
+function syncSeriesSelection() {
+    const present = new Set(rawChartValues.value.map((v: any) => v.type))
+    // default-check series never seen before; keep the user's unchecks
+    for (const t of present) {
+        if (!seenSeries.has(t)) {
+            seenSeries.add(t)
+            selectedSeries.value.push(t)
+        }
+    }
+    selectedSeries.value = selectedSeries.value.filter(t => present.has(t))
+}
+
+function applySeriesFilter() {
+    analyticsMetrics.value.data.values = rawChartValues.value.filter(
+        (v: any) => selectedSeries.value.includes(v.type))
+}
+
+function setAllSeries(checked: boolean) {
+    selectedSeries.value = checked ? seriesOptions.value.map(s => s.name) : []
+    applySeriesFilter()
+    renderChart()
+}
+
+function toggleSeries(name: string, checked: boolean) {
+    if (checked && !selectedSeries.value.includes(name)) {
+        selectedSeries.value = [...selectedSeries.value, name]
+    } else if (!checked) {
+        selectedSeries.value = selectedSeries.value.filter(t => t !== name)
+    }
+    applySeriesFilter()
+    renderChart()
+}
 const isMounted = ref(true)
 const hasNoData = ref(false)
 
@@ -127,12 +222,14 @@ const showOrgChangelogModal: Ref<boolean> = ref(false)
 const directFindingsDate: Ref<string> = ref('')
 const directFindingsSeverity: Ref<string> = ref('')
 const directFindingsType: Ref<string> = ref('')
+const directFindingsKev: Ref<boolean> = ref(false)
 
 // Route-based query params for findings per day display
 const showFindingsPerDay = computed(() => route.query.display === 'findingsPerDay' && route.query.date)
 const findingsPerDayDate = computed(() => route.query.date as string || '')
 const findingsPerDaySeverity = computed(() => route.query.severity as string || '')
 const findingsPerDayType = computed(() => route.query.type as string || '')
+const findingsPerDayKev = computed(() => route.query.kev === 'true')
 
 const findingsPerDayModalTitle = computed(() => {
     const date = directFindingsDate.value || findingsPerDayDate.value
@@ -303,7 +400,9 @@ const analyticsMetrics: Ref<any> = ref({
             as: "dateStr"
         },
         {
-            calculate: "datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? upper(split(datum.type, ' ')[0]) : ''",
+            // 'KEV Vulnerabilities' deliberately yields no severity param: KEV is
+            // not a severity, and severity=KEV would filter the day view to nothing.
+            calculate: "datum.type === 'KEV Vulnerabilities' ? '' : (datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? upper(split(datum.type, ' ')[0]) : '')",
             as: "severityParam"
         },
         {
@@ -363,18 +462,20 @@ const fullPageViewUrl = computed(() => {
     return `/findingsOverTime/${orgUuid.value}${params.toString() ? '?' + params.toString() : ''}`
 })
 
-async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
+async function openFindingsModal(date: string, severity: string = '', typeParam: string = '', kevOnly: boolean = false) {
     directFindingsDate.value = date
     directFindingsSeverity.value = severity
     directFindingsType.value = typeParam
+    directFindingsKev.value = kevOnly
     showFindingsPerDayModal.value = true
-    
+
     // Update URL without triggering watchers so page reload works
     const params = new URLSearchParams()
     params.set('display', 'findingsPerDay')
     params.set('date', date)
     if (severity) params.set('severity', severity)
     if (typeParam) params.set('type', typeParam)
+    if (kevOnly) params.set('kev', 'true')
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
     
     await fetchFindingsPerDay(date)
@@ -604,7 +705,12 @@ async function fetchVulnerabilityViolationAnalytics() {
         }
         
         isLoading.value = false
-        hasNoData.value = !analyticsMetrics.value.data.values || analyticsMetrics.value.data.values.length === 0
+        // hasNoData is judged on the RAW fetch result: an empty chart caused by
+        // the user unchecking every series must not swap in the no-data state.
+        rawChartValues.value = analyticsMetrics.value.data.values || []
+        hasNoData.value = rawChartValues.value.length === 0
+        syncSeriesSelection()
+        applySeriesFilter()
         await nextTick()
         if (!hasNoData.value) {
             renderChart()
@@ -636,7 +742,17 @@ function renderChart() {
                 const datum = item.datum
                 let severity = ''
                 let typeParam = ''
-                if (datum.type && datum.type.indexOf('Vulnerabilities') >= 0) {
+                let kevOnly = false
+                if (datum.type === 'KEV Vulnerabilities') {
+                    // KEV is not a severity, so a severity filter of 'KEV' would
+                    // match nothing in the per-day table. Open with the modal's
+                    // KEV-only switch pre-enabled instead: the day view then
+                    // shows exactly the rows this series point counted (a
+                    // known-exploited MEDIUM otherwise hides below the
+                    // CRITICALs/HIGHs in the severity-sorted table).
+                    typeParam = 'Vulnerability'
+                    kevOnly = true
+                } else if (datum.type && datum.type.indexOf('Vulnerabilities') >= 0) {
                     severity = datum.type.split(' ')[0].toUpperCase()
                     typeParam = 'Vulnerability'
                 } else if (datum.type && datum.type.indexOf('Violations') >= 0) {
@@ -645,7 +761,7 @@ function renderChart() {
                 const dateObj = new Date(datum.createdDate)
                 const date = dateObj.toISOString().split('T')[0]
                 if (date) {
-                    openFindingsModal(date, severity, typeParam)
+                    openFindingsModal(date, severity, typeParam, kevOnly)
                 }
             }
         })
@@ -687,5 +803,27 @@ watch(showFindingsPerDay, (newVal) => {
 <style scoped lang="scss">
 .findingsOverTimeChart {
     display: grid;
+}
+
+.series-filter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.series-filter-actions {
+    display: flex;
+    gap: 12px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #eee;
+    font-size: 0.85em;
+}
+
+.series-color-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
 }
 </style>

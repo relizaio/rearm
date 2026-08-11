@@ -45,6 +45,12 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>{@link ChannelDispatchResult.Outcome#RETRIABLE_FAILURE} with
  *       attempt_count at/above {@link #MAX_ATTEMPTS} → status FAILED.
  *       Operator can "retry" from the DLQ view to reset.</li>
+ *   <li>{@link ChannelDispatchResult.Outcome#RETRIABLE_FAILURE} on a
+ *       channel-test delivery (outbox event's channelTestTarget is
+ *       non-null) -&gt; status FAILED immediately, skipping the backoff
+ *       curve entirely -- a test exists for fast feedback, not
+ *       resilience, and the borrowed DT-fetch backoff curve can take
+ *       over an hour to exhaust MAX_ATTEMPTS.</li>
  *   <li>{@link ChannelDispatchResult.Outcome#NON_RETRIABLE_FAILURE} →
  *       status FAILED immediately.</li>
  * </ul>
@@ -89,6 +95,9 @@ public class NotificationDeliveryWorker {
 
     @Autowired
     private IntegrationRepository integrationRepo;
+
+    @Autowired
+    private NotificationChannelService channelService;
 
     @Autowired
     private NotificationOutboxEventRepository outboxRepo;
@@ -217,6 +226,11 @@ public class NotificationDeliveryWorker {
         // isEnabled=false is the disabled state; treat null isEnabled
         // (legacy / unset) as enabled.
         if (Boolean.FALSE.equals(channelData.getIsEnabled())) {
+            // A disabled channel defers (retries until re-enabled or
+            // MAX_ATTEMPTS) -- a temporary disable acts as a pause. Fan-out
+            // already suppresses NEW deliveries to disabled channels, so this
+            // only handles the race where a channel was disabled after this
+            // delivery was created; the small in-flight set is bounded.
             recordTransientFailure(delivery, "channel disabled", null);
             return;
         }
@@ -254,11 +268,34 @@ public class NotificationDeliveryWorker {
         }
         ChannelDispatchResult result = dispatcher.dispatch(event, channel);
 
+        // Channel-test deliveries (testNotificationChannel) exist for fast,
+        // one-shot feedback on a channel's config -- the UI's "Send test"
+        // button polls for a terminal result. RETRIABLE_FAILURE's normal
+        // backoff (BackoffPolicy.dtrackFetchSkipSeconds, borrowed from the
+        // unrelated DT-fetch-retry curve: 1/2/4/8/16/32/60 MINUTES between
+        // MAX_ATTEMPTS=7 attempts) is the right call for a real subscription
+        // delivery where the upstream may recover, but for a test it just
+        // means a broken webhook silently shows "still pending" for over an
+        // hour with no useful signal. Fail a test delivery on its first
+        // attempt instead -- the point is fast feedback, not resilience.
+        boolean isChannelTest = event.getChannelTestTarget() != null;
         switch (result.outcome()) {
             case SUCCESS -> markSent(delivery);
-            case RETRIABLE_FAILURE -> recordTransientFailure(
-                    delivery, result.errorMessage(), result.retryAfterSeconds());
+            case RETRIABLE_FAILURE -> {
+                if (isChannelTest) {
+                    markFailed(delivery, result.errorMessage());
+                } else {
+                    recordTransientFailure(delivery, result.errorMessage(), result.retryAfterSeconds());
+                }
+            }
             case NON_RETRIABLE_FAILURE -> markFailed(delivery, result.errorMessage());
+            case CHANNEL_MISCONFIGURED -> {
+                markFailed(delivery, result.errorMessage());
+                // The channel (not just this delivery) is broken -- auto-disable
+                // it with the reason so subsequent events skip it (fan-out
+                // suppresses disabled channels) instead of piling up FAILED rows.
+                channelService.autoDisableForMisconfiguration(delivery.getChannelUuid(), result.errorMessage());
+            }
         }
     }
 

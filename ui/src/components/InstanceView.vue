@@ -84,6 +84,20 @@
                     </div>
                     <n-data-table :data="deployedReleases" :columns="deployedReleaseFeilds"></n-data-table>
                 </div>
+                <div v-if="filteredDeploymentFailures.length" class="instanceReleaseBlock deploymentFailuresOnInstance">
+                    <div class="listHeaderText">
+                        Deployment Failures:
+                        <n-tooltip trigger="hover" placement="top" :style="{maxWidth: '460px'}">
+                            <template #trigger><n-icon class="ml-1 clickable" size="18"><InfoCircle /></n-icon></template>
+                            Failures reported by ReARM CD while reconciling this instance. A failure that repeats is shown once with its occurrence count — First Seen is when the current incident started, Last Seen is the most recent report. Rows disappear once the agent stops reporting the failure.
+                        </n-tooltip>
+                        <n-tag v-if="deploymentHealthChip" :type="deploymentHealthChip.type" size="small" round class="ml-1"
+                               :title="deploymentHealthChip.tip">
+                            {{ deploymentHealthChip.label }}
+                        </n-tag>
+                    </div>
+                    <n-data-table :data="filteredDeploymentFailures" :columns="deploymentFailureFields" />
+                </div>
                 <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER && filteredUnmatchedReleases.length"
                      class="instanceReleaseBlock unmatchedImagesOnInstance">
                     <div class="listHeaderText">
@@ -424,7 +438,7 @@ export default {
 import { ComputedRef, ref, computed, Ref, h, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NDropdown, NSelect, NEllipsis, NFormItem, NInput, NInputGroup, NButton, NDatePicker, NModal, NTooltip, useNotification, NotificationType, NIcon, NSwitch, NDataTable, NDrawer, NDrawerContent } from 'naive-ui'
+import { NDropdown, NSelect, NEllipsis, NFormItem, NInput, NInputGroup, NButton, NDatePicker, NModal, NTooltip, NTag, useNotification, NotificationType, NIcon, NSwitch, NDataTable, NDrawer, NDrawerContent } from 'naive-ui'
 import InstanceHistory from '@/components/InstanceHistory.vue'
 import ReleaseView from '@/components/ReleaseView.vue'
 import AddComponentBranch from '@/components/AddComponentBranch.vue'
@@ -443,7 +457,7 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
 import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular, DismissCircle20Regular} from '@vicons/fluent'
-import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History } from '@vicons/tabler'
+import { Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'
@@ -565,6 +579,45 @@ const filteredUnmatchedReleases: ComputedRef<any[]> = computed((): any[] => {
     if (!selectedNamespace.value || selectedNamespace.value === 'ALL') return list
     return list.filter((u: any) => u.namespace === selectedNamespace.value)
 })
+
+// Open deployment failures reported by ReARM CD. Namespace-filtered by the
+// same dropdown that scopes the other instance tables.
+const filteredDeploymentFailures: ComputedRef<any[]> = computed((): any[] => {
+    const list = (updatedInstance.value && updatedInstance.value.deploymentFailures) || []
+    if (!selectedNamespace.value || selectedNamespace.value === 'ALL') return list
+    return list.filter((f: any) => f.namespace === selectedNamespace.value)
+})
+
+// Header chip. FAILING means the agent re-reported a failure recently;
+// DEGRADED means open failures exist but nothing recent — which is genuinely
+// ambiguous between "fixed" and "the agent stopped reporting", hence the
+// tooltip pointing at Last Seen.
+const deploymentHealthChip: ComputedRef<any> = computed((): any => {
+    const health = updatedInstance.value && updatedInstance.value.deploymentHealth
+    if (!health || health === 'HEALTHY') return null
+    if (health === 'FAILING') {
+        return { type: 'error', label: 'Deployments failing',
+            tip: 'ReARM CD reported a deployment failure within the last 15 minutes.' }
+    }
+    return { type: 'warning', label: 'Deployments degraded',
+        tip: 'Open deployment failures exist but none was re-reported recently — either they were fixed, or the CD agent stopped reporting. Check Last Seen below.' }
+})
+
+// "3 minutes ago" style helper for failure recency; the absolute timestamp is
+// always shown alongside so the relative form is a convenience, not the source
+// of truth.
+function relativeFromNow (iso: string): string {
+    if (!iso) return ''
+    const then = new Date(iso).getTime()
+    if (Number.isNaN(then)) return ''
+    const secs = Math.max(0, Math.round((Date.now() - then) / 1000))
+    if (secs < 60) return `${secs}s ago`
+    const mins = Math.round(secs / 60)
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.round(mins / 60)
+    if (hours < 48) return `${hours}h ago`
+    return `${Math.round(hours / 24)}d ago`
+}
 
 // Build the body for the bulls-eye Actual-column tooltip. Lists every
 // feature-set dependency with its target version, the actual deployed
@@ -933,15 +986,6 @@ const notify = async function (type: NotificationType, title: string, content: s
     })
 }
 
-const copyToClipboard = async function (text: string) {
-    try {
-        navigator.clipboard.writeText(text);
-        notify('info', 'Copied', `Copied: ${text}`)
-    } catch (error) {
-        console.error(error)
-    }
-}
-
 const deleteProperty = function (uuid: string, namespace: string, product: string) {
     updatedInstance.value.properties = updatedInstance.value.properties.filter((p: any) => !(p.uuid === uuid && p.namespace === namespace && p.product === product))
     save()
@@ -1028,27 +1072,16 @@ const parseDeployedReleases = function (releases: any) {
             selectedNamespace.value === rl.namespace) {
             let deployedRl = rl.releaseDetails
             if (deployedRl) {
-                let deployedDel
-                if (deployedRl.deliverableDetails && deployedRl.deliverableDetails.length) {
-                    let delArr = deployedRl.deliverableDetails.filter((ad: any) => (ad.uuid === rl.deliverable))
-                    if (delArr && delArr.length) deployedDel = delArr[0]
-                }
                 let dRlObj = {
                     originalReleaseId: rl.release,
                     release: deployedRl,
-                    deliverable: deployedDel,
                     type: rl.type,
                     component: deployedRl.componentDetails.name,
                     componentUuid: deployedRl.componentDetails.uuid,
                     componentType: deployedRl.componentDetails.type,
                     index: index,
                     namespace: rl.namespace,
-                    state: rl.state,
-                    branch: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.name : undefined,
-                    branchUuid: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.uuid : undefined
-                }
-                if (!dRlObj.deliverable) {
-                    dRlObj.deliverable = 'Not Set'
+                    state: rl.state
                 }
                 deployedRls.push(dRlObj)
             }
@@ -1654,22 +1687,6 @@ const targetReleaseFeilds: any[] = [
                 trigger: () => tooltipTrigger,
                 default: () => tooltipDefault
             }))
-            if(row.deliverable && row.deliverable !== 'Not Set'){
-                const artSha = row.deliverable.identifier + (row.deliverable.digests.length ?  '@' + row.deliverable.digests[0] : '')
-                els.push(h(NTooltip, {
-                    trigger: 'hover'
-                }, {
-                    trigger: () => h(NIcon, {
-                        title: 'Copy to clipboard',
-                        class: 'icons clickable',
-                        size: 24,
-                        onClick: () => copyToClipboard(artSha)
-                    },{
-                        default: () => h(Box)
-                    }),
-                    default: () => artSha
-                }))
-            }
             return els
         }
     },
@@ -1755,6 +1772,66 @@ const unmatchedImageFields: any[] = [
         render: (row: any) => row.lastSeen ? (new Date(row.lastSeen)).toLocaleString('en-CA') : '—'
     }
 ]
+const deploymentFailureFields: any[] = [
+    {
+        key: 'deploymentName',
+        title: 'Deployment',
+        render: (row: any) => h('span', { style: 'word-break: break-all;' }, row.deploymentName || '—')
+    },
+    { key: 'namespace', title: 'Namespace', render: (row: any) => row.namespace || '—' },
+    {
+        key: 'phase',
+        title: 'Phase',
+        render: (row: any) => h('span', { style: 'white-space: nowrap;' }, row.phase || 'UNKNOWN')
+    },
+    {
+        key: 'failureClass',
+        title: 'Cause',
+        render: (row: any) => h(NTag, { type: 'error', size: 'small', round: true },
+            () => (row.failureClass || 'UNKNOWN').replaceAll('_', ' '))
+    },
+    {
+        key: 'message',
+        title: 'Message',
+        render: (row: any) => {
+            const msg = row.message || '—'
+            const els: any[] = [h('span', { style: 'word-break: break-word;' }, msg)]
+            // Detail is redacted + truncated agent-side; show it on demand
+            // rather than inline so a long helm dump can't swamp the table.
+            if (row.detail) {
+                els.push(h(NTooltip, { trigger: 'hover', placement: 'top', style: { maxWidth: '640px' } }, {
+                    trigger: () => h(NIcon, { size: 16, class: 'ml-1 clickable', title: 'Show detail' },
+                        { default: () => h(InfoCircle) }),
+                    default: () => h('pre', {
+                        style: 'white-space: pre-wrap; word-break: break-all; margin: 0; max-height: 320px; overflow: auto;'
+                    }, row.detail)
+                }))
+            }
+            return h('span', els)
+        }
+    },
+    {
+        key: 'firstSeen',
+        title: 'First Seen',
+        render: (row: any) => row.firstSeen
+            ? h('span', { title: relativeFromNow(row.firstSeen), style: 'white-space: nowrap;' },
+                (new Date(row.firstSeen)).toLocaleString('en-CA'))
+            : '—'
+    },
+    {
+        key: 'lastSeen',
+        title: 'Last Seen',
+        render: (row: any) => row.lastSeen
+            ? h('span', { title: relativeFromNow(row.lastSeen), style: 'white-space: nowrap;' },
+                `${(new Date(row.lastSeen)).toLocaleString('en-CA')} (${relativeFromNow(row.lastSeen)})`)
+            : '—'
+    },
+    {
+        key: 'occurrenceCount',
+        title: 'Occurrences',
+        render: (row: any) => row.occurrenceCount ?? 1
+    }
+]
 const deployedReleaseFeilds: any[] = [
     {
         key: 'component',
@@ -1836,22 +1913,6 @@ const deployedReleaseFeilds: any[] = [
                             default: () => commit
                         })
                     ))
-            }
-            if(row.deliverable && row.deliverable !== 'Not Set'){
-                const artSha = row.deliverable.identifier + (row.deliverable.digestRecords.length ?  '@' + row.deliverable.digestRecords[0].value : '')
-                els.push(h(NTooltip, {
-                    trigger: 'hover'
-                }, {
-                    trigger: () => h(NIcon, {
-                        title: 'Copy to clipboard',
-                        class: 'icons clickable',
-                        size: 24,
-                        onClick: () => copyToClipboard(artSha)
-                    },{
-                        default: () => h(Box)
-                    }),
-                    default: () => artSha
-                }))
             }
             return h('span', {}, els)
         }

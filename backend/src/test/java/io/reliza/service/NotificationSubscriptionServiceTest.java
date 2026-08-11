@@ -27,7 +27,9 @@ import org.mockito.ArgumentCaptor;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
+import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.UserGroupData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
@@ -63,6 +65,7 @@ class NotificationSubscriptionServiceTest {
     private NotificationChannelGroupRepository channelGroupRepo;
     private AuditService auditService;
     private NotificationCelEvaluator celEvaluator;
+    private UserGroupService userGroupService;
     private NotificationSubscriptionService service;
 
     @BeforeEach
@@ -72,6 +75,7 @@ class NotificationSubscriptionServiceTest {
         channelGroupRepo = mock(NotificationChannelGroupRepository.class);
         auditService = mock(AuditService.class);
         celEvaluator = mock(NotificationCelEvaluator.class);
+        userGroupService = mock(UserGroupService.class);
         when(subRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service = new NotificationSubscriptionService();
@@ -80,6 +84,7 @@ class NotificationSubscriptionServiceTest {
         inject("channelGroupRepo", channelGroupRepo);
         inject("auditService", auditService);
         inject("celEvaluator", celEvaluator);
+        inject("userGroupService", userGroupService);
     }
 
     private void inject(String field, Object value) throws Exception {
@@ -462,5 +467,89 @@ class NotificationSubscriptionServiceTest {
                 null, null);
         sub.setRecordData(Utils.OM.convertValue(data, Map.class));
         return sub;
+    }
+
+    // ---------- T3: team route targets ----------
+
+    /**
+     * Regression guard for a shipped-blocker: `teams` was missing from the
+     * route-emptiness gates, so a route naming ONLY a team was rejected at save.
+     * Naming a team INSTEAD of a channel is the entire point of the feature --
+     * its channel is resolved at fan-out -- so this must save.
+     */
+    @Test
+    void aTeamsOnlyRouteIsAccepted() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID teamUuid = UUID.randomUUID();
+        stubTeamInOrg(teamUuid, orgUuid, UserGroupStatus.ACTIVE);
+
+        NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(teamUuid));
+        NotificationSubscription saved = service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test"));
+        assertNotNull(saved, "a route naming only a team must be savable");
+    }
+
+    @Test
+    void aRouteWithNoChannelGroupOrTeamIsStillRejected() {
+        UUID orgUuid = UUID.randomUUID();
+        NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of());
+        assertThrows(RelizaException.class, () -> service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+    }
+
+    @Test
+    void anUnknownTeamInARouteIsRejectedAtSave() {
+        UUID orgUuid = UUID.randomUUID();
+        UUID unknown = UUID.randomUUID();
+        when(userGroupService.getUserGroupData(unknown)).thenReturn(Optional.empty());
+        NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(unknown));
+        RelizaException e = assertThrows(RelizaException.class, () -> service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+        assertTrue(e.getMessage().contains("unknown teams"), e.getMessage());
+    }
+
+    @Test
+    void aCrossOrgTeamInARouteIsRejectedAtSave() {
+        UUID orgUuid = UUID.randomUUID();
+        UUID foreign = UUID.randomUUID();
+        stubTeamInOrg(foreign, UUID.randomUUID(), UserGroupStatus.ACTIVE);
+        NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(foreign));
+        RelizaException e = assertThrows(RelizaException.class, () -> service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+        assertTrue(e.getMessage().contains("different org"), e.getMessage());
+    }
+
+    /**
+     * A DEACTIVATED team must still SAVE. Rejecting it locked the operator out of
+     * the subscription: they could neither keep the team nor drop it (an emptied
+     * route is also rejected). Resolution skips non-ACTIVE teams, so nothing is
+     * delivered -- that is the real control.
+     */
+    @Test
+    void aDeactivatedTeamInARouteStillSavesSoItCanBeCleanedUp() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID teamUuid = UUID.randomUUID();
+        stubTeamInOrg(teamUuid, orgUuid, UserGroupStatus.INACTIVE);
+        NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(teamUuid));
+        assertNotNull(service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+    }
+
+    private void stubTeamInOrg(UUID teamUuid, UUID orgUuid, UserGroupStatus status) {
+        UserGroupData ugd = mock(UserGroupData.class);
+        when(ugd.getUuid()).thenReturn(teamUuid);
+        when(ugd.getOrg()).thenReturn(orgUuid);
+        when(ugd.getStatus()).thenReturn(status);
+        when(userGroupService.getUserGroupData(teamUuid)).thenReturn(Optional.of(ugd));
+    }
+
+    private static NotificationSubscriptionData subscriptionSeedWithTeams(UUID org,
+            List<UUID> channels, List<UUID> teams) {
+        return new NotificationSubscriptionData(
+                org, null, "test-sub", NotificationSubscriptionStatus.ACTIVE,
+                List.of(NotificationEventType.NEW_VULN_AFFECTS_RELEASES),
+                null,
+                List.of(new RouteConfig(null, null, null, channels, null, null, teams)),
+                null, null);
     }
 }

@@ -5,6 +5,8 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -12,9 +14,11 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
@@ -23,15 +27,19 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import io.reliza.dto.HistoricallyResolvedFinding;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
+import io.reliza.repositories.MetricsAuditRepository;
+import io.reliza.service.FindingComparisonService.OverTimeFindingChangesResult;
 
 /**
  * Unit tests for {@link FindingComparisonService#findHistoricallyResolvedForRelease}.
@@ -43,6 +51,13 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
  */
 @ExtendWith(MockitoExtension.class)
 public class FindingComparisonServiceTest {
+
+    // Shared mock for the new metrics_audit dependency. The historically-resolved-finding tests
+    // in this file do not exercise the audit path, so a bare mock with no stubbing is sufficient.
+    private final MetricsAuditRepository metricsAuditRepository = mock(MetricsAuditRepository.class);
+    // Over-time read clamp (board task #38, phase 3) resolves org retention via GetOrganizationService;
+    // the lineage / historically-resolved tests do not exercise that path, so a bare mock suffices.
+    private final GetOrganizationService getOrganizationService = mock(GetOrganizationService.class);
 
     private static final UUID TRUNK_BRANCH = UUID.fromString("00000000-0000-0000-0000-0000000000a0");
     private static final UUID FEATURE_BRANCH = UUID.fromString("00000000-0000-0000-0000-0000000000b0");
@@ -113,7 +128,8 @@ public class FindingComparisonServiceTest {
                 any(), any())).thenReturn(null);
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
 
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(
                 v15, /*recurseChildren=*/ false, /*cutOffDate=*/ null);
@@ -155,7 +171,8 @@ public class FindingComparisonServiceTest {
                 any(), any())).thenReturn(null);
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(
                 v25, false, null);
 
@@ -189,7 +206,8 @@ public class FindingComparisonServiceTest {
                 any(), any())).thenReturn(null);
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(v15, false, null);
 
         assertTrue(result.isEmpty(),
@@ -229,7 +247,8 @@ public class FindingComparisonServiceTest {
         when(sharedReleaseService.getReleaseData(eq(trunkV10Uuid))).thenReturn(Optional.of(trunkV10));
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(
                 featAuth1, false, null);
 
@@ -272,7 +291,8 @@ public class FindingComparisonServiceTest {
         when(sharedReleaseService.getReleaseData(eq(trunkV10Uuid))).thenReturn(Optional.of(trunkV10));
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(
                 featAuth1, false, null);
 
@@ -304,7 +324,8 @@ public class FindingComparisonServiceTest {
                 .thenReturn(null);
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
 
         ZonedDateTime cutOff = ZonedDateTime.parse("2026-02-01T00:00:00Z");   // BEFORE v1.5's createdDate
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(v15, false, cutOff);
@@ -334,7 +355,8 @@ public class FindingComparisonServiceTest {
                 .thenReturn(null);
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
 
         ZonedDateTime cutOff = ZonedDateTime.parse("2026-04-01T00:00:00Z");   // AFTER v1.5's createdDate
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(v15, false, cutOff);
@@ -398,7 +420,8 @@ public class FindingComparisonServiceTest {
                 .thenReturn(new java.util.LinkedHashSet<>(List.of(childAFix, childBFix)));
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
 
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(
                 product, /*recurseChildren=*/ true, /*cutOffDate=*/ null);
@@ -460,7 +483,8 @@ public class FindingComparisonServiceTest {
                 .thenReturn(new java.util.LinkedHashSet<>(List.of(childAFix, childBFix)));
 
         FindingComparisonService service =
-                new FindingComparisonService(branchService, sharedReleaseService, getComponentService);
+                new FindingComparisonService(branchService, sharedReleaseService, getComponentService,
+                        metricsAuditRepository, getOrganizationService);
 
         List<HistoricallyResolvedFinding> result = service.findHistoricallyResolvedForRelease(
                 product, true, null);
@@ -468,5 +492,113 @@ public class FindingComparisonServiceTest {
         assertEquals(1, result.size(), "Same CVE resolved on multiple children must collapse to one entry");
         assertEquals(childBFix.getUuid(), result.get(0).resolvingReleaseUuid(),
                 "Latest resolution wins");
+    }
+
+    // ---- Over-time finding-changes read window clamp (board task #38, phase 3) ----
+
+    private static final UUID OVER_TIME_ORG = UUID.fromString("00000000-0000-0000-0000-0000000009f0");
+    private static final UUID OVER_TIME_RELEASE = UUID.fromString("00000000-0000-0000-0000-0000000009f1");
+
+    // v3 is the sole finding-change store; the over-time read seam hydrates through it. Injected below.
+    private final FindingDimBackfillService findingDimBackfillService = mock(FindingDimBackfillService.class);
+
+    private FindingComparisonService overTimeService(BranchService branchService,
+            SharedReleaseService sharedReleaseService, GetComponentService getComponentService) {
+        FindingComparisonService svc = new FindingComparisonService(branchService, sharedReleaseService,
+                getComponentService, metricsAuditRepository, getOrganizationService);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                svc, "findingDimBackfillService", findingDimBackfillService);
+        return svc;
+    }
+
+    private void stubRetentionDays(int retentionDays) {
+        OrganizationData.Settings settings = new OrganizationData.Settings();
+        settings.setFindingChangeRetentionDays(retentionDays);
+        OrganizationData od = mock(OrganizationData.class);
+        when(od.getSettings()).thenReturn(settings);
+        when(getOrganizationService.getOrganizationData(OVER_TIME_ORG)).thenReturn(Optional.of(od));
+    }
+
+    @Test
+    void overTime_requestedFromOlderThanRetention_clampsToHorizon() {
+        // Org keeps 30 days; the caller asks for a window starting 90 days ago. Rows older than
+        // now-30d have been purged, so the read lower bound must be clamped to now-30d.
+        int retentionDays = 30;
+        stubRetentionDays(retentionDays);
+
+        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime requestedFrom = now.minusDays(90);
+        ZonedDateTime to = now;
+        // Empty result is fine: the assertion is on the lower bound passed to the repo, not on rows.
+        when(findingDimBackfillService.hydrateInRangeV3(eq(OVER_TIME_ORG), any(), any(), any()))
+                .thenReturn(List.of());
+
+        FindingComparisonService service = overTimeService(
+                mock(BranchService.class), mock(SharedReleaseService.class), mock(GetComponentService.class));
+
+        OverTimeFindingChangesResult result = service.loadOverTimeFindingChanges(
+                OVER_TIME_ORG, List.of(OVER_TIME_RELEASE), requestedFrom, to);
+
+        ArgumentCaptor<ZonedDateTime> fromCaptor = ArgumentCaptor.forClass(ZonedDateTime.class);
+        verify(findingDimBackfillService).hydrateInRangeV3(
+                eq(OVER_TIME_ORG), any(), fromCaptor.capture(), eq(to));
+
+        ZonedDateTime expectedHorizon = now.minusDays(retentionDays);
+        assertTrue(fromCaptor.getValue().isAfter(requestedFrom),
+                "Effective from must be moved forward from the requested (purged) lower bound");
+        assertEquals(0, ChronoUnit.SECONDS.between(expectedHorizon, fromCaptor.getValue()),
+                "Effective from must equal the retention horizon (now - retentionDays)");
+
+        assertNotNull(result.clampedSince(), "clampedSince must be set when the window was clamped");
+        assertEquals(0, ChronoUnit.SECONDS.between(expectedHorizon, result.clampedSince()),
+                "clampedSince must reflect the effective retention horizon");
+    }
+
+    @Test
+    void overTime_requestedFromWithinRetention_notClamped() {
+        // Org keeps 730 days; the caller asks for a 10-day window, well within retention -> no clamp.
+        stubRetentionDays(730);
+
+        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime requestedFrom = now.minusDays(10);
+        ZonedDateTime to = now;
+        when(findingDimBackfillService.hydrateInRangeV3(eq(OVER_TIME_ORG), any(), any(), any()))
+                .thenReturn(List.of());
+
+        FindingComparisonService service = overTimeService(
+                mock(BranchService.class), mock(SharedReleaseService.class), mock(GetComponentService.class));
+
+        OverTimeFindingChangesResult result = service.loadOverTimeFindingChanges(
+                OVER_TIME_ORG, List.of(OVER_TIME_RELEASE), requestedFrom, to);
+
+        verify(findingDimBackfillService).hydrateInRangeV3(
+                eq(OVER_TIME_ORG), any(), eq(requestedFrom), eq(to));
+        assertNull(result.clampedSince(),
+                "clampedSince must be null when the requested window sits within retention");
+    }
+
+    @Test
+    void overTime_retentionDisabledByDefault_ancientWindow_noClamp() {
+        // Default (no findingChangeRetentionDays): retention disabled -> the over-time read never clamps,
+        // even for a window reaching years back. effectiveFrom stays at the caller's from; clampedSince null.
+        OrganizationData od = mock(OrganizationData.class);
+        when(od.getSettings()).thenReturn(new OrganizationData.Settings()); // unset retention
+        when(getOrganizationService.getOrganizationData(OVER_TIME_ORG)).thenReturn(Optional.of(od));
+
+        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime ancientFrom = now.minusDays(3000);
+        when(findingDimBackfillService.hydrateInRangeV3(eq(OVER_TIME_ORG), any(), any(), any()))
+                .thenReturn(List.of());
+
+        FindingComparisonService service = overTimeService(
+                mock(BranchService.class), mock(SharedReleaseService.class), mock(GetComponentService.class));
+
+        OverTimeFindingChangesResult result = service.loadOverTimeFindingChanges(
+                OVER_TIME_ORG, List.of(OVER_TIME_RELEASE), ancientFrom, now);
+
+        verify(findingDimBackfillService).hydrateInRangeV3(
+                eq(OVER_TIME_ORG), any(), eq(ancientFrom), eq(now));
+        assertNull(result.clampedSince(),
+                "retention disabled (default) -> full history -> no clamp even for an ancient window");
     }
 }

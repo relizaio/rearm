@@ -147,9 +147,9 @@ public class SbomComparisonService {
 			String key = artifact.purl() + PURL_VERSION_DELIMITER + safeVersion(artifact.version());
 			ArtifactAttribution attr = artifactMap.computeIfAbsent(key, k -> new ArtifactAttribution(artifact));
 			if (isAdded) {
-				attr.addedIn.add(componentAttr);
+				attr.addAdded(componentAttr);
 			} else {
-				attr.removedIn.add(componentAttr);
+				attr.addRemoved(componentAttr);
 			}
 		}
 	}
@@ -159,16 +159,17 @@ public class SbomComparisonService {
 	 * Shared by both component-level and org-level attribution methods.
 	 */
 	private SbomChangesWithAttribution buildArtifactResult(Map<String, ArtifactAttribution> artifactMap) {
-		// Compute net status for each artifact
+		// Compute net status for each artifact (from full counts, independent of the preview cap)
 		for (ArtifactAttribution attr : artifactMap.values()) {
-			attr.isNetAdded = !attr.addedIn.isEmpty() && attr.removedIn.isEmpty();
-			attr.isNetRemoved = !attr.removedIn.isEmpty() && attr.addedIn.isEmpty();
+			attr.isNetAdded = attr.addedInCount() > 0 && attr.removedInCount() == 0;
+			attr.isNetRemoved = attr.removedInCount() > 0 && attr.addedInCount() == 0;
 		}
-		
+
 		List<ArtifactWithAttribution> artifacts = artifactMap.values().stream()
 			.map(attr -> new ArtifactWithAttribution(
 				attr.purl, attr.name, attr.version,
 				attr.addedIn, attr.removedIn,
+				attr.addedInCount(), attr.removedInCount(),
 				attr.isNetAdded, attr.isNetRemoved
 			))
 			.collect(Collectors.toList());
@@ -188,11 +189,28 @@ public class SbomComparisonService {
 		String purl;
 		String name;
 		String version;
+		// Preview lists: <= ATTRIBUTION_PREVIEW_CAP, the only attribution SERIALIZED. *Count = true totals.
 		List<ComponentAttribution> addedIn = new ArrayList<>();
 		List<ComponentAttribution> removedIn = new ArrayList<>();
+		private final Set<UUID> addedReleases = new HashSet<>();
+		private final Set<UUID> removedReleases = new HashSet<>();
 		boolean isNetAdded;
 		boolean isNetRemoved;
-		
+
+		int addedInCount() { return addedReleases.size(); }
+		int removedInCount() { return removedReleases.size(); }
+
+		void addAdded(ComponentAttribution a) {
+			if (addedReleases.add(a.releaseUuid()) && addedIn.size() < FindingComparisonService.ATTRIBUTION_PREVIEW_CAP) {
+				addedIn.add(a);
+			}
+		}
+		void addRemoved(ComponentAttribution a) {
+			if (removedReleases.add(a.releaseUuid()) && removedIn.size() < FindingComparisonService.ATTRIBUTION_PREVIEW_CAP) {
+				removedIn.add(a);
+			}
+		}
+
 		ArtifactAttribution(DiffComponent component) {
 			this.purl = component.purl();
 			this.version = component.version() != null ? component.version() : "";

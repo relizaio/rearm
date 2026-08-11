@@ -81,10 +81,20 @@ public class SlackChannelDispatcher extends AbstractHttpChannelDispatcher implem
             return ChannelDispatchResult.nonRetriable(
                     "Channel " + channel.getUuid() + " decrypted webhook URL is blank");
         }
+        // Normalize the decrypted secret: strips a pasted trailing newline /
+        // surrounding spaces AND expands a legacy base-integration path
+        // fragment (e.g. "T0/B0/xxx", from the old prefix-prepending sender)
+        // into a full hooks.slack.com URL, so migrated base Slack channels
+        // keep delivering. A full URL passes through unchanged. The value we
+        // validate AND post below is this normalized string.
+        webhookUrl = SlackWebhookUrlValidator.normalize(webhookUrl);
         if (!SlackWebhookUrlValidator.isValid(webhookUrl)) {
-            return ChannelDispatchResult.nonRetriable(
-                    "Channel " + channel.getUuid() + " webhook URL doesn't match the expected Slack host"
-                            + " — refusing to POST vuln-detail payload to a non-Slack endpoint");
+            // The channel's URL isn't a Slack host -- it will never deliver.
+            // Auto-disable it (channelMisconfigured) rather than emitting a
+            // FAILED row for every matching event forever.
+            return ChannelDispatchResult.channelMisconfigured(
+                    "Webhook URL is not a Slack host (" + SlackWebhookUrlValidator.SLACK_WEBHOOK_HOST
+                            + "); re-enter a Slack incoming-webhook or Workflow URL, then re-enable.");
         }
 
         UriParseResult parsed = parseUri(webhookUrl, channel.getUuid());

@@ -586,6 +586,95 @@
                                 />
                             </n-space>
 
+                            <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Member Roles:
+                                    </n-text>
+                                </n-h5>
+                                <n-text depth="3" style="font-size: 12px;">
+                                    A role labels who to contact — for example, escalating a KEV finding to the
+                                    team's security specialist. Roles do not grant any permissions.
+                                </n-text>
+                                <n-text v-if="!rosterMembers.length" depth="3" style="font-size: 12px;">
+                                    Add users to the group first, then assign their roles here.
+                                </n-text>
+                                <div v-for="m in rosterMembers" :key="m.uuid"
+                                    style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
+                                    <span style="min-width: 240px;">{{ m.label }}</span>
+                                    <n-select
+                                        :value="teamRoles[m.uuid]?.role || null"
+                                        :options="constants.TeamRoles"
+                                        placeholder="No role"
+                                        clearable
+                                        style="width: 220px;"
+                                        @update:value="(v: string | null) => setMemberRole(m.uuid, v)"
+                                    />
+                                    <n-input
+                                        v-if="teamRoles[m.uuid]?.role === constants.TeamRoleCustom"
+                                        :value="teamRoles[m.uuid]?.customRole || ''"
+                                        placeholder="Custom role label (required)"
+                                        style="width: 240px;"
+                                        @update:value="(v: string) => setMemberCustomRole(m.uuid, v)"
+                                    />
+                                </div>
+                            </n-space>
+
+                            <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        External Members (no ReARM account):
+                                    </n-text>
+                                </n-h5>
+                                <n-text depth="3" style="font-size: 12px;">
+                                    People reachable only by email or handle, such as a vendor contact. They can be
+                                    notified, but do not count toward the team's durability.
+                                </n-text>
+                                <n-dynamic-input
+                                    v-model:value="teamExternalMembers"
+                                    :on-create="onAddExternalMember"
+                                >
+                                    <template #default="{ value }">
+                                        <div style="display: flex; gap: 8px; width: 100%;">
+                                            <n-input v-model:value="value.name"
+                                                placeholder="Name" style="width: 200px;" />
+                                            <n-input v-model:value="value.contact"
+                                                placeholder="Email or handle" style="width: 240px;" />
+                                            <n-select v-model:value="value.role" :options="constants.TeamRoles"
+                                                placeholder="No role" clearable style="width: 200px;" />
+                                            <n-input v-if="value.role === constants.TeamRoleCustom"
+                                                v-model:value="value.customRole"
+                                                placeholder="Custom role label" style="width: 200px;" />
+                                        </div>
+                                    </template>
+                                </n-dynamic-input>
+                            </n-space>
+
+                            <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Notification Channels:
+                                    </n-text>
+                                </n-h5>
+                                <n-text depth="3" style="font-size: 12px;">
+                                    Where this team is reachable — for example its Slack channel. A subscription
+                                    can then target the team instead of a channel, and if the team moves channel,
+                                    every subscription follows automatically.
+                                </n-text>
+                                <n-alert v-if="orgChannelsFailed" type="warning" style="margin-bottom: 8px;">
+                                    Could not load this organization's channels, so the list below may be
+                                    incomplete. Other team edits still save normally; channel changes are
+                                    skipped until you reload.
+                                </n-alert>
+                                <n-select
+                                    v-model:value="teamChannels"
+                                    multiple
+                                    :options="teamChannelOptions"
+                                    placeholder="No channels — this team can only be reached by email"
+                                    style="width: 100%; min-width: 400px;"
+                                />
+                            </n-space>
+
                             <ScopedPermissions
                                 v-model="userGroupScopedPermissions"
                                 :org-uuid="orgResolved"
@@ -597,15 +686,24 @@
                                 :clusters="orgClusters"
                             />
                         </n-flex>
+                        <n-alert v-if="teamMembersError" type="warning" style="margin-top: 16px;">
+                            {{ teamMembersError }}
+                        </n-alert>
                         <n-space style="margin-top: 20px;">
                             <n-button v-if="restoreMode" type="success" @click="confirmRestoreUserGroup">Restore Group</n-button>
                             <template v-else-if="userGroupPermissionsDirty">
-                                <n-button type="success" @click="updateUserGroup">Save Changes</n-button>
+                                <n-button type="success" :disabled="!!teamMembersError" @click="updateUserGroup">Save Changes</n-button>
                                 <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
                             </template>
                         </n-space>
                         </div>
                     </n-modal>
+
+                    <OrgTeamAssignmentRules
+                        :orgUuid="orgResolved"
+                        :isWritable="isWritable"
+                        :teams="userGroups"
+                        :components="allComponents"/>
                 </div>
             </n-tab-pane>
 
@@ -1051,13 +1149,17 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                     <n-tab-pane name="downloadLog" tab="Download Log">
                         <DownloadLogView />
                     </n-tab-pane>
-                    <n-tab-pane name="deliveryHistory" tab="Delivery History" v-if="myUser.installationType !== 'OSS'">
+                    <!-- Every edition: CE delivers to Slack / Teams / Webhook, and
+                         this is the only surface that answers "did it actually
+                         send?". The channel cards deep-link straight here. -->
+                    <n-tab-pane name="deliveryHistory" tab="Delivery History">
                         <NotificationHistory
                             :orguuid="orgResolved"
                             :initial-channel-uuid="(route.query.historyChannel as string) || null"
+                            :initial-event-uuid="(route.query.historyEvent as string) || null"
                             :initial-status="(route.query.historyStatus as string) || null"
                             :initial-subscription-uuid="(route.query.historySubscription as string) || null"
-                            :key="`hist-${route.query.historyChannel || ''}-${route.query.historyStatus || ''}-${route.query.historySubscription || ''}`"
+                            :key="`hist-${route.query.historyChannel || ''}-${route.query.historyEvent || ''}-${route.query.historyStatus || ''}-${route.query.historySubscription || ''}`"
                         />
                     </n-tab-pane>
                 </n-tabs>
@@ -1128,6 +1230,10 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
 import constants from '../utils/constants'
+import { isSchemaDriftError } from '../utils/graphqlDriftFallback'
+import { buildChannelOptions } from '@/utils/channelOptions'
+import { TYPE_LABELS } from '@/utils/notificationsCommon'
+import { buildMemberRolesPayload, buildExternalMembersPayload, validateTeamMembers, type TeamRoleMap } from '../utils/teamMembers'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
@@ -1138,6 +1244,7 @@ import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
+import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
@@ -1180,6 +1287,9 @@ async function loadTabSpecificData (tabName: string) {
         ])
         loadInvitedUsers(true)
     } else if (tabName === "userGroups") {
+        // Products as well as components: the team-assignment preview filters on
+        // type, so a PRODUCT/ANY rule would otherwise preview "matches 0".
+        store.dispatch('fetchProducts', orgResolved.value)
         await loadUsers() // Load users for the user selection dropdown
         if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
         loadUserGroups()
@@ -1419,7 +1529,7 @@ const currentTab = ref(isTabAccessible(requestedTab) ? requestedTab : defaultTab
 const DEFAULT_POLICY_SUBTAB = 'approvalPoliciesInner'
 const DEFAULT_AUDIT_SUBTAB = 'downloadLog'
 const policySubTab = ref(route.query.policyTab as string || DEFAULT_POLICY_SUBTAB)
-// Audit sub-tab: Download Log (all editions) + Delivery History (Pro).
+// Audit sub-tab: Download Log + Delivery History, both on all editions.
 const auditSubTab = ref(route.query.auditTab as string || DEFAULT_AUDIT_SUBTAB)
 
 // Keep the tab selection in sync when the URL query changes while OrgSettings
@@ -1845,14 +1955,90 @@ const userPermissionsDirty = computed(() => {
     return commonFunctions.stableStringify(userScopedPermissions.value) !== commonFunctions.stableStringify(userScopedPermissionsOriginal.value)
 })
 
+// Projects the modal's editable state. NOTE the team-member keys come from
+// the module-level editor refs (teamRoles / teamExternalMembers), not from
+// `group` -- they are per-modal editor state, not part of the group record.
 function getUserGroupEditableState(group: any) {
     return {
         name: group?.name || '',
         description: group?.description || '',
         manualUsers: group?.manualUsers || [],
-        connectedSsoGroups: group?.connectedSsoGroups || []
+        connectedSsoGroups: group?.connectedSsoGroups || [],
+        // Compare the NORMALIZED payload, not the raw editor arrays -- otherwise
+        // an untouched blank row added by "+" (or stray whitespace) reads as
+        // dirty while producing nothing to save.
+        memberRoles: teamMemberRolesPayload(),
+        externalMembers: teamExternalMembersPayload(),
+        notificationChannels: teamChannels.value
     }
 }
+
+// Keyed by user uuid rather than held as a list: the backend rejects two roles
+// for the same member, and a per-member map makes that impossible to express.
+const teamRoles: Ref<TeamRoleMap> = ref({})
+const teamChannels: Ref<string[]> = ref([])
+const orgChannels: Ref<any[]> = ref([])
+const orgChannelsFailed = ref(false)
+
+// Shared builder so a channel that was disabled or deleted after being picked
+// still renders a name here instead of a bare uuid (BUG 2) -- and stays
+// removable so the operator can clear it.
+const teamChannelOptions = computed(() =>
+    buildChannelOptions(orgChannels.value, teamChannels.value, TYPE_LABELS))
+const teamExternalMembers: Ref<any[]> = ref([])
+
+/**
+ * True only when we have actually loaded this group's team data. Guards both
+ * rendering and the save payload: hydrating an empty editor from a not-yet-
+ * loaded map and then saving would send [], which the backend applies as a
+ * REPLACE -- wiping the team's roles and external members.
+ */
+const teamMembersKnown = computed(() =>
+    teamFieldsSupported.value === true
+    && !!selectedUserGroup.value?.uuid
+    && !!groupTeamMembers.value[selectedUserGroup.value.uuid])
+
+/** Roster members eligible for a role: manually-added plus SSO-inherited. */
+const rosterMembers = computed(() => {
+    const ids = [
+        ...(selectedUserGroup.value?.manualUsers || []),
+        ...(selectedUserGroup.value?.users || [])
+    ]
+    return [...new Set(ids)].map((uuid: any) => ({
+        uuid,
+        label: userOptions.value.find((o: any) => o.value === uuid)?.label || uuid
+    }))
+})
+
+function memberLabelFor(uuid: string): string {
+    return rosterMembers.value.find(m => m.uuid === uuid)?.label || uuid
+}
+
+function teamMemberRolesPayload() {
+    return buildMemberRolesPayload(teamRoles.value, rosterMembers.value.map(m => m.uuid))
+}
+
+function teamExternalMembersPayload() {
+    return buildExternalMembersPayload(teamExternalMembers.value)
+}
+
+function setMemberRole(uuid: string, role: string | null) {
+    teamRoles.value[uuid] = { ...(teamRoles.value[uuid] || {}), role }
+}
+
+function setMemberCustomRole(uuid: string, customRole: string) {
+    teamRoles.value[uuid] = { ...(teamRoles.value[uuid] || {}), customRole }
+}
+
+function onAddExternalMember() {
+    return { name: '', contact: '', role: null, customRole: '' }
+}
+
+/** Pre-submit mirror of the backend rules, so an invalid row names itself
+ *  instead of failing the whole mutation with a generic server error. */
+const teamMembersError = computed(() => teamMembersKnown.value
+    ? validateTeamMembers(teamMemberRolesPayload(), teamExternalMembersPayload(), memberLabelFor)
+    : null)
 
 const userGroupPermissionsDirty = computed(() => {
     const scopedDirty = userGroupScopedPermissionsOriginal.value
@@ -1948,6 +2134,86 @@ async function loadUserGroups() {
     } catch (error: any) {
         console.error('Error loading user groups:', error)
         notify('error', 'Error', 'Failed to load user groups')
+    }
+    await loadTeamMemberFields()
+    // Outside loadTeamMemberFields' try: a channel-load failure must not reach
+    // its drift classifier and hide all three team sections.
+    await loadOrgChannels()
+}
+
+// Team member roles + external members (T1) are loaded by a SEPARATE query on
+// purpose. Folding these fields into getUserGroups above would make the whole
+// User Groups tab fail against a backend that predates them -- the same
+// field-selection drift that has broken a tab before. Isolated here, a lagging
+// backend costs us only these two optional sections, which we then hide.
+//
+// null = not probed yet. The distinction matters: the backend treats a non-null
+// list as a REPLACE, so sending [] because we had not loaded yet would silently
+// delete every role and external member on the team. Unknown => render nothing
+// and send nothing (omitted = keep).
+const teamFieldsSupported: Ref<boolean | null> = ref(null)
+const groupTeamMembers: Ref<Record<string, any>> = ref({})
+
+/** Channel list for the Team editor's channel picker. */
+async function loadOrgChannels() {
+    orgChannelsFailed.value = false
+    try {
+        const res = await graphqlClient.query({
+            query: gql`
+                query notificationChannelsForTeams($orgUuid: ID!) {
+                    notificationChannels(orgUuid: $orgUuid) { uuid name type status }
+                }`,
+            variables: { orgUuid: orgResolved.value },
+            fetchPolicy: 'no-cache'
+        })
+        orgChannels.value = res.data?.notificationChannels || []
+    } catch (error: any) {
+        // Do NOT leave orgChannels empty on a transient failure: buildChannelOptions
+        // would then relabel every healthy saved channel as "(deleted channel)".
+        // Flag it instead so the picker can say so.
+        console.warn('Notification channels unavailable', error?.message)
+        orgChannels.value = []
+        orgChannelsFailed.value = true
+    }
+}
+
+async function loadTeamMemberFields() {
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query getUserGroupsTeamMembers($org: ID!) {
+                    getUserGroups(org: $org) {
+                        uuid
+                        memberRoles { userRef role customRole }
+                        externalMembers { name contact role customRole }
+                        notificationChannels
+                    }
+                }`,
+            variables: { org: orgResolved.value },
+            fetchPolicy: 'no-cache'
+        })
+        const map: Record<string, any> = {}
+        for (const g of (response.data.getUserGroups || [])) {
+            map[g.uuid] = {
+                memberRoles: g.memberRoles || [],
+                externalMembers: g.externalMembers || [],
+                notificationChannels: g.notificationChannels || []
+            }
+        }
+        groupTeamMembers.value = map
+        teamFieldsSupported.value = true
+    } catch (error: any) {
+        // Only a schema-drift-shaped failure means "this backend is older".
+        // A 401/500/network blip must NOT be mistaken for that: this flag also
+        // gates the save payload, so misclassifying would strip roles and
+        // external members from the next save with no operator-visible signal.
+        if (isSchemaDriftError(error)) {
+            console.warn('Team member fields unavailable on this backend', error?.message)
+            teamFieldsSupported.value = false
+        } else {
+            groupTeamMembers.value = {}
+            notify('error', 'Error', 'Failed to load team member roles')
+        }
     }
 }
 
@@ -3955,6 +4221,10 @@ async function createUserGroup() {
 
 async function updateUserGroup() {
     if (!selectedUserGroup.value.uuid) return
+    if (teamMembersError.value) {
+        notify('error', 'Cannot save', teamMembersError.value)
+        return
+    }
     
     try {
         const scopedData = userGroupScopedPermissions.value
@@ -3999,6 +4269,17 @@ async function updateUserGroup() {
             status: selectedUserGroup.value.status,
             connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
             permissions
+        } as any
+        // Only send the team fields when this group's data was actually loaded.
+        // Omitting them means "keep existing" on the backend; sending [] would
+        // REPLACE, i.e. delete. Never send from an unknown state.
+        if (teamMembersKnown.value) {
+            // Omit when the channel list failed to load: sending the current value
+            // would be based on an incomplete picker, and disabling the picker
+            // instead would block every unrelated team edit (rename, members).
+            if (!orgChannelsFailed.value) updateInput.notificationChannels = teamChannels.value
+            updateInput.memberRoles = teamMemberRolesPayload()
+            updateInput.externalMembers = teamExternalMembersPayload()
         }
         
         const response = await graphqlClient.mutate({
@@ -4033,6 +4314,19 @@ async function editUserGroup(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (group) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
+        const tm = groupTeamMembers.value[groupUuid] || { memberRoles: [], externalMembers: [] }
+        const roleMap: Record<string, any> = {}
+        for (const mr of tm.memberRoles) {
+            roleMap[mr.userRef] = { role: mr.role, customRole: mr.customRole || '' }
+        }
+        teamRoles.value = roleMap
+        teamChannels.value = [...(tm.notificationChannels || [])]
+        teamExternalMembers.value = commonFunctions.deepCopy(tm.externalMembers).map((e: any) => ({
+            name: e.name || '',
+            contact: e.contact || '',
+            role: e.role || null,
+            customRole: e.customRole || ''
+        }))
         await Promise.all([
             loadPerspectives(),
             store.dispatch('fetchComponents', orgResolved.value),

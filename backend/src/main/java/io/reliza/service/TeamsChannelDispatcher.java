@@ -87,10 +87,15 @@ public class TeamsChannelDispatcher extends AbstractHttpChannelDispatcher implem
             return ChannelDispatchResult.nonRetriable(
                     "Channel " + channel.getUuid() + " decrypted webhook URL is blank");
         }
+        // Strip a pasted trailing newline / surrounding spaces so the value we
+        // validate AND post is clean (mirrors SlackChannelDispatcher).
+        webhookUrl = webhookUrl.strip();
         if (!TeamsWebhookUrlValidator.isValid(webhookUrl)) {
-            return ChannelDispatchResult.nonRetriable(
-                    "Channel " + channel.getUuid() + " webhook URL doesn't match the expected Teams host suffix"
-                            + " — refusing to POST vuln-detail payload to a non-Teams endpoint");
+            // Never-deliverable URL: auto-disable rather than a FAILED row per
+            // event (mirrors the Slack dispatcher's channelMisconfigured path).
+            return ChannelDispatchResult.channelMisconfigured(
+                    "Webhook URL is not a Microsoft Teams Workflows host; re-enter the"
+                            + " Workflows webhook URL, then re-enable.");
         }
 
         UriParseResult parsed = parseUri(webhookUrl, channel.getUuid());

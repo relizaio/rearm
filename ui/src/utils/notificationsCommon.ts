@@ -7,6 +7,7 @@
 
 import gql from 'graphql-tag'
 import commonFunctions from '@/utils/commonFunctions'
+import { PRO_ONLY_ROUTE_FIELDS } from '@/utils/editionCapabilities'
 
 export type NaiveTagType = 'success' | 'warning' | 'error' | 'info' | 'default'
 
@@ -66,6 +67,9 @@ export interface DeliveryRow {
     sentAt: string | null
     lastError: string | null
     createdDate: string
+    // BUG 3: the outbox event's rendered payload for the expandable row. Optional
+    // ENRICHMENT field -- absent on a backend that predates it (drift-tolerant).
+    payloadJson?: string | null
 }
 
 export interface InboxRow {
@@ -327,3 +331,212 @@ function buildSubscriptionsQuery (fields: string) {
 }
 export const LIST_SUBSCRIPTIONS_QUERY = buildSubscriptionsQuery(`${SUBSCRIPTION_CORE_FIELDS} ${SUBSCRIPTION_ENRICHMENT_FIELDS}`)
 export const LIST_SUBSCRIPTIONS_CORE_QUERY = buildSubscriptionsQuery(SUBSCRIPTION_CORE_FIELDS)
+
+/**
+ * Build one `NotificationRouteInput` from a modeled route row.
+ *
+ * Same hazard as buildNotificationFilterInput below, one level down: GraphQL
+ * input coercion REJECTS unknown keys outright, so any field the server's
+ * NotificationRouteInput does not declare fails the whole mutation rather than
+ * being ignored.
+ *
+ * The offending fields are listed in PRO_ONLY_ROUTE_FIELDS (currently `teams`).
+ * Sending `teams: []` from a CE UI makes every subscription save -- including
+ * ones that use no teams at all -- fail with
+ *   `Field "teams" is not defined by type "NotificationRouteInput"`.
+ * Omitting the key when empty keeps CE saving while losing nothing on Pro, where
+ * an absent list and an empty list mean the same thing.
+ */
+export interface NotificationRouteInput {
+    whenSeverityAtLeast?: string | null
+    channels?: string[]
+    channelGroups?: string[]
+    perspectives?: string[]
+    teams?: string[]
+    // Unmodelled passthrough carried verbatim from `_raw` (andEnvIn,
+    // andLifecycleIn, rate-limit fields the editor does not surface yet).
+    [passthrough: string]: unknown
+}
+
+export function buildNotificationRouteInput (route: Record<string, any>): NotificationRouteInput {
+    const raw = { ...(route._raw || {}) }
+    // Strip the Pro-only fields from the passthrough as well.
+    //
+    // DEFENSIVE, not currently load-bearing: openEditSubscription models `teams`
+    // explicitly alongside `_raw`, so today the re-add below always restores
+    // whatever `_raw` carried and this loop changes nothing. It matters the
+    // moment a Pro-only field stops being modelled -- `_raw` becomes its only
+    // carrier, and without this the field would flow straight through to a CE
+    // backend and 400 every save. Kept because the failure it prevents is
+    // silent and total, and the cost is one shallow copy.
+    for (const f of PRO_ONLY_ROUTE_FIELDS) delete raw[f]
+    const out: NotificationRouteInput = {
+        ...raw,
+        whenSeverityAtLeast: route.whenSeverityAtLeast,
+        channels: route.channels,
+        channelGroups: route.channelGroups,
+        perspectives: route.perspectives,
+    }
+    // Send a Pro-only field only when it actually carries a value, so a CE
+    // backend never sees the key at all.
+    for (const f of PRO_ONLY_ROUTE_FIELDS) {
+        if (carriesValue(route[f])) out[f] = route[f]
+    }
+    return out
+}
+
+/**
+ * Does this route field carry a value worth sending?
+ *
+ * Pro-only fields are omitted when empty so a CE backend never sees the key at
+ * all. "Empty" depends on the shape: `[]` for the list-valued fields (`teams`),
+ * `false` for the boolean ones (`notifyComponentOwner`).
+ *
+ * Worth stating because the list-only version of this check silently broke the
+ * boolean: `(true || []).length > 0` is `undefined > 0`, i.e. false, so the
+ * field was never sent and owner routing could not be turned on from the UI --
+ * a failure that looks like a backend bug from the operator's side.
+ */
+function carriesValue (v: unknown): boolean {
+    if (Array.isArray(v)) return v.length > 0
+    if (typeof v === 'boolean') return v
+    return v !== null && v !== undefined
+}
+
+/**
+ * Does this route name at least one delivery target?
+ *
+ * Mirrors the backend's per-route emptiness gate so the operator gets a clean
+ * client-side error instead of a mutation failure. Lives here, not inline in
+ * the form, because `isPro` is load-bearing and easy to get wrong: on CE the
+ * owner checkbox is hidden and `notifyComponentOwner` is not in the schema, so
+ * counting it as a target there would wave through a route that is GUARANTEED
+ * to fail the save -- and the save it fails is the whole subscription, not just
+ * that route.
+ *
+ * `teams` is deliberately NOT gated on edition: a CE backend soft-fails the
+ * teams query to `[]`, so a CE route cannot carry teams in the first place,
+ * and gating it would wrongly reject a Pro route whose team list loaded fine.
+ */
+export function routeHasTarget (route: Record<string, any>, isPro: boolean): boolean {
+    if ((route.channels || []).length > 0) return true
+    if ((route.channelGroups || []).length > 0) return true
+    if ((route.teams || []).length > 0) return true
+    return isPro && route.notifyComponentOwner === true
+}
+
+/**
+ * Build the payload for `NotificationFilterInput` from the modeled UI fields
+ * plus the as-loaded output blob (`_rawFilter`). Only `mode`,
+ * `presetConfigJson` and `celExpression` are valid input fields; the output
+ * blob carries an unmodelled `presetConfig` OBJECT that must NOT be spread
+ * into the input — doing so 400s the mutation ("field presetConfig not
+ * defined for NotificationFilterInput") and silently loses every Edit -> Save.
+ * Preset state is preserved by mapping `presetConfig` -> `presetConfigJson`.
+ */
+export function buildNotificationFilterInput (
+    rawFilter: Record<string, any> | null | undefined,
+    filterMode: string,
+    celExpression: string,
+): { mode: string, celExpression: string | null, presetConfigJson?: string } {
+    const raw = rawFilter || {}
+    const out: { mode: string, celExpression: string | null, presetConfigJson?: string } = {
+        mode: filterMode,
+        celExpression: filterMode === 'ADVANCED' ? celExpression : null,
+    }
+    if (raw.presetConfigJson != null) {
+        out.presetConfigJson = raw.presetConfigJson
+    } else if (raw.presetConfig != null) {
+        out.presetConfigJson = typeof raw.presetConfig === 'string'
+            ? raw.presetConfig
+            : JSON.stringify(raw.presetConfig)
+    }
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Subscription-test result classification.
+//
+// Split out of SubscriptionsOfOrg.vue so it can be unit-tested: the polling
+// loop there previously exited early ONLY when a delivery row existed, so a
+// test that legitimately produced NO delivery -- an unowned component, a filter
+// that excluded it, a severity gate -- could never take the "finished" branch.
+// It burned all 40 polls and then reported a timeout, which reads as "still
+// working on it" for an event that finished seconds earlier. Worse, the
+// accurate no-delivery explanation was written for exactly that case and was
+// unreachable.
+// ---------------------------------------------------------------------------
+
+/**
+ * Outbox statuses meaning fan-out is DONE for this event, so the set of
+ * delivery rows it produced is final and will not grow. Mirrors
+ * NotificationOutboxStatus: PENDING is the only non-terminal value.
+ */
+export const TERMINAL_OUTBOX_STATUSES: readonly string[] = ['FANNED_OUT', 'SUPPRESSED', 'FAILED']
+
+export type SubscriptionTestOutcome = 'DELIVERED' | 'NO_DELIVERY' | 'FANOUT_FAILED' | 'IN_FLIGHT'
+
+/**
+ * What a poll tick learned.
+ *
+ * - `DELIVERED`     rows exist and none is still PENDING -- render them.
+ * - `NO_DELIVERY`   fan-out finished and produced nothing for this
+ *                   subscription. A real, final answer, NOT a timeout.
+ * - `FANOUT_FAILED` fan-out itself errored. Kept separate from NO_DELIVERY
+ *                   because the no-delivery copy blames the subscription's
+ *                   filter or severity gate, and sending an operator to audit
+ *                   a perfectly good filter while a backend failure goes
+ *                   unmentioned is worse than saying nothing.
+ * - `IN_FLIGHT`     keep polling.
+ *
+ * Ordering is deliberate. Non-empty rows win over the event status: rows that
+ * exist but are still PENDING stay IN_FLIGHT even once fan-out is terminal,
+ * because the channel worker dispatches AFTER fan-out commits. Only an EMPTY
+ * set is final at that point.
+ *
+ * CALLER CONTRACT: read the event status BEFORE the deliveries. Fan-out writes
+ * the delivery rows and flips the event terminal in one transaction, so a
+ * status read first that comes back terminal guarantees a deliveries read
+ * issued after it sees those rows. Reading deliveries first opens a
+ * one-round-trip window where the commit lands between the two queries, and
+ * this function would then be handed an empty set with a terminal status and
+ * confidently report NO_DELIVERY for a subscription that did deliver.
+ */
+export function classifySubscriptionTest (
+    eventStatus: string | null | undefined,
+    items: Array<{ status: string }>,
+): SubscriptionTestOutcome {
+    if (items.length > 0) {
+        return items.every(d => d.status !== 'PENDING') ? 'DELIVERED' : 'IN_FLIGHT'
+    }
+    if (eventStatus === 'FAILED') return 'FANOUT_FAILED'
+    const fanOutFinished = !!eventStatus && TERMINAL_OUTBOX_STATUSES.includes(eventStatus)
+    return fanOutFinished ? 'NO_DELIVERY' : 'IN_FLIGHT'
+}
+
+/** True when any route on the subscription delivers to the component owner. */
+export function isOwnerRouted (routesJson: string | null | undefined): boolean {
+    try {
+        const routes = routesJson ? JSON.parse(routesJson) : []
+        return Array.isArray(routes) && routes.some((r: any) => r?.notifyComponentOwner === true)
+    } catch {
+        return false  // unparseable routes: fall back to the generic wording
+    }
+}
+
+/**
+ * Caveat shown on a SUCCESSFUL owner-routed test.
+ *
+ * Injection deliberately stamps the event onto a component that HAS a routable
+ * owner, so an owner-routed subscription passes its test almost regardless of
+ * how much of the inventory is actually owned. A real event lands on whichever
+ * component carries the finding. Without this note a green test reads as proof
+ * that production routing works, which it is not.
+ */
+export function ownerRoutedSuccessCaveat (routesJson: string | null | undefined): string | null {
+    if (!isOwnerRouted(routesJson)) return null
+    return 'Note: test events are deliberately stamped onto a component that has an owner,'
+        + ' so an owner-routed subscription will usually pass this test. A real event lands on'
+        + ' whichever component actually carries the finding, which may be unowned -- check the'
+        + ' ownership report for coverage rather than relying on this result.'
+}
