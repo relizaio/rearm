@@ -679,6 +679,12 @@
                 </div>
             </n-tab-pane>
 
+            <n-tab-pane v-if="isOrgAdmin" name="teams" tab="Teams">
+                <TeamsOfOrg
+                    :orguuid="orgResolved"
+                    :isWritable="isWritable" />
+            </n-tab-pane>
+
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Programmatic Access</h5>
@@ -1218,6 +1224,7 @@ import ScopedPermissions from './ScopedPermissions.vue'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
+import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
