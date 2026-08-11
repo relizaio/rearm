@@ -405,12 +405,10 @@
                                                         {{ componentOwnership.ownership.status }}
                                                     </n-tag>
                                                     <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
-                                                    <!-- UNSET's reason is the backend's candidate-team SUGGESTION
-                                                         ("suggest team 'X'", "N candidate teams", "create one").
-                                                         Suppressed: nobody asked for a suggestion here, and offering
-                                                         one beside a picker invites reading it as a decision that has
-                                                         already been made. The UNSET tag alone says what is true. -->
-                                                    <span v-if="componentOwnership.ownership.reason && componentOwnership.ownership.status !== 'UNSET'"
+                                                    <!-- A suggestion's reason line is suppressed: offering a candidate
+                                                         team directly above the owner picker invites reading it as a
+                                                         decision already made. Every other status explains itself. -->
+                                                    <span v-if="componentOwnership.ownership.reason && !ownershipIsSuggestion"
                                                         class="text-muted" style="display: block; margin-top: 4px;">
                                                         {{ componentOwnership.ownership.reason }}
                                                     </span>
@@ -442,11 +440,8 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        <!-- Leads were the pre-ownership way of naming who is accountable for a
-                                             component; Owner above supersedes them. Two overlapping answers to one
-                                             question is worse than one, so the editor is gone. The field itself is
-                                             untouched on the backend and any stored value survives: this form no
-                                             longer sends it, and an absent value reads as "leave unchanged". -->
+                                        <!-- The Leads editor lived here; Owner above replaces it. Stored values are
+                                             preserved and still readable over the API, but no longer shown. -->
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
                                             <label>Stakeholder Contacts</label>
                                             <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
@@ -3399,18 +3394,25 @@ const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default
             : s === 'UNSET' ? 'default'  // no owner yet -> neutral, not alarming
                 : 'error'                // ORPHANED (or unknown) -> needs attention
 
+// UNSET is the one ownership status that is a SUGGESTION rather than a fact:
+// the backend fills ownerRef with a candidate team it picked and puts its pitch
+// in `reason`. Every other status describes a real (or absent) owner. Both the
+// owner label and the reason line have to special-case it, and they have to
+// agree -- so the rule lives here once instead of as a string literal in each.
+const ownershipIsSuggestion = computed<boolean>(
+    () => componentOwnership.value?.ownership?.status === 'UNSET')
+
 const ownerLabel = computed<string | null>(() => {
     // Fall back to the RESOLVED ownership when there is no per-component stored
     // owner: an org team-assignment rule can own a component without anything
     // being stored on it. Reading only `owner` showed a green OWNED badge with
     // no name next to it -- "owned by whom?".
-    // UNSET means "no owner, here is a suggestion" -- ownership.ownerRef is
-    // populated for it, so falling back blindly would print the suggested team
-    // beside an UNSET tag as though it owned the component.
+    // A suggestion is not an owner, so do NOT fall back to it: that would print
+    // the suggested team beside an UNSET tag as though it owned the component.
     const resolved = componentOwnership.value?.ownership
     const o = componentOwnership.value?.owner?.ownerRef
         ? componentOwnership.value.owner
-        : (resolved && resolved.status !== 'UNSET' ? resolved : null)
+        : (resolved && !ownershipIsSuggestion.value ? resolved : null)
     if (!o || !o.ownerRef) return null
     const list = o.ownerType === 'TEAM' ? userGroups.value : users.value
     const hit = list.find((x: any) => x.value === o.ownerRef)

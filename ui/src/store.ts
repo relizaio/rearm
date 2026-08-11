@@ -976,9 +976,10 @@ const storeObject : any = {
                 sidPurlOverride: component.sidPurlOverride || 'INHERIT',
                 sidAuthoritySegments: trimmedSegments,
                 isInternal: component.isInternal || null,
-                // team/approvers are read-only derived; contacts ({name, contact})
-                // is the only writeable one left. Strip Apollo's __typename off
-                // contacts so the ComponentContactInput type matches.
+                // Of the PEOPLE fields on a component, team/approvers are
+                // read-only derived and contacts ({name, contact}) is the only
+                // writeable one left. Strip Apollo's __typename off contacts so
+                // the ComponentContactInput type matches.
                 // Fall back to undefined (not []) when the field is absent: the
                 // server reads null as "leave unchanged", so a partially-loaded
                 // component can't accidentally clear contacts the operator never
