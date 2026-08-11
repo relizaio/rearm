@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
     buildMemberRolesPayload,
-    buildExternalMembersPayload,
     validateTeamMembers,
 } from './teamMembers'
 
@@ -38,43 +37,17 @@ describe('buildMemberRolesPayload', () => {
     })
 })
 
-describe('buildExternalMembersPayload', () => {
-    it('drops a wholly blank scaffold row added by "+"', () => {
-        expect(buildExternalMembersPayload([{ name: '', contact: '', role: null, customRole: '' }])).toEqual([])
-    })
-
-    it('keeps a half-filled row so validation can flag it', () => {
-        expect(buildExternalMembersPayload([{ name: 'Vendor', contact: '', role: 'QA' }]))
-            .toEqual([{ name: 'Vendor', contact: '', role: 'QA', customRole: null }])
-    })
-
-    it('trims name and contact', () => {
-        expect(buildExternalMembersPayload([{ name: ' V ', contact: ' v@x.example ', role: 'QA' }]))
-            .toEqual([{ name: 'V', contact: 'v@x.example', role: 'QA', customRole: null }])
-    })
-})
-
 describe('validateTeamMembers', () => {
     it('passes a well-formed payload', () => {
-        expect(validateTeamMembers(
-            [{ userRef: A, role: 'QA', customRole: null }],
-            [{ name: 'V', contact: 'v@x.example', role: 'DEVELOPER', customRole: null }],
-            label)).toBeNull()
+        expect(validateTeamMembers([{ userRef: A, role: 'QA', customRole: null }], label)).toBeNull()
     })
 
     it('names the member whose CUSTOM role has no label', () => {
-        const err = validateTeamMembers([{ userRef: A, role: 'CUSTOM', customRole: null }], [], label)
+        const err = validateTeamMembers([{ userRef: A, role: 'CUSTOM', customRole: null }], label)
         expect(err).toContain('Alice')
     })
 
-    it('rejects an external member missing a contact', () => {
-        const err = validateTeamMembers([], [{ name: 'Vendor', contact: '', role: 'QA', customRole: null }], label)
-        expect(err).toContain('Vendor')
-    })
-
-    it('rejects an external member with a CUSTOM role and no label', () => {
-        const err = validateTeamMembers(
-            [], [{ name: 'Vendor', contact: 'v@x.example', role: 'CUSTOM', customRole: null }], label)
-        expect(err).toContain('Vendor')
+    it('passes an empty payload', () => {
+        expect(validateTeamMembers([], label)).toBeNull()
     })
 })
