@@ -2,7 +2,7 @@
     <div class="notification-history-pane">
         <div class="tab-toolbar">
             <div class="tab-toolbar-info">
-                Audit log of every delivery row: when, to whom, status, attempts. Test rows (channel-test button) and PREVIEW rows (subscriptions in preview mode) are included.
+                Audit log of every delivery row: when, to whom, status, attempts. Test rows (channel-test button) are included.
             </div>
             <n-button size="small" @click="loadDeliveries">
                 <template #icon><n-icon><Refresh /></n-icon></template>
