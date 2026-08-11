@@ -181,8 +181,13 @@
                         @click="showAddComponentModal = true" title="Add Dependency" size="20" style="margin-left: 4px; vertical-align: middle;">
                         <CirclePlus />
                     </n-icon>
-                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable"
-                        @click="triggerAutoIntegrate" title="Trigger Auto Integrate" size="20" style="margin-left: 4px; vertical-align: middle;">
+                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED'" :class="autoIntegrateInFlight ? '' : 'clickable'"
+                        @click="triggerAutoIntegrate"
+                        :title="autoIntegrateInFlight ? 'Auto Integrate in progress...' : 'Trigger Auto Integrate'"
+                        size="20"
+                        :style="{ 'margin-left': '4px', 'vertical-align': 'middle',
+                                  opacity: autoIntegrateInFlight ? 0.5 : 1,
+                                  cursor: autoIntegrateInFlight ? 'not-allowed' : undefined }">
                         <TrendingUp />
                     </n-icon>
                 </p>
@@ -449,6 +454,7 @@ const selectNewVcsRepo = ref(false)
 
 
 const compareMode = ref(false)
+const autoIntegrateInFlight = ref(false)
 const comparisonCheckboxes: Ref<any> = ref({})
 const showReleaseComparisonModal = ref(false)
 
@@ -566,24 +572,36 @@ const createFsFromRelease = async function(){
 }
 
 async function triggerAutoIntegrate () {
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-            mutation autoIntegrateFeatureSet($branchUuid: ID!) {
-                autoIntegrateFeatureSet(branchUuid: $branchUuid) {
-                    uuid
-                    version
-                }
-            }`,
-        variables: { branchUuid: branchUuid.value },
-        fetchPolicy: 'no-cache'
-    })
-    const release = (resp.data as any)?.autoIntegrateFeatureSet
-    await onCreated()
-    if (release && release.version) {
-        notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
-        showBranchSettingsModal.value = false
-    } else {
-        notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+    // The mutation is not idempotent: autoIntegrateFeatureSetOnDemand gathers each dependency's
+    // latest release, checks whether a matching product release already exists, and creates one if
+    // not. That check-then-act takes no lock server-side, so two in-flight calls can both find
+    // nothing and both create a product release. The button is a plain icon with no built-in
+    // disabled state, so without this a double-click sends two mutations.
+    if (autoIntegrateInFlight.value) return
+    autoIntegrateInFlight.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation autoIntegrateFeatureSet($branchUuid: ID!) {
+                    autoIntegrateFeatureSet(branchUuid: $branchUuid) {
+                        uuid
+                        version
+                    }
+                }`,
+            variables: { branchUuid: branchUuid.value },
+            fetchPolicy: 'no-cache'
+        })
+        const release = (resp.data as any)?.autoIntegrateFeatureSet
+        await onCreated()
+        if (release && release.version) {
+            notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
+            showBranchSettingsModal.value = false
+        } else {
+            notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+        }
+    } finally {
+        // finally, not after the notify: a failed mutation must not leave the button dead.
+        autoIntegrateInFlight.value = false
     }
 }
 
