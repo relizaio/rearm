@@ -1086,7 +1086,8 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ComputedRef, ref, Ref, computed, h, Component, onMounted } from 'vue'
+import { ComputedRef, ref, Ref, computed, h, onMounted } from 'vue'
+import type { Component } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
