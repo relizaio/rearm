@@ -405,7 +405,13 @@
                                                         {{ componentOwnership.ownership.status }}
                                                     </n-tag>
                                                     <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
-                                                    <span v-if="componentOwnership.ownership.reason" class="text-muted" style="display: block; margin-top: 4px;">
+                                                    <!-- UNSET's reason is the backend's candidate-team SUGGESTION
+                                                         ("suggest team 'X'", "N candidate teams", "create one").
+                                                         Suppressed: nobody asked for a suggestion here, and offering
+                                                         one beside a picker invites reading it as a decision that has
+                                                         already been made. The UNSET tag alone says what is true. -->
+                                                    <span v-if="componentOwnership.ownership.reason && componentOwnership.ownership.status !== 'UNSET'"
+                                                        class="text-muted" style="display: block; margin-top: 4px;">
                                                         {{ componentOwnership.ownership.reason }}
                                                     </span>
                                                 </div>
@@ -436,25 +442,11 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
-                                            <label>{{ words.componentFirstUpper }} Leads</label>
-                                            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
-                                                <n-select
-                                                    v-if="isWritable"
-                                                    v-model:value="updatedComponent.leads"
-                                                    multiple
-                                                    filterable
-                                                    clearable
-                                                    placeholder="Assign lead users"
-                                                    :options="users" />
-                                                <span v-else>
-                                                    {{ (updatedComponent.leadDetails || []).map((u) => u.name || u.email).join(', ') || 'None' }}
-                                                </span>
-                                                <span class="text-muted" style="margin-top: 4px;">
-                                                    Manually-designated leads for this {{ words.component }}.
-                                                </span>
-                                            </div>
-                                        </div>
+                                        <!-- Leads were the pre-ownership way of naming who is accountable for a
+                                             component; Owner above supersedes them. Two overlapping answers to one
+                                             question is worse than one, so the editor is gone. The field itself is
+                                             untouched on the backend and any stored value survives: this form no
+                                             longer sends it, and an absent value reads as "leave unchanged". -->
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
                                             <label>Stakeholder Contacts</label>
                                             <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
@@ -2395,7 +2387,6 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         (updatedComponent.value.sidPurlOverride || null) !== (componentData.value.sidPurlOverride || null) ||
         commonFunctions.stableStringify(updatedComponent.value.sidAuthoritySegments || []) !== commonFunctions.stableStringify(componentData.value.sidAuthoritySegments || []) ||
         ((updatedComponent.value.isInternal || 'INTERNAL') !== (componentData.value.isInternal || 'INTERNAL')) ||
-        commonFunctions.stableStringify(updatedComponent.value.leads || []) !== commonFunctions.stableStringify(componentData.value.leads || []) ||
         commonFunctions.stableStringify(updatedComponent.value.contacts || []) !== commonFunctions.stableStringify(componentData.value.contacts || [])
 })
 
@@ -2416,7 +2407,6 @@ function resetCoreSettings() {
     updatedComponent.value.sidPurlOverride = componentData.value.sidPurlOverride
     updatedComponent.value.sidAuthoritySegments = commonFunctions.deepCopy(componentData.value.sidAuthoritySegments) || []
     updatedComponent.value.isInternal = componentData.value.isInternal
-    updatedComponent.value.leads = commonFunctions.deepCopy(componentData.value.leads) || []
     updatedComponent.value.contacts = commonFunctions.deepCopy(componentData.value.contacts) || []
     
     // Reset marketing version enabled state
