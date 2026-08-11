@@ -68,7 +68,7 @@
   
 <script lang="ts" setup>
 import { NInput, NModal, NCard, NDataTable, useNotification, NotificationType, NIcon, NTooltip, NCollapseTransition } from 'naive-ui'
-import { ComputedRef, h, ref, Ref, computed, Component, reactive, onMounted } from 'vue'
+import { ComputedRef, h, ref, Ref, computed, reactive, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
 import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash, Search, Settings, GitPullRequest } from '@vicons/tabler'

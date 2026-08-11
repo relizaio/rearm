@@ -71,7 +71,8 @@ export default {
 
 <script lang="ts" setup>
 import { NInput, NModal, NCard, NDataTable, DataTableBaseColumn, DataTableColumns, NIcon, NTooltip  } from 'naive-ui'
-import { ComputedRef, h, ref, Ref, computed, Component, toRefs } from 'vue'
+import { ComputedRef, h, ref, Ref, computed, toRefs } from 'vue'
+import type { Component } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, RouterLink } from 'vue-router'
 import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, QuestionMark } from '@vicons/tabler'

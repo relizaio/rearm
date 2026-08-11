@@ -210,7 +210,7 @@ import type { SelectOption } from 'naive-ui'
 import { NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, DataTableColumns, NDropdown, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSwitch, NTabPane, NTabs, NTag, NTooltip, NotificationType, useNotification } from 'naive-ui'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
+import { ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 

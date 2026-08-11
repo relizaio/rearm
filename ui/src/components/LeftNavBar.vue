@@ -27,8 +27,14 @@
                          Suspense, and a patch landing mid-resolution (menu active
                          item, store updates) intermittently leaves both the old and
                          new route subtrees stacked in the DOM until a full reload.
-                         RouteComponent is renamed from the slot's Component prop to
-                         avoid shadowing the Component type imported from vue. -->
+                         RouteComponent is renamed from the slot's Component prop
+                         because a bare `Component` here is the exact hazard that
+                         broke `npm run dev`: the SFC compiler collects identifiers
+                         out of directive expressions, and any that matches a script
+                         import is emitted into __returned__ as a VALUE. That defeats
+                         esbuild's elision of vue's type-only `Component` export, and
+                         the browser then rejects the module for a named export the
+                         optimized dep does not have. Keep the rename. -->
                     <router-view v-slot="{ Component: RouteComponent }">
                         <template v-if="RouteComponent">
                             <Suspense>
@@ -56,7 +62,8 @@ export default {
 <script lang="ts" setup>
 import { NSpace, NLayout, NLayoutSider, NMenu, NIcon } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
-import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
+import { ref, h, ComputedRef, computed, Ref, watch } from 'vue'
+import type { Component } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
