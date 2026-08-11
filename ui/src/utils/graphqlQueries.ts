@@ -931,12 +931,6 @@ const COMPONENT_FULL_DATA = `
     sidPurlOverride
     sidAuthoritySegments
     isInternal
-    leads
-    leadDetails {
-        uuid
-        name
-        email
-    }
     contacts {
         name
         contact

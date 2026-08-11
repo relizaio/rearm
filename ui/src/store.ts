@@ -976,14 +976,17 @@ const storeObject : any = {
                 sidPurlOverride: component.sidPurlOverride || 'INHERIT',
                 sidAuthoritySegments: trimmedSegments,
                 isInternal: component.isInternal || null,
-                // leadDetails/team/approvers are read-only derived; only leads (IDs)
-                // and contacts ({name, contact}) are writeable. Strip Apollo's
-                // __typename off contacts so the ComponentContactInput type matches.
+                // Of the PEOPLE fields on a component, team/approvers are
+                // read-only derived and contacts ({name, contact}) is the only
+                // writeable one left. Strip Apollo's __typename off contacts so
+                // the ComponentContactInput type matches.
                 // Fall back to undefined (not []) when the field is absent: the
                 // server reads null as "leave unchanged", so a partially-loaded
-                // component can't accidentally clear leads/contacts the operator
-                // never touched. A real clear arrives as an actual empty array.
-                leads: Array.isArray(component.leads) ? component.leads : undefined,
+                // component can't accidentally clear contacts the operator never
+                // touched. A real clear arrives as an actual empty array.
+                // `leads` is deliberately never sent -- the editor for it was
+                // removed in favour of Owner, and omitting it leaves any stored
+                // value intact rather than silently clearing it.
                 contacts: Array.isArray(component.contacts)
                     ? component.contacts.map(({ name, contact }: any) => ({ name, contact }))
                     : undefined

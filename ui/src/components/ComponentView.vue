@@ -405,7 +405,11 @@
                                                         {{ componentOwnership.ownership.status }}
                                                     </n-tag>
                                                     <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
-                                                    <span v-if="componentOwnership.ownership.reason" class="text-muted" style="display: block; margin-top: 4px;">
+                                                    <!-- A suggestion's reason line is suppressed: offering a candidate
+                                                         team directly above the owner picker invites reading it as a
+                                                         decision already made. Every other status explains itself. -->
+                                                    <span v-if="componentOwnership.ownership.reason && !ownershipIsSuggestion"
+                                                        class="text-muted" style="display: block; margin-top: 4px;">
                                                         {{ componentOwnership.ownership.reason }}
                                                     </span>
                                                 </div>
@@ -436,25 +440,8 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
-                                            <label>{{ words.componentFirstUpper }} Leads</label>
-                                            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
-                                                <n-select
-                                                    v-if="isWritable"
-                                                    v-model:value="updatedComponent.leads"
-                                                    multiple
-                                                    filterable
-                                                    clearable
-                                                    placeholder="Assign lead users"
-                                                    :options="users" />
-                                                <span v-else>
-                                                    {{ (updatedComponent.leadDetails || []).map((u) => u.name || u.email).join(', ') || 'None' }}
-                                                </span>
-                                                <span class="text-muted" style="margin-top: 4px;">
-                                                    Manually-designated leads for this {{ words.component }}.
-                                                </span>
-                                            </div>
-                                        </div>
+                                        <!-- The Leads editor lived here; Owner above replaces it. Stored values are
+                                             preserved and still readable over the API, but no longer shown. -->
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
                                             <label>Stakeholder Contacts</label>
                                             <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
@@ -2395,7 +2382,6 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         (updatedComponent.value.sidPurlOverride || null) !== (componentData.value.sidPurlOverride || null) ||
         commonFunctions.stableStringify(updatedComponent.value.sidAuthoritySegments || []) !== commonFunctions.stableStringify(componentData.value.sidAuthoritySegments || []) ||
         ((updatedComponent.value.isInternal || 'INTERNAL') !== (componentData.value.isInternal || 'INTERNAL')) ||
-        commonFunctions.stableStringify(updatedComponent.value.leads || []) !== commonFunctions.stableStringify(componentData.value.leads || []) ||
         commonFunctions.stableStringify(updatedComponent.value.contacts || []) !== commonFunctions.stableStringify(componentData.value.contacts || [])
 })
 
@@ -2416,7 +2402,6 @@ function resetCoreSettings() {
     updatedComponent.value.sidPurlOverride = componentData.value.sidPurlOverride
     updatedComponent.value.sidAuthoritySegments = commonFunctions.deepCopy(componentData.value.sidAuthoritySegments) || []
     updatedComponent.value.isInternal = componentData.value.isInternal
-    updatedComponent.value.leads = commonFunctions.deepCopy(componentData.value.leads) || []
     updatedComponent.value.contacts = commonFunctions.deepCopy(componentData.value.contacts) || []
     
     // Reset marketing version enabled state
@@ -3409,18 +3394,25 @@ const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default
             : s === 'UNSET' ? 'default'  // no owner yet -> neutral, not alarming
                 : 'error'                // ORPHANED (or unknown) -> needs attention
 
+// UNSET is the one ownership status that is a SUGGESTION rather than a fact:
+// the backend fills ownerRef with a candidate team it picked and puts its pitch
+// in `reason`. Every other status describes a real (or absent) owner. Both the
+// owner label and the reason line have to special-case it, and they have to
+// agree -- so the rule lives here once instead of as a string literal in each.
+const ownershipIsSuggestion = computed<boolean>(
+    () => componentOwnership.value?.ownership?.status === 'UNSET')
+
 const ownerLabel = computed<string | null>(() => {
     // Fall back to the RESOLVED ownership when there is no per-component stored
     // owner: an org team-assignment rule can own a component without anything
     // being stored on it. Reading only `owner` showed a green OWNED badge with
     // no name next to it -- "owned by whom?".
-    // UNSET means "no owner, here is a suggestion" -- ownership.ownerRef is
-    // populated for it, so falling back blindly would print the suggested team
-    // beside an UNSET tag as though it owned the component.
+    // A suggestion is not an owner, so do NOT fall back to it: that would print
+    // the suggested team beside an UNSET tag as though it owned the component.
     const resolved = componentOwnership.value?.ownership
     const o = componentOwnership.value?.owner?.ownerRef
         ? componentOwnership.value.owner
-        : (resolved && resolved.status !== 'UNSET' ? resolved : null)
+        : (resolved && !ownershipIsSuggestion.value ? resolved : null)
     if (!o || !o.ownerRef) return null
     const list = o.ownerType === 'TEAM' ? userGroups.value : users.value
     const hit = list.find((x: any) => x.value === o.ownerRef)
