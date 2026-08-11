@@ -570,3 +570,39 @@ export function ownerRoutedSuccessCaveat (routesJson: string | null | undefined)
         + ' whichever component actually carries the finding, which may be unowned -- check the'
         + ' ownership report for coverage rather than relying on this result.'
 }
+
+/**
+ * How many routes a subscription carries, read from the JSON-stringified blob
+ * the list query returns.
+ *
+ * An unparseable blob counts as zero rather than throwing: callers use this to
+ * decide what to show, and a parse failure should not take the row down.
+ */
+export function routeCount (routesJson: string | null | undefined): number {
+    try {
+        const routes = routesJson ? JSON.parse(routesJson) : []
+        return Array.isArray(routes) ? routes.length : 0
+    } catch {
+        return 0  // unparseable: treated as "nothing to lose", same as an empty list
+    }
+}
+
+/**
+ * True when this subscription cannot be honestly edited in the one-route editor.
+ *
+ * The editor offers exactly ONE route; the backend still supports many. These
+ * are NOT only API-made -- the UI shipped an "Add route" control from #130
+ * until the editor was collapsed -- so the block needs a visible explanation
+ * rather than a bare greyed-out button. It is blocked NOT because
+ * routes would be lost -- saveSubscription maps every route the form holds, so
+ * routes 2..N are written back untouched -- but because they become invisible:
+ * the operator sees one route, takes it for the whole subscription, and the
+ * save validator can reject with "Route 3 has no channels" naming something
+ * that was never on screen.
+ *
+ * An unreadable routes blob is treated as "nothing hidden", so a parse failure
+ * cannot lock an operator out of a subscription.
+ */
+export function hasUneditableMultiRoute (routesJson: string | null | undefined): boolean {
+    return routeCount(routesJson) > 1
+}

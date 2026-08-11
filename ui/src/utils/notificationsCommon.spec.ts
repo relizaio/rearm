@@ -22,6 +22,8 @@ import {
     TERMINAL_OUTBOX_STATUSES,
     isOwnerRouted,
     ownerRoutedSuccessCaveat,
+    routeCount,
+    hasUneditableMultiRoute,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
 } from './notificationsCommon'
@@ -383,5 +385,38 @@ describe('owner-routed test caveat', () => {
     it('warns only for owner-routed subscriptions', () => {
         expect(ownerRoutedSuccessCaveat(ownerRoute)).toContain('deliberately stamped')
         expect(ownerRoutedSuccessCaveat(plainRoute)).toBeNull()
+    })
+})
+
+describe('one-route editor guard', () => {
+    const route = (n: number) => JSON.stringify(Array.from({ length: n }, () => ({ channels: [] })))
+
+    it('counts routes off the stringified blob', () => {
+        expect(routeCount(route(0))).toBe(0)
+        expect(routeCount(route(1))).toBe(1)
+        expect(routeCount(route(3))).toBe(3)
+    })
+
+    it('treats unparseable or absent routes as nothing to lose', () => {
+        // The guard exists to stop an operator editing a subscription whose
+        // other routes they cannot see. If we cannot read the blob we must not
+        // claim there are several -- that would lock them out for no reason.
+        expect(routeCount(null)).toBe(0)
+        expect(routeCount('not json')).toBe(0)
+        expect(hasUneditableMultiRoute('not json')).toBe(false)
+    })
+
+    it('blocks editing only when routes would actually be hidden', () => {
+        expect(hasUneditableMultiRoute(route(1))).toBe(false)
+        expect(hasUneditableMultiRoute(route(2))).toBe(true)
+    })
+
+    it('never blocks on a shape it cannot read', () => {
+        // Every one of these must fail OPEN. Blocking here would strand an
+        // operator on a subscription that may well have a single route.
+        for (const shape of [null, undefined, '', 'not json', '{"a":1}', '[]']) {
+            expect(hasUneditableMultiRoute(shape), `shape: ${JSON.stringify(shape)}`).toBe(false)
+        }
+        expect(routeCount('{"a":1}')).toBe(0)  // an object is not a route list
     })
 })

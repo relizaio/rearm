@@ -2,7 +2,7 @@
     <div class="subscriptions-pane">
         <div class="tab-toolbar">
             <div class="tab-toolbar-info">
-                Rules that pick which events fire on which channels. One subscription matches a set of event types, optionally narrows via a filter, and fans out across one or more severity-gated routes.
+                Rules that pick which events fire on which channels. One subscription matches a set of event types, optionally narrows via a filter, and fans out to a destination gated by severity and perspectives.
             </div>
             <n-button
                 v-if="canWrite"
@@ -94,131 +94,121 @@
                             Leave Preset mode to match on event type alone.
                         </div>
 
+                        <!-- Severity and Perspectives live on the route in the
+                             backend model, but they are filters, not
+                             destinations, so they are grouped with the other
+                             filters here and written back onto the single
+                             route on save. -->
+                        <n-grid :cols="2" :x-gap="12">
+                            <n-gi>
+                                <n-form-item label="Minimum severity">
+                                    <n-select
+                                        v-model:value="subForm.routes[0].whenSeverityAtLeast"
+                                        :options="severityOptions"
+                                        placeholder="Any"
+                                        clearable
+                                        data-testid="route-severity"
+                                    />
+                                </n-form-item>
+                            </n-gi>
+                            <n-gi>
+                                <n-form-item label="Perspectives">
+                                    <n-select
+                                        v-model:value="subForm.routes[0].perspectives"
+                                        :options="perspectiveOptions"
+                                        multiple
+                                        clearable
+                                        placeholder="All perspectives (no restriction)"
+                                        data-testid="route-perspectives"
+                                    />
+                                </n-form-item>
+                            </n-gi>
+                        </n-grid>
+                        <div class="field-hint">
+                            Perspectives gate what this subscription <strong>delivers</strong> — they do
+                            not affect the in-app inbox or the bell. Leave empty for no restriction.
+                            Note they are resolved from the affected releases, which only vulnerability
+                            events carry: with perspectives set, release and approval events match
+                            nothing. Keep those on their own subscription.
+                        </div>
+
                         <div class="routes-section">
-                            <div class="routes-header">
-                                <div class="routes-title">Routes</div>
-                                <n-button size="tiny" @click="addRoute" data-testid="add-route">
-                                    <template #icon><n-icon><CirclePlus /></n-icon></template>
-                                    Add route
-                                </n-button>
-                            </div>
+                            <div class="routes-title">Destination</div>
                             <div class="routes-hint">
-                                A route's Perspectives filter gates which events this channel actually <strong>delivers</strong> — it does not affect the in-app inbox/bell visibility. Leave empty for no restriction.
+                                Where matching events are delivered. Pick any combination — they are merged,
+                                and a channel reached twice still gets one delivery.
                             </div>
-                            <div v-for="(r, i) in subForm.routes" :key="i" class="route-row" :data-testid="`route-row-${i}`">
-                                <n-grid :cols="24" :x-gap="8" item-responsive>
-                                    <n-gi :span="8">
-                                        <n-form-item :label="i === 0 ? 'Minimum severity' : ''" :show-feedback="false">
-                                            <n-select
-                                                v-model:value="r.whenSeverityAtLeast"
-                                                :options="severityOptions"
-                                                placeholder="Any"
-                                                clearable
-                                                data-testid="route-severity"
-                                            />
-                                        </n-form-item>
-                                    </n-gi>
-                                    <n-gi :span="14">
-                                        <n-form-item :label="i === 0 ? 'Channels' : ''" :show-feedback="false">
-                                            <n-select
-                                                v-model:value="r.channels"
-                                                :options="channelOptions"
-                                                multiple
-                                                placeholder="Pick channels (and/or groups below)"
-                                                data-testid="route-channels"
-                                            />
-                                        </n-form-item>
-                                    </n-gi>
-                                    <n-gi :span="2" class="route-remove-cell">
-                                        <n-form-item :label="i === 0 ? ' ' : ''" :show-feedback="false">
-                                            <n-button
-                                                size="small"
-                                                secondary
-                                                type="error"
-                                                :disabled="subForm.routes.length <= 1"
-                                                @click="removeRoute(i)"
-                                                :title="subForm.routes.length <= 1 ? 'Subscription must have at least one route' : 'Remove route'"
-                                            >
-                                                <template #icon><n-icon><Trash /></n-icon></template>
-                                            </n-button>
-                                        </n-form-item>
-                                    </n-gi>
-                                    <n-gi :span="22" :offset="0">
-                                        <n-form-item :label="i === 0 ? 'Channel groups (optional)' : ''" :show-feedback="false">
-                                            <n-select
-                                                v-model:value="r.channelGroups"
-                                                :options="channelGroupOptions"
-                                                multiple
-                                                placeholder="(none)"
-                                                clearable
-                                                data-testid="route-channelgroups"
-                                            />
-                                        </n-form-item>
-                                    </n-gi>
-                                    <!-- Hidden when there is nothing to offer. Covers both "this org
-                                         has no teams" and "this backend has no team channels" (a CE
-                                         backend, where loadTeams soft-fails to []): an empty picker
-                                         under copy promising a feature that cannot work is worse
-                                         than no picker. teamOptions still keeps ghosts for teams
-                                         already saved on the route, so those stay removable. -->
-                                    <n-gi v-if="teamOptions.length" :span="22" :offset="0">
-                                        <n-form-item :label="i === 0 ? 'Teams (optional)' : ''" :show-feedback="false">
-                                            <n-select
-                                                v-model:value="r.teams"
-                                                :options="teamOptions"
-                                                multiple
-                                                placeholder="(none)"
-                                                clearable
-                                                data-testid="route-teams"
-                                            />
-                                        </n-form-item>
-                                        <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
-                                            Delivers to each team's own notification channels, resolved when the
-                                            event fires — so if a team changes its channel, this route follows
-                                            automatically.
-                                        </div>
-                                    </n-gi>
-                                    <!-- T4a. Pro-only: notifyComponentOwner does not exist in the CE
-                                         schema, and GraphQL input coercion rejects unknown keys
-                                         outright, so letting a CE operator tick this would fail the
-                                         WHOLE subscription save -- including edits that never touch
-                                         it. Gated on the real edition signal rather than on
-                                         teamOptions.length like the Teams picker above: that proxy
-                                         is empty on a Pro org with no teams yet, and non-empty on CE
-                                         whenever ghosts survive for a route's saved teams. -->
-                                    <n-gi v-if="isPro" :span="22" :offset="0">
-                                        <n-form-item :label="i === 0 ? 'Component owner' : ''" :show-feedback="false">
-                                            <n-checkbox
-                                                v-model:checked="r.notifyComponentOwner"
-                                                data-testid="route-notify-owner"
-                                            >
-                                                Also notify the team that owns the affected component
-                                            </n-checkbox>
-                                        </n-form-item>
-                                        <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
-                                            Resolved when the event fires, from the component's owner — set
-                                            directly or by an assignment rule. Unlike picking a team above,
-                                            this follows ownership changes on its own, so reassigning a
-                                            component never means editing this subscription.
-                                            <template v-if="!teamOptions.length">
-                                                This org has no teams yet, and only a team can own a
-                                                component, so this delivers nothing until one exists.
-                                            </template>
-                                        </div>
-                                    </n-gi>
-                                    <n-gi :span="22" :offset="0">
-                                        <n-form-item :label="i === 0 ? 'Perspectives (delivery filter)' : ''" :show-feedback="false">
-                                            <n-select
-                                                v-model:value="r.perspectives"
-                                                :options="perspectiveOptions"
-                                                multiple
-                                                clearable
-                                                placeholder="All perspectives (no restriction)"
-                                                data-testid="route-perspectives"
-                                            />
-                                        </n-form-item>
-                                    </n-gi>
-                                </n-grid>
+                            <div class="route-row" data-testid="route-row-0">
+                                <n-form-item label="Channels" :show-feedback="false">
+                                    <n-select
+                                        v-model:value="subForm.routes[0].channels"
+                                        :options="channelOptions"
+                                        multiple
+                                        placeholder="Pick channels (and/or groups below)"
+                                        data-testid="route-channels"
+                                    />
+                                </n-form-item>
+                                <n-form-item label="Channel groups (optional)" :show-feedback="false">
+                                    <n-select
+                                        v-model:value="subForm.routes[0].channelGroups"
+                                        :options="channelGroupOptions"
+                                        multiple
+                                        placeholder="(none)"
+                                        clearable
+                                        data-testid="route-channelgroups"
+                                    />
+                                </n-form-item>
+                                <!-- Hidden when there is nothing to offer. Covers both "this org
+                                     has no teams" and "this backend has no team channels" (a CE
+                                     backend, where loadTeams soft-fails to []): an empty picker
+                                     under copy promising a feature that cannot work is worse
+                                     than no picker. teamOptions still keeps ghosts for teams
+                                     already saved on the route, so those stay removable. -->
+                                <template v-if="teamOptions.length">
+                                    <n-form-item label="Teams (optional)" :show-feedback="false">
+                                        <n-select
+                                            v-model:value="subForm.routes[0].teams"
+                                            :options="teamOptions"
+                                            multiple
+                                            placeholder="(none)"
+                                            clearable
+                                            data-testid="route-teams"
+                                        />
+                                    </n-form-item>
+                                    <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
+                                        Delivers to each team's own notification channels, resolved when the
+                                        event fires — so if a team changes its channel, this follows
+                                        automatically.
+                                    </div>
+                                </template>
+                                <!-- T4a. Pro-only: notifyComponentOwner does not exist in the CE
+                                     schema, and GraphQL input coercion rejects unknown keys
+                                     outright, so letting a CE operator tick this would fail the
+                                     WHOLE subscription save -- including edits that never touch
+                                     it. Gated on the real edition signal rather than on
+                                     teamOptions.length like the Teams picker above: that proxy
+                                     is empty on a Pro org with no teams yet, and non-empty on CE
+                                     whenever ghosts survive for a route's saved teams. -->
+                                <template v-if="isPro">
+                                    <n-form-item label="Component owner" :show-feedback="false">
+                                        <n-checkbox
+                                            v-model:checked="subForm.routes[0].notifyComponentOwner"
+                                            data-testid="route-notify-owner"
+                                        >
+                                            Also notify the team that owns the affected component
+                                        </n-checkbox>
+                                    </n-form-item>
+                                    <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
+                                        Resolved when the event fires, from the component's owner — set
+                                        directly or by an assignment rule. Unlike picking a team above,
+                                        this follows ownership changes on its own, so reassigning a
+                                        component never means editing this subscription.
+                                        <template v-if="!teamOptions.length">
+                                            This org has no teams yet, and only a team can own a
+                                            component, so this delivers nothing until one exists.
+                                        </template>
+                                    </div>
+                                </template>
                             </div>
                         </div>
 
@@ -314,6 +304,8 @@ import {
     classifySubscriptionTest,
     isOwnerRouted,
     ownerRoutedSuccessCaveat,
+    routeCount,
+    hasUneditableMultiRoute,
     type SubscriptionTestOutcome
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
@@ -365,7 +357,7 @@ interface SubscriptionRoute {
     // = no restriction (all perspectives).
     perspectives: string[]
     // Carries the as-loaded route object on edit so fields the UI still
-    // doesn't model (andEnvIn, andLifecycleIn) survive an Edit → Save
+    // doesn't model (andEnvIn, andLifecycleIn) survive an Edit -> Save
     // round-trip instead of being silently stripped. channels +
     // channelGroups + perspectives overlay this last and win. Empty on Create.
     _raw?: Record<string, any>
@@ -385,7 +377,7 @@ interface SubscriptionForm {
     rateLimitWindowMinutes: number | null
     // Carries the as-loaded filter object on edit so `presetConfigJson`
     // (and any other field the UI doesn't model yet) survives an
-    // Edit → Save round-trip. Empty on Create.
+    // Edit -> Save round-trip. Empty on Create.
     _rawFilter?: Record<string, any>
 }
 
@@ -625,7 +617,7 @@ function openEditSubscription (row: SubscriptionRow): void {
     // Filter / routes / rateLimit ride as JSON-stringified blobs over the
     // wire. Parse them back into the structured form shape AND stash the
     // original blob on _raw / _rawFilter so unmodelled fields survive an
-    // Edit → Save round-trip.
+    // Edit -> Save round-trip.
     try {
         const filter = row.filter ? JSON.parse(row.filter) : null
         if (filter) {
@@ -660,16 +652,6 @@ function openEditSubscription (row: SubscriptionRow): void {
     showSubscriptionModal.value = true
 }
 
-function addRoute (): void {
-    subForm.value.routes.push(freshRoute())
-}
-
-function removeRoute (i: number): void {
-    if (subForm.value.routes.length > 1) {
-        subForm.value.routes.splice(i, 1)
-    }
-}
-
 async function saveSubscription (): Promise<void> {
     subModalError.value = ''
     const f = subForm.value
@@ -694,7 +676,7 @@ async function saveSubscription (): Promise<void> {
         if (teamOptions.value.length) targets.push('teams')
         if (isPro.value) targets.push('the component owner')
         const targetList = `${targets.slice(0, -1).join(', ')} or ${targets[targets.length - 1]}`
-        subModalError.value = `Route ${emptyRouteIdx + 1} has no ${targetList} — pick at least one.`
+        subModalError.value = `The destination has no ${targetList} — pick at least one.`
         return
     }
     // Build the filter input from ONLY the fields NotificationFilterInput
@@ -978,10 +960,6 @@ function reportSubscriptionTestResult (
     })
 }
 
-function subscriptionRouteCount (row: SubscriptionRow): number {
-    try { return row.routes ? (JSON.parse(row.routes) || []).length : 0 }
-    catch { return 0 }
-}
 
 const subscriptionColumns = computed(() => [
     { title: 'Name', key: 'name' },
@@ -1006,7 +984,7 @@ const subscriptionColumns = computed(() => [
     },
     {
         title: 'Routes', key: 'routes',
-        render: (row: SubscriptionRow) => `${subscriptionRouteCount(row)} route(s)`,
+        render: (row: SubscriptionRow) => `${routeCount(row.routes)} route(s)`,
     },
     {
         title: 'Actions', key: 'actions',
@@ -1039,12 +1017,32 @@ const subscriptionColumns = computed(() => [
                     // CEL expression, every route but one, and the rate limit.
                     // The banner alone is not enough: the destructive action has
                     // to be unavailable, not merely discouraged. Add is fine.
-                    h(NButton, {
-                        size: 'tiny', secondary: true,
-                        onClick: () => openEditSubscription(row),
-                        disabled: !canWrite.value || subscriptionsDegraded.value,
-                        'data-testid': 'edit-subscription',
-                    }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
+                    // Also disabled when the subscription carries more than one
+                    // route: the editor shows one, so the rest would be invisible
+                    // rather than lost. These are not only API-made -- the UI
+                    // offered "Add route" from #130 until this change -- so the
+                    // tooltip has to explain itself. See hasUneditableMultiRoute.
+                    h(NTooltip, { trigger: 'hover' }, {
+                        // The trigger is a SPAN, not the button. A disabled
+                        // <button> receives no mouse events, so a tooltip bound
+                        // directly to it never opens -- which would hide this
+                        // explanation in exactly the case it exists for.
+                        trigger: () => h('span', { style: 'display: inline-flex;' }, [
+                            h(NButton, {
+                                size: 'tiny', secondary: true,
+                                onClick: () => openEditSubscription(row),
+                                disabled: !canWrite.value || subscriptionsDegraded.value
+                                    || hasUneditableMultiRoute(row.routes),
+                                'data-testid': 'edit-subscription',
+                            }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
+                        ]),
+                        default: () => hasUneditableMultiRoute(row.routes)
+                            ? `This subscription has ${routeCount(row.routes)} routes and this editor`
+                                + ' shows one. Editing here would leave the others in place but hidden,'
+                                + ' so they are better changed through the API -- or collapse the'
+                                + ' subscription to a single route.'
+                            : 'Edit subscription',
+                    }),
                     h(NButton, {
                         size: 'tiny', secondary: true,
                         onClick: () => toggleSubscriptionStatus(row),
@@ -1099,12 +1097,6 @@ onMounted(async () => {
     padding: 12px 14px;
     background: var(--n-color-embedded, transparent);
 }
-.routes-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-}
 .routes-title { font-size: 13px; font-weight: 600; }
 .routes-hint { font-size: 12px; color: var(--n-text-color-3, #888); margin-bottom: 10px; }
 /* Inline honesty/help hints under form fields -- matches routes-hint tone but
@@ -1123,6 +1115,4 @@ onMounted(async () => {
     padding: 1px 4px;
     border-radius: 3px;
 }
-.route-row + .route-row { margin-top: 6px; }
-.route-remove-cell { display: flex; align-items: flex-end; }
 </style>
