@@ -620,35 +620,7 @@
                                 </div>
                             </n-space>
 
-                            <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
-                                <n-h5>
-                                    <n-text depth="1">
-                                        External Members (no ReARM account):
-                                    </n-text>
-                                </n-h5>
-                                <n-text depth="3" style="font-size: 12px;">
-                                    People reachable only by email or handle, such as a vendor contact. They can be
-                                    notified, but do not count toward the team's durability.
-                                </n-text>
-                                <n-dynamic-input
-                                    v-model:value="teamExternalMembers"
-                                    :on-create="onAddExternalMember"
-                                >
-                                    <template #default="{ value }">
-                                        <div style="display: flex; gap: 8px; width: 100%;">
-                                            <n-input v-model:value="value.name"
-                                                placeholder="Name" style="width: 200px;" />
-                                            <n-input v-model:value="value.contact"
-                                                placeholder="Email or handle" style="width: 240px;" />
-                                            <n-select v-model:value="value.role" :options="constants.TeamRoles"
-                                                placeholder="No role" clearable style="width: 200px;" />
-                                            <n-input v-if="value.role === constants.TeamRoleCustom"
-                                                v-model:value="value.customRole"
-                                                placeholder="Custom role label" style="width: 200px;" />
-                                        </div>
-                                    </template>
-                                </n-dynamic-input>
-                            </n-space>
+                            <!-- The External Members editor lived here; see utils/teamMembers.ts. -->
 
                             <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
                                 <n-h5>
@@ -1233,7 +1205,8 @@ import constants from '../utils/constants'
 import { isSchemaDriftError } from '../utils/graphqlDriftFallback'
 import { buildChannelOptions } from '@/utils/channelOptions'
 import { TYPE_LABELS } from '@/utils/notificationsCommon'
-import { buildMemberRolesPayload, buildExternalMembersPayload, validateTeamMembers, type TeamRoleMap } from '../utils/teamMembers'
+import { buildMemberRolesPayload, validateTeamMembers, type TeamRoleMap } from '../utils/teamMembers'
+import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
@@ -1956,19 +1929,18 @@ const userPermissionsDirty = computed(() => {
 })
 
 // Projects the modal's editable state. NOTE the team-member keys come from
-// the module-level editor refs (teamRoles / teamExternalMembers), not from
-// `group` -- they are per-modal editor state, not part of the group record.
+// the module-level editor refs (teamRoles / teamChannels), not from `group` --
+// they are per-modal editor state, not part of the group record.
 function getUserGroupEditableState(group: any) {
     return {
         name: group?.name || '',
         description: group?.description || '',
         manualUsers: group?.manualUsers || [],
         connectedSsoGroups: group?.connectedSsoGroups || [],
-        // Compare the NORMALIZED payload, not the raw editor arrays -- otherwise
-        // an untouched blank row added by "+" (or stray whitespace) reads as
-        // dirty while producing nothing to save.
+        // Compare the NORMALIZED payload, not the raw editor map -- otherwise
+        // stray whitespace in a custom label reads as dirty while producing
+        // nothing to save.
         memberRoles: teamMemberRolesPayload(),
-        externalMembers: teamExternalMembersPayload(),
         notificationChannels: teamChannels.value
     }
 }
@@ -1985,13 +1957,12 @@ const orgChannelsFailed = ref(false)
 // removable so the operator can clear it.
 const teamChannelOptions = computed(() =>
     buildChannelOptions(orgChannels.value, teamChannels.value, TYPE_LABELS))
-const teamExternalMembers: Ref<any[]> = ref([])
 
 /**
  * True only when we have actually loaded this group's team data. Guards both
  * rendering and the save payload: hydrating an empty editor from a not-yet-
  * loaded map and then saving would send [], which the backend applies as a
- * REPLACE -- wiping the team's roles and external members.
+ * REPLACE -- wiping the team's roles.
  */
 const teamMembersKnown = computed(() =>
     teamFieldsSupported.value === true
@@ -2018,10 +1989,6 @@ function teamMemberRolesPayload() {
     return buildMemberRolesPayload(teamRoles.value, rosterMembers.value.map(m => m.uuid))
 }
 
-function teamExternalMembersPayload() {
-    return buildExternalMembersPayload(teamExternalMembers.value)
-}
-
 function setMemberRole(uuid: string, role: string | null) {
     teamRoles.value[uuid] = { ...(teamRoles.value[uuid] || {}), role }
 }
@@ -2030,14 +1997,10 @@ function setMemberCustomRole(uuid: string, customRole: string) {
     teamRoles.value[uuid] = { ...(teamRoles.value[uuid] || {}), customRole }
 }
 
-function onAddExternalMember() {
-    return { name: '', contact: '', role: null, customRole: '' }
-}
-
 /** Pre-submit mirror of the backend rules, so an invalid row names itself
  *  instead of failing the whole mutation with a generic server error. */
 const teamMembersError = computed(() => teamMembersKnown.value
-    ? validateTeamMembers(teamMemberRolesPayload(), teamExternalMembersPayload(), memberLabelFor)
+    ? validateTeamMembers(teamMemberRolesPayload(), memberLabelFor)
     : null)
 
 const userGroupPermissionsDirty = computed(() => {
@@ -2141,7 +2104,7 @@ async function loadUserGroups() {
     await loadOrgChannels()
 }
 
-// Team member roles + external members (T1) are loaded by a SEPARATE query on
+// Team member roles + notification channels are loaded by a SEPARATE query on
 // purpose. Folding these fields into getUserGroups above would make the whole
 // User Groups tab fail against a backend that predates them -- the same
 // field-selection drift that has broken a tab before. Isolated here, a lagging
@@ -2149,8 +2112,8 @@ async function loadUserGroups() {
 //
 // null = not probed yet. The distinction matters: the backend treats a non-null
 // list as a REPLACE, so sending [] because we had not loaded yet would silently
-// delete every role and external member on the team. Unknown => render nothing
-// and send nothing (omitted = keep).
+// delete every role on the team. Unknown => render nothing and send nothing
+// (omitted = keep).
 const teamFieldsSupported: Ref<boolean | null> = ref(null)
 const groupTeamMembers: Ref<Record<string, any>> = ref({})
 
@@ -2185,7 +2148,6 @@ async function loadTeamMemberFields() {
                     getUserGroups(org: $org) {
                         uuid
                         memberRoles { userRef role customRole }
-                        externalMembers { name contact role customRole }
                         notificationChannels
                     }
                 }`,
@@ -2196,7 +2158,6 @@ async function loadTeamMemberFields() {
         for (const g of (response.data.getUserGroups || [])) {
             map[g.uuid] = {
                 memberRoles: g.memberRoles || [],
-                externalMembers: g.externalMembers || [],
                 notificationChannels: g.notificationChannels || []
             }
         }
@@ -2205,8 +2166,8 @@ async function loadTeamMemberFields() {
     } catch (error: any) {
         // Only a schema-drift-shaped failure means "this backend is older".
         // A 401/500/network blip must NOT be mistaken for that: this flag also
-        // gates the save payload, so misclassifying would strip roles and
-        // external members from the next save with no operator-visible signal.
+        // gates the save payload, so misclassifying would strip roles from the
+        // next save with no operator-visible signal.
         if (isSchemaDriftError(error)) {
             console.warn('Team member fields unavailable on this backend', error?.message)
             teamFieldsSupported.value = false
@@ -4261,26 +4222,14 @@ async function updateUserGroup() {
             }
         }
         
-        const updateInput = {
-            groupId: selectedUserGroup.value.uuid,
-            name: selectedUserGroup.value.name,
-            description: selectedUserGroup.value.description,
-            manualUsers: selectedUserGroup.value.manualUsers || [],
-            status: selectedUserGroup.value.status,
-            connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
-            permissions
-        } as any
-        // Only send the team fields when this group's data was actually loaded.
-        // Omitting them means "keep existing" on the backend; sending [] would
-        // REPLACE, i.e. delete. Never send from an unknown state.
-        if (teamMembersKnown.value) {
-            // Omit when the channel list failed to load: sending the current value
-            // would be based on an incomplete picker, and disabling the picker
-            // instead would block every unrelated team edit (rename, members).
-            if (!orgChannelsFailed.value) updateInput.notificationChannels = teamChannels.value
-            updateInput.memberRoles = teamMemberRolesPayload()
-            updateInput.externalMembers = teamExternalMembersPayload()
-        }
+        // Assembled in utils so its omit-or-you-delete rules are unit-tested
+        // rather than comment-protected -- see userGroupUpdateInput.ts.
+        const updateInput = buildUserGroupUpdateInput(selectedUserGroup.value, permissions, {
+            known: teamMembersKnown.value,
+            channelsLoadFailed: orgChannelsFailed.value,
+            channels: teamChannels.value,
+            memberRoles: teamMemberRolesPayload()
+        })
         
         const response = await graphqlClient.mutate({
             mutation: gql`
@@ -4314,19 +4263,13 @@ async function editUserGroup(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (group) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
-        const tm = groupTeamMembers.value[groupUuid] || { memberRoles: [], externalMembers: [] }
+        const tm = groupTeamMembers.value[groupUuid] || { memberRoles: [] }
         const roleMap: Record<string, any> = {}
         for (const mr of tm.memberRoles) {
             roleMap[mr.userRef] = { role: mr.role, customRole: mr.customRole || '' }
         }
         teamRoles.value = roleMap
         teamChannels.value = [...(tm.notificationChannels || [])]
-        teamExternalMembers.value = commonFunctions.deepCopy(tm.externalMembers).map((e: any) => ({
-            name: e.name || '',
-            contact: e.contact || '',
-            role: e.role || null,
-            customRole: e.customRole || ''
-        }))
         await Promise.all([
             loadPerspectives(),
             store.dispatch('fetchComponents', orgResolved.value),
