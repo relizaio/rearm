@@ -620,12 +620,7 @@
                                 </div>
                             </n-space>
 
-                            <!-- The External Members editor lived here. It promised "they can be
-                                 notified" and nothing ever delivered to an external contact: there is
-                                 no transport discriminator on the contact string, the email dispatcher
-                                 sends to a static per-channel recipient list, and Slack/Teams post to
-                                 an incoming webhook that cannot DM anyone. Stored values are kept and
-                                 are not sent by this form. -->
+                            <!-- The External Members editor lived here; see utils/teamMembers.ts. -->
 
                             <n-space v-if="teamMembersKnown && !restoreMode" vertical style="margin-bottom: 20px; width: 100%;">
                                 <n-h5>
@@ -1211,6 +1206,7 @@ import { isSchemaDriftError } from '../utils/graphqlDriftFallback'
 import { buildChannelOptions } from '@/utils/channelOptions'
 import { TYPE_LABELS } from '@/utils/notificationsCommon'
 import { buildMemberRolesPayload, validateTeamMembers, type TeamRoleMap } from '../utils/teamMembers'
+import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
@@ -2108,7 +2104,7 @@ async function loadUserGroups() {
     await loadOrgChannels()
 }
 
-// Team member roles + external members (T1) are loaded by a SEPARATE query on
+// Team member roles + notification channels are loaded by a SEPARATE query on
 // purpose. Folding these fields into getUserGroups above would make the whole
 // User Groups tab fail against a backend that predates them -- the same
 // field-selection drift that has broken a tab before. Isolated here, a lagging
@@ -2116,8 +2112,8 @@ async function loadUserGroups() {
 //
 // null = not probed yet. The distinction matters: the backend treats a non-null
 // list as a REPLACE, so sending [] because we had not loaded yet would silently
-// delete every role and external member on the team. Unknown => render nothing
-// and send nothing (omitted = keep).
+// delete every role on the team. Unknown => render nothing and send nothing
+// (omitted = keep).
 const teamFieldsSupported: Ref<boolean | null> = ref(null)
 const groupTeamMembers: Ref<Record<string, any>> = ref({})
 
@@ -2170,8 +2166,8 @@ async function loadTeamMemberFields() {
     } catch (error: any) {
         // Only a schema-drift-shaped failure means "this backend is older".
         // A 401/500/network blip must NOT be mistaken for that: this flag also
-        // gates the save payload, so misclassifying would strip roles and
-        // external members from the next save with no operator-visible signal.
+        // gates the save payload, so misclassifying would strip roles from the
+        // next save with no operator-visible signal.
         if (isSchemaDriftError(error)) {
             console.warn('Team member fields unavailable on this backend', error?.message)
             teamFieldsSupported.value = false
@@ -4226,28 +4222,14 @@ async function updateUserGroup() {
             }
         }
         
-        const updateInput = {
-            groupId: selectedUserGroup.value.uuid,
-            name: selectedUserGroup.value.name,
-            description: selectedUserGroup.value.description,
-            manualUsers: selectedUserGroup.value.manualUsers || [],
-            status: selectedUserGroup.value.status,
-            connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
-            permissions
-        } as any
-        // Only send the team fields when this group's data was actually loaded.
-        // Omitting them means "keep existing" on the backend; sending [] would
-        // REPLACE, i.e. delete. Never send from an unknown state.
-        if (teamMembersKnown.value) {
-            // Omit when the channel list failed to load: sending the current value
-            // would be based on an incomplete picker, and disabling the picker
-            // instead would block every unrelated team edit (rename, members).
-            if (!orgChannelsFailed.value) updateInput.notificationChannels = teamChannels.value
-            updateInput.memberRoles = teamMemberRolesPayload()
-            // externalMembers is deliberately never sent -- the editor was
-            // withdrawn, and omitting the field is what keeps a group's stored
-            // contacts intact instead of replacing them with [].
-        }
+        // Assembled in utils so its omit-or-you-delete rules are unit-tested
+        // rather than comment-protected -- see userGroupUpdateInput.ts.
+        const updateInput = buildUserGroupUpdateInput(selectedUserGroup.value, permissions, {
+            known: teamMembersKnown.value,
+            channelsLoadFailed: orgChannelsFailed.value,
+            channels: teamChannels.value,
+            memberRoles: teamMemberRolesPayload()
+        })
         
         const response = await graphqlClient.mutate({
             mutation: gql`

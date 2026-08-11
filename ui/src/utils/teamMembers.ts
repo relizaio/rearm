@@ -1,6 +1,6 @@
 // Pure payload/validation helpers for the Team editor (member roles). Kept out
 // of the SFC so they are unit-testable, and so the DIRTY comparison and the SAVE
-// payload can be built by the same code -- comparing a raw editor array against
+// payload can be built by the same code -- comparing the raw editor map against
 // a filtered/trimmed payload is what makes a modal look dirty while having
 // nothing to send.
 //
