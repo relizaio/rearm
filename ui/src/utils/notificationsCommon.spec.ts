@@ -8,13 +8,14 @@ vi.mock('@/utils/commonFunctions', () => ({
     default: { dateDisplay: (s: string) => `ABS:${s}` },
 }))
 
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, readdirSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { join } from 'path'
 
 import { print } from 'graphql'
 import {
     relativeTime,
-    subscriptionStatusOptions, eventTypeOptions,
+    subscriptionStatusOptions, eventTypeOptions, deliveryStatusOptions,
     buildNotificationFilterInput,
     routeHasTarget,
     classifySubscriptionTest,
@@ -80,6 +81,97 @@ describe('unselectable options without a backend implementation', () => {
 
     it('keeps VEX_STATE_CHANGED unselectable while it has no event producer', () => {
         expect(option(eventTypeOptions, 'VEX_STATE_CHANGED')?.disabled).toBe(true)
+    })
+
+})
+
+const CE_BACKEND_SRC_PATH = fileURLToPath(new URL(
+    '../../../backend/src/main/java/io/reliza', import.meta.url))
+const PRO_BACKEND_SRC_PATH = fileURLToPath(new URL(
+    '../../../../rearm-core/backend/src/main/java/io/reliza', import.meta.url))
+
+// Comments are stripped before scanning: javadoc in this codebase quotes call
+// forms (NotificationCelEvaluatorImpl's class doc names
+// NotificationDeliveryStatus.EVAL_TIMEOUT while explaining that nothing writes
+// it), and reading prose as code would demand we enable a filter for a status
+// that has no writer.
+function stripComments (src: string): string {
+    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+}
+
+// Every delivery status the backend can WRITE. Two idioms exist and both are
+// scanned -- an earlier cut only saw the first, which left the native-SQL
+// writer in NotificationDeliveryRepository invisible and the guard's coverage
+// incomplete by coincidence rather than design:
+//   1. setStatus(NotificationDeliveryStatus.X)          -- service code
+//   2. SET status = '" + NotificationDeliveryStatus.X_VALUE   -- native @Query
+// Form 2 is matched only in the assigning position, so the WHERE-clause
+// _VALUE references on the very next line are correctly ignored.
+const WRITER_PATTERNS = [
+    /setStatus\(\s*NotificationDeliveryStatus\.([A-Z_]+)\s*\)/g,
+    /SET status = '"\s*\+\s*NotificationDeliveryStatus\.([A-Z_]+)_VALUE/g,
+]
+
+function assignedDeliveryStatuses (root: string): { statuses: Set<string>, filesScanned: number } {
+    const statuses = new Set<string>()
+    let filesScanned = 0
+    const walk = (dir: string) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const full = join(dir, entry.name)
+            if (entry.isDirectory()) walk(full)
+            else if (entry.name.endsWith('.java')) {
+                filesScanned++
+                const src = stripComments(readFileSync(full, 'utf8'))
+                for (const re of WRITER_PATTERNS) {
+                    for (const m of src.matchAll(re)) statuses.add(m[1])
+                }
+            }
+        }
+    }
+    walk(root)
+    return { statuses, filesScanned }
+}
+
+const offeredStatuses = () => new Set(deliveryStatusOptions.map(o => o.value))
+const enabledStatuses = () => new Set(deliveryStatusOptions.filter(o => !o.disabled).map(o => o.value))
+
+// Deliberately NOT the same assertion against both trees. CE is a subset
+// mirror of Pro -- core carries service/saas classes CE lacks, which is
+// exactly where a new writer is most likely to land. Demanding
+// "enabled == produced" of BOTH would become UNSATISFIABLE the moment a
+// Pro-only writer appears: Pro would require the option enabled and CE would
+// require it disabled, and the only way out is deleting a test. So Pro (the
+// source of truth) gets the exact both-ways assertion, and CE gets
+// containment only. Same shape as notificationInboxSchemaDrift.spec.ts, which
+// asserts different propositions per tree for the same reason.
+describe('delivery status filters vs the CE backend (in-repo, always runs)', () => {
+    it('has the CE backend source available', () => {
+        expect(existsSync(CE_BACKEND_SRC_PATH),
+            `CE mirror not found at ${CE_BACKEND_SRC_PATH}`).toBe(true)
+    })
+
+    it('every status the CE backend writes is offered and selectable', () => {
+        if (!existsSync(CE_BACKEND_SRC_PATH)) return
+        const { statuses, filesScanned } = assignedDeliveryStatuses(CE_BACKEND_SRC_PATH)
+        expect(filesScanned).toBeGreaterThan(0)  // a scan that saw no java is broken
+        expect(statuses.size).toBeGreaterThan(0)
+        for (const produced of statuses) {
+            expect(offeredStatuses(), `${produced} is written but has no filter option`)
+                .toContain(produced)
+            expect(enabledStatuses(), `${produced} is written but its filter is disabled`)
+                .toContain(produced)
+        }
+    })
+})
+
+describe('delivery status filters vs the Pro backend (skipped if rearm-core absent)', () => {
+    it.runIf(existsSync(PRO_BACKEND_SRC_PATH))('selectable set equals what Pro writes', () => {
+        const { statuses, filesScanned } = assignedDeliveryStatuses(PRO_BACKEND_SRC_PATH)
+        expect(filesScanned).toBeGreaterThan(0)
+        expect(statuses.size).toBeGreaterThan(0)
+        // Both directions, against the source of truth: nothing selectable
+        // without a writer, and nothing written without a selectable option.
+        expect([...enabledStatuses()].sort()).toEqual([...statuses].sort())
     })
 })
 
