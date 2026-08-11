@@ -196,15 +196,43 @@ export const severityOptions = [
     { label: 'INFO', value: 'INFO' },
 ]
 
-export const deliveryStatusOptions = [
+// Which of these the backend can actually WRITE, checked rather than assumed
+// (an earlier cut of this list exempted ACKED on a guess and was wrong).
+// Sweeping every write path across the backend -- setStatus() call sites, the
+// JPA field default, native UPDATE statements, migrations -- the produced set
+// is PENDING, SENT, FAILED and BATCHED. Nothing else has a writer:
+//   ACKED         setAckedAt() has ZERO callers; read state is a LEFT JOIN on
+//                 notification_reads, not a status, so nothing ever flips a row
+//                 to ACKED no matter how much you mark read.
+//   RATE_LIMITED  the per-subscription rate limit is stored but not enforced.
+//   EVAL_TIMEOUT  a failed CEL filter is skipped and logged; no row is written.
+//   TEST          superseded -- channel tests are recorded on the ORIGIN
+//                 dimension (NotificationDeliveryOrigin.SYNTHETIC) instead.
+//   PREVIEW       the PREVIEW subscription mode was never implemented (#197).
+//
+// Filtering by an unwritable status is a silent trap: the operator filters by
+// ACKED to see what has been acknowledged, gets zero rows, and reads that as a
+// fact about their data rather than about the schema. On a diagnostic surface
+// a false negative is worse than a missing control. Left visible-but-disabled
+// rather than deleted so the reason is on screen -- same treatment as the
+// PREVIEW subscription status and VEX_STATE_CHANGED.
+//
+// Re-enable each ONE alongside the backend change that starts producing it.
+// The spec pins both directions against the backend source, so adding a writer
+// without re-enabling the filter -- or adding a filter with no writer -- fails.
+// Produced statuses first, then the unavailable ones grouped at the end. #197
+// keeps its single disabled entry in situ, which reads fine for one of three;
+// with five of nine disabled, grouping keeps the usable options scannable.
+export const deliveryStatusOptions: Array<{ label: string, value: string, disabled?: boolean }> = [
     { label: 'PENDING', value: 'PENDING' },
     { label: 'SENT', value: 'SENT' },
-    { label: 'ACKED', value: 'ACKED' },
     { label: 'FAILED', value: 'FAILED' },
-    { label: 'RATE_LIMITED', value: 'RATE_LIMITED' },
-    { label: 'EVAL_TIMEOUT', value: 'EVAL_TIMEOUT' },
-    { label: 'TEST', value: 'TEST' },
-    { label: 'PREVIEW', value: 'PREVIEW' },
+    { label: 'BATCHED', value: 'BATCHED' },
+    { label: 'ACKED (not yet available)', value: 'ACKED', disabled: true },
+    { label: 'RATE_LIMITED (not yet available)', value: 'RATE_LIMITED', disabled: true },
+    { label: 'EVAL_TIMEOUT (not yet available)', value: 'EVAL_TIMEOUT', disabled: true },
+    { label: 'TEST (not yet available)', value: 'TEST', disabled: true },
+    { label: 'PREVIEW (not yet available)', value: 'PREVIEW', disabled: true },
 ]
 
 export const deliveryOriginOptions = [
@@ -217,7 +245,9 @@ export const deliveryOriginOptions = [
 export function deliveryStatusTagType (status: string): NaiveTagType {
     if (status === 'SENT' || status === 'ACKED') return 'success'
     if (status === 'FAILED' || status === 'EVAL_TIMEOUT' || status === 'RATE_LIMITED') return 'error'
-    if (status === 'PREVIEW' || status === 'TEST') return 'info'
+    // BATCHED is produced (held in an email digest window, not yet sent), so it
+    // must not read as success -- info, alongside the not-yet-produced pair.
+    if (status === 'BATCHED' || status === 'PREVIEW' || status === 'TEST') return 'info'
     return 'default'
 }
 
