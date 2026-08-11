@@ -561,13 +561,13 @@ async function loadTeams (): Promise<void> {
     try {
         const res = await graphqlClient.query({
             query: gql`
-                query getUserGroupsForRoutes($org: ID!) {
-                    getUserGroups(org: $org) { uuid name status notificationChannels }
+                query getTeamsForRoutes($org: ID!) {
+                    getTeams(org: $org) { uuid name status notificationChannels }
                 }`,
             variables: { org: orgUuid.value },
             fetchPolicy: 'network-only',
         })
-        teams.value = res.data?.getUserGroups || []
+        teams.value = res.data?.getTeams || []
     } catch (e: any) {
         // Only schema drift means "this backend is older". A 401/5xx must not
         // blank the list: saved team targets have no ghost source then, and the

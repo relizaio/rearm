@@ -424,7 +424,7 @@
                                                         filterable
                                                         v-model:value="ownerDraftRef"
                                                         :options="ownerDraftType === 'TEAM' ? userGroups : users"
-                                                        :placeholder="ownerDraftType === 'TEAM' ? 'Pick a team (user group)' : 'Pick a user'" />
+                                                        :placeholder="ownerDraftType === 'TEAM' ? 'Pick a team' : 'Pick a user'" />
                                                     <n-button type="primary" size="small" :loading="savingOwner" :disabled="!ownerDraftRef" @click="saveOwner">
                                                         Set owner
                                                     </n-button>
@@ -3375,8 +3375,10 @@ const COMPONENT_OWNERSHIP_QUERY = gql`
             ownership { ownerType ownerRef status durable derived reason }
         }
     }`
-const GET_USER_GROUPS_QUERY = gql`
-    query getUserGroups($org: ID!) { getUserGroups(org: $org) { uuid name } }`
+// Owner points at a Team, not a permission group -- a team is who is
+// accountable, a group is who has access, and they are separate entities now.
+const GET_TEAMS_QUERY = gql`
+    query getTeamsForOwner($org: ID!) { getTeams(org: $org) { uuid name status } }`
 const SET_COMPONENT_OWNER_MUTATION = gql`
     mutation setComponentOwner($component: UpdateComponentInput!) {
         updateComponent(component: $component) { uuid }
@@ -3442,12 +3444,15 @@ async function loadOwnership() {
 async function loadUserGroups() {
     try {
         const res = await graphqlClient.query({
-            query: GET_USER_GROUPS_QUERY,
+            query: GET_TEAMS_QUERY,
             variables: { org: orguuid.value },
             fetchPolicy: 'network-only',
         })
-        userGroups.value = (res.data?.getUserGroups || [])
-            .filter((g: any) => g)
+        // Archived teams are dropped: notification routing ignores them, so
+        // offering one here would let an operator pick an owner that is
+        // immediately reported DEGRADED.
+        userGroups.value = (res.data?.getTeams || [])
+            .filter((g: any) => g && g.status !== 'INACTIVE')
             .map((g: any) => ({ label: g.name, value: g.uuid }))
     } catch {
         userGroups.value = []
