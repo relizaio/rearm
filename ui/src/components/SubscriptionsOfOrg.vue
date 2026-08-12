@@ -126,19 +126,23 @@
                         <div class="field-hint">
                             Perspectives gate what this subscription <strong>delivers</strong> — they do
                             not affect the in-app inbox or the bell. Leave empty for no restriction.
-                            Note they are resolved from the affected releases, which only vulnerability
-                            events carry: with perspectives set, release and approval events match
-                            nothing. Keep those on their own subscription.
+                            They are resolved from the event's affected releases, so a route only
+                            fires when an affected release's component belongs to one of the chosen
+                            perspectives -- a component with no perspectives set matches none of them.
                         </div>
-                        <!-- Perspectives have the SAME shape of trap as the minimum-severity gate
-                             above -- perspectiveGateMatches returns false when the event carries no
-                             affectedReleases -- yet this one is still shown for every event type,
-                             with a hint, rather than hidden. That is a deliberate asymmetry, not an
-                             oversight: severity is hidden because it can NEVER apply to a
-                             release-only subscription, whereas which events carry affectedReleases
-                             has not been confirmed the same way, and hiding a control on an
-                             unverified premise removes a feature people may be using. Tracked on the
-                             board to be settled one way or the other. -->
+                        <!-- This hint used to say perspectives are carried by vulnerability events
+                             only, so "release and approval events match nothing" with one set. That
+                             is FALSE, and it was the stated reason to hide this control the way the
+                             severity one is hidden. ReleaseChangeHookImpl (created / lifecycle /
+                             bom-diff) and ApprovalEventNotifierImpl (requested / resolved) both
+                             stamp ReleaseNotificationSupport.buildAffectedReleases onto the outbox
+                             payload, and that helper copies the COMPONENT's perspectives onto each
+                             AffectedRelease. So every event family carries them and this gate works
+                             on all of them; what it needs is a component IN the perspective. The
+                             same claim survives in perspectiveGateMatches' javadoc (rearm-saas) and
+                             is tracked on the board. Severity is genuinely different -- no producer
+                             resolves a severity outside the two vuln types -- which is why that one
+                             is hidden and this one is not. -->
 
                         <div class="routes-section">
                             <div class="routes-title">Destination</div>
@@ -500,8 +504,13 @@ const teamOptions = computed(() => {
     for (const r of subForm.value.routes) for (const t of (r.teams || [])) referenced.add(t)
     // Same shared builder as the channel picker, so the "keep dangling refs
     // visible and removable" behaviour cannot drift between the two.
+    //
+    // "(archived)" rather than "(deactivated)": the Teams tab calls the action
+    // Archive and reports "Team archived", and the assignment-rule picker
+    // already says archived. Three words for one state across three pickers is
+    // how an operator ends up wondering whether they mean different things.
     return withGhosts(selectable, teams.value, referenced,
-        (t: any, uuid) => t ? `${t.name} (deactivated)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
+        (t: any, uuid) => t ? `${t.name} (archived)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
 })
 
 const channelGroupOptions = computed(() =>
