@@ -15,8 +15,9 @@ holding permissions does not put you on a team. Access is configured with
 
 ::: tip Teams are a ReARM Pro capability
 On Community Edition the Teams tab reports that teams are not available on this
-server version, and the rest of Organization Settings works normally. Routes and
-components on CE address channels directly instead.
+server version, and the rest of Organization Settings works normally. Notification
+routes on CE address [channels and channel groups](./notifications#route-targets)
+directly, both of which are available on either edition.
 :::
 
 Only **organization admins** can see or edit teams.
@@ -85,9 +86,10 @@ of doing it explicitly:
 - A component owned by the team reports its ownership as `DEGRADED` -- the
   owner still resolves, but is no longer a usable notification target. See
   [Component ownership](./component-ownership#ownership-status).
-- The team is no longer offered when picking a *new* owner or route target.
-  Where it is already stored, it is shown labelled `(archived)` so you can see
-  what to replace.
+- The team is no longer offered when picking a *new* owner or route target,
+  while everywhere it is already stored keeps pointing at it. Archiving stops
+  the team being chosen again; it does not detach it from what it already owns
+  or serves, which is why the two consequences above are yours to clean up.
 
 ::: warning Archiving a team is a quiet way to stop notifications
 Nothing errors when a targeted team is archived: the subscription stays active,
