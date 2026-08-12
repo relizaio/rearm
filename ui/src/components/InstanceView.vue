@@ -966,11 +966,14 @@ async function lazyLoadTab(t: InstTab) {
 }
 
 // Query-only navigations no longer remount the view (router-view keys on
-// path), so browser back/forward must be applied to local state here.
+// path), so browser back/forward must be applied to local state here. An
+// absent/invalid param means the default tab, matching the pre-fix
+// remount-initializer behavior.
 watch(() => route.query.instTab, async (t) => {
-    if ((t === 'instance' || t === 'plan-history' || t === 'actual-history') && t !== activeTab.value) {
-        activeTab.value = t
-        await lazyLoadTab(t)
+    const next: InstTab = (t === 'instance' || t === 'plan-history' || t === 'actual-history') ? t : 'instance'
+    if (next !== activeTab.value) {
+        activeTab.value = next
+        await lazyLoadTab(next)
     }
 })
 

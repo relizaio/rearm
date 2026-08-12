@@ -947,9 +947,13 @@ async function switchSubTab(t: SubTab) {
 }
 
 // Query-only navigations no longer remount the view (router-view keys on
-// path), so browser back/forward must be applied to local state here.
+// path), so browser back/forward must be applied to local state here. An
+// absent/invalid param means the default tab — the pre-fix remount re-ran
+// the initializer, and going back past the first sub-tab click must still
+// land on Catalog.
 watch(() => route.query.integrationsTab, (t) => {
-    if (isSubTabAccessible(t) && t !== subTab.value) subTab.value = t
+    const next: SubTab = isSubTabAccessible(t) ? t : 'catalog'
+    if (next !== subTab.value) subTab.value = next
 })
 
 // ---- Data refs lifted from OrgSettings -------------------------------------
