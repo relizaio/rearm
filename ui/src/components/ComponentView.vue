@@ -400,27 +400,15 @@
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && ownershipSupported">
                                             <label>Owner</label>
                                             <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
-                                                <div v-if="componentOwnership && componentOwnership.ownership">
-                                                    <!-- OWNED and NON_DURABLE differ only in DURABILITY -- whether the
-                                                         owner survives someone leaving. That is a governance signal, not
-                                                         something an operator setting an owner needs to act on, and
-                                                         showing it here reads as a complaint about a perfectly valid
-                                                         choice. Both render as "Owned". DEGRADED and ORPHANED still show
-                                                         through: those say the owner is archived or gone, which IS
-                                                         actionable. The backend still computes durability for the
-                                                         ownership report. -->
-                                                    <n-tag :type="ownershipTagType(componentOwnership.ownership.status)" size="small">
-                                                        {{ ownershipLabel }}
-                                                    </n-tag>
-                                                    <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
-                                                    <!-- A suggestion's reason line is suppressed: offering a candidate
-                                                         team directly above the owner picker invites reading it as a
-                                                         decision already made. Every other status explains itself. -->
-                                                    <span v-if="componentOwnership.ownership.reason && !ownershipIsSuggestion && !ownershipIsDurabilityOnly"
-                                                        class="text-muted" style="display: block; margin-top: 4px;">
-                                                        {{ componentOwnership.ownership.reason }}
-                                                    </span>
-                                                </div>
+                                                <!-- No status chip and no reason line, in ANY state. The chip
+                                                     used to report OWNED / NON_DURABLE / DEGRADED / ORPHANED; the
+                                                     first two differ only on durability, which is a governance
+                                                     signal rather than something an operator picking an owner acts
+                                                     on, and rhythm asked for the whole label gone rather than just
+                                                     the distinction. This block now answers one question: who owns
+                                                     it. The backend still computes every status for the ownership
+                                                     report, which is where coverage belongs. -->
+                                                <div v-if="ownerLabel">{{ ownerLabel }}</div>
                                                 <div v-if="isWritable" style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
                                                     <n-select
                                                         style="width: 110px;"
@@ -3399,13 +3387,6 @@ const ownerDraftType = ref<'TEAM' | 'USER'>('TEAM')
 const ownerDraftRef = ref<string | null>(null)
 const savingOwner = ref<boolean>(false)
 
-const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default' =>
-    s === 'OWNED' ? 'success'
-        : s === 'NON_DURABLE' ? 'success'   // shown as "Owned": colour must not leak the distinction
-            : s === 'DEGRADED' ? 'warning'
-            : s === 'UNSET' ? 'default'  // no owner yet -> neutral, not alarming
-                : 'error'                // ORPHANED (or unknown) -> needs attention
-
 // UNSET is the one ownership status that is a SUGGESTION rather than a fact:
 // the backend fills ownerRef with a candidate team it picked and puts its pitch
 // in `reason`. Every other status describes a real (or absent) owner. Both the
@@ -3413,20 +3394,6 @@ const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default
 // agree -- so the rule lives here once instead of as a string literal in each.
 const ownershipIsSuggestion = computed<boolean>(
     () => componentOwnership.value?.ownership?.status === 'UNSET')
-
-/**
- * OWNED and NON_DURABLE both mean "this thing has an owner"; they differ only on
- * whether that owner survives a departure. Rendered identically so the picker
- * does not editorialise about a valid choice -- see the template comment.
- */
-const ownershipIsDurabilityOnly = computed<boolean>(
-    () => componentOwnership.value?.ownership?.status === 'NON_DURABLE')
-
-const ownershipLabel = computed<string>(() => {
-    const st = componentOwnership.value?.ownership?.status
-    if (st === 'OWNED' || st === 'NON_DURABLE') return 'Owned'
-    return st || ''
-})
 
 const ownerLabel = computed<string | null>(() => {
     // Fall back to the RESOLVED ownership when there is no per-component stored
@@ -3442,7 +3409,12 @@ const ownerLabel = computed<string | null>(() => {
     if (!o || !o.ownerRef) return null
     const list = o.ownerType === 'TEAM' ? userGroups.value : users.value
     const hit = list.find((x: any) => x.value === o.ownerRef)
-    return `${hit?.label || o.ownerRef} (${o.ownerType === 'TEAM' ? 'team' : 'user'})`
+    // A ref that resolves to nothing -- an archived or deleted owner -- used to
+    // fall back to the raw uuid. With the status chip and reason line gone that
+    // uuid would be the only thing on screen and would explain nothing, so an
+    // unresolvable owner reads as no owner and the picker below is the fix.
+    if (!hit) return null
+    return `${hit.label} (${o.ownerType === 'TEAM' ? 'team' : 'user'})`
 })
 
 async function loadOwnership() {
