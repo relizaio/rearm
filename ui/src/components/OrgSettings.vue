@@ -611,18 +611,14 @@
                         </div>
                     </n-modal>
 
-                    <OrgTeamAssignmentRules
-                        :orgUuid="orgResolved"
-                        :isWritable="isWritable"
-                        :teams="userGroups"
-                        :components="allComponents"/>
                 </div>
             </n-tab-pane>
 
             <n-tab-pane v-if="isOrgAdmin" name="teams" tab="Teams">
                 <TeamsOfOrg
                     :orguuid="orgResolved"
-                    :isWritable="isWritable" />
+                    :isWritable="isWritable"
+                    :components="allComponents" />
             </n-tab-pane>
 
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
@@ -1162,7 +1158,6 @@ import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
-import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
@@ -1894,6 +1889,28 @@ function getUserGroupEditableState(group: any) {
 // Shared builder so a channel that was disabled or deleted after being picked
 // still renders a name here instead of a bare uuid (BUG 2) -- and stays
 // removable so the operator can clear it.
+/**
+ * Gates the modal's Save/Reset buttons and the close-confirmation prompt.
+ *
+ * <p>Deleted by accident in the Phase 2b cleanup: it sat immediately below
+ * `teamMembersError`, and the regex removing that computed ran on past its
+ * closing line and took this one too. Nothing caught it -- a template
+ * reference to a missing setup binding is a RUNTIME ReferenceError, so the
+ * build stays green, and every unit test here covers `utils/`, not components.
+ * The symptom was that the edit-group modal could not be closed.
+ */
+const userGroupPermissionsDirty = computed(() => {
+    const scopedDirty = userGroupScopedPermissionsOriginal.value
+        ? commonFunctions.stableStringify(userGroupScopedPermissions.value) !== commonFunctions.stableStringify(userGroupScopedPermissionsOriginal.value)
+        : false
+
+    const detailsDirty = selectedUserGroupOriginal.value
+        ? commonFunctions.stableStringify(getUserGroupEditableState(selectedUserGroup.value)) !== commonFunctions.stableStringify(selectedUserGroupOriginal.value)
+        : false
+
+    return scopedDirty || detailsDirty
+})
+
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
 const orgProducts = computed(() => store.getters.productsOfOrg(orgResolved.value) || [])
 const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])

@@ -37,6 +37,17 @@
             data-testid="teams-table"
         />
 
+        <!-- Assignment rules pick an owner TEAM by component-name pattern, so they
+             belong beside the teams themselves -- and this is where the real team
+             list lives. They previously sat under User Groups and were handed the
+             org's user groups, which stopped being teams in Phase 2a. -->
+        <OrgTeamAssignmentRules
+            v-if="teamsSupported"
+            :orgUuid="orgUuid"
+            :isWritable="canWrite"
+            :teams="teams"
+            :components="props.components || []" />
+
         <n-modal v-model:show="showTeamModal" preset="dialog" :show-icon="false">
             <n-card
                 style="width: 640px"
@@ -141,10 +152,13 @@ import graphqlClient from '@/utils/graphql'
 import { LIST_CHANNELS_QUERY, TYPE_LABELS, extractError } from '@/utils/notificationsCommon'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import gql from 'graphql-tag'
+import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
 
 const props = defineProps<{
     orguuid: string
     isWritable: boolean
+    /** Passed down for the assignment rules' match preview; the parent has them loaded. */
+    components?: any[]
 }>()
 
 const store = useStore()
