@@ -21,7 +21,12 @@ import {
     classifySubscriptionTest,
     TERMINAL_OUTBOX_STATUSES,
     isOwnerRouted,
+    isTeamRouted,
     ownerRoutedSuccessCaveat,
+    noDeliveryExplanation,
+    severityAppliesTo,
+    SEVERITY_BEARING_EVENT_TYPES,
+    clearInapplicableSeverity,
     routeCount,
     hasUneditableMultiRoute,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
@@ -68,12 +73,16 @@ describe('unselectable options without a backend implementation', () => {
     const option = (opts: Array<{ value: string, disabled?: boolean }>, value: string) =>
         opts.find(o => o.value === value)
 
-    it('keeps PREVIEW unselectable while fan-out matches ACTIVE only', () => {
+    it('does not offer PREVIEW at all while fan-out matches ACTIVE only', () => {
         // NotificationSubscriptionRepository.findActiveByOrgString filters on
         // status='ACTIVE', so a PREVIEW subscription never reaches fan-out and
         // behaves exactly like DISABLED. Reproduced on the sandbox: ACTIVE -> 1
         // delivery row, PREVIEW -> 0, DISABLED -> 0.
-        expect(option(subscriptionStatusOptions, 'PREVIEW')?.disabled).toBe(true)
+        //
+        // Stronger than the previous assertion, which only required it to be
+        // present-and-disabled: a greyed row plus a paragraph explaining why it
+        // is useless is still shelf space spent on a non-feature. Absent.
+        expect(option(subscriptionStatusOptions, 'PREVIEW')).toBeUndefined()
     })
 
     it('leaves the implemented subscription statuses selectable', () => {
@@ -418,5 +427,111 @@ describe('one-route editor guard', () => {
             expect(hasUneditableMultiRoute(shape), `shape: ${JSON.stringify(shape)}`).toBe(false)
         }
         expect(routeCount('{"a":1}')).toBe(0)  // an object is not a route list
+    })
+})
+
+describe('isTeamRouted', () => {
+    // The reason this exists: archiving a targeted team made the test say
+    // "your filter or severity gate excluded it", and both were innocent.
+    it('detects an explicit team target', () => {
+        expect(isTeamRouted(JSON.stringify([{ channels: [], teams: ['t-1'] }]))).toBe(true)
+    })
+
+    it('is false for a route that only names channels', () => {
+        expect(isTeamRouted(JSON.stringify([{ channels: ['c-1'], teams: [] }]))).toBe(false)
+    })
+
+    it('is false for a null/empty team entry rather than truthy-by-array', () => {
+        // routes[].teams arrives as [null] from some saved rows; an array with
+        // nothing usable in it is not a team target.
+        expect(isTeamRouted(JSON.stringify([{ channels: ['c-1'], teams: [null] }]))).toBe(false)
+    })
+
+    it('is false for null, empty and unparseable routes rather than throwing', () => {
+        for (const bad of [null, undefined, '', 'not json', '{"a":1}']) {
+            expect(isTeamRouted(bad as any)).toBe(false)
+        }
+    })
+})
+
+describe('noDeliveryExplanation', () => {
+    const teamRoute = JSON.stringify([{ channels: [], teams: ['t-1'] }])
+    const ownerRoute = JSON.stringify([{ channels: [], notifyComponentOwner: true }])
+    const bothRoute = JSON.stringify([{ channels: [], teams: ['t-1'], notifyComponentOwner: true }])
+    const channelRoute = JSON.stringify([{ channels: ['c-1'], teams: [] }])
+
+    it('leads with the resolving target, not the filter, for a team route', () => {
+        const msg = noDeliveryExplanation(teamRoute)
+        expect(msg).toContain('a route targets a team')
+        expect(msg).toContain('Check these first')
+        // The filter and the gate are still mentioned -- demoted, not deleted.
+        expect(msg.indexOf('targets a team')).toBeLessThan(msg.indexOf('filter'))
+    })
+
+    it('leads with the owner cause for an owner-routed subscription', () => {
+        expect(noDeliveryExplanation(ownerRoute)).toContain('delivers to the component owner')
+    })
+
+    it('names BOTH causes when a route resolves through owner and team', () => {
+        const msg = noDeliveryExplanation(bothRoute)
+        expect(msg).toContain('delivers to the component owner')
+        expect(msg).toContain('targets a team')
+        expect(msg).toContain('; and ')
+    })
+
+    it('keeps the plain filter/severity wording for a fixed-channel route', () => {
+        const msg = noDeliveryExplanation(channelRoute)
+        expect(msg).toContain('likely excluded it')
+        expect(msg).not.toContain('Check these first')
+    })
+})
+
+describe('severity gating', () => {
+    // Pinned against NotificationFanOutService.extractEventSeverity: only these
+    // two event types resolve a severity, and severityGateMatches counts a null
+    // severity as NO MATCH -- so a gate left on anything else silently suppresses
+    // every event rather than doing nothing.
+    it('lists exactly the two severity-bearing event types', () => {
+        expect([...SEVERITY_BEARING_EVENT_TYPES].sort())
+            .toEqual(['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED'])
+    })
+
+    it('applies when any selected event type carries a severity', () => {
+        expect(severityAppliesTo(['NEW_VULN_AFFECTS_RELEASES'])).toBe(true)
+        expect(severityAppliesTo(['VULNERABILITY_RECORD_UPDATED'])).toBe(true)
+        expect(severityAppliesTo(['RELEASE_CREATED', 'NEW_VULN_AFFECTS_RELEASES'])).toBe(true)
+    })
+
+    it('does not apply to release, approval or VEX events, or to nothing at all', () => {
+        for (const types of [['RELEASE_CREATED'], ['RELEASE_LIFECYCLE_CHANGED'],
+            ['RELEASE_BOM_DIFF'], ['APPROVAL_REQUESTED'], ['APPROVAL_RESOLVED'],
+            ['VEX_STATE_CHANGED'], [], null, undefined]) {
+            expect(severityAppliesTo(types as any)).toBe(false)
+        }
+    })
+
+    it('clears an inapplicable gate on EVERY route, not just the first', () => {
+        // The editor only exposes one route, but saveSubscription maps them all.
+        const routes = [{ whenSeverityAtLeast: 'HIGH' }, { whenSeverityAtLeast: 'LOW' }]
+        expect(clearInapplicableSeverity(routes, ['RELEASE_CREATED'])).toBe(true)
+        expect(routes.map(r => r.whenSeverityAtLeast)).toEqual([null, null])
+    })
+
+    it('leaves a gate alone when it can still match', () => {
+        const routes = [{ whenSeverityAtLeast: 'HIGH' }]
+        expect(clearInapplicableSeverity(routes, ['NEW_VULN_AFFECTS_RELEASES'])).toBe(false)
+        expect(routes[0].whenSeverityAtLeast).toBe('HIGH')
+    })
+
+    it('reports nothing cleared when no gate was set', () => {
+        // Distinguishes "there was nothing to clear" from "we cleared something",
+        // which is what a caller would key a warning off.
+        const routes = [{ whenSeverityAtLeast: null }]
+        expect(clearInapplicableSeverity(routes, ['RELEASE_CREATED'])).toBe(false)
+    })
+
+    it('survives null routes and null entries', () => {
+        expect(clearInapplicableSeverity(null, ['RELEASE_CREATED'])).toBe(false)
+        expect(clearInapplicableSeverity([null as any], ['RELEASE_CREATED'])).toBe(false)
     })
 })

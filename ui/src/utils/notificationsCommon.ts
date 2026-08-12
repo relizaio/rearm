@@ -130,22 +130,16 @@ export const webhookAuthOptions = [
     { label: 'HMAC-SHA256', value: 'HMAC_SHA256' },
 ]
 
-// PREVIEW has no fan-out implementation, so it behaves exactly like DISABLED:
-// NotificationSubscriptionRepository.findActiveByOrgString matches
-// status='ACTIVE' only, so a PREVIEW subscription never reaches fan-out, no
-// delivery row is ever written, and NotificationDeliveryStatus.PREVIEW has no
-// writer at all. Offering it is a silent trap: a user sets PREVIEW, sees
-// nothing arrive, and concludes their filter matches nothing -- when fan-out
-// never consulted the subscription in the first place. Keep it unselectable
-// until fan-out honours it (same treatment as VEX_STATE_CHANGED below). The
-// enum values are deliberately kept on both sides.
-// Status is a single select, so unlike the multiple-select VEX case this needs
-// no unselect-guard computed: a legacy PREVIEW value still renders and can be
-// changed away, it just can't be re-selected.
+// PREVIEW is deliberately ABSENT rather than present-but-disabled. It has no
+// fan-out implementation -- findActiveByOrgString matches status='ACTIVE' only,
+// so a PREVIEW subscription never reaches fan-out and no delivery row is ever
+// written. Showing a greyed row plus an explanation of why it is useless is
+// still shelf space spent on a non-feature; a legacy PREVIEW value still
+// renders on an existing subscription and can be switched to ACTIVE or
+// DISABLED, which is the only path that matters.
 export const subscriptionStatusOptions = [
     { label: 'Active (deliveries go out)', value: 'ACTIVE' },
     { label: 'Disabled (no dispatch)', value: 'DISABLED' },
-    { label: 'Preview (not yet available)', value: 'PREVIEW', disabled: true },
 ]
 
 // VEX_STATE_CHANGED has no event producer in the backend yet, so a
@@ -196,6 +190,48 @@ export const severityOptions = [
     { label: 'INFO', value: 'INFO' },
 ]
 
+/**
+ * The only event types that carry a severity.
+ *
+ * <p>Mirrors NotificationFanOutService.extractEventSeverity, which returns null
+ * for everything else -- release events, approvals and VEX. That matters
+ * because severityGateMatches treats "gate set, severity null" as NO MATCH: a
+ * minimum severity on a subscription with no vuln event type does not merely
+ * have no effect, it silently gates out EVERY event, and the operator sees a
+ * subscription that never fires with nothing on screen explaining why.
+ */
+export const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED']
+
+/** True when a minimum-severity gate can ever match, given these event types. */
+export function severityAppliesTo (eventTypes: string[] | null | undefined): boolean {
+    return (eventTypes || []).some(t => SEVERITY_BEARING_EVENT_TYPES.includes(t))
+}
+
+/**
+ * Drops a severity gate that can never match, in place, on every route.
+ *
+ * <p>The editor hides the control when {@link severityAppliesTo} is false, so
+ * without this a stored gate becomes UNREACHABLE rather than harmless -- worse
+ * than before it was hidden, since the operator can no longer see or clear the
+ * thing silently suppressing every delivery. Call it wherever the form is
+ * populated AND on the way out, not just on an event-type edit: the common path
+ * is opening an already-broken subscription, where nothing changes and a
+ * change-driven watcher never runs.
+ *
+ * @returns true when something was actually cleared
+ */
+export function clearInapplicableSeverity (
+    routes: Array<Record<string, any>> | null | undefined,
+    eventTypes: string[] | null | undefined,
+): boolean {
+    if (severityAppliesTo(eventTypes)) return false
+    let cleared = false
+    for (const r of routes || []) {
+        if (r && r.whenSeverityAtLeast) { r.whenSeverityAtLeast = null; cleared = true }
+    }
+    return cleared
+}
+
 // Which of these the backend can actually WRITE, checked rather than assumed
 // (an earlier cut of this list exempted ACKED on a guess and was wrong).
 // Sweeping every write path across the backend -- setStatus() call sites, the
@@ -214,8 +250,11 @@ export const severityOptions = [
 // ACKED to see what has been acknowledged, gets zero rows, and reads that as a
 // fact about their data rather than about the schema. On a diagnostic surface
 // a false negative is worse than a missing control. Left visible-but-disabled
-// rather than deleted so the reason is on screen -- same treatment as the
-// PREVIEW subscription status and VEX_STATE_CHANGED.
+// rather than deleted so the reason is on screen -- same treatment as
+// VEX_STATE_CHANGED. NOTE this is deliberately the OPPOSITE of the PREVIEW
+// subscription status above, which is deleted outright: a FILTER that quietly
+// omits a status misrepresents the data, whereas an unselectable CONFIGURATION
+// option is only ever shelf space for a non-feature.
 //
 // Re-enable each ONE alongside the backend change that starts producing it.
 // The spec pins both directions against the backend source, so adding a writer
@@ -555,6 +594,29 @@ export function isOwnerRouted (routesJson: string | null | undefined): boolean {
 }
 
 /**
+ * True when any route targets a TEAM explicitly (as opposed to naming channels
+ * or delivering to the component owner).
+ *
+ * <p>A team target resolves to that team's channels at fan-out, and resolution
+ * drops a team that is archived, cross-org, unreadable, or simply has no
+ * channels. Every one of those yields zero deliveries with the subscription's
+ * filter and severity gate working perfectly -- so a diagnosis that names only
+ * the filter and the gate sends the operator to audit two innocent things.
+ *
+ * <p>Observed live: archiving a targeted team, then testing, produced exactly
+ * that misdirection.
+ */
+export function isTeamRouted (routesJson: string | null | undefined): boolean {
+    try {
+        const routes = routesJson ? JSON.parse(routesJson) : []
+        return Array.isArray(routes)
+            && routes.some((r: any) => Array.isArray(r?.teams) && r.teams.some((t: any) => !!t))
+    } catch {
+        return false  // unparseable routes: fall back to the generic wording
+    }
+}
+
+/**
  * Caveat shown on a SUCCESSFUL owner-routed test.
  *
  * Injection deliberately stamps the event onto a component that HAS a routable
@@ -569,6 +631,44 @@ export function ownerRoutedSuccessCaveat (routesJson: string | null | undefined)
         + ' so an owner-routed subscription will usually pass this test. A real event lands on'
         + ' whichever component actually carries the finding, which may be unowned -- check the'
         + ' ownership report for coverage rather than relying on this result.'
+}
+
+/**
+ * Why a test produced no delivery.
+ *
+ * <p>The default answer names the filter and the severity gate, which is right
+ * for every route target that resolves to a fixed channel. It is WRONG whenever
+ * a route resolves through something else, because then the filter and the gate
+ * can both be working perfectly:
+ *
+ * <ul>
+ *   <li>OWNER-routed: an unowned affected component, or an owner team with no
+ *       channel, yields nothing.</li>
+ *   <li>TEAM-targeted: resolution drops a team that is archived, cross-org,
+ *       unreadable, or has no channels. Observed live -- archiving a targeted
+ *       team produced this message blaming the filter and the gate, both
+ *       innocent.</li>
+ * </ul>
+ *
+ * <p>Sending the operator to audit the wrong thing is worse than saying
+ * nothing, so each resolving target names its own likely causes FIRST.
+ */
+export function noDeliveryExplanation (routesJson: string | null | undefined): string {
+    const base = 'The synthetic event was injected but produced no delivery for this subscription.'
+    const causes: string[] = []
+    if (isOwnerRouted(routesJson)) {
+        causes.push('a route delivers to the component owner, so the affected component may have no'
+            + ' owner, or its owner team no notification channel')
+    }
+    if (isTeamRouted(routesJson)) {
+        causes.push('a route targets a team, which contributes nothing while it is archived or has'
+            + ' no notification channels')
+    }
+    if (causes.length) {
+        return `${base} Check these first: ${causes.join('; and ')}.`
+            + " Only then the subscription's filter or a route's minimum-severity gate."
+    }
+    return `${base} Its filter, or a route's minimum-severity gate, likely excluded it.`
 }
 
 /**

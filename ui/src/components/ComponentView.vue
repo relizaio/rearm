@@ -400,19 +400,15 @@
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && ownershipSupported">
                                             <label>Owner</label>
                                             <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
-                                                <div v-if="componentOwnership && componentOwnership.ownership">
-                                                    <n-tag :type="ownershipTagType(componentOwnership.ownership.status)" size="small">
-                                                        {{ componentOwnership.ownership.status }}
-                                                    </n-tag>
-                                                    <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
-                                                    <!-- A suggestion's reason line is suppressed: offering a candidate
-                                                         team directly above the owner picker invites reading it as a
-                                                         decision already made. Every other status explains itself. -->
-                                                    <span v-if="componentOwnership.ownership.reason && !ownershipIsSuggestion"
-                                                        class="text-muted" style="display: block; margin-top: 4px;">
-                                                        {{ componentOwnership.ownership.reason }}
-                                                    </span>
-                                                </div>
+                                                <!-- No status chip and no reason line, in ANY state. The chip
+                                                     used to report OWNED / NON_DURABLE / DEGRADED / ORPHANED; the
+                                                     first two differ only on durability, which is a governance
+                                                     signal rather than something an operator picking an owner acts
+                                                     on, and rhythm asked for the whole label gone rather than just
+                                                     the distinction. This block now answers one question: who owns
+                                                     it. The backend still computes every status for the ownership
+                                                     report, which is where coverage belongs. -->
+                                                <div v-if="ownerLabel">{{ ownerLabel }}</div>
                                                 <div v-if="isWritable" style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
                                                     <n-select
                                                         style="width: 110px;"
@@ -436,7 +432,7 @@
                                                     </n-button>
                                                 </div>
                                                 <span class="text-muted" style="margin-top: 4px;">
-                                                    The durable owner accountable for this {{ words.component }}. A team is durable (survives members leaving); a single user is flagged non-durable.
+                                                    Who is accountable for this {{ words.component }}.
                                                 </span>
                                             </div>
                                         </div>
@@ -1109,6 +1105,9 @@ import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
 import { InputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
+// Shared "keep a dangling reference visible and removable" builder, so the owner
+// picker behaves like the notification channel and team pickers.
+import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 
@@ -1504,8 +1503,17 @@ const openComponentSettings = async function() {
     await fetchEffectiveApprovalPolicy()
     // Durable ownership (Phase 4 UI): load the owner picker's team list + the
     // computed ownership status when the settings panel opens.
-    loadUserGroups()
-    loadOwnership()
+    //
+    // AWAIT both option lists FIRST. loadOwnership pre-selects the stored owner
+    // only if it resolves to an option, so racing these would leave a perfectly
+    // valid owner unselected whenever the ownership query happened to win. Users
+    // are in here too: they are otherwise loaded fire-and-forget from initLoad,
+    // which is the same race one field over for a USER-typed owner.
+    // loadUserGroups swallows its own errors; loadUsers does not, and a rejection
+    // here would abort openComponentSettings before it ever shows the modal. A
+    // failed lookup must cost one empty picker, not the whole settings panel.
+    await Promise.all([loadUserGroups(), loadUsers().catch(() => {})])
+    await loadOwnership()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     showComponentSettingsModal.value = true
     
@@ -3386,32 +3394,55 @@ const SET_COMPONENT_OWNER_MUTATION = gql`
 
 const componentOwnership = ref<any>(null)
 const ownershipSupported = ref<boolean>(true)
-const userGroups = ref<{ label: string, value: string }[]>([])
+// Every team the org has, INCLUDING archived ones. The picker's options are
+// derived below rather than filtered here, because an archived team can still
+// be the stored owner and has to stay visible.
+const orgTeams = ref<any[]>([])
 const ownerDraftType = ref<'TEAM' | 'USER'>('TEAM')
 const ownerDraftRef = ref<string | null>(null)
 const savingOwner = ref<boolean>(false)
 
-const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default' =>
-    s === 'OWNED' ? 'success'
-        : (s === 'NON_DURABLE' || s === 'DEGRADED') ? 'warning'
-            : s === 'UNSET' ? 'default'  // no owner yet -> neutral, not alarming
-                : 'error'                // ORPHANED (or unknown) -> needs attention
-
 // UNSET is the one ownership status that is a SUGGESTION rather than a fact:
 // the backend fills ownerRef with a candidate team it picked and puts its pitch
-// in `reason`. Every other status describes a real (or absent) owner. Both the
-// owner label and the reason line have to special-case it, and they have to
-// agree -- so the rule lives here once instead of as a string literal in each.
+// in `reason`. Every other status describes a real (or absent) owner. The owner
+// label special-cases it so a suggested team is never printed as the owner.
 const ownershipIsSuggestion = computed<boolean>(
     () => componentOwnership.value?.ownership?.status === 'UNSET')
+
+/** The team reference this component is stored against, if any. */
+const ownerTeamRef = computed<string | null>(() => {
+    const o = componentOwnership.value?.owner
+    return o?.ownerType === 'TEAM' && o?.ownerRef ? o.ownerRef : null
+})
+
+/**
+ * Selectable teams, plus a labelled ghost for a stored owner that is no longer
+ * selectable.
+ *
+ * Archived teams are not offered as NEW owners -- notification routing ignores
+ * them, so picking one buys an owner that is immediately reported DEGRADED. But
+ * dropping them outright is what made an archived owner render as no owner at
+ * all: the label found nothing, the picker pre-select found nothing, and with
+ * the status chip gone the block went silent about a component that IS owned.
+ * withGhosts is the same shared helper the subscription editor's team picker
+ * uses for the identical case, so the two cannot drift.
+ */
+const userGroups = computed<{ label: string, value: string }[]>(() => {
+    const selectable = (orgTeams.value || [])
+        .filter((t: any) => t && t.status !== 'INACTIVE')
+        .map((t: any) => ({ label: t.name, value: t.uuid }))
+    const referenced = ownerTeamRef.value ? [ownerTeamRef.value] : []
+    return withGhosts(selectable, orgTeams.value || [], referenced,
+        (t: any, uuid: string) => t ? `${t.name} (archived)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
+})
 
 const ownerLabel = computed<string | null>(() => {
     // Fall back to the RESOLVED ownership when there is no per-component stored
     // owner: an org team-assignment rule can own a component without anything
-    // being stored on it. Reading only `owner` showed a green OWNED badge with
-    // no name next to it -- "owned by whom?".
+    // being stored on it. Reading only `owner` left the block naming nobody for
+    // a component that is genuinely owned -- "owned by whom?".
     // A suggestion is not an owner, so do NOT fall back to it: that would print
-    // the suggested team beside an UNSET tag as though it owned the component.
+    // a team the backend merely proposed as though it already owned this.
     const resolved = componentOwnership.value?.ownership
     const o = componentOwnership.value?.owner?.ownerRef
         ? componentOwnership.value.owner
@@ -3419,7 +3450,13 @@ const ownerLabel = computed<string | null>(() => {
     if (!o || !o.ownerRef) return null
     const list = o.ownerType === 'TEAM' ? userGroups.value : users.value
     const hit = list.find((x: any) => x.value === o.ownerRef)
-    return `${hit?.label || o.ownerRef} (${o.ownerType === 'TEAM' ? 'team' : 'user'})`
+    // A stored TEAM ref always resolves now -- userGroups keeps a ghost for it --
+    // so this is the genuinely unknown case: a user ref with no matching user, or
+    // a team ref on a component whose team list failed to load. Printing the raw
+    // uuid was the old behaviour; with the status chip and reason line gone it
+    // would be the only thing on the block and would explain nothing.
+    if (!hit) return null
+    return `${hit.label} (${o.ownerType === 'TEAM' ? 'team' : 'user'})`
 })
 
 async function loadOwnership() {
@@ -3433,8 +3470,19 @@ async function loadOwnership() {
         })
         componentOwnership.value = res.data?.component || null
         ownershipSupported.value = true
+        // Pre-select the stored owner in the picker -- but ONLY if it resolves to
+        // an option. An archived or deleted owner does not, and naive-ui then
+        // renders the raw uuid as the selected value: with the status chip gone
+        // that uuid is the only thing on the block, sitting in an editable
+        // control where it reads as a valid choice rather than a dangling
+        // reference. Leaving the picker empty says the same thing honestly, and
+        // Clear owner is still offered because a stored ref does exist.
         const o = componentOwnership.value?.owner
-        if (o && o.ownerType && o.ownerRef) { ownerDraftType.value = o.ownerType; ownerDraftRef.value = o.ownerRef }
+        if (o && o.ownerType && o.ownerRef) {
+            ownerDraftType.value = o.ownerType
+            const opts = o.ownerType === 'TEAM' ? userGroups.value : users.value
+            ownerDraftRef.value = opts.some((x: any) => x.value === o.ownerRef) ? o.ownerRef : null
+        }
     } catch {
         // Backend without the ownership fields (older / CE mirror) -> hide the section.
         ownershipSupported.value = false
@@ -3448,14 +3496,12 @@ async function loadUserGroups() {
             variables: { org: orguuid.value },
             fetchPolicy: 'network-only',
         })
-        // Archived teams are dropped: notification routing ignores them, so
-        // offering one here would let an operator pick an owner that is
-        // immediately reported DEGRADED.
-        userGroups.value = (res.data?.getTeams || [])
-            .filter((g: any) => g && g.status !== 'INACTIVE')
-            .map((g: any) => ({ label: g.name, value: g.uuid }))
+        // Stored whole, archived teams included. The `userGroups` computed
+        // decides what is SELECTABLE; an archived team still has to be
+        // renderable when a component is already owned by it.
+        orgTeams.value = (res.data?.getTeams || []).filter((g: any) => !!g)
     } catch {
-        userGroups.value = []
+        orgTeams.value = []
     }
 }
 
