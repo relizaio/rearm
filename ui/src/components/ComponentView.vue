@@ -418,7 +418,7 @@
                                                         style="width: 110px;"
                                                         v-model:value="ownerDraftType"
                                                         :options="[{label: 'Team', value: 'TEAM'}, {label: 'User', value: 'USER'}]"
-                                                        @update:value="ownerDraftRef = null" />
+                                                        @update:value="onOwnerTypeChange" />
                                                     <n-select
                                                         style="flex: 1; min-width: 0;"
                                                         filterable
@@ -3462,6 +3462,19 @@ function resetOwnerDraft() {
     const base = ownerBaseline.value
     ownerDraftType.value = base?.ownerType || 'TEAM'
     ownerDraftRef.value = base?.ownerRef || null
+}
+
+/**
+ * Type toggle handler: switching away empties the ref (a TEAM ref is not a
+ * USER ref), but returning to the baseline type RE-SEEDS it. Always nulling
+ * made the round trip Team -> User -> Team land on exactly the staged-clear
+ * shape (empty ref + baseline type + stored owner), so a pure browsing
+ * gesture staged a destructive clear that would ride along with any
+ * unrelated Save Changes click.
+ */
+function onOwnerTypeChange(t: 'TEAM' | 'USER') {
+    const base = ownerBaseline.value
+    ownerDraftRef.value = (base && base.ownerType === t) ? base.ownerRef : null
 }
 
 // UNSET is the one ownership status that is a SUGGESTION rather than a fact:
