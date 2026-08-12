@@ -358,7 +358,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ComputedRef, computed, Ref, ref, h, watch } from 'vue'
+import { ComputedRef, computed, Ref, ref, h, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
@@ -498,6 +498,25 @@ if (route.query.release) {
     showReleaseUuid.value = route.query.release as string
     showReleaseModal.value = true
 }
+
+// Router navigations that only change ?release= no longer remount the view
+// (router-view keys on path), so apply them here. showRelease/close write
+// the URL via history.replaceState, which vue-router never sees — so this
+// watcher fires exclusively for real navigations (deep links from other
+// components, browser back/forward), never for local open/close.
+watch(() => route.query.release, (rel) => {
+    if (typeof rel === 'string' && rel) {
+        if (rel !== showReleaseUuid.value || !showReleaseModal.value) {
+            showReleaseUuid.value = rel
+            showReleaseModal.value = true
+        }
+    } else if (showReleaseModal.value) {
+        // Param removed by a navigation: mirror the old remount, which
+        // came back without the modal.
+        showReleaseModal.value = false
+        showReleaseUuid.value = ''
+    }
+})
 const showRelease = function(uuid: string) {
     showReleaseUuid.value = uuid
     showReleaseModal.value = true
@@ -2080,18 +2099,44 @@ async function handleRefreshVulnerabilityData() {
 
 const releaseRowkey = (row: any) => row.uuid
 
+// True while the URL watcher below writes the pagination refs: their
+// watchers must not push for URL-originated writes — restoring a
+// perPage entry would otherwise push a page-1 query and destroy the
+// forward history stack.
+let applyingPaginationFromUrl = false
+
 // Watch pagination changes and sync to route query parameters
 watch(currentPage, (newPage) => {
+    if (applyingPaginationFromUrl) return
     router.push({
         query: { ...route.query, branchReleasePage: newPage.toString() }
     })
 })
 
 watch(perPage, (newPerPage) => {
+    if (applyingPaginationFromUrl) return
     router.push({
         query: { ...route.query, branchReleasePerPage: newPerPage.toString(), branchReleasePage: '1' }
     })
     currentPage.value = 1
+})
+
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward re-applies URL pagination here; absent
+// params = the defaults, mirroring the old remount-initializer.
+watch(() => [route.query.branchReleasePage, route.query.branchReleasePerPage], async () => {
+    applyingPaginationFromUrl = true
+    try {
+        const page = parseInt(route.query.branchReleasePage as string) || 1
+        const size = parseInt(route.query.branchReleasePerPage as string) || 25
+        if (page !== currentPage.value) currentPage.value = page
+        if (size !== perPage.value) perPage.value = size
+        // Hold the flag through the watcher flush so the sync watchers
+        // above observe it.
+        await nextTick()
+    } finally {
+        applyingPaginationFromUrl = false
+    }
 })
 
 onCreated().then(() => {

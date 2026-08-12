@@ -21,7 +21,7 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NTabs, NTabPane } from 'naive-ui'
 import VulnerabilityAnalysis from './VulnerabilityAnalysis.vue'
@@ -39,9 +39,13 @@ function parseTab(q: unknown): TabKey {
     return 'findings'
 }
 
-onMounted(() => {
-    activeTab.value = parseTab(route.query.tab)
-})
+// The URL is the single source of tab truth: onTabChange only writes the
+// query, and this watcher applies it to local state. Immediate so the
+// deep-linked tab is honored on mount; reactive because query-only
+// navigations no longer remount the view (router-view keys on path).
+watch(() => route.query.tab, (q) => {
+    activeTab.value = parseTab(q)
+}, { immediate: true })
 
 function onTabChange(val: TabKey) {
     router.replace({ query: { ...route.query, tab: val } })
