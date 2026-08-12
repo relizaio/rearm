@@ -46,7 +46,7 @@
             :orgUuid="orgUuid"
             :isWritable="canWrite"
             :teams="teams"
-            :components="props.components || []" />
+            :components="ruleComponents" />
 
         <n-modal v-model:show="showTeamModal" preset="dialog" :show-icon="false">
             <n-card
@@ -157,8 +157,13 @@ import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
 const props = defineProps<{
     orguuid: string
     isWritable: boolean
-    /** Passed down for the assignment rules' match preview; the parent has them loaded. */
-    components?: any[]
+    /**
+     * Components AND products, for the assignment rules' match preview.
+     * REQUIRED, not optional: an empty list makes the preview say "matches no
+     * components right now", which is indistinguishable from a genuinely bad
+     * pattern -- so a missing prop would degrade silently rather than loudly.
+     */
+    components: any[]
 }>()
 
 const store = useStore()
@@ -167,6 +172,7 @@ const message = useMessage()
 
 const orgUuid = computed<string>(() => props.orguuid)
 const canWrite = computed<boolean>(() => props.isWritable)
+const ruleComponents = computed<any[]>(() => props.components)
 
 interface TeamRow {
     uuid: string
@@ -228,8 +234,9 @@ const LIST_GROUPS_WITH_ROSTER_QUERY = gql`
 const teams = ref<TeamRow[]>([])
 const teamsLoading = ref<boolean>(false)
 // Teams is a Pro-ahead surface, so a backend that predates it must cost only
-// THIS pane rather than the whole page -- the same isolation the team-member
-// fields use in OrgSettings. Null until probed.
+// THIS pane rather than the whole page. Starts true and flips only on a
+// drift-shaped failure, so the pane renders optimistically and hides itself if
+// the backend turns out not to have Teams.
 const teamsSupported = ref<boolean>(true)
 const users = ref<any[]>([])
 const groups = ref<any[]>([])

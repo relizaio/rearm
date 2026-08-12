@@ -1144,9 +1144,6 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
 import constants from '../utils/constants'
-import { isSchemaDriftError } from '../utils/graphqlDriftFallback'
-import { buildChannelOptions } from '@/utils/channelOptions'
-import { TYPE_LABELS } from '@/utils/notificationsCommon'
 import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
@@ -1869,26 +1866,17 @@ const userPermissionsDirty = computed(() => {
     return commonFunctions.stableStringify(userScopedPermissions.value) !== commonFunctions.stableStringify(userScopedPermissionsOriginal.value)
 })
 
-// Projects the modal's editable state. NOTE the team-member keys come from
-// there is no per-modal editor state left beyond the group's own fields.
+// Projects the modal's editable state. Nothing here is per-modal editor state
+// any more -- every key is a field of the group record itself.
 function getUserGroupEditableState(group: any) {
     return {
         name: group?.name || '',
         description: group?.description || '',
         manualUsers: group?.manualUsers || [],
         connectedSsoGroups: group?.connectedSsoGroups || [],
-        // Compare the NORMALIZED payload, not the raw editor map -- otherwise
-        // stray whitespace in a custom label reads as dirty while producing
-        // nothing to save.
     }
 }
 
-// Keyed by user uuid rather than held as a list: the backend rejects two roles
-// for the same member, and a per-member map makes that impossible to express.
-
-// Shared builder so a channel that was disabled or deleted after being picked
-// still renders a name here instead of a bare uuid (BUG 2) -- and stays
-// removable so the operator can clear it.
 /**
  * Gates the modal's Save/Reset buttons and the close-confirmation prompt.
  *
