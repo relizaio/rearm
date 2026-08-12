@@ -21,6 +21,7 @@ import {
     classifySubscriptionTest,
     TERMINAL_OUTBOX_STATUSES,
     isOwnerRouted,
+    isTeamRouted,
     ownerRoutedSuccessCaveat,
     routeCount,
     hasUneditableMultiRoute,
@@ -418,5 +419,29 @@ describe('one-route editor guard', () => {
             expect(hasUneditableMultiRoute(shape), `shape: ${JSON.stringify(shape)}`).toBe(false)
         }
         expect(routeCount('{"a":1}')).toBe(0)  // an object is not a route list
+    })
+})
+
+describe('isTeamRouted', () => {
+    // The reason this exists: archiving a targeted team made the test say
+    // "your filter or severity gate excluded it", and both were innocent.
+    it('detects an explicit team target', () => {
+        expect(isTeamRouted(JSON.stringify([{ channels: [], teams: ['t-1'] }]))).toBe(true)
+    })
+
+    it('is false for a route that only names channels', () => {
+        expect(isTeamRouted(JSON.stringify([{ channels: ['c-1'], teams: [] }]))).toBe(false)
+    })
+
+    it('is false for a null/empty team entry rather than truthy-by-array', () => {
+        // routes[].teams arrives as [null] from some saved rows; an array with
+        // nothing usable in it is not a team target.
+        expect(isTeamRouted(JSON.stringify([{ channels: ['c-1'], teams: [null] }]))).toBe(false)
+    })
+
+    it('falls back to the generic wording on unparseable routes', () => {
+        for (const bad of [null, undefined, '', 'not json', '{"a":1}']) {
+            expect(isTeamRouted(bad as any)).toBe(false)
+        }
     })
 })

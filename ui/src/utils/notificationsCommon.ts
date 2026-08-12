@@ -555,6 +555,29 @@ export function isOwnerRouted (routesJson: string | null | undefined): boolean {
 }
 
 /**
+ * True when any route targets a TEAM explicitly (as opposed to naming channels
+ * or delivering to the component owner).
+ *
+ * <p>A team target resolves to that team's channels at fan-out, and resolution
+ * drops a team that is archived, cross-org, unreadable, or simply has no
+ * channels. Every one of those yields zero deliveries with the subscription's
+ * filter and severity gate working perfectly -- so a diagnosis that names only
+ * the filter and the gate sends the operator to audit two innocent things.
+ *
+ * <p>Observed live: archiving a targeted team, then testing, produced exactly
+ * that misdirection.
+ */
+export function isTeamRouted (routesJson: string | null | undefined): boolean {
+    try {
+        const routes = routesJson ? JSON.parse(routesJson) : []
+        return Array.isArray(routes)
+            && routes.some((r: any) => Array.isArray(r?.teams) && r.teams.some((t: any) => !!t))
+    } catch {
+        return false  // unparseable routes: fall back to the generic wording
+    }
+}
+
+/**
  * Caveat shown on a SUCCESSFUL owner-routed test.
  *
  * Injection deliberately stamps the event onto a component that HAS a routable
