@@ -482,6 +482,18 @@ const channelOptions = computed(() => {
 
 const teams = ref<any[]>([])
 
+/**
+ * The name of the team that owns a managed row.
+ *
+ * Falls back to the uuid rather than to nothing: this string is the operator's
+ * only route to the control that actually changes the subscription, so a team
+ * that failed to load must still leave them something to search for.
+ */
+function managedTeamName (row: SubscriptionRow): string {
+    const team = teams.value.find((t: any) => t.uuid === row.managedByTeam)
+    return team?.name || String(row.managedByTeam)
+}
+
 // T4a: owner routing is a Pro-only route field. The control, the client-side
 // "route has a target" check and the error copy all gate on this one flag, so
 // a CE operator can neither author an owner-only route nor be told to.
@@ -1010,7 +1022,21 @@ function reportSubscriptionTestResult (
 
 
 const subscriptionColumns = computed(() => [
-    { title: 'Name', key: 'name' },
+    {
+        title: 'Name', key: 'name',
+        render: (row: SubscriptionRow) => {
+            if (!row.managedByTeam) return row.name
+            // Badged rather than hidden. A row that delivers but does not appear
+            // here is the failure this whole subsystem keeps producing; the
+            // honest version is visible, labelled, and pointing at the only
+            // place it can be changed.
+            return h('div', null, [
+                h('div', null, row.name),
+                h(NTag, { size: 'small', type: 'info', style: 'margin-top: 4px;' },
+                    { default: () => `Managed by ${managedTeamName(row)}` }),
+            ])
+        },
+    },
     {
         title: 'Status', key: 'status',
         render: (row: SubscriptionRow) => h(
@@ -1080,11 +1106,20 @@ const subscriptionColumns = computed(() => [
                                 size: 'tiny', secondary: true,
                                 onClick: () => openEditSubscription(row),
                                 disabled: !canWrite.value || subscriptionsDegraded.value
-                                    || hasUneditableMultiRoute(row.routes),
+                                    || hasUneditableMultiRoute(row.routes)
+                                    // The backend refuses an edit to a
+                                    // team-managed row. Leaving the control
+                                    // enabled would hand the operator an error
+                                    // where a pointer belongs.
+                                    || !!row.managedByTeam,
                                 'data-testid': 'edit-subscription',
                             }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
                         ]),
-                        default: () => hasUneditableMultiRoute(row.routes)
+                        default: () => row.managedByTeam
+                            ? `${managedTeamName(row)} owns this subscription -- it exists because that`
+                                + ' team asked to hear about the components it owns. Change it on the'
+                                + ' team, under Organization Settings -> Teams.'
+                            : hasUneditableMultiRoute(row.routes)
                             ? `This subscription has ${routeCount(row.routes)} routes and this editor`
                                 + ' shows one. Editing here would leave the others in place but hidden,'
                                 + ' so they are better changed through the API -- or collapse the'
@@ -1094,7 +1129,10 @@ const subscriptionColumns = computed(() => [
                     h(NButton, {
                         size: 'tiny', secondary: true,
                         onClick: () => toggleSubscriptionStatus(row),
-                        disabled: !canWrite.value,
+                        // A status flip is an edit, and the backend refuses one
+                        // on a managed row -- the team's toggle is the switch.
+                        disabled: !canWrite.value || !!row.managedByTeam,
+                        'data-testid': 'toggle-subscription',
                     }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
                     h(NTooltip, { trigger: 'hover' }, {
                         trigger: () => testButton,
@@ -1111,7 +1149,11 @@ const subscriptionColumns = computed(() => [
                     h(NButton, {
                         size: 'tiny', secondary: true, type: 'error',
                         onClick: () => confirmDeleteSubscription(row),
-                        disabled: !canWrite.value,
+                        // Deleting would leave the team's toggle claiming a
+                        // subscription that no longer exists; the backend
+                        // refuses, so the button does too.
+                        disabled: !canWrite.value || !!row.managedByTeam,
+                        'data-testid': 'delete-subscription',
                     }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
                 ],
             })

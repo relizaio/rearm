@@ -52,7 +52,7 @@ describe('notification list query CORE / FULL split', () => {
     })
 
     const SUB_CORE = ['uuid', 'org', 'resourceGroup', 'name', 'status', 'eventTypes', 'revision']
-    const SUB_ENRICHMENT = ['filter', 'routes', 'dedupWindowMinutes', 'rateLimit']
+    const SUB_ENRICHMENT = ['filter', 'routes', 'dedupWindowMinutes', 'rateLimit', 'managedByTeam']
     it('subscriptions CORE has the render essentials and no enrichment fields', () => {
         SUB_CORE.forEach(f => expect(has(LIST_SUBSCRIPTIONS_CORE_QUERY, f), `core should have ${f}`).toBe(true))
         SUB_ENRICHMENT.forEach(f => expect(has(LIST_SUBSCRIPTIONS_CORE_QUERY, f), `core should NOT have ${f}`).toBe(false))
