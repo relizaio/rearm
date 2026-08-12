@@ -130,6 +130,15 @@
                             events carry: with perspectives set, release and approval events match
                             nothing. Keep those on their own subscription.
                         </div>
+                        <!-- Perspectives have the SAME shape of trap as the minimum-severity gate
+                             above -- perspectiveGateMatches returns false when the event carries no
+                             affectedReleases -- yet this one is still shown for every event type,
+                             with a hint, rather than hidden. That is a deliberate asymmetry, not an
+                             oversight: severity is hidden because it can NEVER apply to a
+                             release-only subscription, whereas which events carry affectedReleases
+                             has not been confirmed the same way, and hiding a control on an
+                             unverified premise removes a feature people may be using. Tracked on the
+                             board to be settled one way or the other. -->
 
                         <div class="routes-section">
                             <div class="routes-title">Destination</div>
@@ -166,17 +175,15 @@
                                 <template v-if="teamOptions.length">
                                     <n-form-item :show-feedback="false">
                                         <template #label>
-                                            <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
                                                 Teams (optional)
-                                                <n-tooltip trigger="hover">
+                                                <n-tooltip trigger="hover" style="max-width: 360px;">
                                                     <template #trigger>
                                                         <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
                                                     </template>
-                                                    <span style="max-width: 320px; display: inline-block;">
-                                                        Delivers to each team's own notification channels, resolved
-                                                        when the event fires -- so if a team changes its channel,
-                                                        this follows automatically.
-                                                    </span>
+                                                    Delivers to each team's own notification channels, resolved
+                                                    when the event fires -- so if a team changes its channel,
+                                                    this follows automatically.
                                                 </n-tooltip>
                                             </span>
                                         </template>
@@ -201,19 +208,17 @@
                                 <template v-if="isPro">
                                     <n-form-item :show-feedback="false">
                                         <template #label>
-                                            <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
                                                 Notify Component Owner
-                                                <n-tooltip trigger="hover">
+                                                <n-tooltip trigger="hover" style="max-width: 360px;">
                                                     <template #trigger>
                                                         <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
                                                     </template>
-                                                    <span style="max-width: 340px; display: inline-block;">
-                                                        Resolved when the event fires, from the component's owner --
-                                                        set directly or by an assignment rule. Unlike picking a team
-                                                        above, this follows ownership changes on its own, so
-                                                        reassigning a component never means editing this
-                                                        subscription.
-                                                    </span>
+                                                    Resolved when the event fires, from the component's owner --
+                                                    set directly or by an assignment rule. Unlike picking a team
+                                                    above, this follows ownership changes on its own, so
+                                                    reassigning a component never means editing this
+                                                    subscription.
                                                 </n-tooltip>
                                             </span>
                                         </template>
@@ -318,8 +323,9 @@ import {
     buildNotificationRouteInput,
     routeHasTarget,
     classifySubscriptionTest,
-    isOwnerRouted,
-    isTeamRouted,
+    severityAppliesTo,
+    clearInapplicableSeverity,
+    noDeliveryExplanation,
     ownerRoutedSuccessCaveat,
     routeCount,
     hasUneditableMultiRoute,
@@ -396,6 +402,10 @@ interface SubscriptionForm {
     // (and any other field the UI doesn't model yet) survives an
     // Edit -> Save round-trip. Empty on Create.
     _rawFilter?: Record<string, any>
+    // Same idea for the rate limit, and load-bearing now that the control is
+    // hidden: the modelled pair drops a partial limit, and nothing on screen
+    // would show the operator what was lost. Empty on Create.
+    _rawRateLimit?: Record<string, any>
 }
 
 function freshRoute (): SubscriptionRoute {
@@ -431,26 +441,20 @@ const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
 const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
 
-/**
- * Only two event types carry a severity: NEW_VULN_AFFECTS_RELEASES and
- * VULNERABILITY_RECORD_UPDATED. Everything else -- release and approval events,
- * and VEX -- returns null from the backend's extractEventSeverity, and
- * severityGateMatches treats "gate set, severity null" as NO MATCH.
- *
- * So a minimum severity on a subscription with no vuln event type does not
- * merely have no effect: it silently gates out EVERY event, and the operator
- * sees a subscription that never fires with nothing on screen explaining why.
- * The control is therefore hidden when it cannot apply -- and the stored value
- * cleared, because hiding a set gate would leave exactly that trap in place
- * where nobody can see or reach it.
- */
-const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED']
+// Hide the minimum-severity control when no selected event type can carry a
+// severity. The predicate and the clearing live in notificationsCommon so the
+// spec suite can pin them -- there is no component test environment here, and
+// review found the first cut of this shipped its only behavioural rule inside
+// the .vue where nothing could reach it. See severityAppliesTo /
+// clearInapplicableSeverity for WHY a stale gate is a trap rather than a no-op.
+const severityApplies = computed<boolean>(() => severityAppliesTo(subForm.value.eventTypes))
 
-const severityApplies = computed<boolean>(() =>
-    (subForm.value.eventTypes || []).some(t => SEVERITY_BEARING_EVENT_TYPES.includes(t)))
-
-watch(severityApplies, (applies) => {
-    if (!applies && subForm.value.routes[0]) subForm.value.routes[0].whenSeverityAtLeast = null
+// Clears while the modal is OPEN, i.e. when the last vuln event type is
+// removed. The load and save paths clear too, and must: a watcher fires on
+// CHANGE, so opening a subscription that was ALREADY in the bad state never
+// runs this one.
+watch(severityApplies, () => {
+    clearInapplicableSeverity(subForm.value.routes, subForm.value.eventTypes)
 })
 
 // Event-type options for THIS form. The shared eventTypeOptions marks
@@ -684,8 +688,20 @@ function openEditSubscription (row: SubscriptionRow): void {
         if (rl) {
             f.rateLimitMaxPerWindow = rl.maxPerWindow ?? null
             f.rateLimitWindowMinutes = rl.windowMinutes ?? null
+            // Stash the blob for the same reason filter and routes stash theirs:
+            // the modelled pair cannot express a PARTIAL limit ({maxPerWindow}
+            // with no window, which the API accepts), and with the control gone
+            // there is no longer a field where an operator could even see the
+            // orphaned half before an unrelated save dropped it.
+            f._rawRateLimit = rl
         }
     } catch { /* skip */ }
+    // A gate that can never match is dropped HERE, not left to the watcher: the
+    // watcher is change-driven, and the common path -- open a subscription that
+    // was already release-only with a stored gate -- is not a change. Verified
+    // live before the fix: edit + save re-persisted whenSeverityAtLeast=HIGH on
+    // a RELEASE_CREATED subscription, with the control hidden.
+    clearInapplicableSeverity(f.routes, f.eventTypes)
     subForm.value = f
     subModalError.value = ''
     showSubscriptionModal.value = true
@@ -723,6 +739,11 @@ async function saveSubscription (): Promise<void> {
     // carries an unmodelled `presetConfig` object that must not leak into the
     // input (it 400s the mutation). See buildNotificationFilterInput.
     const filterInput = buildNotificationFilterInput(f._rawFilter, f.filterMode, f.celExpression)
+    // Belt and braces on the way out. openEditSubscription already clears an
+    // inapplicable gate, but this is the only choke point EVERY save passes
+    // through, and the failure it prevents is invisible: a gate that matches
+    // nothing, on a control that is no longer rendered.
+    clearInapplicableSeverity(f.routes, f.eventTypes)
     const input: any = {
         uuid: f.uuid || undefined,
         expectedRevision: f.expectedRevision,
@@ -741,6 +762,13 @@ async function saveSubscription (): Promise<void> {
             maxPerWindow: f.rateLimitMaxPerWindow,
             windowMinutes: f.rateLimitWindowMinutes,
         }
+    } else if (f._rawRateLimit) {
+        // A limit that the modelled pair cannot represent -- a partial one, or
+        // one carrying keys this form does not know about -- rides back
+        // verbatim. The upsert REPLACES rateLimit wholesale, so omitting it here
+        // is not "leave it alone", it is a silent delete on the next edit of any
+        // unrelated field. Same reasoning as _rawFilter and route._raw.
+        input.rateLimit = f._rawRateLimit
     }
     savingSubscription.value = true
     try {
@@ -918,43 +946,6 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
     }
 }
 
-/**
- * Why a test produced no delivery.
- *
- * The default answer names the filter and the severity gate, which is right for
- * every route target that resolves to a fixed channel. It is WRONG whenever a
- * route resolves through something else, because then the filter and the gate
- * can both be working perfectly:
- *
- * <ul>
- *   <li>OWNER-routed: an unowned affected component, or an owner team with no
- *       channel, yields nothing.</li>
- *   <li>TEAM-targeted: resolution drops a team that is archived, cross-org,
- *       unreadable, or has no channels. Observed live -- archiving a targeted
- *       team produced this message blaming the filter and the gate, both
- *       innocent.</li>
- * </ul>
- *
- * Sending the operator to audit the wrong thing is worse than saying nothing,
- * so each resolving target names its own likely causes FIRST.
- */
-function noDeliveryExplanation (row: SubscriptionRow): string {
-    const base = 'The synthetic event was injected but produced no delivery for this subscription.'
-    const causes: string[] = []
-    if (isOwnerRouted(row.routes)) {
-        causes.push('a route delivers to the component owner, so the affected component may have no'
-            + ' owner, or its owner team no notification channel')
-    }
-    if (isTeamRouted(row.routes)) {
-        causes.push('a route targets a team, which contributes nothing while it is archived or has'
-            + ' no notification channels')
-    }
-    if (causes.length) {
-        return `${base} Check these first: ${causes.join('; and ')}.`
-            + " Only then the subscription's filter or a route's minimum-severity gate."
-    }
-    return `${base} Its filter, or a route's minimum-severity gate, likely excluded it.`
-}
 
 function reportSubscriptionTestResult (
     row: SubscriptionRow,
@@ -989,7 +980,7 @@ function reportSubscriptionTestResult (
                 : timedOut
                     ? 'Gave up waiting after 60s -- the event had not finished fanning out.'
                         + ' Check Notification History for the eventual result.'
-                    : noDeliveryExplanation(row),
+                    : noDeliveryExplanation(row.routes),
         })
         return
     }
