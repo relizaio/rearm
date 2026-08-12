@@ -303,6 +303,7 @@ import {
     routeHasTarget,
     classifySubscriptionTest,
     isOwnerRouted,
+    isTeamRouted,
     ownerRoutedSuccessCaveat,
     routeCount,
     hasUneditableMultiRoute,
@@ -883,18 +884,36 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
  * Why a test produced no delivery.
  *
  * The default answer names the filter and the severity gate, which is right for
- * every route target that resolves to a fixed channel. It is WRONG for an
- * owner-routed route: that resolves through the affected component's owner, so
- * an unowned component, or an owner team with no channel, yields zero
- * deliveries with the filter and severity gate working perfectly. Sending the
- * operator to audit those instead is worse than saying nothing.
+ * every route target that resolves to a fixed channel. It is WRONG whenever a
+ * route resolves through something else, because then the filter and the gate
+ * can both be working perfectly:
+ *
+ * <ul>
+ *   <li>OWNER-routed: an unowned affected component, or an owner team with no
+ *       channel, yields nothing.</li>
+ *   <li>TEAM-targeted: resolution drops a team that is archived, cross-org,
+ *       unreadable, or has no channels. Observed live -- archiving a targeted
+ *       team produced this message blaming the filter and the gate, both
+ *       innocent.</li>
+ * </ul>
+ *
+ * Sending the operator to audit the wrong thing is worse than saying nothing,
+ * so each resolving target names its own likely causes FIRST.
  */
 function noDeliveryExplanation (row: SubscriptionRow): string {
     const base = 'The synthetic event was injected but produced no delivery for this subscription.'
+    const causes: string[] = []
     if (isOwnerRouted(row.routes)) {
-        return `${base} A route delivers to the component owner, so this is also what you see when the`
-            + ' affected component has no owner, or its owner team has no notification channel --'
-            + " check those before the subscription's filter or a route's minimum-severity gate."
+        causes.push('a route delivers to the component owner, so the affected component may have no'
+            + ' owner, or its owner team no notification channel')
+    }
+    if (isTeamRouted(row.routes)) {
+        causes.push('a route targets a team, which contributes nothing while it is archived or has'
+            + ' no notification channels')
+    }
+    if (causes.length) {
+        return `${base} Check these first: ${causes.join('; and ')}.`
+            + " Only then the subscription's filter or a route's minimum-severity gate."
     }
     return `${base} Its filter, or a route's minimum-severity gate, likely excluded it.`
 }

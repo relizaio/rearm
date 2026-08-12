@@ -401,14 +401,22 @@
                                             <label>Owner</label>
                                             <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
                                                 <div v-if="componentOwnership && componentOwnership.ownership">
+                                                    <!-- OWNED and NON_DURABLE differ only in DURABILITY -- whether the
+                                                         owner survives someone leaving. That is a governance signal, not
+                                                         something an operator setting an owner needs to act on, and
+                                                         showing it here reads as a complaint about a perfectly valid
+                                                         choice. Both render as "Owned". DEGRADED and ORPHANED still show
+                                                         through: those say the owner is archived or gone, which IS
+                                                         actionable. The backend still computes durability for the
+                                                         ownership report. -->
                                                     <n-tag :type="ownershipTagType(componentOwnership.ownership.status)" size="small">
-                                                        {{ componentOwnership.ownership.status }}
+                                                        {{ ownershipLabel }}
                                                     </n-tag>
                                                     <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
                                                     <!-- A suggestion's reason line is suppressed: offering a candidate
                                                          team directly above the owner picker invites reading it as a
                                                          decision already made. Every other status explains itself. -->
-                                                    <span v-if="componentOwnership.ownership.reason && !ownershipIsSuggestion"
+                                                    <span v-if="componentOwnership.ownership.reason && !ownershipIsSuggestion && !ownershipIsDurabilityOnly"
                                                         class="text-muted" style="display: block; margin-top: 4px;">
                                                         {{ componentOwnership.ownership.reason }}
                                                     </span>
@@ -436,7 +444,7 @@
                                                     </n-button>
                                                 </div>
                                                 <span class="text-muted" style="margin-top: 4px;">
-                                                    The durable owner accountable for this {{ words.component }}. A team is durable (survives members leaving); a single user is flagged non-durable.
+                                                    Who is accountable for this {{ words.component }}.
                                                 </span>
                                             </div>
                                         </div>
@@ -3393,7 +3401,8 @@ const savingOwner = ref<boolean>(false)
 
 const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default' =>
     s === 'OWNED' ? 'success'
-        : (s === 'NON_DURABLE' || s === 'DEGRADED') ? 'warning'
+        : s === 'NON_DURABLE' ? 'success'   // shown as "Owned": colour must not leak the distinction
+            : s === 'DEGRADED' ? 'warning'
             : s === 'UNSET' ? 'default'  // no owner yet -> neutral, not alarming
                 : 'error'                // ORPHANED (or unknown) -> needs attention
 
@@ -3404,6 +3413,20 @@ const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default
 // agree -- so the rule lives here once instead of as a string literal in each.
 const ownershipIsSuggestion = computed<boolean>(
     () => componentOwnership.value?.ownership?.status === 'UNSET')
+
+/**
+ * OWNED and NON_DURABLE both mean "this thing has an owner"; they differ only on
+ * whether that owner survives a departure. Rendered identically so the picker
+ * does not editorialise about a valid choice -- see the template comment.
+ */
+const ownershipIsDurabilityOnly = computed<boolean>(
+    () => componentOwnership.value?.ownership?.status === 'NON_DURABLE')
+
+const ownershipLabel = computed<string>(() => {
+    const st = componentOwnership.value?.ownership?.status
+    if (st === 'OWNED' || st === 'NON_DURABLE') return 'Owned'
+    return st || ''
+})
 
 const ownerLabel = computed<string | null>(() => {
     // Fall back to the RESOLVED ownership when there is no per-component stored
