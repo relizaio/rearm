@@ -409,6 +409,10 @@
                                                      it. The backend still computes every status for the ownership
                                                      report, which is where coverage belongs. -->
                                                 <div v-if="ownerLabel">{{ ownerLabel }}</div>
+                                                <!-- Staged like every other core setting: picking (or clearing —
+                                                     the X hands the component back to org team-assignment rules)
+                                                     only stages the change; the shared Save Changes / Reset
+                                                     Changes buttons commit or revert it with the rest. -->
                                                 <div v-if="isWritable" style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
                                                     <n-select
                                                         style="width: 110px;"
@@ -418,18 +422,10 @@
                                                     <n-select
                                                         style="flex: 1; min-width: 0;"
                                                         filterable
+                                                        clearable
                                                         v-model:value="ownerDraftRef"
                                                         :options="ownerDraftType === 'TEAM' ? userGroups : users"
                                                         :placeholder="ownerDraftType === 'TEAM' ? 'Pick a team' : 'Pick a user'" />
-                                                    <n-button type="primary" size="small" :loading="savingOwner" :disabled="!ownerDraftRef" @click="saveOwner">
-                                                        Set owner
-                                                    </n-button>
-                                                    <!-- Only meaningful when a stored owner exists: clearing hands the
-                                                         component back to org team-assignment rules. -->
-                                                    <n-button v-if="componentOwnership && componentOwnership.owner && componentOwnership.owner.ownerRef"
-                                                        size="small" :loading="savingOwner" @click="clearOwner">
-                                                        Clear owner
-                                                    </n-button>
                                                 </div>
                                                 <span class="text-muted" style="margin-top: 4px;">
                                                     Who is accountable for this {{ words.component }}.
@@ -1526,6 +1522,7 @@ const openComponentSettings = async function() {
 
 const hasComponentChanges = function() {
     return JSON.stringify(originalComponent.value) !== JSON.stringify(updatedComponent.value)
+        || stagedOwnerChange.value !== 'none'
 }
 
 const handleComponentSettingsClose = async function(show: boolean) {
@@ -1536,9 +1533,10 @@ const handleComponentSettingsClose = async function(show: boolean) {
             showComponentSettingsModal.value = true
             return
         }
-        
+
         // Revert changes
         updatedComponent.value = commonFunctions.deepCopy(originalComponent.value)
+        resetOwnerDraft()
         if (hasTriggerChanges.value) {
             resetTriggers()
         }
@@ -2276,6 +2274,14 @@ async function save () {
     if (componentData.value?.approvalPolicy && !updatedComponent.value.approvalPolicy) {
         payload.clearApprovalPolicy = true
     }
+    // Owner rides the same UpdateComponentInput. owner:null means "no
+    // change" server-side, so a staged clear is an explicit flag.
+    if (stagedOwnerChange.value === 'set') {
+        payload.owner = { ownerType: ownerDraftType.value, ownerRef: ownerDraftRef.value }
+    } else if (stagedOwnerChange.value === 'clear') {
+        payload.clearOwner = true
+    }
+    const ownerWasStaged = stagedOwnerChange.value !== 'none'
     try {
         updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
         // Update originalComponent to match current state so hasComponentChanges() returns false
@@ -2284,6 +2290,9 @@ async function save () {
         // reflects whatever the operator just saved (or cleared, in which
         // case the resolver may now fall through to an org rule).
         await fetchEffectiveApprovalPolicy()
+        // Re-read ownership so the label and the staging baseline reflect
+        // the just-saved (or just-cleared) owner.
+        if (ownerWasStaged) await loadOwnership()
         notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
     } catch (err: any) {
         // RelizaException surfaces as BAD_REQUEST with the actual
@@ -2416,7 +2425,8 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         (updatedComponent.value.sidPurlOverride || null) !== (componentData.value.sidPurlOverride || null) ||
         commonFunctions.stableStringify(updatedComponent.value.sidAuthoritySegments || []) !== commonFunctions.stableStringify(componentData.value.sidAuthoritySegments || []) ||
         ((updatedComponent.value.isInternal || 'INTERNAL') !== (componentData.value.isInternal || 'INTERNAL')) ||
-        commonFunctions.stableStringify(updatedComponent.value.contacts || []) !== commonFunctions.stableStringify(componentData.value.contacts || [])
+        commonFunctions.stableStringify(updatedComponent.value.contacts || []) !== commonFunctions.stableStringify(componentData.value.contacts || []) ||
+        stagedOwnerChange.value !== 'none'
 })
 
 function resetCoreSettings() {
@@ -2437,6 +2447,7 @@ function resetCoreSettings() {
     updatedComponent.value.sidAuthoritySegments = commonFunctions.deepCopy(componentData.value.sidAuthoritySegments) || []
     updatedComponent.value.isInternal = componentData.value.isInternal
     updatedComponent.value.contacts = commonFunctions.deepCopy(componentData.value.contacts) || []
+    resetOwnerDraft()
     
     // Reset marketing version enabled state
     marketingVersionEnabled.value = componentData.value.versionType === 'MARKETING'
@@ -3412,11 +3423,6 @@ const COMPONENT_OWNERSHIP_QUERY = gql`
 // accountable, a group is who has access, and they are separate entities now.
 const GET_TEAMS_QUERY = gql`
     query getTeamsForOwner($org: ID!) { getTeams(org: $org) { uuid name status } }`
-const SET_COMPONENT_OWNER_MUTATION = gql`
-    mutation setComponentOwner($component: UpdateComponentInput!) {
-        updateComponent(component: $component) { uuid }
-    }`
-
 const componentOwnership = ref<any>(null)
 const ownershipSupported = ref<boolean>(true)
 // Every team the org has, INCLUDING archived ones. The picker's options are
@@ -3425,7 +3431,38 @@ const ownershipSupported = ref<boolean>(true)
 const orgTeams = ref<any[]>([])
 const ownerDraftType = ref<'TEAM' | 'USER'>('TEAM')
 const ownerDraftRef = ref<string | null>(null)
-const savingOwner = ref<boolean>(false)
+// What the draft picker was SEEDED with — the comparison anchor for staging.
+// Deliberately the seeded value rather than the raw stored owner: a stored
+// ref that doesn't resolve to a picker option seeds null, and comparing the
+// draft against the stored ref would then stage a clear the operator never
+// asked for.
+const ownerBaseline = ref<{ ownerType: 'TEAM' | 'USER', ownerRef: string } | null>(null)
+
+/**
+ * Owner edit staged in the picker, pending the shared Save Changes button:
+ * 'set' when a (different) owner is picked, 'clear' when a seeded picker was
+ * emptied while a stored owner exists (clearing hands the component back to
+ * org team-assignment rules), 'none' otherwise.
+ */
+const stagedOwnerChange = computed<'none' | 'set' | 'clear'>(() => {
+    if (!ownershipSupported.value) return 'none'
+    const base = ownerBaseline.value
+    if (ownerDraftRef.value) {
+        return (base && base.ownerType === ownerDraftType.value && base.ownerRef === ownerDraftRef.value)
+            ? 'none' : 'set'
+    }
+    // Empty picker stages a clear only when the TYPE still matches the
+    // baseline: switching Team/User to browse auto-empties the ref, and
+    // that browsing gesture must not stage anything.
+    return (base && base.ownerType === ownerDraftType.value && componentOwnership.value?.owner?.ownerRef)
+        ? 'clear' : 'none'
+})
+
+function resetOwnerDraft() {
+    const base = ownerBaseline.value
+    ownerDraftType.value = base?.ownerType || 'TEAM'
+    ownerDraftRef.value = base?.ownerRef || null
+}
 
 // UNSET is the one ownership status that is a SUGGESTION rather than a fact:
 // the backend fills ownerRef with a candidate team it picked and puts its pitch
@@ -3507,7 +3544,12 @@ async function loadOwnership() {
             ownerDraftType.value = o.ownerType
             const opts = o.ownerType === 'TEAM' ? userGroups.value : users.value
             ownerDraftRef.value = opts.some((x: any) => x.value === o.ownerRef) ? o.ownerRef : null
+        } else {
+            ownerDraftRef.value = null
         }
+        ownerBaseline.value = ownerDraftRef.value
+            ? { ownerType: ownerDraftType.value, ownerRef: ownerDraftRef.value }
+            : null
     } catch {
         // Backend without the ownership fields (older / CE mirror) -> hide the section.
         ownershipSupported.value = false
@@ -3530,49 +3572,8 @@ async function loadUserGroups() {
     }
 }
 
-/**
- * Removes the stored owner so org team-assignment rules apply again. Sent as an
- * explicit clearOwner flag because owner:null already means "no change" on the
- * update input -- there is no way to express "remove it" with owner alone.
- */
-async function clearOwner() {
-    const uuid = componentData.value?.uuid
-    if (!uuid) return
-    savingOwner.value = true
-    try {
-        await graphqlClient.mutate({
-            mutation: SET_COMPONENT_OWNER_MUTATION,
-            variables: { component: { uuid, name: componentData.value.name, clearOwner: true } }
-        })
-        notify('success', 'Owner cleared', 'Team assignment rules now apply to this ' + words.value.component + '.')
-        await loadOwnership()
-    } catch (error: any) {
-        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
-    } finally {
-        savingOwner.value = false
-    }
-}
-
-async function saveOwner() {
-    if (!ownerDraftRef.value || !componentData.value?.uuid) return
-    savingOwner.value = true
-    try {
-        await graphqlClient.mutate({
-            mutation: SET_COMPONENT_OWNER_MUTATION,
-            variables: { component: {
-                uuid: componentData.value.uuid,
-                name: componentData.value.name,
-                owner: { ownerType: ownerDraftType.value, ownerRef: ownerDraftRef.value },
-            } },
-        })
-        notify('success', 'Owner updated', 'Component owner set.')
-        await loadOwnership()
-    } catch (err: any) {
-        notify('error', 'Failed to set owner', commonFunctions.parseGraphQLError(err.toString()))
-    } finally {
-        savingOwner.value = false
-    }
-}
+// Owner set/clear rides the shared save() with the rest of the core
+// settings (same UpdateComponentInput) — see stagedOwnerChange.
 
 async function initLoad() {
     const compUuid = route.params.compuuid.toString()

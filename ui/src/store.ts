@@ -989,7 +989,13 @@ const storeObject : any = {
                 // value intact rather than silently clearing it.
                 contacts: Array.isArray(component.contacts)
                     ? component.contacts.map(({ name, contact }: any) => ({ name, contact }))
-                    : undefined
+                    : undefined,
+                // Owner set/clear staged in component settings. null owner is
+                // "leave unchanged" server-side; removal is the explicit flag.
+                owner: component.owner
+                    ? { ownerType: component.owner.ownerType, ownerRef: component.owner.ownerRef }
+                    : null,
+                clearOwner: component.clearOwner || false
             }
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.ComponentMutate,
