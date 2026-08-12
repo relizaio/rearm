@@ -121,10 +121,10 @@
                                     Notify this team about the components it owns
                                 </n-checkbox>
                             </n-form-item>
-                            <div class="muted-12">
+                            <n-text depth="3" style="font-size: 12px;">
                                 Delivers to this team's own notification channels, for events about
                                 components this team owns -- directly or through an assignment rule.
-                            </div>
+                            </n-text>
 
                             <template v-if="teamForm.notifyOnOwnedComponents">
                                 <n-form-item label="Event types">
@@ -132,15 +132,16 @@
                                         v-model:value="includedEventTypes"
                                         :options="ownedEventTypeOptions"
                                         multiple
-                                        placeholder="All event types"
+                                        filterable
+                                        placeholder="Select at least one event type"
                                         data-testid="team-notify-events"
                                     />
                                 </n-form-item>
-                                <div class="muted-12">
+                                <n-text depth="3" style="font-size: 12px;">
                                     Everything is selected by default. Deselect what this team does
                                     not want; a new kind of event arrives selected, so the team keeps
                                     hearing about whatever happens to what it owns.
-                                </div>
+                                </n-text>
                                 <!-- Both warnings are conditional and INLINE rather than in a
                                      tooltip: each one says the setting achieves something other
                                      than what it looks like right now, which is not an explanation
@@ -179,7 +180,7 @@
                             <n-button
                                 type="primary"
                                 :loading="savingTeam"
-                                :disabled="!teamForm.name.trim()"
+                                :disabled="!teamForm.name.trim() || noEventTypesSelected"
                                 data-testid="save-team"
                                 @click="saveTeam"
                             >
@@ -197,7 +198,7 @@
 <script lang="ts" setup>
 import { ref, computed, h, onMounted, watch } from 'vue'
 import {
-    NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
+    NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput, NCheckbox,
     NSelect, NSpace, NAlert, NTag, NText, useDialog, useMessage
 } from 'naive-ui'
 import { CirclePlus, Edit as EditIcon, Archive, ArrowBackUp } from '@vicons/tabler'
@@ -209,6 +210,7 @@ import {
     ownedComponentEventTypes,
     selectedFromExcluded,
     excludedFromSelected,
+    buildOwnedComponentNotificationsInput,
 } from '@/utils/teamNotificationEventTypes'
 import gql from 'graphql-tag'
 import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
@@ -298,7 +300,7 @@ const UPDATE_TEAM_MUTATION = gql`
 const LIST_OWNER_ROUTED_SUBSCRIPTIONS_QUERY = gql`
     query notificationSubscriptions($orgUuid: ID!) {
         notificationSubscriptions(orgUuid: $orgUuid) {
-            uuid name status routes
+            uuid name status routes eventTypes
         }
     }`
 const LIST_GROUPS_WITH_ROSTER_QUERY = gql`
@@ -354,9 +356,20 @@ const includedEventTypes = computed<string[]>({
  * accident.
  */
 const ownerRoutedOverlap = computed<string | null>(() => {
-    const hit = ownerRoutedSubscriptions.value[0]
-    return hit ? hit.name : null
+    if (!teamForm.value.notifyOnOwnedComponents) return null
+    const mine = new Set(includedEventTypes.value)
+    // Only an overlap that can actually double-deliver. A subscription on
+    // vulnerabilities alone cannot duplicate a team that has deselected them,
+    // and a warning that fires when it cannot be true is the fastest way to
+    // teach an operator to ignore the ones that can.
+    const hit = ownerRoutedSubscriptions.value.find((sub: any) =>
+        (sub.eventTypes || []).some((t: string) => mine.has(t)))
+    return hit ? (hit.name || hit.uuid) : null
 })
+
+/** Enabled with nothing ticked is a save the backend refuses. */
+const noEventTypesSelected = computed<boolean>(() =>
+    teamForm.value.notifyOnOwnedComponents && includedEventTypes.value.length === 0)
 
 const userOptions = computed(() => users.value.map((u: any) => ({
     label: u.name ? `${u.name} (${u.email})` : u.email, value: u.uuid,
@@ -460,6 +473,7 @@ async function loadPickers (): Promise<void> {
         })
         ownerRoutedSubscriptions.value = (res.data?.notificationSubscriptions || [])
             .filter((sub: any) => sub && sub.status === 'ACTIVE' && isOwnerRouted(sub.routes))
+            .map((sub: any) => ({ uuid: sub.uuid, name: sub.name, eventTypes: sub.eventTypes || [] }))
     } catch {
         // Silent: this feeds a WARNING, so failing to load it must not raise an
         // error of its own. Losing the warning is a smaller harm than a red
@@ -516,10 +530,10 @@ async function saveTeam (): Promise<void> {
                         // "leave alone", so an editor that DID load it must send
                         // it -- otherwise unticking the box would silently do
                         // nothing.
-                        ownedComponentNotifications: {
-                            enabled: f.notifyOnOwnedComponents,
-                            excludedEventTypes: f.excludedEventTypes,
-                        },
+                        ownedComponentNotifications: buildOwnedComponentNotificationsInput(
+                            f.notifyOnOwnedComponents,
+                            ownedEventTypeOptions.value.map(o => o.value),
+                            includedEventTypes.value),
                     },
                 },
             })

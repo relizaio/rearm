@@ -56,3 +56,28 @@ export function excludedFromSelected (available: string[], selected: string[] | 
     const kept = new Set(selected || [])
     return (available || []).filter(v => !kept.has(v))
 }
+
+/**
+ * The `ownedComponentNotifications` half of an UpdateTeamInput.
+ *
+ * Extracted for the reason `userGroupUpdateInput.ts` states about its own
+ * payload: GraphQL input coercion rejects unknown keys OUTRIGHT and fails the
+ * whole mutation, and `scripts/validate-graphql.mjs` validates the document,
+ * never the variables. A payload built inline in an SFC is therefore the one
+ * part of a mutation nothing in CI can check -- so it lives here, where
+ * teamNotificationEventTypes.spec.ts coerces it against the real schema.
+ *
+ * @param enabled  whether the team wants notifications for what it owns
+ * @param available every event type the picker offered
+ * @param selected  what the operator left ticked
+ */
+export function buildOwnedComponentNotificationsInput (
+    enabled: boolean,
+    available: string[],
+    selected: string[] | null | undefined,
+): { enabled: boolean, excludedEventTypes: string[] } {
+    return {
+        enabled: !!enabled,
+        excludedEventTypes: excludedFromSelected(available, selected),
+    }
+}
