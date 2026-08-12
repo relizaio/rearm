@@ -56,7 +56,6 @@
                                 <n-form-item label="Status">
                                     <n-select v-model:value="subForm.status" :options="subscriptionStatusOptions" />
                                 </n-form-item>
-                                <div class="field-hint">"Preview" is reserved and not available yet, so it isn't selectable -- a preview subscription would never deliver anything, exactly like Disabled. (An existing Preview subscription can still be switched to Active or Disabled.)</div>
                             </n-gi>
                         </n-grid>
 
@@ -100,7 +99,7 @@
                              filters here and written back onto the single
                              route on save. -->
                         <n-grid :cols="2" :x-gap="12">
-                            <n-gi>
+                            <n-gi v-if="severityApplies">
                                 <n-form-item label="Minimum severity">
                                     <n-select
                                         v-model:value="subForm.routes[0].whenSeverityAtLeast"
@@ -165,7 +164,22 @@
                                      than no picker. teamOptions still keeps ghosts for teams
                                      already saved on the route, so those stay removable. -->
                                 <template v-if="teamOptions.length">
-                                    <n-form-item label="Teams (optional)" :show-feedback="false">
+                                    <n-form-item :show-feedback="false">
+                                        <template #label>
+                                            <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                                Teams (optional)
+                                                <n-tooltip trigger="hover">
+                                                    <template #trigger>
+                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                    </template>
+                                                    <span style="max-width: 320px; display: inline-block;">
+                                                        Delivers to each team's own notification channels, resolved
+                                                        when the event fires -- so if a team changes its channel,
+                                                        this follows automatically.
+                                                    </span>
+                                                </n-tooltip>
+                                            </span>
+                                        </template>
                                         <n-select
                                             v-model:value="subForm.routes[0].teams"
                                             :options="teamOptions"
@@ -175,11 +189,6 @@
                                             data-testid="route-teams"
                                         />
                                     </n-form-item>
-                                    <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
-                                        Delivers to each team's own notification channels, resolved when the
-                                        event fires — so if a team changes its channel, this follows
-                                        automatically.
-                                    </div>
                                 </template>
                                 <!-- T4a. Pro-only: notifyComponentOwner does not exist in the CE
                                      schema, and GraphQL input coercion rejects unknown keys
@@ -190,7 +199,24 @@
                                      is empty on a Pro org with no teams yet, and non-empty on CE
                                      whenever ghosts survive for a route's saved teams. -->
                                 <template v-if="isPro">
-                                    <n-form-item label="Component owner" :show-feedback="false">
+                                    <n-form-item :show-feedback="false">
+                                        <template #label>
+                                            <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                                Notify Component Owner
+                                                <n-tooltip trigger="hover">
+                                                    <template #trigger>
+                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                    </template>
+                                                    <span style="max-width: 340px; display: inline-block;">
+                                                        Resolved when the event fires, from the component's owner --
+                                                        set directly or by an assignment rule. Unlike picking a team
+                                                        above, this follows ownership changes on its own, so
+                                                        reassigning a component never means editing this
+                                                        subscription.
+                                                    </span>
+                                                </n-tooltip>
+                                            </span>
+                                        </template>
                                         <n-checkbox
                                             v-model:checked="subForm.routes[0].notifyComponentOwner"
                                             data-testid="route-notify-owner"
@@ -198,15 +224,15 @@
                                             Also notify the team that owns the affected component
                                         </n-checkbox>
                                     </n-form-item>
-                                    <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
-                                        Resolved when the event fires, from the component's owner — set
-                                        directly or by an assignment rule. Unlike picking a team above,
-                                        this follows ownership changes on its own, so reassigning a
-                                        component never means editing this subscription.
-                                        <template v-if="!teamOptions.length">
-                                            This org has no teams yet, and only a team can own a
-                                            component, so this delivers nothing until one exists.
-                                        </template>
+                                    <!-- The description moved to the label's tooltip. This warning
+                                         stays INLINE and unconditional-looking on purpose: it is not
+                                         an explanation of the feature, it is a statement that ticking
+                                         the box right now achieves nothing, and a caveat hidden
+                                         behind a hover is a caveat nobody reads. -->
+                                    <div v-if="!teamOptions.length" class="muted-12"
+                                        style="margin-top: -6px; margin-bottom: 6px;">
+                                        This org has no teams yet, and only a team can own a
+                                        component, so this delivers nothing until one exists.
                                     </div>
                                 </template>
                             </div>
@@ -225,29 +251,19 @@
                                 </n-form-item>
                                 <div class="field-hint">Suppresses repeat deliveries of the same event within the window. Leave empty for the 24h default; set 0 to deliver every matching event.</div>
                             </n-gi>
-                            <n-gi>
-                                <n-space>
-                                    <n-form-item label="Rate limit max">
-                                        <n-input-number
-                                            v-model:value="subForm.rateLimitMaxPerWindow"
-                                            :min="1"
-                                            clearable
-                                            placeholder="None"
-                                            style="width: 100px;"
-                                        />
-                                    </n-form-item>
-                                    <n-form-item label="per (min)">
-                                        <n-input-number
-                                            v-model:value="subForm.rateLimitWindowMinutes"
-                                            :min="1"
-                                            clearable
-                                            placeholder="None"
-                                            style="width: 100px;"
-                                        />
-                                    </n-form-item>
-                                </n-space>
-                                <div class="field-hint">Stored but not enforced yet -- rate limiting is planned; leave empty for now.</div>
-                            </n-gi>
+                            <!-- The rate-limit control is deliberately absent. `rateLimit` is
+                                 parsed, stored and echoed back by the API, but NOTHING reads it:
+                                 neither the fan-out nor the delivery worker consults it, so a
+                                 rate limit set here has never suppressed anything. A field that
+                                 does nothing is a trap even with a hint saying so, which is the
+                                 same reason PREVIEW came out of the status list.
+
+                                 The PLUMBING stays on purpose -- the form still loads the stored
+                                 value in openEditSubscription and still sends it back on save --
+                                 so an existing subscription's rate limit round-trips untouched
+                                 rather than being silently cleared by an unrelated edit. When
+                                 enforcement lands, the control comes back and no data was lost
+                                 in the meantime. -->
                         </n-grid>
 
                         <n-alert v-if="subModalError" type="error" :show-icon="false">
@@ -279,14 +295,14 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, h, onMounted, onUnmounted, Ref } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted, watch, Ref } from 'vue'
 import { useStore } from 'vuex'
 import {
     NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
     NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag, NDropdown, NTooltip,
     NRadioGroup, NRadioButton, NCheckbox, useDialog, useMessage
 } from 'naive-ui'
-import { CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
+import { InfoCircle, CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
 import { useRouter } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
@@ -414,6 +430,28 @@ const showSubscriptionModal = ref<boolean>(false)
 const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
 const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
+
+/**
+ * Only two event types carry a severity: NEW_VULN_AFFECTS_RELEASES and
+ * VULNERABILITY_RECORD_UPDATED. Everything else -- release and approval events,
+ * and VEX -- returns null from the backend's extractEventSeverity, and
+ * severityGateMatches treats "gate set, severity null" as NO MATCH.
+ *
+ * So a minimum severity on a subscription with no vuln event type does not
+ * merely have no effect: it silently gates out EVERY event, and the operator
+ * sees a subscription that never fires with nothing on screen explaining why.
+ * The control is therefore hidden when it cannot apply -- and the stored value
+ * cleared, because hiding a set gate would leave exactly that trap in place
+ * where nobody can see or reach it.
+ */
+const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED']
+
+const severityApplies = computed<boolean>(() =>
+    (subForm.value.eventTypes || []).some(t => SEVERITY_BEARING_EVENT_TYPES.includes(t)))
+
+watch(severityApplies, (applies) => {
+    if (!applies && subForm.value.routes[0]) subForm.value.routes[0].whenSeverityAtLeast = null
+})
 
 // Event-type options for THIS form. The shared eventTypeOptions marks
 // VEX_STATE_CHANGED disabled (no backend producer yet), which also makes

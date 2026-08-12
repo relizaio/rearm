@@ -1500,8 +1500,12 @@ const openComponentSettings = async function() {
     await fetchEffectiveApprovalPolicy()
     // Durable ownership (Phase 4 UI): load the owner picker's team list + the
     // computed ownership status when the settings panel opens.
-    loadUserGroups()
-    loadOwnership()
+    //
+    // AWAIT the team list FIRST. loadOwnership pre-selects the stored owner only
+    // if it resolves to an option, so racing these would leave a perfectly valid
+    // owner unselected whenever the ownership query happened to win.
+    await loadUserGroups()
+    await loadOwnership()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     showComponentSettingsModal.value = true
     
@@ -3428,8 +3432,19 @@ async function loadOwnership() {
         })
         componentOwnership.value = res.data?.component || null
         ownershipSupported.value = true
+        // Pre-select the stored owner in the picker -- but ONLY if it resolves to
+        // an option. An archived or deleted owner does not, and naive-ui then
+        // renders the raw uuid as the selected value: with the status chip gone
+        // that uuid is the only thing on the block, sitting in an editable
+        // control where it reads as a valid choice rather than a dangling
+        // reference. Leaving the picker empty says the same thing honestly, and
+        // Clear owner is still offered because a stored ref does exist.
         const o = componentOwnership.value?.owner
-        if (o && o.ownerType && o.ownerRef) { ownerDraftType.value = o.ownerType; ownerDraftRef.value = o.ownerRef }
+        if (o && o.ownerType && o.ownerRef) {
+            ownerDraftType.value = o.ownerType
+            const opts = o.ownerType === 'TEAM' ? userGroups.value : users.value
+            ownerDraftRef.value = opts.some((x: any) => x.value === o.ownerRef) ? o.ownerRef : null
+        }
     } catch {
         // Backend without the ownership fields (older / CE mirror) -> hide the section.
         ownershipSupported.value = false

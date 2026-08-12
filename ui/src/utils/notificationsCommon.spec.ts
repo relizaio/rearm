@@ -69,12 +69,16 @@ describe('unselectable options without a backend implementation', () => {
     const option = (opts: Array<{ value: string, disabled?: boolean }>, value: string) =>
         opts.find(o => o.value === value)
 
-    it('keeps PREVIEW unselectable while fan-out matches ACTIVE only', () => {
+    it('does not offer PREVIEW at all while fan-out matches ACTIVE only', () => {
         // NotificationSubscriptionRepository.findActiveByOrgString filters on
         // status='ACTIVE', so a PREVIEW subscription never reaches fan-out and
         // behaves exactly like DISABLED. Reproduced on the sandbox: ACTIVE -> 1
         // delivery row, PREVIEW -> 0, DISABLED -> 0.
-        expect(option(subscriptionStatusOptions, 'PREVIEW')?.disabled).toBe(true)
+        //
+        // Stronger than the previous assertion, which only required it to be
+        // present-and-disabled: a greyed row plus a paragraph explaining why it
+        // is useless is still shelf space spent on a non-feature. Absent.
+        expect(option(subscriptionStatusOptions, 'PREVIEW')).toBeUndefined()
     })
 
     it('leaves the implemented subscription statuses selectable', () => {

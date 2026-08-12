@@ -130,22 +130,16 @@ export const webhookAuthOptions = [
     { label: 'HMAC-SHA256', value: 'HMAC_SHA256' },
 ]
 
-// PREVIEW has no fan-out implementation, so it behaves exactly like DISABLED:
-// NotificationSubscriptionRepository.findActiveByOrgString matches
-// status='ACTIVE' only, so a PREVIEW subscription never reaches fan-out, no
-// delivery row is ever written, and NotificationDeliveryStatus.PREVIEW has no
-// writer at all. Offering it is a silent trap: a user sets PREVIEW, sees
-// nothing arrive, and concludes their filter matches nothing -- when fan-out
-// never consulted the subscription in the first place. Keep it unselectable
-// until fan-out honours it (same treatment as VEX_STATE_CHANGED below). The
-// enum values are deliberately kept on both sides.
-// Status is a single select, so unlike the multiple-select VEX case this needs
-// no unselect-guard computed: a legacy PREVIEW value still renders and can be
-// changed away, it just can't be re-selected.
+// PREVIEW is deliberately ABSENT rather than present-but-disabled. It has no
+// fan-out implementation -- findActiveByOrgString matches status='ACTIVE' only,
+// so a PREVIEW subscription never reaches fan-out and no delivery row is ever
+// written. Showing a greyed row plus an explanation of why it is useless is
+// still shelf space spent on a non-feature; a legacy PREVIEW value still
+// renders on an existing subscription and can be switched to ACTIVE or
+// DISABLED, which is the only path that matters.
 export const subscriptionStatusOptions = [
     { label: 'Active (deliveries go out)', value: 'ACTIVE' },
     { label: 'Disabled (no dispatch)', value: 'DISABLED' },
-    { label: 'Preview (not yet available)', value: 'PREVIEW', disabled: true },
 ]
 
 // VEX_STATE_CHANGED has no event producer in the backend yet, so a
