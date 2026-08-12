@@ -227,19 +227,6 @@ const BATCH_MODE_HELP = {
     exampleJson: '[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
 }
 
-// Team member roles (backend TeamRole enum). A role is an addressing LABEL --
-// it never grants access. CUSTOM carries an operator-supplied label alongside.
-const TEAM_ROLE_CUSTOM = 'CUSTOM'
-const TEAM_ROLES = [
-    { label: 'Team Lead', value: 'TEAM_LEAD' },
-    { label: 'Security Specialist', value: 'SECURITY_SPECIALIST' },
-    { label: 'Developer', value: 'DEVELOPER' },
-    { label: 'QA', value: 'QA' },
-    { label: 'Project Manager', value: 'PROJECT_MANAGER' },
-    { label: 'Product Manager', value: 'PRODUCT_MANAGER' },
-    { label: 'Custom...', value: TEAM_ROLE_CUSTOM }
-]
-
 export default {
     VersionTypes: VERSION_TYPES,
     BranchVersionTypes: BRANCH_VERSION_TYPES,
@@ -275,7 +262,5 @@ export default {
     PermissionTypes: PERMISSION_TYPES,
     PermissionTypesWithAdmin: PERMISSION_TYPES_WITH_ADMIN,
     PermissionFunctions: PERMISSION_FUNCTIONS,
-    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS,
-    TeamRoles: TEAM_ROLES,
-    TeamRoleCustom: TEAM_ROLE_CUSTOM
+    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS
 }
