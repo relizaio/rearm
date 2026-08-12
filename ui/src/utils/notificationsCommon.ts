@@ -48,6 +48,17 @@ export interface SubscriptionRow {
     routes: string | null         // JSON-stringified server-side
     dedupWindowMinutes: number | null
     rateLimit: string | null      // JSON-stringified server-side
+    /**
+     * Set when a TEAM's own notification setting owns this row rather than an
+     * operator. Such a subscription cannot be edited, disabled or deleted here
+     * -- the backend refuses all three -- so the list badges it and withholds
+     * those controls.
+     *
+     * Optional because it is Pro-ahead: a CE backend has no teams, the field is
+     * absent, and every row reads as operator-owned. That is correct there, not
+     * degraded.
+     */
+    managedByTeam?: string | null
     // See ChannelRow.revision — same optimistic-locking gate.
     revision: number
 }
@@ -391,7 +402,12 @@ export const LIST_GROUPS_QUERY = buildGroupsQuery(`${GROUP_CORE_FIELDS} ${GROUP_
 export const LIST_GROUPS_CORE_QUERY = buildGroupsQuery(GROUP_CORE_FIELDS)
 
 const SUBSCRIPTION_CORE_FIELDS = 'uuid org resourceGroup name status eventTypes revision'
-const SUBSCRIPTION_ENRICHMENT_FIELDS = 'filter routes dedupWindowMinutes rateLimit'
+// managedByTeam belongs in ENRICHMENT, not CORE: it is Pro-ahead of the CE
+// mirror, and a field CORE selects that the server lacks re-blanks the whole
+// surface the drift fallback exists to protect. Its absence degrades to
+// "no row is team-managed", which is exactly right on a backend that has no
+// teams to manage them.
+const SUBSCRIPTION_ENRICHMENT_FIELDS = 'filter routes dedupWindowMinutes rateLimit managedByTeam'
 function buildSubscriptionsQuery (fields: string) {
     return gql`
         query notificationSubscriptions($orgUuid: ID!) {

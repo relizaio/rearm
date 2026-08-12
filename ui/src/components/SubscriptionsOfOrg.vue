@@ -486,6 +486,32 @@ const channelOptions = computed(() => {
 
 const teams = ref<any[]>([])
 
+/**
+ * The name of the team that owns a managed row.
+ *
+ * Falls back to the uuid rather than to nothing: this string is the operator's
+ * only route to the control that actually changes the subscription, so a team
+ * that failed to load must still leave them something to search for.
+ */
+/**
+ * Why every control on this row is withheld, or null when it is an ordinary
+ * subscription.
+ *
+ * One string for all three buttons: the operator does not care which control
+ * they reached for, they care where the switch actually is.
+ */
+function managedRowExplanation (row: SubscriptionRow): string | null {
+    if (!row.managedByTeam) return null
+    return `${managedTeamName(row)} owns this subscription -- it exists because that team asked to`
+        + ' hear about the components it owns. Change it on the team: Organization Settings ->'
+        + ' Teams.'
+}
+
+function managedTeamName (row: SubscriptionRow): string {
+    const team = teams.value.find((t: any) => t.uuid === row.managedByTeam)
+    return team?.name || String(row.managedByTeam)
+}
+
 // T4a: owner routing is a Pro-only route field. The control, the client-side
 // "route has a target" check and the error copy all gate on this one flag, so
 // a CE operator can neither author an owner-only route nor be told to.
@@ -1019,7 +1045,21 @@ function reportSubscriptionTestResult (
 
 
 const subscriptionColumns = computed(() => [
-    { title: 'Name', key: 'name' },
+    {
+        title: 'Name', key: 'name',
+        render: (row: SubscriptionRow) => {
+            if (!row.managedByTeam) return row.name
+            // Badged rather than hidden. A row that delivers but does not appear
+            // here is the failure this whole subsystem keeps producing; the
+            // honest version is visible, labelled, and pointing at the only
+            // place it can be changed.
+            return h('div', null, [
+                h('div', null, row.name),
+                h(NTag, { size: 'small', type: 'info', style: 'margin-top: 4px;' },
+                    { default: () => `Managed by ${managedTeamName(row)}` }),
+            ])
+        },
+    },
     {
         title: 'Status', key: 'status',
         render: (row: SubscriptionRow) => h(
@@ -1089,22 +1129,48 @@ const subscriptionColumns = computed(() => [
                                 size: 'tiny', secondary: true,
                                 onClick: () => openEditSubscription(row),
                                 disabled: !canWrite.value || subscriptionsDegraded.value
-                                    || hasUneditableMultiRoute(row.routes),
+                                    || hasUneditableMultiRoute(row.routes)
+                                    // The backend refuses an edit to a
+                                    // team-managed row. Leaving the control
+                                    // enabled would hand the operator an error
+                                    // where a pointer belongs.
+                                    || !!row.managedByTeam,
                                 'data-testid': 'edit-subscription',
                             }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
                         ]),
-                        default: () => hasUneditableMultiRoute(row.routes)
-                            ? `This subscription has ${routeCount(row.routes)} routes and this editor`
+                        default: () => managedRowExplanation(row)
+                            || (hasUneditableMultiRoute(row.routes)
+                                ? `This subscription has ${routeCount(row.routes)} routes and this editor`
                                 + ' shows one. Editing here would leave the others in place but hidden,'
                                 + ' so they are better changed through the API -- or collapse the'
                                 + ' subscription to a single route.'
-                            : 'Edit subscription',
+                                : 'Edit subscription'),
                     }),
-                    h(NButton, {
-                        size: 'tiny', secondary: true,
-                        onClick: () => toggleSubscriptionStatus(row),
-                        disabled: !canWrite.value,
-                    }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
+                    h(NTooltip, { trigger: 'hover' }, {
+                        // Span, not the button: a disabled <button> receives no
+                        // mouse events, so a tooltip bound to it never opens --
+                        // in exactly the case it exists to explain.
+                        trigger: () => h('span', { style: 'display: inline-flex;' }, [
+                            h(NButton, {
+                                size: 'tiny', secondary: true,
+                                onClick: () => toggleSubscriptionStatus(row),
+                                // A status flip is an edit, and the backend
+                                // refuses one on a managed row -- the team's
+                                // toggle is the switch. Also withheld on a
+                                // degraded load, where managedByTeam is absent
+                                // from the CORE query and every row would look
+                                // operator-owned.
+                                disabled: !canWrite.value || subscriptionsDegraded.value
+                                    || !!row.managedByTeam,
+                                'data-testid': 'toggle-subscription',
+                            }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
+                        ]),
+                        default: () => managedRowExplanation(row)
+                            || (subscriptionsDegraded.value
+                                ? 'Some fields could not be loaded from this server, so changes are'
+                                    + ' withheld until the full record is available.'
+                                : (row.status === 'ACTIVE' ? 'Stop delivering' : 'Start delivering')),
+                    }),
                     h(NTooltip, { trigger: 'hover' }, {
                         trigger: () => testButton,
                         default: () => disabledReason || "Send a synthetic test event through this subscription's matching path (also exercises other subscriptions on the same event type -- asks for confirmation first).",
@@ -1117,11 +1183,21 @@ const subscriptionColumns = computed(() => [
                         }, { icon: () => h(NIcon, null, { default: () => h(History) }) }),
                         default: () => 'View delivery history for this subscription',
                     }),
-                    h(NButton, {
-                        size: 'tiny', secondary: true, type: 'error',
-                        onClick: () => confirmDeleteSubscription(row),
-                        disabled: !canWrite.value,
-                    }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
+                    h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => h('span', { style: 'display: inline-flex;' }, [
+                            h(NButton, {
+                                size: 'tiny', secondary: true, type: 'error',
+                                onClick: () => confirmDeleteSubscription(row),
+                                // Deleting would leave the team's toggle claiming
+                                // a subscription that no longer exists; the
+                                // backend refuses, so the button does too.
+                                disabled: !canWrite.value || subscriptionsDegraded.value
+                                    || !!row.managedByTeam,
+                                'data-testid': 'delete-subscription',
+                            }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
+                        ]),
+                        default: () => managedRowExplanation(row) || 'Delete subscription',
+                    }),
                 ],
             })
         },

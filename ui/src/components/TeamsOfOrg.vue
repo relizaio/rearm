@@ -112,6 +112,61 @@
                                 team. Only people on the roster — directly or through a selected user
                                 group — can be picked.
                             </n-text>
+
+                            <n-form-item :show-feedback="false">
+                                <n-checkbox
+                                    v-model:checked="teamForm.notifyOnOwnedComponents"
+                                    data-testid="team-notify-owned"
+                                >
+                                    Notify this team about the components it owns
+                                </n-checkbox>
+                            </n-form-item>
+                            <n-text depth="3" style="font-size: 12px;">
+                                Delivers to this team's own notification channels, for events about
+                                components this team owns -- directly or through an assignment rule.
+                            </n-text>
+
+                            <template v-if="teamForm.notifyOnOwnedComponents">
+                                <n-form-item label="Event types">
+                                    <n-select
+                                        v-model:value="includedEventTypes"
+                                        :options="ownedEventTypeOptions"
+                                        multiple
+                                        filterable
+                                        placeholder="Select at least one event type"
+                                        data-testid="team-notify-events"
+                                    />
+                                </n-form-item>
+                                <n-text depth="3" style="font-size: 12px;">
+                                    Everything is selected by default. Deselect what this team does
+                                    not want; a new kind of event arrives selected, so the team keeps
+                                    hearing about whatever happens to what it owns.
+                                </n-text>
+                                <!-- Both warnings are conditional and INLINE rather than in a
+                                     tooltip: each one says the setting achieves something other
+                                     than what it looks like right now, which is not an explanation
+                                     of the feature and is not something to hide behind a hover. -->
+                                <n-alert
+                                    v-if="!teamForm.notificationChannels.length"
+                                    type="warning"
+                                    :show-icon="false"
+                                    data-testid="team-notify-no-channels"
+                                >
+                                    This team has no notification channels, so this delivers nothing
+                                    until it has one.
+                                </n-alert>
+                                <n-alert
+                                    v-if="ownerRoutedOverlap"
+                                    type="info"
+                                    :show-icon="false"
+                                    data-testid="team-notify-overlap"
+                                >
+                                    An existing subscription already notifies component owners
+                                    ({{ ownerRoutedOverlap }}). Both will deliver: duplicate
+                                    suppression is per subscription, so this team's channel gets two
+                                    messages for the same event.
+                                </n-alert>
+                            </template>
                         </template>
                         <n-text v-else depth="3" style="font-size: 12px;">
                             Members, groups, channels and leads can be set once the team exists.
@@ -125,7 +180,7 @@
                             <n-button
                                 type="primary"
                                 :loading="savingTeam"
-                                :disabled="!teamForm.name.trim()"
+                                :disabled="!teamForm.name.trim() || noEventTypesSelected"
                                 data-testid="save-team"
                                 @click="saveTeam"
                             >
@@ -143,14 +198,20 @@
 <script lang="ts" setup>
 import { ref, computed, h, onMounted, watch } from 'vue'
 import {
-    NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
+    NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput, NCheckbox,
     NSelect, NSpace, NAlert, NTag, NText, useDialog, useMessage
 } from 'naive-ui'
 import { CirclePlus, Edit as EditIcon, Archive, ArrowBackUp } from '@vicons/tabler'
 import { useStore } from 'vuex'
 import graphqlClient from '@/utils/graphql'
-import { LIST_CHANNELS_QUERY, TYPE_LABELS, extractError } from '@/utils/notificationsCommon'
+import { LIST_CHANNELS_QUERY, TYPE_LABELS, eventTypeOptions, isOwnerRouted, extractError } from '@/utils/notificationsCommon'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
+import {
+    ownedComponentEventTypes,
+    selectedFromExcluded,
+    excludedFromSelected,
+    buildOwnedComponentNotificationsInput,
+} from '@/utils/teamNotificationEventTypes'
 import gql from 'graphql-tag'
 import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
 
@@ -183,6 +244,7 @@ interface TeamRow {
     userGroups: string[]
     notificationChannels: string[]
     leads: string[]
+    ownedComponentNotifications?: { enabled: boolean, excludedEventTypes: string[] } | null
 }
 
 interface TeamForm {
@@ -193,12 +255,18 @@ interface TeamForm {
     userGroups: string[]
     notificationChannels: string[]
     leads: string[]
+    notifyOnOwnedComponents: boolean
+    // Stored as an OPT-OUT list, which is why the picker below is bound to its
+    // complement: the effective set is "everything, minus these", so an event
+    // type that ships later arrives selected instead of quietly missing.
+    excludedEventTypes: string[]
 }
 
 function freshTeamForm (): TeamForm {
     return {
         uuid: null, name: '', description: '',
         members: [], userGroups: [], notificationChannels: [], leads: [],
+        notifyOnOwnedComponents: false, excludedEventTypes: [],
     }
 }
 
@@ -212,18 +280,27 @@ const LIST_TEAMS_QUERY = gql`
     query getTeams($org: ID!) {
         getTeams(org: $org) {
             uuid name description org status members userGroups notificationChannels leads
+            ownedComponentNotifications { enabled excludedEventTypes }
         }
     }`
 const CREATE_TEAM_MUTATION = gql`
     mutation createTeam($team: CreateTeamInput!) {
         createTeam(team: $team) {
             uuid name description org status members userGroups notificationChannels leads
+            ownedComponentNotifications { enabled excludedEventTypes }
         }
     }`
 const UPDATE_TEAM_MUTATION = gql`
     mutation updateTeam($team: UpdateTeamInput!) {
         updateTeam(team: $team) {
             uuid name description org status members userGroups notificationChannels leads
+            ownedComponentNotifications { enabled excludedEventTypes }
+        }
+    }`
+const LIST_OWNER_ROUTED_SUBSCRIPTIONS_QUERY = gql`
+    query notificationSubscriptions($orgUuid: ID!) {
+        notificationSubscriptions(orgUuid: $orgUuid) {
+            uuid name status routes eventTypes
         }
     }`
 const LIST_GROUPS_WITH_ROSTER_QUERY = gql`
@@ -241,10 +318,58 @@ const teamsSupported = ref<boolean>(true)
 const users = ref<any[]>([])
 const groups = ref<any[]>([])
 const channels = ref<any[]>([])
+// Only the owner-routed ACTIVE subscriptions, for the duplicate-delivery
+// warning. Deliberately a narrow read: the Teams tab has no business rendering
+// the subscription list, it only needs to know whether one of them already
+// covers what this toggle is about to cover.
+const ownerRoutedSubscriptions = ref<any[]>([])
 const showTeamModal = ref<boolean>(false)
 const savingTeam = ref<boolean>(false)
 const teamModalError = ref<string>('')
 const teamForm = ref<TeamForm>(freshTeamForm())
+
+const ownedEventTypeOptions = computed(() => ownedComponentEventTypes(eventTypeOptions))
+
+/**
+ * The picker shows what the team WILL receive; the record stores what it will
+ * not. The conversion lives in utils/teamNotificationEventTypes so it can be
+ * tested -- there is no component test environment here, and this inversion is
+ * the only behavioural rule the control has.
+ */
+const includedEventTypes = computed<string[]>({
+    get: () => selectedFromExcluded(
+        ownedEventTypeOptions.value.map(o => o.value), teamForm.value.excludedEventTypes),
+    set: (selected: string[]) => {
+        teamForm.value.excludedEventTypes = excludedFromSelected(
+            ownedEventTypeOptions.value.map(o => o.value), selected)
+    },
+})
+
+/**
+ * Names an ACTIVE subscription that already notifies component owners, if one
+ * exists.
+ *
+ * <p>Both will deliver. Duplicate suppression is keyed per subscription, so an
+ * org-wide owner-routed subscription and this team's own row produce two rows
+ * for the same event on the same channel -- and the two are configured in
+ * different places by different people, which is exactly how it gets created by
+ * accident.
+ */
+const ownerRoutedOverlap = computed<string | null>(() => {
+    if (!teamForm.value.notifyOnOwnedComponents) return null
+    const mine = new Set(includedEventTypes.value)
+    // Only an overlap that can actually double-deliver. A subscription on
+    // vulnerabilities alone cannot duplicate a team that has deselected them,
+    // and a warning that fires when it cannot be true is the fastest way to
+    // teach an operator to ignore the ones that can.
+    const hit = ownerRoutedSubscriptions.value.find((sub: any) =>
+        (sub.eventTypes || []).some((t: string) => mine.has(t)))
+    return hit ? (hit.name || hit.uuid) : null
+})
+
+/** Enabled with nothing ticked is a save the backend refuses. */
+const noEventTypesSelected = computed<boolean>(() =>
+    teamForm.value.notifyOnOwnedComponents && includedEventTypes.value.length === 0)
 
 const userOptions = computed(() => users.value.map((u: any) => ({
     label: u.name ? `${u.name} (${u.email})` : u.email, value: u.uuid,
@@ -340,6 +465,21 @@ async function loadPickers (): Promise<void> {
         // roster, so this degrades to an empty picker rather than a hard error.
         channels.value = []
     }
+    try {
+        const res = await graphqlClient.query({
+            query: LIST_OWNER_ROUTED_SUBSCRIPTIONS_QUERY,
+            variables: { orgUuid: orgUuid.value },
+            fetchPolicy: 'network-only',
+        })
+        ownerRoutedSubscriptions.value = (res.data?.notificationSubscriptions || [])
+            .filter((sub: any) => sub && sub.status === 'ACTIVE' && isOwnerRouted(sub.routes))
+            .map((sub: any) => ({ uuid: sub.uuid, name: sub.name, eventTypes: sub.eventTypes || [] }))
+    } catch {
+        // Silent: this feeds a WARNING, so failing to load it must not raise an
+        // error of its own. Losing the warning is a smaller harm than a red
+        // toast on a page the operator opened to rename a team.
+        ownerRoutedSubscriptions.value = []
+    }
 }
 
 function openCreateTeam (): void {
@@ -357,6 +497,8 @@ function openEditTeam (row: TeamRow): void {
         userGroups: [...(row.userGroups || [])],
         notificationChannels: [...(row.notificationChannels || [])],
         leads: [...(row.leads || [])],
+        notifyOnOwnedComponents: !!row.ownedComponentNotifications?.enabled,
+        excludedEventTypes: [...(row.ownedComponentNotifications?.excludedEventTypes || [])],
     }
     teamModalError.value = ''
     showTeamModal.value = true
@@ -383,6 +525,15 @@ async function saveTeam (): Promise<void> {
                         userGroups: f.userGroups,
                         notificationChannels: f.notificationChannels,
                         leads: f.leads,
+                        // Always sent from this editor, which always loads the
+                        // current value first. The backend treats null as
+                        // "leave alone", so an editor that DID load it must send
+                        // it -- otherwise unticking the box would silently do
+                        // nothing.
+                        ownedComponentNotifications: buildOwnedComponentNotificationsInput(
+                            f.notifyOnOwnedComponents,
+                            ownedEventTypeOptions.value.map(o => o.value),
+                            includedEventTypes.value),
                     },
                 },
             })
