@@ -38,8 +38,13 @@ export const BUILT_IN_ENRICHMENT_SKIP_PATTERNS: readonly string[] = [
 export function effectiveSkipPatterns(configured: string[] | null | undefined): string[] {
   const merged: string[] = [...BUILT_IN_ENRICHMENT_SKIP_PATTERNS];
   for (const pattern of configured || []) {
-    if (typeof pattern === 'string' && pattern.trim().length > 0 && !merged.includes(pattern)) {
-      merged.push(pattern);
+    if (typeof pattern !== 'string') continue;
+    // Trimmed before use, not just for validation: canonical purls
+    // percent-encode spaces, so a pattern with stray whitespace could
+    // never match anything — it would be a silently dead entry.
+    const trimmed = pattern.trim();
+    if (trimmed.length > 0 && !merged.includes(trimmed)) {
+      merged.push(trimmed);
     }
   }
   return merged;

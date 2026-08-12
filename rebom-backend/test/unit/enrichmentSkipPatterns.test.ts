@@ -40,6 +40,19 @@ describe('enrichmentSkipPatterns', () => {
         expect(out).toEqual([...BUILT_IN_ENRICHMENT_SKIP_PATTERNS, 'pkg:swift/']);
     });
 
+    it('trims stray whitespace instead of pushing a dead pattern', () => {
+        // Canonical purls percent-encode spaces, so ' pkg:swift/ ' as-is
+        // could never match anything.
+        const out = effectiveSkipPatterns([' pkg:swift/ ']);
+        expect(out).toContain('pkg:swift/');
+        expect(out).not.toContain(' pkg:swift/ ');
+    });
+
+    it('deduplicates a built-in restated with whitespace padding', () => {
+        const out = effectiveSkipPatterns(['  pkg:generic/  ']);
+        expect(out.filter(p => p === 'pkg:generic/')).toHaveLength(1);
+    });
+
     it('deduplicates repeated configured entries', () => {
         const out = effectiveSkipPatterns(['pkg:swift/', 'pkg:swift/']);
         expect(out.filter(p => p === 'pkg:swift/')).toHaveLength(1);
