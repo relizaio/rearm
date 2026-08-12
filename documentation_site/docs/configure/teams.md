@@ -48,13 +48,14 @@ leads carry authority.
 1. Open **Organization Settings -> Teams** and click **Add team**.
 2. Give it a name (and optionally a description).
 3. Save, then edit it to add members, user groups, notification channels, and
-   leads. Those are only offered once the team exists, since each one is a
-   reference that has to resolve against a saved record.
+   leads. Creation deliberately takes a name and description only: everything
+   else arrives through the same update path, so each reference is validated by
+   exactly one piece of code rather than two that can drift.
 
-A team name must be unique within the organization, and archived teams still
-hold their names -- so if a name is refused and you cannot see the team using
-it, an archived team has it. Restore that team rather than working around the
-name.
+A team name must be unique within the organization, and archived teams keep
+their names. Try to reuse one and ReARM says so explicitly -- restore the
+archived team rather than working around the name. Archived teams stay listed
+on the Teams tab with status `INACTIVE`, so there is nothing hidden to hunt for.
 
 ## Why contain a user group instead of listing people
 
@@ -73,8 +74,9 @@ roster.
 
 ## Archiving a team
 
-Set a team to **inactive** rather than deleting it, and the record and its
-history stay intact. Archiving has real routing consequences, which is the point
+Use the **Archive** action on the team's row rather than deleting it -- there is
+no delete -- and the record and its history stay intact, with the team's status
+shown as `INACTIVE`. Archiving has real routing consequences, which is the point
 of doing it explicitly:
 
 - Notification routes that target the team **stop delivering**. The team
@@ -84,8 +86,8 @@ of doing it explicitly:
   owner still resolves, but is no longer a usable notification target. See
   [Component ownership](./component-ownership#ownership-status).
 - The team is no longer offered when picking a *new* owner or route target.
-  Where it is already stored it stays visible, labelled as archived, so you can
-  see it and replace it rather than finding an empty field.
+  Where it is already stored, it is shown labelled `(archived)` so you can see
+  what to replace.
 
 ::: warning Archiving a team is a quiet way to stop notifications
 Nothing errors when a targeted team is archived: the subscription stays active,

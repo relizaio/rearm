@@ -15,9 +15,10 @@ Subscriptions, routes, and channel groups are available on **both** editions,
 as are the **Slack**, **Microsoft Teams**, and **Webhook** channel types.
 
 Pro adds two channel types -- **Email** and
-[**Microsoft Sentinel**](../integrations/sentinel) -- [**teams**](./teams) and
-the two route targets that depend on them, **teams** and **notify the component
-owner**, and [subscription filtering](#filters-severity-and-routes).
+[**Microsoft Sentinel**](../integrations/sentinel) -- [**teams**](./teams)
+themselves, the two route targets that depend on them (**team** and **notify the
+component owner**), and
+[subscription filtering](#filters-severity-and-routes).
 :::
 
 ## How it fits together
@@ -88,9 +89,9 @@ severity gate its event types can never satisfy, and keep vulnerability events
 on their own subscription when you want to gate by severity.
 :::
 
-Perspectives do **not** behave that way, despite the similar shape. Every event
-type -- release, approval and vulnerability alike -- carries its affected
-releases, so a perspective-scoped route matches on any of them. What it needs is
+Perspectives do **not** behave that way, despite the similar shape. Release,
+approval and vulnerability events all carry their affected releases, so a
+perspective-scoped route matches on any of them. What it needs is
 that the affected release's **component** actually belongs to one of the named
 perspectives; a component with no perspectives set matches no perspective-scoped
 route, whatever the event type.

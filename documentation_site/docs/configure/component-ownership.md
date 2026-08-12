@@ -27,9 +27,10 @@ person leaves, and only a team can be a notification target -- a user has no
 channels of their own, so a route that notifies the component owner will not
 deliver for a user-owned component.
 
-The picker offers active teams only. If the component is already owned by a team
-that has since been archived, that team is still shown -- labelled as archived --
-so the stale owner is visible and replaceable rather than an empty field.
+The picker offers active teams only, so an archived team cannot be chosen as a
+new owner. A component already owned by a team that was archived since keeps
+that owner on record -- it reports `DEGRADED` and stops receiving owner-routed
+notifications until you point it somewhere else.
 
 ## Ownership status
 
@@ -107,11 +108,11 @@ When more than one source could decide an owner, ReARM resolves in this order:
 
 ## Finding components at risk
 
-On an individual component, the **Settings** panel names the current owner. It
-does not report durability: that is a fleet-level question -- "which components
-have nobody durable behind them" -- and answering it one component at a time
-invites reading a single `NON_DURABLE` as a fault to fix rather than as coverage
-to plan.
+On an individual component, the **Settings** panel names the current owner.
+
+Durability, though, is a fleet-level question -- "which components have nobody
+durable behind them" -- and answering it one component at a time invites reading
+a single `NON_DURABLE` as a fault to fix rather than as coverage to plan.
 
 Organization-wide, an **ownership report** returns every component that is not
 cleanly `OWNED`, together with its computed status. This is the practical
