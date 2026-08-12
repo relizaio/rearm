@@ -504,8 +504,13 @@ const teamOptions = computed(() => {
     for (const r of subForm.value.routes) for (const t of (r.teams || [])) referenced.add(t)
     // Same shared builder as the channel picker, so the "keep dangling refs
     // visible and removable" behaviour cannot drift between the two.
+    //
+    // "(archived)" rather than "(deactivated)": the Teams tab calls the action
+    // Archive and reports "Team archived", and the assignment-rule picker
+    // already says archived. Three words for one state across three pickers is
+    // how an operator ends up wondering whether they mean different things.
     return withGhosts(selectable, teams.value, referenced,
-        (t: any, uuid) => t ? `${t.name} (deactivated)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
+        (t: any, uuid) => t ? `${t.name} (archived)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
 })
 
 const channelGroupOptions = computed(() =>
