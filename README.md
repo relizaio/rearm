@@ -16,7 +16,7 @@
 
 #### ReARM CE governs  releases at agentic speed. It tells you what each product is made of, its security posture and stores and manages per-release SBOMs, HBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts and Metadata.
 
-## Next ReARM Community Engagement: ReARM is presenting online talk [The Human is the Loop](https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/315615348), August 11, 2026, 12:00pm EDT
+## Next ReARM Community Engagement: ReARM CE at Black Hat India 2026 Arsenal [ReARM CE: answer the 2 AM where is this CVE shipping? question across your whole portfolio](https://www.blackhat-india.com/arsenal-schedule#rearm-ce-answer-the-2-am-where-is-this-cve-shipping-question-across-your-whole-portfolio-60007), October 29, 2026, 12:00pm IST
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
