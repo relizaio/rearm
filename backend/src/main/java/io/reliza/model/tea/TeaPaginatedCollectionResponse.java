@@ -5,7 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
-import io.reliza.model.tea.TeaProduct;
+import io.reliza.model.tea.TeaCollection;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -21,35 +21,35 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A paginated response containing TEA Products
+ * A paginated response containing TEA Collections
  */
 
-@Schema(name = "paginated-product-response", description = "A paginated response containing TEA Products")
-@JsonTypeName("paginated-product-response")
+@Schema(name = "paginated-collection-response", description = "A paginated response containing TEA Collections")
+@JsonTypeName("paginated-collection-response")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-06-03T01:14:38.691100265Z[Etc/UTC]", comments = "Generator version: 7.21.0")
-public class TeaPaginatedProductResponse {
+public class TeaPaginatedCollectionResponse {
 
   private Boolean hasNext = false;
 
   private String nextPageToken;
 
   @Valid
-  private List<@Valid TeaProduct> results = new ArrayList<>();
+  private List<@Valid TeaCollection> results = new ArrayList<>();
 
-  public TeaPaginatedProductResponse() {
+  public TeaPaginatedCollectionResponse() {
     super();
   }
 
   /**
    * Constructor with only required parameters
    */
-  public TeaPaginatedProductResponse(Boolean hasNext, String nextPageToken, List<@Valid TeaProduct> results) {
+  public TeaPaginatedCollectionResponse(Boolean hasNext, String nextPageToken, List<@Valid TeaCollection> results) {
     this.hasNext = hasNext;
     this.nextPageToken = nextPageToken;
     this.results = results;
   }
 
-  public TeaPaginatedProductResponse hasNext(Boolean hasNext) {
+  public TeaPaginatedCollectionResponse hasNext(Boolean hasNext) {
     this.hasNext = hasNext;
     return this;
   }
@@ -70,7 +70,7 @@ public class TeaPaginatedProductResponse {
     this.hasNext = hasNext;
   }
 
-  public TeaPaginatedProductResponse nextPageToken(String nextPageToken) {
+  public TeaPaginatedCollectionResponse nextPageToken(String nextPageToken) {
     this.nextPageToken = nextPageToken;
     return this;
   }
@@ -91,12 +91,12 @@ public class TeaPaginatedProductResponse {
     this.nextPageToken = nextPageToken;
   }
 
-  public TeaPaginatedProductResponse results(List<@Valid TeaProduct> results) {
+  public TeaPaginatedCollectionResponse results(List<@Valid TeaCollection> results) {
     this.results = results;
     return this;
   }
 
-  public TeaPaginatedProductResponse addResultsItem(TeaProduct resultsItem) {
+  public TeaPaginatedCollectionResponse addResultsItem(TeaCollection resultsItem) {
     if (this.results == null) {
       this.results = new ArrayList<>();
     }
@@ -111,12 +111,12 @@ public class TeaPaginatedProductResponse {
   @NotNull @Valid 
   @Schema(name = "results", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("results")
-  public List<@Valid TeaProduct> getResults() {
+  public List<@Valid TeaCollection> getResults() {
     return results;
   }
 
   @JsonProperty("results")
-  public void setResults(List<@Valid TeaProduct> results) {
+  public void setResults(List<@Valid TeaCollection> results) {
     this.results = results;
   }
 
@@ -128,10 +128,10 @@ public class TeaPaginatedProductResponse {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    TeaPaginatedProductResponse paginatedProductResponse = (TeaPaginatedProductResponse) o;
-    return Objects.equals(this.hasNext, paginatedProductResponse.hasNext) &&
-        Objects.equals(this.nextPageToken, paginatedProductResponse.nextPageToken) &&
-        Objects.equals(this.results, paginatedProductResponse.results);
+    TeaPaginatedCollectionResponse paginatedCollectionResponse = (TeaPaginatedCollectionResponse) o;
+    return Objects.equals(this.hasNext, paginatedCollectionResponse.hasNext) &&
+        Objects.equals(this.nextPageToken, paginatedCollectionResponse.nextPageToken) &&
+        Objects.equals(this.results, paginatedCollectionResponse.results);
   }
 
   @Override
@@ -142,7 +142,7 @@ public class TeaPaginatedProductResponse {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class TeaPaginatedProductResponse {\n");
+    sb.append("class TeaPaginatedCollectionResponse {\n");
     sb.append("    hasNext: ").append(toIndentedString(hasNext)).append("\n");
     sb.append("    nextPageToken: ").append(toIndentedString(nextPageToken)).append("\n");
     sb.append("    results: ").append(toIndentedString(results)).append("\n");
