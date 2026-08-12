@@ -120,7 +120,7 @@ function syncUrl() {
     router.replace({ query: q })
 }
 
-onMounted(() => {
+function applyQueryToState() {
     if (route.query.fromDate) {
         const fromDate = new Date(route.query.fromDate as string)
         if (!isNaN(fromDate.getTime())) startDateValue.value = fromDate.getTime()
@@ -144,7 +144,15 @@ onMounted(() => {
     if (urlType === 'COMPONENT' || urlType === 'PRODUCT') {
         componentTypeValue.value = urlType
     }
-})
+}
+
+onMounted(applyQueryToState)
+
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward re-applies the URL here. Writing state
+// re-triggers syncUrl, but an identical query is a no-op navigation, so
+// this cannot loop.
+watch(() => [route.query.fromDate, route.query.toDate, route.query.limit, route.query.type], applyQueryToState)
 
 watch([startDateValue, endDateValue, effectiveLimit, componentTypeValue], syncUrl)
 </script>

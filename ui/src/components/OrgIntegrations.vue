@@ -946,6 +946,12 @@ async function switchSubTab(t: SubTab) {
     await router.push({ query: { ...route.query, integrationsTab: t } })
 }
 
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward must be applied to local state here.
+watch(() => route.query.integrationsTab, (t) => {
+    if (isSubTabAccessible(t) && t !== subTab.value) subTab.value = t
+})
+
 // ---- Data refs lifted from OrgSettings -------------------------------------
 const configuredIntegrations: Ref<string[]> = ref([])
 const ciIntegrations: Ref<any[]> = ref([])

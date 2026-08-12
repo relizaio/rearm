@@ -954,12 +954,25 @@ const fetchActualHistory = async function () {
 const switchTab = async function (t: InstTab) {
     activeTab.value = t
     await router.push({ query: { ...route.query, instTab: t } })
+    await lazyLoadTab(t)
+}
+
+async function lazyLoadTab(t: InstTab) {
     if (t === 'plan-history' && !planHistoryLoaded.value) {
         await fetchPlanHistory()
     } else if (t === 'actual-history' && !actualHistoryLoaded.value) {
         await fetchActualHistory()
     }
 }
+
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward must be applied to local state here.
+watch(() => route.query.instTab, async (t) => {
+    if ((t === 'instance' || t === 'plan-history' || t === 'actual-history') && t !== activeTab.value) {
+        activeTab.value = t
+        await lazyLoadTab(t)
+    }
+})
 
 // Auto-refetch when a date bound changes. Debounced so picking
 // both From and To in quick succession (or the picker emitting
