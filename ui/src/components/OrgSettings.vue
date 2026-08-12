@@ -611,18 +611,14 @@
                         </div>
                     </n-modal>
 
-                    <OrgTeamAssignmentRules
-                        :orgUuid="orgResolved"
-                        :isWritable="isWritable"
-                        :teams="userGroups"
-                        :components="allComponents"/>
                 </div>
             </n-tab-pane>
 
             <n-tab-pane v-if="isOrgAdmin" name="teams" tab="Teams">
                 <TeamsOfOrg
                     :orguuid="orgResolved"
-                    :isWritable="isWritable" />
+                    :isWritable="isWritable"
+                    :components="allComponents" />
             </n-tab-pane>
 
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
@@ -1148,9 +1144,6 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
 import constants from '../utils/constants'
-import { isSchemaDriftError } from '../utils/graphqlDriftFallback'
-import { buildChannelOptions } from '@/utils/channelOptions'
-import { TYPE_LABELS } from '@/utils/notificationsCommon'
 import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
@@ -1162,7 +1155,6 @@ import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
-import OrgTeamAssignmentRules from './OrgTeamAssignmentRules.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
@@ -1874,26 +1866,39 @@ const userPermissionsDirty = computed(() => {
     return commonFunctions.stableStringify(userScopedPermissions.value) !== commonFunctions.stableStringify(userScopedPermissionsOriginal.value)
 })
 
-// Projects the modal's editable state. NOTE the team-member keys come from
-// there is no per-modal editor state left beyond the group's own fields.
+// Projects the modal's editable state. Nothing here is per-modal editor state
+// any more -- every key is a field of the group record itself.
 function getUserGroupEditableState(group: any) {
     return {
         name: group?.name || '',
         description: group?.description || '',
         manualUsers: group?.manualUsers || [],
         connectedSsoGroups: group?.connectedSsoGroups || [],
-        // Compare the NORMALIZED payload, not the raw editor map -- otherwise
-        // stray whitespace in a custom label reads as dirty while producing
-        // nothing to save.
     }
 }
 
-// Keyed by user uuid rather than held as a list: the backend rejects two roles
-// for the same member, and a per-member map makes that impossible to express.
+/**
+ * Gates the modal's Save/Reset buttons and the close-confirmation prompt.
+ *
+ * <p>Deleted by accident in the Phase 2b cleanup: it sat immediately below
+ * `teamMembersError`, and the regex removing that computed ran on past its
+ * closing line and took this one too. Nothing caught it -- a template
+ * reference to a missing setup binding is a RUNTIME ReferenceError, so the
+ * build stays green, and every unit test here covers `utils/`, not components.
+ * The symptom was that the edit-group modal could not be closed.
+ */
+const userGroupPermissionsDirty = computed(() => {
+    const scopedDirty = userGroupScopedPermissionsOriginal.value
+        ? commonFunctions.stableStringify(userGroupScopedPermissions.value) !== commonFunctions.stableStringify(userGroupScopedPermissionsOriginal.value)
+        : false
 
-// Shared builder so a channel that was disabled or deleted after being picked
-// still renders a name here instead of a bare uuid (BUG 2) -- and stays
-// removable so the operator can clear it.
+    const detailsDirty = selectedUserGroupOriginal.value
+        ? commonFunctions.stableStringify(getUserGroupEditableState(selectedUserGroup.value)) !== commonFunctions.stableStringify(selectedUserGroupOriginal.value)
+        : false
+
+    return scopedDirty || detailsDirty
+})
+
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
 const orgProducts = computed(() => store.getters.productsOfOrg(orgResolved.value) || [])
 const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])
