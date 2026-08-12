@@ -15,9 +15,9 @@ Subscriptions, routes, and channel groups are available on **both** editions,
 as are the **Slack**, **Microsoft Teams**, and **Webhook** channel types.
 
 Pro adds two channel types -- **Email** and
-[**Microsoft Sentinel**](../integrations/sentinel) -- two route targets,
-**teams** and **notify the component owner**, and
-[subscription filtering](#filters-severity-and-routes).
+[**Microsoft Sentinel**](../integrations/sentinel) -- [**teams**](./teams) and
+the two route targets that depend on them, **teams** and **notify the component
+owner**, and [subscription filtering](#filters-severity-and-routes).
 :::
 
 ## How it fits together
@@ -75,6 +75,26 @@ A subscription's `eventTypes` list controls what it can match:
   perspectives. This gates **delivery only** -- it does not change what appears
   in the in-app inbox or the bell.
 
+::: warning A minimum severity on a non-vulnerability subscription silences it entirely
+Only two event types carry a severity: `NEW_VULN_AFFECTS_RELEASES` and
+`VULNERABILITY_RECORD_UPDATED`. Release and approval events carry none, and a
+gate then compares against *nothing* rather than against zero -- so it does not
+match. A minimum severity on a release-only subscription therefore does not
+merely fail to narrow it, it **stops every event on that route**.
+
+This does not error and writes no delivery row you could go looking for. If a
+subscription you believe is correct has never fired, check whether it carries a
+severity gate its event types can never satisfy, and keep vulnerability events
+on their own subscription when you want to gate by severity.
+:::
+
+Perspectives do **not** behave that way, despite the similar shape. Every event
+type -- release, approval and vulnerability alike -- carries its affected
+releases, so a perspective-scoped route matches on any of them. What it needs is
+that the affected release's **component** actually belongs to one of the named
+perspectives; a component with no perspectives set matches no perspective-scoped
+route, whatever the event type.
+
 ::: warning Filters are not applied on Community Edition
 Filter evaluation is a Pro capability. On CE the evaluator is absent, and
 rather than dropping subscriptions it cannot evaluate, ReARM delivers them
@@ -95,12 +115,18 @@ delivers nothing, so the editor will not let you save one.
 |---|---|---|
 | **Channels** | The channels you name explicitly | CE and Pro |
 | **Channel groups** | Every channel in the named group | CE and Pro |
-| **Teams** | The named team's own notification channels | Pro |
+| **Teams** | The named [team](./teams)'s own notification channels | Pro |
 | **Notify the component owner** | The channels of whichever team owns the affected component | Pro |
 
 The last two are what let a route describe *who* should hear about something
 rather than *where* to send it. That distinction matters most for owner
 routing, described next.
+
+Both are resolved when the event fires, not when you save the subscription. A
+team that changes its channel, or a component that changes hands, is followed
+automatically -- and a team that is **archived** contributes nothing, so a route
+targeting only that team goes quiet without failing. See
+[Archiving a team](./teams#archiving-a-team).
 
 ### Notifying the component owner
 
@@ -138,6 +164,18 @@ default), so a flapping upstream signal won't repeat-fire the same alert to
 the same channel over and over. Test/synthetic events (see
 [Testing](#testing-channels-and-subscriptions) below) intentionally bypass
 dedup, so a test always produces a visible delivery.
+
+Setting the window to **0** turns dedup off for that subscription: every
+matching event is delivered, repeats included. That is the right setting for a
+low-volume signal you never want collapsed, and the wrong one if you are
+wondering why a repeated alert arrives repeatedly.
+
+::: tip You cannot demonstrate dedup with the Test button
+Because synthetic events skip dedup by design, testing a subscription twice
+always produces two deliveries no matter what the window is -- which reads
+exactly like dedup being broken. To see it working, cause the same *real* event
+twice inside the window and watch the second produce no row.
+:::
 
 ::: warning Per-subscription rate limit is not enforced yet
 The subscription rate-limit fields (`maxPerWindow` / `windowMinutes`) are
@@ -320,12 +358,19 @@ release-lifecycle or approval subscription can only be verified by causing the
 real event: transition a release, or open an actual approval request.
 :::
 
-::: tip A test on an owner-routed subscription can legitimately show nothing
-If the only route on the subscription
-[notifies the component owner](#notifying-the-component-owner), a test that
-reports no delivery usually means the component the test event landed on has no
-owner, or its owner team has no channel -- not that your filter or severity
-gate is wrong. Check ownership first; the result dialog says so too.
+::: tip A test can legitimately show nothing when the route resolves through something
+A route that names channels directly either delivers or has a filter or gate
+problem. A route that resolves through *something else* has a third
+possibility, and it is the likeliest one:
+
+- **Owner-routed** -- the component the test event landed on has no owner, or
+  its owner team has no channel.
+- **Team-targeted** -- the [team](./teams) is archived, or has no notification
+  channels of its own.
+
+In both cases your filter and severity gate are working perfectly and auditing
+them is wasted effort. The result dialog names the resolving target first for
+that reason.
 :::
 
 ::: warning A passing owner-routing test does not mean production will deliver
