@@ -1082,7 +1082,7 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ComputedRef, ref, Ref, computed, h, onMounted } from 'vue'
+import { ComputedRef, ref, Ref, computed, h, onMounted, watch } from 'vue'
 import type { Component } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
@@ -1833,7 +1833,7 @@ function selectBranch (uuid: string) {
 function handleTabChange (tabName: string) {
     // Clear selected branch when switching tabs
     selectedBranchUuid.value = ''
-    
+
     router.push({
         name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
         params: {
@@ -1843,6 +1843,31 @@ function handleTabChange (tabName: string) {
         query: { ...route.query, tab: tabName }
     })
 }
+
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward across tab states must be applied to
+// local state here; absent param = the default tab, mirroring the old
+// remount-initializer. Local writes only — safe without a route guard.
+watch(() => route.query.tab, (t) => {
+    const next = (typeof t === 'string' && t) ? t : 'branches'
+    if (next !== selectedTab.value) {
+        selectedBranchUuid.value = ''
+        selectedTab.value = next
+    }
+})
+
+// Same for the settings-panel deep link. Open only while this view's route
+// is active (on route leave the param flips to the destination's and must
+// not trigger the async open cascade); closing on param removal mirrors
+// the old remount (which discarded the modal without an unsaved prompt).
+watch(() => route.query.componentSettingsView, async (v) => {
+    const here = route.name === 'ComponentsOfOrg' || route.name === 'ProductsOfOrg'
+    if (v === 'true' && here && !showComponentSettingsModal.value) {
+        await openComponentSettings()
+    } else if (v !== 'true' && showComponentSettingsModal.value) {
+        showComponentSettingsModal.value = false
+    }
+})
 
 const createBranchForm = ref<FormInst | null>(null)
 
