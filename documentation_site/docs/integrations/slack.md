@@ -55,8 +55,8 @@ A channel on its own delivers nothing. Add a subscription under
 **Integrations -> Subscriptions** with the event types you care about and a
 route pointing at this channel. See
 [Notifications](../configure/notifications) for event types, filters, and the
-other route targets (channel groups, teams, and the affected component's
-owner).
+other route targets (channel groups, [teams](../configure/teams), and the
+affected component's owner).
 
 ::: tip Editing later
 Leave **Incoming-webhook URL** blank when editing an existing channel to keep

@@ -11,6 +11,14 @@ This guide describes administrator actions in **Organization Settings** for mana
 - Active/inactive user groups
 - Scoped permission behavior (organization, perspective, product/component)
 
+::: tip Groups grant access; teams carry accountability
+A user group decides what its members may *do*. It is not a notification target
+and it does not own anything. If you are looking for the thing a notification
+route or a component owner points at, that is a [team](./teams) -- which can
+contain a user group, so an SSO-managed roster serves both without being
+maintained twice.
+:::
+
 ## Prerequisites
 
 - You must be an **Organization Admin**.
