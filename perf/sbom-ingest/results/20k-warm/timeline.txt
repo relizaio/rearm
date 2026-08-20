@@ -1,0 +1,2 @@
+RUN START: 2026-08-17T01:11:02Z
+org=fba679d2-4a6f-4438-98aa-03b976f3ebe5 component=53dd39f1-c894-47fd-8fcf-47cadc5b2e05 threads=24 loops=834 target=20016 rpm=360 mode=warm comps/bom=50 profile=lean
