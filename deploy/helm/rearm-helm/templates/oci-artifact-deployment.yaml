@@ -45,6 +45,15 @@ spec:
               value: {{ .Values.ociArtifactService.logLevel | default "info" | quote }}
             - name: USE_PLAIN_HTTP
               value: {{ include "rearm.ociPlainHttp" . | quote }}
+            {{- /* Same values key rebom-backend and the backend already use to
+                 build repo names, so callers and the service's namespace
+                 containment check agree by construction. Deliberately NOT in
+                 rearm.ociRegistryEnv: the backup cronjob includes that helper
+                 and gets its paths pre-composed via REGISTRY_BASE_PATHS. */}}
+            {{- if .Values.rebom.backend.oci.registryNamespace }}
+            - name: OCIARTIFACTS_REGISTRY_NAMESPACE
+              value: {{ .Values.rebom.backend.oci.registryNamespace | quote }}
+            {{- end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
