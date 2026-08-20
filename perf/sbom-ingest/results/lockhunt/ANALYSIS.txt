@@ -1,0 +1,13 @@
+top wait targets:
+   26 threads -> 0x0000040006302000 (java.util.concurrent.SynchronousQueue$Transferer)
+    6 threads -> 0x0000040008d9ecf8 (java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+    4 threads -> 0x000004001ca7cc68 (java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+    4 threads -> 0x0000040000466a08 (java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+    4 threads -> 0x00000400094db6c8 (java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+
+owner of 0x0000040006302000:
+  (no thread lists it as owned - may be a Condition; showing one waiter stack)
+" #39 [41] daemon prio=5 os_prio=0 cpu=12902.10ms elapsed=47808.19s tid=0x000075d27b19e700 nid=41 waiting on condition  [0x000075d27ae14000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.3/Native Method)
+	- parking to wait for  <

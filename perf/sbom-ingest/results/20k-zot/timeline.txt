@@ -1,0 +1,4 @@
+ACCEPT START: 2026-08-18T16:27:16Z
+org=86dd0d43-7d02-46f0-bdb8-5734be508cb8 comp=6629613e-caab-4cc8-8c5e-70529db6e731 threads=24 loops=834 total=20016 rpm=780(13/s) keys=5 registry=zottest mode=warm comps/bom=50 drainbatch=250 rebom=4x
+ACCEPT END: 2026-08-18T17:55:04Z
+DRAIN COMPLETE: 2026-08-18T22:52:48Z

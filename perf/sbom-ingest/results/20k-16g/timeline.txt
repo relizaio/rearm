@@ -1,0 +1,8 @@
+RUN START: 2026-08-17T01:21:15Z
+org=3240a811-e874-44ad-85a3-ab137a427ebb component=17411497-47a8-4ebc-bb5c-8dd568a75422 threads=32 loops=626 rpm=900 heap=11.2G(16Gi limit) mode=warm comps/bom=50
+RESULT: throughput unchanged by heap bump. 3.4/s with 11.2G heap vs 3.3/s with 2.8G.
+DIAGNOSIS: bottleneck is the synchronous OCI artifact push to Harbor in the BOM
+upload path (harbor repo rearm-artifacts-private/rebom-artifacts-2026-08, peaking
+6001 registry ops/min at 01:22 during the run). Postgres idle (20 conns parked in
+ClientRead), rebom insert ~1ms, backend CPU ~100m of 4000m, 35 http threads all
+parked on one AbstractQueuedSynchronizer condition. Adding threads only adds latency.
