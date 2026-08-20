@@ -166,8 +166,25 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   
   logger.debug({ repositoryName, uploadTimestamp: uploadTimestamp.toISOString() }, 'Calculated repository name for upload');
   
-  const rawPushResult = await pushToOci(rawUuid, rawBom, repositoryName);  // Raw BOM (original, untouched)
-  const pushResult = await pushToOci(newUuid, finalBom, repositoryName);  // Processed (and optionally augmented) BOM
+  // Raw and processed BOMs are pushed in parallel: neither consumes the
+  // other's result, and repositoryName/uuids/digests are all pinned above
+  // (the month-boundary race is already handled by computing the repo name
+  // once). allSettled so that when both fail we report both causes instead
+  // of whichever lost the race; any rejection still fails the whole add, so
+  // no DB record is written unless BOTH pushes succeeded.
+  const [rawSettled, processedSettled] = await Promise.allSettled([
+    pushToOci(rawUuid, rawBom, repositoryName),   // Raw BOM (original, untouched)
+    pushToOci(newUuid, finalBom, repositoryName), // Processed (and optionally augmented) BOM
+  ]);
+  if (rawSettled.status === 'rejected' || processedSettled.status === 'rejected') {
+    const reasons = [
+      rawSettled.status === 'rejected' ? `raw: ${rawSettled.reason?.message ?? rawSettled.reason}` : null,
+      processedSettled.status === 'rejected' ? `processed: ${processedSettled.reason?.message ?? processedSettled.reason}` : null,
+    ].filter(Boolean).join(' | ');
+    throw new Error(`OCI push failed for BOM ${newUuid}: ${reasons}`);
+  }
+  const rawPushResult = rawSettled.value;
+  const pushResult = processedSettled.value;
   
   // Validate both BOMs went to same repository and have repository names set
   validateDualBomPush(rawPushResult, pushResult, 'upload', newUuid);
@@ -257,8 +274,21 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
       
       // Re-upload to existing UUIDs (overwrites old files in OCI)
       // Always use current month's repository
-      const rawReplacementResult = await pushToOci(existingRawUuid, rawBom, repositoryName);
-      const replacementPushResult = await pushToOci(existingUuid, finalBom, repositoryName);
+      // Parallel for the same reasons as the insert path above; overwrites
+      // two independent tags with no interdependency.
+      const [rawReplSettled, replSettled] = await Promise.allSettled([
+        pushToOci(existingRawUuid, rawBom, repositoryName),
+        pushToOci(existingUuid, finalBom, repositoryName),
+      ]);
+      if (rawReplSettled.status === 'rejected' || replSettled.status === 'rejected') {
+        const reasons = [
+          rawReplSettled.status === 'rejected' ? `raw: ${rawReplSettled.reason?.message ?? rawReplSettled.reason}` : null,
+          replSettled.status === 'rejected' ? `processed: ${replSettled.reason?.message ?? replSettled.reason}` : null,
+        ].filter(Boolean).join(' | ');
+        throw new Error(`OCI push failed replacing BOM ${existingUuid}: ${reasons}`);
+      }
+      const rawReplacementResult = rawReplSettled.value;
+      const replacementPushResult = replSettled.value;
       
       // Validate both BOMs went to same repository and have repository names set
       validateDualBomPush(rawReplacementResult, replacementPushResult, 'replacement', existingUuid);
