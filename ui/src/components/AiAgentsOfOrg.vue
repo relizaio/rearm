@@ -38,6 +38,9 @@
                 </n-card>
             </div>
 
+            <!-- Task boards (hub-and-spoke coordination over the tracker) -->
+            <AiAgentBoardsPanel :org-uuid="orgUuid" />
+
             <!-- Agent card grid -->
             <div>
                 <div class="section-head">
@@ -176,6 +179,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
+import AiAgentBoardsPanel from '@/components/AiAgentBoardsPanel.vue'
 
 const store = useStore()
 const route = useRoute()
