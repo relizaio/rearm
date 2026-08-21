@@ -38,6 +38,9 @@
                 </n-card>
             </div>
 
+            <!-- Task pipeline board (coordination plane over the tracker) -->
+            <AiAgentTaskBoard :tasks="agentTasks" :role-configs="taskRoleConfigs" />
+
             <!-- Agent card grid -->
             <div>
                 <div class="section-head">
@@ -176,6 +179,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
+import AiAgentTaskBoard from '@/components/AiAgentTaskBoard.vue'
 
 const store = useStore()
 const route = useRoute()
@@ -226,6 +230,8 @@ const loading = ref<boolean>(false)
 const kpis = ref<any>(null)
 const agents = ref<any[]>([])
 const openSessions = ref<any[]>([])
+const agentTasks = ref<any[]>([])
+const taskRoleConfigs = ref<any[]>([])
 
 const HERO_LIMIT = 8
 
@@ -289,14 +295,18 @@ onMounted(async () => {
 async function refreshAll () {
     loading.value = true
     try {
-        const [k, a, s] = await Promise.all([
+        const [k, a, s, t, rc] = await Promise.all([
             store.dispatch('fetchAgentDashboardKpis', orgUuid.value),
             store.dispatch('fetchAgentsOfOrg', orgUuid.value),
             store.dispatch('fetchSessionsOfOrg', { orgUuid: orgUuid.value, statuses: ['OPEN'] }),
+            store.dispatch('fetchAgentTasksOfOrg', { orgUuid: orgUuid.value }),
+            store.dispatch('fetchAgentTaskRoleConfigsOfOrg', orgUuid.value),
         ])
         kpis.value = k
         agents.value = a ?? []
         openSessions.value = s ?? []
+        agentTasks.value = t ?? []
+        taskRoleConfigs.value = rc ?? []
     } finally {
         loading.value = false
     }

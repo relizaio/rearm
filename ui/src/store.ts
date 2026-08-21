@@ -2196,6 +2196,67 @@ const storeObject : any = {
             })
             return response.data.sessionsOfOrg
         },
+        async fetchAgentTasksOfOrg (context: any, payload: { orgUuid: string, status?: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTasksOfOrg($orgUuid: ID!, $status: AgentTaskStatus) {
+                        agentTasksOfOrg(orgUuid: $orgUuid, status: $status) {
+                            uuid
+                            org
+                            externalRef
+                            title
+                            sourceUrl
+                            status
+                            pipeline
+                            currentStageIndex
+                            rolePassages {
+                                role
+                                agent
+                                session
+                                claimedAt
+                                completedAt
+                                outcome
+                                note
+                                promptVersion
+                            }
+                            activeClaim {
+                                role
+                                agent
+                                session
+                                claimedAt
+                                leaseExpiresAt
+                            }
+                            parentTask
+                            childTasks
+                            sessions
+                            prUrls
+                            createdDate
+                            completedAt
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, status: payload.status ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTasksOfOrg
+        },
+        async fetchAgentTaskRoleConfigsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskRoleConfigsOfOrg($orgUuid: ID!) {
+                        agentTaskRoleConfigsOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            name
+                            orderIndex
+                            routing
+                            requireDistinctAgent
+                            active
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRoleConfigsOfOrg
+        },
         async fetchSession (context: any, uuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
