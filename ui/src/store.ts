@@ -2246,6 +2246,7 @@ const storeObject : any = {
                         agentTaskRoleConfigsOfOrg(orgUuid: $orgUuid) {
                             uuid
                             name
+                            prompt
                             orderIndex
                             routing
                             requireDistinctAgent
@@ -2256,6 +2257,25 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskRoleConfigsOfOrg
+        },
+        async setAgentTaskRoleConfig (context: any, payload: { orgUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRoleConfigSet($orgUuid: ID!, $input: AgentTaskRoleConfigInput!) {
+                        agentTaskRoleConfigSet(orgUuid: $orgUuid, input: $input) {
+                            uuid
+                            name
+                            prompt
+                            orderIndex
+                            routing
+                            requireDistinctAgent
+                            active
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, input: payload.input },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRoleConfigSet
         },
         async fetchSession (context: any, uuid: string) {
             const response = await graphqlClient.query({

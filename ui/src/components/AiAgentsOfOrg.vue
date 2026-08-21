@@ -9,6 +9,7 @@
                 </p>
             </div>
             <n-space>
+                <n-button quaternary @click="showRoleConfig = true">Configure roles</n-button>
                 <n-button quaternary @click="openPolicies">Manage policies →</n-button>
             </n-space>
         </div>
@@ -40,6 +41,13 @@
 
             <!-- Task pipeline board (coordination plane over the tracker) -->
             <AiAgentTaskBoard :tasks="agentTasks" :role-configs="taskRoleConfigs" />
+
+            <AiAgentTaskRoleConfigModal
+                v-model:show="showRoleConfig"
+                :org-uuid="orgUuid"
+                :roles="taskRoleConfigs"
+                @saved="refreshRoleConfigs"
+            />
 
             <!-- Agent card grid -->
             <div>
@@ -180,6 +188,7 @@ import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTag,
 import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
 import AiAgentTaskBoard from '@/components/AiAgentTaskBoard.vue'
+import AiAgentTaskRoleConfigModal from '@/components/AiAgentTaskRoleConfigModal.vue'
 
 const store = useStore()
 const route = useRoute()
@@ -232,6 +241,11 @@ const agents = ref<any[]>([])
 const openSessions = ref<any[]>([])
 const agentTasks = ref<any[]>([])
 const taskRoleConfigs = ref<any[]>([])
+const showRoleConfig = ref<boolean>(false)
+
+async function refreshRoleConfigs () {
+    taskRoleConfigs.value = await store.dispatch('fetchAgentTaskRoleConfigsOfOrg', orgUuid.value) ?? []
+}
 
 const HERO_LIMIT = 8
 
