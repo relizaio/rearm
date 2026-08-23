@@ -2254,12 +2254,15 @@ const storeObject : any = {
                             orderIndex
                             dependsOn
                             holdReason
-                            assignment { session agent role assignedAt }
-                            signOffs { role agent outcome note signedOffAt }
-                            returns { role reason description returnedAt }
+                            assignment { session agent role assignedAt promptVersion }
+                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion }
+                            returns { role agent session reason description returnedAt }
                             parentTask
                             childTasks
+                            sessions
+                            registeredBySession
                             prUrls
+                            createdDate
                             completedAt
                         }
                     }`,

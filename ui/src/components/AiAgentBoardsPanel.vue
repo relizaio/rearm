@@ -88,7 +88,17 @@
             <n-tab-pane name="pert" tab="PERT">
                 <AiAgentTaskPertView :tasks="tasks"/>
             </n-tab-pane>
+            <n-tab-pane name="timeline" tab="Timeline">
+                <AiAgentTaskTimelineView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
+            </n-tab-pane>
+            <n-tab-pane name="table" tab="Table">
+                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
+            </n-tab-pane>
             </n-tabs>
+
+            <AiAgentTaskDetailDrawer
+                :task="selectedTask" :tasks="tasks" :agent-names="agentNames"
+                @close="selectedTask = null" @open="openTask"/>
         </template>
 
         <!-- Board create / edit modal -->
@@ -217,6 +227,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NInput, NInputNumber, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
+import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
+import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
+import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 
 const props = defineProps<{ orgUuid: string }>()
 
@@ -227,8 +240,9 @@ const router = useRouter()
 
 // Board selection and view live in the query string so a board (and
 // the view you were looking at) is linkable and survives a reload.
+const BOARD_VIEWS = ['kanban', 'pert', 'timeline', 'table']
 const boardView = ref<string>(
-    route.query.view === 'pert' ? 'pert' : 'kanban')
+    BOARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : 'kanban')
 
 function syncQuery () {
     const q: Record<string, string> = { ...(route.query as Record<string, string>), tab: 'boards' }
@@ -253,6 +267,15 @@ const editingBoardIsNew = ref(false)
 const editingRole = ref<any>(null)
 const editingRoleIsNew = ref(false)
 const saving = ref(false)
+const selectedTask = ref<any>(null)
+const agentNames = ref<Record<string, string>>({})
+
+function openTask (t: any) {
+    // resolve to the freshest copy from the board so drawer navigation
+    // (deps/lineage chips) always shows current state
+    selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? t
+}
+
 const showPresets = ref(false)
 const presets = ref<any[]>([])
 const editingPreset = ref<any>(null)
@@ -323,7 +346,7 @@ function atRole (role: string): any[] {
 const TaskCard = defineComponent({
     props: { t: { type: Object, required: true } },
     setup (p: any) {
-        return () => h(NCard, { size: 'small', class: ['tcard',
+        return () => h(NCard, { size: 'small', style: 'cursor: pointer', onClick: () => openTask(p.t), class: ['tcard',
             p.t.status === 'ASSIGNED' ? 'tcard--assigned' : '',
             p.t.status === 'COMPLETED' ? 'tcard--done' : ''] }, { default: () => [
             h('div', { class: 'tcard__title' }, p.t.title),
@@ -423,6 +446,12 @@ async function refreshBoardContent () {
     ])
     tasks.value = t ?? []
     roles.value = r ?? []
+    // agent uuid -> display name map for timeline/table/drawer; loaded
+    // lazily once per panel life, refreshed with board content
+    const agents = await store.dispatch('fetchAgentsOfOrg', props.orgUuid) ?? []
+    const m: Record<string, string> = {}
+    for (const a of agents) m[a.uuid] = a.effectiveDisplayName || a.name || a.uuid.slice(0, 8)
+    agentNames.value = m
 }
 
 function startEditBoard (b: any | null) {
