@@ -251,6 +251,25 @@ function blockedBy (t: any): string[] {
     })
 }
 
+// Resolve dependency uuids to the task rows so cards can name what
+// they wait on ("after") and what waits on them ("blocks").
+function depsOf (t: any): any[] {
+    return (t.dependsOn ?? []).map((d: string) =>
+        tasks.value.find(x => x.uuid === d) ?? { uuid: d, title: 'unknown task', status: 'UNKNOWN' })
+}
+
+function dependentsOf (t: any): any[] {
+    return tasks.value.filter(x => (x.dependsOn ?? []).includes(t.uuid))
+}
+
+// Compact card label: the tracker issue number when there is one,
+// otherwise a clipped title.
+function depLabel (t: any): string {
+    if (t.externalRef?.includes('#')) return '#' + t.externalRef.split('#').pop()
+    const title = t.title ?? 'task'
+    return title.length > 16 ? title.slice(0, 15) + '…' : title
+}
+
 const boardOptions = computed(() => boards.value.map(b => ({ label: b.name, value: b.uuid })))
 const currentBoard = computed(() => boards.value.find(b => b.uuid === selectedBoard.value) ?? null)
 const isLocked = computed(() => {
@@ -290,8 +309,12 @@ const TaskCard = defineComponent({
                     default: () => p.t.holdReason ?? 'on hold',
                 }) : null,
                 blockedBy(p.t).length ? h(NTooltip, { trigger: 'hover' }, {
-                    trigger: () => h(NTag, { size: 'tiny', bordered: false }, { default: () => `blocked (${blockedBy(p.t).length} dep)` }),
-                    default: () => 'Waiting on incomplete dependencies — the server releases this task when they complete.',
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, {
+                        default: () => 'blocked by ' + blockedBy(p.t)
+                            .map((d: string) => depLabel(tasks.value.find(x => x.uuid === d) ?? { uuid: d }))
+                            .join(', '),
+                    }),
+                    default: () => 'Not assignable until every dependency is COMPLETED; the server releases it automatically.',
                 }) : null,
                 p.t.parentTask ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'subtask' }) : null,
                 p.t.childTasks?.length ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => `${p.t.childTasks.length} subtasks` }) : null,
@@ -302,6 +325,22 @@ const TaskCard = defineComponent({
                 ...(p.t.prUrls ?? []).map((pr: string) => h(NTag, { size: 'tiny', bordered: false, type: 'success' },
                     { default: () => h('a', { href: pr, target: '_blank', rel: 'noopener', class: 'prlink' }, 'PR') })),
             ]),
+            p.t.dependsOn?.length ? h('div', { class: 'tcard__deps' }, [
+                h('span', { class: 'deplabel' }, 'after'),
+                ...depsOf(p.t).map((d: any, i: number) => h(NTooltip, { trigger: 'hover', key: 'a' + i }, {
+                    trigger: () => h('span', {
+                        class: ['depchip', d.status === 'COMPLETED' ? 'depchip--done' : 'depchip--wait'],
+                    }, depLabel(d)),
+                    default: () => `${d.title} — ${d.status}`,
+                })),
+            ]) : null,
+            dependentsOf(p.t).length ? h('div', { class: 'tcard__deps' }, [
+                h('span', { class: 'deplabel' }, 'blocks'),
+                ...dependentsOf(p.t).map((d: any, i: number) => h(NTooltip, { trigger: 'hover', key: 'b' + i }, {
+                    trigger: () => h('span', { class: 'depchip depchip--blocks' }, depLabel(d)),
+                    default: () => `${d.title} — ${d.status}`,
+                })),
+            ]) : null,
             p.t.signOffs?.length ? h('div', { class: 'tcard__passages' },
                 p.t.signOffs.map((s: any, i: number) => h(NTooltip, { trigger: 'hover', key: i }, {
                     trigger: () => h('span', { class: ['passage', 'passage--' + (s.outcome || '').toLowerCase()] }, s.role),
@@ -555,6 +594,19 @@ async function operatorLock (lock: boolean) {
         .tcard__ref { font-size: 12px; margin-bottom: 6px; word-break: break-all; }
         .tcard__meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
         .tcard__passages { display: flex; flex-wrap: wrap; gap: 4px; }
+        .tcard__deps {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 4px;
+            .deplabel {
+                font-size: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: #999;
+            }
+        }
     }
     .passage {
         font-size: 11px;
@@ -564,6 +616,16 @@ async function operatorLock (lock: boolean) {
         color: #555;
         &--passed { background: #e2f3e8; color: #2f7a4d; }
         &--rejected { background: #fbe3e3; color: #b03a3a; }
+    }
+    .depchip {
+        font-size: 11px;
+        font-family: monospace;
+        padding: 1px 6px;
+        border-radius: 8px;
+        border: 1px dashed transparent;
+        &--done { background: #e2f3e8; color: #2f7a4d; }
+        &--wait { background: #fdf1de; color: #9a6516; border-color: #e6c88f; }
+        &--blocks { background: rgba(128, 128, 128, 0.12); color: #666; }
     }
     .prlink { color: inherit; text-decoration: none; }
 }
