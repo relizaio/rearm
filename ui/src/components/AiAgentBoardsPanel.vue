@@ -12,6 +12,7 @@
                 />
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
+                <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
             </n-space>
         </div>
@@ -37,13 +38,25 @@
             </n-alert>
             <div class="boardmeta">
                 <span v-for="s in currentBoard.sources ?? []" :key="s" class="srcchip">{{ s }}</span>
-                <a v-if="currentBoard.coordinatingIssueUrl" :href="currentBoard.coordinatingIssueUrl"
-                   target="_blank" rel="noopener" class="coordissue">coordinating issue ↗</a>
                 <n-tag size="tiny" :bordered="false" :type="currentBoard.coordinatorSeat ? 'success' : 'default'">
                     {{ currentBoard.coordinatorSeat ? 'coordinator connected' : 'no coordinator' }}
                 </n-tag>
                 <n-button v-if="!isLocked" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
             </div>
+            <n-alert v-if="currentBoard.missingCapabilities?.length" type="warning" class="lockbanner">
+                Delivery loop incomplete: no active role covers
+                {{ currentBoard.missingCapabilities.join(', ') }} — this board cannot ship until a role carries them.
+            </n-alert>
+            <n-collapse v-if="currentBoard.events?.length" class="eventsfeed">
+                <n-collapse-item :title="`Board events (${currentBoard.events.length})`" name="ev">
+                    <div v-for="(e, i) in [...currentBoard.events].reverse()" :key="i" class="evrow">
+                        <n-tag size="tiny" :bordered="false"
+                               :type="e.kind === 'ALERT' ? 'error' : e.kind === 'LOCKED' ? 'warning' : 'default'">{{ e.kind }}</n-tag>
+                        <span class="evmsg">{{ e.message }}</span>
+                        <span class="evmeta">{{ e.actor }} · {{ formatEventTime(e.eventAt) }}</span>
+                    </div>
+                </n-collapse-item>
+            </n-collapse>
 
             <!-- Hub-and-spoke kanban: intake / per-role / awaiting coordinator / done -->
             <div class="board">
@@ -58,6 +71,10 @@
                 <div class="col">
                     <div class="col__head">Awaiting coordinator</div>
                     <TaskCard v-for="t in byStatus('AWAITING_COORDINATOR')" :key="t.uuid" :t="t"/>
+                </div>
+                <div class="col" v-if="byStatus('ON_HOLD').length">
+                    <div class="col__head col__head--hold">On hold</div>
+                    <TaskCard v-for="t in byStatus('ON_HOLD')" :key="t.uuid" :t="t"/>
                 </div>
                 <div class="col col--done">
                     <div class="col__head">Completed</div>
@@ -79,10 +96,12 @@
                 <n-select v-model:value="editingBoard.sources" filterable multiple tag
                           placeholder="Wired sources, e.g. github:owner/repo (type + enter)"
                           :show-arrow="false" :show="false"/>
-                <n-input v-model:value="editingBoard.coordinatingIssueUrl" placeholder="Coordinating issue URL (human hand-off channel)"/>
                 <n-input-number v-model:value="editingBoard.perAgentWipLimit" :min="1">
                     <template #prefix><span class="flabel">per-agent WIP limit</span></template>
                 </n-input-number>
+                <n-checkbox v-if="editingBoardIsNew" v-model:checked="editingBoard.seedFromPresets">
+                    seed roles from org presets (a preset named "coordinator" seeds the coordinator prompt)
+                </n-checkbox>
                 <div>
                     <div class="flabel" style="margin-bottom: 4px">coordinator prompt (implicit role — always present)</div>
                     <n-input v-model:value="editingBoard.coordinatorPrompt" type="textarea"
@@ -124,6 +143,9 @@
                         <n-checkbox v-model:checked="editingRole.requireDistinctAgent">require distinct agent</n-checkbox>
                         <n-checkbox v-model:checked="editingRole.active">active</n-checkbox>
                     </n-space>
+                    <n-select v-model:value="editingRole.requiredCapabilities" multiple
+                              :options="capabilityOptions"
+                              placeholder="Required capabilities (declared, unverified in v1)"/>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">role prompt (served to the assuming agent)</div>
                         <n-input v-model:value="editingRole.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 20 }"/>
@@ -135,13 +157,56 @@
                 </n-space>
             </n-modal>
         </n-modal>
+
+        <!-- Org role presets (operator library; boards seed from these) -->
+        <n-modal :show="showPresets" preset="card" title="Org role presets" style="max-width: 860px"
+                 @update:show="(v: boolean) => showPresets = v">
+            <p class="hint">
+                Operator-curated library copied onto new boards (copy semantics — edits here do not
+                ripple to existing boards). A preset named "coordinator" seeds a new board's
+                coordinator prompt.
+            </p>
+            <n-data-table :columns="presetColumns" :data="sortedPresets" :row-key="(r: any) => r.uuid ?? r.name" size="small"/>
+            <n-button class="addbtn" size="small" dashed @click="startAddPreset">+ Add preset</n-button>
+
+            <n-modal :show="editingPreset !== null" preset="card"
+                     :title="editingPresetIsNew ? 'New preset' : `Edit preset: ${editingPreset?.name}`"
+                     style="max-width: 640px"
+                     @update:show="(v: boolean) => { if (!v) editingPreset = null }">
+                <n-space vertical :size="12" v-if="editingPreset">
+                    <n-input v-model:value="editingPreset.name" :disabled="!editingPresetIsNew" placeholder="Preset name (use coordinator for the coordinator prompt)">
+                        <template #prefix><span class="flabel">name</span></template>
+                    </n-input>
+                    <n-input-number v-model:value="editingPreset.orderIndex">
+                        <template #prefix><span class="flabel">routing order</span></template>
+                    </n-input-number>
+                    <n-input-number v-model:value="editingPreset.wipLimit" :min="0" placeholder="0 = uncapped">
+                        <template #prefix><span class="flabel">role WIP limit</span></template>
+                    </n-input-number>
+                    <n-space :size="18">
+                        <n-checkbox v-model:checked="editingPreset.requireDistinctAgent">require distinct agent</n-checkbox>
+                        <n-checkbox v-model:checked="editingPreset.active">active</n-checkbox>
+                    </n-space>
+                    <n-select v-model:value="editingPreset.requiredCapabilities" multiple
+                              :options="capabilityOptions" placeholder="Required capabilities"/>
+                    <div>
+                        <div class="flabel" style="margin-bottom: 4px">prompt</div>
+                        <n-input v-model:value="editingPreset.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 20 }"/>
+                    </div>
+                    <n-space justify="end">
+                        <n-button quaternary @click="editingPreset = null">Cancel</n-button>
+                        <n-button type="primary" :loading="saving" @click="savePreset">Save</n-button>
+                    </n-space>
+                </n-space>
+            </n-modal>
+        </n-modal>
     </div>
 </template>
 
 <script lang="ts" setup>
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
-import { NAlert, NButton, NCard, NCheckbox, NDataTable, NInput, NInputNumber, NModal, NSelect, NSpace, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NInput, NInputNumber, NModal, NSelect, NSpace, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 
 const props = defineProps<{ orgUuid: string }>()
 
@@ -158,6 +223,33 @@ const editingBoardIsNew = ref(false)
 const editingRole = ref<any>(null)
 const editingRoleIsNew = ref(false)
 const saving = ref(false)
+const showPresets = ref(false)
+const presets = ref<any[]>([])
+const editingPreset = ref<any>(null)
+const editingPresetIsNew = ref(false)
+
+const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
+    .map(c => ({ label: c, value: c }))
+
+const sortedPresets = computed(() =>
+    [...presets.value].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)))
+
+function formatEventTime (iso: string | null | undefined): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return isNaN(d.getTime()) ? '' : d.toLocaleString('en-CA', {
+        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    })
+}
+
+// A QUEUED task is blocked when any dependency is not yet COMPLETED.
+function blockedBy (t: any): string[] {
+    if (t.status !== 'QUEUED' || !t.dependsOn?.length) return []
+    return t.dependsOn.filter((d: string) => {
+        const dep = tasks.value.find(x => x.uuid === d)
+        return !dep || dep.status !== 'COMPLETED'
+    })
+}
 
 const boardOptions = computed(() => boards.value.map(b => ({ label: b.name, value: b.uuid })))
 const currentBoard = computed(() => boards.value.find(b => b.uuid === selectedBoard.value) ?? null)
@@ -193,6 +285,14 @@ const TaskCard = defineComponent({
             h('div', { class: 'tcard__meta' }, [
                 p.t.status === 'QUEUED' ? h(NTag, { size: 'tiny', bordered: false }, { default: () => `queued #${p.t.orderIndex}` }) : null,
                 p.t.status === 'ASSIGNED' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'assigned' }) : null,
+                p.t.status === 'ON_HOLD' ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'on hold' }),
+                    default: () => p.t.holdReason ?? 'on hold',
+                }) : null,
+                blockedBy(p.t).length ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false }, { default: () => `blocked (${blockedBy(p.t).length} dep)` }),
+                    default: () => 'Waiting on incomplete dependencies — the server releases this task when they complete.',
+                }) : null,
                 p.t.parentTask ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'subtask' }) : null,
                 p.t.childTasks?.length ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => `${p.t.childTasks.length} subtasks` }) : null,
                 p.t.returns?.length ? h(NTooltip, { trigger: 'hover' }, {
@@ -251,7 +351,7 @@ async function refreshBoardContent () {
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])] }
-        : { name: '', description: '', sources: [], coordinatingIssueUrl: '', coordinatorPrompt: '', perAgentWipLimit: 2 }
+        : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2, seedFromPresets: true }
 }
 
 async function saveBoard () {
@@ -264,12 +364,12 @@ async function saveBoard () {
         const input: any = {
             description: editingBoard.value.description ?? '',
             sources: editingBoard.value.sources ?? [],
-            coordinatingIssueUrl: editingBoard.value.coordinatingIssueUrl ?? '',
             coordinatorPrompt: editingBoard.value.coordinatorPrompt ?? '',
             perAgentWipLimit: editingBoard.value.perAgentWipLimit ?? 2,
         }
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
+            input.seedFromPresets = !!editingBoard.value.seedFromPresets
             await store.dispatch('createAgentBoard', { orgUuid: props.orgUuid, input })
         } else {
             await store.dispatch('updateAgentBoard', { boardUuid: editingBoard.value.uuid, input })
@@ -306,11 +406,66 @@ async function saveRole () {
                 wipLimit: editingRole.value.wipLimit ?? 0,
                 requireDistinctAgent: !!editingRole.value.requireDistinctAgent,
                 active: !!editingRole.value.active,
+                requiredCapabilities: editingRole.value.requiredCapabilities ?? [],
             },
         })
         notification.success({ content: `Role ${editingRole.value.name} saved` })
         editingRole.value = null
         await refreshBoardContent()
+    } catch (e: any) {
+        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+    } finally {
+        saving.value = false
+    }
+}
+
+const presetColumns: DataTableColumns<any> = [
+    { title: 'Order', key: 'orderIndex', width: 70 },
+    { title: 'Preset', key: 'name', width: 140 },
+    {
+        title: 'Capabilities', key: 'caps', width: 220,
+        render: (r: any) => (r.requiredCapabilities ?? []).join(', ') || '—',
+    },
+    { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
+    {
+        title: '', key: 'actions', width: 70,
+        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingPresetIsNew.value = false; editingPreset.value = { ...r } } }, { default: () => 'Edit' }),
+    },
+]
+
+async function openPresets () {
+    presets.value = await store.dispatch('fetchAgentTaskRolePresetsOfOrg', props.orgUuid) ?? []
+    showPresets.value = true
+}
+
+function startAddPreset () {
+    editingPresetIsNew.value = true
+    const maxOrder = Math.max(0, ...presets.value.map(r => r.orderIndex ?? 0))
+    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [] }
+}
+
+async function savePreset () {
+    if (!editingPreset.value?.name?.trim()) {
+        notification.error({ content: 'Preset name is required' })
+        return
+    }
+    saving.value = true
+    try {
+        await store.dispatch('setAgentTaskRolePreset', {
+            orgUuid: props.orgUuid,
+            input: {
+                name: editingPreset.value.name.trim(),
+                prompt: editingPreset.value.prompt ?? '',
+                orderIndex: editingPreset.value.orderIndex ?? 0,
+                wipLimit: editingPreset.value.wipLimit ?? 0,
+                requireDistinctAgent: !!editingPreset.value.requireDistinctAgent,
+                active: !!editingPreset.value.active,
+                requiredCapabilities: editingPreset.value.requiredCapabilities ?? [],
+            },
+        })
+        notification.success({ content: `Preset ${editingPreset.value.name} saved` })
+        editingPreset.value = null
+        presets.value = await store.dispatch('fetchAgentTaskRolePresetsOfOrg', props.orgUuid) ?? []
     } catch (e: any) {
         notification.error({ content: `Save failed: ${e?.message ?? e}` })
     } finally {
@@ -348,6 +503,17 @@ async function operatorLock (lock: boolean) {
     .addbtn { margin-top: 10px; }
     .flabel { color: #888; font-size: 12px; }
     .lockbanner { margin-bottom: 10px; }
+    .eventsfeed { margin-bottom: 10px; }
+    .evrow {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 12px;
+        padding: 2px 0;
+        .evmsg { flex: 1; }
+        .evmeta { color: #999; font-size: 11px; white-space: nowrap; }
+    }
+    .col__head--hold { color: #b03a3a; }
     .boardmeta {
         display: flex;
         align-items: center;

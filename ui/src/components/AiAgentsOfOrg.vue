@@ -15,6 +15,8 @@
 
         <n-spin v-if="loading" size="small"/>
 
+        <n-tabs type="line" animated default-value="agents">
+        <n-tab-pane name="agents" tab="Agents">
         <n-space vertical :size="20">
             <!-- KPI row (cross-cutting dashboard metrics) -->
             <div class="kpis" v-if="kpis">
@@ -37,9 +39,6 @@
                     <div class="kpi__v">{{ kpis.registeredAgents }}</div>
                 </n-card>
             </div>
-
-            <!-- Task boards (hub-and-spoke coordination over the tracker) -->
-            <AiAgentBoardsPanel :org-uuid="orgUuid" />
 
             <!-- Agent card grid -->
             <div>
@@ -154,6 +153,11 @@
                 />
             </div>
         </n-space>
+        </n-tab-pane>
+        <n-tab-pane name="boards" tab="Task boards">
+            <AiAgentBoardsPanel :org-uuid="orgUuid" />
+        </n-tab-pane>
+        </n-tabs>
 
         <n-modal v-model:show="showEditName" preset="card" title="Edit agent display name" style="width: 480px;">
             <n-input v-model:value="nameDraft" placeholder="Display name (blank = use registration name)"
@@ -176,7 +180,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
 import AiAgentBoardsPanel from '@/components/AiAgentBoardsPanel.vue'

@@ -2180,9 +2180,9 @@ const storeObject : any = {
                             description
                             status
                             sources
-                            coordinatingIssueRef
-                            coordinatingIssueUrl
                             coordinatorPrompt
+                            missingCapabilities
+                            events { kind message actor eventAt }
                             lock { level reason lockedBy lockedAt }
                             coordinatorSeat { session agent claimedAt }
                             perAgentWipLimit
@@ -2252,6 +2252,8 @@ const storeObject : any = {
                             status
                             role
                             orderIndex
+                            dependsOn
+                            holdReason
                             assignment { session agent role assignedAt }
                             signOffs { role agent outcome note signedOffAt }
                             returns { role reason description returnedAt }
@@ -2278,12 +2280,44 @@ const storeObject : any = {
                             wipLimit
                             requireDistinctAgent
                             active
+                            requiredCapabilities
                         }
                     }`,
                 variables: { boardUuid },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskRoleConfigsOfBoard
+        },
+        async fetchAgentTaskRolePresetsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskRolePresetsOfOrg($orgUuid: ID!) {
+                        agentTaskRolePresetsOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            name
+                            prompt
+                            orderIndex
+                            wipLimit
+                            requireDistinctAgent
+                            active
+                            requiredCapabilities
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRolePresetsOfOrg
+        },
+        async setAgentTaskRolePreset (context: any, payload: { orgUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRolePresetSet($orgUuid: ID!, $input: AgentTaskRoleConfigInput!) {
+                        agentTaskRolePresetSet(orgUuid: $orgUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRolePresetSet
         },
         async setAgentTaskRoleConfig (context: any, payload: { boardUuid: string, input: any }) {
             const response = await graphqlClient.mutate({
