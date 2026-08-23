@@ -47,6 +47,16 @@
                     </template>
                     Max concurrently assigned tasks per agent on this board.
                 </n-tooltip>
+                <n-tooltip trigger="hover">
+                    <template #trigger>
+                        <span class="wipchip" :class="{ 'wipchip--strict': currentBoard.priorityType === 'STRICT' }">
+                            priority {{ (currentBoard.priorityType ?? 'LAX').toLowerCase() }}
+                        </span>
+                    </template>
+                    {{ currentBoard.priorityType === 'STRICT'
+                        ? 'STRICT: a worker may only take the top eligible task for it — coordinator ordering is enforced at assignment.'
+                        : 'LAX: the poll offers work in priority order, but a worker may assign any eligible task.' }}
+                </n-tooltip>
                 <n-tooltip v-for="w in agentWip" :key="w.agent" trigger="hover">
                     <template #trigger>
                         <span class="wipchip" :class="{ 'wipchip--full': w.count >= currentBoard.perAgentWipLimit }">
@@ -139,6 +149,8 @@
                 <n-input-number v-model:value="editingBoard.perAgentWipLimit" :min="1">
                     <template #prefix><span class="flabel">per-agent WIP limit</span></template>
                 </n-input-number>
+                <n-select v-model:value="editingBoard.priorityType" :options="priorityOptions"
+                          placeholder="Priority enforcement"/>
                 <n-checkbox v-if="editingBoardIsNew" v-model:checked="editingBoard.seedFromPresets">
                     seed roles from org presets (a preset named "coordinator" seeds the coordinator prompt)
                 </n-checkbox>
@@ -305,6 +317,11 @@ const editingPresetIsNew = ref(false)
 
 const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
     .map(c => ({ label: c, value: c }))
+
+const priorityOptions = [
+    { label: 'LAX — priority is advisory; workers may take any eligible task', value: 'LAX' },
+    { label: 'STRICT — workers may only take their top eligible task', value: 'STRICT' },
+]
 
 const sortedPresets = computed(() =>
     [...presets.value].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)))
@@ -540,12 +557,12 @@ async function refreshBoardContent () {
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])] }
-        : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2, seedFromPresets: true }
+        : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2, priorityType: 'LAX', seedFromPresets: true }
 }
 
 async function saveBoard () {
     if (!editingBoard.value?.name?.trim()) {
-        notification.error({ content: 'Board name is required' })
+        notification.error({ content: 'Board name is required', duration: 8000 })
         return
     }
     saving.value = true
@@ -555,6 +572,7 @@ async function saveBoard () {
             sources: editingBoard.value.sources ?? [],
             coordinatorPrompt: editingBoard.value.coordinatorPrompt ?? '',
             perAgentWipLimit: editingBoard.value.perAgentWipLimit ?? 2,
+            priorityType: editingBoard.value.priorityType ?? 'LAX',
         }
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
@@ -563,7 +581,7 @@ async function saveBoard () {
         } else {
             await store.dispatch('updateAgentBoard', { boardUuid: editingBoard.value.uuid, input })
         }
-        notification.success({ content: `Board ${editingBoard.value.name} saved` })
+        notification.success({ content: `Board ${editingBoard.value.name} saved`, duration: 3000 })
         const wasNew = editingBoardIsNew.value
         const savedName = editingBoard.value.name.trim()
         editingBoard.value = null
@@ -573,7 +591,7 @@ async function saveBoard () {
             if (created) selectedBoard.value = created.uuid
         }
     } catch (e: any) {
-        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+        notification.error({ content: `Save failed: ${e?.message ?? e}`, duration: 8000 })
     } finally {
         saving.value = false
     }
@@ -587,7 +605,7 @@ function startAddRole () {
 
 async function saveRole () {
     if (!editingRole.value?.name?.trim() || !selectedBoard.value) {
-        notification.error({ content: 'Role name is required' })
+        notification.error({ content: 'Role name is required', duration: 8000 })
         return
     }
     saving.value = true
@@ -604,11 +622,11 @@ async function saveRole () {
                 requiredCapabilities: editingRole.value.requiredCapabilities ?? [],
             },
         })
-        notification.success({ content: `Role ${editingRole.value.name} saved` })
+        notification.success({ content: `Role ${editingRole.value.name} saved`, duration: 3000 })
         editingRole.value = null
         await refreshBoardContent()
     } catch (e: any) {
-        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+        notification.error({ content: `Save failed: ${e?.message ?? e}`, duration: 8000 })
     } finally {
         saving.value = false
     }
@@ -641,7 +659,7 @@ function startAddPreset () {
 
 async function savePreset () {
     if (!editingPreset.value?.name?.trim()) {
-        notification.error({ content: 'Preset name is required' })
+        notification.error({ content: 'Preset name is required', duration: 8000 })
         return
     }
     saving.value = true
@@ -658,11 +676,11 @@ async function savePreset () {
                 requiredCapabilities: editingPreset.value.requiredCapabilities ?? [],
             },
         })
-        notification.success({ content: `Preset ${editingPreset.value.name} saved` })
+        notification.success({ content: `Preset ${editingPreset.value.name} saved`, duration: 3000 })
         editingPreset.value = null
         presets.value = await store.dispatch('fetchAgentTaskRolePresetsOfOrg', props.orgUuid) ?? []
     } catch (e: any) {
-        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+        notification.error({ content: `Save failed: ${e?.message ?? e}`, duration: 8000 })
     } finally {
         saving.value = false
     }
@@ -676,10 +694,10 @@ async function operatorLock (lock: boolean) {
     }
     try {
         await store.dispatch('setAgentBoardOperatorLock', { boardUuid: selectedBoard.value, lock, reason })
-        notification.success({ content: lock ? 'Board locked (OPERATOR)' : 'Board unlocked' })
+        notification.success({ content: lock ? 'Board locked (OPERATOR)' : 'Board unlocked', duration: 3000 })
         await refreshBoards()
     } catch (e: any) {
-        notification.error({ content: `Lock change failed: ${e?.message ?? e}` })
+        notification.error({ content: `Lock change failed: ${e?.message ?? e}`, duration: 8000 })
     }
 }
 </script>
@@ -717,6 +735,7 @@ async function operatorLock (lock: boolean) {
         color: #666;
         &--board { font-weight: 600; }
         &--full { background: #fbe3e3; color: #b03a3a; }
+        &--strict { background: #e8f0fb; color: #3c5f96; font-weight: 600; }
     }
     .boardmeta {
         display: flex;

@@ -2186,6 +2186,7 @@ const storeObject : any = {
                             lock { level reason lockedBy lockedAt }
                             coordinatorSeat { session agent claimedAt }
                             perAgentWipLimit
+                            priorityType
                         }
                     }`,
                 variables: { orgUuid },
