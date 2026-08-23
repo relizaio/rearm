@@ -383,12 +383,40 @@ const activeRoles = computed(() =>
 const sortedRoles = computed(() =>
     [...roles.value].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)))
 
+// Column ordering: in-flight first, then what a worker could actually
+// pick up now, then capped, then dependency-blocked - each group by
+// coordinator priority. The top of a column always answers "what is
+// moving and what is next"; stuck work sinks.
+function workRank (t: any): number {
+    if (t.status === 'ASSIGNED') return 0
+    if (t.status === 'QUEUED') {
+        if (blockedBy(t).length) return 3
+        if (wipCapped(t)) return 2
+        return 1
+    }
+    return 4
+}
+
+function byPriority (list: any[]): any[] {
+    return [...list].sort((a, b) =>
+        workRank(a) - workRank(b)
+        || (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+        || String(a.createdDate ?? '').localeCompare(String(b.createdDate ?? '')))
+}
+
 function byStatus (s: string): any[] {
-    return tasks.value.filter(t => t.status === s)
+    const list = tasks.value.filter(t => t.status === s)
+    // completed reads best newest-first; everything else by priority
+    if (s === 'COMPLETED') {
+        return [...list].sort((a, b) =>
+            String(b.completedAt ?? '').localeCompare(String(a.completedAt ?? '')))
+    }
+    return byPriority(list)
 }
 // QUEUED + ASSIGNED tasks grouped under their current role column
 function atRole (role: string): any[] {
-    return tasks.value.filter(t => (t.status === 'QUEUED' || t.status === 'ASSIGNED') && t.role === role)
+    return byPriority(tasks.value.filter(t =>
+        (t.status === 'QUEUED' || t.status === 'ASSIGNED') && t.role === role))
 }
 
 // Compact task card as a local render component to keep the template lean.
@@ -397,7 +425,9 @@ const TaskCard = defineComponent({
     setup (p: any) {
         return () => h(NCard, { size: 'small', style: 'cursor: pointer', onClick: () => openTask(p.t), class: ['tcard',
             p.t.status === 'ASSIGNED' ? 'tcard--assigned' : '',
-            p.t.status === 'COMPLETED' ? 'tcard--done' : ''] }, { default: () => [
+            p.t.status === 'COMPLETED' ? 'tcard--done' : '',
+            workRank(p.t) === 1 ? 'tcard--ready' : '',
+            workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
             h('div', { class: 'tcard__title' }, p.t.title),
             h('div', { class: 'tcard__ref' }, p.t.sourceUrl
                 ? h('a', { href: p.t.sourceUrl, target: '_blank', rel: 'noopener' },
@@ -730,6 +760,8 @@ async function operatorLock (lock: boolean) {
     .tcard {
         margin-bottom: 10px;
         &--assigned { border-left: 3px solid #d9a24a; }
+        &--ready { border-left: 3px solid #6c8fc7; }
+        &--stuck { opacity: 0.72; }
         &--done { opacity: 0.85; border-left: 3px solid #4a9d6e; }
         .tcard__title { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
         .tcard__ref { font-size: 12px; margin-bottom: 6px; word-break: break-all; }
