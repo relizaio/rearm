@@ -213,15 +213,115 @@
                                     :min="0" placeholder="0 = uncapped">
                         <template #prefix><span class="flabel">role WIP limit</span></template>
                     </n-input-number>
-                    <n-space :size="12">
-                        <n-select v-model:value="editingRole.kind" :options="roleKindOptions"
-                                  style="width: 190px" placeholder="Role kind"/>
-                        <n-select v-model:value="editingRole.necessity" :options="necessityOptions"
-                                  style="width: 190px" placeholder="Necessity"/>
-                        <n-select v-model:value="editingRole.humanGate" :options="humanGateOptions"
-                                  :disabled="editingRole.kind === 'HUMAN'"
-                                  style="width: 220px" placeholder="Human gate"/>
-                    </n-space>
+                    <div>
+                        <div class="flabel" style="margin-bottom: 4px">worked by</div>
+                        <n-radio-group v-model:value="editingRole.kind" size="small">
+                            <n-radio-button value="AGENTIC">
+                                <span style="display: inline-flex; align-items: center;">
+                                    AGENTIC
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Worked by agents: the role is offered on poll, assigned to a session, and signed off by the agent that assumed it.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="HUMAN">
+                                <span style="display: inline-flex; align-items: center;">
+                                    HUMAN
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        A human workflow stage: never offered to agent polls and never assignable — an org admin signs off directly from the queue. WIP, distinct-agent and capabilities do not apply.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </div>
+                    <div>
+                        <div class="flabel" style="margin-bottom: 4px">coordinator pass</div>
+                        <n-radio-group v-model:value="editingRole.necessity" size="small">
+                            <n-radio-button value="OPTIONAL">
+                                <span style="display: inline-flex; align-items: center;">
+                                    OPTIONAL
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        The coordinator may skip this role — routing through it is its judgment, per task.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="REQUIRED">
+                                <span style="display: inline-flex; align-items: center;">
+                                    REQUIRED
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Unskippable: no task completes unless its most recent sign-off in this role is PASSED. Cancelled tasks and split parents are exempt.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </div>
+                    <div>
+                        <div class="flabel" style="margin-bottom: 4px">human gate</div>
+                        <n-radio-group v-model:value="editingRole.humanGate" size="small">
+                            <n-radio-button value="NONE"
+                                           :disabled="editingRole.kind === 'HUMAN'">
+                                <span style="display: inline-flex; align-items: center;">
+                                    NONE
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        No human review of this role's sign-offs.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="ON_PASS"
+                                           :disabled="editingRole.kind === 'HUMAN'">
+                                <span style="display: inline-flex; align-items: center;">
+                                    ON PASS
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        A PASSED sign-off in this role parks the task for human review — and only then, so a task never routed through this role never pauses.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="ON_ANY_SIGNOFF"
+                                           :disabled="editingRole.kind === 'HUMAN'">
+                                <span style="display: inline-flex; align-items: center;">
+                                    ANY
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Every sign-off in this role parks the task for human review, rejections included (human arbitration of bounces).
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </div>
                     <n-space :size="18" v-if="editingRole.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingRole.requireDistinctAgent">require distinct agent</n-checkbox>
                         <n-checkbox v-model:checked="editingRole.active">active</n-checkbox>
@@ -270,15 +370,115 @@
                                     :min="0" placeholder="0 = uncapped">
                         <template #prefix><span class="flabel">role WIP limit</span></template>
                     </n-input-number>
-                    <n-space :size="12">
-                        <n-select v-model:value="editingPreset.kind" :options="roleKindOptions"
-                                  style="width: 190px" placeholder="Role kind"/>
-                        <n-select v-model:value="editingPreset.necessity" :options="necessityOptions"
-                                  style="width: 190px" placeholder="Necessity"/>
-                        <n-select v-model:value="editingPreset.humanGate" :options="humanGateOptions"
-                                  :disabled="editingPreset.kind === 'HUMAN'"
-                                  style="width: 220px" placeholder="Human gate"/>
-                    </n-space>
+                    <div>
+                        <div class="flabel" style="margin-bottom: 4px">worked by</div>
+                        <n-radio-group v-model:value="editingPreset.kind" size="small">
+                            <n-radio-button value="AGENTIC">
+                                <span style="display: inline-flex; align-items: center;">
+                                    AGENTIC
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Worked by agents: the role is offered on poll, assigned to a session, and signed off by the agent that assumed it.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="HUMAN">
+                                <span style="display: inline-flex; align-items: center;">
+                                    HUMAN
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        A human workflow stage: never offered to agent polls and never assignable — an org admin signs off directly from the queue. WIP, distinct-agent and capabilities do not apply.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </div>
+                    <div>
+                        <div class="flabel" style="margin-bottom: 4px">coordinator pass</div>
+                        <n-radio-group v-model:value="editingPreset.necessity" size="small">
+                            <n-radio-button value="OPTIONAL">
+                                <span style="display: inline-flex; align-items: center;">
+                                    OPTIONAL
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        The coordinator may skip this role — routing through it is its judgment, per task.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="REQUIRED">
+                                <span style="display: inline-flex; align-items: center;">
+                                    REQUIRED
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Unskippable: no task completes unless its most recent sign-off in this role is PASSED. Cancelled tasks and split parents are exempt.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </div>
+                    <div>
+                        <div class="flabel" style="margin-bottom: 4px">human gate</div>
+                        <n-radio-group v-model:value="editingPreset.humanGate" size="small">
+                            <n-radio-button value="NONE"
+                                           :disabled="editingPreset.kind === 'HUMAN'">
+                                <span style="display: inline-flex; align-items: center;">
+                                    NONE
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        No human review of this role's sign-offs.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="ON_PASS"
+                                           :disabled="editingPreset.kind === 'HUMAN'">
+                                <span style="display: inline-flex; align-items: center;">
+                                    ON PASS
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        A PASSED sign-off in this role parks the task for human review — and only then, so a task never routed through this role never pauses.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="ON_ANY_SIGNOFF"
+                                           :disabled="editingPreset.kind === 'HUMAN'">
+                                <span style="display: inline-flex; align-items: center;">
+                                    ANY
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Every sign-off in this role parks the task for human review, rejections included (human arbitration of bounces).
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </div>
                     <n-space :size="18" v-if="editingPreset.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingPreset.requireDistinctAgent">require distinct agent</n-checkbox>
                         <n-checkbox v-model:checked="editingPreset.active">active</n-checkbox>
@@ -304,7 +504,8 @@
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NInput, NInputNumber, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { QuestionCircle20Regular } from '@vicons/fluent'
 import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
@@ -363,19 +564,6 @@ const editingPresetIsNew = ref(false)
 const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
     .map(c => ({ label: c, value: c }))
 
-const roleKindOptions = [
-    { label: 'AGENTIC — worked by agents via poll/assign', value: 'AGENTIC' },
-    { label: 'HUMAN — org admins sign off from the queue', value: 'HUMAN' },
-]
-const necessityOptions = [
-    { label: 'OPTIONAL — coordinator may skip this role', value: 'OPTIONAL' },
-    { label: 'REQUIRED — no completion without a passing sign-off', value: 'REQUIRED' },
-]
-const humanGateOptions = [
-    { label: 'no human gate', value: 'NONE' },
-    { label: 'ON_PASS — passing sign-offs await human review', value: 'ON_PASS' },
-    { label: 'ON_ANY_SIGNOFF — rejections gate too', value: 'ON_ANY_SIGNOFF' },
-]
 const priorityOptions = [
     { label: 'LAX — priority is advisory; workers may take any eligible task', value: 'LAX' },
     { label: 'STRICT — workers may only take their top eligible task', value: 'STRICT' },
