@@ -188,7 +188,7 @@
         </n-modal>
 
         <!-- Role config modal -->
-        <n-modal :show="showRoles" preset="card" title="Board roles" style="max-width: 860px"
+        <n-modal :show="showRoles" preset="card" title="Board roles" style="max-width: 1040px"
                  @update:show="(v: boolean) => showRoles = v">
             <p class="hint">
                 Roles are served prompts plus advisory routing order — any agent can assume any
@@ -245,7 +245,7 @@
         </n-modal>
 
         <!-- Org role presets (operator library; boards seed from these) -->
-        <n-modal :show="showPresets" preset="card" title="Org role presets" style="max-width: 860px"
+        <n-modal :show="showPresets" preset="card" title="Org role presets" style="max-width: 1040px"
                  @update:show="(v: boolean) => showPresets = v">
             <p class="hint">
                 Operator-curated library copied onto new boards (copy semantics — edits here do not
@@ -635,23 +635,63 @@ const TaskCard = defineComponent({
     },
 })
 
-const roleColumns: DataTableColumns<any> = [
-    { title: 'Order', key: 'orderIndex', width: 70 },
-    { title: 'Role', key: 'name', width: 140 },
-    { title: 'WIP', key: 'wipLimit', width: 60, render: (r: any) => r.wipLimit ?? '—' },
+// Header label carrying its own explanation — these three columns are
+// governance, and the words alone ("pass", "gate") don't carry the rules.
+function hintHeader (label: string, hint: string) {
+    return () => h(NTooltip, { trigger: 'hover' }, {
+        trigger: () => h('span', { class: 'hinthead' }, label),
+        default: () => hint,
+    })
+}
+
+// Always rendered, defaults included: an empty cell would read as
+// "unset" when it actually means AGENTIC / OPTIONAL / no gate.
+const kindCell = (r: any) => h(NTag,
+    { size: 'tiny', bordered: false, type: r.kind === 'HUMAN' ? 'info' : 'default' },
+    { default: () => (r.kind === 'HUMAN' ? '\u270b human' : 'agent') })
+
+const necessityCell = (r: any) => (r.necessity === 'REQUIRED'
+    ? h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'required' })
+    : h('span', { class: 'cellmuted' }, 'optional'))
+
+const gateCell = (r: any) => (!r.humanGate || r.humanGate === 'NONE'
+    ? h('span', { class: 'cellmuted' }, 'none')
+    : h(NTag, { size: 'tiny', bordered: false, type: 'warning' },
+        { default: () => (r.humanGate === 'ON_PASS' ? 'on pass' : 'any sign-off') }))
+
+const governanceColumns = (): DataTableColumns<any> => [
     {
-        title: 'Flags', key: 'flags', width: 170,
+        title: hintHeader('Worked by', 'AGENTIC roles are polled and assigned to agents.'
+            + ' HUMAN roles are never offered to agents — an org admin signs off directly from the queue.'),
+        key: 'kind', width: 100, render: kindCell,
+    },
+    {
+        title: hintHeader('Pass', 'OPTIONAL: the coordinator may skip this role — routing is its judgment.'
+            + ' REQUIRED: unskippable — no task completes without a passing sign-off in this role.'),
+        key: 'necessity', width: 95, render: necessityCell,
+    },
+    {
+        title: hintHeader('Human gate', 'Human review of this role\'s sign-offs, fired only when the role'
+            + ' actually signs off. on pass = passing sign-offs park for review; any sign-off = rejections gate too.'),
+        key: 'humanGate', width: 115, render: gateCell,
+    },
+]
+
+const roleColumns: DataTableColumns<any> = [
+    { title: 'Order', key: 'orderIndex', width: 62 },
+    { title: 'Role', key: 'name', width: 120 },
+    { title: 'WIP', key: 'wipLimit', width: 52, render: (r: any) => r.wipLimit ?? '—' },
+    ...governanceColumns(),
+    {
+        title: 'Flags', key: 'flags', width: 120,
         render: (r: any) => h('span', {}, [
-            r.kind === 'HUMAN' ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'human' }) : null,
-            r.necessity === 'REQUIRED' ? h(NTag, { size: 'tiny', bordered: false, type: 'error', style: 'margin-left:4px' }, { default: () => 'required' }) : null,
-            r.humanGate && r.humanGate !== 'NONE' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left:4px' }, { default: () => 'gate:' + r.humanGate.toLowerCase() }) : null,
-            r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left:4px' }, { default: () => 'distinct agent' }) : null,
+            r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'distinct agent' }) : null,
             !r.active ? h(NTag, { size: 'tiny', bordered: false, style: 'margin-left:4px' }, { default: () => 'inactive' }) : null,
         ]),
     },
     { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
     {
-        title: '', key: 'actions', width: 70,
+        title: '', key: 'actions', width: 62,
         render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r } } }, { default: () => 'Edit' }),
     },
 ]
@@ -771,10 +811,11 @@ async function saveRole () {
 }
 
 const presetColumns: DataTableColumns<any> = [
-    { title: 'Order', key: 'orderIndex', width: 70 },
-    { title: 'Preset', key: 'name', width: 140 },
+    { title: 'Order', key: 'orderIndex', width: 62 },
+    { title: 'Preset', key: 'name', width: 120 },
+    ...governanceColumns(),
     {
-        title: 'Capabilities', key: 'caps', width: 220,
+        title: 'Capabilities', key: 'caps', width: 170,
         render: (r: any) => (r.requiredCapabilities ?? []).join(', ') || '—',
     },
     { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
@@ -868,6 +909,8 @@ async function operatorLock (lock: boolean) {
         .evmeta { color: #999; font-size: 11px; white-space: nowrap; }
     }
     .col__head--hold { color: #b03a3a; }
+    .hinthead { border-bottom: 1px dotted #bbb; cursor: help; }
+    .cellmuted { color: #9a9a9a; font-size: 12px; }
     .col__human, .col__req, .col__gate {
         font-size: 10px;
         font-weight: 600;
