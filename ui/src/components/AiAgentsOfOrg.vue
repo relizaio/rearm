@@ -15,7 +15,7 @@
 
         <n-spin v-if="loading" size="small"/>
 
-        <n-tabs type="line" animated default-value="agents">
+        <n-tabs type="line" animated :value="activeTab" @update:value="setActiveTab">
         <n-tab-pane name="agents" tab="Agents">
         <n-space vertical :size="20">
             <!-- KPI row (cross-cutting dashboard metrics) -->
@@ -230,6 +230,17 @@ async function saveName () {
         savingName.value = false
     }
 }
+// Top-level tab lives in the query string so "AI Agents > Task
+// boards" is linkable; the boards panel adds ?board= and ?view=.
+const activeTab = ref<string>(route.query.tab === 'boards' ? 'boards' : 'agents')
+
+function setActiveTab (v: string) {
+    activeTab.value = v
+    const q: Record<string, string> = { ...(route.query as Record<string, string>), tab: v }
+    if (v !== 'boards') { delete q.board; delete q.view }
+    router.replace({ query: q }).catch(() => { /* duplicate navigation is fine */ })
+}
+
 const loading = ref<boolean>(false)
 const kpis = ref<any>(null)
 const agents = ref<any[]>([])

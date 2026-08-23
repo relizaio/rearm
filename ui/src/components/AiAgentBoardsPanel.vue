@@ -58,6 +58,9 @@
                 </n-collapse-item>
             </n-collapse>
 
+            <n-tabs type="segment" size="small" class="viewtabs"
+                    :value="boardView" @update:value="setBoardView">
+            <n-tab-pane name="kanban" tab="Kanban">
             <!-- Hub-and-spoke kanban: intake / per-role / awaiting coordinator / done -->
             <div class="board">
                 <div class="col">
@@ -81,6 +84,11 @@
                     <TaskCard v-for="t in byStatus('COMPLETED')" :key="t.uuid" :t="t"/>
                 </div>
             </div>
+            </n-tab-pane>
+            <n-tab-pane name="pert" tab="PERT">
+                <AiAgentTaskPertView :tasks="tasks"/>
+            </n-tab-pane>
+            </n-tabs>
         </template>
 
         <!-- Board create / edit modal -->
@@ -205,13 +213,35 @@
 
 <script lang="ts" setup>
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NInput, NInputNumber, NModal, NSelect, NSpace, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NInput, NInputNumber, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 
 const props = defineProps<{ orgUuid: string }>()
 
 const store = useStore()
 const notification = useNotification()
+const route = useRoute()
+const router = useRouter()
+
+// Board selection and view live in the query string so a board (and
+// the view you were looking at) is linkable and survives a reload.
+const boardView = ref<string>(
+    route.query.view === 'pert' ? 'pert' : 'kanban')
+
+function syncQuery () {
+    const q: Record<string, string> = { ...(route.query as Record<string, string>), tab: 'boards' }
+    if (selectedBoard.value) q.board = selectedBoard.value
+    else delete q.board
+    q.view = boardView.value
+    router.replace({ query: q }).catch(() => { /* duplicate navigation is fine */ })
+}
+
+function setBoardView (v: string) {
+    boardView.value = v
+    syncQuery()
+}
 
 const boards = ref<any[]>([])
 const selectedBoard = ref<string | null>(null)
@@ -369,11 +399,19 @@ const roleColumns: DataTableColumns<any> = [
 ]
 
 onMounted(refreshBoards)
-watch(selectedBoard, refreshBoardContent)
+watch(selectedBoard, async () => {
+    syncQuery()
+    await refreshBoardContent()
+})
 
 async function refreshBoards () {
     boards.value = await store.dispatch('fetchAgentBoardsOfOrg', props.orgUuid) ?? []
-    if (!selectedBoard.value && boards.value.length) selectedBoard.value = boards.value[0].uuid
+    if (!selectedBoard.value) {
+        const fromUrl = route.query.board as string | undefined
+        const known = fromUrl && boards.value.some(b => b.uuid === fromUrl)
+        selectedBoard.value = known ? (fromUrl as string) : (boards.value[0]?.uuid ?? null)
+    }
+    syncQuery()
     await refreshBoardContent()
 }
 
@@ -414,8 +452,14 @@ async function saveBoard () {
             await store.dispatch('updateAgentBoard', { boardUuid: editingBoard.value.uuid, input })
         }
         notification.success({ content: `Board ${editingBoard.value.name} saved` })
+        const wasNew = editingBoardIsNew.value
+        const savedName = editingBoard.value.name.trim()
         editingBoard.value = null
         await refreshBoards()
+        if (wasNew) {
+            const created = boards.value.find(b => b.name === savedName)
+            if (created) selectedBoard.value = created.uuid
+        }
     } catch (e: any) {
         notification.error({ content: `Save failed: ${e?.message ?? e}` })
     } finally {
@@ -568,6 +612,7 @@ async function operatorLock (lock: boolean) {
         }
         .coordissue { font-size: 12px; }
     }
+    .viewtabs { margin-bottom: 6px; }
     .board {
         display: grid;
         grid-auto-flow: column;
