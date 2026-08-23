@@ -41,6 +41,22 @@
                 <n-tag size="tiny" :bordered="false" :type="currentBoard.coordinatorSeat ? 'success' : 'default'">
                     {{ currentBoard.coordinatorSeat ? 'coordinator connected' : 'no coordinator' }}
                 </n-tag>
+                <n-tooltip trigger="hover">
+                    <template #trigger>
+                        <span class="wipchip wipchip--board">agent WIP ≤ {{ currentBoard.perAgentWipLimit }}</span>
+                    </template>
+                    Max concurrently assigned tasks per agent on this board.
+                </n-tooltip>
+                <n-tooltip v-for="w in agentWip" :key="w.agent" trigger="hover">
+                    <template #trigger>
+                        <span class="wipchip" :class="{ 'wipchip--full': w.count >= currentBoard.perAgentWipLimit }">
+                            {{ w.name }} {{ w.count }}/{{ currentBoard.perAgentWipLimit }}
+                        </span>
+                    </template>
+                    {{ w.count >= currentBoard.perAgentWipLimit
+                        ? 'At the per-agent WIP limit — this agent gets no new assignments until a task leaves ASSIGNED.'
+                        : 'Concurrently assigned tasks vs the board per-agent limit.' }}
+                </n-tooltip>
                 <n-button v-if="!isLocked" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
             </div>
             <n-alert v-if="currentBoard.missingCapabilities?.length" type="warning" class="lockbanner">
@@ -68,7 +84,13 @@
                     <TaskCard v-for="t in byStatus('PENDING_INTAKE')" :key="t.uuid" :t="t"/>
                 </div>
                 <div class="col" v-for="r in activeRoles" :key="r.name">
-                    <div class="col__head">{{ r.name }}<span v-if="r.wipLimit" class="col__wip">wip ≤ {{ r.wipLimit }}</span></div>
+                    <div class="col__head">
+                        {{ r.name }}
+                        <span v-if="r.wipLimit" class="col__wip"
+                              :class="{ 'col__wip--full': assignedInRole(r.name) >= r.wipLimit }">
+                            {{ assignedInRole(r.name) }}/{{ r.wipLimit }} wip
+                        </span>
+                    </div>
                     <TaskCard v-for="t in atRole(r.name)" :key="t.uuid" :t="t"/>
                 </div>
                 <div class="col">
@@ -295,6 +317,33 @@ function formatEventTime (iso: string | null | undefined): string {
     })
 }
 
+// Concurrently assigned tasks per agent on this board (drives the WIP chips).
+const agentWip = computed(() => {
+    const counts = new Map<string, number>()
+    for (const t of tasks.value) {
+        if (t.status === 'ASSIGNED' && t.assignment?.agent) {
+            counts.set(t.assignment.agent, (counts.get(t.assignment.agent) ?? 0) + 1)
+        }
+    }
+    return [...counts.entries()]
+        .map(([agent, count]) => ({ agent, count, name: agentNames.value[agent] ?? agent.slice(0, 8) }))
+        .sort((a, b) => b.count - a.count)
+})
+
+function assignedInRole (role: string): number {
+    return tasks.value.filter(t => t.status === 'ASSIGNED' && t.assignment?.role === role).length
+}
+
+// A QUEUED task is wip-capped when its role's concurrent-assignment
+// limit is already exhausted: eligible, but the server will refuse
+// assignment until a slot frees.
+function wipCapped (t: any): boolean {
+    if (t.status !== 'QUEUED' || blockedBy(t).length) return false
+    const rc = roles.value.find(r => r.name === t.role)
+    if (!rc?.wipLimit) return false
+    return assignedInRole(t.role) >= rc.wipLimit
+}
+
 // A QUEUED task is blocked when any dependency is not yet COMPLETED.
 function blockedBy (t: any): string[] {
     if (t.status !== 'QUEUED' || !t.dependsOn?.length) return []
@@ -368,6 +417,10 @@ const TaskCard = defineComponent({
                             .join(', '),
                     }),
                     default: () => 'Not assignable until every dependency is COMPLETED; the server releases it automatically.',
+                }) : null,
+                wipCapped(p.t) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'wip-capped' }),
+                    default: () => `Role ${p.t.role} is at its WIP limit — assignable as soon as a slot frees.`,
                 }) : null,
                 p.t.parentTask ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'subtask' }) : null,
                 p.t.childTasks?.length ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => `${p.t.childTasks.length} subtasks` }) : null,
@@ -626,6 +679,15 @@ async function operatorLock (lock: boolean) {
         .evmeta { color: #999; font-size: 11px; white-space: nowrap; }
     }
     .col__head--hold { color: #b03a3a; }
+    .wipchip {
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 9px;
+        background: rgba(128, 128, 128, 0.1);
+        color: #666;
+        &--board { font-weight: 600; }
+        &--full { background: #fbe3e3; color: #b03a3a; }
+    }
     .boardmeta {
         display: flex;
         align-items: center;
@@ -657,7 +719,12 @@ async function operatorLock (lock: boolean) {
         letter-spacing: 0.04em;
         color: #888;
         padding: 2px 4px 8px;
-        .col__wip { margin-left: 6px; font-weight: 400; text-transform: none; }
+        .col__wip {
+            margin-left: 6px;
+            font-weight: 400;
+            text-transform: none;
+            &--full { color: #b03a3a; font-weight: 600; }
+        }
     }
     .col--done .col__head { color: #4a9d6e; }
     .tcard {

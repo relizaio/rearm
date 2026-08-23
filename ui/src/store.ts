@@ -2261,6 +2261,7 @@ const storeObject : any = {
                             childTasks
                             sessions
                             registeredBySession
+                            statusHistory { from to at trigger actor }
                             prUrls
                             createdDate
                             completedAt

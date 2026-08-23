@@ -108,6 +108,18 @@
                     </div>
                 </div>
 
+                <div v-if="task.statusHistory?.length" class="dsec">
+                    <div class="dsec__h">Status history</div>
+                    <div class="shist">
+                        <div v-for="(c, i) in task.statusHistory" :key="i" class="shist__row">
+                            <span class="shist__time">{{ ts(c.at) }}</span>
+                            <span class="shist__arrow">{{ (c.from ?? '·').toLowerCase().replace(/_/g, ' ') }} → {{ c.to.toLowerCase().replace(/_/g, ' ') }}</span>
+                            <code class="shist__trig">{{ c.trigger }}</code>
+                            <span v-if="i > 0" class="shist__dur">+{{ dur(task.statusHistory[i-1].at, c.at) || '0m' }}</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="dsec">
                     <div class="dsec__h">Provenance</div>
                     <div class="prov">
@@ -232,6 +244,14 @@ function statusTone (s: string): string {
     &__time { color: #999; font-size: 11.5px; }
     &__pv { font-size: 10.5px; color: #999; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
     &__note { width: 100%; color: #555; font-size: 12px; padding-left: 2px; }
+}
+.shist {
+    font-size: 11.5px;
+    &__row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; flex-wrap: wrap; }
+    &__time { color: #999; font-family: monospace; }
+    &__arrow { color: #555; }
+    &__trig { font-size: 10px; color: #888; background: rgba(128, 128, 128, 0.1); padding: 0 4px; border-radius: 4px; }
+    &__dur { color: #b0854a; font-size: 10.5px; }
 }
 .prov { font-size: 12px; color: #777; div { margin-bottom: 3px; } }
 .sesschip { font-size: 10.5px; margin-right: 4px; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
