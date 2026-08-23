@@ -358,9 +358,9 @@ async function saveNotes () {
         })
         agent.value.notes = notesDraft.value
         editingNotes.value = false
-        notification.success({ content: 'Notes saved' })
+        notification.success({ content: 'Notes saved', duration: 3000 })
     } catch (e: any) {
-        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+        notification.error({ content: `Save failed: ${e?.message ?? e}`, duration: 8000 })
     } finally {
         savingNotes.value = false
     }
@@ -380,9 +380,9 @@ async function saveName () {
         })
         agent.value.displayName = updated.displayName
         editingName.value = false
-        notification.success({ content: 'Display name saved' })
+        notification.success({ content: 'Display name saved', duration: 3000 })
     } catch (e: any) {
-        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+        notification.error({ content: `Save failed: ${e?.message ?? e}`, duration: 8000 })
     } finally {
         savingName.value = false
     }

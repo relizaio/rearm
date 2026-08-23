@@ -45,7 +45,7 @@
                         <text class="pert-role" :x="NODE_W - 10" y="18" text-anchor="end">{{ n.t.role || '—' }}</text>
                         <text class="pert-title" x="10" y="35">{{ clip(n.t.title, 26) }}</text>
                         <text class="pert-status" x="10" y="50">{{ statusLabel(n.t) }}</text>
-                        <title>{{ n.t.title }} — {{ n.t.status }}{{ n.t.holdReason ? ' (' + n.t.holdReason + ')' : '' }}</title>
+                        <title>{{ n.t.title }} — {{ n.t.status }}{{ n.t.hold?.reason ? ' (' + n.t.hold.reason + ')' : '' }}</title>
                     </g>
                 </svg>
             </div>

@@ -73,6 +73,13 @@
                 Delivery loop incomplete: no active role covers
                 {{ currentBoard.missingCapabilities.join(', ') }} — this board cannot ship until a role carries them.
             </n-alert>
+            <n-alert v-if="awaitingHumanReview.length" type="error" class="lockbanner">
+                {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting your review:
+                <n-button v-for="t in awaitingHumanReview" :key="t.uuid" size="tiny" quaternary
+                          style="margin-left: 6px" @click="openTask(t)">
+                    {{ t.externalRef ? '#' + t.externalRef.split('#').pop() : t.title }} ({{ t.hold.gateRole }})
+                </n-button>
+            </n-alert>
             <n-collapse v-if="currentBoard.events?.length" class="eventsfeed">
                 <n-collapse-item :title="`Board events (${currentBoard.events.length})`" name="ev">
                     <div v-for="(e, i) in [...currentBoard.events].reverse()" :key="i" class="evrow">
@@ -96,6 +103,18 @@
                 <div class="col" v-for="r in activeRoles" :key="r.name">
                     <div class="col__head">
                         {{ r.name }}
+                        <n-tooltip v-if="r.kind === 'HUMAN'" trigger="hover">
+                            <template #trigger><span class="col__human">human</span></template>
+                            Human stage: never offered to agent polls — an org admin signs off directly from the queue (open the card).
+                        </n-tooltip>
+                        <n-tooltip v-if="r.necessity === 'REQUIRED'" trigger="hover">
+                            <template #trigger><span class="col__req">required</span></template>
+                            Unskippable: no task completes without a passing {{ r.name }} sign-off.
+                        </n-tooltip>
+                        <n-tooltip v-if="r.humanGate && r.humanGate !== 'NONE'" trigger="hover">
+                            <template #trigger><span class="col__gate">gated</span></template>
+                            {{ r.humanGate === 'ON_PASS' ? 'Passing sign-offs' : 'Every sign-off' }} in this role parks the task for human review.
+                        </n-tooltip>
                         <span v-if="r.wipLimit" class="col__wip"
                               :class="{ 'col__wip--full': assignedInRole(r.name) >= r.wipLimit }">
                             {{ assignedInRole(r.name) }}/{{ r.wipLimit }} wip
@@ -129,8 +148,10 @@
             </n-tabs>
 
             <AiAgentTaskDetailDrawer
-                :task="selectedTask" :tasks="tasks" :agent-names="agentNames"
-                @close="selectedTask = null" @open="openTask"/>
+                :task="selectedTask" :tasks="tasks" :agent-names="agentNames" :roles="roles"
+                @close="selectedTask = null" @open="openTask"
+                @human-review="humanReview" @human-signoff="humanSignOff"
+                @operator-release="operatorRelease" @require-review="requireReview"/>
         </template>
 
         <!-- Board create / edit modal -->
@@ -188,18 +209,31 @@
                     <n-input-number v-model:value="editingRole.orderIndex">
                         <template #prefix><span class="flabel">routing order</span></template>
                     </n-input-number>
-                    <n-input-number v-model:value="editingRole.wipLimit" :min="0" placeholder="0 = uncapped">
+                    <n-input-number v-if="editingRole.kind !== 'HUMAN'" v-model:value="editingRole.wipLimit"
+                                    :min="0" placeholder="0 = uncapped">
                         <template #prefix><span class="flabel">role WIP limit</span></template>
                     </n-input-number>
-                    <n-space :size="18">
+                    <n-space :size="12">
+                        <n-select v-model:value="editingRole.kind" :options="roleKindOptions"
+                                  style="width: 190px" placeholder="Role kind"/>
+                        <n-select v-model:value="editingRole.necessity" :options="necessityOptions"
+                                  style="width: 190px" placeholder="Necessity"/>
+                        <n-select v-model:value="editingRole.humanGate" :options="humanGateOptions"
+                                  :disabled="editingRole.kind === 'HUMAN'"
+                                  style="width: 220px" placeholder="Human gate"/>
+                    </n-space>
+                    <n-space :size="18" v-if="editingRole.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingRole.requireDistinctAgent">require distinct agent</n-checkbox>
                         <n-checkbox v-model:checked="editingRole.active">active</n-checkbox>
                     </n-space>
-                    <n-select v-model:value="editingRole.requiredCapabilities" multiple
+                    <n-checkbox v-else v-model:checked="editingRole.active">active</n-checkbox>
+                    <n-select v-if="editingRole.kind !== 'HUMAN'" v-model:value="editingRole.requiredCapabilities" multiple
                               :options="capabilityOptions"
                               placeholder="Required capabilities (declared, unverified in v1)"/>
                     <div>
-                        <div class="flabel" style="margin-bottom: 4px">role prompt (served to the assuming agent)</div>
+                        <div class="flabel" style="margin-bottom: 4px">{{ editingRole.kind === 'HUMAN'
+                            ? 'reviewer guidance (shown to the human in the UI)'
+                            : 'role prompt (served to the assuming agent)' }}</div>
                         <n-input v-model:value="editingRole.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 20 }"/>
                     </div>
                     <n-space justify="end">
@@ -232,14 +266,25 @@
                     <n-input-number v-model:value="editingPreset.orderIndex">
                         <template #prefix><span class="flabel">routing order</span></template>
                     </n-input-number>
-                    <n-input-number v-model:value="editingPreset.wipLimit" :min="0" placeholder="0 = uncapped">
+                    <n-input-number v-if="editingPreset.kind !== 'HUMAN'" v-model:value="editingPreset.wipLimit"
+                                    :min="0" placeholder="0 = uncapped">
                         <template #prefix><span class="flabel">role WIP limit</span></template>
                     </n-input-number>
-                    <n-space :size="18">
+                    <n-space :size="12">
+                        <n-select v-model:value="editingPreset.kind" :options="roleKindOptions"
+                                  style="width: 190px" placeholder="Role kind"/>
+                        <n-select v-model:value="editingPreset.necessity" :options="necessityOptions"
+                                  style="width: 190px" placeholder="Necessity"/>
+                        <n-select v-model:value="editingPreset.humanGate" :options="humanGateOptions"
+                                  :disabled="editingPreset.kind === 'HUMAN'"
+                                  style="width: 220px" placeholder="Human gate"/>
+                    </n-space>
+                    <n-space :size="18" v-if="editingPreset.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingPreset.requireDistinctAgent">require distinct agent</n-checkbox>
                         <n-checkbox v-model:checked="editingPreset.active">active</n-checkbox>
                     </n-space>
-                    <n-select v-model:value="editingPreset.requiredCapabilities" multiple
+                    <n-checkbox v-else v-model:checked="editingPreset.active">active</n-checkbox>
+                    <n-select v-if="editingPreset.kind !== 'HUMAN'" v-model:value="editingPreset.requiredCapabilities" multiple
                               :options="capabilityOptions" placeholder="Required capabilities"/>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">prompt</div>
@@ -318,6 +363,19 @@ const editingPresetIsNew = ref(false)
 const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
     .map(c => ({ label: c, value: c }))
 
+const roleKindOptions = [
+    { label: 'AGENTIC — worked by agents via poll/assign', value: 'AGENTIC' },
+    { label: 'HUMAN — org admins sign off from the queue', value: 'HUMAN' },
+]
+const necessityOptions = [
+    { label: 'OPTIONAL — coordinator may skip this role', value: 'OPTIONAL' },
+    { label: 'REQUIRED — no completion without a passing sign-off', value: 'REQUIRED' },
+]
+const humanGateOptions = [
+    { label: 'no human gate', value: 'NONE' },
+    { label: 'ON_PASS — passing sign-offs await human review', value: 'ON_PASS' },
+    { label: 'ON_ANY_SIGNOFF — rejections gate too', value: 'ON_ANY_SIGNOFF' },
+]
 const priorityOptions = [
     { label: 'LAX — priority is advisory; workers may take any eligible task', value: 'LAX' },
     { label: 'STRICT — workers may only take their top eligible task', value: 'STRICT' },
@@ -346,6 +404,67 @@ const agentWip = computed(() => {
         .map(([agent, count]) => ({ agent, count, name: agentNames.value[agent] ?? agent.slice(0, 8) }))
         .sort((a, b) => b.count - a.count)
 })
+
+const awaitingHumanReview = computed(() =>
+    tasks.value.filter(t => t.status === 'ON_HOLD' && t.hold?.kind === 'HUMAN_GATE'))
+
+// Client-side mirror of the server completion gate (active REQUIRED roles
+// whose latest sign-off on the task is not PASSED) so gaps show pre-"done".
+function missingRequired (t: any): string[] {
+    if (t.childTasks?.length || t.status === 'COMPLETED' || t.status === 'CANCELLED') return []
+    return roles.value
+        .filter(r => r.active && r.necessity === 'REQUIRED')
+        .map(r => r.name)
+        .filter((role: string) => {
+            const last = [...(t.signOffs ?? [])].reverse()
+                .find((so: any) => (so.role ?? '').toLowerCase() === role.toLowerCase())
+            return !last || last.outcome !== 'PASSED'
+        })
+}
+
+async function humanReview (p: { task: any, approve: boolean, note: string }) {
+    try {
+        await store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve, note: p.note || undefined })
+        notification.success({ content: `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass — returned to the coordinator`, duration: 3000 })
+        selectedTask.value = null
+        await refreshBoardContent()
+    } catch (e: any) {
+        notification.error({ content: `Review failed: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
+
+async function humanSignOff (p: { task: any, outcome: string, note: string }) {
+    try {
+        await store.dispatch('agentTaskHumanSignOff', { taskUuid: p.task.uuid, outcome: p.outcome, note: p.note || undefined })
+        notification.success({ content: `Signed off ${p.outcome} — returned to the coordinator`, duration: 3000 })
+        selectedTask.value = null
+        await refreshBoardContent()
+    } catch (e: any) {
+        notification.error({ content: `Sign-off failed: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
+
+async function operatorRelease (t: any) {
+    try {
+        await store.dispatch('agentTaskOperatorHold', { taskUuid: t.uuid, hold: false })
+        notification.success({ content: 'Hold released', duration: 3000 })
+        selectedTask.value = null
+        await refreshBoardContent()
+    } catch (e: any) {
+        notification.error({ content: `Release failed: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
+
+async function requireReview (p: { task: any, value: boolean }) {
+    try {
+        await store.dispatch('agentTaskRequireHumanReview', { taskUuid: p.task.uuid, value: p.value })
+        notification.success({ content: p.value ? 'Next sign-off will require human review' : 'Human-review flag cleared', duration: 3000 })
+        await refreshBoardContent()
+        selectedTask.value = tasks.value.find(x => x.uuid === p.task.uuid) ?? null
+    } catch (e: any) {
+        notification.error({ content: `Update failed: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
 
 function assignedInRole (role: string): number {
     return tasks.value.filter(t => t.status === 'ASSIGNED' && t.assignment?.role === role).length
@@ -454,8 +573,20 @@ const TaskCard = defineComponent({
                 p.t.status === 'QUEUED' ? h(NTag, { size: 'tiny', bordered: false }, { default: () => `queued #${p.t.orderIndex}` }) : null,
                 p.t.status === 'ASSIGNED' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'assigned' }) : null,
                 p.t.status === 'ON_HOLD' ? h(NTooltip, { trigger: 'hover' }, {
-                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'on hold' }),
-                    default: () => p.t.holdReason ?? 'on hold',
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, {
+                        default: () => p.t.hold?.kind === 'HUMAN_GATE' ? '\u270b human review' : 'on hold',
+                    }),
+                    default: () => p.t.hold?.reason ?? 'on hold',
+                }) : null,
+                p.t.requireHumanReview ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'review flagged' }),
+                    default: () => 'The next sign-off on this task parks it for human review.',
+                }) : null,
+                missingRequired(p.t).length && (p.t.status === 'AWAITING_COORDINATOR') ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, {
+                        default: () => 'needs ' + missingRequired(p.t).join(', '),
+                    }),
+                    default: () => 'Required role(s) without a passing sign-off — completion is blocked until they stamp.',
                 }) : null,
                 blockedBy(p.t).length ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, {
@@ -496,8 +627,9 @@ const TaskCard = defineComponent({
             ]) : null,
             p.t.signOffs?.length ? h('div', { class: 'tcard__passages' },
                 p.t.signOffs.map((s: any, i: number) => h(NTooltip, { trigger: 'hover', key: i }, {
-                    trigger: () => h('span', { class: ['passage', 'passage--' + (s.outcome || '').toLowerCase()] }, s.role),
-                    default: () => `${s.role}: ${s.outcome}${s.note ? ' — ' + s.note : ''}`,
+                    trigger: () => h('span', { class: ['passage', 'passage--' + (s.outcome || '').toLowerCase()] },
+                        (s.reviewedBy ? '\u270b ' : '') + s.role),
+                    default: () => `${s.role}: ${s.outcome}${s.reviewedBy ? ' by ' + s.reviewedBy : ''}${s.note ? ' — ' + s.note : ''}`,
                 }))) : null,
         ] })
     },
@@ -510,7 +642,10 @@ const roleColumns: DataTableColumns<any> = [
     {
         title: 'Flags', key: 'flags', width: 170,
         render: (r: any) => h('span', {}, [
-            r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'distinct agent' }) : null,
+            r.kind === 'HUMAN' ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'human' }) : null,
+            r.necessity === 'REQUIRED' ? h(NTag, { size: 'tiny', bordered: false, type: 'error', style: 'margin-left:4px' }, { default: () => 'required' }) : null,
+            r.humanGate && r.humanGate !== 'NONE' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left:4px' }, { default: () => 'gate:' + r.humanGate.toLowerCase() }) : null,
+            r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left:4px' }, { default: () => 'distinct agent' }) : null,
             !r.active ? h(NTag, { size: 'tiny', bordered: false, style: 'margin-left:4px' }, { default: () => 'inactive' }) : null,
         ]),
     },
@@ -600,7 +735,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE' }
 }
 
 async function saveRole () {
@@ -616,10 +751,13 @@ async function saveRole () {
                 name: editingRole.value.name.trim(),
                 prompt: editingRole.value.prompt ?? '',
                 orderIndex: editingRole.value.orderIndex ?? 0,
-                wipLimit: editingRole.value.wipLimit ?? 0,
-                requireDistinctAgent: !!editingRole.value.requireDistinctAgent,
+                requireDistinctAgent: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.requireDistinctAgent,
                 active: !!editingRole.value.active,
-                requiredCapabilities: editingRole.value.requiredCapabilities ?? [],
+                requiredCapabilities: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.requiredCapabilities ?? []),
+                wipLimit: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.wipLimit ?? 0),
+                kind: editingRole.value.kind ?? 'AGENTIC',
+                necessity: editingRole.value.necessity ?? 'OPTIONAL',
+                humanGate: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.humanGate ?? 'NONE'),
             },
         })
         notification.success({ content: `Role ${editingRole.value.name} saved`, duration: 3000 })
@@ -654,7 +792,7 @@ async function openPresets () {
 function startAddPreset () {
     editingPresetIsNew.value = true
     const maxOrder = Math.max(0, ...presets.value.map(r => r.orderIndex ?? 0))
-    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [] }
+    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE' }
 }
 
 async function savePreset () {
@@ -670,10 +808,13 @@ async function savePreset () {
                 name: editingPreset.value.name.trim(),
                 prompt: editingPreset.value.prompt ?? '',
                 orderIndex: editingPreset.value.orderIndex ?? 0,
-                wipLimit: editingPreset.value.wipLimit ?? 0,
-                requireDistinctAgent: !!editingPreset.value.requireDistinctAgent,
+                wipLimit: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.wipLimit ?? 0),
+                requireDistinctAgent: editingPreset.value.kind === 'HUMAN' ? null : !!editingPreset.value.requireDistinctAgent,
                 active: !!editingPreset.value.active,
-                requiredCapabilities: editingPreset.value.requiredCapabilities ?? [],
+                requiredCapabilities: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.requiredCapabilities ?? []),
+                kind: editingPreset.value.kind ?? 'AGENTIC',
+                necessity: editingPreset.value.necessity ?? 'OPTIONAL',
+                humanGate: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.humanGate ?? 'NONE'),
             },
         })
         notification.success({ content: `Preset ${editingPreset.value.name} saved`, duration: 3000 })
@@ -727,6 +868,19 @@ async function operatorLock (lock: boolean) {
         .evmeta { color: #999; font-size: 11px; white-space: nowrap; }
     }
     .col__head--hold { color: #b03a3a; }
+    .col__human, .col__req, .col__gate {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 1px 6px;
+        border-radius: 8px;
+        margin-left: 6px;
+        cursor: default;
+    }
+    .col__human { background: rgba(64, 128, 255, 0.15); color: #3d6fd9; }
+    .col__req { background: rgba(208, 48, 80, 0.12); color: #d03050; }
+    .col__gate { background: rgba(240, 160, 32, 0.15); color: #b0740a; }
     .wipchip {
         font-size: 11px;
         padding: 1px 8px;

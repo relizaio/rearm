@@ -19,9 +19,62 @@
             </template>
 
             <n-space vertical :size="16">
-                <n-alert v-if="task.holdReason" type="error" title="On hold">
-                    {{ task.holdReason }}
+                <n-alert v-if="task.hold" type="error"
+                         :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review' : `On hold (${(task.hold.level ?? '').toLowerCase()})`">
+                    {{ task.hold.reason }}
+                    <div class="holdmeta">held by {{ task.hold.heldBy }} · {{ ts(task.hold.heldAt) }}</div>
+                    <template v-if="task.hold.kind === 'HUMAN_GATE'">
+                        <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
+                                 style="margin-top: 8px"/>
+                        <n-space style="margin-top: 8px">
+                            <n-button size="small" type="primary"
+                                      @click="emit('human-review', { task, approve: true, note: reviewNote })">
+                                Approve {{ task.hold.gateRole }} pass
+                            </n-button>
+                            <n-button size="small" type="error" ghost
+                                      @click="emit('human-review', { task, approve: false, note: reviewNote })">
+                                Reject
+                            </n-button>
+                        </n-space>
+                    </template>
+                    <template v-else-if="task.hold.level === 'OPERATOR'">
+                        <n-space style="margin-top: 8px">
+                            <n-button size="small" @click="emit('operator-release', task)">Operator release</n-button>
+                        </n-space>
+                    </template>
                 </n-alert>
+
+                <n-alert v-if="humanStageRole" type="info" :title="`Human stage: ${humanStageRole.name}`">
+                    <div v-if="humanStageRole.prompt" class="holdmeta">{{ humanStageRole.prompt }}</div>
+                    <n-input v-model:value="reviewNote" size="small" placeholder="Sign-off note (optional)"
+                             style="margin-top: 8px"/>
+                    <n-space style="margin-top: 8px">
+                        <n-button size="small" type="primary"
+                                  @click="emit('human-signoff', { task, outcome: 'PASSED', note: reviewNote })">
+                            Sign off PASSED
+                        </n-button>
+                        <n-button size="small" type="error" ghost
+                                  @click="emit('human-signoff', { task, outcome: 'REJECTED', note: reviewNote })">
+                            REJECTED
+                        </n-button>
+                    </n-space>
+                </n-alert>
+
+                <div v-if="!terminal" class="dsec">
+                    <div class="dsec__h">Human review</div>
+                    <div class="deprow">
+                        <n-tag v-if="task.requireHumanReview" size="small" :bordered="false" type="warning">
+                            next sign-off requires human review
+                        </n-tag>
+                        <n-button size="tiny" quaternary
+                                  @click="emit('require-review', { task, value: !task.requireHumanReview })">
+                            {{ task.requireHumanReview ? 'clear flag (operator)' : 'require human review of next sign-off' }}
+                        </n-button>
+                        <n-tag v-for="m in missingRequired" :key="m" size="small" :bordered="false" type="error">
+                            required: {{ m }} ✗
+                        </n-tag>
+                    </div>
+                </div>
 
                 <div v-if="task.dependsOn?.length || dependents.length" class="dsec">
                     <div class="dsec__h">Dependencies</div>
@@ -82,9 +135,10 @@
                                     {{ e.rec.outcome }}
                                 </n-tag>
                                 <span class="hist__role">{{ e.rec.role }}</span>
-                                <span class="hist__agent">{{ agentName(e.rec.agent) }}</span>
-                                <span class="hist__time">{{ ts(e.rec.signedOffAt) }}
-                                    · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</span>
+                                <n-tag v-if="e.rec.reviewedBy" size="tiny" :bordered="false" type="info">human</n-tag>
+                                <span class="hist__agent">{{ e.rec.reviewedBy ?? agentName(e.rec.agent) }}</span>
+                                <span class="hist__time">{{ ts(e.rec.signedOffAt) }}<template v-if="e.rec.assignedAt">
+                                    · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</template></span>
                                 <code v-if="e.rec.promptVersion" class="hist__pv"
                                       title="Served role-prompt version">{{ e.rec.promptVersion }}</code>
                                 <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
@@ -136,18 +190,50 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue'
-import { NAlert, NDrawer, NDrawerContent, NSpace, NTag } from 'naive-ui'
+import { computed, ref, watch } from 'vue'
+import { NAlert, NButton, NDrawer, NDrawerContent, NInput, NSpace, NTag } from 'naive-ui'
 
 const props = defineProps<{
     task: any | null
     tasks: any[]
     agentNames: Record<string, string>
+    roles?: any[]
 }>()
 const emit = defineEmits<{
     (e: 'close'): void
     (e: 'open', task: any): void
+    (e: 'human-review', p: { task: any, approve: boolean, note: string }): void
+    (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
+    (e: 'operator-release', task: any): void
+    (e: 'require-review', p: { task: any, value: boolean }): void
 }>()
+
+const reviewNote = ref('')
+watch(() => props.task?.uuid, () => { reviewNote.value = '' })
+
+const terminal = computed(() =>
+    props.task?.status === 'COMPLETED' || props.task?.status === 'CANCELLED')
+
+// Task queued in a HUMAN-kind role: org admins sign off directly (no claim step).
+const humanStageRole = computed(() => {
+    if (props.task?.status !== 'QUEUED') return null
+    const rc = (props.roles ?? []).find(r => r.name === props.task.role)
+    return rc?.kind === 'HUMAN' ? rc : null
+})
+
+// Active REQUIRED roles whose most recent sign-off on this task is not PASSED --
+// mirrors the server-side completion gate so the gap is visible before "done".
+const missingRequired = computed(() => {
+    if (!props.task || terminal.value || props.task.childTasks?.length) return []
+    return (props.roles ?? [])
+        .filter(r => r.active && r.necessity === 'REQUIRED')
+        .map(r => r.name)
+        .filter((role: string) => {
+            const last = [...(props.task.signOffs ?? [])].reverse()
+                .find((s: any) => (s.role ?? '').toLowerCase() === role.toLowerCase())
+            return !last || last.outcome !== 'PASSED'
+        })
+})
 
 const resolvedDeps = computed(() => (props.task?.dependsOn ?? [])
     .map((d: string) => props.tasks.find(t => t.uuid === d) ?? { uuid: d, title: 'unknown', status: 'UNKNOWN' }))
@@ -253,6 +339,7 @@ function statusTone (s: string): string {
     &__trig { font-size: 10px; color: #888; background: rgba(128, 128, 128, 0.1); padding: 0 4px; border-radius: 4px; }
     &__dur { color: #b0854a; font-size: 10.5px; }
 }
+.holdmeta { font-size: 11.5px; color: #888; margin-top: 4px; white-space: pre-wrap; }
 .prov { font-size: 12px; color: #777; div { margin-bottom: 3px; } }
 .sesschip { font-size: 10.5px; margin-right: 4px; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
 .prlink2 { font-size: 12.5px; }
