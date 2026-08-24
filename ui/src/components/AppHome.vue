@@ -1,6 +1,16 @@
 <template>
     <div class="home">
-        <div class="dashboardBlock">
+        <div class="dashswitch">
+            <span class="dashswitch__label">Dashboard</span>
+            <n-radio-group :value="effectiveDashboard" size="small" @update:value="setHomeDashboard">
+                <n-radio-button value="app">Metrics</n-radio-button>
+                <n-radio-button value="boards">Task boards</n-radio-button>
+            </n-radio-group>
+        </div>
+        <div v-if="effectiveDashboard === 'boards'" class="boardshome">
+            <ai-agent-boards-panel v-if="myorg?.uuid" :org-uuid="myorg.uuid" />
+        </div>
+        <div v-else class="dashboardBlock">
             <n-grid x-gap="24" cols="2">
                 <n-gi>
                     <releases-per-day-chart
@@ -566,6 +576,7 @@ import ReleasesByCve from './ReleasesByCve.vue'
 import ComponentBranchesTable from './ComponentBranchesTable.vue'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 import MostRecentReleasesWidget from './MostRecentReleasesWidget.vue'
+import AiAgentBoardsPanel from './AiAgentBoardsPanel.vue'
 import { processMetricsData } from '@/utils/metrics'
 
 const store = useStore()
@@ -583,6 +594,21 @@ const notify = (type: NotificationType, title: string, content: string) => {
 }
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+
+// Home dashboard selection: the user's browser-local choice wins;
+// otherwise the deployment default served on the user object
+// (relizaprops.default-dashboard); otherwise the classic dashboard.
+const HOME_DASHBOARD_LS = 'relizaHomeDashboard'
+const storedHomeDashboard = window.localStorage.getItem(HOME_DASHBOARD_LS)
+const homeDashboardChoice: Ref<string | null> = ref(
+    storedHomeDashboard === 'app' || storedHomeDashboard === 'boards' ? storedHomeDashboard : null)
+const effectiveDashboard: ComputedRef<string> = computed(() =>
+    homeDashboardChoice.value
+        ?? (store.getters.myuser?.defaultDashboard === 'BOARDS' ? 'boards' : 'app'))
+function setHomeDashboard (v: string) {
+    homeDashboardChoice.value = v
+    window.localStorage.setItem(HOME_DASHBOARD_LS, v)
+}
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
 const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
@@ -1429,5 +1455,22 @@ function displayVulnerableComponentType () {
 <style scoped lang="scss">
 .charts {
     display: grid;
+}
+.dashswitch {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 6px 12px 0 0;
+    &__label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #999;
+    }
+}
+.boardshome {
+    padding: 0 12px;
 }
 </style>
