@@ -59,45 +59,77 @@
                             </n-gi>
                         </n-grid>
 
-                        <n-form-item label="Event types">
-                            <n-select
-                                v-model:value="subForm.eventTypes"
-                                :options="eventTypeOptionsForForm"
-                                multiple
-                                placeholder="Pick one or more event types"
-                                data-testid="sub-eventtypes"
-                            />
-                        </n-form-item>
-                        <div class="field-hint">This subscription fires only when a selected event type is actually emitted. "VEX state changed" is reserved and not emitted yet, so it isn't selectable (an existing selection can still be removed).</div>
+                        <!-- ===== Section: which events ===== -->
+                        <div class="routes-section">
+                            <div class="routes-title">Events</div>
+                            <div class="routes-hint">Which events this subscription listens for.</div>
+                            <n-form-item label="Event types" :show-feedback="false">
+                                <n-select
+                                    v-model:value="subForm.eventTypes"
+                                    :options="eventTypeOptionsForForm"
+                                    multiple
+                                    placeholder="Pick one or more event types"
+                                    data-testid="sub-eventtypes"
+                                />
+                            </n-form-item>
+                            <div class="field-hint">Fires only when a selected event type is actually emitted. "VEX state changed" is reserved and not emitted yet, so it isn't selectable (an existing selection can still be removed).</div>
 
-                        <n-form-item label="Filter mode">
-                            <n-radio-group v-model:value="subForm.filterMode">
-                                <n-radio-button value="PRESET">Preset (match all selected event types)</n-radio-button>
-                                <n-radio-button value="ADVANCED">Advanced (CEL)</n-radio-button>
-                            </n-radio-group>
-                        </n-form-item>
-                        <n-form-item v-if="subForm.filterMode === 'ADVANCED'" label="CEL expression">
-                            <n-input
-                                v-model:value="subForm.celExpression"
-                                type="textarea"
-                                :autosize="{ minRows: 3, maxRows: 8 }"
-                                style="font-family: monospace; font-size: 12px;"
-                                placeholder='e.g. event.severity == "CRITICAL" && size(event.affectedReleases) > 0'
-                            />
-                        </n-form-item>
-                        <div v-if="subForm.filterMode === 'ADVANCED'" class="field-hint">
-                            A CEL boolean over the event. Examples:
-                            <code>event.severity == "CRITICAL"</code>,
-                            <code>event.kevListed == true</code>,
-                            <code>size(event.affectedReleases) &gt; 0</code>.
-                            Leave Preset mode to match on event type alone.
+                            <!-- Contextual: only for instance-deployment subscriptions, so
+                                 vuln/release subscriptions never see an irrelevant control. -->
+                            <template v-if="hasInstanceEventType">
+                                <n-form-item label="Instance-deployment templates" :show-feedback="false">
+                                    <n-select
+                                        v-model:value="selectedInstancePreset"
+                                        :options="instancePresetOptions"
+                                        placeholder="Optional: one-click setup for a common case"
+                                        clearable
+                                        @update:value="onInstancePresetPick"
+                                        data-testid="instance-preset"
+                                    />
+                                </n-form-item>
+                                <div class="field-hint">One-click filters for common instance-deployment setups (e.g. fully-converged only, or failures only). Adjust anything afterward.</div>
+                            </template>
                         </div>
 
-                        <!-- Severity and Perspectives live on the route in the
-                             backend model, but they are filters, not
-                             destinations, so they are grouped with the other
-                             filters here and written back onto the single
-                             route on save. -->
+                        <!-- ===== Section: when to deliver (filter) ===== -->
+                        <!-- Severity and Perspectives live on the route in the backend model,
+                             but they are filters (not destinations), so they are grouped with
+                             the other filters here and written back onto the route on save. -->
+                        <div class="routes-section">
+                            <div class="routes-title">When to deliver</div>
+                            <div class="routes-hint">By default every event of the selected types is delivered. Add filters below to narrow that down.</div>
+                            <n-form-item :show-feedback="false">
+                                <template #label>
+                                    <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                        Custom filter (CEL)
+                                        <n-tooltip trigger="hover" style="max-width: 360px;">
+                                            <template #trigger>
+                                                <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                            </template>
+                                            Off: deliver every event of the selected types. On: only deliver events
+                                            matching a CEL boolean expression you provide.
+                                        </n-tooltip>
+                                    </span>
+                                </template>
+                                <n-switch v-model:value="advancedFilter" data-testid="filter-advanced-toggle" />
+                            </n-form-item>
+                            <div v-if="!advancedFilter" class="field-hint">Off — delivering every event of the selected types. Turn on to match only some events with an expression.</div>
+                            <n-form-item v-if="advancedFilter" label="CEL expression" :show-feedback="false">
+                                <n-input
+                                    v-model:value="subForm.celExpression"
+                                    type="textarea"
+                                    :autosize="{ minRows: 3, maxRows: 8 }"
+                                    style="font-family: monospace; font-size: 12px;"
+                                    placeholder='e.g. event.severity == "CRITICAL" && size(event.affectedReleases) > 0'
+                                />
+                            </n-form-item>
+                            <div v-if="advancedFilter" class="field-hint">
+                                A CEL boolean over the event. Examples:
+                                <code>event.severity == "CRITICAL"</code>,
+                                <code>event.kevListed == true</code>,
+                                <code>"CONVERGED" in event.statuses</code>.
+                            </div>
+
                         <n-grid :cols="2" :x-gap="12">
                             <n-gi v-if="severityApplies">
                                 <n-form-item label="Minimum severity">
@@ -144,6 +176,9 @@
                              resolves a severity outside the two vuln types -- which is why that one
                              is hidden and this one is not. -->
 
+                        </div>
+
+                        <!-- ===== Section: where (destination) ===== -->
                         <div class="routes-section">
                             <div class="routes-title">Destination</div>
                             <div class="routes-hint">
@@ -247,6 +282,9 @@
                             </div>
                         </div>
 
+                        <!-- ===== Section: delivery options ===== -->
+                        <div class="routes-section">
+                            <div class="routes-title">Delivery options</div>
                         <n-grid :cols="2" :x-gap="12">
                             <n-gi>
                                 <n-form-item label="Dedup window (minutes, optional)">
@@ -274,6 +312,7 @@
                                  enforcement lands, the control comes back and no data was lost
                                  in the meantime. -->
                         </n-grid>
+                        </div>
 
                         <n-alert v-if="subModalError" type="error" :show-icon="false">
                             {{ subModalError }}
@@ -309,10 +348,10 @@ import { useStore } from 'vuex'
 import {
     NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
     NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag, NDropdown, NTooltip,
-    NRadioGroup, NRadioButton, NCheckbox, useDialog, useMessage
+    NCheckbox, NSwitch, useDialog, useMessage
 } from 'naive-ui'
 import { InfoCircle, CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { buildChannelOptions, withGhosts } from '@/utils/channelOptions'
@@ -333,6 +372,9 @@ import {
     ownerRoutedSuccessCaveat,
     routeCount,
     hasUneditableMultiRoute,
+    instanceDeploymentPresets,
+    instanceSubscriptionPrefillForUri,
+    type InstanceSubscriptionPrefill,
     type SubscriptionTestOutcome
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
@@ -354,6 +396,7 @@ const dialog = useDialog()
 const message = useMessage()
 const store = useStore()
 const router = useRouter()
+const route = useRoute()
 
 // Deep-link into the Delivery History audit surface, pre-filtered to this
 // subscription, so a user can go from "this subscription" straight to "what did
@@ -469,11 +512,52 @@ watch(severityApplies, () => {
 // selected: unselectable for new subs, still removable when editing an
 // existing VEX subscription (after removal it re-disables, no re-add).
 const eventTypeOptionsForForm = computed(() =>
-    eventTypeOptions.map(o =>
-        o.value === 'VEX_STATE_CHANGED'
-            ? { ...o, disabled: !subForm.value.eventTypes.includes('VEX_STATE_CHANGED') }
-            : o)
+    eventTypeOptions.map(o => {
+        if (o.value === 'VEX_STATE_CHANGED') {
+            return { ...o, disabled: !subForm.value.eventTypes.includes('VEX_STATE_CHANGED') }
+        }
+        // Pro-only event types (instance deployment) are unselectable on CE, but
+        // stay removable if somehow already selected -- same non-trapping logic
+        // as the VEX row above.
+        if ((o as { proOnly?: boolean }).proOnly && !isPro.value) {
+            return { ...o, disabled: !subForm.value.eventTypes.includes(o.value) }
+        }
+        return o
+    })
 )
+
+// Instance-deployment quick-start presets (Pro-only). Picking one pre-fills the
+// event types + filter mode + CEL so the common intents are one click; the user
+// can still adjust everything afterward. The select is a launcher, not a stored
+// field -- it resets to null after applying, so re-picking the same preset
+// re-applies. Severity is reconciled by the severityApplies watcher above when
+// eventTypes changes.
+const instancePresetOptions = instanceDeploymentPresets.map(p => ({ label: p.label, value: p.key }))
+const selectedInstancePreset = ref<string | null>(null)
+// The instance-deployment templates are contextual: shown only once the
+// subscription actually targets an instance event type, so vuln/release
+// subscriptions never see an irrelevant instance control.
+const INSTANCE_EVENT_TYPES = ['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED']
+const hasInstanceEventType = computed(() =>
+    (subForm.value.eventTypes || []).some(t => INSTANCE_EVENT_TYPES.includes(t)))
+
+// The filter is off by default (deliver every matching event); flipping it on
+// switches the backend filterMode to ADVANCED and reveals the CEL box. Modelled
+// as a boolean toggle rather than a two-option radio because the "no filter"
+// choice was reading as a confusing "all events of these types".
+const advancedFilter = computed<boolean>({
+    get: () => subForm.value.filterMode === 'ADVANCED',
+    set: (on: boolean) => { subForm.value.filterMode = on ? 'ADVANCED' : 'PRESET' },
+})
+function onInstancePresetPick (key: string | null): void {
+    const preset = instanceDeploymentPresets.find(p => p.key === key)
+    if (preset) {
+        subForm.value.eventTypes = [...preset.prefill.eventTypes]
+        subForm.value.filterMode = preset.prefill.filterMode
+        subForm.value.celExpression = preset.prefill.celExpression
+    }
+    selectedInstancePreset.value = null
+}
 
 const channelOptions = computed(() => {
     // Ghost handling for already-referenced DISABLED/DELETED channels lives in
@@ -682,6 +766,16 @@ function openCreateSubscription (): void {
     subForm.value = freshSubscriptionForm()
     subModalError.value = ''
     showSubscriptionModal.value = true
+}
+
+// Deep-link entry: open the create modal pre-filled (e.g. from the Instance
+// page's "Subscribe" action). Kept separate from openCreateSubscription so a
+// template @click's MouseEvent can never be mistaken for a prefill.
+function openCreateSubscriptionPrefilled (prefill: InstanceSubscriptionPrefill): void {
+    openCreateSubscription()
+    subForm.value.eventTypes = [...prefill.eventTypes]
+    subForm.value.filterMode = prefill.filterMode
+    subForm.value.celExpression = prefill.celExpression
 }
 
 function openEditSubscription (row: SubscriptionRow): void {
@@ -1212,6 +1306,18 @@ onMounted(async () => {
         loadSubscriptions(),
         store.dispatch('fetchPerspectives', orgUuid.value),
     ])
+    // Instance-page "Subscribe" deep-link: ?newInstanceSub=<uri> opens the
+    // create modal pre-filled to notify on this instance's deployments. Pro-only
+    // (instance events don't exist on CE) and writable-only (create needs it).
+    const uri = route.query.newInstanceSub
+    if (typeof uri === 'string' && uri && isPro.value && props.isWritable) {
+        openCreateSubscriptionPrefilled(instanceSubscriptionPrefillForUri(uri))
+        // Consume the one-shot deep-link param: this component remounts on every
+        // subtab switch, so leaving it in the URL would re-pop the modal each time.
+        const q = { ...route.query }
+        delete q.newInstanceSub
+        router.replace({ path: route.path, query: q })
+    }
 })
 </script>
 

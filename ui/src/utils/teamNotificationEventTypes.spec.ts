@@ -17,14 +17,18 @@ const OPTIONS = [
     { label: 'VEX state changed (not yet available)', value: 'VEX_STATE_CHANGED', disabled: true },
     { label: 'Release created', value: 'RELEASE_CREATED' },
     { label: 'Approval requested', value: 'APPROVAL_REQUESTED' },
+    { label: 'Instance deployment changed', value: 'INSTANCE_DEPLOYMENT_CHANGED' },
+    { label: 'Instance deployment failed', value: 'INSTANCE_DEPLOYMENT_FAILED' },
 ]
 const VALUES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED',
     'RELEASE_CREATED', 'APPROVAL_REQUESTED']
 
 describe('ownedComponentEventTypes', () => {
-    it('drops VEX, which no ownership-scoped subscription could ever match', () => {
+    it('drops event types with no affected component (VEX + instance-deployment)', () => {
         const values = ownedComponentEventTypes(OPTIONS).map(o => o.value)
         expect(values).not.toContain('VEX_STATE_CHANGED')
+        expect(values).not.toContain('INSTANCE_DEPLOYMENT_CHANGED')
+        expect(values).not.toContain('INSTANCE_DEPLOYMENT_FAILED')
         expect(values).toEqual(VALUES)
     })
 

@@ -26,6 +26,8 @@ import {
     noDeliveryExplanation,
     severityAppliesTo,
     SEVERITY_BEARING_EVENT_TYPES,
+    instanceDeploymentPresets,
+    instanceSubscriptionPrefillForUri,
     clearInapplicableSeverity,
     routeCount,
     hasUneditableMultiRoute,
@@ -92,6 +94,14 @@ describe('unselectable options without a backend implementation', () => {
 
     it('keeps VEX_STATE_CHANGED unselectable while it has no event producer', () => {
         expect(option(eventTypeOptions, 'VEX_STATE_CHANGED')?.disabled).toBe(true)
+    })
+
+    it('offers the Pro-only instance-deployment event types, flagged proOnly', () => {
+        for (const v of ['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED']) {
+            const o = option(eventTypeOptions, v) as { proOnly?: boolean } | undefined
+            expect(o, `${v} present in eventTypeOptions`).toBeTruthy()
+            expect(o?.proOnly, `${v} is proOnly (gated to Pro in the form)`).toBe(true)
+        }
     })
 
 })
@@ -491,15 +501,19 @@ describe('severity gating', () => {
     // two event types resolve a severity, and severityGateMatches counts a null
     // severity as NO MATCH -- so a gate left on anything else silently suppresses
     // every event rather than doing nothing.
-    it('lists exactly the two severity-bearing event types', () => {
+    it('lists exactly the severity-bearing event types', () => {
         expect([...SEVERITY_BEARING_EVENT_TYPES].sort())
-            .toEqual(['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED'])
+            .toEqual(['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED',
+                'NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED'])
     })
 
     it('applies when any selected event type carries a severity', () => {
         expect(severityAppliesTo(['NEW_VULN_AFFECTS_RELEASES'])).toBe(true)
         expect(severityAppliesTo(['VULNERABILITY_RECORD_UPDATED'])).toBe(true)
         expect(severityAppliesTo(['RELEASE_CREATED', 'NEW_VULN_AFFECTS_RELEASES'])).toBe(true)
+        // Instance-deployment events carry a computed severity (extractEventSeverity).
+        expect(severityAppliesTo(['INSTANCE_DEPLOYMENT_CHANGED'])).toBe(true)
+        expect(severityAppliesTo(['INSTANCE_DEPLOYMENT_FAILED'])).toBe(true)
     })
 
     it('does not apply to release, approval or VEX events, or to nothing at all', () => {
@@ -508,6 +522,53 @@ describe('severity gating', () => {
             ['VEX_STATE_CHANGED'], [], null, undefined]) {
             expect(severityAppliesTo(types as any)).toBe(false)
         }
+    })
+})
+
+describe('instance-deployment presets', () => {
+    it('offers the three quick-start presets with sensible prefills', () => {
+        const byKey = Object.fromEntries(instanceDeploymentPresets.map(p => [p.key, p]))
+        expect(Object.keys(byKey).sort()).toEqual(['ALL_DEPLOYS', 'FAILURES_ONLY', 'FULLY_CONVERGED'])
+
+        // Fully converged: only the CHANGED type, CEL that excludes errors.
+        expect(byKey.FULLY_CONVERGED.prefill.eventTypes).toEqual(['INSTANCE_DEPLOYMENT_CHANGED'])
+        expect(byKey.FULLY_CONVERGED.prefill.filterMode).toBe('ADVANCED')
+        expect(byKey.FULLY_CONVERGED.prefill.celExpression).toContain('"CONVERGED" in event.statuses')
+        expect(byKey.FULLY_CONVERGED.prefill.celExpression).toContain('!("ERROR" in event.statuses)')
+
+        // Failures only: the actionable FAILED type, no filter needed.
+        expect(byKey.FAILURES_ONLY.prefill.eventTypes).toEqual(['INSTANCE_DEPLOYMENT_FAILED'])
+        expect(byKey.FAILURES_ONLY.prefill.filterMode).toBe('PRESET')
+        expect(byKey.FAILURES_ONLY.prefill.celExpression).toBe('')
+
+        // All deploys: both types, no filter.
+        expect([...byKey.ALL_DEPLOYS.prefill.eventTypes].sort())
+            .toEqual(['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED'])
+        expect(byKey.ALL_DEPLOYS.prefill.filterMode).toBe('PRESET')
+    })
+
+    it('every preset targets only Pro instance-deployment event types', () => {
+        const allowed = new Set(['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED'])
+        for (const p of instanceDeploymentPresets) {
+            for (const t of p.prefill.eventTypes) expect(allowed.has(t)).toBe(true)
+        }
+    })
+})
+
+describe('instanceSubscriptionPrefillForUri (deep-link)', () => {
+    it('scopes both instance event types to the instance uri via a CEL literal', () => {
+        const pf = instanceSubscriptionPrefillForUri('test.relizahub.com')
+        expect([...pf.eventTypes].sort())
+            .toEqual(['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED'])
+        expect(pf.filterMode).toBe('ADVANCED')
+        expect(pf.celExpression).toBe('event.instance.uri == "test.relizahub.com"')
+    })
+
+    it('embeds the uri as a JSON string literal so a quote cannot break out of the CEL', () => {
+        const pf = instanceSubscriptionPrefillForUri('evil" || true || "x')
+        // JSON.stringify escapes the embedded quotes -> no CEL injection.
+        expect(pf.celExpression).toBe('event.instance.uri == "evil\\" || true || \\"x"')
+        expect(pf.celExpression.startsWith('event.instance.uri == ')).toBe(true)
     })
 
     it('clears an inapplicable gate on EVERY route, not just the first', () => {

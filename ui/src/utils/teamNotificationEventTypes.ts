@@ -17,17 +17,23 @@
 /**
  * Event types a team can be notified about.
  *
- * VEX is excluded: no producer emits it, and its payload carries no affected
- * component, so an ownership-scoped subscription could never match it. The
- * backend drops it from the effective set regardless -- offering it here would
- * be a control that provably does nothing, which is what teaches an operator to
+ * Excluded here are the event types whose payload carries no affected component,
+ * so an ownership-scoped subscription could never match them -- VEX, and the
+ * instance-deployment events (org/instance-scoped, not component-owner scoped).
+ * This mirrors NotificationEventType.carriesAffectedComponents on the backend,
+ * which drops them from the effective set regardless: offering one here would be
+ * a control that provably does nothing, which is what teaches an operator to
  * distrust the ones next to it.
  */
+export const EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS = new Set([
+    'VEX_STATE_CHANGED', 'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED',
+])
+
 export function ownedComponentEventTypes (
     allOptions: Array<{ label: string, value: string, disabled?: boolean }>,
 ): Array<{ label: string, value: string }> {
     return (allOptions || [])
-        .filter(o => o && o.value !== 'VEX_STATE_CHANGED')
+        .filter(o => o && !EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS.has(o.value))
         .map(o => ({ label: o.label, value: o.value }))
 }
 

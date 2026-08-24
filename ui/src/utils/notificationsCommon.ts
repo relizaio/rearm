@@ -166,6 +166,13 @@ export const eventTypeOptions = [
     { label: 'Release BOM diff', value: 'RELEASE_BOM_DIFF' },
     { label: 'Approval requested', value: 'APPROVAL_REQUESTED' },
     { label: 'Approval resolved', value: 'APPROVAL_RESOLVED' },
+    // Instance-deployment events are Pro-only (the Instance model + producer
+    // live in rearm-core). proOnly gates them out of the form on CE, mirroring
+    // how the VEX row is disabled -- see eventTypeOptionsForForm in
+    // SubscriptionsOfOrg.vue. FAILED is a separate type (not a status on CHANGED)
+    // so it can be actionable/immediate; see ai-plans/instance-event-notifications.md.
+    { label: 'Instance deployment changed', value: 'INSTANCE_DEPLOYMENT_CHANGED', proOnly: true },
+    { label: 'Instance deployment failed', value: 'INSTANCE_DEPLOYMENT_FAILED', proOnly: true },
 ]
 
 // Mirrors SyntheticEventTemplates.Template in rearm-core (backend/src/main/
@@ -210,12 +217,87 @@ export const severityOptions = [
  * minimum severity on a subscription with no vuln event type does not merely
  * have no effect, it silently gates out EVERY event, and the operator sees a
  * subscription that never fires with nothing on screen explaining why.
+ *
+ * <p>Instance-deployment events carry a computed severity (extractEventSeverity
+ * reads the payload: ERROR->HIGH, terminal->MEDIUM, churn->LOW), so a severity
+ * gate is meaningful for them too.
  */
-export const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED']
+export const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED',
+    'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED']
 
 /** True when a minimum-severity gate can ever match, given these event types. */
 export function severityAppliesTo (eventTypes: string[] | null | undefined): boolean {
     return (eventTypes || []).some(t => SEVERITY_BEARING_EVENT_TYPES.includes(t))
+}
+
+/**
+ * The subset of the subscription form a quick-start preset (or the Instance-page
+ * "Subscribe" deep-link) pre-fills. filterMode 'ADVANCED' pairs with a non-empty
+ * celExpression; 'PRESET' means "match every selected event type" (no filter).
+ */
+export interface InstanceSubscriptionPrefill {
+    eventTypes: string[]
+    filterMode: 'PRESET' | 'ADVANCED'
+    celExpression: string
+}
+
+/**
+ * Named quick-start presets for instance-deployment notifications (Pro-only).
+ * Because the producer emits ONE settled event per deploy (see
+ * ai-plans/instance-event-notifications.md), these are about WHICH deploys, not
+ * which transitions. "Fully converged" leans on the CEL surface
+ * (`event.statuses` is a list of UpdateStatus names); "Failures only" simply
+ * subscribes to the actionable FAILED type.
+ */
+export const instanceDeploymentPresets: Array<{
+    key: string
+    label: string
+    description: string
+    prefill: InstanceSubscriptionPrefill
+}> = [
+    {
+        key: 'FULLY_CONVERGED',
+        label: 'Fully converged only',
+        description: 'Notify when a deploy settles with everything converged and no errors.',
+        prefill: {
+            eventTypes: ['INSTANCE_DEPLOYMENT_CHANGED'],
+            filterMode: 'ADVANCED',
+            celExpression: '"CONVERGED" in event.statuses && !("ERROR" in event.statuses)',
+        },
+    },
+    {
+        key: 'FAILURES_ONLY',
+        label: 'Failures only',
+        description: 'Notify only when a deploy settles with one or more errors.',
+        prefill: {
+            eventTypes: ['INSTANCE_DEPLOYMENT_FAILED'],
+            filterMode: 'PRESET',
+            celExpression: '',
+        },
+    },
+    {
+        key: 'ALL_DEPLOYS',
+        label: 'All instance deploys',
+        description: 'Notify on every settled deploy (converged, undeployed, or failed).',
+        prefill: {
+            eventTypes: ['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED'],
+            filterMode: 'PRESET',
+            celExpression: '',
+        },
+    },
+]
+
+/**
+ * Prefill for the Instance-page "Subscribe" deep-link: all instance-deployment
+ * events scoped to one instance by uri. The uri is embedded as a CEL string
+ * literal via JSON.stringify so quotes/backslashes can't break out of it.
+ */
+export function instanceSubscriptionPrefillForUri (uri: string): InstanceSubscriptionPrefill {
+    return {
+        eventTypes: ['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED'],
+        filterMode: 'ADVANCED',
+        celExpression: `event.instance.uri == ${JSON.stringify(uri || '')}`,
+    }
 }
 
 /**
