@@ -10,6 +10,7 @@
                         <n-icon class="clickable icons" title="Export as CycloneDX JSON" size="20" @click="exportCycloneDx"><Download /></n-icon>
                         <n-icon class="clickable icons" :title="instanceWord + ' Settings'" @click="showInstSettingsModal = true" size="20"><Tool /></n-icon>
                         <n-icon class="clickable icons" title="Refresh Instance Data" @click="onCreate" size="20"><Refresh /></n-icon>
+                        <n-icon v-if="canSubscribeToDeploymentNotifications" class="clickable icons" title="Subscribe to deployment notifications" @click="subscribeToDeploymentNotifications" size="20" data-testid="instance-subscribe"><Bell /></n-icon>
                     </h4>
                     <span v-if="updatedInstance.instanceType === InstanceType.CLUSTER_INSTANCE"> Part of Cluster: <router-link :to="{ name: 'Instance', params: {orguuid: orguuid, instuuid: cluster.uuid }}">{{ cluster.name }}</router-link></span>
                     <span v-if="updatedInstance.instanceType === InstanceType.CLUSTER_INSTANCE"> Namespace: {{updatedInstance.namespace}}</span>
@@ -447,6 +448,7 @@ import CreateRelease from '@/components/CreateRelease.vue'
 import SideBySide from '@/components/SideBySide.vue'
 import commonFunctions from '@/utils/commonFunctions'
 import { SwalData } from '@/utils/commonFunctions'
+import { isProEdition } from '@/utils/editionCapabilities'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import Swal from 'sweetalert2'
@@ -457,7 +459,7 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
 import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular, DismissCircle20Regular} from '@vicons/fluent'
-import { Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History } from '@vicons/tabler'
+import { Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History, Bell } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'
@@ -493,6 +495,29 @@ if (route.params.orguuid) {
 }
 
 const updatedInstance: Ref<any> = ref({})
+
+// The Subscribe deep-link lands on OrgSettings -> Integrations -> Subscriptions,
+// which is org-admin-only (integrations is an adminOnlyTab) and Pro-only
+// (instance events don't exist on CE). Gate the affordance on both so a
+// non-admin / CE user is never sent to a tab they can't open -- a control that
+// provably does nothing is worse than no control.
+const canSubscribeToDeploymentNotifications = computed<boolean>(() =>
+    isProEdition(myUser?.installationType) && commonFunctions.isAdmin(orguuid.value, myUser))
+
+// Deep-link to the org's notification subscriptions, pre-filled to notify on
+// this instance's deployments. SubscriptionsOfOrg reads newInstanceSub on mount
+// (Pro-only there) and opens a pre-filled create modal.
+function subscribeToDeploymentNotifications (): void {
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: orguuid.value },
+        query: {
+            tab: 'integrations',
+            integrationsTab: 'subscriptions',
+            newInstanceSub: updatedInstance.value?.uri,
+        },
+    })
+}
 const envs: Ref<any[]> = ref([])
 
 // --- Tab state (URL-synced) ---
