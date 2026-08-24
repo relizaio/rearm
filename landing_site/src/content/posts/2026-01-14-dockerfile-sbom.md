@@ -1,7 +1,7 @@
 ---
 title: "Dockerfile.sbom"
 date: "2026-01-14"
-ogImage: "2026-01-14-dockerfile-sbom.png"
+ogImage: "/blog_images/2026-01-14-dockerfile-sbom.png"
 ---
 
 With the recent [ReARM release](https://github.com/relizaio/rearm/releases/tag/26.01.34), and updated [GitHub Actions](https://github.com/relizaio/rearm-actions), and our brand new [Azure Extension](https://marketplace.visualstudio.com/items?itemName=Reliza.rearm-cli-tasks), we would like to discuss a great workflow feature that is natively supported by ReARM tooling but should also be useful for a wider ecosystem.
