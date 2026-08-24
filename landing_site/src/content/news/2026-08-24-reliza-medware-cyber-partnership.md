@@ -1,7 +1,7 @@
 ---
 title: "Reliza and MedWare Cyber Announce Strategic Partnership to Streamline Medical Device Compliance"
 date: "2026-08-24"
-ogImage: "2026-08-24-medware-cyber-partnership-linkedin-1200x627.png"
+ogImage: "/news_images/2026-08-24-medware-cyber-partnership-linkedin-1200x627.png"
 ---
 
 **Ottawa, ON, August 24, 2026** — Reliza Incorporated, the company behind ReARM, an open-core release governance and SBOM/xBOM lifecycle management platform, today announced a strategic partnership with MedWare Cyber, a leading provider of end-to-end cybersecurity and regulatory consulting for medical devices under FDA and EU MDR frameworks.

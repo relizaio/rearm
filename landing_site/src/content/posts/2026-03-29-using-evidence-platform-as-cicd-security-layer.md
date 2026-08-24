@@ -1,7 +1,7 @@
 ---
 title: "Using Evidence Platform as CI/CD Security Layer"
 date: "2026-03-29"
-ogImage: "2026-03-29-evidence-store-github-actions-security.png"
+ogImage: "/blog_images/2026-03-29-evidence-store-github-actions-security.png"
 ---
 
 Following the recent Trivy and LiteLLM compromises, it has become clear that we still lack a good way to protect our CI/CD layer, specifically GitHub Actions, from supply chain attacks.
