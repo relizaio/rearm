@@ -96,6 +96,7 @@ export const integrations = [
   { file: 'clearlydefined.png', url: 'https://clearlydefined.io', title: 'ClearlyDefined' },
   { file: 'depsdev.png', url: 'https://deps.dev', title: 'deps.dev' },
   { file: 'cdxgen.png', url: 'https://github.com/cdxgen/cdxgen', title: 'cdxgen' },
+  { file: 'microsoft_sentinel.png', url: '#', title: 'Microsoft sentinel' },
 ];
 
 export const clientsPartners = [
@@ -106,6 +107,7 @@ export const clientsPartners = [
   { file: 'ovh.png', url: 'https://ovhcloud.com', title: 'OVHcloud' },
   { file: 'wicwac.png', url: 'https://wicwac.com', title: 'WicWac' },
   { file: 'semperis.png', url: 'https://www.semperis.com', title: 'Semperis' },
+  { file: 'medware_cyber.png', url: 'https://medwarecyber.com/', title: 'MedWare Cyber' },
 ];
 
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
