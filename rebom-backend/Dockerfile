@@ -66,13 +66,27 @@ RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && \
 # Build after tests pass
 RUN npm run build
 
-FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS deliverable
+# Production node_modules, installed here because the deliverable stage
+# deliberately has no npm (see below)
+RUN mkdir /prod && cp package.json package-lock.json /prod/ && \
+    cd /prod && npm ci --ignore-scripts --omit=dev
+
+# Runtime base is plain alpine, NOT node:alpine: the app only needs the node
+# BINARY (copied from the builder, so it is the same official node 26 build),
+# while node:alpine also ships the npm CLI in a base layer we cannot remove --
+# and npm's vendored tree (tar, brace-expansion, ip-address, undici) is where
+# every npm-ecosystem CVE in this image's scans has come from. With no npm in
+# any layer, that finding class is gone structurally, not just until the next
+# npm release. Runtime deps stay installable via apk (gpg / ssh-keygen for
+# signature verification, ICU for cyclonedx-cli); libstdc++ is for node itself.
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS deliverable
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
 ARG VERSION=not_versioned
 
+COPY --from=builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=builder /usr/local/bin/cyclonedx-cli /usr/local/bin/
 COPY --from=builder /usr/local/bin/rearm /usr/local/bin/
 
@@ -81,6 +95,7 @@ ENV \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8
 RUN apk add --no-cache \
+    libstdc++ \
     icu-data-full \
     icu-libs \
     openssh-keygen \
@@ -93,11 +108,10 @@ RUN addgroup -S apprunner && adduser -S apprunner -G apprunner && chown apprunne
 
 COPY --chown=apprunner:apprunner package*.json ./
 COPY --from=builder --chown=apprunner:apprunner /app/dist ./
+COPY --from=builder --chown=apprunner:apprunner /prod/node_modules ./node_modules
 COPY --chown=apprunner:apprunner migrations /app/migrations
 
 USER apprunner
-
-RUN npm ci --ignore-scripts --omit=dev
 
 LABEL git_commit=$GIT_COMMIT
 LABEL git_branch=$GIT_BRANCH
