@@ -1,0 +1,6 @@
+accept: 20016 releases in 101m2s (02:06:35-03:47:47Z) = 3.30/s = 11887/hr, 0 errors
+backlog peak: 19845 queued at accept end
+drain complete: 08:48:22Z; end-to-end 02:06:35->08:48:22 = 6h41m47s
+post-accept drain: 19845 releases in 300.6 min = 66.0/min = 3961/hr
+queued by hour (first sample): {'02': 0, '03': 10559, '04': 18165, '05': 11366, '06': 8316, '07': 5366, '08': 2366}
+failed reconciles: max 0

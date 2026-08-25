@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="ReARM SBOM ingest" enabled="true">
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="BASE_URL" elementType="Argument"><stringProp name="Argument.name">BASE_URL</stringProp><stringProp name="Argument.value">${__P(BASE_URL,https://psclaude.rearmhq.com)}</stringProp></elementProp>
+          <elementProp name="COMPONENT" elementType="Argument"><stringProp name="Argument.name">COMPONENT</stringProp><stringProp name="Argument.value">${__P(COMPONENT,)}</stringProp></elementProp>
+          <elementProp name="BRANCH" elementType="Argument"><stringProp name="Argument.name">BRANCH</stringProp><stringProp name="Argument.value">${__P(BRANCH,main)}</stringProp></elementProp>
+          <elementProp name="POOL_PATH" elementType="Argument"><stringProp name="Argument.name">POOL_PATH</stringProp><stringProp name="Argument.value">${__P(POOL_PATH,lib/pool.json)}</stringProp></elementProp>
+          <elementProp name="KEYS_PATH" elementType="Argument"><stringProp name="Argument.name">KEYS_PATH</stringProp><stringProp name="Argument.value">${__P(KEYS_PATH,/home/reliza/.loadtest-keys.json)}</stringProp></elementProp>
+          <elementProp name="TMP_DIR" elementType="Argument"><stringProp name="Argument.name">TMP_DIR</stringProp><stringProp name="Argument.value">${__P(TMP_DIR,/tmp/sbom-ingest-boms)}</stringProp></elementProp>
+          <elementProp name="COMPONENTS_PER_BOM" elementType="Argument"><stringProp name="Argument.name">COMPONENTS_PER_BOM</stringProp><stringProp name="Argument.value">${__P(COMPONENTS_PER_BOM,50)}</stringProp></elementProp>
+          <elementProp name="MODE" elementType="Argument"><stringProp name="Argument.name">MODE</stringProp><stringProp name="Argument.value">${__P(MODE,warm)}</stringProp></elementProp>
+          <elementProp name="RUN_LABEL" elementType="Argument"><stringProp name="Argument.name">RUN_LABEL</stringProp><stringProp name="Argument.value">${__P(RUN_LABEL,run)}</stringProp></elementProp>
+        </collectionProp>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+
+      <!-- ============ setUp: CSRF handshake + load pool/keys once ============ -->
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp" enabled="true">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <stringProp name="ThreadGroup.on_sample_error">stoptest</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="load pool + keys" enabled="true">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">
+import groovy.json.JsonSlurper
+
+// Load the component pool ONCE here rather than per iteration: it is ~1.4 MB
+// and 2867 components. Parsing it in a PreProcessor would reparse it 20,000
+// times and make the load generator the bottleneck instead of the server.
+def poolFile = new File(vars.get("POOL_PATH"))
+if (!poolFile.exists()) { throw new IllegalStateException("pool not found: " + poolFile.absolutePath) }
+def pool = new JsonSlurper().parse(poolFile)
+props.put("POOL", pool.components)
+log.info("pool loaded: " + pool.components.size() + " components, profile=" + pool.profile)
+
+def keys = new JsonSlurper().parse(new File(vars.get("KEYS_PATH")))
+def auths = keys.collect { k -&gt;
+  "Basic " + Base64.encoder.encodeToString((k.id + ":" + k.secret).getBytes("UTF-8"))
+}
+props.put("AUTHS", auths)
+log.info("auth keys: " + auths.size() + ", rate-limit capacity " + (auths.size()*100/30) + " req/s")
+
+new File(vars.get("TMP_DIR")).mkdirs()
+props.put("SEQ", new java.util.concurrent.atomic.AtomicLong(0L))
+SampleResult.setResponseOK()
+          </stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+      </hashTree>
+
+      <!-- ============ main load ============ -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="ingest" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__P(THREADS,8)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(RAMP,30)}</stringProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController">
+          <stringProp name="LoopController.loops">${__P(LOOPS,2500)}</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+      </ThreadGroup>
+      <hashTree>
+
+          <CookieManager guiclass="CookiePanel" testclass="CookieManager" testname="cookies" enabled="true">
+            <boolProp name="CookieManager.clearEachIteration">false</boolProp>
+            <stringProp name="CookieManager.policy">standard</stringProp>
+          </CookieManager>
+          <hashTree/>
+
+          <!-- Each thread does its own CSRF handshake. Spring matches the
+               X-XSRF-TOKEN header against the XSRF-TOKEN *cookie*, and JMeter
+               cookie jars are per-thread, so a single shared handshake in the
+               setUp group would leave every worker thread without the cookie
+               and 401 the whole run. -->
+          <OnceOnlyController guiclass="OnceOnlyControllerGui" testclass="OnceOnlyController" testname="csrf handshake" enabled="true"/>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="fetchCsrf" enabled="true">
+              <stringProp name="HTTPSampler.path">${BASE_URL}/api/manual/v1/fetchCsrf</stringProp>
+              <stringProp name="HTTPSampler.method">GET</stringProp>
+              <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+              <stringProp name="HTTPSampler.connect_timeout">10000</stringProp>
+              <stringProp name="HTTPSampler.response_timeout">30000</stringProp>
+              <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"/></elementProp>
+            </HTTPSamplerProxy>
+            <hashTree>
+              <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="stash csrf" enabled="true">
+                <stringProp name="scriptLanguage">groovy</stringProp>
+                <stringProp name="script">
+import groovy.json.JsonSlurper
+def body = prev.getResponseDataAsString()
+def parsed = new JsonSlurper().parseText(body)
+def token = parsed.token ?: parsed.xsrfToken
+if (!token) { throw new IllegalStateException("no CSRF token: " + body.take(200)) }
+vars.put("csrfToken", token as String)
+                </stringProp>
+              </JSR223PostProcessor>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="headers" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header"><stringProp name="Header.name">X-XSRF-TOKEN</stringProp><stringProp name="Header.value">${csrfToken}</stringProp></elementProp>
+              <elementProp name="" elementType="Header"><stringProp name="Header.name">Apollo-Require-Preflight</stringProp><stringProp name="Header.value">true</stringProp></elementProp>
+              <elementProp name="" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">${authHeader}</stringProp></elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="synthesize BOM" enabled="true">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+import groovy.json.JsonOutput
+
+def pool  = props.get("POOL")
+def auths = props.get("AUTHS")
+def seq   = props.get("SEQ").incrementAndGet()
+
+// Spread requests across API keys. The rate limiter buckets per key
+// (api:&lt;apiKeyId&gt;) at 100 req/30s, so a single key caps the run at 3.3 req/s
+// regardless of thread count. Round-robin on the global sequence keeps the
+// buckets even rather than pinning a slow thread to one key.
+vars.put("authHeader", auths[(int)(seq % auths.size())])
+
+def k = vars.get("COMPONENTS_PER_BOM") as int
+def mode = vars.get("MODE")
+def rnd = new java.util.Random(seq * 7919L)
+
+def n = pool.size()
+def picked = []
+def used = new HashSet&lt;Integer&gt;()
+while (picked.size() &lt; k &amp;&amp; used.size() &lt; n) {
+  int idx = rnd.nextInt(n)
+  if (used.add(idx)) picked &lt;&lt; pool[idx]
+}
+
+// warm: reuse real purls, which is what a real org looks like and lets the
+//       four dedup layers engage legitimately.
+// cold: make every purl unique so each release introduces new canonical purls
+//       and forces maximum reconcile work. Worst case, not realistic.
+def comps
+if (mode == "cold") {
+  comps = picked.collect { c -&gt;
+    def m = new LinkedHashMap(c)
+    if (m.purl) { m.purl = m.purl + (m.purl.contains("?") ? "&amp;" : "?") + "lt=" + seq }
+    m.version = (m.version ?: "0.0.0") + "-lt" + seq
+    m
+  }
+} else {
+  comps = picked
+}
+
+def bom = [
+  bomFormat: "CycloneDX", specVersion: "1.6",
+  serialNumber: "urn:uuid:" + UUID.randomUUID().toString(), version: 1,
+  metadata: [
+    timestamp: java.time.Instant.now().toString(),
+    component: [type: "application", name: "loadtest-" + vars.get("RUN_LABEL"), version: "1.0." + seq]
+  ],
+  components: comps
+]
+
+def f = new File(vars.get("TMP_DIR"), "bom-" + seq + ".json")
+f.text = JsonOutput.toJson(bom)
+vars.put("bomFile", f.absolutePath)
+vars.put("relVersion", "lt-" + vars.get("RUN_LABEL") + "-" + seq)
+
+def ops = JsonOutput.toJson([
+  query: "mutation(\$r: ReleaseInputProg!){ addReleaseProgrammatic(release: \$r){ uuid } }",
+  variables: [ r: [
+    version  : vars.get("relVersion"),
+    component: vars.get("COMPONENT"),
+    branch   : vars.get("BRANCH"),
+    lifecycle: "ASSEMBLED",
+    artifacts: [[ type: "BOM", displayIdentifier: "sbom-" + seq, bomFormat: "CYCLONEDX", file: null ]]
+  ]]
+])
+vars.put("operations", ops)
+vars.put("fileMap", '{"0":["variables.r.artifacts.0.file"]}')
+            </stringProp>
+          </JSR223PreProcessor>
+          <hashTree/>
+
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="addReleaseProgrammatic" enabled="true">
+            <stringProp name="HTTPSampler.path">${BASE_URL}/graphql</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.DO_MULTIPART_POST">true</boolProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.connect_timeout">15000</stringProp>
+            <stringProp name="HTTPSampler.response_timeout">120000</stringProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="operations" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.name">operations</stringProp>
+                  <stringProp name="Argument.value">${operations}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                </elementProp>
+                <elementProp name="map" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.name">map</stringProp>
+                  <stringProp name="Argument.value">${fileMap}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <elementProp name="HTTPsampler.Files" elementType="HTTPFileArgs">
+              <collectionProp name="HTTPFileArgs.files">
+                <elementProp name="${bomFile}" elementType="HTTPFileArg">
+                  <stringProp name="File.path">${bomFile}</stringProp>
+                  <stringProp name="File.paramname">0</stringProp>
+                  <stringProp name="File.mimetype">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="created ok" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="ok">addReleaseProgrammatic</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <intProp name="Assertion.test_type">2</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="no graphql errors" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="noerr">"errors"</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+              <intProp name="Assertion.test_type">6</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="drop temp bom" enabled="true">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+// 20,000 x ~24 KB would be ~0.5 GB left behind. Delete as we go; the BOM has
+// already been sent and the server owns it now.
+def p = vars.get("bomFile")
+if (p) { new File(p).delete() }
+              </stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+          </hashTree>
+
+          <ConstantThroughputTimer guiclass="TestBeanGUI" testclass="ConstantThroughputTimer" testname="pace" enabled="true">
+            <intProp name="calcMode">2</intProp>
+            <stringProp name="throughput">${__P(RPM,360)}</stringProp>
+          </ConstantThroughputTimer>
+          <hashTree/>
+
+      </hashTree>
+
+      <ResultCollector guiclass="SimpleDataWriter" testclass="ResultCollector" testname="results" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp><name>saveConfig</name><value class="SampleSaveConfiguration">
+          <time>true</time><latency>true</latency><timestamp>true</timestamp><success>true</success>
+          <label>true</label><code>true</code><message>true</message><threadName>true</threadName>
+          <dataType>false</dataType><encoding>false</encoding><assertions>true</assertions>
+          <subresults>false</subresults><responseData>false</responseData><samplerData>false</samplerData>
+          <xml>false</xml><fieldNames>true</fieldNames><responseHeaders>false</responseHeaders>
+          <requestHeaders>false</requestHeaders><responseDataOnError>true</responseDataOnError>
+          <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+          <assertionsResultsToSave>0</assertionsResultsToSave><bytes>true</bytes>
+          <sentBytes>true</sentBytes><threadCounts>true</threadCounts><idleTime>true</idleTime>
+          <connectTime>true</connectTime>
+        </value></objProp>
+        <stringProp name="filename">${__P(RESULTS,results/run.jtl)}</stringProp>
+      </ResultCollector>
+      <hashTree/>
+
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

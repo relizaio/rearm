@@ -1,0 +1,39 @@
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+Creating summariser <summary>
+Created the tree successfully using sbom-ingest.jmx
+Starting standalone test @ 2026 Aug 17 01:11:03 UTC (1786929063472)
+Waiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445
+summary +      1 in 00:00:00 =    2.0/s Avg:   486 Min:   486 Max:   486 Err:     0 (0.00%) Active: 1 Started: 1 Finished: 0
+summary +     82 in 00:00:26 =    3.1/s Avg:  1530 Min:    12 Max:  4612 Err:     0 (0.00%) Active: 11 Started: 11 Finished: 0
+summary =     83 in 00:00:27 =    3.1/s Avg:  1517 Min:    12 Max:  4612 Err:     0 (0.00%)
+summary +    108 in 00:00:30 =    3.6/s Avg:  3939 Min:    11 Max: 10775 Err:     0 (0.00%) Active: 23 Started: 23 Finished: 0
+summary =    191 in 00:00:57 =    3.4/s Avg:  2887 Min:    11 Max: 10775 Err:     0 (0.00%)
+summary +     98 in 00:00:30 =    3.3/s Avg:  6810 Min:    11 Max: 12243 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    289 in 00:01:27 =    3.3/s Avg:  4217 Min:    11 Max: 12243 Err:     0 (0.00%)
+summary +    101 in 00:00:30 =    3.4/s Avg:  7241 Min:  3844 Max: 12622 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    390 in 00:01:57 =    3.3/s Avg:  5000 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +     98 in 00:00:30 =    3.3/s Avg:  7258 Min:  2756 Max: 10778 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    488 in 00:02:27 =    3.3/s Avg:  5454 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +    100 in 00:00:30 =    3.3/s Avg:  7248 Min:  2975 Max: 11153 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    588 in 00:02:57 =    3.3/s Avg:  5759 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +     98 in 00:00:30 =    3.2/s Avg:  7280 Min:  3527 Max: 10797 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    686 in 00:03:27 =    3.3/s Avg:  5976 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +     99 in 00:00:30 =    3.4/s Avg:  7339 Min:  3852 Max: 11761 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    785 in 00:03:56 =    3.3/s Avg:  6148 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +     99 in 00:00:30 =    3.3/s Avg:  7260 Min:  2724 Max: 11796 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    884 in 00:04:27 =    3.3/s Avg:  6273 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +     98 in 00:00:30 =    3.3/s Avg:  7302 Min:  4055 Max: 12618 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    982 in 00:04:56 =    3.3/s Avg:  6375 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +     98 in 00:00:30 =    3.3/s Avg:  7331 Min:  4513 Max: 11763 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =   1080 in 00:05:27 =    3.3/s Avg:  6462 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +    100 in 00:00:30 =    3.3/s Avg:  7174 Min:  3275 Max: 10773 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =   1180 in 00:05:57 =    3.3/s Avg:  6522 Min:    11 Max: 12622 Err:     0 (0.00%)
+summary +    100 in 00:00:30 =    3.3/s Avg:  7303 Min:  3410 Max: 13135 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =   1280 in 00:06:27 =    3.3/s Avg:  6583 Min:    11 Max: 13135 Err:     0 (0.00%)
+summary +     96 in 00:00:30 =    3.2/s Avg:  7262 Min:  2889 Max: 11470 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =   1376 in 00:06:57 =    3.3/s Avg:  6631 Min:    11 Max: 13135 Err:     0 (0.00%)
+summary +    102 in 00:00:30 =    3.4/s Avg:  7204 Min:  4133 Max: 11063 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =   1478 in 00:07:27 =    3.3/s Avg:  6670 Min:    11 Max: 13135 Err:     0 (0.00%)
