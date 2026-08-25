@@ -52,5 +52,10 @@
     "@types/node": "^25.5.0",
     "@types/pg": "^8.20.0",
     "vitest": "^4.1.1"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }
