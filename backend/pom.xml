@@ -334,10 +334,16 @@
                 <schemas>rearm</schemas>
             </configuration>
             <dependencies>
+                <!-- Driver the plugin uses to reach Postgres for migrate/info.
+                     Tracks the Spring Boot BOM's postgresql.version rather than
+                     a literal: a hardcoded version here is invisible to
+                     `mvn dependency:list` (plugin deps are not project deps),
+                     so it silently went stale at 42.7.11 while the project
+                     dependency moved to a patched release. -->
                 <dependency>
                     <groupId>org.postgresql</groupId>
                     <artifactId>postgresql</artifactId>
-                    <version>42.7.11</version>
+                    <version>${postgresql.version}</version>
                 </dependency>
             </dependencies>
         </plugin>
