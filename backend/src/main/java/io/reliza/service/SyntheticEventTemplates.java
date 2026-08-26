@@ -3,18 +3,35 @@
 */
 package io.reliza.service;
 
+import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import io.reliza.common.Utils;
+import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.NotificationEventType;
+import io.reliza.model.NotificationOutboxEvent;
+import io.reliza.model.NotificationSeverity;
 import io.reliza.model.dto.notifications.AffectedComponent;
 import io.reliza.model.dto.notifications.AffectedRelease;
+import io.reliza.model.dto.notifications.ApprovalRequestEntryRef;
+import io.reliza.model.dto.notifications.ApprovalRequestedPayload;
+import io.reliza.model.dto.notifications.ApprovalResolvedPayload;
+import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentItem;
+import io.reliza.model.dto.notifications.InstanceRef;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
-import io.reliza.model.NotificationEventType;
-import io.reliza.model.NotificationSeverity;
+import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
+import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
+import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
+import io.reliza.model.dto.notifications.ReleaseRef;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload.ChangeType;
+import io.reliza.model.dto.UpdateStatus;
 
 /**
  * Curated synthetic event payloads used by {@link SyntheticEventService}.
@@ -198,5 +215,79 @@ public final class SyntheticEventTemplates {
                     "affected",
                     "not_affected");
         };
+    }
+
+    /**
+     * Build a representative, in-memory (unsaved) {@link NotificationOutboxEvent}
+     * for one event type. Used by save-time CEL-filter validation to dry-run a
+     * subscription's expression against every event type it selects, and reusable
+     * by any "preview this event type" surface. The payload is fully populated
+     * (see {@link #samplePayloadForEventType}) so nested fields the CEL surface
+     * exposes conditionally (e.g. {@code event.affectedComponent},
+     * {@code event.instance}) are present -- which catches a reference to a field
+     * a type NEVER has, but not unguarded access to an OPTIONAL field this type
+     * carries only sometimes at runtime (a fully-null-optionals variant would be
+     * needed for that; those want a {@code has()} guard regardless).
+     */
+    public static NotificationOutboxEvent sampleEventForType(UUID org, NotificationEventType eventType) {
+        NotificationOutboxEvent event = new NotificationOutboxEvent();
+        event.setOrg(org);
+        event.setEventType(eventType);
+        event.setOccurredAt(ZonedDateTime.now());
+        event.setDedupKey("sample-" + eventType.name());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> recordData = Utils.OM.convertValue(samplePayloadForEventType(eventType), Map.class);
+        event.setRecordData(recordData);
+        return event;
+    }
+
+    /**
+     * Representative payload per event type. The three vuln/VEX types reuse a
+     * curated {@link Template}; the rest carry an inline sample with every nested
+     * object populated. Exhaustive over {@link NotificationEventType} with no
+     * default per coding_principles.md -- a new event type does not compile until
+     * it has a sample, which is what keeps the validation and preview surfaces
+     * complete rather than silently skipping the new type.
+     */
+    private static Object samplePayloadForEventType(NotificationEventType eventType) {
+        return switch (eventType) {
+            case NEW_VULN_AFFECTS_RELEASES -> payloadOf(Template.CRITICAL_VULN_SINGLE_SHIPPED_RELEASE);
+            case VULNERABILITY_RECORD_UPDATED -> payloadOf(Template.SEVERITY_BUMP_MEDIUM_TO_CRITICAL);
+            case VEX_STATE_CHANGED -> payloadOf(Template.VEX_RESOLVED_NOT_AFFECTED);
+            case RELEASE_CREATED -> new ReleaseCreatedPayload(sampleRelease(), false);
+            case RELEASE_LIFECYCLE_CHANGED -> new ReleaseLifecycleChangedPayload(
+                    sampleRelease(), ReleaseLifecycle.DRAFT, ReleaseLifecycle.ASSEMBLED);
+            case RELEASE_BOM_DIFF -> new ReleaseBomDiffPayload(
+                    sampleRelease(),
+                    List.of(new BomComponentChange("pkg:npm/left-pad@1.3.0", "1.3.0")),
+                    List.of(new BomComponentChange("pkg:npm/old-lib@0.9.0", "0.9.0")));
+            case APPROVAL_REQUESTED -> new ApprovalRequestedPayload(
+                    sampleRelease(), UUID.randomUUID(), UUID.randomUUID(),
+                    "Sample Requester", "requester@example.com",
+                    List.of(new ApprovalRequestEntryRef(UUID.randomUUID(), "QA sign-off")),
+                    List.of(UUID.randomUUID()));
+            case APPROVAL_RESOLVED -> new ApprovalResolvedPayload(
+                    sampleRelease(), UUID.randomUUID(), "QA sign-off",
+                    ApprovalResolvedPayload.Resolution.APPROVED, UUID.randomUUID(),
+                    "Sample Approver", "approver@example.com", List.of(UUID.randomUUID()));
+            case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> new InstanceDeploymentChangedPayload(
+                    new InstanceRef(UUID.randomUUID(), "demo.example.com", "Demo Instance",
+                            "PRODUCTION", "STANDALONE_INSTANCE"),
+                    1, 2,
+                    List.of(new InstanceDeploymentItem(ComponentType.COMPONENT, "sample-service", "default",
+                            UpdateStatus.CONVERGED, "1.4.5", "1.4.4", "sample failure detail",
+                            UUID.randomUUID(), UUID.randomUUID())),
+                    List.of("CONVERGED"), NotificationSeverity.MEDIUM);
+        };
+    }
+
+    /** A fully-populated {@link ReleaseRef} shared across the release/approval samples. */
+    private static ReleaseRef sampleRelease() {
+        return new ReleaseRef(
+                UUID.randomUUID(), "v2.0", UUID.randomUUID(), "sample-service",
+                ComponentType.COMPONENT, UUID.randomUUID(), "main",
+                ReleaseLifecycle.GENERAL_AVAILABILITY, "0123abcd",
+                "https://git.example.com/commit/0123abcd", "Sample commit message",
+                "Sample User", "user@example.com");
     }
 }

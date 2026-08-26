@@ -284,6 +284,24 @@ class VariableQueries {
 				)
 			""";
 
+	// Notifications fan-out: the most recent artifact-metrics scan stamp in an
+	// org, as epoch seconds. lastScanned is stored as a JSON number, which is
+	// why V74's index casts it to float; this query is shaped to use that index
+	// (equality on org, max() over the cast expression).
+	//
+	// Answers "has the pipeline that writes the CVE -> release link run for
+	// this org since a given moment?" The affected-release guard needs that
+	// answer before it may conclude a vulnerability affects nothing: an empty
+	// resolve only means "nothing is affected" if the metrics behind it are
+	// current. NULL means the org has no scanned artifact at all, which is
+	// itself definitive -- nothing can be carrying the vuln.
+	protected static final String FIND_MAX_LAST_SCANNED_EPOCH_FOR_ORG = """
+			SELECT max(cast(metrics->>'lastScanned' as float)) FROM rearm.artifacts
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND metrics IS NOT NULL
+				AND metrics->>'lastScanned' IS NOT NULL
+			""";
+
 	// Notifications fan-out enrichment (S-3): the distinct package purls a
 	// vuln landed against in the org, ordered for a deterministic pick when
 	// one CVE affects multiple packages.
@@ -580,18 +598,40 @@ class VariableQueries {
 			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
 			""";
 	
+	// Commit membership is expressed as whole-document containment
+	// (record_data @> {"commits": [sce]}) rather than
+	// jsonb_contains(record_data->'commits', ...): the two are
+	// equivalent, but only the top-level @> operator form can use the
+	// jsonb_path_ops GIN index (idx_releases_record_data_gin) -- the
+	// function-call form on a sub-path always sequential-scans.
 	protected static final String FIND_RELEASES_BY_SCE_AND_ORG = "select * from rearm.releases"
 			+ " where record_data->>'"+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
 			+ " AND "
 			+ "(record_data->>'" + CommonVariables.SOURCE_CODE_ENTRY_FIELD + "' = :sceUuidAsString OR "
-			+ "jsonb_contains(record_data->'commits', jsonb_build_array(:sceUuidAsString)))";
+			+ "record_data @> jsonb_build_object('commits', jsonb_build_array(:sceUuidAsString)))";
 
 	protected static final String FIND_LATEST_RELEASE_BY_SCE_AND_ORG = "select * from rearm.releases"
 			+ " where record_data->>'"+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
 			+ " AND "
 			+ "(record_data->>'" + CommonVariables.SOURCE_CODE_ENTRY_FIELD + "' = :sceUuidAsString OR "
-			+ "jsonb_contains(record_data->'commits', jsonb_build_array(:sceUuidAsString)))"
+			+ "record_data @> jsonb_build_object('commits', jsonb_build_array(:sceUuidAsString)))"
 			+ "ORDER BY last_updated_date desc LIMIT 1";
+
+	/**
+	 * Batched form of {@link #FIND_RELEASES_BY_SCE_AND_ORG}: one
+	 * round-trip for any number of SCEs. Both branches stay
+	 * index-backed -- the sourceCodeEntry equality list uses the
+	 * releases_source_code_entry expression index, and the per-SCE
+	 * containment probes (built by unnesting the same array) use the
+	 * jsonb_path_ops GIN index via {@code @> ANY}.
+	 */
+	protected static final String FIND_RELEASES_BY_SCES_AND_ORG = "select * from rearm.releases"
+			+ " where record_data->>'"+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
+			+ " AND "
+			+ "(record_data->>'" + CommonVariables.SOURCE_CODE_ENTRY_FIELD + "' = ANY(CAST(:sceUuidsAsStrings AS text[])) OR "
+			+ "record_data @> ANY(ARRAY(SELECT jsonb_build_object('commits', jsonb_build_array(sce))"
+			+ " FROM unnest(CAST(:sceUuidsAsStrings AS text[])) sce)))"
+			+ " ORDER BY last_updated_date desc";
 
 	protected static final String COUNT_RELEASES_OF_ORG_BY_DATE = """
 			select d.date, COUNT(*) as num from (
@@ -1374,6 +1414,11 @@ class VariableQueries {
 	 */
 	protected static final String FIND_ALL_USER_GROUPS_BY_ORGANIZATION = """
 			SELECT * FROM rearm.user_groups
+				WHERE record_data->>'org' = :orgUuidAsString
+			""";
+	
+	protected static final String FIND_ALL_TEAMS_BY_ORGANIZATION = """
+			SELECT * FROM rearm.teams
 				WHERE record_data->>'org' = :orgUuidAsString
 			""";
 	

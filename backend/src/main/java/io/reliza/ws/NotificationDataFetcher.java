@@ -481,6 +481,8 @@ public class NotificationDataFetcher {
 					d.routes() != null ? Utils.OM.writeValueAsString(d.routes()) : null,
 					d.dedupWindowMinutes(),
 					d.rateLimit() != null ? Utils.OM.writeValueAsString(d.rateLimit()) : null,
+					d.ownedByTeam(),
+					d.managedByTeam(),
 					sub.getRevision());
 		} catch (RuntimeException e) {
 			log.warn("Failed to render subscription {} for read: {}", sub.getUuid(), e.getMessage());
@@ -782,7 +784,8 @@ public class NotificationDataFetcher {
 
 		return new NotificationSubscriptionData(
 				input.org(), input.resourceGroup(), input.name(), input.status(),
-				eventTypes, filter, routes, input.dedupWindowMinutes(), rateLimit);
+				eventTypes, filter, routes, input.dedupWindowMinutes(), rateLimit,
+				input.ownedByTeam());
 	}
 
 	private static FilterConfig toFilterConfig(NotificationSubscriptionInput.FilterInput in)
@@ -820,7 +823,10 @@ public class NotificationDataFetcher {
 						// T3: teams passes through as-is. Null preserves
 						// "no team expansion" on routes authored without
 						// the field.
-						r.teams()))
+						r.teams(),
+						// T4a: owner-aware targeting. Null preserves "no owner
+						// expansion" on routes authored without the field.
+						r.notifyComponentOwner()))
 				.toList();
 	}
 

@@ -16,7 +16,6 @@ import java.util.UUID;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang3.StringUtils;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -30,12 +29,9 @@ import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.IntegrationData;
-import io.reliza.model.TeamRole;
 import io.reliza.model.UserData;
 import io.reliza.model.UserGroup;
 import io.reliza.model.UserGroupData;
-import io.reliza.model.UserGroupData.ExternalTeamMember;
-import io.reliza.model.UserGroupData.TeamMemberRole;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionType;
@@ -160,18 +156,6 @@ public class UserGroupService {
 			}
 		}
 		
-		// Team-member validation lives here, next to the other domain rules
-		// (name uniqueness / restore conflict) rather than in the data fetcher,
-		// so every caller of this method is held to the invariant -- not just the
-		// GraphQL one. Sanitize BEFORE validating so the checks see exactly what
-		// will persist: a customRole of "<script>x</script>" is non-empty on the
-		// way in but sanitizes to "", which is precisely the state the CUSTOM
-		// rule exists to reject.
-		updateUserGroupDto.setMemberRoles(UserGroupData.sanitizeMemberRoles(updateUserGroupDto.getMemberRoles()));
-		updateUserGroupDto.setExternalMembers(UserGroupData.sanitizeExternalMembers(updateUserGroupDto.getExternalMembers()));
-		validateMemberRoles(updateUserGroupDto.getMemberRoles(), effectiveRoster(ugd, updateUserGroupDto));
-		validateExternalMembers(updateUserGroupDto.getExternalMembers());
-		validateNotificationChannels(updateUserGroupDto.getNotificationChannels(), ugd.getOrg());
 
 		UserGroupData updatedUgd = UserGroupData.updateUserGroupData(ugd, updateUserGroupDto);
 
@@ -214,163 +198,6 @@ public class UserGroupService {
 		return count;
 	}
 
-	/**
-	 * The deduplicated channels of the given teams, first-seen order (T3). Used
-	 * by the fan-out to expand a route's {@code teams} target. A team that no
-	 * longer exists, belongs to another org, or has been deactivated contributes
-	 * nothing rather than failing the whole fan-out -- one stale reference must
-	 * not silence every other route target.
-	 */
-	public List<UUID> resolveTeamChannelUuids(Iterable<UUID> teamUuids, UUID expectedOrg) {
-		if (null == teamUuids) return Collections.emptyList();
-		// Fail CLOSED on a missing org: a conditional guard that a caller can
-		// silently switch off is the shape the previous review criticised in
-		// channelEligibleForDelivery. No production caller passes null today, and
-		// none should be able to start.
-		if (null == expectedOrg) return Collections.emptyList();
-		List<UUID> out = new ArrayList<>();
-		Set<UUID> seen = new HashSet<>();
-		for (UUID teamUuid : teamUuids) {
-			if (null == teamUuid) continue;
-			UserGroupData ugd;
-			try {
-				Optional<UserGroupData> ougd = getUserGroupData(teamUuid);
-				if (ougd.isEmpty()) continue;
-				ugd = ougd.get();
-			} catch (RuntimeException e) {
-				// dataFromRecord throws on an unsupported schemaVersion or malformed
-				// record_data. This runs inside the fan-out, so letting it escape
-				// would kill the whole pass for one bad row -- the opposite of what
-				// this method promises. Reads tolerate dangling references.
-				log.warn("Skipping unreadable team {} while resolving route channels: {}",
-						teamUuid, e.getMessage());
-				continue;
-			}
-			// Org guard even though writes validate: this is the read side of a
-			// cross-tenant path, and relying solely on the fan-out's channel-org
-			// check would leave one conditional guard between a stale route and
-			// another org's team record.
-			if (!expectedOrg.equals(ugd.getOrg())) continue;
-			// A deactivated team is not a target. The picker hides INACTIVE teams,
-			// so an operator who deactivates one reasonably expects notifications
-			// to stop; without this an already-saved route keeps firing forever.
-			if (UserGroupStatus.ACTIVE != ugd.getStatus()) continue;
-			for (UUID ch : ugd.getNotificationChannels()) {
-				if (null != ch && seen.add(ch)) out.add(ch);
-			}
-		}
-		return out;
-	}
-
-	/**
-	 * The roster this update will LAND on -- mirrors
-	 * {@code UserGroupData.updateUserGroupData}'s merge (null means keep
-	 * existing, non-null replaces), so adding a user and giving them a role in
-	 * the same call works. Package-private for test access.
-	 */
-	static Set<UUID> effectiveRoster(UserGroupData existing, UpdateUserGroupDto dto) {
-		Set<UUID> roster = new LinkedHashSet<>(
-				null != dto.getUsers() ? dto.getUsers() : existing.getUsers());
-		roster.addAll(null != dto.getManualUsers() ? dto.getManualUsers() : existing.getManualUsers());
-		return roster;
-	}
-
-	/**
-	 * A role annotates an EXISTING roster member -- it must never be a back door
-	 * for adding someone to a team, which would fork the roster into two sources
-	 * of truth. Note this only fires when the caller SENDS memberRoles; a role
-	 * can still go stale when the roster shrinks separately, which is why
-	 * {@code UserGroupData.getRoleForUser} re-checks membership on read.
-	 */
-	static void validateMemberRoles(List<TeamMemberRole> memberRoles, Set<UUID> roster) throws RelizaException {
-		if (null == memberRoles) return;
-		Set<UUID> seen = new LinkedHashSet<>();
-		for (TeamMemberRole mr : memberRoles) {
-			if (null == mr.userRef() || !roster.contains(mr.userRef())) {
-				throw new RelizaException(
-						"A team role can only be assigned to an existing team member: " + mr.userRef());
-			}
-			if (!seen.add(mr.userRef())) {
-				// getRoleForUser returns a single Optional, so a second entry for
-				// the same user would be silently dropped -- reject instead of
-				// persisting a role that never takes effect.
-				throw new RelizaException("Duplicate team role for member: " + mr.userRef());
-			}
-			validateCustomRole(mr.role(), mr.customRole());
-		}
-	}
-
-	/** External members carry no roster identity, so identity/reachability is all we can check. */
-	static void validateExternalMembers(List<ExternalTeamMember> externalMembers) throws RelizaException {
-		if (null == externalMembers) return;
-		for (ExternalTeamMember em : externalMembers) {
-			// Checked post-sanitization: GraphQL String! rejects null but not "",
-			// and a pure-markup value sanitizes down to "". An external member
-			// without a contact is unreachable, which defeats the point of storing
-			// one at all.
-			if (StringUtils.isBlank(em.name()) || StringUtils.isBlank(em.contact())) {
-				throw new RelizaException("An external team member requires a non-blank name and contact");
-			}
-			validateCustomRole(em.role(), em.customRole());
-		}
-	}
-
-
-	/**
-	 * A team's channels must exist, belong to the same org, and actually be
-	 * notification channels -- the same three checks as
-	 * {@code NotificationChannelGroupService.validateSeed}. A reference to a
-	 * deleted, cross-org or non-channel integration is a save-time error, not a
-	 * fan-out-time surprise. Package-private for test access.
-	 */
-	void validateNotificationChannels(Set<UUID> channels, UUID orgUuid) throws RelizaException {
-		if (null == channels) return;
-		for (UUID channelUuid : channels) {
-			if (null == channelUuid) throw new RelizaException("Team channels cannot contain null entries");
-			var oc = notificationChannelService.getChannel(channelUuid);
-			if (oc.isEmpty()) {
-				throw new RelizaException("Notification channel not found: " + channelUuid
-						+ ". Remove it from this team's channels to continue.");
-			}
-			IntegrationData idata;
-			try {
-				idata = IntegrationData.dataFromRecord(oc.get());
-			} catch (RuntimeException e) {
-				// Tolerant parse, matching the channel-group validator: malformed
-				// record_data is a validation error, not an unwrapped 500.
-				throw new RelizaException("Notification channel " + channelUuid + " is unreadable");
-			}
-			if (null == idata || null == idata.getOrg() || !idata.getOrg().equals(orgUuid)) {
-				throw new RelizaException("Notification channel " + channelUuid
-						+ " does not belong to this organization");
-			}
-			// Must actually BE a notification channel. Without this a same-org CI
-			// integration (DTrack, GitHub, Jira...) can be attached as a team
-			// channel; fan-out then writes a delivery row per event that the
-			// worker terminates FAILED ("no dispatcher") -- exactly the
-			// fan-out-time surprise this validation exists to prevent.
-			if (null == idata.getName()
-					|| !IntegrationData.NOTIFICATION_DESTINATION_TYPES.contains(idata.getType())) {
-				throw new RelizaException("Integration " + channelUuid
-						+ " is not a notification channel");
-			}
-		}
-	}
-
-	/**
-	 * These are malformed-input errors, not authorization failures, so they go
-	 * through {@link RelizaException} -- the domain validation channel
-	 * {@code GraphQLExceptionHandlers.handleReliza} surfaces as BAD_REQUEST with
-	 * the actual message. Throwing AccessDeniedException here would flatten every
-	 * one of them to a generic "Not authorized", misleading both the operator
-	 * fixing their request and anyone reading the logs.
-	 */
-	static void validateCustomRole(TeamRole role, String customRole) throws RelizaException {
-		if (TeamRole.CUSTOM == role && StringUtils.isBlank(customRole)) {
-			throw new RelizaException("A CUSTOM team role requires a customRole label");
-		}
-	}
-
 	private boolean hasWritePermissions(UserGroupData ugd) {
 		Set<UserPermission> perms = ugd.getOrgPermissions(ugd.getOrg());
 		for (UserPermission p : perms) {
@@ -385,13 +212,48 @@ public class UserGroupService {
 	/**
 	 * Gets all user groups for an organization (active only, used by SSO sync)
 	 */
+	/**
+	 * <p>One unreadable row costs only that row. An org-wide LIST that dies
+	 * because a single {@code record_data} is unparseable (or carries an
+	 * unsupported {@code schemaVersion}) is not useful to any caller, and it is
+	 * actively dangerous to some: this method is {@code @Transactional} and every
+	 * caller reaches it ACROSS a bean boundary, so letting the exception escape
+	 * makes Spring mark the CALLER's transaction rollback-only on the way out --
+	 * which no {@code catch} at the call site can undo. That is how one bad
+	 * {@code user_groups} row wedged the notification fan-out for every org.
+	 * Containment has to live here, in the method that throws.
+	 */
 	@Transactional(readOnly = true)
 	public List<UserGroupData> getUserGroupsByOrganization(UUID orgUuid) {
 		List<UserGroup> groups = userGroupRepository.findAllByOrganization(orgUuid.toString());
-		return groups.stream()
-				.map(UserGroupData::dataFromRecord)
-				.filter(g -> g.getStatus() == UserGroupStatus.ACTIVE)
-				.collect(Collectors.toList());
+		List<UserGroupData> out = new ArrayList<>();
+		for (UserGroup ug : groups) {
+			UserGroupData ugd;
+			try {
+				ugd = UserGroupData.dataFromRecord(ug);
+			} catch (RuntimeException e) {
+				log.warn("Skipping unreadable team {} while listing org {} teams: {}",
+						ug.getUuid(), orgUuid, e.getMessage());
+				continue;
+			}
+			if (ugd.getStatus() == UserGroupStatus.ACTIVE) out.add(ugd);
+		}
+		return out;
+	}
+
+	/**
+	 * Same as {@link #getUserGroupData}, but an unreadable row yields empty
+	 * rather than throwing. See {@link #getReadableUserGroupsByOrganization} for
+	 * why containing it inside the transactional method is the load-bearing part.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<UserGroupData> getReadableUserGroupData(UUID groupUuid) {
+		try {
+			return getUserGroupData(groupUuid);
+		} catch (RuntimeException e) {
+			log.warn("Skipping unreadable team {}: {}", groupUuid, e.getMessage());
+			return Optional.empty();
+		}
 	}
 	
 	/**

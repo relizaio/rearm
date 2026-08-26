@@ -25,21 +25,20 @@
     <java.version>25</java.version>
     <main-class>org.springframework.boot.loader.launch.JarLauncher</main-class>
     <start-class>io.reliza.ws.App</start-class>
-    <log4j2.version>2.26.0</log4j2.version>
-    <commons-lang3.version>3.20.0</commons-lang3.version>
-    <!-- Override Spring Boot 4.0.6 BOM-managed versions with the latest
-         patch releases that carry CVE fixes vs the BOM-pinned defaults.
-         Refresh on each Spring Boot bump and re-check against the
-         scanner so we don't silently regress past a future BOM. -->
-    <netty.version>4.2.15.Final</netty.version>
-    <tomcat.version>11.0.22</tomcat.version>
-    <postgresql.version>42.7.13</postgresql.version>
+    <!-- No netty/tomcat/postgresql/log4j2/commons-lang3 overrides here on
+         purpose. They were added to get ahead of a lagging BOM and then did
+         the opposite: by 4.1.1 the BOM had passed every one of them, so the
+         pins held netty at 4.2.15 (13 advisories, fixed in 4.2.16/4.2.17),
+         tomcat at 11.0.22 and log4j2 at 2.26.0 (vulnerable; the BOM's
+         2.25.5 is patched). Let the BOM manage them and this cannot happen
+         again: reintroduce a pin only for a CVE the BOM has not yet picked
+         up, and drop it again at the next Spring Boot bump. -->
   </properties>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -52,6 +51,17 @@
 	            <version>12.0.0</version>
 	            <type>pom</type>
 	            <scope>import</scope>
+	        </dependency>
+	        <!-- log4j-slf4j2-impl 2.25.5 resolves log4j-api to 2.25.3, which
+	             the Spring Boot BOM does not manage, so GHSA-qv9r-c865-cp47
+	             stays in the tree while the rest of the log4j stack is
+	             patched. Track the BOM's own log4j2.version rather than a
+	             literal, so this follows future Spring Boot bumps instead of
+	             going stale the way the removed pins did. -->
+	        <dependency>
+	            <groupId>org.apache.logging.log4j</groupId>
+	            <artifactId>log4j-api</artifactId>
+	            <version>${log4j2.version}</version>
 	        </dependency>
 	        <!-- DGS 12 ships Jackson3JsonProvider wiring that requires
 	             json-path 3.x; Spring Boot 4.0.6 BOM still pins 2.10.0. -->
@@ -244,7 +254,7 @@
     <dependency>
         <groupId>org.jsoup</groupId>
         <artifactId>jsoup</artifactId>
-        <version>1.22.2</version>
+        <version>1.23.1</version>
     </dependency>
     <dependency>
         <groupId>org.openapitools</groupId>

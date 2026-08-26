@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
-import io.reliza.model.UserGroupData;
+import io.reliza.model.TeamData;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
@@ -37,6 +37,8 @@ import io.reliza.repositories.NotificationChannelGroupRepository;
 import io.reliza.repositories.NotificationSubscriptionRepository;
 import io.reliza.service.AuditService;
 import io.reliza.model.dto.notifications.EvaluationMode;
+import io.reliza.model.NotificationEventType;
+import io.reliza.model.NotificationOutboxEvent;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -83,7 +85,7 @@ public class NotificationSubscriptionService {
 
     @Autowired
     @Lazy
-    private UserGroupService userGroupService;
+    private TeamService teamService;
 
     @Autowired
     private IntegrationRepository integrationRepo;
@@ -116,6 +118,14 @@ public class NotificationSubscriptionService {
     public NotificationSubscription upsertSubscription(UUID uuid, Integer expectedRevision,
             NotificationSubscriptionData seed, WhoUpdated wu) throws RelizaException {
         if (seed == null) throw new RelizaException("Subscription input is required");
+        // Nobody gets to declare their own row team-managed through the public
+        // path. The marker is what the CRUD guards trust, so a caller who could
+        // set it could make a subscription that only a team can edit -- and no
+        // team would agree it owns it.
+        if (null != seed.managedByTeam()) {
+            throw new RelizaException("managedByTeam is set by the team's own notification"
+                    + " setting and cannot be assigned here");
+        }
         validateSeed(seed);
 
         NotificationSubscription target;
@@ -129,6 +139,10 @@ public class NotificationSubscriptionService {
                 throw new RelizaException("Subscription not found: " + uuid);
             }
             target = existing.get();
+            // Guard the STORED row, not the incoming seed: a caller can simply
+            // omit managedByTeam, and the question is who owns the row being
+            // overwritten, not what the writer claims about it.
+            requireNotTeamManaged(target, "edited");
             NotificationChannelService.assertExpectedRevision(target.getRevision(),
                     expectedRevision, "Subscription", seed.name());
             auditService.createAndSaveAuditRecord(TableName.NOTIFICATION_SUBSCRIPTION, target);
@@ -171,11 +185,21 @@ public class NotificationSubscriptionService {
         if (data.status() == status) {
             return sub;
         }
+        // A status flip IS an edit, and a team-managed row is edited on its team.
+        // Without this an admin could disable a team's subscription from the
+        // list, leaving the team's toggle claiming something untrue.
+        requireNotTeamManaged(sub, "disabled or enabled");
         auditService.createAndSaveAuditRecord(TableName.NOTIFICATION_SUBSCRIPTION, sub);
+        // CANONICAL constructor, not one of the back-compat overloads. Rebuilding
+        // a stored row field by field through a shortened ctor is precisely how a
+        // field gets silently dropped: the previous cut of this carried
+        // ownedByTeam and lost managedByTeam, which would have orphaned the row
+        // from its team and let the next team save materialise a SECOND one.
         NotificationSubscriptionData updated = new NotificationSubscriptionData(
                 data.org(), data.resourceGroup(), data.name(), status,
                 data.eventTypes(), data.filter(), data.routes(),
-                data.dedupWindowMinutes(), data.rateLimit());
+                data.dedupWindowMinutes(), data.rateLimit(),
+                data.ownedByTeam(), data.managedByTeam());
         @SuppressWarnings("unchecked")
         Map<String, Object> recordData = Utils.OM.convertValue(updated, Map.class);
         sub.setRecordData(recordData);
@@ -188,9 +212,103 @@ public class NotificationSubscriptionService {
         if (uuid == null) throw new RelizaException("uuid is required");
         Optional<NotificationSubscription> oSub = subscriptionRepo.findById(uuid);
         if (oSub.isEmpty()) return;
+        requireNotTeamManaged(oSub.get(), "deleted");
         auditService.createAndSaveAuditRecord(TableName.NOTIFICATION_SUBSCRIPTION, oSub.get());
         subscriptionRepo.deleteById(uuid);
         log.info("Deleted notification_subscription {}", uuid);
+    }
+
+    /**
+     * A team-managed row is not editable or deletable through the ordinary CRUD
+     * path -- the team's toggle owns it.
+     *
+     * <p>Refusing is the honest answer rather than a courtesy. Letting an
+     * operator edit it leaves the team's setting describing something that is no
+     * longer true, with nothing on the team to show the divergence; letting them
+     * delete it leaves the toggle claiming a subscription that does not exist.
+     * Either way the fix is on the team, so the message says so.
+     */
+    private void requireNotTeamManaged(NotificationSubscription sub, String verb) throws RelizaException {
+        NotificationSubscriptionData data;
+        try {
+            data = Utils.OM.convertValue(sub.getRecordData(), NotificationSubscriptionData.class);
+        } catch (RuntimeException e) {
+            // Refuse rather than assume. The tolerant-read convention applies to
+            // READS, where skipping a bad row costs only that row; this is a
+            // write guard, and answering "unmanaged" to a question it could not
+            // read is how a managed row gets deleted after an enum rename makes
+            // it unparseable. Matches setSubscriptionStatus, which already
+            // rejects an unparseable record_data outright.
+            log.warn("Could not read subscription {} while checking team ownership: {}",
+                    sub.getUuid(), e.getMessage());
+            throw new RelizaException("Cannot verify ownership of subscription " + sub.getUuid()
+                    + ": its stored data is unreadable");
+        }
+        if (null != data && data.isTeamManaged()) {
+            throw new RelizaException("This subscription is managed by a team and cannot be "
+                    + verb + " here. Change it on the team that owns it ("
+                    + data.managedByTeam() + ").");
+        }
+    }
+
+    /**
+     * Create or update the subscription a team's owned-component toggle owns.
+     *
+     * <p>Separate entry point from {@link #upsertSubscription} because the two
+     * have opposite guards: that one refuses to touch a managed row, this one
+     * exists only to write it. Package-private on purpose -- {@code TeamService}
+     * is the only legitimate caller, and a managed row that anything else can
+     * write is a managed row in name only.
+     *
+     * <p>Runs in the caller's transaction, so a team save and its subscription
+     * commit together or not at all. That is deliberate: the alternative is a
+     * team whose toggle says "on" while no subscription exists, which no screen
+     * would ever reveal. No {@code @Transactional} of its own: Spring's default
+     * attribute source only sees public methods, so one here would be inert and
+     * would suggest a boundary that does not exist. The real constraint on who
+     * may call this is the managedByTeam check below, not the visibility --
+     * there are over a hundred classes in this package.
+     */
+    NotificationSubscription upsertManagedSubscription(UUID existingUuid,
+            NotificationSubscriptionData seed, WhoUpdated wu) throws RelizaException {
+        if (null == seed || null == seed.managedByTeam()) {
+            throw new RelizaException("A managed subscription must name the team that manages it");
+        }
+        validateSeed(seed);
+        NotificationSubscription target;
+        if (null != existingUuid) {
+            Optional<NotificationSubscription> existing = subscriptionRepo.findById(existingUuid);
+            if (existing.isEmpty()) {
+                throw new RelizaException("Managed subscription not found: " + existingUuid);
+            }
+            target = existing.get();
+            auditService.createAndSaveAuditRecord(TableName.NOTIFICATION_SUBSCRIPTION, target);
+        } else {
+            target = new NotificationSubscription();
+            target.setUuid(UUID.randomUUID());
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> recordData = Utils.OM.convertValue(seed, Map.class);
+        // Same JSONB ceiling the operator path enforces. A generated seed is
+        // unlikely to reach it, but "this caller is trusted" is how a size guard
+        // stops being a guard.
+        NotificationChannelService.assertRecordDataSize(recordData, "subscription");
+        target.setRecordData(recordData);
+        target = (NotificationSubscription) WhoUpdated.injectWhoUpdatedData(target, wu);
+        return subscriptionRepo.save(target);
+    }
+
+    /**
+     * The subscription a team's owned-component toggle owns, if any.
+     *
+     * <p>Lives here rather than on TeamService so the org predicate and the
+     * parse stay with the aggregate that owns this table -- the team service
+     * reaching into this repository directly is what let the first cut ship a
+     * cross-tenant-unscoped query.
+     */
+    Optional<NotificationSubscription> findManagedFor(UUID org, UUID team) {
+        if (null == org || null == team) return Optional.empty();
+        return subscriptionRepo.findManagedByTeam(org, team);
     }
 
     /**
@@ -209,7 +327,39 @@ public class NotificationSubscriptionService {
             throw new RelizaException("at least one route is required");
         }
         validateFilter(seed.filter());
+        dryRunFilterAgainstEventTypes(seed.org(), seed.filter(), seed.eventTypes());
         validateRoutes(seed.org(), seed.routes());
+        validateOwnedByTeam(seed.org(), seed.ownedByTeam());
+    }
+
+    /**
+     * The ownership scope must resolve to a team in the SAME org.
+     *
+     * <p>Same reasoning as the route references: no foreign key backs the uuid,
+     * so this is the integrity gate. It matters more here than for a route
+     * target, because the failure is invisible rather than merely quiet -- a
+     * scope naming a team that does not exist matches nothing, forever, and
+     * looks exactly like "no events have happened yet". A cross-org uuid would
+     * be worse: it would silently never match while appearing configured.
+     *
+     * <p>Archived teams are ACCEPTED here, deliberately. Scoping is a matching
+     * rule, not a destination, and an archived team's ownership already reports
+     * DEGRADED and so resolves to nothing at fan-out. Rejecting it at save time
+     * would block an operator from editing an unrelated field on a subscription
+     * whose team was archived after it was written.
+     */
+    private void validateOwnedByTeam(UUID org, UUID ownedByTeam) throws RelizaException {
+        if (ownedByTeam == null) return;
+        // Readable, not plain: TeamService is @Transactional at class level, so
+        // an unreadable row escaping it would poison this save's transaction
+        // before the message below could be produced.
+        Optional<TeamData> otd = teamService.getReadableTeamData(ownedByTeam);
+        if (otd.isEmpty()) {
+            throw new RelizaException("ownedByTeam does not resolve to a team: " + ownedByTeam);
+        }
+        if (!org.equals(otd.get().getOrg())) {
+            throw new RelizaException("ownedByTeam belongs to a different organization: " + ownedByTeam);
+        }
     }
 
     private void validateFilter(FilterConfig filter) throws RelizaException {
@@ -224,6 +374,59 @@ public class NotificationSubscriptionService {
         // readable message on failure. Let it propagate so the caller's
         // exception mapper surfaces the message to the customer.
         celEvaluator.validate(cel, mode);
+    }
+
+    /**
+     * Dry-run the filter against a representative sample of EACH selected event
+     * type, refusing the save if it cannot be evaluated for one of them.
+     *
+     * <p>Closes the gap where an expression valid for one payload shape throws on
+     * another -- e.g. referencing {@code event.affectedReleases} on an approval or
+     * release event that carries none. At fan-out that throw is caught and the
+     * event is skipped with NO delivery row (see {@link NotificationCelEvaluator}),
+     * so the operator sees nothing -- indistinguishable from "no event matched".
+     * Failing at save time turns an invisible mis-scope into an actionable error
+     * that names the offending event type.
+     *
+     * <p>Scope and limits:
+     * <ul>
+     *   <li>ADVANCED (user-authored) expressions only. PRESET expressions are
+     *       generated by the UI and are type-scoped there; a preset that failed on
+     *       a selected type is a UI/generator concern, not something the operator
+     *       can fix by editing the expression, so refusing their save would be a
+     *       dead-end. Blank expressions and CE (no evaluator) are also no-ops.</li>
+     *   <li>Deterministic evaluation errors only -- it cannot reproduce a genuine
+     *       50ms wall-clock timeout under load.</li>
+     *   <li>The sample carries a populated payload, so a reference to a field a
+     *       type never has (e.g. {@code event.affectedReleases} on an approval
+     *       event) is caught, but unguarded access to an OPTIONAL nested field
+     *       that this type sometimes-but-not-always carries at runtime (e.g.
+     *       {@code event.affectedComponent} on a component-less CVE) is not -- use
+     *       a {@code has()} guard for those. Syntactic validity is covered by
+     *       {@link #validateFilter}.</li>
+     * </ul>
+     */
+    private void dryRunFilterAgainstEventTypes(UUID org, FilterConfig filter,
+            List<NotificationEventType> eventTypes) throws RelizaException {
+        if (filter == null || StringUtils.isBlank(filter.celExpression()) || celEvaluator == null) return;
+        if (eventTypes == null || eventTypes.isEmpty()) return;
+        EvaluationMode mode = filter.mode() != null ? filter.mode() : EvaluationMode.PRESET;
+        if (mode != EvaluationMode.ADVANCED) return;
+        String cel = filter.celExpression();
+        for (NotificationEventType et : eventTypes) {
+            NotificationOutboxEvent sample = SyntheticEventTemplates.sampleEventForType(org, et);
+            try {
+                celEvaluator.evaluate(cel, mode, sample);
+            } catch (RelizaException | RuntimeException e) {
+                // RelizaException is the evaluator's normal failure path; a raw
+                // RuntimeException can still escape its final rethrow -- either way
+                // this is an unevaluatable filter, not a 500.
+                throw new RelizaException("The filter cannot be evaluated against " + et.name()
+                        + " events: " + e.getMessage()
+                        + ". Adjust the filter or remove " + et.name()
+                        + " from this subscription's event types.");
+            }
+        }
     }
 
     /**
@@ -256,6 +459,10 @@ public class NotificationSubscriptionService {
         Set<UUID> referencedChannels = new HashSet<>();
         Set<UUID> referencedGroups = new HashSet<>();
         Set<UUID> referencedTeams = new HashSet<>();
+        // T4a: an owner-routed route contributes no referenced UUID at all --
+        // its target is resolved at fan-out. Tracked separately so the
+        // subscription-level gate below sees it as a real target.
+        boolean anyOwnerRouting = false;
         for (RouteConfig route : routes) {
             if (route == null) continue;
             // T3: a teams-only route is legitimate -- naming a team INSTEAD of a
@@ -265,9 +472,17 @@ public class NotificationSubscriptionService {
             boolean hasChannels = route.channels() != null && !route.channels().isEmpty();
             boolean hasGroups = route.channelGroups() != null && !route.channelGroups().isEmpty();
             boolean hasTeams = route.teams() != null && !route.teams().isEmpty();
-            if (!hasChannels && !hasGroups && !hasTeams) {
+            // T4a: same reasoning one step further. An owner-routed route names
+            // NO target at save time by design -- the target is whatever owns the
+            // affected component when the event fires. Leaving it out of this gate
+            // would make the feature unsaveable without also naming a channel,
+            // which is exactly the dead end T3 hit.
+            boolean hasOwnerTarget = Boolean.TRUE.equals(route.notifyComponentOwner());
+            if (hasOwnerTarget) anyOwnerRouting = true;
+            if (!hasChannels && !hasGroups && !hasTeams && !hasOwnerTarget) {
                 throw new RelizaException(
-                        "route must reference at least one channel, channelGroup or team");
+                        "route must reference at least one channel, channelGroup, team,"
+                        + " or the component owner");
             }
             if (route.channels() != null) {
                 for (UUID channelUuid : route.channels()) {
@@ -285,9 +500,11 @@ public class NotificationSubscriptionService {
                 }
             }
         }
-        if (referencedChannels.isEmpty() && referencedGroups.isEmpty() && referencedTeams.isEmpty()) {
+        if (referencedChannels.isEmpty() && referencedGroups.isEmpty() && referencedTeams.isEmpty()
+                && !anyOwnerRouting) {
             throw new RelizaException(
-                    "subscription routes must reference at least one channel, channelGroup or team");
+                    "subscription routes must reference at least one channel, channelGroup, team,"
+                    + " or the component owner");
         }
         validateReferencedChannels(org, referencedChannels);
         validateReferencedGroups(org, referencedGroups);
@@ -339,7 +556,7 @@ public class NotificationSubscriptionService {
      * subscription entirely: they could neither keep the team (rejected here) nor
      * drop it (an emptied route is rejected above), with no error hinting at the
      * only escape. A deactivated team is already harmless --
-     * {@code UserGroupService.resolveTeamChannelUuids} skips non-ACTIVE teams so
+     * {@code TeamService.resolveTeamChannelUuids} skips non-ACTIVE teams so
      * nothing is delivered, and the route editor labels it "(deactivated)" so it
      * can be seen and removed. Verified live: the rejection made
      * deactivate-then-clean-up impossible.
@@ -349,13 +566,16 @@ public class NotificationSubscriptionService {
         List<UUID> notFound = new ArrayList<>();
         List<UUID> wrongOrg = new ArrayList<>();
         for (UUID teamUuid : referenced) {
-            Optional<UserGroupData> ougd = userGroupService.getUserGroupData(teamUuid);
-            if (ougd.isEmpty()) {
+            // Readable, not plain: TeamService is @Transactional at class level,
+            // so an unreadable row escaping it would poison this save's
+            // transaction before the message below could be produced.
+            Optional<TeamData> otd = teamService.getReadableTeamData(teamUuid);
+            if (otd.isEmpty()) {
                 notFound.add(teamUuid);
                 continue;
             }
-            UserGroupData ugd = ougd.get();
-            if (ugd.getOrg() == null || !ugd.getOrg().equals(org)) {
+            TeamData td = otd.get();
+            if (td.getOrg() == null || !td.getOrg().equals(org)) {
                 wrongOrg.add(teamUuid);
             }
         }

@@ -10,7 +10,9 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.Utils;
+import io.reliza.dto.ChangelogRecords.FindingChangeKind;
 import io.reliza.model.FindingChangeEvent;
 import io.reliza.model.FindingChangeEventV3;
 import io.reliza.model.FindingDim;
@@ -79,8 +82,31 @@ public class FindingDimBackfillService {
 	 * @return the number of v3 fact rows actually inserted
 	 */
 	public int writeEventsToV3(UUID org, List<FindingChangeEvent> events) {
+		return writeEventsToV3ByKind(org, events).landed();
+	}
+
+	/**
+	 * As {@link #writeEventsToV3}, but reports the {@code change_kind} mix of the rows that ACTUALLY
+	 * landed -- events skipped by {@code ON CONFLICT DO NOTHING} are excluded.
+	 *
+	 * <p>The distinction matters to the repair sweep's alert. A re-diff PRODUCES a release's whole recent
+	 * slice, most of which already exists; reporting the produced mix would describe hundreds of
+	 * already-present events rather than the handful of genuine holes, and would destroy the
+	 * all-APPEARED-vs-mixed signal the alert asks the reader to act on.
+	 *
+	 * <p>Also reports how many rows were OFFERED. Offered-vs-landed is the one fact that separates the two
+	 * reasons the repair sweep ever inserts anything: if every offered row landed, nothing the sweep offered
+	 * was already present, which together with the emit-rule replay indicates the emit never ran; if only
+	 * some landed, the emit DID run and produced a different set -- a producer disagreement, not a lost
+	 * write. It costs nothing to
+	 * compute -- the batch already reports per-row outcomes -- and it has to travel with the counts, because
+	 * the sweep's single aggregate alert is the only place it can be surfaced.
+	 *
+	 * @return what was offered and what landed; {@link V3WriteResult#isEmpty()} when nothing landed
+	 */
+	public V3WriteResult writeEventsToV3ByKind(UUID org, List<FindingChangeEvent> events) {
 		if (events == null || events.isEmpty()) {
-			return 0;
+			return V3WriteResult.NOTHING;
 		}
 		Map<String, UUID> dimIdByHexHash = resolveDims(org, events);
 		// Order fact inserts by the dedup tuple (first_release_uuid, to_metrics_revision, change_kind, dim)
@@ -143,13 +169,61 @@ public class FindingDimBackfillService {
 			}
 			@Override public int getBatchSize() { return ordered.size(); }
 		});
-		int inserted = 0;
-		for (int c : counts) {
-			if (c > 0) {
-				inserted += c;
+		// Counts are positionally aligned with `ordered`, so a landed row can be attributed back to the
+		// event that produced it. A driver returning SUCCESS_NO_INFO (-2) is treated as "did not land",
+		// matching the pre-existing total; the ON CONFLICT note above records why that does not arise here.
+		Map<FindingChangeKind, Integer> insertedByKind = new EnumMap<>(FindingChangeKind.class);
+		Map<Integer, int[]> perRevision = new LinkedHashMap<>();
+		for (int i = 0; i < counts.length; i++) {
+			FindingChangeEvent ev = ordered.get(i);
+			int[] offeredLanded = perRevision.computeIfAbsent(ev.getToMetricsRevision(), k -> new int[2]);
+			offeredLanded[0]++;
+			if (counts[i] > 0) {
+				insertedByKind.merge(ev.getChangeKind(), counts[i], Integer::sum);
+				offeredLanded[1] += counts[i];
 			}
 		}
-		return inserted;
+		Map<Integer, RevisionWrite> byRevision = new LinkedHashMap<>();
+		perRevision.forEach((rev, ol) -> byRevision.put(rev, new RevisionWrite(ol[0], ol[1])));
+		return new V3WriteResult(insertedByKind, byRevision);
+	}
+
+	/** Offered vs landed for ONE metrics revision -- i.e. for one emit that either ran or did not. */
+	public record RevisionWrite(int offered, int landed) {
+		/**
+		 * Every row this sweep OFFERED for the revision was new. Deliberately not phrased as "the store held
+		 * nothing": all the batch can see is its own offered set, so a row the sweep never offered could
+		 * still be present.
+		 */
+		public boolean noOfferedRowWasAlreadyPresent() {
+			return landed > 0 && landed == offered;
+		}
+	}
+
+	/**
+	 * What a {@link #writeEventsToV3ByKind} call did: the change-kind mix of the rows that LANDED, and the
+	 * offered/landed split PER METRICS REVISION.
+	 *
+	 * <p>Per revision, not per call, because a revision is the unit an emit actually runs on -- one metrics
+	 * save, one transaction, one afterCommit callback. A caller re-diffing a multi-revision slice that
+	 * aggregated these would misread a single dropped emit among several healthy ones as "the store was
+	 * partly populated, so the emit ran and disagreed", which is the opposite of the truth.
+	 */
+	public record V3WriteResult(Map<FindingChangeKind, Integer> byKind, Map<Integer, RevisionWrite> byRevision) {
+		public static final V3WriteResult NOTHING = new V3WriteResult(Map.of(), Map.of());
+
+		/** Rows that actually landed (offered minus those ON CONFLICT skipped). */
+		public int landed() {
+			int n = 0;
+			for (int v : byKind.values()) {
+				n += v;
+			}
+			return n;
+		}
+
+		public boolean isEmpty() {
+			return landed() <= 0;
+		}
 	}
 
 	private static final String V3_FACT_INSERT_SQL =

@@ -653,6 +653,93 @@ class NotificationDataFetcherReadTest {
         assertEquals(List.of(perspectiveUuid), persistedRoute.perspectives());
     }
 
+    // ---------------- T4a: owner-routing flag round-trip ----------------
+
+    /**
+     * Same regression shape as {@link #upsertNotificationSubscriptionPersistsRoutePerspectives},
+     * for the two route fields added since. {@code toRouteConfigs} is positional:
+     * dropping or reordering an argument there persists {@code null} and leaves
+     * the feature inert in production while every unit test stays green, because
+     * the fan-out tests build {@link RouteConfig} directly in Java and never
+     * exercise this mapping. That is exactly how board #8 shipped.
+     */
+    @Test
+    void upsertNotificationSubscriptionPersistsOwnerFlagAndTeams() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        UUID teamUuid = UUID.randomUUID();
+
+        ArgumentCaptor<NotificationSubscriptionData> seedCaptor =
+                ArgumentCaptor.forClass(NotificationSubscriptionData.class);
+        when(subscriptionService.upsertSubscription(any(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    NotificationSubscriptionData seed = inv.getArgument(2);
+                    NotificationSubscription saved = new NotificationSubscription();
+                    saved.setUuid(UUID.randomUUID());
+                    saved.setRecordData(Utils.OM.convertValue(seed, Map.class));
+                    return saved;
+                });
+
+        Map<String, Object> route = new HashMap<>();
+        route.put("channels", List.of(channelUuid.toString()));
+        route.put("teams", List.of(teamUuid.toString()));
+        route.put("notifyComponentOwner", true);
+
+        Map<String, Object> input = Map.of(
+                "org", orgUuid.toString(),
+                "name", "owner-routed-sub",
+                "eventTypes", List.of(NotificationEventType.RELEASE_CREATED.name()),
+                "routes", List.of(route));
+
+        fetcher.upsertNotificationSubscription(input);
+
+        verify(subscriptionService).upsertSubscription(any(), any(), seedCaptor.capture(), any());
+        RouteConfig persistedRoute = seedCaptor.getValue().routes().get(0);
+        assertEquals(Boolean.TRUE, persistedRoute.notifyComponentOwner(),
+                "notifyComponentOwner must survive the input mapping, not be dropped to null");
+        assertEquals(List.of(teamUuid), persistedRoute.teams(),
+                "teams must survive the same mapping -- it had no round-trip guard either");
+    }
+
+    /**
+     * The off state must reach the record as null/false rather than being
+     * coerced to TRUE by a truthiness slip, and an absent key must stay null so
+     * pre-T4a routes keep their "no owner expansion" semantics on read.
+     */
+    @Test
+    void upsertNotificationSubscriptionLeavesOwnerFlagUnsetWhenAbsentOrFalse() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+
+        ArgumentCaptor<NotificationSubscriptionData> seedCaptor =
+                ArgumentCaptor.forClass(NotificationSubscriptionData.class);
+        when(subscriptionService.upsertSubscription(any(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    NotificationSubscription saved = new NotificationSubscription();
+                    saved.setUuid(UUID.randomUUID());
+                    saved.setRecordData(Utils.OM.convertValue(inv.getArgument(2), Map.class));
+                    return saved;
+                });
+
+        Map<String, Object> absent = new HashMap<>();
+        absent.put("channels", List.of(channelUuid.toString()));
+        Map<String, Object> explicitFalse = new HashMap<>();
+        explicitFalse.put("channels", List.of(channelUuid.toString()));
+        explicitFalse.put("notifyComponentOwner", false);
+
+        fetcher.upsertNotificationSubscription(Map.of(
+                "org", orgUuid.toString(),
+                "name", "plain-sub",
+                "eventTypes", List.of(NotificationEventType.RELEASE_CREATED.name()),
+                "routes", List.of(absent, explicitFalse)));
+
+        verify(subscriptionService).upsertSubscription(any(), any(), seedCaptor.capture(), any());
+        List<RouteConfig> routes = seedCaptor.getValue().routes();
+        assertNull(routes.get(0).notifyComponentOwner(),
+                "an absent key must stay null -- null is load-bearing for pre-T4a routes");
+        assertEquals(Boolean.FALSE, routes.get(1).notifyComponentOwner());
+    }
+
     @Test
     void deleteNotificationChannelGroupReturnsFalseWhenMissing() throws Exception {
         UUID groupUuid = UUID.randomUUID();

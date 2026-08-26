@@ -21,13 +21,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.Utils;
-import io.reliza.common.CommonVariables.UserGroupStatus;
-import io.reliza.model.UserGroup;
-import io.reliza.repositories.UserGroupRepository;
+import io.reliza.model.Team;
+import io.reliza.model.TeamStatus;
+import io.reliza.repositories.TeamRepository;
 
 /**
- * {@code UserGroupService.resolveTeamChannelUuids} -- what the fan-out calls to
- * turn a route's {@code teams} target into channel UUIDs (T3).
+ * {@code TeamService.resolveTeamChannelUuids} -- what the fan-out calls to turn
+ * a route's {@code teams} target into channel UUIDs.
  *
  * <p>Resolution is deliberately LATE (fan-out, not save) so retargeting a team's
  * channel takes effect without editing every subscription that names it. That
@@ -37,8 +37,8 @@ import io.reliza.repositories.UserGroupRepository;
  */
 class TeamChannelRoutingTest {
 
-	private UserGroupRepository repo;
-	private UserGroupService service;
+	private TeamRepository repo;
+	private TeamService service;
 
 	private final UUID org = UUID.randomUUID();
 	private final UUID otherOrg = UUID.randomUUID();
@@ -49,15 +49,15 @@ class TeamChannelRoutingTest {
 
 	@BeforeEach
 	void setUp() {
-		repo = mock(UserGroupRepository.class);
-		service = new UserGroupService();
-		ReflectionTestUtils.setField(service, "userGroupRepository", repo);
+		repo = mock(TeamRepository.class);
+		service = new TeamService();
+		ReflectionTestUtils.setField(service, "teamRepository", repo);
 	}
 
 	/** Stubs the repository so the REAL service method under test runs. */
-	private void stubTeam(UUID uuid, UUID teamOrg, UserGroupStatus status, UUID... channels) {
+	private void stubTeam(UUID uuid, UUID teamOrg, TeamStatus status, UUID... channels) {
 		String chans = Arrays.stream(channels).map(c -> "\"" + c + "\"").collect(Collectors.joining(","));
-		UserGroup ug = new UserGroup();
+		Team ug = new Team();
 		ug.setUuid(uuid);
 		ug.setRecordData(Utils.OM.readValue(
 				"{\"name\":\"T\",\"org\":\"%s\",\"status\":\"%s\",\"notificationChannels\":[%s]}"
@@ -74,8 +74,8 @@ class TeamChannelRoutingTest {
 
 	@Test
 	void teamChannelsAreResolvedDedupedInFirstSeenOrder() {
-		stubTeam(teamA, org, UserGroupStatus.ACTIVE, chan1, chan2);
-		stubTeam(teamB, org, UserGroupStatus.ACTIVE, chan2);
+		stubTeam(teamA, org, TeamStatus.ACTIVE, chan1, chan2);
+		stubTeam(teamB, org, TeamStatus.ACTIVE, chan2);
 		assertEquals(List.of(chan1, chan2), service.resolveTeamChannelUuids(List.of(teamA, teamB), org),
 				"a channel shared by two teams is delivered to once, in first-seen order");
 	}
@@ -83,7 +83,7 @@ class TeamChannelRoutingTest {
 	@Test
 	void aMissingTeamContributesNothingRatherThanFailingTheRoute() {
 		when(repo.findById(teamA)).thenReturn(Optional.empty());
-		stubTeam(teamB, org, UserGroupStatus.ACTIVE, chan2);
+		stubTeam(teamB, org, TeamStatus.ACTIVE, chan2);
 		assertEquals(List.of(chan2), service.resolveTeamChannelUuids(List.of(teamA, teamB), org),
 				"one stale team reference must not silence the rest of the route");
 	}
@@ -92,7 +92,7 @@ class TeamChannelRoutingTest {
 	void aCrossOrgTeamIsSkipped() {
 		// Writes validate too, but a route saved before a change must not become a
 		// cross-tenant read/delivery path.
-		stubTeam(teamA, otherOrg, UserGroupStatus.ACTIVE, chan1);
+		stubTeam(teamA, otherOrg, TeamStatus.ACTIVE, chan1);
 		assertTrue(service.resolveTeamChannelUuids(List.of(teamA), org).isEmpty());
 	}
 
@@ -100,13 +100,13 @@ class TeamChannelRoutingTest {
 	void aDeactivatedTeamStopsReceivingNotifications() {
 		// The picker hides INACTIVE teams, so an operator who deactivates one
 		// expects delivery to stop; without this an already-saved route fires forever.
-		stubTeam(teamA, org, UserGroupStatus.INACTIVE, chan1);
+		stubTeam(teamA, org, TeamStatus.INACTIVE, chan1);
 		assertTrue(service.resolveTeamChannelUuids(List.of(teamA), org).isEmpty());
 	}
 
 	@Test
 	void aTeamWithNoChannelsContributesNothing() {
-		stubTeam(teamA, org, UserGroupStatus.ACTIVE);
+		stubTeam(teamA, org, TeamStatus.ACTIVE);
 		assertTrue(service.resolveTeamChannelUuids(List.of(teamA), org).isEmpty());
 	}
 
@@ -117,8 +117,8 @@ class TeamChannelRoutingTest {
 		// could neither keep the team nor drop it, since an emptied route is also
 		// rejected). Resolution skipping it is the real protection -- nothing is
 		// delivered -- so the save-time rejection was removed.
-		stubTeam(teamA, org, UserGroupStatus.INACTIVE, chan1);
-		stubTeam(teamB, org, UserGroupStatus.ACTIVE, chan2);
+		stubTeam(teamA, org, TeamStatus.INACTIVE, chan1);
+		stubTeam(teamB, org, TeamStatus.ACTIVE, chan2);
 		assertEquals(List.of(chan2), service.resolveTeamChannelUuids(List.of(teamA, teamB), org),
 				"the deactivated team contributes nothing while the active one still delivers");
 	}

@@ -25,8 +25,12 @@ import io.reliza.model.dto.notifications.ApprovalRequestEntryRef;
 import io.reliza.model.dto.notifications.ApprovalRequestedPayload;
 import io.reliza.model.dto.notifications.ApprovalResolvedPayload;
 import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentItem;
+import io.reliza.model.dto.notifications.InstanceRef;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
+import io.reliza.model.dto.UpdateStatus;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
 import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
 import io.reliza.model.dto.notifications.ReleaseRef;
@@ -532,6 +536,105 @@ class SlackBlockKitFormatterTest {
     // ---------- helpers ----------
 
     @SuppressWarnings("unchecked")
+    @Test
+    void instanceDeploymentChangedRendersSummaryLinksAndColor() {
+        UUID relUuid = UUID.randomUUID();
+        InstanceDeploymentChangedPayload p = new InstanceDeploymentChangedPayload(
+                new InstanceRef(UUID.randomUUID(), "test.relizahub.com", "test", "PRODUCTION", "STANDALONE_INSTANCE"),
+                4, 5,
+                List.of(
+                        new InstanceDeploymentItem(ComponentType.PRODUCT, "Reliza", "reliza",
+                                UpdateStatus.CONVERGED, "26.02.4.14", "26.02.4.13", null, UUID.randomUUID(), relUuid),
+                        new InstanceDeploymentItem(ComponentType.COMPONENT, "Reliza Hub Back-end", "reliza",
+                                UpdateStatus.UNDEPLOYED, null, null, null, UUID.randomUUID(), null)),
+                List.of("CONVERGED", "UNDEPLOYED"),
+                NotificationSeverity.MEDIUM);
+
+        // linkedFormatter carries a base URI so deep links render.
+        Map<String, Object> payload = linkedFormatter.format(
+                eventOf(NotificationEventType.INSTANCE_DEPLOYMENT_CHANGED, p, UUID.randomUUID()));
+
+        assertNotNull(payload.get("text"), "fallback text present");
+        List<Map<String, Object>> blocks = combinedBlocks(payload);
+        assertNotNull(blocks);
+        String allText = allBlockText(blocks);
+        assertTrue(allText.contains("Event for the instance"), "legacy-style title");
+        assertTrue(allText.contains("test.relizahub.com"), "instance named");
+        assertTrue(allText.contains("Bundle:") && allText.contains("Reliza"), "PRODUCT renders as Bundle");
+        assertTrue(allText.contains("Project:") && allText.contains("Reliza Hub Back-end"), "COMPONENT renders as Project");
+        assertTrue(allText.contains("converged") && allText.contains("undeployed"), "summary counts present");
+        assertTrue(allText.contains("PRODUCTION"), "environment shown");
+        // The "to" version is rendered inside the release link, so assert the
+        // from-arrow and the linked to-version separately rather than as one string.
+        assertTrue(allText.contains("26.02.4.13 -> "), "from-version and arrow");
+        assertTrue(allText.contains("/release/show/" + relUuid + "|26.02.4.14>"), "to-version links to the release");
+        assertTrue(allText.contains("/componentsOfOrg/"), "component name links to its page");
+        assertTrue(allText.contains("/instancesOfOrg/"), "instance linked once, on the title line");
+        // Mixed converged + undeployed (no error, not all-good) -> amber warning bar.
+        assertEquals("#ecb22e", attachmentColor(payload), "mixed statuses -> warning colour");
+    }
+
+    @Test
+    void instanceDeploymentFailedRendersErrorHeaderReasonAndRedColor() {
+        InstanceDeploymentChangedPayload p = new InstanceDeploymentChangedPayload(
+                new InstanceRef(UUID.randomUUID(), "test.relizahub.com", "test", "PRODUCTION", "STANDALONE_INSTANCE"),
+                4, 5,
+                List.of(new InstanceDeploymentItem(ComponentType.COMPONENT, "REEF-backend", "reliza",
+                        UpdateStatus.ERROR, null, null, "CrashLoopBackOff", UUID.randomUUID(), null)),
+                List.of("ERROR"),
+                NotificationSeverity.HIGH);
+
+        Map<String, Object> payload = formatter.format(
+                eventOf(NotificationEventType.INSTANCE_DEPLOYMENT_FAILED, p));
+
+        List<Map<String, Object>> blocks = combinedBlocks(payload);
+        String allText = allBlockText(blocks);
+        assertTrue(allText.contains("Deployment error"), "failed title signals error");
+        assertTrue(allText.contains("REEF-backend"), "item rendered");
+        assertTrue(allText.contains("CrashLoopBackOff"), "failure reason rendered");
+        assertEquals("#e01e5a", attachmentColor(payload), "any error -> red colour");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> attachmentBlocks(Map<String, Object> payload) {
+        List<Map<String, Object>> atts = (List<Map<String, Object>>) payload.get("attachments");
+        if (atts == null || atts.isEmpty()) return List.of();
+        return (List<Map<String, Object>>) atts.get(0).get("blocks");
+    }
+
+    /** Top-level blocks (the title) + the attachment's detail blocks. */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> combinedBlocks(Map<String, Object> payload) {
+        java.util.List<Map<String, Object>> all = new java.util.ArrayList<>();
+        Object top = payload.get("blocks");
+        if (top instanceof List<?> l) all.addAll((List<Map<String, Object>>) l);
+        all.addAll(attachmentBlocks(payload));
+        return all;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String attachmentColor(Map<String, Object> payload) {
+        List<Map<String, Object>> atts = (List<Map<String, Object>>) payload.get("attachments");
+        return atts != null && !atts.isEmpty() ? (String) atts.get(0).get("color") : null;
+    }
+
+    private static String allBlockText(List<Map<String, Object>> blocks) {
+        StringBuilder sb = new StringBuilder();
+        for (Map<String, Object> b : blocks) {
+            sb.append(extractBlockText(b)).append('\n');
+            // context blocks carry their text in elements[].text, not block.text
+            Object els = b.get("elements");
+            if (els instanceof List<?> list) {
+                for (Object el : list) {
+                    if (el instanceof Map<?, ?> m && m.get("text") instanceof String t) {
+                        sb.append(t).append('\n');
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     private NotificationOutboxEvent eventOf(NotificationEventType type, Object payload) {
         NotificationOutboxEvent ev = new NotificationOutboxEvent();
         ev.setUuid(UUID.randomUUID());

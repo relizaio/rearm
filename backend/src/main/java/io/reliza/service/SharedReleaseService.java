@@ -1380,6 +1380,18 @@ public class SharedReleaseService {
 	public List<ReleaseData> findReleaseDatasBySce(UUID sce, UUID org) {
 		return findReleasesBySce(sce,org).stream().map(ReleaseData::dataFromRecord).toList();
 	}
+
+	/**
+	 * Batched variant of {@link #findReleaseDatasBySce}: one query for
+	 * any number of SCEs. Ordered most recently updated first; a release
+	 * matching several of the SCEs appears once.
+	 */
+	public List<ReleaseData> findReleaseDatasBySces(Collection<UUID> sces, UUID org) {
+		if (org == null || sces == null || sces.isEmpty()) return List.of();
+		String[] sceStrings = sces.stream().map(UUID::toString).toArray(String[]::new);
+		return repository.findReleasesByScesIncludingCommits(org.toString(), sceStrings)
+				.stream().map(ReleaseData::dataFromRecord).toList();
+	}
 	
 	/**
 	 * Group a precomputed set of release UUIDs into {@code ComponentWithBranches}.

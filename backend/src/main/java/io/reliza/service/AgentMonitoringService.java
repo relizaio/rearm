@@ -5,23 +5,22 @@ package io.reliza.service;
 
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import io.reliza.model.AgentData;
 import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentSessionData.SessionStatus;
 
 /**
  * Read-side aggregations for the AI Agents dashboard. Keeps the KPI
  * computation out of {@link AgentService} / {@link AgentSessionService}
- * — those own write paths and want to stay narrowly scoped. The
- * read-side here streams over the existing repository queries and
- * computes counts in-memory. For psclaude-scale orgs this is fine;
- * if a tenant grows large the per-agent field resolvers and KPI
- * query are the first place to consider SQL aggregation.
+ * — those own write paths and want to stay narrowly scoped. Per-agent
+ * badges (counts, last activity) aggregate in SQL; the org-level KPI
+ * header still streams the org's sessions in-memory and is the next
+ * SQL-aggregation target if it bites.
  *
  * Lives in shared {@code service.*} — dashboards are CE. Policies
  * and verdicts (PR 4) extend KPIs with blocked / passing counters
@@ -88,24 +87,20 @@ public class AgentMonitoringService {
 	 * agents have a clean slate until their first init).
 	 */
 	public ZonedDateTime lastActivityForAgent(UUID rootAgentUuid) {
-		if (rootAgentUuid == null) return null;
-		List<AgentSessionData> sessions = agentSessionService.listByAgent(rootAgentUuid, null);
-		return sessions.stream()
-				.map(AgentSessionData::getLastActivityAt)
-				.filter(java.util.Objects::nonNull)
-				.max(ZonedDateTime::compareTo)
-				.orElse(null);
+		return agentSessionService.maxLastActivityAt(rootAgentUuid);
 	}
 
 	/**
-	 * Per-agent counts for the dashboard card grid. Computed via the
-	 * existing repository indexes on {@code (agent, status)}.
+	 * Per-agent counts for the dashboard card grid. Aggregated in SQL --
+	 * an agent with a deep closed-session history shouldn't cost two
+	 * full list deserializations just to render its badges.
 	 */
 	public AgentSessionCounts countsForAgent(UUID rootAgentUuid) {
 		if (rootAgentUuid == null) return new AgentSessionCounts(0, 0);
-		int open = agentSessionService.listByAgent(rootAgentUuid, List.of("OPEN")).size();
-		int closed = agentSessionService.listByAgent(rootAgentUuid, List.of("CLOSED")).size();
-		return new AgentSessionCounts(open, closed);
+		Map<SessionStatus, Long> counts = agentSessionService.countByAgentPerStatus(rootAgentUuid);
+		return new AgentSessionCounts(
+				counts.getOrDefault(SessionStatus.OPEN, 0L).intValue(),
+				counts.getOrDefault(SessionStatus.CLOSED, 0L).intValue());
 	}
 
 	/**
@@ -127,8 +122,4 @@ public class AgentMonitoringService {
 			int artifactsProduced7d, int registeredAgents) {}
 
 	public record AgentSessionCounts(int openSessions, int closedSessions) {}
-
-	// Shared boilerplate to bridge AgentData.uuid -> count.
-	@SuppressWarnings("unused")
-	private UUID agentUuid(AgentData ad) { return ad == null ? null : ad.getUuid(); }
 }

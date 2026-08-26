@@ -4,7 +4,6 @@
 
 package io.reliza.model.dto;
 
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -12,8 +11,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.UserGroupStatus;
-import io.reliza.model.UserGroupData.ExternalTeamMember;
-import io.reliza.model.UserGroupData.TeamMemberRole;
 import io.reliza.model.UserPermission.Permissions;
 import lombok.Builder;
 import lombok.Data;
@@ -39,11 +36,4 @@ public class UserGroupWebDto {
 	private Set<UUID> manualUsers;
 	@JsonProperty("connectedSsoGroups")
 	private Set<String> connectedSsoGroups;
-	@JsonProperty("memberRoles")
-	private List<TeamMemberRole> memberRoles;
-	@JsonProperty("externalMembers")
-	private List<ExternalTeamMember> externalMembers;
-	/** Channels this team is reachable on (T3). */
-	@JsonProperty("notificationChannels")
-	private Set<UUID> notificationChannels;
 }

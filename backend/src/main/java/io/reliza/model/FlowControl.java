@@ -57,12 +57,19 @@ public record FlowControl(
         // release needs its dependent product feature sets auto-integrated,
         // drained after-commit on the bounded autoIntegrateExecutor and by
         // the per-minute scheduler. autoIntegrateSkipUntil holds the
-        // failure-backoff fence; autoIntegrateFailureCount the attempt count.
+        // failure-backoff fence ONLY -- "this failed, do not retry before X" --
+        // and autoIntegrateFailureCount the attempt count that sizes it. The
+        // in-flight LEASE is autoIntegrateClaimedAt below, deliberately a
+        // separate key: while the two shared skipUntil, any write clearing the
+        // fence also cancelled a running worker's lease and let a second worker
+        // claim the same release.
         String autoIntegrateRequestedAt,
         String autoIntegrateSkipUntil,
         Integer autoIntegrateFailureCount,
-        // Stamped by claimAutoIntegrate when a worker takes the lease. The
-        // post-run conditional clear compares it against autoIntegrateRequestedAt:
+        // Stamped by claimAutoIntegrate when a worker takes the lease; the lease
+        // EXPIRES at claimedAt + AUTO_INTEGRATE_LEASE_SECONDS, which is what both
+        // the claim and the scheduler drain test, so a crashed run frees itself.
+        // The post-run conditional clear compares it against autoIntegrateRequestedAt:
         // a request newer than the claim arrived mid-run and must survive the
         // clear (lost-wakeup guard), so only the lease/bookkeeping is dropped.
         String autoIntegrateClaimedAt,

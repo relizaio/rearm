@@ -249,6 +249,11 @@ public class SyntheticSbomService {
 	 */
 	boolean hasPendingSyntheticWork(UUID orgUuid) {
 		return sbomComponentRepository.existsUnbucketedMatchableByOrg(orgUuid.toString())
+				// PENDING has exactly one writer: an in-progress retirement whose
+				// DTrack project deletion hasn't succeeded yet. The retry lives in
+				// submitOrg's retire pass, so the gate must wake for it — on an
+				// otherwise-idle org the retirement would never complete.
+				|| bucketRepository.existsByOrgAndIngestState(orgUuid, IngestState.PENDING)
 				|| bucketRepository.existsByOrgAndIngestState(orgUuid, IngestState.FAILED);
 	}
 
@@ -291,7 +296,14 @@ public class SyntheticSbomService {
 		List<SbomComponent> matchable = bearConfigured
 				? sbomComponentRepository.findEnrichedMatchableByOrgOrdered(orgUuid.toString())
 				: sbomComponentRepository.findMatchableByOrgOrdered(orgUuid.toString());
-		if (matchable.isEmpty()) return;
+		if (matchable.isEmpty()) {
+			// Still retire: a population that went ENTIRELY unmatchable (e.g.
+			// every row turned enrichment-terminal) leaves zero live buckets,
+			// and returning before retirement would strand every bucket — and
+			// its DTrack project — forever.
+			retireEmptyBuckets(orgUuid, Set.of());
+			return;
+		}
 
 		// Assign any not-yet-bucketed components first-fit, then group by the
 		// persisted index. TreeMap so bucket order is deterministic.
@@ -407,21 +419,67 @@ public class SyntheticSbomService {
 	}
 
 	/**
-	 * Clear coverage for buckets that no longer have any matchable members so
-	 * fan-out stops counting their stale purls as scanned. Cheap: only writes the
-	 * buckets that still carry stale state.
+	 * Retire buckets that no longer have any matchable members: clear local
+	 * coverage (so fan-out stops counting their stale purls as scanned),
+	 * delete the bucket's Dependency-Track project, and converge to
+	 * INGESTED. Self-healing: a failed DTrack deletion stays PENDING with its
+	 * project ref intact and is retried on every subsequent tick. Cheap in
+	 * steady state: fully-converged buckets are skipped without writes.
 	 */
 	private void retireEmptyBuckets(UUID orgUuid, Set<Integer> liveIndices) {
 		for (SyntheticDtrackBucket b : bucketRepository.findByOrg(orgUuid)) {
 			if (liveIndices.contains(b.getBucketIndex())) continue;
-			boolean alreadyEmpty = (b.getRefMap() == null || b.getRefMap().isEmpty())
+			boolean locallyClear = (b.getRefMap() == null || b.getRefMap().isEmpty())
 					&& (b.getFindings() == null || b.getFindings().isEmpty())
 					&& b.getContentHash() == null;
-			if (alreadyEmpty) continue;
-			b.setRefMap(new LinkedHashMap<>());
-			b.setFindings(new LinkedHashMap<>());
-			b.setContentHash(null);
-			b.setIngestState(IngestState.PENDING);
+			// Fully retired: local coverage cleared, DTrack project gone,
+			// terminal state. Only this converged shape is skipped — a bucket
+			// that is empty but still holds a project ref (or a non-terminal
+			// state) is a retirement in progress and must be retried.
+			if (locallyClear && b.getDtrackProjectUuid() == null
+					&& IngestState.INGESTED == b.getIngestState()) {
+				continue;
+			}
+			if (!locallyClear) {
+				b.setRefMap(new LinkedHashMap<>());
+				b.setFindings(new LinkedHashMap<>());
+				b.setContentHash(null);
+			}
+			// Complete the DTrack side: without this, a bucket emptied without a
+			// resubmit (all members left the matchable population at once — the
+			// V79 generic-purl backfill emptied ~19 buckets in one prod org)
+			// leaves an orphaned DTrack project still carrying the very
+			// components the population change was meant to evict.
+			if (b.getDtrackProjectUuid() != null) {
+				IntegrationService.DtrackProjectDeletionOutcome outcome =
+						integrationService.deleteDtrackProjectForOrg(
+								orgUuid, b.getDtrackProjectUuid().toString());
+				if (outcome == IntegrationService.DtrackProjectDeletionOutcome.FAILED) {
+					// Retryable: keep the ref, stay PENDING; every subsequent
+					// tick re-attempts. This makes the stall reporter's
+					// ">2h not INGESTED" line a REAL alarm for retired buckets
+					// (DTrack cleanup cannot complete) instead of permanent
+					// noise.
+					b.setIngestState(IngestState.PENDING);
+					b.setLastUpdatedDate(ZonedDateTime.now());
+					bucketRepository.save(b);
+					log.warn("Retiring bucket {} (org {}): DTrack project {} deletion failed; will retry",
+							b.getBucketIndex(), orgUuid, b.getDtrackProjectUuid());
+					continue;
+				}
+				if (outcome == IntegrationService.DtrackProjectDeletionOutcome.NO_INTEGRATION) {
+					// Org dropped its DTrack integration: the project is
+					// unreachable by us and harmless. Converge rather than
+					// retry forever — mirrors the legacy phase-out's stance.
+					log.warn("Retiring bucket {} (org {}): no DTrack integration to delete project {} through; converging",
+							b.getBucketIndex(), orgUuid, b.getDtrackProjectUuid());
+				}
+				b.setDtrackProjectUuid(null);
+			}
+			// Converged: nothing to ingest, nothing left in DTrack. INGESTED is
+			// the terminal state the stall reporter ignores; a bucket revived by
+			// a returning member goes back to SUBMITTED on its next submit.
+			b.setIngestState(IngestState.INGESTED);
 			b.setLastUpdatedDate(ZonedDateTime.now());
 			bucketRepository.save(b);
 		}

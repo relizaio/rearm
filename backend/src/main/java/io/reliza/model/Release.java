@@ -66,8 +66,28 @@ public class Release implements Serializable, RelizaEntity {
 	@Column(columnDefinition = ModelProperties.JSONB)
 	private Map<String,Object> metrics;
 
+	/**
+	 * Votes on this release. {@code updatable = false} is load-bearing, not
+	 * tidiness: saveRelease writes the whole entity, and every caller that
+	 * passes a ReleaseData built it from an UNLOCKED read, so an ordinary save
+	 * whose read predated a vote used to write the pre-vote list back and
+	 * silently erase the vote -- a swallowed DISAPPROVE on a governance
+	 * control. Taking the column out of JPA's UPDATE makes that impossible by
+	 * construction rather than by every caller remembering.
+	 *
+	 * <p>Deliberately NOT "just don't set the field": {@code @DynamicUpdate}
+	 * would skip an untouched column only while the entity is MANAGED. A
+	 * detached instance goes through {@code em.merge()}, which copies every
+	 * field onto the managed copy and dirties this one regardless.
+	 *
+	 * <p>The one legitimate writer is the vote path, which persists through
+	 * {@code ReleaseRepository.updateApprovalEvents} under the row write lock
+	 * -- same shape as {@code updateMetrics}. INSERT still writes the field, so
+	 * a brand-new release now stores NULL here rather than an empty array; read
+	 * paths null-check already, and the column has no NOT NULL constraint.
+	 */
 	@Type(JsonBinaryType.class)
-	@Column(name = "approval_events", columnDefinition = ModelProperties.JSONB)
+	@Column(name = "approval_events", columnDefinition = ModelProperties.JSONB, updatable = false)
 	private List<Map<String,Object>> approvalEvents;
 
 	@Type(JsonBinaryType.class)

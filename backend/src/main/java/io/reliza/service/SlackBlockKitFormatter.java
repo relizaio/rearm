@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -15,11 +16,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import io.reliza.common.Utils;
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.NotificationEventType;
 import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.ApprovalRequestEntryRef;
 import io.reliza.model.dto.notifications.ApprovalRequestedPayload;
 import io.reliza.model.dto.notifications.ApprovalResolvedPayload;
 import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentItem;
+import io.reliza.model.dto.notifications.InstanceRef;
+import io.reliza.model.dto.UpdateStatus;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
@@ -89,6 +96,7 @@ public class SlackBlockKitFormatter {
             case RELEASE_BOM_DIFF -> renderReleaseBomDiff(event, payload);
             case APPROVAL_REQUESTED -> renderApprovalRequested(event, payload);
             case APPROVAL_RESOLVED -> renderApprovalResolved(event, payload);
+            case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event, payload);
         }
         return payload;
     }
@@ -334,6 +342,172 @@ public class SlackBlockKitFormatter {
 
         out.put("text", capText(headerText));
         out.put("blocks", blocks);
+    }
+
+    private void renderInstanceDeployment(NotificationOutboxEvent event, Map<String, Object> out) {
+        InstanceDeploymentChangedPayload p = deserialize(event, InstanceDeploymentChangedPayload.class);
+        if (p == null) { renderFallback(event, out); return; }
+
+        boolean failed = event.getEventType() == NotificationEventType.INSTANCE_DEPLOYMENT_FAILED;
+        InstanceRef instance = p.instance();
+        String instanceLabel = instanceLabel(instance);
+        String instanceUrl = instanceUrl(event, instance);
+        // Instance appears ONCE, linked, on the title line (a section, not a plain
+        // header block, so it can carry the link) -- no separate "Instance:" line
+        // and no "View instance" button repeating it.
+        String linkedInstance = instanceUrl != null
+                ? "<" + instanceUrl + "|" + instanceLabel + ">"
+                : "*" + instanceLabel + "*";
+
+        // Title is a TOP-LEVEL block (not inside the attachment). With top-level
+        // blocks present Slack uses the message `text` only as a notification
+        // fallback and does not print it in the body -- so the instance title no
+        // longer appears twice (once as `text`, once in the card). Only the
+        // details carry the colour bar, so they go in the attachment below.
+        Map<String, Object> titleBlock = sectionBlock(failed
+                ? ":x: *Deployment error* on instance " + linkedInstance
+                : ":floppy_disk: *Event for the instance* " + linkedInstance);
+
+        List<Map<String, Object>> detail = new ArrayList<>();
+        // One compact meta line: summary | environment | settled-at.
+        List<String> meta = new ArrayList<>();
+        String summary = InstanceDeploymentRenderSupport.summarize(p.items());
+        if (StringUtils.isNotBlank(summary)) meta.add(summary);
+        if (instance != null && StringUtils.isNotBlank(instance.environment())) {
+            meta.add("Env: " + instance.environment());
+        }
+        if (event.getOccurredAt() != null) meta.add("Settled " + slackDate(event.getOccurredAt()));
+        if (!meta.isEmpty()) detail.add(contextBlock(String.join("  |  ", meta)));
+
+        List<InstanceDeploymentItem> items = p.items();
+        int itemCount = items != null ? items.size() : 0;
+        if (itemCount > 0) {
+            List<String> itemLines = new ArrayList<>();
+            int cap = Math.min(itemCount, 10);
+            for (int i = 0; i < cap; i++) {
+                InstanceDeploymentItem item = items.get(i);
+                if (item == null) continue;
+                StringBuilder line = new StringBuilder("- ");
+                String emoji = statusShortcode(item.status());
+                if (!emoji.isEmpty()) line.append(emoji).append(' ');
+                // The leading emoji is the status; no redundant "Status: X" text.
+                // Link the component name (like the legacy format) and the version.
+                line.append(componentTypeLabel(item.componentType()))
+                        .append(": ").append(componentNameLink(event, item))
+                        .append(". Namespace: ").append(StringUtils.defaultString(item.namespace()));
+                if (StringUtils.isNotBlank(item.version())) {
+                    line.append(". Version: ");
+                    if (StringUtils.isNotBlank(item.fromVersion())) {
+                        line.append(item.fromVersion()).append(" -> ");
+                    }
+                    line.append(versionLink(item));
+                }
+                if (StringUtils.isNotBlank(item.failureReason())) {
+                    line.append(". Reason: ").append(item.failureReason());
+                }
+                itemLines.add(line.toString());
+            }
+            if (itemCount > cap) {
+                itemLines.add("_…and " + (itemCount - cap) + " more_");
+            }
+            detail.add(sectionBlock(String.join("\n", itemLines)));
+        }
+
+        // Colour bar via an attachment: green all-converged / red on error / amber churn.
+        String color = InstanceDeploymentRenderSupport.colorHex(
+                InstanceDeploymentRenderSupport.tone(p.statuses()));
+        Map<String, Object> attachment = new HashMap<>();
+        attachment.put("color", color);
+        attachment.put("blocks", detail);
+        // `text` is the notification/accessibility fallback only (hidden from the
+        // body because top-level `blocks` are present).
+        out.put("text", capText(failed
+                ? "Deployment error on instance " + instanceLabel
+                : "Event for the instance " + instanceLabel));
+        out.put("blocks", List.of(titleBlock));
+        out.put("attachments", List.of(attachment));
+    }
+
+    /**
+     * Slack-native date token: renders in the viewer's timezone (e.g. "Aug 21,
+     * 2026 at 11:47 AM") instead of a raw ISO string; the pipe fallback shows if
+     * a client can't format it.
+     */
+    private static String slackDate(ZonedDateTime t) {
+        return "<!date^" + t.toEpochSecond() + "^{date_short_pretty} {time}|" + t.toInstant() + ">";
+    }
+
+    /** Component/project name linked to its ReARM page, or plain when links are off. */
+    private String componentNameLink(NotificationOutboxEvent event, InstanceDeploymentItem item) {
+        String name = StringUtils.defaultString(item.name());
+        if (hasBaseUri() && item.componentUuid() != null && event.getOrg() != null) {
+            return "<" + webBaseUri + "/componentsOfOrg/" + event.getOrg() + "/" + item.componentUuid()
+                    + "|" + name + ">";
+        }
+        return name;
+    }
+
+    /** Settled version linked to its release page, or plain when links are off. */
+    private String versionLink(InstanceDeploymentItem item) {
+        String v = StringUtils.defaultString(item.version());
+        if (hasBaseUri() && item.releaseUuid() != null) {
+            return "<" + webBaseUri + "/release/show/" + item.releaseUuid() + "|" + v + ">";
+        }
+        return v;
+    }
+
+    /** Slack-shortcode status indicator; empty for internal (REQUESTED/NONE). */
+    private static String statusShortcode(UpdateStatus status) {
+        if (status == null) return "";
+        return switch (status) {
+            case CONVERGED -> ":white_check_mark:";
+            case ERROR -> ":x:";
+            case IN_PROGRESS -> ":hourglass_flowing_sand:";
+            case UNDEPLOYED -> ":arrow_down:";
+            case RECOVERED -> ":leftwards_arrow_with_hook:";
+            case NEW -> ":new:";
+            case REQUESTED, NONE -> "";
+        };
+    }
+
+    private Map<String, Object> contextBlock(String text) {
+        Map<String, Object> block = new HashMap<>();
+        block.put("type", "context");
+        Map<String, Object> el = new HashMap<>();
+        el.put("type", "mrkdwn");
+        el.put("text", text);
+        block.put("elements", List.of(el));
+        return block;
+    }
+
+    /** Deep-link to the instance page, or null when links are disabled / data is missing. */
+    private String instanceUrl(NotificationOutboxEvent event, InstanceRef instance) {
+        if (!hasBaseUri() || instance == null || instance.uuid() == null || event.getOrg() == null) {
+            return null;
+        }
+        return webBaseUri + "/instancesOfOrg/" + event.getOrg() + "/" + instance.uuid();
+    }
+
+    /** Instance display label: uri, then name, then uuid. */
+    private static String instanceLabel(InstanceRef instance) {
+        if (instance == null) return "(unknown instance)";
+        if (StringUtils.isNotBlank(instance.uri())) return instance.uri();
+        if (StringUtils.isNotBlank(instance.name())) return instance.name();
+        return instance.uuid() != null ? instance.uuid().toString() : "(unknown instance)";
+    }
+
+    /**
+     * Customer-facing component-type label. Switches on {@link ComponentType}
+     * directly (no default) so a future enum value compiles-errors rather than
+     * silently mislabelling. PRODUCT reads as "Bundle", COMPONENT as "Project".
+     */
+    private static String componentTypeLabel(ComponentType componentType) {
+        if (componentType == null) return "Component";
+        return switch (componentType) {
+            case PRODUCT -> "Bundle";
+            case COMPONENT -> "Project";
+            case ANY -> "Component";
+        };
     }
 
     /** Comma-joined approval entry names (capped at 10); null when none are usable. */
