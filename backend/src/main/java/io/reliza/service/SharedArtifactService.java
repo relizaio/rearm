@@ -46,7 +46,10 @@ import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.util.BackoffPolicy;
 import lombok.extern.slf4j.Slf4j;
+import java.nio.charset.StandardCharsets;
+
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
 
 @Service
 @Slf4j
@@ -91,6 +94,9 @@ public class SharedArtifactService {
 	
 	@Autowired
     private RebomService rebomService;
+
+	@Autowired
+	private SupportInjectionService supportInjectionService;
 
 	/**
 	 * What a conditional carry-forward seed write did. Three outcomes, not a boolean, because a scan
@@ -232,9 +238,10 @@ public class SharedArtifactService {
         log.info("download artifacts for ad: {}", ad);
 
 		if(null != ad.getInternalBom()){
-			String rebom;
+			byte[] byteArray;
 			// For SPDX, augmented BOM is the converted CycloneDX
 			if(ad.getBomFormat().equals(BomFormat.SPDX)){
+				String rebom;
 				// Support version parameter for SPDX augmented downloads
 				if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
 					try {
@@ -248,18 +255,45 @@ public class SharedArtifactService {
 					// No version specified, return latest converted CycloneDX
 					rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
 				}
-			} else if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
-				try {
-					Integer version = Integer.parseInt(ad.getVersion());
-					rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
-				} catch (NumberFormatException e) {
-					// Version is not numeric, fall back to latest
-					rebom = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg()).toString();
-				}
+				// Support injection into the SPDX-augmented (converted CycloneDX) download is a
+				// later slice; served as-is for now.
+				byteArray = rebom.getBytes();
 			} else {
-				rebom = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg()).toString();
+				// Native CycloneDX: fetch the BOM as a JsonNode, inject the CURRENT (derived,
+				// non-attested, current-state) per-component support facts, then serialize. The
+				// rebom fetch is already blocked, so this is a synchronous tree edit; the signed
+				// raw original served by downloadRawArtifact is a separate path and untouched.
+				JsonNode bomNode;
+				if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
+					try {
+						Integer version = Integer.parseInt(ad.getVersion());
+						bomNode = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version);
+					} catch (NumberFormatException e) {
+						// Version is not numeric, fall back to latest
+						bomNode = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg());
+					}
+				} else {
+					bomNode = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg());
+				}
+				try {
+					supportInjectionService.injectCurrentSupport(bomNode, ad.getOrg());
+				} catch (Exception supportEx) {
+					// Support injection is an add-on -- never fail the core BOM download because
+					// of a support-resolution error (transient DB, unexpected node shape). Serve
+					// the un-injected BOM and alert (this path had no DB dependency before PR2a).
+					log.error("Support injection failed for artifact {} (org {}); serving un-injected BOM: {}",
+							ad.getUuid(), ad.getOrg(), supportEx.getMessage(), supportEx);
+					// Still run the DB-free strip so an uploader-forged reliza:support:* cannot
+					// survive a resolution outage, and the disclosure marker is still stamped.
+					try {
+						supportInjectionService.stripForgedProvenanceAndMark(bomNode);
+					} catch (Exception stripEx) {
+						log.error("Support strip fallback also failed for artifact {}: {}",
+								ad.getUuid(), stripEx.getMessage(), stripEx);
+					}
+				}
+				byteArray = bomNode.toString().getBytes(StandardCharsets.UTF_8);
 			}
-			byte[] byteArray = rebom.getBytes();
 			String bomFileName = ad.getTags().stream()
 				.filter(t -> t.key().equals(CommonVariables.FILE_NAME_FIELD))
 				.map(t -> t.value())

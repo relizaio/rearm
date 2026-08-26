@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -23,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +53,8 @@ import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.SbomComponentData;
 import io.reliza.model.SbomComponentFlowControl;
+import io.reliza.model.SbomComponentSupportAudit;
+import io.reliza.model.SupportSource;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.ParsedBomComponent;
@@ -61,6 +65,7 @@ import io.reliza.repositories.ArtifactSbomComponentRepository;
 import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.SbomComponentRepository;
+import io.reliza.repositories.SbomComponentSupportAuditRepository;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -202,16 +207,19 @@ public class SbomComponentService {
 	private final ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	private final ReleaseArtifactIndexRepository releaseArtifactIndexRepository;
 	private final ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
+	private final SbomComponentSupportAuditRepository sbomComponentSupportAuditRepository;
 
 	SbomComponentService(
 			SbomComponentRepository sbomComponentRepository,
 			ArtifactSbomComponentRepository artifactSbomComponentRepository,
 			ReleaseArtifactIndexRepository releaseArtifactIndexRepository,
-			ArtifactCanonicalMapRepository artifactCanonicalMapRepository) {
+			ArtifactCanonicalMapRepository artifactCanonicalMapRepository,
+			SbomComponentSupportAuditRepository sbomComponentSupportAuditRepository) {
 		this.sbomComponentRepository = sbomComponentRepository;
 		this.artifactSbomComponentRepository = artifactSbomComponentRepository;
 		this.releaseArtifactIndexRepository = releaseArtifactIndexRepository;
 		this.artifactCanonicalMapRepository = artifactCanonicalMapRepository;
+		this.sbomComponentSupportAuditRepository = sbomComponentSupportAuditRepository;
 	}
 
 	// ===================================================================
@@ -2386,4 +2394,93 @@ private static int currentReconcileFailureCount(Release r) {
 	private record ParentKey(String sourceCanonical, String relationshipType) {}
 
 	private record ParentEdge(String sourceFullPurl, String targetFullPurl) {}
+
+	/**
+	 * Manufacturer (MANUAL) attestation of a component's support facts. Sets the
+	 * dates, stamps supportSource=MANUAL plus the attester and supportLastAssessed,
+	 * and appends an after-image row to the attestation history -- all in one tx.
+	 * The derived status is computed on read, never written here. Throws
+	 * {@link OptimisticLockingFailureException} if a concurrent reconcile bumped the
+	 * row's revision; the caller retries. The reconcile path load-merges and leaves
+	 * these columns untouched, so it never clobbers an attestation.
+	 *
+	 * @param assertedBy the authenticated user making the attestation
+	 */
+	@Transactional
+	public SbomComponent setSbomComponentSupport(UUID sbomComponentUuid, LocalDate endOfSupportDate,
+			LocalDate endOfLifeDate, String supportNotes, UUID assertedBy) {
+		return applySupport(sbomComponentUuid, endOfSupportDate, endOfLifeDate, supportNotes,
+				SupportSource.MANUAL, assertedBy);
+	}
+
+	/**
+	 * Shared write core for every support provenance (MANUAL now; SUPPLIER / ENRICHED
+	 * writers in later slices call this same path so they cannot drift on the
+	 * stamp / save / audit-revision semantics). Validates the date invariant for
+	 * every caller (not just the web layer), stamps the facts + source + attester,
+	 * saves, and appends the after-image to the attestation history in one tx. The
+	 * status is derived on read, never written. A concurrent reconcile that bumps the
+	 * row's @Version makes the version-checked UPDATE fail at COMMIT, surfacing as
+	 * {@link OptimisticLockingFailureException} for the caller to retry; the reconcile
+	 * path load-merges and never touches these columns. Runs in the caller's tx.
+	 */
+	private SbomComponent applySupport(UUID sbomComponentUuid, LocalDate endOfSupportDate,
+			LocalDate endOfLifeDate, String supportNotes, SupportSource source, UUID assertedBy) {
+		if (endOfSupportDate != null && endOfLifeDate != null && endOfSupportDate.isAfter(endOfLifeDate)) {
+			throw new IllegalArgumentException("endOfSupportDate must not be after endOfLifeDate");
+		}
+		SbomComponent sc = sbomComponentRepository.findById(sbomComponentUuid)
+				.orElseThrow(() -> new IllegalArgumentException(
+						"sbom component not found: " + sbomComponentUuid));
+		ZonedDateTime now = ZonedDateTime.now();
+		sc.setEndOfSupportDate(endOfSupportDate);
+		sc.setEndOfLifeDate(endOfLifeDate);
+		sc.setSupportSource(source);
+		sc.setSupportNotes(supportNotes);
+		sc.setSupportAssertedBy(assertedBy);
+		sc.setSupportLastAssessed(now);
+		sc.setLastUpdatedDate(now);
+		SbomComponent saved = sbomComponentRepository.save(sc);
+		// Flush now to apply the version-checked UPDATE and read the TRUE post-update
+		// revision (rather than predicting a bump that a no-op rewrite would skip). A
+		// mid-@Service flush throws the untranslated jakarta OptimisticLockException, so
+		// convert it to Spring's type here -- otherwise the caller's retry (which catches
+		// OptimisticLockingFailureException) would miss a concurrent-reconcile conflict.
+		try {
+			entityManager.flush();
+		} catch (jakarta.persistence.OptimisticLockException ole) {
+			throw new ObjectOptimisticLockingFailureException(SbomComponent.class, sbomComponentUuid, ole);
+		}
+		writeSupportAudit(saved, saved.getRevision(), now);
+		return saved;
+	}
+
+	/** Append the asserted (after-image) values plus attester to the history table. */
+	private void writeSupportAudit(SbomComponent sc, int supportRevision, ZonedDateTime assertedDate) {
+		SbomComponentSupportAudit audit = new SbomComponentSupportAudit();
+		audit.setSbomComponentUuid(sc.getUuid());
+		audit.setOrg(sc.getOrg());
+		audit.setSupportRevision(supportRevision);
+		audit.setEndOfSupportDate(sc.getEndOfSupportDate());
+		audit.setEndOfLifeDate(sc.getEndOfLifeDate());
+		audit.setSupportSource(sc.getSupportSource());
+		audit.setSupportNotes(sc.getSupportNotes());
+		audit.setSupportAssertedBy(sc.getSupportAssertedBy());
+		audit.setAssertedDate(assertedDate);
+		sbomComponentSupportAuditRepository.save(audit);
+	}
+
+	/**
+	 * Support-disclosure coverage for an org: how many non-root components carry a
+	 * support attestation, of the total. A mostly-unattested export is an
+	 * incomplete disclosure, so this feeds a pre-submission readiness signal.
+	 */
+	public SupportCoverage getSupportCoverage(UUID orgUuid) {
+		long total = sbomComponentRepository.countNonRootByOrg(orgUuid.toString());
+		long attested = sbomComponentRepository.countAttestedNonRootByOrg(orgUuid.toString());
+		return new SupportCoverage(total, attested);
+	}
+
+	/** Coverage counts for the support-disclosure completeness metric. */
+	public record SupportCoverage(long total, long attested) {}
 }

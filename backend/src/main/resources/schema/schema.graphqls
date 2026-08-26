@@ -155,6 +155,8 @@ type Query {
 	releasesBySbomComponents(orgUuid: ID!, sbomComponentUuids: [ID]!, perspectiveUuid: ID): [ComponentWithBranches]
 	sbomComponentSearchNative(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToSbom]
 	searchSbomComponentByPurl(orgUuid: ID!, purl: String!): ID
+	# FDA-Readiness-1: support-disclosure completeness for an org (attested vs total non-root components).
+	sbomComponentSupportCoverage(orgUuid: ID!): SbomComponentSupportCoverage
 	
 	getAllOrganizations: [Organization]
 	
@@ -740,6 +742,10 @@ type Mutation {
 	# (e.g. an earlier async reconcile failed). Returns true on success; throws on failure so the
 	# caller sees the underlying error.
 	reconcileReleaseSbomComponents(releaseUuid: ID!): Boolean
+	# FDA-Readiness-1: manufacturer attests a component's support level / EOS-EOL dates.
+	# Server-set source=MANUAL, attester recorded, appended to the append-only attestation
+	# history. supportStatus is derived on read, not set here. Dates are ISO-8601 (YYYY-MM-DD).
+	setSbomComponentSupport(sbomComponentUuid: ID!, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String): SbomComponent
 	"""
 	Recompute a release's findings metrics from CURRENT scan and KEV state:
 	re-gathers the release's artifacts, merges their (fan-out-maintained)
@@ -6074,6 +6080,45 @@ type SbomComponent {
 	name: String
 	version: String
 	isRoot: Boolean
+	# FDA-Readiness-1 per-component support disclosure. supportStatus is DERIVED
+	# from the dates and the current date (never stored). Dates are ISO-8601
+	# (YYYY-MM-DD); supportLastAssessed is a UTC RFC-3339 instant. supportNotes is
+	# internal-only (shown to authorized org users, never injected into an export).
+	supportStatus: SupportStatus
+	endOfSupportDate: String
+	endOfLifeDate: String
+	supportSource: SupportSource
+	supportLastAssessed: String
+	supportNotes: String
+}
+
+# Per-component support level. Derived from the support dates + current date; the
+# manufacturer attests the DATES, not this value. Aligns to FDA support adjectives
+# and IMDRF N60 lifecycle stages. SECURITY_ONLY and ABANDONED are reserved for
+# later slices (not yet produced from the two stored dates alone).
+enum SupportStatus {
+	ACTIVELY_SUPPORTED
+	SECURITY_ONLY
+	END_OF_SUPPORT
+	END_OF_LIFE
+	ABANDONED
+	UNKNOWN
+}
+
+# Provenance of a support assertion, set server-side per write path.
+enum SupportSource {
+	MANUAL
+	SUPPLIER
+	ENRICHED
+}
+
+# Support-disclosure completeness for an org. attested = non-root components with a
+# MANUFACTURER (MANUAL) attestation (excludes machine ENRICHED / supplier-declared
+# provenance, which are not a manufacturer disclosure). total = all non-root components.
+# Per-source counts can be added as new fields additively if needed.
+type SbomComponentSupportCoverage {
+	total: Int!
+	attested: Int!
 }
 
 # One row per (release, canonical component). artifactParticipations lists
