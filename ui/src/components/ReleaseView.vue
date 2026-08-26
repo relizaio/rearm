@@ -913,7 +913,14 @@
                                 placeholder="Search SBOM components (name, version, group, type, purl)"
                                 clearable
                                 size="small"
-                                style="width: 480px;"
+                                style="width: 420px;"
+                            />
+                            <n-select
+                                v-if="sbomViewMode === 'list'"
+                                v-model:value="sbomSupportFilter"
+                                :options="supportFilterOptions"
+                                size="small"
+                                style="width: 210px;"
                             />
                             <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
                                 <n-radio-button value="list" label="List" />
@@ -943,6 +950,12 @@
                                 @click="collapseAllTreeNodes">
                                 Collapse all
                             </n-button>
+                            <span
+                                v-if="supportCoverageLoaded"
+                                style="font-size: 12px; color: #666; margin-left: 4px;"
+                                title="Components in this org with a manufacturer (manual) support attestation -- a pre-submission disclosure-completeness signal.">
+                                Support attested: {{ supportCoverageAttested }} / {{ supportCoverageTotal }}
+                            </span>
                         </n-space>
                         <div v-if="sbomComponentsLoading && !sbomComponentsLoaded">
                             <n-spin size="medium" />
@@ -974,6 +987,29 @@
                         <div v-else>
                             <p>Open this tab to load SBOM components.</p>
                         </div>
+                        <n-modal v-model:show="sbomSupportModalOpen" preset="card" style="width: 560px;" title="Edit component support">
+                            <n-form v-if="sbomSupportEditRow" label-placement="top" size="small">
+                                <div style="margin-bottom: 10px; font-family: monospace; font-size: 12px; word-break: break-all;">
+                                    {{ sbomSupportEditRow.component?.name }}<span v-if="sbomSupportEditRow.component?.version">@{{ sbomSupportEditRow.component?.version }}</span>
+                                </div>
+                                <n-form-item label="End-of-support date">
+                                    <n-date-picker v-model:value="supportEosInput" type="date" clearable style="width: 100%;" />
+                                </n-form-item>
+                                <n-form-item label="End-of-life date">
+                                    <n-date-picker v-model:value="supportEolInput" type="date" clearable style="width: 100%;" />
+                                </n-form-item>
+                                <n-form-item label="Notes (internal only, never exported in the SBOM)">
+                                    <n-input v-model:value="supportNotesInput" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="Optional audit note" />
+                                </n-form-item>
+                                <div style="font-size: 11px; color: #999;">Status is derived from the dates; source is recorded as your manual attestation (MANUAL).</div>
+                            </n-form>
+                            <template #footer>
+                                <n-space justify="end">
+                                    <n-button size="small" @click="sbomSupportModalOpen = false">Cancel</n-button>
+                                    <n-button size="small" type="primary" :loading="supportSavePending" @click="saveSbomSupport">Save attestation</n-button>
+                                </n-space>
+                            </template>
+                        </n-modal>
                     </div>
                         </n-tab-pane>
                         <n-tab-pane name="hbomSub" :tab="`HBOM Components${hbomComponents.length ? ' · ' + hbomComponents.length : ''}`">
@@ -2785,17 +2821,141 @@ const sbomGraphDirty: Ref<boolean> = ref(false)
 // Client-side filter for the list view. Matches against any of name, version,
 // group, type, or canonical purl (case-insensitive substring).
 const sbomSearchQueryInput: Ref<string> = ref('')
+const sbomSupportFilter: Ref<string> = ref('all')
+const supportFilterOptions = [
+    { label: 'All support', value: 'all' },
+    { label: 'Attested', value: 'attested' },
+    { label: 'Not attested', value: 'notAttested' },
+    { label: 'Past end-of-support', value: 'pastEos' },
+    { label: 'Approaching EOS (90d)', value: 'approaching' }
+]
+function eosTimestamp (c: any): number | null {
+    // Reuse the edit path's local-time conversion so the filter interprets the date identically.
+    return isoDateToTs(c?.endOfSupportDate)
+}
 const filteredSbomComponents: ComputedRef<any[]> = computed((): any[] => {
     const q = (sbomSearchQueryInput.value || '').trim().toLowerCase()
-    if (!q) return sbomComponents.value
+    const f = sbomSupportFilter.value
+    const now = Date.now()
+    const soon = now + 90 * 24 * 3600 * 1000
     return sbomComponents.value.filter((row: any) => {
         const c = row.component || {}
-        const haystack = [
-            c.name, c.version, c.group, c.type, c.canonicalPurl
-        ].filter(Boolean).join(' ').toLowerCase()
-        return haystack.includes(q)
+        if (q) {
+            const haystack = [c.name, c.version, c.group, c.type, c.canonicalPurl].filter(Boolean).join(' ').toLowerCase()
+            if (!haystack.includes(q)) return false
+        }
+        if (f === 'attested' && !c.supportSource) return false
+        if (f === 'notAttested' && c.supportSource) return false
+        if (f === 'pastEos') {
+            const t = eosTimestamp(c)
+            if (t === null || t > now) return false
+        }
+        if (f === 'approaching') {
+            const t = eosTimestamp(c)
+            if (t === null || t <= now || t > soon) return false
+        }
+        return true
     })
 })
+
+// Per-component support attestation edit (manual path). setSbomComponentSupport records
+// source=MANUAL server-side; the derived status is computed on read.
+const sbomSupportModalOpen: Ref<boolean> = ref(false)
+const sbomSupportEditRow: Ref<any> = ref(null)
+const supportEosInput: Ref<number | null> = ref(null)
+const supportEolInput: Ref<number | null> = ref(null)
+const supportNotesInput: Ref<string> = ref('')
+const supportSavePending: Ref<boolean> = ref(false)
+
+// Org-wide support disclosure completeness -- a pre-submission readiness signal
+// (counts MANUAL manufacturer attestations only, per the backend).
+const supportCoverageTotal: Ref<number> = ref(0)
+const supportCoverageAttested: Ref<number> = ref(0)
+const supportCoverageLoaded: Ref<boolean> = ref(false)
+
+// naive-ui's date picker works in LOCAL time (a picked day is that day's local midnight),
+// so convert via local calendar parts -- toISOString()/UTC would shift the day across a tz.
+function isoDateToTs (iso: string | null | undefined): number | null {
+    if (!iso) return null
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(y, m - 1, d).getTime()
+}
+
+function tsToIsoDate (ts: number | null): string | null {
+    if (ts === null || ts === undefined) return null
+    const d = new Date(ts)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+}
+
+function openSupportEdit (row: any) {
+    sbomSupportEditRow.value = row
+    const c = row.component || {}
+    supportEosInput.value = isoDateToTs(c.endOfSupportDate)
+    supportEolInput.value = isoDateToTs(c.endOfLifeDate)
+    supportNotesInput.value = c.supportNotes || ''
+    sbomSupportModalOpen.value = true
+}
+
+async function saveSbomSupport () {
+    const row = sbomSupportEditRow.value
+    if (!row?.sbomComponentUuid) return
+    const eos = tsToIsoDate(supportEosInput.value)
+    const eol = tsToIsoDate(supportEolInput.value)
+    if (eos && eol && eos > eol) {
+        notify('error', 'Invalid dates', 'End-of-support date must not be after end-of-life date.')
+        return
+    }
+    supportSavePending.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation setSbomComponentSupport($sbomComponentUuid: ID!, $endOfSupportDate: String, $endOfLifeDate: String, $supportNotes: String) {
+                    setSbomComponentSupport(sbomComponentUuid: $sbomComponentUuid, endOfSupportDate: $endOfSupportDate, endOfLifeDate: $endOfLifeDate, supportNotes: $supportNotes) {
+                        uuid
+                    }
+                }`,
+            variables: {
+                sbomComponentUuid: row.sbomComponentUuid,
+                endOfSupportDate: eos,
+                endOfLifeDate: eol,
+                supportNotes: supportNotesInput.value ? supportNotesInput.value : null
+            }
+        })
+        notify('success', 'Saved', 'Component support attestation updated.')
+        sbomSupportModalOpen.value = false
+        await loadSbomComponents(true)
+        await loadSupportCoverage(true)
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        supportSavePending.value = false
+    }
+}
+
+async function loadSupportCoverage (force: boolean = false) {
+    const orgUuid = updatedRelease.value?.orgDetails?.uuid
+    if (!orgUuid) return
+    if (supportCoverageLoaded.value && !force) return
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query sbomComponentSupportCoverage($orgUuid: ID!) {
+                    sbomComponentSupportCoverage(orgUuid: $orgUuid) { total attested }
+                }`,
+            variables: { orgUuid },
+            fetchPolicy: force ? 'network-only' : 'cache-first'
+        })
+        const cov = (resp.data as any).sbomComponentSupportCoverage || { total: 0, attested: 0 }
+        supportCoverageTotal.value = cov.total
+        supportCoverageAttested.value = cov.attested
+        supportCoverageLoaded.value = true
+    } catch (err: any) {
+        // Coverage is an auxiliary signal; a failure here must not disrupt the SBOM tab.
+    }
+}
 
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (!updatedRelease.value?.uuid) return
@@ -2816,6 +2976,11 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
                             name
                             version
                             isRoot
+                            supportStatus
+                            endOfSupportDate
+                            endOfLifeDate
+                            supportSource
+                            supportNotes
                         }
                         artifactParticipations {
                             artifact
@@ -2828,6 +2993,7 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
         })
         sbomComponents.value = (resp.data as any).getReleaseSbomComponents || []
         sbomComponentsLoaded.value = true
+        loadSupportCoverage(forceRefresh)
         // Refresh invalidates the deeper graph too — rows may have changed.
         if (forceRefresh) {
             sbomGraphLoaded.value = false
@@ -2926,6 +3092,17 @@ function openSbomComponentGraphByPurl (purl: string) {
     window.open(href, '_blank')
 }
 
+// Derived support status -> NTag type + human label. Mirrors SupportStatus on the backend.
+type SupportTagType = 'default' | 'success' | 'warning' | 'error'
+const SUPPORT_TAG: Record<string, { type: SupportTagType, label: string }> = {
+    ACTIVELY_SUPPORTED: { type: 'success', label: 'Actively supported' },
+    SECURITY_ONLY: { type: 'warning', label: 'Security only' },
+    END_OF_SUPPORT: { type: 'error', label: 'End of support' },
+    END_OF_LIFE: { type: 'error', label: 'End of life' },
+    ABANDONED: { type: 'error', label: 'Abandoned' },
+    UNKNOWN: { type: 'default', label: 'Unknown' }
+}
+
 const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'name',
@@ -2960,6 +3137,22 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
         render: (row: any) => h('span', { style: 'word-break: break-all; font-family: monospace; font-size: 12px;' }, row.component?.canonicalPurl || '')
     },
     {
+        key: 'support',
+        title: 'Support',
+        sorter: (a: any, b: any) => (a.component?.supportStatus || '').localeCompare(b.component?.supportStatus || ''),
+        render: (row: any) => {
+            const c = row.component || {}
+            // Un-attested components have no supportSource -> show a neutral dash, not UNKNOWN.
+            if (!c.supportSource) return h('span', { style: 'color: #999;' }, '—')
+            const tag = SUPPORT_TAG[c.supportStatus] || SUPPORT_TAG.UNKNOWN
+            const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
+            if (c.endOfSupportDate) {
+                els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
+            }
+            return h('div', els)
+        }
+    },
+    {
         key: 'artifacts',
         title: 'Artifacts',
         render: (row: any) => {
@@ -2983,10 +3176,13 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
-        render: (row: any) => h(NButton, {
-            size: 'small',
-            onClick: () => openSbomComponentGraph(row)
-        }, () => 'View graph')
+        render: (row: any) => {
+            const els: any[] = [h(NButton, { size: 'small', onClick: () => openSbomComponentGraph(row) }, () => 'View graph')]
+            if (isWritable.value && !row.component?.isRoot) {
+                els.push(h(NButton, { size: 'small', onClick: () => openSupportEdit(row) }, () => 'Edit support'))
+            }
+            return h('div', { style: 'display: flex; gap: 6px;' }, els)
+        }
     }
 ]
 
