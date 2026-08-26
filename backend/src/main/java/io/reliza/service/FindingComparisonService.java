@@ -745,7 +745,8 @@ public class FindingComparisonService {
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
 					flags.orgContext(),
 					fa.finding.analysisState(),
-					null, null, null
+					null, null, null,
+					fa.finding.knownExploited()
 				);
 			})
 			.collect(Collectors.toList());
@@ -1039,7 +1040,8 @@ public class FindingComparisonService {
 	 * after {@code from} (posture unchanged since {@code from} -> reconstruct == current). No
 	 * {@code metrics_audit} read is involved. {@code retentionHorizon} is {@code now -
 	 * findingChangeRetentionDays} for the org: an endpoint older than it cannot be reconstructed (older
-	 * events purged) and degrades to current -- the SAME single horizon the over-time changelog clamps to.
+	 * events clamped out of reach) and degrades to current -- the SAME single horizon the over-time changelog
+	 * clamps to. NB "out of reach", not "deleted": no v3 purge exists (see predecessorMetricsAsOf).
 	 * {@code from} / {@code to} are the exact endpoint instants this prefetch was built for;
 	 * {@link #reconstructLiveMetricsAt} matches {@code at} against them via {@link #covers}. When
 	 * {@code null} (component / branch / product scopes, unit tests) {@code reconstructLiveMetricsAt} does
@@ -1104,8 +1106,9 @@ public class FindingComparisonService {
 	}
 
 	/**
-	 * {@code now - findingChangeRetentionDays} for the org (events older than this are purged), or NULL
-	 * when retention is disabled (the default = full history, nothing purged so nothing to clamp) or the
+	 * {@code now - findingChangeRetentionDays} for the org (events older than this are treated as
+	 * unavailable -- the opt-in read-clamp; the physical purge was retired in V64), or NULL
+	 * when retention is disabled (the default = full history, nothing clamped) or the
 	 * org is unknown. A null horizon flows through to {@code reconstructionClampedSince} as "no clamp".
 	 */
 	private ZonedDateTime retentionHorizon(UUID org) {
@@ -1362,7 +1365,7 @@ public class FindingComparisonService {
 		base = decorateScanArrivals(base, overlay.appearedAtByKey(), scopeReleases, componentNames, branchNameCache);
 
 		// DISCLOSURE: the from-endpoint degrades to current metrics for EVERY release when `from` predates
-		// the org's event-retention horizon (older events purged -> not reverse-reconstructable). That is a
+		// the org's event-retention horizon (older events clamped out of reach -> not reverse-reconstructable). That is a
 		// single per-org determination (all anchors share the org horizon and the same `from`), so surface
 		// it once here instead of silently degrading. Non-null clamp tells the caller the New/Resolved/
 		// Worsened numbers treat current as the `from`-baseline for postures before this instant. The
@@ -1592,7 +1595,7 @@ public class FindingComparisonService {
 	 *
 	 * <p>Returns {@code fallbackCurrent} unchanged when there are no events after {@code at} (posture
 	 * unchanged since {@code at}, includes the {@code to ~ now} case), OR when {@code at} predates the org's
-	 * event-retention horizon (older events were purged and cannot be replayed -- degrade-to-current for this
+	 * event-retention horizon (older events are clamped out of reach and cannot be replayed -- degrade-to-current for this
 	 * release only, the disclosed retention edge, now on the SAME single horizon the over-time changelog
 	 * clamps to).
 	 *
@@ -1625,7 +1628,7 @@ public class FindingComparisonService {
 		}
 
 		// RETENTION EDGE (disclosed, accepted): `at` older than the event-retention horizon cannot be
-		// reconstructed (events before the horizon were purged), so degrade to CURRENT metrics for this
+		// reconstructed (events before the horizon are clamped out of reach), so degrade to CURRENT metrics for this
 		// release only -- the same fail-safe the metrics_audit path applied at its retention edge, now on a
 		// SINGLE consistent horizon shared with the over-time changelog.
 		if (retentionHorizon != null && at.isBefore(retentionHorizon)) {
@@ -2481,7 +2484,8 @@ public class FindingComparisonService {
 		}
 
 		// Cap the query window to the retention horizon (shared with loadFindingChangeTimeline so the inline
-		// `since` and the drawer `since` cannot desync): rows older than now - retentionDays have been purged.
+		// `since` and the drawer `since` cannot desync): rows older than now - retentionDays are clamped out of
+		// reach by the opt-in read-clamp -- they are NOT deleted; no v3 purge is built (see the v3 cutover runbook).
 		RetentionClamp clamp = clampToRetention(org, from);
 		ZonedDateTime effectiveFrom = clamp.effectiveFrom();
 		ZonedDateTime clampedSince = clamp.clampedSince();
@@ -2764,6 +2768,52 @@ public class FindingComparisonService {
 	}
 
 	/**
+	 * What the whole-list v3 producer derived for one release: the events it would store, and -- purely as
+	 * evidence for the repair sweep's alert -- how many rows the LIVE EMIT's own rule would have produced
+	 * from the same input.
+	 *
+	 * <p>That second number is what separates the sweep's two reasons for inserting anything. When the store
+	 * held nothing for the repaired revisions, an operator cannot otherwise tell "the emit never ran" from
+	 * "the emit ran and correctly wrote nothing" (a first scan whose findings are ALL inherited stores zero
+	 * rows, quite legitimately). If the emit's own rule would have produced rows and none are there, it did
+	 * not run. If it would have produced none, an empty store is right and the difference is a producer
+	 * disagreement instead.
+	 *
+	 * <p>The replay matches the emitter by construction in both directions: both key on whether the pair's
+	 * OLDER side has findings, not on whether it is "really" the first scan, so a slice that excludes the
+	 * birth simply has no first-scan pair in it and both keep everything. Two things it does NOT model, and
+	 * they are the real limits: the emitter's enclosing CANCELLED/REJECTED early return (the caller
+	 * compensates per revision), and {@code inheritedKeys}, which is computed NOW rather than as of emit
+	 * time -- so it cannot detect a disagreement that arose from inherited-key drift.
+	 *
+	 * @param inheritedNowSize    size of the inherited-key set AS COMPUTED NOW, not as of emit time -- the same
+	 *                            caveat as above, restated because it is printed in an operator-facing alert
+	 * @param bornWithInSliceSize size of the born-with set DERIVED FROM THE SLICE the caller passed. This is
+	 *                            the release's true birth set ONLY when that slice starts at birth; the repair
+	 *                            sweep deliberately passes a date-bounded slice, so for any release born before
+	 *                            the lookback this is the slice-start snapshot. Do NOT read it as "born with"
+	 */
+	public record V3Production(List<FindingChangeEvent> events,
+			Map<Integer, RevisionProduction> byRevision, int inheritedNowSize, int bornWithInSliceSize) {
+		public static final V3Production NOTHING = new V3Production(List.of(), Map.of(), 0, 0);
+	}
+
+	/**
+	 * Per-revision evidence: when that transition happened, and how many rows the LIVE EMIT's own rule would
+	 * have written for it. Per revision because that is the unit an emit runs on -- a verdict computed over a
+	 * multi-revision slice cannot say which of those emits misbehaved.
+	 *
+	 * <p>{@code firstScanPair} and {@code producedRows} exist for the DISAGREED diagnostic only. NOTE the two
+	 * producers are NOT limited to differing on a first-scan pair: this producer applies the inherited-drop on
+	 * ANY pair (gated on the caller-owned {@code appearedOnThisRelease} set) while the emit's rule drops only
+	 * where the older side is empty, so an inherited born-with finding that resolves and re-appears mid-slice
+	 * diverges at {@code firstScanPair=false}. {@code producedRows} vs {@code emitRuleWouldHaveProduced} is the
+	 * comparison that actually carries the signal; {@code firstScanPair} is context, not a filter.
+	 */
+	public record RevisionProduction(ZonedDateTime changeDate, int emitRuleWouldHaveProduced,
+			boolean firstScanPair, int producedRows, int keptAsReappearance, int keptAsNotBornWith) {}
+
+	/**
 	 * BRANCH-CHAINED ("events-lite" v3) variant of {@link #backfillEventsForRelease}: produces the SAME
 	 * event stream, then drops the initial {@code APPEARED} rows for findings INHERITED from the branch
 	 * predecessor. This is the ENTIRE difference between v3 and v1/v2 events (see
@@ -2799,9 +2849,18 @@ public class FindingComparisonService {
 			ReleaseMetricsDto liveMetrics,
 			EventAttribution attr,
 			Set<String> inheritedKeys) {
+		return produceForReleaseV3(auditRows, liveMetrics, attr, inheritedKeys).events();
+	}
+
+	/** As {@link #backfillEventsForReleaseV3}, plus the emit-rule evidence described on {@link V3Production}. */
+	public V3Production produceForReleaseV3(
+			List<MetricsAudit> auditRows,
+			ReleaseMetricsDto liveMetrics,
+			EventAttribution attr,
+			Set<String> inheritedKeys) {
 
 		if (auditRows == null || auditRows.isEmpty()) {
-			return List.of();
+			return V3Production.NOTHING;
 		}
 		List<BackfillSnapshot> timeline = new ArrayList<>();
 		for (MetricsAudit a : auditRows) {
@@ -2822,14 +2881,103 @@ public class FindingComparisonService {
 
 		Set<String> appearedOnThisRelease = new HashSet<>();
 		List<FindingChangeEvent> events = new ArrayList<>();
+		Map<Integer, RevisionProduction> byRevision = new LinkedHashMap<>();
 		for (int i = 0; i < timeline.size() - 1; i++) {
 			BackfillSnapshot older = timeline.get(i);
 			BackfillSnapshot newer = timeline.get(i + 1);
 			List<FindingChangeEvent> pairEvents = diffPairToEvents(
 					older.metrics(), newer.metrics(), attr, older.changeDate(), older.metricsRevision());
-			events.addAll(dropInheritedInitialAppearance(pairEvents, inheritedKeys, bornWithKeys, appearedOnThisRelease));
+			// Computed ONCE and threaded into countUnderLiveEmitRule: findingKeysOf walks the whole snapshot
+			// (vulnerabilities + violations + weaknesses) to build a HashSet, and deriving it twice per pair
+			// doubled that allocation for every pair of every release in the sweep's lookback.
+			boolean firstScanPair = findingKeysOf(older.metrics()).isEmpty();
+			// WHY this producer keeps an APPEARED the live emit's rule drops -- the two reasons are different
+			// bugs and the aggregate counts cannot tell them apart. Computed BEFORE the drop runs, because
+			// dropInheritedInitialAppearance mutates appearedOnThisRelease as it walks.
+			// keptAsReappearance: the finding already appeared earlier on this release, so this is a
+			//   RE-appearance (the release's metrics went non-empty -> empty -> non-empty). The emit sees an
+			//   empty pre-image, calls it a first scan and drops; this producer correctly keeps it.
+			// keptAsNotBornWith: the finding is inherited but absent from the slice's born-with set, so the
+			//   F1 gate does not fire. On a windowed slice that set is the slice-start snapshot, not the
+			//   birth scan, so this arm can be an artefact of the lookback rather than a real difference.
+			int keptReappear = 0;
+			int keptNotBornWith = 0;
+			// Gated on firstScanPair because countUnderLiveEmitRule returns pairEvents.size() for any other
+			// pair -- i.e. the emit keeps everything there, so nothing can be "kept that the emit dropped".
+			// Counting on every pair made keptAsNotBornWith non-zero on trickle-in releases where the two
+			// producers actually agreed, which is the opposite of what the field is for. So gated, these two
+			// are the decomposition of the POSITIVE part of produced - emitRule. The negative direction is
+			// reachable and uncounted: on a non-first-scan pair dropInheritedInitialAppearance still drops a
+			// born-with inherited key making its first in-slice appearance, while countUnderLiveEmitRule
+			// returns pairEvents.size(), so produced < emitRule with both counters 0.
+			if (firstScanPair && null != inheritedKeys && !inheritedKeys.isEmpty()) {
+				for (FindingChangeEvent ev : pairEvents) {
+					if (ev.getChangeKind() != FindingChangeKind.APPEARED
+							|| !inheritedKeys.contains(ev.getFindingKey())) {
+						continue;
+					}
+					if (appearedOnThisRelease.contains(ev.getFindingKey())) {
+						keptReappear++;
+					} else if (!bornWithKeys.contains(ev.getFindingKey())) {
+						keptNotBornWith++;
+					}
+				}
+			}
+			List<FindingChangeEvent> keptForPair = dropInheritedInitialAppearance(
+					pairEvents, inheritedKeys, bornWithKeys, appearedOnThisRelease);
+			events.addAll(keptForPair);
+			// MERGE, not put: two audit rows can share a metrics_revision (SharedReleaseService logs
+			// "Duplicate metrics audit revision detected" and repairs it going forward, so historical rows
+			// can carry duplicates). The write path merges offered/landed under that key, so last-wins here
+			// would compare one pair's emit-rule count against two pairs' rows. Keep the EARLIEST changeDate:
+			// the lifecycle question is "was it cancelled when this started".
+			byRevision.merge(older.metricsRevision(),
+					new RevisionProduction(older.changeDate(),
+							countUnderLiveEmitRule(pairEvents, firstScanPair, inheritedKeys),
+							firstScanPair, keptForPair.size(), keptReappear, keptNotBornWith),
+					(a, b) -> new RevisionProduction(
+							earliest(a.changeDate(), b.changeDate()),
+							a.emitRuleWouldHaveProduced() + b.emitRuleWouldHaveProduced(),
+							a.firstScanPair() || b.firstScanPair(),
+							a.producedRows() + b.producedRows(),
+							a.keptAsReappearance() + b.keptAsReappearance(),
+							a.keptAsNotBornWith() + b.keptAsNotBornWith()));
 		}
-		return events;
+		return new V3Production(events, byRevision, inheritedKeys == null ? 0 : inheritedKeys.size(),
+				bornWithKeys.size());
+	}
+
+	private static ZonedDateTime earliest(ZonedDateTime a, ZonedDateTime b) {
+		if (a == null) {
+			return b;
+		}
+		if (b == null) {
+			return a;
+		}
+		return a.isBefore(b) ? a : b;
+	}
+
+	/**
+	 * How many of {@code pairEvents} the LIVE EMIT would have KEPT (offered to the store), mirroring
+	 * {@code FindingChangeEventEmitter.emitV3}: it treats a pair whose OLDER side has no findings as the
+	 * release's first scan and drops inherited APPEAREDs there, and keeps everything on any other pair.
+	 * Evidence only -- it decides nothing, it just lets the sweep's alert say which of its two causes it is
+	 * looking at. Kept adjacent to the producer it is compared against so the two cannot drift unnoticed.
+	 */
+	private int countUnderLiveEmitRule(List<FindingChangeEvent> pairEvents, boolean firstScanPair,
+			Set<String> inheritedKeys) {
+		if (!firstScanPair) {
+			return pairEvents.size();
+		}
+		int kept = 0;
+		for (FindingChangeEvent ev : pairEvents) {
+			boolean dropped = ev.getChangeKind() == FindingChangeKind.APPEARED
+					&& null != inheritedKeys && inheritedKeys.contains(ev.getFindingKey());
+			if (!dropped) {
+				kept++;
+			}
+		}
+		return kept;
 	}
 
 	/**
@@ -2912,9 +3060,20 @@ public class FindingComparisonService {
 	 * The inherited finding_keys for a release's FIRST scan (live-emit v3 path): the live finding keys of
 	 * the previous SAME-BRANCH release. Aligns with the branch-chained backfill's predecessor chain --
 	 * first-on-branch inherits NOTHING (a base-branch fork point is a DIFFERENT branch, so it is excluded),
-	 * and CANCELLED/REJECTED predecessors never contributed posture. A live-vs-backfill disagreement (this
-	 * reads the predecessor's CURRENT metrics; the backfill reads its terminal metrics) is a HARMLESS
-	 * dedup-key superset -- a kept inherited APPEARED == v1/v2 behavior, so reconstruction stays correct.
+	 * and CANCELLED/REJECTED predecessors never contributed posture.
+	 *
+	 * <p>The predecessor's finding set is taken AS OF {@code rd}'s creation ({@link #predecessorMetricsAsOf})
+	 * rather than as of now, so the answer does not move when the predecessor is later re-scanned. That
+	 * stability is what keeps this method's TWO callers -- the live emit and the daily repair sweep -- from
+	 * disagreeing; see the fuller account on {@code predecessorMetricsAsOf}.
+	 *
+	 * <p>It does NOT make all three v3 producers agree. The branch-chained backfill never calls this method:
+	 * it decides "inherited" from a CUMULATIVE set of every finding seen on any earlier release of the
+	 * branch. Against that cumulative set this immediate-predecessor answer is a dedup-key SUBSET, so the
+	 * event set it yields is a SUPERSET -- a kept inherited APPEARED == v1/v2 behavior, so reconstruction
+	 * stays correct and the disagreement is harmless. It is nonetheless real and permanent (writes are
+	 * insert-only), which is why the repair sweep's alert names producer disagreement as one of the
+	 * conditions it can be reporting.
 	 */
 	public Set<String> firstScanInheritedKeys(ReleaseData rd) {
 		UUID branch = rd.getBranch();
@@ -2931,7 +3090,79 @@ public class FindingComparisonService {
 				|| prev.getLifecycle() == ReleaseLifecycle.REJECTED) {
 			return Set.of();
 		}
-		return findingKeysOf(prev.getMetrics());
+		return findingKeysOf(predecessorMetricsAsOf(prev, rd.getCreatedDate()));
+	}
+
+	/**
+	 * The predecessor's metrics AS OF {@code at} -- REVERSE-REPLAYED from its own
+	 * {@code finding_change_events} onto its current metrics ({@link #reconstructLiveMetricsAt}), so the
+	 * inherited-key answer is anchored to the successor's birth instead of to whatever the predecessor
+	 * happens to look like when the question is asked.
+	 *
+	 * <p>This is the fix #280 promised and did not land ("Same drift affects the live-emit
+	 * firstScanInheritedKeys path. Fix to follow -- source inherited findings from a drift-proof,
+	 * fork-time basis"). Reading the predecessor's CURRENT metrics makes the answer depend on WHEN it is
+	 * asked: the live emit asks at the successor's first scan, the daily repair sweep asks again up to two
+	 * days later, and a predecessor re-scanned in between silently changes the answer. The two then
+	 * disagree about which APPEARED to drop, and because v3 writes are insert-only the later, looser
+	 * answer wins permanently -- while the sweep logs ERROR blaming the live emitter. Anchoring to the
+	 * successor's birth makes the answer STABLE no matter when it is computed, so those two callers agree.
+	 *
+	 * <p>Deliberately sourced from the EVENTS, not from {@code metrics_audit}. The whole point of the
+	 * v1 -&gt; v2 -&gt; v3 arc is that {@code metrics_audit} becomes trimmable; anchoring the emit path to
+	 * archived audit snapshots would re-couple it to the table we are trying to retire, and would fail
+	 * SILENTLY (falling back to current metrics, i.e. straight back to the drift) once trimming was enabled.
+	 * Reverse-replay reads the store meant to outlive the audit rows, and shares the changelog read path's
+	 * reconstruction engine, so the dedup decision and the rendered changelog cannot disagree.
+	 *
+	 * <p><b>Known imprecision, accepted.</b> Reverse-replay can only undo transitions that were RECORDED, and
+	 * v3 deliberately does not record a predecessor's own inherited APPEAREDs. So when {@code at} precedes
+	 * the predecessor's first scan -- a successor created before its predecessor was ever scanned, which fast
+	 * pipelines do produce -- there is no APPEARED to invert for those findings and the reconstructed set is
+	 * a SUPERSET of the predecessor's true state at {@code at}, dropping MORE than the audit-based answer
+	 * would. The direction is safe (a dropped inherited APPEARED is what the branch grain wants; the extra
+	 * drops are exactly the findings the branch had already announced, matching the backfill's cumulative
+	 * semantics) but it is a real difference, and unlike the read path's version of this it is permanent.
+	 * Measured on the rhythm sandbox over 2083 audit-revision probes: 2078 exact, 5 divergent, 11 keys, ALL
+	 * in this superset direction and none in the opposite one.
+	 *
+	 * <p>RETENTION EDGE -- read this before assuming it cannot bite. {@code reconstructLiveMetricsAt}
+	 * returns the predecessor's CURRENT metrics when {@code at} predates the org's event-retention horizon,
+	 * i.e. it silently degrades to the pre-fix drifting answer. It is tempting to say that cannot happen
+	 * here because both callers look at recent releases; that is FALSE for the sweep, which selects on
+	 * {@code metrics_audit.revision_created_date} -- when a release was last RE-SCANNED -- while {@code at}
+	 * is the release's CREATION date. A release created two years ago and re-scanned yesterday is in scope
+	 * with a two-year-old anchor.
+	 *
+	 * <p>It is inert on a default org (retention is opt-in) but NOT harmless where it is set, and the reason
+	 * is worth stating so nobody re-derives it. The physical v1 purge was retired with the v1/v2 tables in
+	 * V64 and nothing deletes {@code finding_change_events_v3} today; the horizon survives as a deliberate
+	 * READ-clamp guardrail (see {@code ai-agents/finding-change-v1v2-decommission-runbook.md}), so a
+	 * changelog never claims to reconstruct across a window the org opted out of. That rationale is about
+	 * what we SHOW a user. This caller is not showing anything -- it is deciding dedup -- so inheriting the
+	 * clamp here silently swaps a stable answer for a drifting one on old releases, using events that are
+	 * still present in the table. Whether the clamp should apply to this caller at all is an open question;
+	 * it is deliberately left alone rather than quietly diverged from the read path.
+	 *
+	 * <p>COST: one event read + one org-settings lookup per call, with no {@code prefetch} to share. That is
+	 * once per release first-scan on the live path, but once per in-window release on the daily sweep -- an
+	 * N+1 the sweep did not previously have. Accepted at the sweep's cadence and measured scale (worst-case
+	 * release on the sandbox: 1390 events, 0.44 ms, served by
+	 * {@code finding_change_events_v3_first_release_date_idx}).
+	 */
+	private ReleaseMetricsDto predecessorMetricsAsOf(ReleaseData prev, ZonedDateTime at) {
+		ReleaseMetricsDto current = prev.getMetrics() != null ? prev.getMetrics() : new ReleaseMetricsDto();
+		if (at == null) {
+			return current;
+		}
+		try {
+			return reconstructLiveMetricsAt(prev, at, current, null);
+		} catch (RuntimeException e) {
+			// Fail SOFT to today's behaviour: a reconstruction failure must not break the emit or the sweep.
+			log.error("fork-time inherited-key reconstruction failed for predecessor {} at {}; falling back "
+					+ "to its current metrics (dedup may drift)", prev.getUuid(), at, e);
+			return current;
+		}
 	}
 
 	/**
@@ -3138,7 +3369,7 @@ public class FindingComparisonService {
 		switch (ev.getFindingKind()) {
 			case VULNERABILITY -> vuln = new ReleaseVulnerabilityInfo(
 					ev.getVulnId(), ev.getPurl(), ev.getSeverity(), ev.getAliases(),
-					parseAnalysisState(ev.getAnalysisState()));
+					parseAnalysisState(ev.getAnalysisState()), ev.getKnownExploited());
 			case VIOLATION -> violation = new ReleaseViolationInfo(
 					ev.getViolationType(), ev.getPurl(), parseAnalysisState(ev.getAnalysisState()));
 			case WEAKNESS -> weakness = new ReleaseWeaknessInfo(

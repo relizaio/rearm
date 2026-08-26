@@ -213,13 +213,25 @@ class SyntheticSbomServiceTest {
 	@Test
 	void hasPendingSyntheticWork_trueWhenFailedBucketExists() {
 		when(sbomComponentRepository.existsUnbucketedMatchableByOrg(ORG.toString())).thenReturn(false);
+		// The gate probes PENDING (retirement-in-progress) before FAILED.
+		when(bucketRepository.existsByOrgAndIngestState(ORG, IngestState.PENDING)).thenReturn(false);
 		when(bucketRepository.existsByOrgAndIngestState(ORG, IngestState.FAILED)).thenReturn(true);
+		assertTrue(service.hasPendingSyntheticWork(ORG));
+	}
+
+	@Test
+	void hasPendingSyntheticWork_trueWhenPendingRetirementExists() {
+		when(sbomComponentRepository.existsUnbucketedMatchableByOrg(ORG.toString())).thenReturn(false);
+		// An in-progress retirement (DTrack delete not yet succeeded) must
+		// keep the idle-gate open, or it would never heal on a quiet org.
+		when(bucketRepository.existsByOrgAndIngestState(ORG, IngestState.PENDING)).thenReturn(true);
 		assertTrue(service.hasPendingSyntheticWork(ORG));
 	}
 
 	@Test
 	void hasPendingSyntheticWork_falseWhenIdle() {
 		when(sbomComponentRepository.existsUnbucketedMatchableByOrg(ORG.toString())).thenReturn(false);
+		when(bucketRepository.existsByOrgAndIngestState(ORG, IngestState.PENDING)).thenReturn(false);
 		when(bucketRepository.existsByOrgAndIngestState(ORG, IngestState.FAILED)).thenReturn(false);
 		assertFalse(service.hasPendingSyntheticWork(ORG));
 	}

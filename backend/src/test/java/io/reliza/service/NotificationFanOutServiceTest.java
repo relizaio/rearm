@@ -3,13 +3,16 @@
 */
 package io.reliza.service;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doReturn;
@@ -23,6 +26,7 @@ import java.lang.reflect.Field;
 import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,6 +36,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.Set;
 
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
@@ -89,6 +95,8 @@ class NotificationFanOutServiceTest {
     private NotificationChannelGroupService channelGroupService;
     private NotificationChannelService channelService;
     private NotificationReadService readService;
+    private TeamService teamService;
+    private ComponentOwnershipService componentOwnershipService;
     private Map<UUID, UUID> channelOrgs;
     private NotificationFanOutService fanOut;
 
@@ -105,7 +113,18 @@ class NotificationFanOutServiceTest {
         channelGroupService = mock(NotificationChannelGroupService.class);
         channelService = mock(NotificationChannelService.class);
         readService = mock(NotificationReadService.class);
+        teamService = mock(TeamService.class);
+        componentOwnershipService = mock(ComponentOwnershipService.class);
         channelOrgs = new HashMap<>();
+        // Defaults: no team channels, no owner channels. Tests that exercise
+        // T3 / T4a targeting override per-call.
+        when(teamService.resolveTeamChannelUuids(any(), any())).thenReturn(List.of());
+        when(componentOwnershipService.resolveOwnerTeamChannels(any(), any())).thenReturn(List.of());
+        // Default: nothing is owned by anyone. A team-scoped subscription
+        // therefore matches nothing unless a test says who owns what, which is
+        // the fail-closed direction -- a default of "owned" would let a scoped
+        // subscription pass a test that never established ownership at all.
+        when(componentOwnershipService.resolveOwnerTeams(any(), any())).thenReturn(Set.of());
         // Default group-service behavior: never resolve anything. Tests
         // that exercise channelGroups expansion override per-call.
         when(channelGroupService.resolveChannelUuids(any())).thenReturn(List.of());
@@ -133,6 +152,15 @@ class NotificationFanOutServiceTest {
         inject(fanOut, "channelGroupService", channelGroupService);
         inject(fanOut, "channelService", channelService);
         inject(fanOut, "readService", readService);
+        inject(fanOut, "teamService", teamService);
+        inject(fanOut, "componentOwnershipService", componentOwnershipService);
+        // drainBatch reaches the per-event transaction boundary through `self`.
+        // Point it at the instance itself: these tests have no Spring proxy, so
+        // there is no transaction to enter anyway, and this keeps them
+        // exercising the same call sequence. The transaction behaviour that
+        // matters is covered by NotificationDrainTransactionTest, which needs a
+        // real transaction manager to be meaningful at all.
+        inject(fanOut, "self", fanOut);
     }
 
     /**
@@ -403,6 +431,11 @@ class NotificationFanOutServiceTest {
 
         when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(eventA, eventB));
         when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+        // The FAILED mark is applied to a FRESHLY READ row, not to the instance
+        // handed to the loop: that one belonged to the transaction that just
+        // rolled back, so it is detached and its @Version may be stale. Model
+        // the re-read here or the mark lands nowhere.
+        when(outboxRepo.findById(eventB.getUuid())).thenReturn(Optional.of(eventB));
         // A passes; B throws an unchecked from CEL (simulates an unexpected
         // evaluator error that ISN'T a clean RelizaException)
         when(celEvaluator.evaluate(anyString(), any(), eq(eventA))).thenReturn(true);
@@ -416,7 +449,8 @@ class NotificationFanOutServiceTest {
         assertEquals(NotificationOutboxStatus.FANNED_OUT, eventA.getStatus());
         // B is FAILED (the per-event catch contained the throw)
         assertEquals(NotificationOutboxStatus.FAILED, eventB.getStatus());
-        // Both events were saved by the outer loop
+        // A is saved by its own per-event transaction; B by the separate
+        // FAILED-marking transaction, which is why findById is stubbed above.
         verify(outboxRepo).save(eventA);
         verify(outboxRepo).save(eventB);
     }
@@ -746,9 +780,16 @@ class NotificationFanOutServiceTest {
 
     @Test
     void enrichmentFailureDoesNotKillEventStillShipsEmptyReleaseList() throws Exception {
-        // Defense-in-depth: if the JSONB scan throws, we still want the
-        // event delivered (operators see "affects 0 releases" rather than
-        // nothing). The producer-side severity is enough for routing.
+        // Defense-in-depth: if the JSONB scan THROWS, we still want the event
+        // delivered (operators see "affects 0 releases" rather than nothing).
+        // The producer-side severity is enough for routing.
+        //
+        // This is the case the affected-release guard must NOT swallow. A
+        // throw says nothing about whether releases are affected, so once the
+        // deferred re-attempts are spent the event ships rather than being
+        // suppressed -- suppression is reserved for a definitive empty
+        // resolve. Attempts are pre-spent here to land on that terminal pass;
+        // deferralOnEmptyResolve covers the earlier ones.
         UUID orgUuid = UUID.randomUUID();
         UUID channelUuid = UUID.randomUUID();
 
@@ -767,6 +808,7 @@ class NotificationFanOutServiceTest {
         event.setStatus(NotificationOutboxStatus.PENDING);
         event.setOccurredAt(ZonedDateTime.now());
         event.setRecordData(recordData);
+        event.setEnrichmentAttemptCount(NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS);
 
         when(artifactRepo.findArtifactsWithVulnId(anyString(), anyString()))
                 .thenThrow(new RuntimeException("postgres connection blip"));
@@ -788,6 +830,330 @@ class NotificationFanOutServiceTest {
         assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
     }
 
+    // ---------- affected-release guard (defer, then suppress) ----------
+
+    @Test
+    void emptyResolveDefersInsteadOfDeliveringAnEventThatAffectsNothing() throws Exception {
+        // The race this guard exists for: the outbox row commits in
+        // ingestOrgBuckets, but artifacts.metrics -- the only place the
+        // CVE -> release link lives -- is not written until fanOutOrg later in
+        // the same synthetic-SBOM pass. Reading in between resolves empty for
+        // a vuln that genuinely DOES affect a release, so the first look must
+        // put the event back rather than deliver "affects 0 releases".
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-RACE");
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-RACE"))
+                .thenReturn(List.of());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, never()).save(any());
+        assertEquals(NotificationOutboxStatus.PENDING, event.getStatus(),
+                "a deferred event must stay PENDING so the drain comes back to it");
+        // Re-queued by a targeted update, not an entity save: the delay is
+        // stamped from the database clock and the payload scratch is left
+        // unpersisted. Asserting the call is what pins both.
+        verify(outboxRepo, times(1)).deferForEnrichment(eq(event.getUuid()), eq(1), anyInt());
+        verify(outboxRepo, never()).save(any());
+        assertEquals(1, event.getEnrichmentAttemptCount());
+    }
+
+    @Test
+    void aDeferredEventDoesNotPersistAnEmptyAffectedReleaseList() throws Exception {
+        // A row that is still PENDING must not carry "affects nothing" -- that
+        // is the answer the deferral explicitly declined to commit to, and
+        // re-resolution on the next attempt depends on the list still reading
+        // as unpopulated.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-NOPERSIST");
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-NOPERSIST"))
+                .thenReturn(List.of());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        verify(outboxRepo, never()).save(any());
+        // And the component scan is skipped entirely on a deferring pass, so a
+        // partial purl view can never be frozen into the payload by the
+        // don't-clobber rule on a later attempt.
+        verify(artifactRepo, never()).findVulnPurlsForVulnId(anyString(), anyString());
+    }
+
+    @Test
+    void aThrowingEnrichmentDefersOnEarlyAttemptsRatherThanShipping() throws Exception {
+        // Guards the FIRST-pass behaviour of an enrichment throw, which
+        // enrichmentFailureDoesNotKillEventStillShipsEmptyReleaseList no longer
+        // covers now that it pre-spends the budget to reach the terminal pass.
+        // Without this, a future change mapping UNRESOLVED straight to
+        // SUPPRESSED would silently drop real notifications on any transient DB
+        // error and both tests would stay green.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-THROWS");
+
+        when(artifactRepo.findArtifactsWithVulnId(anyString(), anyString()))
+                .thenThrow(new RuntimeException("postgres connection blip"));
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, never()).save(any());
+        verify(outboxRepo, times(1)).deferForEnrichment(eq(event.getUuid()), eq(1), anyInt());
+        assertEquals(NotificationOutboxStatus.PENDING, event.getStatus());
+    }
+
+    @Test
+    void aVulnEventNoSubscriptionWantsIsNeitherEnrichedNorSuppressed() throws Exception {
+        // An org with subscriptions that simply do not cover vuln events must
+        // not pay the enrichment scan or the deferral cycle, and must not land
+        // in SUPPRESSED -- otherwise the suppressed count, which exists to
+        // measure how often the race fires, silently fills up with "nobody
+        // subscribed to this anyway".
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-UNWANTED");
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionFor(orgUuid, List.of(NotificationEventType.RELEASE_LIFECYCLE_CHANGED),
+                        null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
+        assertEquals(0, event.getEnrichmentAttemptCount());
+        verify(artifactRepo, never()).findArtifactsWithVulnId(anyString(), anyString());
+        verify(deliveryRepo, never()).save(any());
+    }
+
+    @Test
+    void emptyResolveSuppressesOnceAttemptsAreSpent() throws Exception {
+        // Terminal case, and the product call behind this task: a vulnerability
+        // notification that names no release is not actionable, so it is
+        // withheld rather than delivered.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-NOBODY");
+        event.setEnrichmentAttemptCount(NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS);
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-NOBODY"))
+                .thenReturn(List.of());
+        // Metrics refreshed AFTER the event, so the empty answer is proven.
+        wireMetricsScannedAfterEvent(orgUuid, event);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, never()).save(any());
+        assertEquals(NotificationOutboxStatus.SUPPRESSED, event.getStatus(),
+                "SUPPRESSED, not FANNED_OUT: 'we withheld it' must stay distinguishable "
+                        + "from 'we offered it and no subscription wanted it'");
+    }
+
+    @Test
+    void resolvingReleasesOnARetryDeliversNormally() throws Exception {
+        // The payoff: an event deferred while the metrics write was in flight
+        // delivers as soon as the link appears, with the releases populated.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-LATE");
+        event.setEnrichmentAttemptCount(1);
+
+        wireOneAffectedRelease(orgUuid, "CVE-2025-LATE");
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, times(1)).save(any());
+        assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
+        Object releases = event.getRecordData().get("affectedReleases");
+        assertEquals(1, ((List<?>) releases).size());
+    }
+
+    @Test
+    void staleOrgMetricsKeepDeferringInsteadOfSuppressing() throws Exception {
+        // The silent-loss guard. Spending the attempt budget is NOT evidence
+        // that nothing is affected -- the metrics write can lag arbitrarily
+        // (fanOutOrg throwing and resuming, a long fan-out pass, or the
+        // idempotency guard skipping the write). If the org's metrics have not
+        // been refreshed since the event was emitted, the empty answer is not
+        // trustworthy and the event must NOT be suppressed.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-STALE");
+        event.setEnrichmentAttemptCount(NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS);
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-STALE"))
+                .thenReturn(List.of());
+        // Last scan predates the event -- the pipeline has not caught up.
+        double beforeEvent = event.getOccurredAt().toInstant().toEpochMilli() / 1000.0 - 600;
+        when(artifactRepo.findMaxLastScannedEpochForOrg(orgUuid.toString())).thenReturn(beforeEvent);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        assertEquals(NotificationOutboxStatus.PENDING, event.getStatus(),
+                "an unproven empty must never be suppressed -- that is the silent-drop case");
+        verify(outboxRepo, times(1)).deferForEnrichment(eq(event.getUuid()), anyInt(), anyInt());
+        verify(deliveryRepo, never()).save(any());
+    }
+
+    @Test
+    void anUnprovenEmptyIsDeliveredNotSuppressedOnceTheCeilingIsReached() throws Exception {
+        // A permanently stalled metrics pipeline must not strand events in
+        // PENDING forever, and must not silently drop them either. At the
+        // ceiling the event ships -- an "affects 0 releases" notification is at
+        // least visible and reportable; a suppressed one is not.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-STALLED");
+        event.setEnrichmentAttemptCount(
+                NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS_UNPROVEN);
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-STALLED"))
+                .thenReturn(List.of());
+        double beforeEvent = event.getOccurredAt().toInstant().toEpochMilli() / 1000.0 - 600;
+        when(artifactRepo.findMaxLastScannedEpochForOrg(orgUuid.toString())).thenReturn(beforeEvent);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
+        verify(deliveryRepo, times(1)).save(any());
+    }
+
+    @Test
+    void anOrgWithNoScannedArtifactsCountsAsProvenEmpty() throws Exception {
+        // A null scan stamp means the org has no scanned artifact at all. That
+        // is a definitive answer rather than a missing one -- nothing in the
+        // org can be carrying the vuln -- so suppression is justified.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-NOARTIFACTS");
+        event.setEnrichmentAttemptCount(NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS);
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-NOARTIFACTS"))
+                .thenReturn(List.of());
+        when(artifactRepo.findMaxLastScannedEpochForOrg(orgUuid.toString())).thenReturn(null);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        assertEquals(NotificationOutboxStatus.SUPPRESSED, event.getStatus());
+    }
+
+    @Test
+    void aFailingCurrencyProbeFailsClosedAndDoesNotSuppress() throws Exception {
+        // The probe exists to avoid dropping notifications on insufficient
+        // evidence, so a probe that throws IS insufficient evidence. It must
+        // never be read as "proven empty".
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-PROBEFAIL");
+        event.setEnrichmentAttemptCount(NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS);
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-PROBEFAIL"))
+                .thenReturn(List.of());
+        when(artifactRepo.findMaxLastScannedEpochForOrg(orgUuid.toString()))
+                .thenThrow(new RuntimeException("statement timeout"));
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionWith(orgUuid, null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        assertEquals(NotificationOutboxStatus.PENDING, event.getStatus(),
+                "a failed probe must defer, never suppress");
+    }
+
+    @Test
+    void vulnRecordUpdatedEventIsGuardedToo() throws Exception {
+        // Same producer shape (affectedReleases null, filled at fan-out), so
+        // the same guard applies -- a KEV_ADDED or severity bump on a vuln
+        // nothing carries is as unactionable as a new one.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-UPD");
+        event.setEventType(NotificationEventType.VULNERABILITY_RECORD_UPDATED);
+        event.setEnrichmentAttemptCount(NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS);
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-UPD"))
+                .thenReturn(List.of());
+        wireMetricsScannedAfterEvent(orgUuid, event);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionFor(orgUuid, List.of(NotificationEventType.VULNERABILITY_RECORD_UPDATED),
+                        null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, never()).save(any());
+        assertEquals(NotificationOutboxStatus.SUPPRESSED, event.getStatus());
+    }
+
+    @Test
+    void channelTestIsNeverSuppressedEvenWhenItAffectsNothing() throws Exception {
+        // An operator pressing "test this channel" must get a message even if
+        // the vuln affects nothing -- withholding it would break the very
+        // affordance being tested.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-TESTCHAN");
+        event.setChannelTestTarget(channelUuid);
+        event.setEnrichmentAttemptCount(NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS);
+
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-TESTCHAN"))
+                .thenReturn(List.of());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, times(1)).save(any());
+        assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
+    }
+
+    @Test
+    void nonVulnEventIsUntouchedByTheGuard() throws Exception {
+        // Regression guard: the deferral path must not leak onto event types
+        // that have no affectedReleases concept at all.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-IRRELEVANT");
+        event.setEventType(NotificationEventType.RELEASE_LIFECYCLE_CHANGED);
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(
+                subscriptionFor(orgUuid, List.of(NotificationEventType.RELEASE_LIFECYCLE_CHANGED),
+                        null, NotificationSeverity.LOW, channelUuid)));
+
+        fanOut.drainBatch(50);
+
+        assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
+        assertEquals(0, event.getEnrichmentAttemptCount());
+        verify(artifactRepo, never()).findArtifactsWithVulnId(anyString(), anyString());
+    }
+
     // ---------- S-3: affectedComponent enrichment ----------
 
     @Test
@@ -796,6 +1162,7 @@ class NotificationFanOutServiceTest {
         UUID channelUuid = UUID.randomUUID();
         NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-S3-1");
 
+        wireOneAffectedRelease(orgUuid, "CVE-2025-S3-1");
         when(artifactRepo.findVulnPurlsForVulnId(orgUuid.toString(), "CVE-2025-S3-1"))
                 .thenReturn(List.of("pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"));
 
@@ -860,6 +1227,7 @@ class NotificationFanOutServiceTest {
         UUID channelUuid = UUID.randomUUID();
         NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-S3-3");
 
+        wireOneAffectedRelease(orgUuid, "CVE-2025-S3-3");
         when(artifactRepo.findVulnPurlsForVulnId(orgUuid.toString(), "CVE-2025-S3-3"))
                 .thenReturn(List.of("not-a-valid-purl"));
 
@@ -910,12 +1278,13 @@ class NotificationFanOutServiceTest {
 
     @Test
     void noPurlsMeansNoAffectedComponentKey() throws Exception {
-        // CVE not present in any artifact's vulnerabilityDetails (or purls
-        // all null) → leave affectedComponent absent; formatters degrade.
+        // An artifact carries the vuln, but its findings have no purl ->
+        // leave affectedComponent absent; formatters degrade.
         UUID orgUuid = UUID.randomUUID();
         UUID channelUuid = UUID.randomUUID();
         NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-S3-4");
 
+        wireOneAffectedRelease(orgUuid, "CVE-2025-S3-4");
         when(artifactRepo.findVulnPurlsForVulnId(orgUuid.toString(), "CVE-2025-S3-4"))
                 .thenReturn(List.of());
 
@@ -970,6 +1339,7 @@ class NotificationFanOutServiceTest {
         UUID channelUuid = UUID.randomUUID();
         NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-S3-6");
 
+        wireOneAffectedRelease(orgUuid, "CVE-2025-S3-6");
         when(artifactRepo.findVulnPurlsForVulnId(orgUuid.toString(), "CVE-2025-S3-6"))
                 .thenReturn(List.of(
                         "pkg:maven/com.example/alpha@1.0.0",
@@ -996,6 +1366,7 @@ class NotificationFanOutServiceTest {
         UUID channelUuid = UUID.randomUUID();
         NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-S3-7");
 
+        wireOneAffectedRelease(orgUuid, "CVE-2025-S3-7");
         when(artifactRepo.findVulnPurlsForVulnId(anyString(), anyString()))
                 .thenThrow(new RuntimeException("postgres connection blip"));
 
@@ -2085,6 +2456,45 @@ class NotificationFanOutServiceTest {
     }
 
     /**
+     * State that the org's artifact metrics were refreshed AFTER the event was
+     * emitted, which is what makes an empty affected-release resolve provable
+     * and therefore suppressible.
+     *
+     * <p>Has to be stated explicitly rather than left to the default: Mockito
+     * hands back 0.0, not null, for an unstubbed boxed Double, and 0.0 reads as
+     * "last scanned at the epoch" -- hopelessly stale -- on which the guard
+     * correctly refuses to suppress.
+     */
+    private void wireMetricsScannedAfterEvent(UUID orgUuid, NotificationOutboxEvent event) {
+        double afterEvent = event.getOccurredAt().toInstant().toEpochMilli() / 1000.0 + 60;
+        when(artifactRepo.findMaxLastScannedEpochForOrg(orgUuid.toString())).thenReturn(afterEvent);
+    }
+
+    /**
+     * Satisfy the affected-release guard with one affected release, for tests
+     * whose actual subject is something else (affectedComponent enrichment,
+     * mostly). Without it those events resolve to zero affected releases and
+     * are deferred rather than delivered, so the assertion under test is never
+     * reached. Stubs the branch/component chain too: an unstubbed
+     * Optional-returning mock hands back null, which would throw inside
+     * enrichment and make the case UNRESOLVED instead of RESOLVED_NON_EMPTY.
+     */
+    private void wireOneAffectedRelease(UUID orgUuid, String cve) {
+        UUID artifactUuid = UUID.randomUUID();
+        UUID branchUuid = UUID.randomUUID();
+        UUID componentUuid = UUID.randomUUID();
+        when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), cve))
+                .thenReturn(List.of(artifactUuid));
+        when(sharedReleaseService.gatherReleasesForArtifact(artifactUuid, orgUuid))
+                .thenReturn(List.of(buildReleaseData(UUID.randomUUID(), orgUuid, branchUuid,
+                        componentUuid, "v1.0", ReleaseLifecycle.GENERAL_AVAILABILITY)));
+        when(branchService.getBranchData(branchUuid))
+                .thenReturn(Optional.of(buildBranchData("main")));
+        when(getComponentService.getComponentData(componentUuid))
+                .thenReturn(Optional.of(buildComponentData("carrier")));
+    }
+
+    /**
      * Phase 12 helper. Wires the full enrichment dependency chain so a
      * test only has to think about the inputs that matter for the
      * assertion (the component's perspectives, mostly).
@@ -2168,5 +2578,452 @@ class NotificationFanOutServiceTest {
             m.put("perspectives", perspectives.stream().map(UUID::toString).toList());
         }
         return Utils.OM.convertValue(m, ComponentData.class);
+    }
+
+    // ---------- T4a: owner-aware route targeting ----------
+
+    /** A vuln event whose affected release names a real component uuid. */
+    private NotificationOutboxEvent vulnEventForComponent(UUID componentUuid) {
+        NewVulnAffectsReleasesPayload payload = new NewVulnAffectsReleasesPayload(
+                "CVE-2025-99999", List.of(), 9.8, "vec", 0.5, true, "fix",
+                NotificationSeverity.CRITICAL, null,
+                List.of(new AffectedRelease(UUID.randomUUID(), componentUuid, "myapp",
+                        "v1.0", "main", null, List.of(), Set.of())));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> recordData = Utils.OM.convertValue(payload, Map.class);
+        NotificationOutboxEvent event = new NotificationOutboxEvent();
+        event.setUuid(UUID.randomUUID());
+        event.setOrg(UUID.randomUUID());
+        event.setEventType(NotificationEventType.NEW_VULN_AFFECTS_RELEASES);
+        event.setStatus(NotificationOutboxStatus.PENDING);
+        event.setOccurredAt(ZonedDateTime.now());
+        event.setRecordData(recordData);
+        return event;
+    }
+
+    @SuppressWarnings("unchecked")
+    private NotificationSubscription subscriptionNotifyingOwner(UUID org, List<UUID> directChannels) {
+        NotificationSubscriptionData data = new NotificationSubscriptionData(
+                org, null, "owner-routed sub",
+                NotificationSubscriptionStatus.ACTIVE,
+                List.of(NotificationEventType.NEW_VULN_AFFECTS_RELEASES),
+                new FilterConfig(EvaluationMode.PRESET, null, null),
+                List.of(new RouteConfig(NotificationSeverity.LOW, null, null,
+                        directChannels, null, null, null, Boolean.TRUE)),
+                null, null);
+        NotificationSubscription sub = new NotificationSubscription();
+        sub.setUuid(UUID.randomUUID());
+        sub.setRecordData(Utils.OM.convertValue(data, Map.class));
+        return sub;
+    }
+
+    @Test
+    void notifyComponentOwnerDeliversToTheOwnerTeamsChannel() throws Exception {
+        // The headline behaviour: nobody named a channel or a team, yet the
+        // component's owner team gets the delivery.
+        UUID componentUuid = UUID.randomUUID();
+        UUID ownerChannel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setOrg(event.getOrg());
+        when(getComponentService.getComponentData(componentUuid)).thenReturn(Optional.of(cd));
+        // Matches the COMPONENT, not any(): with any() the stub answers even for
+        // an EMPTY component list, so this passed against code that extracted no
+        // component at all. Verified by mutation before tightening it.
+        when(componentOwnershipService.resolveOwnerTeamChannels(
+                        argThat(cs -> cs != null && cs.stream()
+                                .anyMatch(c -> componentUuid.equals(c.getUuid()))),
+                        eq(event.getOrg())))
+                .thenReturn(List.of(ownerChannel));
+        stubChannelInOrg(ownerChannel, event.getOrg());
+
+        NotificationSubscription sub = subscriptionNotifyingOwner(event.getOrg(), List.of());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        ArgumentCaptor<NotificationDelivery> captor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(1)).save(captor.capture());
+        assertEquals(ownerChannel, captor.getValue().getChannelUuid());
+    }
+
+    @Test
+    void notifyComponentOwnerDedupesAgainstAnExplicitlyNamedChannel() throws Exception {
+        // A channel that is BOTH named on the route and the owner team's must
+        // produce exactly one delivery, not two.
+        UUID componentUuid = UUID.randomUUID();
+        UUID shared = UUID.randomUUID();
+        // An owner-ONLY channel alongside the shared one. Without it the
+        // assertion could not tell "the shared channel was deduped to one" from
+        // "owner routing resolved nothing and the one delivery is the named
+        // channel" -- so the test stayed green even with owner routing dead.
+        UUID ownerOnly = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setOrg(event.getOrg());
+        when(getComponentService.getComponentData(componentUuid)).thenReturn(Optional.of(cd));
+        when(componentOwnershipService.resolveOwnerTeamChannels(
+                        argThat(cs -> cs != null && cs.stream()
+                                .anyMatch(c -> componentUuid.equals(c.getUuid()))),
+                        eq(event.getOrg())))
+                .thenReturn(List.of(shared, ownerOnly));
+        stubChannelInOrg(shared, event.getOrg());
+        stubChannelInOrg(ownerOnly, event.getOrg());
+
+        NotificationSubscription sub = subscriptionNotifyingOwner(event.getOrg(), List.of(shared));
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        ArgumentCaptor<NotificationDelivery> captor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(2)).save(captor.capture());
+        List<UUID> channels = captor.getAllValues().stream()
+                .map(NotificationDelivery::getChannelUuid).toList();
+        assertEquals(1, channels.stream().filter(shared::equals).count(),
+                "a channel both named on the route and owned by the component gets ONE row");
+        assertTrue(channels.contains(ownerOnly),
+                "the owner team's other channel must still be delivered to");
+    }
+
+    @Test
+    void routesWithoutTheFlagNeverResolveOwnership() throws Exception {
+        // Cost control: ownership resolution reads the org's groups, the org
+        // record and every affected component. A route that did not ask for it
+        // must not pay for it.
+        UUID channelUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEvent(NotificationSeverity.CRITICAL);
+        stubChannelInOrg(channelUuid, event.getOrg());
+        NotificationSubscription sub = subscriptionWith(event.getOrg(), null,
+                NotificationSeverity.LOW, channelUuid);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        verify(componentOwnershipService, times(0)).resolveOwnerTeamChannels(any(), any());
+        verify(getComponentService, times(0)).getComponentData(any());
+    }
+
+    @Test
+    void ownerResolutionHappensOncePerEventNotOncePerSubscription() throws Exception {
+        // Three subscriptions all asking for the owner must resolve it once.
+        // Without the memo this is an N-subscriptions x M-components fan-out of
+        // DB reads on every event.
+        UUID componentUuid = UUID.randomUUID();
+        UUID ownerChannel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setOrg(event.getOrg());
+        when(getComponentService.getComponentData(componentUuid)).thenReturn(Optional.of(cd));
+        when(componentOwnershipService.resolveOwnerTeamChannels(any(), eq(event.getOrg())))
+                .thenReturn(List.of(ownerChannel));
+        stubChannelInOrg(ownerChannel, event.getOrg());
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(
+                subscriptionNotifyingOwner(event.getOrg(), List.of()),
+                subscriptionNotifyingOwner(event.getOrg(), List.of()),
+                subscriptionNotifyingOwner(event.getOrg(), List.of())));
+
+        fanOut.drainBatch(50);
+
+        verify(componentOwnershipService, times(1)).resolveOwnerTeamChannels(any(), any());
+        verify(getComponentService, times(1)).getComponentData(componentUuid);
+    }
+
+    @Test
+    void anUnownedComponentSimplyProducesNoDelivery() throws Exception {
+        // No owner is a normal state, not an error: the route contributes
+        // nothing and the batch carries on.
+        UUID componentUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setOrg(event.getOrg());
+        when(getComponentService.getComponentData(componentUuid)).thenReturn(Optional.of(cd));
+        // default stub: resolveOwnerTeamChannels -> empty
+
+        NotificationSubscription sub = subscriptionNotifyingOwner(event.getOrg(), List.of());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        assertDoesNotThrow(() -> fanOut.drainBatch(50));
+        verify(deliveryRepo, times(0)).save(any());
+    }
+
+    // ---------- ownedByTeam: a subscription scoped to one team's components ----------
+    //
+    // The property that matters throughout this section is ISOLATION. The whole
+    // reason this is a matching scope rather than the existing
+    // notifyComponentOwner destination is that the flag delivers to EVERY owner
+    // of an affected component; a per-team subscription built out of it would
+    // hand team A's events to team B. So the negative tests below are the point,
+    // not padding around the happy path.
+
+    /** A subscription scoped to {@code ownedByTeam}, delivering to a fixed channel. */
+    @SuppressWarnings("unchecked")
+    private NotificationSubscription subscriptionScopedToTeam(UUID org, UUID ownedByTeam, UUID channelUuid) {
+        NotificationSubscriptionData data = new NotificationSubscriptionData(
+                org, null, "team-scoped sub",
+                NotificationSubscriptionStatus.ACTIVE,
+                List.of(NotificationEventType.NEW_VULN_AFFECTS_RELEASES),
+                new FilterConfig(EvaluationMode.PRESET, null, null),
+                List.of(new RouteConfig(NotificationSeverity.LOW, null, null, List.of(channelUuid))),
+                null, null, ownedByTeam);
+        NotificationSubscription sub = new NotificationSubscription();
+        sub.setUuid(UUID.randomUUID());
+        sub.setRecordData(Utils.OM.convertValue(data, Map.class));
+        stubChannelInOrg(channelUuid, org);
+        return sub;
+    }
+
+    /** Register a component on the event's org and say which team owns it. */
+    private void stubComponentOwnedBy(NotificationOutboxEvent event, UUID componentUuid, UUID... ownerTeams) {
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setOrg(event.getOrg());
+        when(getComponentService.getComponentData(componentUuid)).thenReturn(Optional.of(cd));
+        // Matched on the COMPONENT rather than any(), for the reason recorded on
+        // the T4a stubs above: with any() the stub answers even for an EMPTY
+        // component list, so the assertion would pass against code that
+        // extracted no component at all.
+        when(componentOwnershipService.resolveOwnerTeams(
+                        argThat(cs -> cs != null && cs.stream()
+                                .anyMatch(c -> componentUuid.equals(c.getUuid()))),
+                        eq(event.getOrg())))
+                .thenReturn(new LinkedHashSet<>(List.of(ownerTeams)));
+    }
+
+    @Test
+    void teamScopedSubscriptionMatchesWhenItsTeamOwnsAnAffectedComponent() throws Exception {
+        UUID componentUuid = UUID.randomUUID();
+        UUID team = UUID.randomUUID();
+        UUID channel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        stubComponentOwnedBy(event, componentUuid, team);
+
+        NotificationSubscription sub = subscriptionScopedToTeam(event.getOrg(), team, channel);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        ArgumentCaptor<NotificationDelivery> captor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(1)).save(captor.capture());
+        assertEquals(channel, captor.getValue().getChannelUuid());
+    }
+
+    @Test
+    void teamScopedSubscriptionDoesNotMatchAnotherTeamsComponent() throws Exception {
+        // THE test. Same event, same channel, same everything -- except the
+        // component is owned by somebody else. If scoping were built on the
+        // owner-routing flag this would deliver, and one team would be reading
+        // another team's vulnerabilities.
+        UUID componentUuid = UUID.randomUUID();
+        UUID myTeam = UUID.randomUUID();
+        UUID someoneElse = UUID.randomUUID();
+        UUID channel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        stubComponentOwnedBy(event, componentUuid, someoneElse);
+
+        NotificationSubscription sub = subscriptionScopedToTeam(event.getOrg(), myTeam, channel);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, times(0)).save(any());
+    }
+
+    @Test
+    void teamScopedSubscriptionFailsClosedWhenOwnershipResolvesToNothing() throws Exception {
+        // Unowned component, user-owned component, archived owner team, or a
+        // payload carrying no component at all: all arrive here as an empty
+        // owner set. Delivering on "cannot tell" would send a team events about
+        // components it does not own, which is worse than silence and much
+        // harder to notice.
+        UUID componentUuid = UUID.randomUUID();
+        UUID team = UUID.randomUUID();
+        UUID channel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setOrg(event.getOrg());
+        when(getComponentService.getComponentData(componentUuid)).thenReturn(Optional.of(cd));
+        // default stub: resolveOwnerTeams -> empty
+
+        NotificationSubscription sub = subscriptionScopedToTeam(event.getOrg(), team, channel);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        assertDoesNotThrow(() -> fanOut.drainBatch(50));
+        verify(deliveryRepo, times(0)).save(any());
+    }
+
+    @Test
+    void oneEventMatchesEveryOwningTeamsOwnSubscription() throws Exception {
+        // An event can affect components owned by different teams. Each team's
+        // scoped subscription matches on its own account -- scoping restricts a
+        // team to its own components, it does not make ownership exclusive.
+        UUID componentUuid = UUID.randomUUID();
+        UUID teamA = UUID.randomUUID();
+        UUID teamB = UUID.randomUUID();
+        UUID channelA = UUID.randomUUID();
+        UUID channelB = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        stubComponentOwnedBy(event, componentUuid, teamA, teamB);
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(
+                subscriptionScopedToTeam(event.getOrg(), teamA, channelA),
+                subscriptionScopedToTeam(event.getOrg(), teamB, channelB)));
+
+        fanOut.drainBatch(50);
+
+        ArgumentCaptor<NotificationDelivery> captor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(2)).save(captor.capture());
+        assertEquals(Set.of(channelA, channelB), captor.getAllValues().stream()
+                .map(NotificationDelivery::getChannelUuid).collect(Collectors.toSet()));
+    }
+
+    @Test
+    void anUnscopedSubscriptionNeverResolvesOwnership() throws Exception {
+        // Every subscription that exists today is unscoped, and none of them
+        // should start paying for an ownership pass because this field was
+        // added. The supplier is lazy precisely so that an org with no scoped
+        // subscriptions sees no extra database work at all.
+        UUID componentUuid = UUID.randomUUID();
+        UUID channel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        NotificationSubscription sub = subscriptionWith(event.getOrg(), null,
+                NotificationSeverity.LOW, channel);
+        stubChannelInOrg(channel, event.getOrg());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, times(1)).save(any());
+        verify(componentOwnershipService, times(0)).resolveOwnerTeams(any(), any());
+    }
+
+    @Test
+    void ownershipResolvesOnceNoMatterHowManyScopedSubscriptionsMatch() throws Exception {
+        UUID componentUuid = UUID.randomUUID();
+        UUID team = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        stubComponentOwnedBy(event, componentUuid, team);
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(
+                subscriptionScopedToTeam(event.getOrg(), team, UUID.randomUUID()),
+                subscriptionScopedToTeam(event.getOrg(), team, UUID.randomUUID()),
+                subscriptionScopedToTeam(event.getOrg(), team, UUID.randomUUID())));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, times(3)).save(any());
+        verify(componentOwnershipService, times(1)).resolveOwnerTeams(any(), any());
+    }
+
+    @Test
+    void anOwnerRoutedRouteAndAScopedSubscriptionBothFireOnOneEvent() throws Exception {
+        // The overlap case the two suppliers exist for, and the one the design
+        // memo flags as a hazard: an org-wide owner-routed subscription and a
+        // team's own scoped subscription, matching the same event. BOTH deliver,
+        // because dedup is per-subscription -- so the same channel can receive
+        // two messages. That is the documented behaviour, and this test is here
+        // so that changing it is a deliberate act rather than a side effect.
+        UUID componentUuid = UUID.randomUUID();
+        UUID team = UUID.randomUUID();
+        UUID sharedChannel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        stubComponentOwnedBy(event, componentUuid, team);
+        // The owner-routing half resolves the SAME team's channel.
+        when(componentOwnershipService.resolveOwnerTeamChannels(
+                        argThat(cs -> cs != null && cs.stream()
+                                .anyMatch(c -> componentUuid.equals(c.getUuid()))),
+                        eq(event.getOrg())))
+                .thenReturn(List.of(sharedChannel));
+        stubChannelInOrg(sharedChannel, event.getOrg());
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(
+                subscriptionNotifyingOwner(event.getOrg(), List.of()),
+                subscriptionScopedToTeam(event.getOrg(), team, sharedChannel)));
+
+        fanOut.drainBatch(50);
+
+        ArgumentCaptor<NotificationDelivery> captor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(2)).save(captor.capture());
+        assertEquals(2, captor.getAllValues().stream()
+                .filter(d -> sharedChannel.equals(d.getChannelUuid())).count(),
+                "both subscriptions should deliver to the shared channel -- dedup is per-subscription");
+        // Components are fetched ONCE even though both halves consult ownership.
+        verify(getComponentService, times(1)).getComponentData(componentUuid);
+    }
+
+    @Test
+    void anUnreadableOwnershipLookupDoesNotTakeDownTheBatch() throws Exception {
+        // Mirror of the resolveOwnerTeamChannels containment test in
+        // NotificationDrainTransactionTest: a throwing ownership lookup must cost
+        // the scoped subscription, not the drain.
+        UUID componentUuid = UUID.randomUUID();
+        UUID team = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        ComponentData cd = new ComponentData();
+        cd.setUuid(componentUuid);
+        cd.setOrg(event.getOrg());
+        when(getComponentService.getComponentData(componentUuid)).thenReturn(Optional.of(cd));
+        when(componentOwnershipService.resolveOwnerTeams(any(), any()))
+                .thenThrow(new RuntimeException("record_data unreadable"));
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(
+                subscriptionScopedToTeam(event.getOrg(), team, UUID.randomUUID())));
+
+        assertDoesNotThrow(() -> fanOut.drainBatch(50));
+        verify(deliveryRepo, times(0)).save(any());
+    }
+
+    @Test
+    void aScopedSubscriptionStillHonoursItsEventTypeAndSeverityGate() throws Exception {
+        // Scoping is an ADDITIONAL predicate, not a replacement: owning the
+        // component does not exempt a subscription from the gates every other
+        // subscription passes. Same owner, same team, severity gate the event
+        // cannot clear.
+        UUID componentUuid = UUID.randomUUID();
+        UUID team = UUID.randomUUID();
+        UUID channel = UUID.randomUUID();
+        NotificationOutboxEvent event = vulnEventForComponent(componentUuid);
+        stubComponentOwnedBy(event, componentUuid, team);
+
+        @SuppressWarnings("unchecked")
+        NotificationSubscriptionData data = new NotificationSubscriptionData(
+                event.getOrg(), null, "scoped but gated",
+                NotificationSubscriptionStatus.ACTIVE,
+                // The event is NEW_VULN_AFFECTS_RELEASES; this listens for something else.
+                List.of(NotificationEventType.RELEASE_CREATED),
+                new FilterConfig(EvaluationMode.PRESET, null, null),
+                List.of(new RouteConfig(NotificationSeverity.LOW, null, null, List.of(channel))),
+                null, null, team);
+        NotificationSubscription sub = new NotificationSubscription();
+        sub.setUuid(UUID.randomUUID());
+        sub.setRecordData(Utils.OM.convertValue(data, Map.class));
+        stubChannelInOrg(channel, event.getOrg());
+
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(event.getOrg())).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        verify(deliveryRepo, times(0)).save(any());
+        // And it short-circuited on event type: ownership was never consulted.
+        verify(componentOwnershipService, times(0)).resolveOwnerTeams(any(), any());
     }
 }

@@ -50,11 +50,10 @@ public interface ReleaseChangeHook {
 	void onReleaseCreated(ReleaseData rd, boolean scheduled);
 
 	/**
-	 * Fires when a release lifecycle transition occurs that the legacy
-	 * Slack/Teams path notified on (DRAFT / ASSEMBLED / CANCELLED /
-	 * REJECTED). The caller gates which transitions reach this method to
-	 * preserve pre-Phase-2b-2 behaviour; the SAAS impl emits a
-	 * {@code RELEASE_LIFECYCLE_CHANGED} event carrying old → new.
+	 * Fires on any release lifecycle transition. The caller gates on the two
+	 * lifecycles actually differing, so a re-save that does not move the
+	 * lifecycle never reaches here; the SAAS impl emits a
+	 * {@code RELEASE_LIFECYCLE_CHANGED} event carrying old -> new.
 	 */
 	void onReleaseLifecycleChanged(ReleaseData rd, ReleaseLifecycle oldLifecycle, ReleaseLifecycle newLifecycle);
 

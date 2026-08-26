@@ -132,6 +132,39 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		}
 
 		/**
+		 * Lifecycles for which finding-change events are NOT emitted, because the release's metrics
+		 * are not a statement about shipped software.
+		 *
+		 * <p>CANCELLED / REJECTED never assembled, so their metrics may be half-finished.
+		 *
+		 * <p><b>PENDING is deliberately NOT in this set</b>, though an earlier revision of this change
+		 * added it on the theory that a rebuild's churn through PENDING is build noise. That theory was
+		 * wrong twice over. First, the churn it aimed at is the collapse-to-zero that findings
+		 * carry-forward now removes AT SOURCE, so suppressing here is redundant. Second, and worse,
+		 * PENDING is where a brand-new release's FIRST scan usually lands -- CI creates the release as
+		 * PENDING and Dependency-Track returns minutes later, still PENDING -- so suppressing drops the
+		 * genuine first-APPEARED for the release's whole finding set. Nothing re-emits when it settles:
+		 * the lifecycle flip recomputes, but the metrics are unchanged, so {@code saveReleaseMetrics}
+		 * never fires and no emit is scheduled. The sweep then labels the hole EMIT_SKIPPED_LIFECYCLE,
+		 * which reads as benign, so the missing events would not even show up in the cause histogram.
+		 * Suppressing a transient state must never be paid for in lost real events.
+		 *
+		 * <p><b>This lives here because the rule has FOUR consumers</b> -- the live emitter, the
+		 * repair sweep's predecessor selection, its repair-cause classification, and its
+		 * repair-detail guard -- and it has already drifted once, when one site omitted the
+		 * lifecycle arm and a benign skip was reported to the operator as a lost write. Add a
+		 * lifecycle here, not at the call sites, and keep the operator-facing text in
+		 * {@code FindingChangeEventBackfillService} in step with it.
+		 *
+		 * <p>Deliberately NOT the same set as {@code isScannableLifecycle} (>= ASSEMBLED), which
+		 * additionally excludes DRAFT and PENDING. Both keep emitting: DRAFT is a deliberate user state
+		 * that can hold real scanned BOMs indefinitely, and PENDING carries first scans (above).
+		 */
+		public static boolean isFindingChangeEmitSuppressed(ReleaseLifecycle rl) {
+			return rl == CANCELLED || rl == REJECTED;
+		}
+
+		/**
 		 * True once a release has reached {@link #END_OF_SUPPORT} or later (currently END_OF_SUPPORT,
 		 * END_OF_LIFE, and any future terminal state added after them). Such releases are retired and
 		 * are hidden from finding-change DISPLAY surfaces: the findings-over-time CHART

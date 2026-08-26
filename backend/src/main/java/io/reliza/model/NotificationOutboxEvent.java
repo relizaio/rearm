@@ -92,6 +92,39 @@ public class NotificationOutboxEvent implements Serializable, RelizaEntity {
 	@Column(name = "channel_test_target")
 	private UUID channelTestTarget;
 
+	/**
+	 * How many times fan-out has looked at this event, found its affected
+	 * releases still unresolvable, and deliberately put it back.
+	 *
+	 * <p>Named for enrichment specifically, NOT "attemptCount", even though the
+	 * sibling {@code notification_deliveries.attempt_count} is spelled that way.
+	 * The two mean opposite things: the delivery column counts FAILURES, while
+	 * this one counts deliberate deferrals -- a throw out of fan-out marks the
+	 * event FAILED and never reaches here. Sharing the generic name would invite
+	 * a future transient-retry path to increment the same counter on a DB blip,
+	 * after which the affected-release guard would read a number it did not
+	 * write, believe its budget was spent, and suppress a real vulnerability
+	 * event on the first look. One counter, one policy.
+	 *
+	 * <p>Bounded by {@code NotificationFanOutService.MAX_ENRICHMENT_ATTEMPTS}.
+	 */
+	@Column(nullable = false, name = "enrichment_attempt_count")
+	private int enrichmentAttemptCount = 0;
+
+	/**
+	 * Eligibility gate for the drain: {@code findPendingBatch} skips rows whose
+	 * {@code next_attempt_at} is still in the future. Defaults to now, so an
+	 * ordinary event is eligible the instant it commits and the deferral
+	 * machinery costs undeferred events nothing.
+	 *
+	 * <p>Unlike its {@code notification_deliveries} counterpart, this does NOT
+	 * drive the drain's ordering -- the outbox keeps {@code ORDER BY
+	 * occurred_at} because the approvals path depends on that FIFO. See the
+	 * V76 migration comment.
+	 */
+	@Column(nullable = false, name = "next_attempt_at")
+	private ZonedDateTime nextAttemptAt = ZonedDateTime.now();
+
 	@Type(JsonBinaryType.class)
 	@Column(columnDefinition = ModelProperties.JSONB)
 	private Map<String, Object> recordData;
@@ -123,4 +156,10 @@ public class NotificationOutboxEvent implements Serializable, RelizaEntity {
 	public void setOrigin(NotificationDeliveryOrigin origin) { this.origin = origin; }
 	public UUID getChannelTestTarget() { return channelTestTarget; }
 	public void setChannelTestTarget(UUID channelTestTarget) { this.channelTestTarget = channelTestTarget; }
+	public int getEnrichmentAttemptCount() { return enrichmentAttemptCount; }
+	public void setEnrichmentAttemptCount(int enrichmentAttemptCount) {
+		this.enrichmentAttemptCount = enrichmentAttemptCount;
+	}
+	public ZonedDateTime getNextAttemptAt() { return nextAttemptAt; }
+	public void setNextAttemptAt(ZonedDateTime nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }
 }

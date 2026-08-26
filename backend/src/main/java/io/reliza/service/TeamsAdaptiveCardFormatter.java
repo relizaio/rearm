@@ -13,11 +13,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import io.reliza.common.Utils;
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.NotificationEventType;
 import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.ApprovalRequestEntryRef;
 import io.reliza.model.dto.notifications.ApprovalRequestedPayload;
 import io.reliza.model.dto.notifications.ApprovalResolvedPayload;
 import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentItem;
+import io.reliza.model.dto.notifications.InstanceRef;
+import io.reliza.model.dto.UpdateStatus;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
@@ -96,6 +102,7 @@ public class TeamsAdaptiveCardFormatter {
             case RELEASE_BOM_DIFF -> renderReleaseBomDiff(event);
             case APPROVAL_REQUESTED -> renderApprovalRequested(event);
             case APPROVAL_RESOLVED -> renderApprovalResolved(event);
+            case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event);
         };
     }
 
@@ -296,6 +303,170 @@ public class TeamsAdaptiveCardFormatter {
         if (!facts.isEmpty()) body.add(factSet(facts));
 
         return adaptiveCard(body, releaseAction(r));
+    }
+
+    private Map<String, Object> renderInstanceDeployment(NotificationOutboxEvent event) {
+        InstanceDeploymentChangedPayload p = deserialize(event, InstanceDeploymentChangedPayload.class);
+        if (p == null || p.instance() == null) return fallbackCard(event);
+        InstanceRef instance = p.instance();
+
+        boolean failed = event.getEventType() == NotificationEventType.INSTANCE_DEPLOYMENT_FAILED;
+
+        // Instance appears ONCE, linked, on the title line -- no separate
+        // "Instance:" fact and no "View Instance" action repeating it. Adaptive
+        // Card TextBlocks render markdown links reliably even where **bold** is
+        // flaky, so the link rides the title text.
+        String instanceLabel = instanceLabel(instance);
+        String instanceUrl = instanceUrl(event, instance);
+        String linkedInstance = instanceUrl != null
+                ? "[" + instanceLabel + "](" + instanceUrl + ")"
+                : instanceLabel;
+        String title = failed
+                ? "Deployment error on instance " + linkedInstance
+                : "Event for the instance " + linkedInstance;
+
+        // Inner blocks live inside a tone-styled Container so the whole card
+        // carries a good/warning/attention accent (Adaptive Cards keep colour
+        // to the named palette, so we map the shared Tone rather than a hex).
+        List<Map<String, Object>> inner = new ArrayList<>();
+        inner.add(textBlock(title, "Large", "Bolder", severityColor(p.severity())));
+
+        // One compact, subtle meta line: summary | Env | settled-at, shared with Slack.
+        List<String> meta = new ArrayList<>();
+        String summary = InstanceDeploymentRenderSupport.summarize(p.items());
+        if (StringUtils.isNotBlank(summary)) meta.add(summary);
+        if (StringUtils.isNotBlank(instance.environment())) meta.add("Env: " + instance.environment());
+        // Teams renders unicode/text, so a readable RFC-3339 instant is fine here
+        // (no Slack-style viewer-local date token). Post time can differ from
+        // settle time because of the coalesce window.
+        if (event.getOccurredAt() != null) meta.add("Settled " + event.getOccurredAt().toInstant());
+        if (!meta.isEmpty()) {
+            Map<String, Object> metaBlock = textBlock(String.join("  |  ", meta), "Small", "Lighter", "Default");
+            metaBlock.put("isSubtle", true);
+            inner.add(metaBlock);
+        }
+
+        List<InstanceDeploymentItem> items = p.items();
+        if (items != null && !items.isEmpty()) {
+            int cap = Math.min(items.size(), 10);
+            for (int i = 0; i < cap; i++) {
+                InstanceDeploymentItem item = items.get(i);
+                if (item == null) continue;
+                StringBuilder line = new StringBuilder();
+                String glyph = statusGlyph(item.status());
+                if (!glyph.isEmpty()) line.append(glyph).append(' ');
+                // The leading glyph is the status; no redundant "Status: X" text.
+                // Link the component name and the settled version when ids exist.
+                line.append(componentTypeLabel(item.componentType()))
+                        .append(": ").append(componentNameLink(event, item))
+                        .append(". Namespace: ").append(StringUtils.defaultString(item.namespace()));
+                if (StringUtils.isNotBlank(item.version())) {
+                    line.append(". Version: ");
+                    if (StringUtils.isNotBlank(item.fromVersion())) {
+                        line.append(item.fromVersion()).append(" -> ");
+                    }
+                    line.append(versionLink(item));
+                }
+                if (StringUtils.isNotBlank(item.failureReason())) {
+                    line.append(". Reason: ").append(item.failureReason());
+                }
+                inner.add(textBlock(line.toString(), "Medium", "Default", "Default"));
+            }
+            if (items.size() > cap) {
+                inner.add(textBlock("…and " + (items.size() - cap) + " more", "Medium", "Default", "Default"));
+            }
+        }
+
+        Map<String, Object> container = new HashMap<>();
+        container.put("type", "Container");
+        container.put("style", toneStyle(InstanceDeploymentRenderSupport.tone(p.statuses())));
+        container.put("items", inner);
+        List<Map<String, Object>> body = new ArrayList<>();
+        body.add(container);
+
+        return adaptiveCard(body, List.of());
+    }
+
+    /** Instance display label: uri, then name, then uuid. */
+    private static String instanceLabel(InstanceRef instance) {
+        if (instance == null) return "(unknown instance)";
+        if (StringUtils.isNotBlank(instance.uri())) return instance.uri();
+        if (StringUtils.isNotBlank(instance.name())) return instance.name();
+        return instance.uuid() != null ? instance.uuid().toString() : "(unknown instance)";
+    }
+
+    /** Deep-link URL to the instance page; null when links are disabled / data is missing. */
+    private String instanceUrl(NotificationOutboxEvent event, InstanceRef instance) {
+        if (!hasBaseUri() || instance == null || instance.uuid() == null || event.getOrg() == null) {
+            return null;
+        }
+        return webBaseUri + "/instancesOfOrg/" + event.getOrg() + "/" + instance.uuid();
+    }
+
+    /**
+     * Customer-facing component-type label. Switches on {@link ComponentType}
+     * directly (no default) so a future enum value compiles-errors rather than
+     * silently mislabelling. PRODUCT reads as "Bundle", COMPONENT as "Project".
+     */
+    private static String componentTypeLabel(ComponentType componentType) {
+        if (componentType == null) return "Component";
+        return switch (componentType) {
+            case PRODUCT -> "Bundle";
+            case COMPONENT -> "Project";
+            case ANY -> "Component";
+        };
+    }
+
+    /** Component/project name as a markdown link to its ReARM page, or plain when links are off. */
+    private String componentNameLink(NotificationOutboxEvent event, InstanceDeploymentItem item) {
+        String name = StringUtils.defaultString(item.name());
+        if (hasBaseUri() && item.componentUuid() != null && event.getOrg() != null) {
+            return "[" + name + "](" + webBaseUri + "/componentsOfOrg/" + event.getOrg() + "/"
+                    + item.componentUuid() + ")";
+        }
+        return name;
+    }
+
+    /** Settled version as a markdown link to its release page, or plain when links are off. */
+    private String versionLink(InstanceDeploymentItem item) {
+        String v = StringUtils.defaultString(item.version());
+        if (hasBaseUri() && item.releaseUuid() != null) {
+            return "[" + v + "](" + webBaseUri + "/release/show/" + item.releaseUuid() + ")";
+        }
+        return v;
+    }
+
+    /**
+     * Unicode status glyph for an item -- Teams renders these natively in the
+     * card body. Switches on {@link UpdateStatus} directly (no default) so a
+     * future enum value compiles-errors rather than silently dropping its
+     * glyph. REQUESTED / NONE are internal states with no user-facing glyph.
+     */
+    private static String statusGlyph(UpdateStatus status) {
+        if (status == null) return "";
+        return switch (status) {
+            case CONVERGED -> "\u2705";      // white check mark
+            case ERROR -> "\u274C";          // cross mark
+            case IN_PROGRESS -> "\u23F3";    // hourglass
+            case UNDEPLOYED -> "\u2B07";     // down arrow
+            case RECOVERED -> "\u21A9";      // leftwards hook
+            case NEW -> "\u2728";            // sparkles
+            case REQUESTED, NONE -> "";
+        };
+    }
+
+    /**
+     * Maps the shared {@link InstanceDeploymentRenderSupport.Tone} to an
+     * Adaptive Card Container {@code style}. Adaptive Cards keep colour to a
+     * named palette, so the {@code colorHex} the other channels use isn't
+     * applicable here -- GOOD/WARNING/DANGER become good/warning/attention.
+     */
+    private static String toneStyle(InstanceDeploymentRenderSupport.Tone tone) {
+        return switch (tone) {
+            case GOOD -> "good";
+            case WARNING -> "warning";
+            case DANGER -> "attention";
+        };
     }
 
     /** Comma-joined approval entry names (capped at 10); null when none are usable. */

@@ -3,13 +3,20 @@
 */
 package io.reliza.service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +63,13 @@ public class ReleaseMetricsComputeService {
 	@Autowired
 	private KevAssertionService kevAssertionService;
 
+	/** Diagnostics only: re-derives which artifacts the SCE contributed, which the union erases. */
+	@Autowired
+	private GetSourceCodeEntryService getSourceCodeEntryService;
+
+	/** Bounds the uuid samples carried by the diagnostic lines. Matches RepairTally.SAMPLE_LIMIT. */
+	private static final int SAMPLE_LIMIT = 5;
+
 	@Transactional
 	public Optional<Release> getReleaseWriteLocked(UUID uuid) {
 		return repository.findByIdWriteLocked(uuid);
@@ -87,15 +101,27 @@ public class ReleaseMetricsComputeService {
 			// makes `release.firstScanned` a reliable "scan complete" signal
 			// for CEL conditions on policy-wide rules (notably PR_COMMENT).
 			final boolean[] anyBomUnscanned = { false };
+			// Diagnostic counters for the metrics-loss probe: when a release loses findings with every completeness
+			// flag false, the merge had nothing to merge -- the question is whether the artifacts were not
+			// gathered, did not resolve, or resolved with no metrics. anyBomUnscanned cannot answer it,
+			// because it is only ever set INSIDE this loop: no artifacts means no flag.
+			final int[] artsResolved = { 0 };
+			final int[] artsFindings = { 0 };
+			final List<UUID> artsUnresolved = new ArrayList<>();
 			allReleaseArts.forEach(aid -> {
 				var ad = artifactService.getArtifactData(aid);
+				if (ad.isEmpty() && artsUnresolved.size() < SAMPLE_LIMIT) {
+					artsUnresolved.add(aid);
+				}
 				if (ad.isPresent()) {
+					artsResolved[0]++;
 					ArtifactData artifactData = ad.get();
 					if (artifactData.getType() == ArtifactType.BOM) {
 						hasAnyBomArtifact[0] = true;
 					}
 					ReleaseMetricsDto artifactMetrics = artifactData.getMetrics();
 					if (artifactMetrics != null) {
+						artsFindings[0] += countFindings(artifactMetrics);
 						// Set attributedAt to artifact creation date for findings that don't have it
 						artifactMetrics.setAttributedAtFallback(artifactData.getCreatedDate());
 						rmd.mergeWithByContent(artifactMetrics);
@@ -116,7 +142,48 @@ public class ReleaseMetricsComputeService {
 					}
 				}
 			});
+			// RELEASE-LEVEL HOLD. A release whose gathered artifacts contribute ZERO findings, but which
+			// previously HAD findings, has not remediated -- its inputs are pending or missing. Two shapes,
+			// one rule:
+			//   * gathered=0 -- ALL_ARTIFACTS_GONE: the artifacts were dereferenced (a rebuild repointed the
+			//     SCE / cleared the list before the replacement landed; see ai-agents/all-artifacts-gone-
+			//     hold-design.md). Carry-forward (#433) cannot help -- there is no replacement to seed.
+			//   * gathered>=1 but every gathered BOM is unscanned -- the CI-rebuild SWAP: the old BOM was
+			//     replaced by a brand-new unscanned one. #433's artifact seed covers this ONLY when its
+			//     deliverable pairing succeeds; when the pairing declines (an unstable/absent CI-supplied
+			//     displayIdentifier), the release collapses. This holds it regardless, with NO pairing.
+			//
+			// Left to the normal path either shape re-derives to a confident ZERO and emits a phantom
+			// all-RESOLVED cycle -- the emit_disagreed alert. Instead HOLD the last-known findings by not
+			// overwriting them, and fence for retry. It self-heals the moment a scan lands (gathered
+			// contributes findings, this branch no longer fires), and surfaces in [METRICS-STALLED] if it
+			// never does.
+			//
+			// UNION-SAFE by construction, which is what sank the earlier in-compute guards ("additions must
+			// never wait; only losses may"): the trigger is artsFindings==0 -- NO gathered artifact carries
+			// ANY finding -- so there is nothing to withhold. The moment any artifact contributes a finding
+			// (a partial rebuild where one BOM scanned and added a new CVE while another is pending), the
+			// guard does NOT fire, the normal union write runs, and that addition is published immediately;
+			// the still-pending BOM's granular carry is #433's job, not this net's. A genuinely clean scan
+			// (a gathered BOM that scanned to zero -- remediation) also does not fire: artsFindings==0 but
+			// the gather is non-empty AND nothing is unscanned, so neither arm of the OR is true.
+			// LEAF only -- a PRODUCT derives from its children (the rollup below), not its own artifacts.
+			boolean hasChildRels = rd.getParentReleases() != null && !rd.getParentReleases().isEmpty();
+			if (!hasChildRels
+					&& isScannableLifecycle(rd.getLifecycle())
+					&& countFindings(originalMetrics) > 0
+					&& artsFindings[0] == 0
+					&& (allReleaseArts.isEmpty() || anyBomUnscanned[0])) {
+				// Hold: return WITHOUT writing, so the persisted findings stay put -- no zero, no phantom
+				// emit, no settle -- and fence for retry exactly like a scan-incomplete release.
+				fenceIncompleteCompute(r);
+				return false;
+			}
 			ReleaseMetricsDto rolledUp = rollUpProductReleaseMetrics(rd);
+			// Counted separately from the artifact sum: a PRODUCT release's findings come from its children,
+			// not its own artifacts, so a rollup collapse would otherwise read as "artifacts empty" on the
+			// loss line and send the reader to the wrong subsystem entirely.
+			int rollupFindings = countFindings(rolledUp);
 			rmd.mergeWithByContent(rolledUp);
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, rmd);
 			// Stamp KEV membership onto each finding, then re-derive kevCount.
@@ -236,23 +303,7 @@ public class ReleaseMetricsComputeService {
 			// minutes — keeps today's per-minute retry latency. A complete compute
 			// drops the fence so any future wait starts fresh.
 			if (scanIncomplete) {
-				repository.recordMetricsComputeIncomplete(r.getUuid(),
-						nextMetricsComputeBackoffSeconds(r.getFlowControl()));
-				// Surface long-running stalls: the fence is by-design silent
-				// (waiting on an external event is normal), but a release
-				// that has been incomplete for ~a day of hourly retries is
-				// stuck on something that will not arrive by itself — e.g. a
-				// BOM artifact that never reached scanning (2026-07-12 prod
-				// incident sat like this for 11 days / 266 attempts with no
-				// signal). Warn once per ~24 capped-backoff attempts.
-				FlowControl fcNow = r.getFlowControl();
-				int attemptsNow = (fcNow != null && fcNow.metricsComputeFailureCount() != null)
-						? fcNow.metricsComputeFailureCount() : 0;
-				if (attemptsNow > 0 && attemptsNow % 24 == 0) {
-					log.warn("Metrics compute for release {} has been incomplete for {} attempts — "
-							+ "likely waiting on an artifact that never reached scanning; "
-							+ "check its BOM artifacts' scan state", r.getUuid(), attemptsNow);
-				}
+				fenceIncompleteCompute(r);
 			} else {
 				repository.clearMetricsComputeBackoff(r.getUuid());
 			}
@@ -267,8 +318,101 @@ public class ReleaseMetricsComputeService {
 			// the BY_UPDATE pool and drops its fence in one statement; multi-level
 			// products chain one level per tick, and the chain terminates as soon
 			// as a level's aggregate comes out unchanged.
+			// Separate tag, separate condition: something in this release's artifact GRAPH points at a
+			// row that is not there, whatever happened to the findings. NOT "unreachable" -- an earlier
+			// comment claimed that on the grounds that ArtifactRepository declares no delete method, but
+			// it extends CrudRepository, so deleteById exists, and there are no FOREIGN KEYs to constrain
+			// record_data.artifacts either (house rule). It is observed in practice.
+			// OUTSIDE the metrics-changed block on purpose: a release whose metrics are healthy and steady never
+			// re-enters that block, which is exactly the standing population this probe exists to surface.
+			// Deliberately does NOT say the RELEASE holds the bad reference: gatherReleaseArtifacts
+			// unions three owners -- the release's own artifacts, the SCE's, and every variant's outbound
+			// deliverables' -- so the dangling uuid may belong to any of them. The uuids are printed
+			// precisely because this probe cannot name the owner and the reader has to go look.
+			if (artsResolved[0] < allReleaseArts.size()) {
+				log.error("[ARTIFACT-REF-MISSING] release {} v{}: {} of {} gathered artifact reference(s) "
+						+ "do not resolve. The reference may be held by the release, its source code "
+						+ "entry, or a variant's outbound deliverables -- unresolved (up to {}): {}",
+						r.getUuid(), rd.getVersion(), allReleaseArts.size() - artsResolved[0],
+						allReleaseArts.size(), SAMPLE_LIMIT, artsUnresolved);
+			}
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
+				// DIAGNOSTIC (prod incident 2026-08-13): rmd is re-derived by MERGING artifact metrics,
+				// so it is only as complete as the artifacts are at this instant. When it comes out smaller
+				// than what is already persisted, the release visibly loses findings -- and the resulting
+				// flap is what makes the v3 live emit see an EMPTY pre-image on the next scan, misread a
+				// re-appearance as a first scan, and disagree with the repair sweep.
+				// rev= is the revision saveReleaseMetrics stamps THIS write's audit row with. It is NOT the
+				// revision the repair sweep will report the resulting disagreement at -- hence
+				// disagreesAtRev=rev+1, and do not "correct" it. An audit row holds the state its write
+				// REPLACED, so the pair stamped @rev(R) has a NON-empty older side and produces no
+				// disagreement; it is the RECOVERY write R+1, whose audit row holds the empty snapshot, that
+				// gives the sweep an empty older side, makes the live emit misread a re-appearance as a first
+				// scan, and shows up as emit_disagreed @rev(R+1). Verified against production: a sample
+				// entry reading @rev3 firstScan=true corresponds to the loss logged at rev=2.
+				// It is a LOWER BOUND, not an equality: if the release never recovers there is no
+				// disagreement at all, and a write that stays at zero while changing firstScanned (which
+				// IS in ReleaseMetricsDto.equals, unlike lastScanned) pushes the recovery out to rev+2.
+				// ONE EXCEPTION: on the duplicate-revision repair path saveReleaseMetrics stamps the audit
+				// row with maxAuditRevision + 1 instead, so BOTH numbers here are wrong for that write. It
+				// logs its own "Duplicate metrics audit revision detected" ERROR, so it is detectable.
+				// (updateMetrics bumps metrics_revision in the same statement as the write --
+				// ReleaseRepository, "SET metrics_revision = metrics_revision + 1".)
+				// artifactFindings vs rollupFindings says which SUBSYSTEM lost them -- a product release's
+				// findings come from its children, so artifactFindings=0 is normal there and only a drop in
+				// rollupFindings is meaningful.
+				// READING THE LINE: gathered=0, or resolved below gathered, means the artifacts VANISHED
+				// from the release rather than losing findings in place -- note anyBomUnscanned can only be
+				// set for an artifact that was actually gathered, so it reads false when there is nothing to
+				// flag. If instead the artifacts are all present with metrics, look for the truncation probe
+				// on this release (search: was wiped by an authoritative scan result). artifactFindings is a
+				// PRE-MERGE sum, so it legitimately exceeds the release total once mergeWithByContent
+				// dedupes. Both completeness states have been observed in production, so a gate on
+				// scanIncomplete would only ever catch some of these.
+				// The completeness flags ANSWERED that question, so it is no longer open. Measured over one
+				// production night (2026-08-13 overnight, 59 loss lines): 51 carried scanIncomplete=true
+				// and 8 carried false, so a scan-completeness guard could address at most 51/59 ~= 86%.
+				// Most of the 8 are the gathered=0 shape (7 lines), i.e. a release that lost its artifact
+				// list entirely. Note that is a DATA observation, not a code property: scanIncomplete is
+				// (anyBomUnscanned || childrenIncomplete) && isScannableLifecycle, so a product with no
+				// artifacts and an incomplete child can be gathered=0 AND scanIncomplete=true. Keep the
+				// flags -- they are what separates the two populations.
+				int hadFindings = countFindings(originalMetrics);
+				int nowFindings = countFindings(rmd);
+				// TOTAL collapse, not any shrink. A partial drop is remediation, a VEX suppression, or the
+				// alias/dedup collapse inside processReleaseMetricsDto -- all legitimate, all common, and
+				// paging on them would drown the monitored channel. Everything reaching zero is the shape
+				// that flaps, and it covers BOTH reachable causes: the artifact list emptied (gathered=0)
+				// and the artifacts present but contributing nothing.
+				boolean collapsedToZero = isTotalFindingCollapse(hadFindings, nowFindings);
+				if (nowFindings < hadFindings) {
+					recordFindingLoss(hadFindings, nowFindings, collapsedToZero, scanIncomplete,
+							!isScannableLifecycle(rd.getLifecycle()));
+				}
+				// A dangling reference is a SEPARATE condition and gets its own line below -- it is not a
+				// loss, and OR-ing it in here produced "[METRICS-LOSS] findings 451 -> 451" on releases that
+				// lost nothing. Measured on the sandbox: 11 of 424 release->artifact references point at
+				// rows that do not resolve, on releases with entirely healthy metrics.
+				// ERROR-log a per-release loss ONLY for a SCANNABLE (ASSEMBLED+) release. A collapse on a
+				// sub-ASSEMBLED release (PENDING = CI-created, DRAFT = manual edit) is expected pre-release
+				// churn -- the artifact is dereferenced on rebuild before the replacement lands -- and is
+				// deliberately NOT held (holding sub-ASSEMBLED would form the unbounded fenced-draft
+				// population, all-artifacts-gone-hold-design.md 5.1). ERROR-logging it just pages on benign
+				// churn: production showed 100% of collapses were lifecycle=PENDING (gauge collapses ==
+				// subAssembledCollapses). The gauge still counts these via subAssembledCollapses (recorded
+				// above, unconditionally) for aggregate visibility; a real ASSEMBLED+ loss still emits here.
+				if (collapsedToZero && isScannableLifecycle(rd.getLifecycle())) {
+					log.error("[METRICS-LOSS] {} v{} lifecycle={} rev={} disagreeAtRev>={} findings={}->{} "
+							+ "| anyBomUnscanned={} childrenIncomplete={} scanIncomplete={} "
+							+ "| gathered={} resolved={} artifactFindings={} rollupFindings={} hasAnyBom={}",
+							r.getUuid(), rd.getVersion(), rd.getLifecycle(), r.getMetricsRevision(), r.getMetricsRevision() + 1,
+							hadFindings, nowFindings,
+							anyBomUnscanned[0], childrenIncomplete, scanIncomplete,
+							allReleaseArts.size(), artsResolved[0], artsFindings[0],
+							rollupFindings, hasAnyBomArtifact[0]);
+					logLossProvenance(r, rd, originalMetrics, allReleaseArts);
+				}
 				sharedReleaseService.saveReleaseMetrics(r, rmd);
 				markContainingProductsStale(rd);
 				return true;
@@ -282,6 +426,420 @@ public class ReleaseMetricsComputeService {
 			}
 		}
 		return false;
+	}
+
+	// ---- hourly finding-loss gauge -------------------------------------------------------------
+	// [METRICS-LOSS] fires only on a TOTAL collapse, deliberately: the "any shrink" version of that
+	// predicate would have fired 4544 times against production history without once catching the shape
+	// it exists for. That leaves PARTIAL losses completely invisible, so nobody knows how big that
+	// population is. Since ERROR is the only log level this instance retains, per-release partial
+	// reporting is not an option -- it would flood the sole alerting channel. An instance-wide gauge,
+	// emitted at most hourly, sizes the population without naming releases. Same idiom as
+	// [METRICS-BACKLOG] in ReleaseService.
+	private final AtomicLong lossGaugeReleases = new AtomicLong();
+	private final AtomicLong lossGaugeFindings = new AtomicLong();
+	private final AtomicLong lossGaugeTotalCollapses = new AtomicLong();
+	// Collapses on a sub-ASSEMBLED release (PENDING = CI-created, DRAFT = manual edit). These emit finding
+	// changes but are deliberately NOT held -- holding them would form the unbounded fenced-draft population
+	// (see all-artifacts-gone-hold-design.md 5.1). Counted as a subset of collapses so the gauge shows how
+	// much of the loss volume is expected pre-release churn versus an ASSEMBLED+ collapse worth paging on.
+	private final AtomicLong lossGaugeSubAssembledCollapses = new AtomicLong();
+	private final AtomicLong lossGaugeScanIncomplete = new AtomicLong();
+	private final AtomicReference<Instant> lastLossGaugeReport = new AtomicReference<>();
+	private static final Duration LOSS_GAUGE_INTERVAL = Duration.ofHours(1);
+
+	// Per-window budget for the PER-RELEASE loss pair ([METRICS-LOSS] + [METRICS-LOSS-PROVENANCE]).
+	// Without it the pair is bounded only by the compute batch -- METRICS_COMPUTE_BATCH_LIMIT per
+	// per-minute tick, i.e. thousands of releases an hour -- so a mass event (a Dependency-Track outage,
+	// a sweep returning empty) would flood the ONLY alerting channel during exactly the incident the
+	// probe exists to diagnose. Past the budget the releases are still counted and reported in aggregate
+	// by the gauge, which also prints how many pairs were dropped.
+	private static final int LOSS_PAIR_LINES_PER_WINDOW = 20;
+	private final AtomicInteger lossPairBudget = new AtomicInteger(LOSS_PAIR_LINES_PER_WINDOW);
+	private final AtomicLong lossPairSuppressed = new AtomicLong();
+
+	// ---- hourly stall gauge --------------------------------------------------------------------
+	// Same shape and the same reasoning as the loss gauge: bounded output regardless of how large the
+	// stalled population turns out to be.
+	private static final int STALL_ATTEMPTS_THRESHOLD = 24;
+	private static final Duration STALL_GAUGE_INTERVAL = Duration.ofHours(1);
+	private final AtomicLong stallObservations = new AtomicLong();
+	private final AtomicInteger stallMaxAttempts = new AtomicInteger();
+	private final Set<UUID> stallSample = ConcurrentHashMap.newKeySet();
+	private final AtomicReference<Instant> lastStallReport = new AtomicReference<>();
+
+	/**
+	 * Count one stalled compute and emit the aggregate when the window elapses.
+	 *
+	 * <p>{@code stalledComputes} counts OBSERVATIONS, not distinct releases, and is named for what it
+	 * is. With the backoff capped at an hour a stuck release is recomputed roughly once per hour, so
+	 * over an hour-long window the two are close -- but a release whose fence keeps being cleared (every
+	 * containing product is touched on each child metrics change) is counted more than once, so treat it
+	 * as an upper bound on the population and read {@code sample} for identities.
+	 */
+	/**
+	 * Fence a release that cannot finish its compute yet -- an unscanned BOM / incomplete child, or a
+	 * held empty gather (ALL_ARTIFACTS_GONE) -- out of the metrics finders for an escalating interval,
+	 * and surface the aggregate once it has been stuck past the threshold.
+	 *
+	 * <p>The fence itself is by-design silent (waiting on an external event is normal), but a release
+	 * incomplete for ~a day of hourly retries is stuck on something that will not arrive by itself -- a
+	 * BOM artifact that never reached scanning (a 2026-07-12 production incident sat like this for 11
+	 * days / 266 attempts). This replaces a per-release WARN: it was invisible (the instance this matters
+	 * on retains ERROR only), and the per-release form could not be raised to ERROR safely because its
+	 * volume is the size of the stalled population -- the very thing nobody knows and this line exists to
+	 * measure. An aggregate answers "how many are stuck?" at one line per window whatever the answer is.
+	 *
+	 * <p>Shared by the scan-incomplete path and the empty-gather hold so the two cannot drift; the
+	 * attempt count is read AFTER recording the increment (the DB update does not mutate the in-memory
+	 * entity), matching the previous inline behaviour.
+	 */
+	private void fenceIncompleteCompute(Release r) {
+		repository.recordMetricsComputeIncomplete(r.getUuid(),
+				nextMetricsComputeBackoffSeconds(r.getFlowControl()));
+		FlowControl fc = r.getFlowControl();
+		int attempts = (fc != null && fc.metricsComputeFailureCount() != null)
+				? fc.metricsComputeFailureCount() : 0;
+		if (attempts >= STALL_ATTEMPTS_THRESHOLD) {
+			recordStalledCompute(r.getUuid(), attempts);
+		}
+	}
+
+	private void recordStalledCompute(UUID releaseUuid, int attempts) {
+		stallObservations.incrementAndGet();
+		stallMaxAttempts.accumulateAndGet(attempts, Math::max);
+		if (stallSample.size() < SAMPLE_LIMIT) {
+			stallSample.add(releaseUuid);
+		}
+		Instant last = lastStallReport.get();
+		Instant now = Instant.now();
+		if (null == last) {
+			// First observation since boot opens the window rather than emitting a one-sample summary.
+			lastStallReport.compareAndSet(null, now);
+			return;
+		}
+		if (last.isBefore(now.minus(STALL_GAUGE_INTERVAL)) && lastStallReport.compareAndSet(last, now)) {
+			List<UUID> sample = List.copyOf(stallSample);
+			stallSample.clear();
+			log.error("[METRICS-STALLED] windowSec={} stalledComputes={} maxAttempts={} sample={}",
+					Duration.between(last, now).toSeconds(), stallObservations.getAndSet(0),
+					stallMaxAttempts.getAndSet(0), sample);
+		}
+	}
+
+	/**
+	 * Record one finding loss for the hourly gauge, then emit if the window has elapsed.
+	 *
+	 * <p>{@code releasesLosingFindings} is an UPPER BOUND and is labelled as one in the output: it counts
+	 * any drop in raw list size, which the alias organizer and both dedup passes can produce on a release
+	 * that lost nothing. {@code totalCollapses} is the reliable subset (the population [METRICS-LOSS]
+	 * already reports per release), and {@code withScanIncomplete} is the discriminator worth watching --
+	 * it is the shape the whole incomplete-scan investigation is about.
+	 */
+	private void recordFindingLoss(int had, int now, boolean totalCollapse, boolean scanIncomplete,
+			boolean subAssembled) {
+		lossGaugeReleases.incrementAndGet();
+		lossGaugeFindings.addAndGet(Math.max(0, had - now));
+		if (totalCollapse) {
+			lossGaugeTotalCollapses.incrementAndGet();
+			if (subAssembled) {
+				lossGaugeSubAssembledCollapses.incrementAndGet();
+			}
+		}
+		if (scanIncomplete) {
+			lossGaugeScanIncomplete.incrementAndGet();
+		}
+		Instant last = lastLossGaugeReport.get();
+		Instant now_ = Instant.now();
+		if (null == last) {
+			// First loss since boot: start the window rather than emitting a one-sample summary.
+			lastLossGaugeReport.compareAndSet(null, now_);
+			return;
+		}
+		if (last.isBefore(now_.minus(LOSS_GAUGE_INTERVAL)) && lastLossGaugeReport.compareAndSet(last, now_)) {
+			long collapses = lossGaugeTotalCollapses.getAndSet(0);
+			long scanIncompleteCount = lossGaugeScanIncomplete.getAndSet(0);
+			long anyDrop = lossGaugeReleases.getAndSet(0);
+			long findingsLost = lossGaugeFindings.getAndSet(0);
+			long suppressed = lossPairSuppressed.getAndSet(0);
+			long subAssembledCollapses = lossGaugeSubAssembledCollapses.getAndSet(0);
+			lossPairBudget.set(LOSS_PAIR_LINES_PER_WINDOW);
+			// Nothing worth paging for: releasesAnyDrop alone counts benign alias/dedup shrinkage, so
+			// emitting on it would train the sole alerting channel on a healthy instance.
+			if (0 == collapses && 0 == scanIncompleteCount) {
+				return;
+			}
+			// windowSec is MEASURED, not the constant: the gauge emits on the next loss, so a quiet
+			// period makes the real window longer than LOSS_GAUGE_INTERVAL and a fixed denominator
+			// would under-report the rate. releasesAnyDrop names its own upper-bound semantics.
+			log.error("[METRICS-LOSS-GAUGE] windowSec={} releasesAnyDrop={} collapses={} subAssembledCollapses={} "
+					+ "scanIncomplete={} findingsLost={} suppressedPairs={}",
+					Duration.between(last, now_).toSeconds(), anyDrop, collapses, subAssembledCollapses,
+					scanIncompleteCount, findingsLost, suppressed);
+		}
+	}
+
+	/**
+	 * Second line of the finding-loss probe: WHERE the lost findings came from, and WHAT is attached now.
+	 *
+	 * <p>The customer instance has no SQL and no kubectl access, so log output is the only channel and the
+	 * existing [METRICS-LOSS] line has taken the investigation as far as counts can. It establishes that a
+	 * release with ONE gathered, resolved, never-scanned BOM dropped its whole finding set -- but not
+	 * whether that BOM is the same artifact that used to carry the findings. Those two possibilities need
+	 * opposite fixes: an artifact SWAP is a release/SCE wiring problem, while the same artifact losing its
+	 * findings in place is an artifact-metrics problem.
+	 *
+	 * <p>The persisted findings already answer it. Every finding carries {@code sources[].artifact} -- the
+	 * artifact that produced it -- so the artifacts behind the LOST findings can be compared against the
+	 * set gathered now. Disjoint means swapped; overlapping means lost in place.
+	 *
+	 * <p>Also prints what {@code gatherReleaseArtifacts} deliberately forgets: which of its three owners
+	 * (the release's own list, the source-code-entry, a variant's outbound deliverables) contributed each
+	 * artifact. Production shows sibling components at IDENTICAL versions losing findings in the same
+	 * second, which is the signature of a SHARED source-code-entry -- an SCE is canonical per (vcs, commit)
+	 * -- but the current line cannot confirm it because ownership is erased by the union.
+	 *
+	 * <p>Fires only where [METRICS-LOSS] already fires (a total collapse), so it adds no new log volume,
+	 * and every list is bounded by SAMPLE_LIMIT.
+	 */
+	private void logLossProvenance(Release r, ReleaseData rd, ReleaseMetricsDto originalMetrics,
+			Set<UUID> gatheredNow) {
+		try {
+			// Artifacts credited with the findings that were just lost.
+			Set<UUID> lostFrom = new LinkedHashSet<>();
+			int[] attributed = { 0, 0 };
+			collectSourceArtifacts(originalMetrics, lostFrom, attributed);
+			// Artifacts that BOTH resolve and can carry findings: tells "replaced by another BOM" from
+			// "the BOM went and only a VDR/signature remains", and a deleted row from a lost finding set.
+			Set<UUID> resolvedFindingCapable = new LinkedHashSet<>();
+			for (ArtifactData fad : artifactService.getArtifactDataListLight(gatheredNow)) {
+				if (ArtifactType.BOM == fad.getType()) {
+					resolvedFindingCapable.add(fad.getUuid());
+				}
+			}
+			boolean rollupLoss = null != rd.getParentReleases() && !rd.getParentReleases().isEmpty();
+			String verdict = lossVerdict(lostFrom, gatheredNow, resolvedFindingCapable, rollupLoss);
+			// For a release that gathered nothing, the next question is whether the artifacts that used
+			// to carry the findings still EXIST. Rows still present means the release was de-referenced
+			// (its artifact list was emptied); rows gone means the artifacts were deleted underneath it.
+			// Those are different bugs and the counts cannot separate them.
+			String lostFromState = "";
+			if ("ALL_ARTIFACTS_GONE".equals(verdict)) {
+				int stillExist = 0;
+				for (UUID aid : lostFrom) {
+					if (artifactService.getArtifactData(aid).isPresent()) stillExist++;
+				}
+				lostFromState = " lostFromStillExist=" + stillExist + "/" + lostFrom.size()
+						+ " (" + (stillExist == lostFrom.size() ? "DEREFERENCED" : "ROWS_DELETED") + ")";
+			}
+
+			// Ownership, re-derived: gatherReleaseArtifacts unions three owners and returns a flat set.
+			Set<UUID> ownRelease = (null != rd.getArtifacts()) ? new LinkedHashSet<>(rd.getArtifacts())
+					: new LinkedHashSet<>();
+			Set<UUID> ownSce = new LinkedHashSet<>();
+			if (null != rd.getSourceCodeEntry()) {
+				getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry())
+						.ifPresent(sce -> sce.getArtifacts().stream()
+								.filter(a -> a.componentUuid() == null
+										|| rd.getComponent().equals(a.componentUuid()))
+								.forEach(a -> ownSce.add(a.artifactUuid())));
+			}
+
+			// Age of each gathered artifact against the release, which distinguishes "attached late"
+			// from "there all along" -- the artifact/release timing question the counts cannot answer.
+			List<String> artDetail = new ArrayList<>();
+			for (UUID aid : gatheredNow) {
+				if (artDetail.size() >= SAMPLE_LIMIT) break;
+				var oad = artifactService.getArtifactData(aid);
+				if (oad.isEmpty()) {
+					artDetail.add(aid + ":UNRESOLVED");
+					continue;
+				}
+				ArtifactData ad = oad.get();
+				String owner = ownRelease.contains(aid) ? "REL" : (ownSce.contains(aid) ? "SCE" : "DELIV");
+				ReleaseMetricsDto am = ad.getMetrics();
+				// created vs touched vs the release's own dates: an artifact TOUCHED long after the
+				// release was created is an attach/replace after the fact, which is a different story
+				// from one that has been there since the build. The counts cannot separate them.
+				artDetail.add(aid + ":" + owner + ":" + ad.getType()
+						+ ":created=" + ad.getCreatedDate()
+						+ ":touched=" + ad.getUpdatedDate()
+						+ ":firstScanned=" + (null == am ? "n/a" : am.getFirstScanned())
+						+ ":lastScanned=" + (null == am ? "n/a" : am.getLastScanned())
+						+ ":findings=" + countFindings(am));
+			}
+
+			// Who touched the artifact wiring, from the release's own trail. WhoUpdated.createdType
+			// separates a human (MANUAL) from CI (API) from the system (AUTO).
+			//
+			// READ THE ABSENCE CAREFULLY -- an earlier version of this comment got it backwards and the
+			// sandbox calibration then confirmed the wrong reading. ReleaseService writes NO
+			// ReleaseUpdateAction.REMOVED event anywhere: replaceArtifact removes the old uuid and records
+			// only ADDED for the new one, and SCE- and deliverable-level artifact changes write no
+			// release-scoped event at all. So "no recent event" does NOT mean a wholesale record_data
+			// overwrite. It means the change did not come through a release-DIRECT path -- which leaves
+			// an SCE or deliverable mutation (the shared-SCE fan-out hypothesis) or a direct write, and
+			// those are NOT distinguished here. A recent ADDED naming the currently attached artifact is
+			// the positive signal: that is a release-direct attach or replace, with its actor.
+			List<String> artifactEvents = new ArrayList<>();
+			if (null != rd.getUpdateEvents()) {
+				rd.getUpdateEvents().stream()
+						.filter(e -> ReleaseData.ReleaseUpdateScope.ARTIFACT == e.rus())
+						.sorted((a, b) -> b.date().compareTo(a.date()))
+						.limit(SAMPLE_LIMIT)
+						.forEach(e -> artifactEvents.add(e.rua() + ":" + e.objectId() + ":" + e.date()
+								+ ":by=" + (null == e.wu() ? "n/a" : e.wu().getCreatedType())
+								+ "/" + (null == e.wu() ? "n/a" : e.wu().getLastUpdatedBy())));
+			}
+
+			// Field names are abbreviated deliberately: the line repeats per loss and every term is
+			// defined on this method, not in the log. lostFrom = artifacts credited with the findings
+			// that just went; now = what is attached at this instant; owners = r(elease)/s(ce)/d(eliverable).
+			log.error("[METRICS-LOSS-PROVENANCE] {} v{} lifecycle={} verdict={} lostFrom={} now={} owners=r{}/s{}/d{} "
+					+ "relCreated={} relTouched={} sce={} arts={} artEvents={}",
+					r.getUuid(), rd.getVersion(), rd.getLifecycle(), verdict + lostFromState,
+					bounded(lostFrom), bounded(gatheredNow),
+					ownRelease.size(), ownSce.size(),
+					Math.max(0, gatheredNow.size() - ownRelease.size() - ownSce.size()),
+					rd.getCreatedDate(), r.getLastUpdatedDate(), rd.getSourceCodeEntry(), artDetail,
+					artifactEvents.isEmpty() ? "NONE_RECORDED" : artifactEvents);
+		} catch (Exception e) {
+			// A diagnostic must never be able to fail the compute it is describing -- but it must also
+			// not fail SILENTLY. This instance retains ERROR only, so at WARN a broken probe would show
+			// up as a [METRICS-LOSS] line with no companion and no explanation. Fires only when the probe
+			// itself is broken, so the volume is nil.
+			log.error("[METRICS-LOSS-PROVENANCE] release {}: probe failed", r.getUuid(), e);
+		}
+	}
+
+	/**
+	 * The provenance verdict, as a pure function so a test can exercise the SHIPPED ladder rather than a
+	 * copy of it. ORDER IS LOAD-BEARING: {@code disjoint(anything, EMPTY)} is trivially true, so the
+	 * empty-gather case must be decided before disjointness or a release that lost its whole artifact
+	 * list reports as a swap and sends the reader hunting a replacement that never existed.
+	 */
+	static String lossVerdict(Set<UUID> lostFrom, Set<UUID> gatheredNow, Set<UUID> resolvedFindingCapable,
+			boolean rollupLoss) {
+		// PRODUCT ROLLUP FIRST. A product's findings come from its children, and the rollup KEEPS each
+		// child's sources[].artifact -- so lostFrom is a list of CHILD artifacts while gatheredNow is the
+		// product's own set, normally empty. Without this rung every product loss reports
+		// ALL_ARTIFACTS_GONE, i.e. "its artifact list was emptied", about a release that never had one,
+		// and sends the reader to artifact wiring when the defect is one level down.
+		if (rollupLoss) {
+			return "PRODUCT_ROLLUP";
+		}
+		if (lostFrom.isEmpty()) {
+			return "NO_SOURCE_ATTRIBUTION";
+		}
+		if (gatheredNow.isEmpty()) {
+			// disjoint(anything, EMPTY) is trivially true, so this MUST precede the disjointness rung or
+			// a release that lost its whole list reports as a swap.
+			return "ALL_ARTIFACTS_GONE";
+		}
+		// Still listed but the ROW is gone. gatheredNow is the pre-resolution gather set, so without this
+		// rung a deleted artifact whose uuid survives in the list satisfies containsAll and reports as
+		// LOST_IN_PLACE -- pointing at artifact metrics for what is a row deletion.
+		if (gatheredNow.containsAll(lostFrom) && Collections.disjoint(lostFrom, resolvedFindingCapable)) {
+			return "LOST_ARTIFACT_ROW_MISSING";
+		}
+		if (gatheredNow.containsAll(lostFrom)) {
+			return "SAME_ARTIFACT_LOST_IN_PLACE";
+		}
+		if (!Collections.disjoint(lostFrom, gatheredNow)) {
+			return "PARTIAL_OVERLAP";
+		}
+		// Disjoint. Only call it a SWAP if something that could actually carry findings replaced it --
+		// otherwise a leftover VDR snapshot or SCE signature reads as a replacement that never happened.
+		return resolvedFindingCapable.isEmpty() ? "ARTIFACTS_GONE_NON_BOM_REMAIN" : "ARTIFACTS_SWAPPED";
+	}
+
+	/** Distinct artifacts credited as the SOURCE of any finding in the snapshot. */
+	private void collectSourceArtifacts(ReleaseMetricsDto m, Set<UUID> out, int[] attributed) {
+		if (null == m) {
+			return;
+		}
+		if (null != m.getVulnerabilityDetails()) {
+			m.getVulnerabilityDetails().forEach(v -> addSources(v.sources(), out, attributed));
+		}
+		if (null != m.getViolationDetails()) {
+			m.getViolationDetails().forEach(v -> addSources(v.sources(), out, attributed));
+		}
+		if (null != m.getWeaknessDetails()) {
+			m.getWeaknessDetails().forEach(w -> addSources(w.sources(), out, attributed));
+		}
+	}
+
+	/**
+	 * {@code attributed} is [withArtifact, total] over findings. Null-artifact sources are minted
+	 * routinely (enrichSourcesWithRelease stamps a release-only source for rollup findings and for any
+	 * finding arriving without sources), so a verdict can otherwise rest on a tiny attributed minority
+	 * while reading as confident. The line prints the ratio so the reader can weigh it.
+	 */
+	private void addSources(Set<ReleaseMetricsDto.FindingSourceDto> sources, Set<UUID> out, int[] attributed) {
+		attributed[1]++;
+		if (null == sources) {
+			return;
+		}
+		boolean any = false;
+		for (ReleaseMetricsDto.FindingSourceDto src : sources) {
+			if (null != src.artifact()) {
+				out.add(src.artifact());
+				any = true;
+			}
+		}
+		if (any) {
+			attributed[0]++;
+		}
+	}
+
+	private static List<UUID> bounded(Set<UUID> uuids) {
+		return uuids.stream().limit(SAMPLE_LIMIT).toList();
+	}
+
+	/**
+	 * Does this transition wipe out every finding the release had?
+	 *
+	 * <p>Package-private so it can be asserted directly: this predicate is what protects the monitored
+	 * ERROR channel, and it has already been wrong once -- it gated on "fewer than before", which is true of
+	 * ordinary remediation, of a VEX suppression, and of the alias/dedup collapse that runs on this very
+	 * path. Widening it back would flood production with nothing left to catch it.
+	 *
+	 * <p>Total collapse specifically, because a dedup pass cannot produce it: each collapse group yields at
+	 * least one entry, so a non-empty set cannot dedup to empty.
+	 */
+	boolean isTotalFindingCollapse(int had, int now) {
+		return now == 0 && had > 0;
+	}
+
+	/**
+	 * Findings currently carried by a metrics snapshot, across all detail lists. Diagnostic use only.
+	 *
+	 * <p>Counts raw list SIZES, which is not the same as distinct findings: the same compute runs
+	 * {@code organizeVulnerabilitiesWithAliases} / {@code deduplicateViolations} /
+	 * {@code deduplicateWeaknesses}, all of which collapse entries. So a release that merely gained alias
+	 * data can shrink here with nothing lost. That is why the loss probe fires only on a TOTAL collapse --
+	 * a dedup pass cannot take a non-empty set to zero.
+	 *
+	 * <p>NOTE {@code computeReleaseMetricsOnNonRescan} is NOT probed, and the earlier claim that it "only
+	 * stamps analysisState and cannot remove findings" is WRONG: it calls the same
+	 * {@code processReleaseMetricsDto}, whose first three statements are the three collapses above. It can
+	 * lose entries on a triage action. Left unprobed deliberately for now, but do not repeat that claim.
+	 */
+	int countFindings(ReleaseMetricsDto m) {
+		if (null == m) {
+			return 0;
+		}
+		int n = 0;
+		if (null != m.getVulnerabilityDetails()) {
+			n += m.getVulnerabilityDetails().size();
+		}
+		if (null != m.getViolationDetails()) {
+			n += m.getViolationDetails().size();
+		}
+		if (null != m.getWeaknessDetails()) {
+			n += m.getWeaknessDetails().size();
+		}
+		return n;
 	}
 
 	@Transactional
@@ -332,12 +890,27 @@ public class ReleaseMetricsComputeService {
 	 * with only GHSA/OSV findings), the probe is skipped entirely — every
 	 * finding is stamped {@code FALSE} without a DB call.
 	 */
-	private void stampKnownExploited(java.util.UUID orgUuid, ReleaseMetricsDto rmd) {
+	private void stampKnownExploited(UUID orgUuid, ReleaseMetricsDto rmd) {
+		applyKnownExploited(orgUuid, rmd);
+		// Re-derive kevCount (and the other tallies) from the freshly stamped findings.
+		rmd.computeMetricsFromFacts();
+	}
+
+	/**
+	 * Stamps {@code knownExploited} onto {@code rmd}'s findings and NOTHING else.
+	 *
+	 * <p>Split out from {@link #stampKnownExploited} so read paths can stamp
+	 * without the {@code computeMetricsFromFacts()} that follows it on the write
+	 * path. That recompute is right when metrics are being (re)built, and wrong
+	 * on a read: it rewrites the stored tallies from whatever detail lists happen
+	 * to be loaded, and -- worse -- {@code computeMetricsFromFacts} ends with
+	 * "if lastScanned is null, set it to now", which would invent a scan
+	 * timestamp for an artifact that has never been scanned, changing on every
+	 * request. See {@link #knownExploitedStampedCopy}.
+	 */
+	private void applyKnownExploited(UUID orgUuid, ReleaseMetricsDto rmd) {
 		List<VulnerabilityDto> findings = rmd.getVulnerabilityDetails();
-		if (findings == null || findings.isEmpty()) {
-			rmd.computeMetricsFromFacts();
-			return;
-		}
+		if (findings == null || findings.isEmpty()) return;
 		Set<String> allCandidates = new LinkedHashSet<>();
 		for (VulnerabilityDto vuln : findings) {
 			allCandidates.addAll(candidateCveIds(vuln));
@@ -362,8 +935,36 @@ public class ReleaseMetricsComputeService {
 			stamped.add(vuln.withKnownExploited(kev));
 		}
 		rmd.setVulnerabilityDetails(stamped);
-		// Re-derive kevCount (and the other tallies) from the freshly stamped findings.
-		rmd.computeMetricsFromFacts();
+	}
+
+	/**
+	 * A KEV-stamped COPY of {@code metrics}, for read paths that serve metrics
+	 * which were never stamped at write time -- per-artifact metrics above all.
+	 *
+	 * <p>Artifact metrics are merged into the release aggregate and only the
+	 * aggregate is stamped, so an artifact's own {@code vulnerabilityDetails}
+	 * carry {@code knownExploited = false} even when the release says true for
+	 * the same finding. Stamping here rather than persisting a second copy
+	 * keeps a single source of truth and cannot go stale when CISA adds a CVE:
+	 * {@code recomputeReleasesForNewlyKev} refreshes RELEASES, not artifacts, so
+	 * a persisted artifact stamp would silently drift.
+	 *
+	 * <p>Clones first -- {@code ReleaseMetricsDto.clone()} goes through
+	 * {@code Object.clone()}, so the caller's runtime type (e.g.
+	 * {@code DependencyTrackIntegration}) is preserved -- because the argument
+	 * belongs to the caller's entity and must not be mutated by a read.
+	 *
+	 * <p>Stamps ONLY. Deliberately does not run {@code computeMetricsFromFacts()}:
+	 * that is a write-path operation which rewrites the stored tallies from the
+	 * currently-loaded detail lists and defaults a null {@code lastScanned} to
+	 * now -- on a read that would hand back an invented scan timestamp for an
+	 * artifact that has never been scanned, different on every request.
+	 */
+	public ReleaseMetricsDto knownExploitedStampedCopy(UUID orgUuid, ReleaseMetricsDto metrics) {
+		if (null == metrics) return null;
+		ReleaseMetricsDto copy = metrics.clone();
+		applyKnownExploited(orgUuid, copy);
+		return copy;
 	}
 
 	/**

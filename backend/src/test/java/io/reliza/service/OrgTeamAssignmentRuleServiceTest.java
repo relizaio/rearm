@@ -20,13 +20,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.GlobalTeamAssignmentRule;
-import io.reliza.model.UserGroupData;
+import io.reliza.model.TeamData;
+import io.reliza.model.TeamStatus;
 
 /**
  * Matching + validation for org-wide team-assignment rules (T2).
@@ -37,7 +37,7 @@ import io.reliza.model.UserGroupData;
  */
 class OrgTeamAssignmentRuleServiceTest {
 
-	private UserGroupService userGroupService;
+	private TeamService teamService;
 	private OrgTeamAssignmentRuleService service;
 
 	private final UUID org = UUID.randomUUID();
@@ -46,20 +46,20 @@ class OrgTeamAssignmentRuleServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		userGroupService = mock(UserGroupService.class);
+		teamService = mock(TeamService.class);
 		service = new OrgTeamAssignmentRuleService();
-		ReflectionTestUtils.setField(service, "userGroupService", userGroupService);
+		ReflectionTestUtils.setField(service, "teamService", teamService);
 		ReflectionTestUtils.setField(service, "organizationService", mock(OrganizationService.class));
-		stubTeam(teamA, org, UserGroupStatus.ACTIVE);
-		stubTeam(teamB, org, UserGroupStatus.ACTIVE);
+		stubTeam(teamA, org, TeamStatus.ACTIVE);
+		stubTeam(teamB, org, TeamStatus.ACTIVE);
 	}
 
-	private void stubTeam(UUID uuid, UUID teamOrg, UserGroupStatus status) {
-		UserGroupData g = mock(UserGroupData.class);
+	private void stubTeam(UUID uuid, UUID teamOrg, TeamStatus status) {
+		TeamData g = mock(TeamData.class);
 		when(g.getUuid()).thenReturn(uuid);
 		when(g.getOrg()).thenReturn(teamOrg);
 		when(g.getStatus()).thenReturn(status);
-		when(userGroupService.getUserGroupData(uuid)).thenReturn(Optional.of(g));
+		when(teamService.getReadableTeamData(uuid)).thenReturn(Optional.of(g));
 	}
 
 	private static GlobalTeamAssignmentRule rule(String name, String pattern, ComponentType type, UUID team) {
@@ -131,7 +131,7 @@ class OrgTeamAssignmentRuleServiceTest {
 	@Test
 	void ruleWhoseTeamIsGoneIsSkippedSoLaterRulesStillApply() {
 		UUID missing = UUID.randomUUID();
-		when(userGroupService.getUserGroupData(missing)).thenReturn(Optional.empty());
+		when(teamService.getReadableTeamData(missing)).thenReturn(Optional.empty());
 		var m = service.matchFor(component("rebom-backend", ComponentType.COMPONENT),
 				orgWith(rule("stale", "rebom-.*", null, missing),
 						rule("good", "rebom-.*", null, teamB)));
@@ -142,7 +142,7 @@ class OrgTeamAssignmentRuleServiceTest {
 	@Test
 	void crossOrgTeamIsNotUsable() {
 		UUID foreign = UUID.randomUUID();
-		stubTeam(foreign, UUID.randomUUID(), UserGroupStatus.ACTIVE);
+		stubTeam(foreign, UUID.randomUUID(), TeamStatus.ACTIVE);
 		assertTrue(service.matchFor(component("x", ComponentType.COMPONENT),
 				orgWith(rule("foreign", ".*", null, foreign))).isEmpty());
 	}
@@ -186,10 +186,10 @@ class OrgTeamAssignmentRuleServiceTest {
 	void validateRejectsMissingCrossOrgAndArchivedTeams() {
 		assertThrows(RelizaException.class, () -> service.validate(org, List.of(rule("n", "x", null, null))));
 		UUID missing = UUID.randomUUID();
-		when(userGroupService.getUserGroupData(missing)).thenReturn(Optional.empty());
+		when(teamService.getReadableTeamData(missing)).thenReturn(Optional.empty());
 		assertThrows(RelizaException.class, () -> service.validate(org, List.of(rule("n", "x", null, missing))));
 		UUID archived = UUID.randomUUID();
-		stubTeam(archived, org, UserGroupStatus.INACTIVE);
+		stubTeam(archived, org, TeamStatus.INACTIVE);
 		assertThrows(RelizaException.class, () -> service.validate(org, List.of(rule("n", "x", null, archived))));
 	}
 
@@ -227,24 +227,24 @@ class OrgTeamAssignmentRuleServiceTest {
 
 	@Test
 	void hoistedOrgGroupsAreUsedInsteadOfARepositoryHit() {
-		UserGroupData hoisted = mock(UserGroupData.class);
+		TeamData hoisted = mock(TeamData.class);
 		when(hoisted.getUuid()).thenReturn(teamA);
 		when(hoisted.getOrg()).thenReturn(org);
-		when(hoisted.getStatus()).thenReturn(UserGroupStatus.ACTIVE);
+		when(hoisted.getStatus()).thenReturn(TeamStatus.ACTIVE);
 		var m = service.matchFor(component("x", ComponentType.COMPONENT),
 				orgWith(rule("r", "x", null, teamA)), List.of(hoisted));
 		assertTrue(m.isPresent());
 		// The whole point of hoisting: no per-component DB read for the team.
-		verify(userGroupService, never()).getUserGroupData(teamA);
+		verify(teamService, never()).getReadableTeamData(teamA);
 	}
 
 	@Test
 	void archivedTeamIsStillReturnedSoOwnershipCanReportDegraded() {
 		UUID archived = UUID.randomUUID();
-		stubTeam(archived, org, UserGroupStatus.INACTIVE);
+		stubTeam(archived, org, TeamStatus.INACTIVE);
 		var m = service.matchFor(component("x", ComponentType.COMPONENT),
 				orgWith(rule("r", "x", null, archived)));
 		assertTrue(m.isPresent(), "an archived team must surface as DEGRADED, not fall through");
-		assertEquals(UserGroupStatus.INACTIVE, m.get().team().getStatus());
+		assertEquals(TeamStatus.INACTIVE, m.get().team().getStatus());
 	}
 }

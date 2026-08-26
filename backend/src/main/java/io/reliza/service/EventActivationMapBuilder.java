@@ -18,6 +18,9 @@ import io.reliza.model.dto.notifications.ApprovalRequestEntryRef;
 import io.reliza.model.dto.notifications.ApprovalRequestedPayload;
 import io.reliza.model.dto.notifications.ApprovalResolvedPayload;
 import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentItem;
+import io.reliza.model.dto.notifications.InstanceRef;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
@@ -77,6 +80,8 @@ public class EventActivationMapBuilder {
                 case RELEASE_BOM_DIFF -> populateReleaseBomDiff(eventMap, event);
                 case APPROVAL_REQUESTED -> populateApprovalRequested(eventMap, event);
                 case APPROVAL_RESOLVED -> populateApprovalResolved(eventMap, event);
+                case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED ->
+                        populateInstanceDeployment(eventMap, event);
             }
         }
 
@@ -221,6 +226,54 @@ public class EventActivationMapBuilder {
         eventMap.put("resolvedBy", p.resolvedBy() != null ? p.resolvedBy().toString() : "");
         eventMap.put("resolvedByEmail", StringUtils.defaultString(p.resolvedByEmail()));
         populateReleaseRef(eventMap, p.release());
+    }
+
+    /**
+     * Surfaces an instance-deployment event onto the CEL activation map.
+     * Nested {@code instance} object + top-level {@code statuses} (a list of
+     * {@code UpdateStatus.name()} strings) + {@code severity} are the fields
+     * customer filters read, e.g.
+     *   {@code event.instance.environment == "PRODUCTION"}
+     *   {@code "CONVERGED" in event.statuses && !("ERROR" in event.statuses)}
+     *   {@code event.instance.uri == "test.relizahub.com"}
+     * PRESET mode keeps {@code ==} and {@code in} (only macros are dropped), so
+     * these evaluate. {@code statuses} MUST be a {@code List<String>} -- CEL's
+     * {@code in} does not match raw enum objects.
+     */
+    private void populateInstanceDeployment(Map<String, Object> eventMap, NotificationOutboxEvent event) {
+        InstanceDeploymentChangedPayload p = deserialize(event, InstanceDeploymentChangedPayload.class);
+        if (p == null) return;
+        eventMap.put("severity", p.severity() != null ? p.severity().name() : "");
+        eventMap.put("fromRevision", p.fromRevision());
+        eventMap.put("toRevision", p.toRevision());
+        eventMap.put("statuses", p.statuses() != null ? p.statuses() : List.of());
+
+        InstanceRef inst = p.instance();
+        if (inst != null) {
+            Map<String, Object> instanceMap = new HashMap<>();
+            instanceMap.put("uuid", inst.uuid() != null ? inst.uuid().toString() : "");
+            instanceMap.put("uri", StringUtils.defaultString(inst.uri()));
+            instanceMap.put("name", StringUtils.defaultString(inst.name()));
+            instanceMap.put("environment", StringUtils.defaultString(inst.environment()));
+            instanceMap.put("instanceType", StringUtils.defaultString(inst.instanceType()));
+            eventMap.put("instance", instanceMap);
+        }
+
+        List<Map<String, Object>> itemList = new ArrayList<>();
+        if (p.items() != null) {
+            for (InstanceDeploymentItem it : p.items()) {
+                if (it == null) continue;
+                Map<String, Object> im = new HashMap<>();
+                im.put("componentType", it.componentType() != null ? it.componentType().name() : "");
+                im.put("name", StringUtils.defaultString(it.name()));
+                im.put("namespace", StringUtils.defaultString(it.namespace()));
+                im.put("status", it.status() != null ? it.status().name() : "");
+                im.put("version", StringUtils.defaultString(it.version()));
+                im.put("componentUuid", it.componentUuid() != null ? it.componentUuid().toString() : "");
+                itemList.add(im);
+            }
+        }
+        eventMap.put("items", itemList);
     }
 
     /**

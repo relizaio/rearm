@@ -45,4 +45,31 @@ class BackoffPolicyTest {
         assertEquals(60, BackoffPolicy.dtrackFetchSkipSeconds(-1));
         assertEquals(60, BackoffPolicy.dtrackFetchSkipSeconds(Integer.MIN_VALUE));
     }
+
+    @Test
+    void autoIntegrateStartsAtTwoMinutesAndDoublesToACapOfSixtyFour() {
+        assertEquals(120, BackoffPolicy.autoIntegrateSkipSeconds(1));
+        assertEquals(240, BackoffPolicy.autoIntegrateSkipSeconds(2));
+        assertEquals(480, BackoffPolicy.autoIntegrateSkipSeconds(3));
+        assertEquals(960, BackoffPolicy.autoIntegrateSkipSeconds(4));
+        assertEquals(1920, BackoffPolicy.autoIntegrateSkipSeconds(5));
+    }
+
+    @Test
+    void autoIntegrateCapsFromTheSixthFailureOnward() {
+        assertEquals(3840, BackoffPolicy.autoIntegrateSkipSeconds(6));
+        assertEquals(3840, BackoffPolicy.autoIntegrateSkipSeconds(7));
+        // Retries never stop, so the count keeps climbing for as long as the release stays broken;
+        // the curve must stay flat rather than overflow or wrap.
+        assertEquals(3840, BackoffPolicy.autoIntegrateSkipSeconds(1000));
+        assertEquals(3840, BackoffPolicy.autoIntegrateSkipSeconds(Integer.MAX_VALUE));
+    }
+
+    @Test
+    void autoIntegrateDefensiveHandlingOfNonPositiveInput() {
+        assertEquals(120, BackoffPolicy.autoIntegrateSkipSeconds(0));
+        assertEquals(120, BackoffPolicy.autoIntegrateSkipSeconds(-1));
+        // MIN_VALUE is the interesting one for a shift-based curve.
+        assertEquals(120, BackoffPolicy.autoIntegrateSkipSeconds(Integer.MIN_VALUE));
+    }
 }

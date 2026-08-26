@@ -50,6 +50,7 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.SbomComponentData;
+import io.reliza.model.SbomComponentFlowControl;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.ParsedBomComponent;
@@ -100,6 +101,7 @@ public class SbomComponentService {
 	@Autowired private RebomService rebomService;
 	@Autowired private SharedReleaseService sharedReleaseService;
 	@Autowired private ArtifactService artifactService;
+	@Autowired private SystemInfoService systemInfoService;
 	@Autowired private SharedArtifactService sharedArtifactService;
 	@Autowired private GetSourceCodeEntryService getSourceCodeEntryService;
 	@Autowired private GetDeliverableService getDeliverableService;
@@ -246,7 +248,21 @@ public class SbomComponentService {
 			if (HeapPressureGuard.checkAndMaybeGc(log, "SBOM reconcile drain",
 					String.format("before release %s (%d/%d done); remaining will be retried on the next scheduler tick.",
 							releaseUuid, processed, total))) {
-				return;
+				// Post-GC free heap is still under the abort threshold. Before
+				// abandoning the remaining batch until the next tick, give the
+				// concurrent GC cycle a moment to finish and re-check once --
+				// a transient spike should not cost a full batch of progress.
+				try {
+					Thread.sleep(2000L);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+				if (HeapPressureGuard.checkAndMaybeGc(log, "SBOM reconcile drain (retry)",
+						String.format("still hot after GC retry before release %s (%d/%d done); abandoning batch until next tick.",
+								releaseUuid, processed, total))) {
+					return;
+				}
 			}
 			try {
 				int skippedArts = self.reconcileReleaseSbomComponents(releaseUuid);
@@ -1121,6 +1137,12 @@ private static int currentReconcileFailureCount(Release r) {
 	/** Age before an unmapped BOM artifact is considered orphaned, not in-flight. */
 	private static final int SWEEP_MIN_AGE_MINUTES = 90;
 
+	/** Watermark scan window; bounds the rows one sweep query can touch. */
+	private static final int SWEEP_WINDOW_DAYS = 30;
+
+	/** Max empty windows advanced per tick — paces the historical catch-up. */
+	private static final int SWEEP_MAX_WINDOWS_PER_TICK = 12;
+
 	/**
 	 * Heal BOM artifacts that slipped through reconcile entirely: BOM-typed,
 	 * internalBom present, older than {@link #SWEEP_MIN_AGE_MINUTES}, but no
@@ -1136,12 +1158,67 @@ private static int currentReconcileFailureCount(Release r) {
 	 * a map row without component rows would stop the sweep from ever
 	 * retrying the artifact while leaving it unscannable.
 	 */
-	public void sweepUnmappedBomArtifacts(int batchLimit) {
-		List<UUID> orphans = artifactService.listUnmappedBomArtifactUuids(SWEEP_MIN_AGE_MINUTES, batchLimit);
+	/** @return number of orphan heal attempts this tick (observability + tests). */
+	public int sweepUnmappedBomArtifacts(int batchLimit) {
+		// Watermark-windowed scan. The old single query walked the WHOLE BOM
+		// history every tick: in steady state nothing is unmapped, so the
+		// LIMIT never filled and every BOM artifact ever created was
+		// heap-fetched, jsonb-detoasted and anti-join-probed each minute —
+		// which outgrew the 120s query timeout in production. The persisted
+		// watermark (advisory-locked tick, so single-writer) records how far
+		// history has been verified; each tick advances it over empty
+		// windows and stops at the first window holding orphans.
+		//
+		// Advance rules keep it safe: an empty window advances the watermark
+		// to the window end; a non-empty window does NOT advance it, so a
+		// row the heal path leaves unmapped (rebom down, heap guard) is
+		// rescanned next tick. Healed rows make the window empty and the
+		// watermark moves past them one tick later.
+		ZonedDateTime cutoff = ZonedDateTime.now().minusMinutes(SWEEP_MIN_AGE_MINUTES);
+		ZonedDateTime watermark = systemInfoService.getUnmappedBomSweepWatermark();
+		if (watermark == null) {
+			watermark = artifactService.getOldestBomArtifactCreatedDate();
+			if (watermark == null) return 0; // no BOM artifacts at all
+		}
+		List<UUID> orphans = List.of();
+		ZonedDateTime scannedUpTo = watermark;
+		int windows = 0;
+		while (watermark.isBefore(cutoff) && windows++ < SWEEP_MAX_WINDOWS_PER_TICK) {
+			ZonedDateTime windowEnd = watermark.plusDays(SWEEP_WINDOW_DAYS);
+			if (windowEnd.isAfter(cutoff)) windowEnd = cutoff;
+			orphans = artifactService.listUnmappedBomArtifactUuidsInWindow(watermark, windowEnd, batchLimit);
+			scannedUpTo = windowEnd;
+			if (!orphans.isEmpty()) break;
+			watermark = windowEnd;
+			systemInfoService.setUnmappedBomSweepWatermark(watermark);
+		}
+		// Tail guarantee: a window the heal path cannot empty (a BOM rebom
+		// permanently fails to parse) pins the watermark, and NEW orphans —
+		// this sweep's primary quarry — would otherwise wait behind it
+		// indefinitely. Whenever the loop did not reach the cutoff (pinned,
+		// or catch-up budget exhausted), additionally probe up to the newest
+		// window, from max(scannedUpTo, cutoff - window) so the ranges stay
+		// disjoint from the pinned window. The lower bound matters: an
+		// earlier scannedUpTo < cutoff-window guard left a dead band at pin
+		// age ~30-60d where fresh orphans were beyond the pinned window yet
+		// the tail probe was suppressed. Steady state (scannedUpTo == cutoff)
+		// costs zero extra queries. Accepted residual: orphans BETWEEN the
+		// pinned window and this tail range wait until the poison is
+		// resolved (it warn-logs every tick, so it is visible).
+		ZonedDateTime tailFrom = cutoff.minusDays(SWEEP_WINDOW_DAYS);
+		if (scannedUpTo.isAfter(tailFrom)) tailFrom = scannedUpTo;
+		if (tailFrom.isBefore(cutoff)) {
+			List<UUID> tailOrphans = artifactService.listUnmappedBomArtifactUuidsInWindow(tailFrom, cutoff, batchLimit);
+			if (!tailOrphans.isEmpty()) {
+				List<UUID> combined = new ArrayList<>(orphans);
+				combined.addAll(tailOrphans);
+				orphans = combined;
+			}
+		}
 		for (UUID artifactUuid : orphans) {
 			if (HeapPressureGuard.checkAndMaybeGc(log, "unmapped-BOM sweep",
 					String.format("before artifact %s; remaining retried next tick.", artifactUuid))) {
-				return;
+				return orphans.size();
 			}
 			Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 			if (oad.isEmpty()) continue;
@@ -1158,6 +1235,7 @@ private static int currentReconcileFailureCount(Release r) {
 			log.warn("Unmapped-BOM sweep healed artifact {} (org {}, canonical {}) — no release reconcile pass had covered it",
 					artifactUuid, ad.getOrg(), canonical);
 		}
+		return orphans.size();
 	}
 
 	// ===================================================================
@@ -1322,6 +1400,7 @@ private static int currentReconcileFailureCount(Release r) {
 				seed.getIdentities(), seed.getCanonicalPurl(), canonicalPurl));
 		created.setLicenses(seed.getLicenses());
 		created.setEnrichedAt(seed.getEnrichedAt());
+		stampTerminalIfUnmatchablePurlType(created);
 		try {
 			created = sbomComponentRepository.save(created);
 		} catch (DataIntegrityViolationException dive) {
@@ -2034,7 +2113,21 @@ private static int currentReconcileFailureCount(Release r) {
 				// lacked); only write when the set actually grew.
 				List<ComponentIdentity> mergedIds = mergeIdentities(
 						existing.getIdentities(), buildIdentities(canonical, agg.cpes));
-				if (mergedIds != null) { existing.setIdentities(mergedIds); changed = true; }
+				if (mergedIds != null) {
+					existing.setIdentities(mergedIds);
+					changed = true;
+					// This merge is the single place a late CPE lands, and a CPE
+					// is exactly what rescues an UNMATCHABLE_PURL_TYPE row (NVD
+					// matches CPEs regardless of purl type). Re-evaluate ONLY
+					// that reason -- V75's genuinely-unrecoverable terminal
+					// reasons stay terminal.
+					if (rescuesUnmatchableTerminal(existing, mergedIds)) {
+						existing.setFlowControl(null);
+						log.info("Cleared UNMATCHABLE_PURL_TYPE terminal on {} (org {}): "
+								+ "a later ingest asserted a CPE, so the row is NVD-matchable now",
+								existing.getCanonicalPurl(), orgUuid);
+					}
+				}
 				// Licenses: reconcile only fills when the row has none — it never
 				// overwrites. The enrichment puller is the sole writer of enriched
 				// licenses (alongside enriched_at), so a raw re-parse must not clobber
@@ -2081,7 +2174,71 @@ private static int currentReconcileFailureCount(Release r) {
 		if (agg.getLicenses() != null && !agg.getLicenses().isEmpty()) {
 			sc.setLicenses(agg.getLicenses());
 		}
+		stampTerminalIfUnmatchablePurlType(sc);
 		return sc;
+	}
+
+	/** Terminal reason for purl types no vulnerability source can ever match. */
+	static final String TERMINAL_REASON_UNMATCHABLE_PURL_TYPE = "UNMATCHABLE_PURL_TYPE";
+
+	/**
+	 * True for canonical purl types that are unmatchable BY CONSTRUCTION:
+	 * {@code pkg:generic} has no upstream registry, so no vulnerability source
+	 * (OSS Index / OSV / GHSA ecosystems, NVD-by-CPE) indexes it and BEAR has
+	 * nothing to resolve it against. Filesystem-cataloguing scanners emit
+	 * thousands of such per-file rows (pkg:generic/&lt;file&gt;?path=...); left
+	 * matchable they clog the enrichment candidate window, gate fan-out
+	 * coverage on components that can never yield a finding, and ship inert
+	 * rows to Dependency-Track.
+	 *
+	 * <p>A CPE identity rescues the row: NVD matching works regardless of purl
+	 * type, so a CPE-bearing generic component stays matchable.
+	 */
+	static boolean isUnmatchablePurlType(String canonicalPurl, List<ComponentIdentity> identities) {
+		if (canonicalPurl == null || !canonicalPurl.startsWith("pkg:generic/")) return false;
+		if (identities != null) {
+			for (ComponentIdentity id : identities) {
+				if (id != null && "cpe".equals(id.scheme())) return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Same timestamp shape as the SQL writers of this field
+	 * ({@code markEnrichmentTerminal}, V79: {@code to_char(now(),
+	 * 'YYYY-MM-DD"T"HH24:MI:SSOF')} -> e.g. {@code 2026-08-12T21:20:43+00}):
+	 * second precision, minimal offset. Nothing parses the value back, but two
+	 * writers of one field should not disagree on its format.
+	 */
+	private static final java.time.format.DateTimeFormatter TERMINAL_TS_FORMAT =
+			java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssx");
+
+	/**
+	 * Mint-time twin of the V79 backfill: mark an unmatchable-by-construction
+	 * row enrichment-terminal BEFORE first save, so it never enters the
+	 * matchable universe (candidate window, buckets, coverage gate) at all.
+	 * Same flow_control shape as {@code markEnrichmentTerminal}.
+	 */
+	static void stampTerminalIfUnmatchablePurlType(SbomComponent sc) {
+		if (sc.isEnrichmentTerminal()) return;
+		if (!isUnmatchablePurlType(sc.getCanonicalPurl(), sc.getIdentities())) return;
+		sc.setFlowControl(new SbomComponentFlowControl(
+				ZonedDateTime.now().format(TERMINAL_TS_FORMAT),
+				TERMINAL_REASON_UNMATCHABLE_PURL_TYPE));
+	}
+
+	/**
+	 * True when an identity union just made an {@code UNMATCHABLE_PURL_TYPE}
+	 * terminal row matchable again -- i.e. the merged identities now carry a
+	 * CPE, so the mint/backfill criterion no longer holds. Scoped to that one
+	 * reason: every other terminal reason describes an unrecoverable dead end
+	 * (own BOM pulled unmatched / unpullable), which a new identity cannot fix.
+	 */
+	static boolean rescuesUnmatchableTerminal(SbomComponent sc, List<ComponentIdentity> mergedIds) {
+		return sc.getFlowControl() != null
+				&& TERMINAL_REASON_UNMATCHABLE_PURL_TYPE.equals(sc.getFlowControl().enrichmentTerminalReason())
+				&& !isUnmatchablePurlType(sc.getCanonicalPurl(), mergedIds);
 	}
 
 	/**

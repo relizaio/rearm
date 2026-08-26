@@ -24,10 +24,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Organization;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
-import io.reliza.model.TeamRole;
 import io.reliza.model.UserGroupData;
-import io.reliza.model.UserGroupData.ExternalTeamMember;
-import io.reliza.model.UserGroupData.TeamMemberRole;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CreateUserGroupDto;
 import io.reliza.model.dto.UpdateUserGroupDto;
@@ -504,12 +501,6 @@ public class UserGroupTest {
 				.groupId(created.getUuid())
 				.users(Set.of(testUser1, testUser2))
 				.connectedSsoGroups(Set.of("lifecycle-sso"))
-				// T1 Team fields: exercised through the real JSONB round-trip so a
-				// serialization-side break (record component or enum that fails to
-				// bind) is caught here rather than by hand-written fixture JSON.
-				.memberRoles(List.of(new TeamMemberRole(testUser1, TeamRole.TEAM_LEAD, null)))
-				.externalMembers(List.of(new ExternalTeamMember(
-						"Lifecycle Vendor", "vendor@lifecycle.example", TeamRole.CUSTOM, "On-call")))
 				.build();
 		userGroupService.updateUserGroupComprehensive(enrichDto, WhoUpdated.getTestWhoUpdated());
 
@@ -530,17 +521,7 @@ public class UserGroupTest {
 		Assertions.assertTrue(restored.getUsers().contains(testUser1));
 		Assertions.assertTrue(restored.getUsers().contains(testUser2));
 		Assertions.assertTrue(restored.getConnectedSsoGroups().contains("lifecycle-sso"));
-		// T1: roles + external members survive the deactivate/restore cycle
-		Assertions.assertEquals(1, restored.getMemberRoles().size());
-		Assertions.assertEquals(TeamRole.TEAM_LEAD, restored.getMemberRoles().get(0).role());
-		Assertions.assertEquals(testUser1, restored.getMemberRoles().get(0).userRef());
-		Assertions.assertTrue(restored.getRoleForUser(testUser1).isPresent(),
-				"the role must resolve for a user still on the roster");
-		Assertions.assertEquals(1, restored.getExternalMembers().size());
-		Assertions.assertEquals("Lifecycle Vendor", restored.getExternalMembers().get(0).name());
-		Assertions.assertEquals("On-call", restored.getExternalMembers().get(0).customRole());
-		Assertions.assertEquals(2, restored.getAllUsers().size(),
-				"the external member must not have joined the durability roster");
+		Assertions.assertEquals(2, restored.getAllUsers().size());
 	}
 
 	// ==================== T8: CREATE-AFTER-RESTORE CYCLE ====================

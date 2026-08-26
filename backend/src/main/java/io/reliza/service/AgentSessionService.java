@@ -3,7 +3,9 @@
 */
 package io.reliza.service;
 
+import java.math.BigDecimal;
 import java.time.ZonedDateTime;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -110,6 +112,42 @@ public class AgentSessionService {
 		return java.util.stream.StreamSupport.stream(rows.spliterator(), false)
 				.map(AgentSessionData::dataFromRecord)
 				.collect(Collectors.toList());
+	}
+
+	/**
+	 * Per-status session counts for one ROOT agent, aggregated in SQL.
+	 * Statuses with no sessions are absent from the map.
+	 */
+	public Map<SessionStatus, Long> countByAgentPerStatus(UUID rootAgentUuid) {
+		if (rootAgentUuid == null) return Map.of();
+		Map<SessionStatus, Long> counts = new EnumMap<>(SessionStatus.class);
+		for (Object[] row : repository.countByAgentGroupedByStatus(rootAgentUuid.toString())) {
+			String status = (String) row[0];
+			if (status == null) {
+				log.error("session row with null status for agent {}", rootAgentUuid);
+				continue;
+			}
+			try {
+				counts.put(SessionStatus.valueOf(status), ((Number) row[1]).longValue());
+			} catch (IllegalArgumentException e) {
+				log.error("Unrecognized session status {} in counts for agent {}", status, rootAgentUuid, e);
+			}
+		}
+		return counts;
+	}
+
+	/**
+	 * Most recent {@code lastActivityAt} across one ROOT agent's
+	 * sessions, computed in SQL. Null when the agent has no sessions
+	 * with recorded activity.
+	 */
+	public ZonedDateTime maxLastActivityAt(UUID rootAgentUuid) {
+		if (rootAgentUuid == null) return null;
+		BigDecimal epochSeconds = repository.maxLastActivityAtForAgent(rootAgentUuid.toString());
+		if (epochSeconds == null) return null;
+		// same mapper that wrote the numeric, so the max round-trips to
+		// the identical instant AgentSessionData reports for that row
+		return Utils.OM.convertValue(epochSeconds, ZonedDateTime.class);
 	}
 
 	/**

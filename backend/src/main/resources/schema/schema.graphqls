@@ -180,6 +180,7 @@ type Query {
 	
 	# User Groups
 	getUserGroups(org: ID!): [UserGroupWebDto]
+	getTeams(org: ID!): [TeamWebDto]
 	
 	# Vulnerability Analysis
 	getVulnAnalysis(org: ID!): [VulnAnalysisWebDto]
@@ -813,6 +814,8 @@ type Mutation {
 	# User Groups
 	createUserGroup(userGroup: CreateUserGroupInput!): UserGroupWebDto
 	updateUserGroup(userGroup: UpdateUserGroupInput!): UserGroupWebDto
+	createTeam(team: CreateTeamInput!): TeamWebDto
+	updateTeam(team: UpdateTeamInput!): TeamWebDto
 	
 	# Vulnerability Analysis
 	createVulnAnalysis(analysis: CreateVulnAnalysisInput!): VulnAnalysisWebDto
@@ -1350,14 +1353,28 @@ type NotificationSubscriptionResult {
 	# JSON-stringified filter config: { mode, presetConfig, celExpression }.
 	filter: String
 	# JSON-stringified route table:
-	# [{ whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, channelGroups, teams }].
+	# [{ whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, channelGroups,
+	#    teams, notifyComponentOwner }].
 	# perspectives is the Phase 12 list of UUIDs gating the route -- null/empty = no gate.
 	# channelGroups is the Phase 13b list of group UUIDs expanded to member channels at fan-out.
 	# teams is the T3 list of team UUIDs whose own channels are merged in at fan-out.
+	# notifyComponentOwner is the T4a flag: when true the route also delivers to the owner
+	# team of each affected component, resolved at fan-out -- null/false = no owner expansion.
 	routes: String
 	dedupWindowMinutes: Int
 	# JSON-stringified rate limit config: { maxPerWindow, windowMinutes }. Nullable.
 	rateLimit: String
+	# Ownership MATCHING scope: when set, this subscription matches an event only
+	# if at least one component the event affects is owned by this team. Null =
+	# unscoped (org-wide), which is every subscription written before this field.
+	# Distinct from routes[].notifyComponentOwner, which is a DESTINATION meaning
+	# "deliver to whoever owns the affected component" -- every owner, not one.
+	ownedByTeam: ID
+	# Set when this row is MATERIALISED by a team's own notification setting
+	# rather than authored here. Such a row cannot be edited, disabled or deleted
+	# through the subscription API -- it is changed on the team that owns it -- so
+	# a client must use this to badge the row and withhold those controls.
+	managedByTeam: ID
 	# Hibernate @Version-managed row revision. The UI captures this on
 	# Edit load and round-trips it as expectedRevision on the next save
 	# so a concurrent edit by another admin is rejected with a clear
@@ -1482,6 +1499,8 @@ enum NotificationEventTypeEnum {
 	RELEASE_BOM_DIFF
 	APPROVAL_REQUESTED
 	APPROVAL_RESOLVED
+	INSTANCE_DEPLOYMENT_CHANGED
+	INSTANCE_DEPLOYMENT_FAILED
 }
 
 # Vuln severity classification carried on event payloads + route gates.
@@ -1642,6 +1661,17 @@ input NotificationSubscriptionInput {
 	routes: [NotificationRouteInput!]!
 	dedupWindowMinutes: Int
 	rateLimit: NotificationRateLimitInput
+	# Ownership MATCHING scope -- "only events about components THIS team owns".
+	# Validated at save: must resolve to a team in the same org. An ARCHIVED team
+	# is accepted, since scoping is a matching rule and an archived owner already
+	# resolves to nothing at fan-out; rejecting it would block editing unrelated
+	# fields on a subscription whose team was archived after it was written.
+	#
+	# Do not confuse with routes[].notifyComponentOwner: that is a destination
+	# covering EVERY owner, this restricts which events match at all. A
+	# per-team subscription built from the flag would deliver one team's events
+	# to all the others. See ai-plans/team-owned-component-notifications.md.
+	ownedByTeam: ID
 }
 
 input NotificationFilterInput {
@@ -1693,6 +1723,17 @@ input NotificationRouteInput {
 	# CHANNELS only -- it does not push rows into members' inboxes, which have
 	# their own visibility arms. Same null/[] equivalence as the fields above.
 	teams: [ID!]
+	# T4a owner-aware targeting. When true the route ALSO delivers to the owner
+	# team of every component the event affects, resolved at fan-out from the
+	# component's ownership (stored owner, else a matching team-assignment
+	# rule). Complements `teams`: that names a FIXED set an operator must keep
+	# up to date, this follows whatever currently owns the component, so
+	# reassigning ownership needs no subscription edit.
+	# Only OWNED / NON_DURABLE ownership delivers -- a suggestion is not an
+	# owner and an archived owner team's channels are stale. USER owners
+	# contribute no channel; they are reached through the inbox arms.
+	# Null / false = no owner expansion.
+	notifyComponentOwner: Boolean
 }
 
 input NotificationRateLimitInput {
@@ -2264,6 +2305,69 @@ type User {
 	status: UserStatus
 }
 
+"""
+A Team is the organization's addressable unit -- what a notification route can
+point at, and (from a later phase) what a component is owned by. A team grants
+NOTHING: access comes from UserGroup and the permission model, and the two are
+separate entities so neither drifts into doing the other's job.
+"""
+type TeamWebDto {
+	uuid: ID
+	name: String
+	description: String
+	org: ID
+	status: TeamStatus
+	# Individually-added members.
+	members: [ID]
+	"""
+	Permission groups whose members are also on this team. Not a convenience:
+	component ownership derives its candidate teams from COMPONENT-scoped
+	permissions and its durability from SSO-backed groups, so a team that could
+	hold only individual users would lose both once ownership retargets here.
+	"""
+	userGroups: [ID]
+	# Channels this team is reachable on (e.g. its Slack channel).
+	notificationChannels: [ID]
+	"""
+	Members who may administer this team. Stored and validated now; nothing
+	reads it for authorization yet -- delegated administration is a later phase.
+	Distinct from ComponentData.leads, which names people on a component.
+	"""
+	leads: [ID]
+	"""
+	This team's own "notify me about the components I own" setting. ReARM
+	materialises an ordinary subscription behind it, scoped to this team's
+	components and delivering to this team's channels; the subscription appears
+	in the subscription list flagged as team-managed and is edited HERE, not
+	there. Null means never configured, which reads as off.
+	"""
+	ownedComponentNotifications: OwnedComponentNotifications
+}
+
+"""
+A team's owned-component notification preference.
+
+excludedEventTypes is an OPT-OUT list: the effective set is every event type
+ReARM emits MINUS these, so a team hears about a new class of event happening to
+its components without editing anything. VEX_STATE_CHANGED is never included --
+nothing emits it, and its payload carries no affected releases, so an
+ownership-scoped subscription could not match it in any case.
+"""
+type OwnedComponentNotifications {
+	enabled: Boolean!
+	excludedEventTypes: [NotificationEventTypeEnum!]
+}
+
+input OwnedComponentNotificationsInput {
+	enabled: Boolean!
+	excludedEventTypes: [NotificationEventTypeEnum!]
+}
+
+enum TeamStatus {
+	ACTIVE
+	INACTIVE
+}
+
 type UserGroupWebDto {
 	uuid: ID
 	name: String
@@ -2276,20 +2380,6 @@ type UserGroupWebDto {
 	permissions: Permissions
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
-	# Addressing roles for roster users (annotation only -- a role never grants
-	# access, and listing a user here does NOT add them to the team).
-	memberRoles: [TeamMemberRole]
-	# Team members who are not registered ReARM users. Addressable for
-	# notification/escalation, but excluded from the durability bar by design.
-	externalMembers: [ExternalTeamMember]
-	"""
-	Notification channels this team is reachable on (e.g. its Slack channel).
-	Direct channel references rather than a channel-group reference: a team
-	having its own channel is one idea, and routing it through a separate named
-	group would add an entity and a screen for no benefit. Channel groups remain
-	the org-level bundling concept for subscriptions.
-	"""
-	notificationChannels: [ID]
 	createdDate: DateTime
 	lastUpdatedBy: ID
 }
@@ -2297,29 +2387,6 @@ type UserGroupWebDto {
 # The role a member plays on a Team. An addressing LABEL only -- never grants
 # access (membership stays decoupled from RBAC). CUSTOM carries an org-defined
 # label alongside in customRole.
-enum TeamRole {
-	TEAM_LEAD
-	SECURITY_SPECIALIST
-	DEVELOPER
-	QA
-	PROJECT_MANAGER
-	PRODUCT_MANAGER
-	CUSTOM
-}
-
-type TeamMemberRole {
-	userRef: ID
-	role: TeamRole
-	customRole: String
-}
-
-type ExternalTeamMember {
-	name: String
-	contact: String
-	role: TeamRole
-	customRole: String
-}
-
 type EmailObject {
 	email: String
 	isPrimary: Boolean
@@ -4615,6 +4682,34 @@ input InviteUserInput {
 	type: PermissionType!
 }
 
+input CreateTeamInput {
+	name: String!
+	description: String
+	org: ID!
+}
+
+"""
+Every collection is NULL-MEANS-KEEP: omitting a field leaves the stored value
+alone, sending an empty list REPLACES it with nothing. A partially-loaded editor
+must omit rather than send [] -- that is how a roster gets silently emptied.
+"""
+input UpdateTeamInput {
+	teamId: ID!
+	name: String
+	description: String
+	status: TeamStatus
+	members: [ID]
+	# Must exist and belong to this org; validated on save.
+	userGroups: [ID]
+	# Must exist, belong to this org, and actually be notification channels.
+	notificationChannels: [ID]
+	# Must be on the effective roster (members + members of contained groups).
+	leads: [ID]
+	# Omit to leave the team's notification setting alone. Sending it replaces
+	# the whole object, and saving the team re-materialises its subscription.
+	ownedComponentNotifications: OwnedComponentNotificationsInput
+}
+
 input CreateUserGroupInput {
 	name: String!
 	description: String
@@ -4631,27 +4726,6 @@ input UpdateUserGroupInput {
 	approvals: [String]
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
-	# Each userRef must already be on the roster (users + manualUsers); a role
-	# annotates an existing member, it never adds one.
-	memberRoles: [TeamMemberRoleInput]
-	externalMembers: [ExternalTeamMemberInput]
-	# Channels must exist and belong to this org; validated on save.
-	notificationChannels: [ID]
-}
-
-input TeamMemberRoleInput {
-	userRef: ID!
-	role: TeamRole!
-	# Required when role is CUSTOM, ignored otherwise.
-	customRole: String
-}
-
-input ExternalTeamMemberInput {
-	name: String!
-	contact: String!
-	role: TeamRole!
-	# Required when role is CUSTOM, ignored otherwise.
-	customRole: String
 }
 
 input UserGroupPermissionInput {

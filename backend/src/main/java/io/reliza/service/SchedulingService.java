@@ -9,6 +9,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import jakarta.annotation.PostConstruct;
 
 import javax.sql.DataSource;
 
@@ -242,10 +245,14 @@ public class SchedulingService {
 					// enrichment pull on the dedicated scheduler keeps system-wide
 					// concurrency lower while freeing this tick for fan-out/ingest.
 
-					// processPendingReconciles already takes an explicit batch limit; tuned higher (50)
-					// because each row is a cheap dedupe and the operation is non-IO-bound.
+					// processPendingReconciles takes an explicit batch limit, configurable via
+					// relizaprops.sbomReconcileDrainBatch (default 50). A 20k-release burst test
+					// measured the drain sustaining the full configured batch per tick at 250
+					// with an 11G heap: post-burst backlog cleared at ~245/min vs ~66/min at 50,
+					// with zero reconcile failures and no Hikari pressure. Size to roughly match
+					// expected peak ingest (releases/min) and available heap.
 					try {
-						sbomComponentService.processPendingReconciles(50);
+						sbomComponentService.processPendingReconciles(sbomReconcileDrainBatch);
 					} catch (Exception e) {
 						log.error("processPendingReconciles failed", e);
 					}
@@ -288,10 +295,12 @@ public class SchedulingService {
 					// Retry releases whose after-commit product auto-integration didn't fully
 					// complete (e.g. transient DB-pool pressure). Idempotent; clears the
 					// flow_control marker on success.
-					try {
-						releaseService.processPendingAutoIntegrate(SCHEDULER_TICK_BATCH_LIMIT);
-					} catch (Exception e) {
-						log.error("processPendingAutoIntegrate failed", e);
+					if (autoIntegrateDrainEnabled) {
+						try {
+							releaseService.processPendingAutoIntegrate(SCHEDULER_TICK_BATCH_LIMIT);
+						} catch (Exception e) {
+							log.error("processPendingAutoIntegrate failed", e);
+						}
 					}
 				} finally {
 					releaseLock(AdvisoryLockKey.RESOLVE_DEPENDENCY_TRACK_STATUS);
@@ -472,6 +481,22 @@ public class SchedulingService {
      * 21:50 DTrack sync) so the single-transaction DELETE doesn't
      * contend with them.
      */
+    /**
+     * Flush the in-memory api-key last-access accumulator. Deliberately NO
+     * advisory lock: the accumulator is per-replica memory, so every replica
+     * must flush its own; the SQL-side IF-NEWER guard keeps concurrent
+     * replica flushes monotonic. See ApiKeyAccessService.pendingTouches for
+     * why this replaced the per-request row UPDATE.
+     */
+    @Scheduled(fixedRateString = "PT30S")
+    public void flushApiKeyLastAccessTouches() {
+        try {
+            apiKeyAccessService.flushPendingLastAccessTouches();
+        } catch (Exception e) {
+            log.error("api key last-access flush failed", e);
+        }
+    }
+
     @Scheduled(cron="0 30 4 * * *")
     public void purgeOldApiKeyAccessRows() {
         try {
@@ -599,6 +624,9 @@ public class SchedulingService {
      * {@code relizaprops.notificationOutboxBatch} for operator tuning
      * without a redeploy.
      */
+    @Value("${relizaprops.sbomReconcileDrainBatch:50}")
+    private int sbomReconcileDrainBatch;
+
     @Value("${relizaprops.notificationOutboxBatch:50}")
     private int notificationOutboxBatch;
 
@@ -613,9 +641,12 @@ public class SchedulingService {
     /**
      * Outbox fan-out drain. Every 5 seconds, claim the
      * {@code DRAIN_NOTIFICATION_OUTBOX} advisory lock; if successful, hand
-     * a batch of PENDING events to {@link NotificationFanOutService} which
-     * writes per-channel delivery rows and flips event status to
-     * FANNED_OUT in the same transaction.
+     * a batch of PENDING events that are DUE to {@link NotificationFanOutService},
+     * which writes per-channel delivery rows and flips event status to
+     * FANNED_OUT in the same transaction. A vuln event whose affected releases
+     * are not resolvable yet is instead left PENDING with its due time pushed
+     * forward, and is withheld as SUPPRESSED if still unresolvable once its
+     * attempt budget is spent.
      *
      * <p>{@code fixedDelay} (not {@code fixedRate}) so a slow batch doesn't
      * pile up ticks -- next tick begins 5 s after the previous one returns.
@@ -625,6 +656,9 @@ public class SchedulingService {
      */
     @Scheduled(fixedDelayString = "PT5S")
     public void drainNotificationOutbox() {
+        if (!notificationOutboxDrainEnabled) {
+            return;
+        }
         try {
             Boolean lock = getLock(AdvisoryLockKey.DRAIN_NOTIFICATION_OUTBOX);
             log.debug("notification outbox lock acquired {}", lock);
@@ -710,8 +744,29 @@ public class SchedulingService {
      * via {@code relizaprops.findingChangeV3BackfillDrainEnabled=false} (e.g. to pause the drain during a
      * controlling-instance rollout without stopping the daily repair sweep).
      */
+    /**
+     * Kill switch for the auto-integrate retry drain. Disabled in the surefire run
+     * ({@code relizaprops.autoIntegrateDrainEnabled=false}) for the same reason as the two drains
+     * below: @SpringBootTest classes that drive claim/marker state directly would otherwise race
+     * this tick, which claims queued releases and clears their markers out from under the
+     * assertions. Direct calls to processPendingAutoIntegrate are unaffected.
+     */
+    @Value("${relizaprops.autoIntegrateDrainEnabled:true}")
+    private boolean autoIntegrateDrainEnabled;
+
     @Value("${relizaprops.findingChangeV3BackfillDrainEnabled:true}")
     private boolean findingChangeV3BackfillDrainEnabled;
+
+    /**
+     * Kill switch for the notification outbox fan-out drain. Defaults on. Mirrors
+     * {@code findingChangeV3BackfillDrainEnabled}: surefire turns it off so the
+     * 5-second schedule does not race @SpringBootTest classes that call
+     * {@code drainBatch} directly (the direct calls are unaffected, and only the
+     * scheduled path takes the advisory lock, so an unlocked test call would
+     * otherwise contend with a live tick over the same rows).
+     */
+    @Value("${relizaprops.notificationOutboxDrainEnabled:true}")
+    private boolean notificationOutboxDrainEnabled;
 
     /**
      * Max branches the v3 backfill drain processes per tick -- the per-tick CPU bound. Conservative default
@@ -753,26 +808,98 @@ public class SchedulingService {
         }
     }
 
-    /** Repair-sweep lookback: covers >1 full day between daily runs with overlap, so every transition is
-     * re-checked by at least two consecutive sweeps. */
-    private static final int FINDING_CHANGE_REPAIR_LOOKBACK_DAYS = 2;
+    /**
+     * Repair-sweep lookback in days. The default (2) deliberately exceeds the daily cadence so every
+     * transition is re-checked by two consecutive sweeps.
+     *
+     * <p>This value is also the sweep's MEMORY: it never revisits a release whose last {@code metrics_audit}
+     * revision is older than the window, so it bounds how long a hole can go unrepaired before it becomes
+     * permanent. Raising it widens both the safety margin and the cost (measured on a 2094-release /
+     * 968k-event instance: ~40s per run at full history).
+     *
+     * <p>The inline default matters: {@code copy-src.sh} mirrors {@code src/} to CE but NOT
+     * {@code application.yaml}, and the CE chart sets no corresponding env var -- so without it the next
+     * mirror produces a CE backend that cannot start. Same for the two properties below.
+     */
+    @Value("${relizaprops.findingChangeRepairLookbackDays:2}")
+    private int findingChangeRepairLookbackDays;
+
+    /** Effective sweep schedule, read only to report it at startup (the annotation below binds it for real). */
+    @Value("${relizaprops.findingChangeRepairCron:" + DEFAULT_REPAIR_CRON + "}")
+    private String findingChangeRepairCron;
+
+    /**
+     * EMERGENCY kill switch for the daily repair sweep. Defaults on, and should stay on.
+     *
+     * <p>Unlike the drain's switch next to it, turning THIS off is not merely a pause: the sweep is the only
+     * thing that heals v3 rows a best-effort live emit dropped, and it only looks back
+     * {@code findingChangeRepairLookbackDays}. Disable it for longer than that and any hole created meanwhile
+     * ages out of every future sweep -- it is then permanent, reverse-replay silently reconstructs across it,
+     * and only a full re-backfill recovers the history. Disabling also stops the vacuous certification of
+     * never-re-scanned orgs, which is what flips their reads to v3.
+     *
+     * <p>The usable budget is NOT the full lookback: a hole created the moment the sweep is disabled is only
+     * repairable by a run at or before that moment plus the lookback, and the first run after re-enabling is
+     * up to one cron period later. So the real margin is {@code lookbackDays - cronPeriod} -- ONE day at the
+     * defaults, not two.
+     *
+     * <p>Deliberately a boolean rather than Spring's {@code cron = "-"} disable: a task that never fires
+     * cannot report that it is off, and this one must not be allowed to rot unnoticed. Every skipped run logs
+     * at ERROR, which is the level operator alerting actually fires on.
+     */
+    @Value("${relizaprops.findingChangeRepairEnabled:true}")
+    private boolean findingChangeRepairEnabled;
+
+    /** Default sweep schedule -- 03:35 daily. Shared by the annotation and the startup report. */
+    private static final String DEFAULT_REPAIR_CRON = "0 35 3 * * *";
+
+    /**
+     * Consecutive runs skipped by the kill switch in THIS process. A count of runs, not elapsed wall-clock:
+     * the exposure that matters is "how many repair opportunities were missed", the process cannot observe
+     * when the flag was actually flipped (it is bound at startup), and a restart resets any elapsed-time
+     * measure to zero while the risk keeps accruing.
+     */
+    private final AtomicInteger repairSweepSkippedRuns = new AtomicInteger();
 
     /**
      * DAILY v3 (events-lite) repair sweep -- v3 is the sole finding-change store and its best-effort live
      * emit needs a self-heal (a dropped v3 row is otherwise a permanent hole reverse-replay reconstructs
-     * across). Bounded reseed of releases re-scanned in the last {@value #FINDING_CHANGE_REPAIR_LOOKBACK_DAYS}
-     * days, re-diffed from {@code metrics_audit}; any hole self-heals within a day and is logged at ERROR
-     * when found. Also vacuously v3-certifies never-re-scanned orgs. Shares the {@code BACKFILL_FINDING_CHANGE_V3}
-     * advisory lock with the v3 backfill drain so the two never run concurrently. 03:35.
+     * across). Bounded reseed of releases re-scanned in the last {@code findingChangeRepairLookbackDays}
+     * days, re-diffed from {@code metrics_audit}; any hole self-heals within a day. Each repaired release is
+     * logged at INFO and the sweep emits at most ONE aggregate line per cause per run -- a sweep that repairs
+     * hundreds of releases must not produce hundreds of alerts. Repairs in v3-CERTIFIED orgs are ERROR (the
+     * live emit was lost); repairs in orgs still being backfilled are INFO (expected rollout). Failures are
+     * reported separately so a wholly-failed run is not silent.
+     * Also vacuously v3-certifies never-re-scanned orgs. Shares the {@code BACKFILL_FINDING_CHANGE_V3}
+     * advisory lock with the v3 backfill drain so the two never run concurrently.
+     *
+     * <p>Schedule and window are operator-tunable ({@code relizaprops.findingChangeRepairCron} /
+     * {@code ...LookbackDays}); default 03:35 daily over 2 days. Widening the cron cadence without widening
+     * the lookback narrows the overlap the lookback exists to provide -- keep the window comfortably longer
+     * than the gap between runs. {@link #reportRepairSweepConfig()} states the effective settings at startup
+     * and objects to values that would silently neuter the sweep.
      */
-    @Scheduled(cron = "0 35 3 * * *")
+    @Scheduled(cron = "${relizaprops.findingChangeRepairCron:" + DEFAULT_REPAIR_CRON + "}")
     public void repairFindingChangeV3() {
+        if (!findingChangeRepairEnabled) {
+            // ERROR, not WARN: on an ERROR-only alerting channel a WARN here would be exactly the silent rot
+            // this switch was made a boolean to avoid.
+            log.error("finding_change_events v3 repair sweep is DISABLED "
+                    + "(relizaprops.findingChangeRepairEnabled=false) -- skipped {} consecutive run(s) in this "
+                    + "process. The sweep only looks back {} day(s) and the first run after re-enabling is up "
+                    + "to one cron period later, so any v3 row dropped by a live emit while it stays off ages "
+                    + "out of every future sweep and becomes permanent (recoverable only by a full "
+                    + "re-backfill). Re-enable well inside that margin.",
+                    repairSweepSkippedRuns.incrementAndGet(), findingChangeRepairLookbackDays);
+            return;
+        }
+        repairSweepSkippedRuns.set(0);
         try {
             Boolean lock = getLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
             log.debug("finding_change_events v3 repair sweep lock acquired {}", lock);
             if (Boolean.TRUE.equals(lock)) {
                 try {
-                    findingChangeEventBackfillService.repairSweepV3(FINDING_CHANGE_REPAIR_LOOKBACK_DAYS);
+                    findingChangeEventBackfillService.repairSweepV3(findingChangeRepairLookbackDays);
                 } finally {
                     releaseLock(AdvisoryLockKey.BACKFILL_FINDING_CHANGE_V3);
                 }
@@ -780,6 +907,50 @@ public class SchedulingService {
         } catch (Exception e) {
             log.error("finding_change_events v3 repair sweep failed", e);
         }
+    }
+
+    /**
+     * States the repair sweep's EFFECTIVE settings once at startup, and objects to any that would silently
+     * neuter it.
+     *
+     * <p>Exposing the schedule as a property re-opened the hole the boolean kill switch was chosen to close:
+     * Spring treats {@code cron = "-"} as "never schedule", so an operator could disable the sweep with no
+     * running task left to report it -- precisely the silent rot the boolean exists to prevent. A
+     * non-positive lookback is the same defect by another route: the sweep runs, walks nothing, and repairs
+     * nothing, forever, while looking healthy. Neither is rejected outright (an instance must still boot
+     * during an incident) but both are stated at ERROR so they cannot pass unnoticed.
+     */
+    @PostConstruct
+    void reportRepairSweepConfig() {
+        String cron = findingChangeRepairCron != null ? findingChangeRepairCron.trim() : "";
+        if (!findingChangeRepairEnabled) {
+            // Deliberately NOT left to the per-run reminder. That reminder is up to one cron period away --
+            // a full day at the defaults -- so after a restart this line is the only immediate evidence the
+            // sweep is off, which is exactly when someone is most likely to be looking at the logs.
+            log.error("finding_change_events v3 repair sweep is DISABLED at startup "
+                    + "(relizaprops.findingChangeRepairEnabled=false) -- nothing will heal v3 rows dropped by "
+                    + "a live emit, and holes older than the {} day(s) lookback can no longer be repaired at "
+                    + "all. Next per-run reminder is one '{}' period away.",
+                    findingChangeRepairLookbackDays, cron);
+            return;
+        }
+        if (Scheduled.CRON_DISABLED.equals(cron) || cron.isEmpty()) {
+            log.error("finding_change_events v3 repair sweep will NEVER RUN: "
+                    + "relizaprops.findingChangeRepairCron is '{}', which Spring treats as disabled. Nothing "
+                    + "will heal v3 rows dropped by a live emit, and no further log line will mention it. "
+                    + "Use relizaprops.findingChangeRepairEnabled=false instead -- that path reports itself.",
+                    cron);
+            return;
+        }
+        if (findingChangeRepairLookbackDays <= 0) {
+            log.error("finding_change_events v3 repair sweep is configured with lookbackDays={}, so every run "
+                    + "will examine an empty window and repair nothing while appearing healthy. Set "
+                    + "relizaprops.findingChangeRepairLookbackDays to at least 2 (longer than the gap between "
+                    + "runs).", findingChangeRepairLookbackDays);
+            return;
+        }
+        log.info("finding_change_events v3 repair sweep enabled -- cron '{}', lookback {} day(s)",
+                cron, findingChangeRepairLookbackDays);
     }
 
 }

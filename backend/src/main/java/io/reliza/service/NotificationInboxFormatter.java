@@ -6,9 +6,13 @@ package io.reliza.service;
 import org.springframework.stereotype.Component;
 
 import io.reliza.common.Utils;
+import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.dto.notifications.ApprovalRequestEntryRef;
 import io.reliza.model.dto.notifications.ApprovalRequestedPayload;
 import io.reliza.model.dto.notifications.ApprovalResolvedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentItem;
+import io.reliza.model.dto.notifications.InstanceRef;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
@@ -73,6 +77,7 @@ public class NotificationInboxFormatter {
                 case RELEASE_BOM_DIFF -> renderReleaseBomDiff(event);
                 case APPROVAL_REQUESTED -> renderApprovalRequested(event);
                 case APPROVAL_RESOLVED -> renderApprovalResolved(event);
+                case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event);
             };
         } catch (Exception e) {
             // Defence in depth: never let a single malformed event break
@@ -262,6 +267,72 @@ public class NotificationInboxFormatter {
             appendFact(desc, "Resolved by " + p.resolvedByName());
         }
         return new InboxRendering(title, desc.length() == 0 ? null : desc.toString());
+    }
+
+    private InboxRendering renderInstanceDeployment(NotificationOutboxEvent event) {
+        InstanceDeploymentChangedPayload p = Utils.OM.convertValue(
+                event.getRecordData(), InstanceDeploymentChangedPayload.class);
+        if (p == null) return new InboxRendering(event.getEventType().name(), null);
+
+        String instance = instanceLabel(p.instance());
+        boolean failed = event.getEventType() == NotificationEventType.INSTANCE_DEPLOYMENT_FAILED;
+        String title = failed ? "Instance " + instance + " — deployment error" : "Instance " + instance;
+
+        StringBuilder desc = new StringBuilder();
+        // Primary summary: the shared severity-ordered status roll-up
+        // ("1 error, 2 converged"), so the compact inbox line reads the same as
+        // the Slack/Teams/Email formatters. Prefix the environment when known
+        // ("PRODUCTION: 2 converged") -- it's the routing dimension operators
+        // scan by. Falls back to the raw item join / status list only when
+        // there are no typed items to roll up (legacy or items-less payload).
+        String summary = InstanceDeploymentRenderSupport.summarize(p.items());
+        if (summary != null && !summary.isBlank()) {
+            String env = p.instance() != null ? p.instance().environment() : null;
+            appendFact(desc, env != null && !env.isBlank() ? env + ": " + summary : summary);
+        } else {
+            String itemLines = instanceItemLines(p.items());
+            if (itemLines != null) {
+                appendFact(desc, itemLines);
+            } else {
+                int n = p.items() != null ? p.items().size() : 0;
+                appendFact(desc, n == 1 ? "1 item" : n + " items");
+                if (p.statuses() != null && !p.statuses().isEmpty()) {
+                    appendFact(desc, String.join(", ", p.statuses()));
+                }
+            }
+        }
+        return new InboxRendering(title, desc.length() == 0 ? null : desc.toString());
+    }
+
+    /** Prefer the customer-facing uri; fall back to name then uuid. */
+    private static String instanceLabel(InstanceRef instance) {
+        if (instance == null) return "instance";
+        if (instance.uri() != null && !instance.uri().isBlank()) return instance.uri();
+        if (instance.name() != null && !instance.name().isBlank()) return instance.name();
+        return instance.uuid() != null ? instance.uuid().toString() : "instance";
+    }
+
+    /** One-line join of the first few deployment items (capped at 3); null when none are usable. */
+    private static String instanceItemLines(java.util.List<InstanceDeploymentItem> items) {
+        if (items == null || items.isEmpty()) return null;
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        int cap = Math.min(items.size(), 3);
+        for (int i = 0; i < cap; i++) {
+            InstanceDeploymentItem item = items.get(i);
+            if (item == null) continue;
+            String status = item.status() != null ? item.status().name() : "unknown";
+            lines.add(componentTypeLabel(item.componentType()) + " "
+                    + defaultString(item.name()) + ": " + status);
+        }
+        if (lines.isEmpty()) return null;
+        String joined = String.join(", ", lines);
+        if (items.size() > cap) joined += " …and " + (items.size() - cap) + " more";
+        return joined;
+    }
+
+    /** Instance items reuse {@link ComponentType}: PRODUCT reads as "Bundle", COMPONENT as "Project". */
+    private static String componentTypeLabel(ComponentType type) {
+        return type == ComponentType.PRODUCT ? "Bundle" : "Project";
     }
 
     /** Comma-joined approval entry names (capped at 10); null when none are usable. */
