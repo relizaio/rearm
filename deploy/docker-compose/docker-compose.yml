@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:26.07.6@sha256:73a7fafd9ed422f38353290ddb669757107e78554ac2b64fb7f9a533ca408879
+    image: registry.relizahub.com/library/rearm-backend:26.08.12@sha256:ad4c424c12bfb901ded5e7b51b7c56485d6965c9d1edc7baa941e7d1353162f2
     # Legacy core.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
@@ -32,7 +32,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:26.07.43@sha256:4708b58fed003940c44d24a5345502ba738c1ac97e77bb4d6ec5ae341615b985
+    image: registry.relizahub.com/library/rearm-ui:26.08.26@sha256:9f063bf29f8065d36aee4c742fac2cbb6ac50ce630e5b829414db93195332837
     ports:
      - "8092:80"
     environment:
@@ -69,7 +69,7 @@ services:
     volumes:
       - "rearm-postgres-data:/relizaio/postgresql"
   keycloak:
-    image: registry.relizahub.com/library/rearm-keycloak:26.06.1@sha256:5c73bda11adb9f0c387804e1c660f76f7aab3060b4c88a424b940dc216344706
+    image: registry.relizahub.com/library/rearm-keycloak:26.06.2@sha256:09141e5e609f49d5692b0115314fbc738f17db9f5708658dfd3da5e809d99c75
     # build: ../../keycloak
     ports:
      - "9080:9080"
@@ -119,7 +119,7 @@ services:
       - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
       - "rearm-keycloak-compose-postgres-data:/relizaio/postgresql"
   oci-artifact-service:
-    image: registry.relizahub.com/library/rearm-oci-artifact-service:26.07.0@sha256:e5cde74f9ce4da0188e78f41e864ab8cd99736eae5ee2d74ad366df0fddf2759
+    image: registry.relizahub.com/library/rearm-oci-artifact-service:26.08.1@sha256:40bf777d5e8945f4cc1df65f0a9aa9620a77dab3a204540cf157d9b803b0c780
     # Legacy oci.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
@@ -180,7 +180,7 @@ services:
       restart_policy:
         condition: on-failure
   rebom-backend:
-    image: registry.relizahub.com/library/rebom-backend:0.22.3@sha256:f6dd989a98d511fa97134fd99d9079f33a85af44fb70d8934313d5ed6153c58c
+    image: registry.relizahub.com/library/rebom-backend:0.23.2@sha256:d7f3749c545452f0a045fa4c5ef3baf2d3790be16575959d3a70781030c2ac69
     # Legacy rebom.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
