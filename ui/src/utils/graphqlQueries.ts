@@ -652,6 +652,7 @@ const singleReleaseDataNoParent = `
                 uuid
                 approvalName
                 approvalRequirements {
+                    allowedApprovalRoleIds
                     allowedApprovalRoleIdExpanded {
                         id
                         displayView
@@ -1127,6 +1128,7 @@ const singleReleaseProductNoParent = `
                 uuid
                 approvalName
                 approvalRequirements {
+                    allowedApprovalRoleIds
                     allowedApprovalRoleIdExpanded {
                         id
                         displayView
