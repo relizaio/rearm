@@ -992,6 +992,20 @@
                                 <div style="margin-bottom: 10px; font-family: monospace; font-size: 12px; word-break: break-all;">
                                     {{ sbomSupportEditRow.component?.name }}<span v-if="sbomSupportEditRow.component?.version">@{{ sbomSupportEditRow.component?.version }}</span>
                                 </div>
+                                <div
+                                    v-if="supportSuggestionInUse"
+                                    style="margin-bottom: 12px; padding: 8px 10px; border: 1px dashed #d0d0d0; border-radius: 4px; font-size: 12px;">
+                                    <div style="font-weight: 600; margin-bottom: 2px;">Pre-filled from a suggestion - review before saving</div>
+                                    <div>{{ supportSuggestionBasisLabel(supportSuggestionInUse.basis) }}</div>
+                                    <div style="color: #999;">
+                                        {{ supportSuggestionInUse.product }} {{ supportSuggestionInUse.cycle }}<span v-if="supportSuggestionInUse.catalogAsOf">, catalog as of {{ supportSuggestionInUse.catalogAsOf }}</span>
+                                        <a v-if="supportSuggestionInUse.upstreamUrl" :href="supportSuggestionInUse.upstreamUrl" target="_blank" rel="noopener noreferrer" style="margin-left: 6px;">check upstream</a>
+                                    </div>
+                                    <div v-if="supportSuggestionInUse.extendedSupportDate" style="margin-top: 4px;">
+                                        Extended/LTS support runs to {{ supportSuggestionInUse.extendedSupportDate }} - use that date instead only if you hold that subscription or support contract.
+                                    </div>
+                                    <div style="margin-top: 4px;">Saving records this as <strong>your</strong> attestation, not the catalog's.</div>
+                                </div>
                                 <n-form-item label="End-of-support date">
                                     <n-date-picker v-model:value="supportEosInput" type="date" clearable style="width: 100%;" />
                                 </n-form-item>
@@ -1304,6 +1318,7 @@ import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
+import { loadSbomComponentsForRelease } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
@@ -2865,6 +2880,9 @@ const sbomSupportEditRow: Ref<any> = ref(null)
 const supportEosInput: Ref<number | null> = ref(null)
 const supportEolInput: Ref<number | null> = ref(null)
 const supportNotesInput: Ref<string> = ref('')
+// The suggestion the editor was opened from, if any. Drives the review banner, and is
+// cleared on a plain edit so an existing attestation is never re-framed as a suggestion.
+const supportSuggestionInUse: Ref<any> = ref(null)
 const supportSavePending: Ref<boolean> = ref(false)
 
 // Org-wide support disclosure completeness -- a pre-submission readiness signal
@@ -2890,12 +2908,35 @@ function tsToIsoDate (ts: number | null): string | null {
     return `${y}-${m}-${day}`
 }
 
-function openSupportEdit (row: any) {
+const SUPPORT_SUGGESTION_BASIS_LABEL: Record<string, string> = {
+    DISTRO_RELEASE_LIFECYCLE: 'Lifecycle of the distribution release that ships this package (not the upstream project - distributions backport fixes, so the two disagree).',
+    EXACT_COORDINATE: 'Published lifecycle of this exact project and release cycle.'
+}
+
+function supportSuggestionBasisLabel (basis: string): string {
+    return SUPPORT_SUGGESTION_BASIS_LABEL[basis] || 'Derived from the public lifecycle catalog.'
+}
+
+/**
+ * Open the attestation editor. When a suggestion is passed the dates are pre-filled
+ * from it and its provenance is pre-written into the (internal-only) note, so whatever
+ * the reviewer saves records what they were shown. The note stays editable and the
+ * reviewer can override either date - accepting is a decision, not a formality.
+ */
+function openSupportEdit (row: any, suggestion?: any) {
     sbomSupportEditRow.value = row
     const c = row.component || {}
-    supportEosInput.value = isoDateToTs(c.endOfSupportDate)
+    supportSuggestionInUse.value = suggestion || null
+    supportEosInput.value = suggestion
+        ? isoDateToTs(suggestion.endOfSupportDate)
+        : isoDateToTs(c.endOfSupportDate)
     supportEolInput.value = isoDateToTs(c.endOfLifeDate)
-    supportNotesInput.value = c.supportNotes || ''
+    supportNotesInput.value = c.supportNotes
+        || (suggestion
+            ? `Accepted suggestion from endoflife.date: ${suggestion.product} ${suggestion.cycle}`
+                + `${suggestion.matchedOn ? ` (matched on ${suggestion.matchedOn})` : ''}`
+                + `${suggestion.catalogAsOf ? `, catalog as of ${suggestion.catalogAsOf}` : ''}.`
+            : '')
     sbomSupportModalOpen.value = true
 }
 
@@ -2957,41 +2998,25 @@ async function loadSupportCoverage (force: boolean = false) {
     }
 }
 
+// CORE selection: fields present on every deployed backend, including a CE mirror
+// lagging behind Pro. FULL adds supportSuggestion, which only exists once the backend
+// carries the suggestion surface. Without this split, selecting it against a lagging
+// CE backend fails validation for the WHOLE document and blanks the entire SBOM
+// components tab -- the enrichment field is advisory, so degrading to CORE (table
+// renders, no suggestion chips) is strictly better than showing nothing.
+// Set once a load proves the deployed backend rejects the suggestion field, so later
+// loads skip the reject-then-retry round-trip.
+const sbomSuggestionUnsupported: Ref<boolean> = ref(false)
+
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (!updatedRelease.value?.uuid) return
     if (sbomComponentsLoaded.value && !forceRefresh) return
     sbomComponentsLoading.value = true
     try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query getReleaseSbomComponentsList($releaseUuid: ID!) {
-                    getReleaseSbomComponents(releaseUuid: $releaseUuid) {
-                        uuid
-                        sbomComponentUuid
-                        component {
-                            uuid
-                            canonicalPurl
-                            type
-                            group
-                            name
-                            version
-                            isRoot
-                            supportStatus
-                            endOfSupportDate
-                            endOfLifeDate
-                            supportSource
-                            supportNotes
-                        }
-                        artifactParticipations {
-                            artifact
-                            exactPurls
-                        }
-                    }
-                }`,
-            variables: { releaseUuid: updatedRelease.value.uuid },
-            fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
-        })
-        sbomComponents.value = (resp.data as any).getReleaseSbomComponents || []
+        const result = await loadSbomComponentsForRelease(
+            graphqlClient as any, updatedRelease.value.uuid, sbomSuggestionUnsupported.value)
+        if (result.degraded) sbomSuggestionUnsupported.value = true
+        sbomComponents.value = result.rows
         sbomComponentsLoaded.value = true
         loadSupportCoverage(forceRefresh)
         // Refresh invalidates the deeper graph too — rows may have changed.
@@ -3142,8 +3167,40 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
         sorter: (a: any, b: any) => (a.component?.supportStatus || '').localeCompare(b.component?.supportStatus || ''),
         render: (row: any) => {
             const c = row.component || {}
-            // Un-attested components have no supportSource -> show a neutral dash, not UNKNOWN.
-            if (!c.supportSource) return h('span', { style: 'color: #999;' }, '—')
+            // Un-attested components have no supportSource -> a neutral dash, not UNKNOWN.
+            // Where the backend can propose a date from the public lifecycle catalog we
+            // offer it here instead, clearly marked as a suggestion rather than a fact:
+            // accepting it opens the ordinary attestation editor pre-filled, so what gets
+            // stored is a MANUAL attestation by the reviewer, never a machine assertion.
+            if (!c.supportSource) {
+                const sug = c.supportSuggestion
+                // Same gate as the Edit-support action below: a viewer who cannot attest
+                // must not be walked through a review that fails on save, and root
+                // components are excluded from manual attestation entirely.
+                const canAttest = isWritable.value && !c.isRoot
+                if (!sug || !canAttest) return h('span', { style: 'color: #999;' }, '—')
+                return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 460px;' }, {
+                    trigger: () => h(NTag, {
+                        size: 'small',
+                        round: true,
+                        bordered: true,
+                        style: 'border-style: dashed; cursor: pointer; color: #888;',
+                        onClick: () => openSupportEdit(row, sug)
+                    }, () => `Suggested EOS ${sug.endOfSupportDate}`),
+                    default: () => h('div', { style: 'font-size: 12px;' }, [
+                        h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 'Not attested - suggestion only'),
+                        h('div', supportSuggestionBasisLabel(sug.basis)),
+                        h('div', `Source: ${sug.product} ${sug.cycle}`),
+                        sug.matchedOn ? h('div', { style: 'color: #999;' }, `Matched on ${sug.matchedOn}`) : null,
+                        sug.extendedSupportDate
+                            ? h('div', { style: 'margin-top: 4px;' },
+                                `Extended/LTS support runs to ${sug.extendedSupportDate} - applies only if you hold that subscription or contract.`)
+                            : null,
+                        sug.catalogAsOf ? h('div', { style: 'color: #999; margin-top: 4px;' }, `Catalog as of ${sug.catalogAsOf}`) : null,
+                        h('div', { style: 'margin-top: 4px;' }, 'Click to review and attest.')
+                    ])
+                })
+            }
             const tag = SUPPORT_TAG[c.supportStatus] || SUPPORT_TAG.UNKNOWN
             const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
             if (c.endOfSupportDate) {
