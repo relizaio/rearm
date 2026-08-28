@@ -3063,7 +3063,7 @@ const suggestionClaims: ComputedRef<any[]> = computed(() => {
         // Mirrors the chip's own gate: root components are excluded from manual attestation,
         // so offering to attest them in bulk would fail on save.
         if (!sug || c.isRoot) continue
-        const key = `${sug.product} ${sug.cycle}`
+        const key = `${sug.product} ${sug.cycle}`
         const claim = byClaim.get(key)
         if (claim) {
             claim.count++
