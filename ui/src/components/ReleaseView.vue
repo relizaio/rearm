@@ -974,6 +974,17 @@
                                 title="This device release declares neither an end-of-support nor an end-of-life date, so component support windows cannot be compared against it. Set the device's support window on the release to enable this check.">
                                 Device declares no support window -- not checked
                             </span>
+                            <!-- One button per CLAIM, never a single "accept all": each is one
+                                 judgement about one catalog date, applied to the components it
+                                 covers. -->
+                            <n-button
+                                v-for="claim in suggestionClaims"
+                                :key="claim.key"
+                                size="small"
+                                secondary
+                                @click="openBulkAccept(claim)">
+                                Accept {{ claim.count }} from {{ claim.product }} {{ claim.cycle }}
+                            </n-button>
                         </n-space>
                         <div v-if="sbomComponentsLoading && !sbomComponentsLoaded">
                             <n-spin size="medium" />
@@ -1039,6 +1050,48 @@
                                 <n-space justify="end">
                                     <n-button size="small" @click="sbomSupportModalOpen = false">Cancel</n-button>
                                     <n-button size="small" type="primary" :loading="supportSavePending" @click="saveSbomSupport">Save attestation</n-button>
+                                </n-space>
+                            </template>
+                        </n-modal>
+                        <!-- Bulk acceptance is still one deliberate decision, so it gets the same
+                             disclosure the per-component editor gives: what the claim is, how old
+                             the data is, the LTS caveat, and that the result is the reviewer's
+                             own attestation. -->
+                        <n-modal v-model:show="bulkAcceptModalOpen" preset="card" style="width: 560px;" title="Accept these suggestions">
+                            <div v-if="bulkAcceptClaim" style="font-size: 13px;">
+                                <p style="margin-top: 0;">
+                                    Attest the <strong>{{ bulkAcceptClaim.count }}</strong> component<span v-if="bulkAcceptClaim.count !== 1">s</span>
+                                    this release still has outstanding, to end-of-support
+                                    <strong>{{ bulkAcceptClaim.endOfSupportDate }}</strong>.
+                                </p>
+                                <div style="padding: 8px 10px; border: 1px dashed #d0d0d0; border-radius: 4px; font-size: 12px;">
+                                    <div>{{ supportSuggestionBasisLabel(bulkAcceptClaim.basis) }}</div>
+                                    <div style="color: #999;">
+                                        {{ bulkAcceptClaim.product }} {{ bulkAcceptClaim.cycle }}<span v-if="bulkAcceptClaim.catalogAsOf">, catalog as of {{ bulkAcceptClaim.catalogAsOf }}</span>
+                                        <a v-if="bulkAcceptClaim.upstreamUrl" :href="bulkAcceptClaim.upstreamUrl" target="_blank" rel="noopener noreferrer" style="margin-left: 6px;">check upstream</a>
+                                    </div>
+                                    <div v-if="bulkAcceptClaim.extendedSupportDate" style="margin-top: 4px;">
+                                        Extended/LTS support runs to {{ bulkAcceptClaim.extendedSupportDate }} - that longer window applies only if you hold that subscription or support contract. Accepting here records the shorter date; edit individually if yours differs.
+                                    </div>
+                                </div>
+                                <p style="margin-bottom: 0;">
+                                    These are recorded as <strong>your</strong> manual attestations, exactly as if you
+                                    accepted each one by hand. Components that already carry an attestation are left
+                                    unchanged. This covers only {{ bulkAcceptClaim.product }} {{ bulkAcceptClaim.cycle }} --
+                                    any other suggestion stays a separate decision.
+                                </p>
+                                <p style="margin-bottom: 0; color: #666;">
+                                    A component's support facts are held once per organization, so these attestations
+                                    also apply wherever else in this organization the same components appear -- the
+                                    same as attesting them individually.
+                                </p>
+                            </div>
+                            <template #footer>
+                                <n-space justify="end">
+                                    <n-button size="small" @click="bulkAcceptModalOpen = false">Cancel</n-button>
+                                    <n-button size="small" type="primary" :loading="bulkAcceptPending" @click="confirmBulkAccept">
+                                        Attest {{ bulkAcceptClaim ? bulkAcceptClaim.count : 0 }} component<span v-if="bulkAcceptClaim && bulkAcceptClaim.count !== 1">s</span>
+                                    </n-button>
                                 </n-space>
                             </template>
                         </n-modal>
@@ -2992,6 +3045,105 @@ function openSupportEdit (row: any, suggestion?: any) {
     sbomSupportModalOpen.value = true
 }
 
+/**
+ * Outstanding suggestions grouped by the CLAIM they rest on, not by component.
+ *
+ * A base-image SBOM typically yields one claim -- "debian 12 support ends 2026-07-11" --
+ * across a hundred-plus OS packages. The reviewer is not making a hundred judgements there,
+ * they are making one and applying it, so that is the unit acceptance is offered in. Keeping
+ * distinct claims as distinct groups is what stops this being an "accept everything" button:
+ * agreeing with Debian's window says nothing about Ubuntu's or Log4j's.
+ */
+const suggestionClaims: ComputedRef<any[]> = computed(() => {
+    if (!isWritable.value) return []
+    const byClaim = new Map<string, any>()
+    for (const row of sbomComponents.value) {
+        const c = row.component || {}
+        const sug = c.supportSuggestion
+        // Mirrors the chip's own gate: root components are excluded from manual attestation,
+        // so offering to attest them in bulk would fail on save.
+        if (!sug || c.isRoot) continue
+        const key = `${sug.product} ${sug.cycle}`
+        const claim = byClaim.get(key)
+        if (claim) {
+            claim.count++
+        } else {
+            byClaim.set(key, {
+                key,
+                product: sug.product,
+                cycle: sug.cycle,
+                endOfSupportDate: sug.endOfSupportDate,
+                extendedSupportDate: sug.extendedSupportDate,
+                catalogAsOf: sug.catalogAsOf,
+                upstreamUrl: sug.upstreamUrl,
+                basis: sug.basis,
+                count: 1
+            })
+        }
+    }
+    return Array.from(byClaim.values()).sort((a, b) => b.count - a.count)
+})
+
+const bulkAcceptClaim: Ref<any> = ref(null)
+const bulkAcceptModalOpen: Ref<boolean> = ref(false)
+const bulkAcceptPending: Ref<boolean> = ref(false)
+function openBulkAccept (claim: any) {
+    bulkAcceptClaim.value = claim
+    bulkAcceptModalOpen.value = true
+}
+
+/**
+ * Accept one claim across the release.
+ *
+ * Sends only the claim's identity -- the server re-derives the date from its own catalog and
+ * writes what it would itself have proposed. So this cannot persist a date the catalog has
+ * since revised, and the confirm dialog shows what the reviewer is agreeing to rather than
+ * what gets written behind it.
+ */
+async function confirmBulkAccept () {
+    const claim = bulkAcceptClaim.value
+    if (!claim) return
+    bulkAcceptPending.value = true
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation: gql`
+                mutation acceptSupportSuggestions($releaseUuid: ID!, $product: String!, $cycle: String!) {
+                    acceptSupportSuggestions(releaseUuid: $releaseUuid, product: $product, cycle: $cycle) {
+                        accepted
+                        skipped
+                        endOfSupportDate
+                    }
+                }`,
+            variables: { releaseUuid: updatedRelease.value.uuid, product: claim.product, cycle: claim.cycle }
+        })
+        const res = resp?.data?.acceptSupportSuggestions || { accepted: 0, skipped: 0 }
+        // Report the skip count rather than folding it into the total: it means an existing
+        // attestation was preserved, which the reviewer should know about.
+        const skippedNote = res.skipped ? ` ${res.skipped} already attested and left unchanged.` : ''
+        if (res.accepted > 0) {
+            // Name the date the SERVER reports, never the one this client was holding: if the
+            // catalog moved between render and click, those differ, and only one of them was
+            // actually written.
+            notify('success', 'Attested',
+                `${res.accepted} component${res.accepted === 1 ? '' : 's'} attested to EOS ${res.endOfSupportDate}.${skippedNote}`)
+        } else {
+            // Nothing was written -- e.g. the catalog changed under this view and the claim no
+            // longer matches. A green "attested" toast here would assert a disclosure that does
+            // not exist, so say plainly that nothing happened.
+            notify('info', 'Nothing to accept',
+                `No outstanding suggestions from ${claim.product} ${claim.cycle} remain on this release.${skippedNote}`)
+        }
+        bulkAcceptModalOpen.value = false
+        bulkAcceptClaim.value = null
+        await loadSbomComponents(true)
+        await loadSupportCoverage(true)
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        bulkAcceptPending.value = false
+    }
+}
+
 async function saveSbomSupport () {
     const row = sbomSupportEditRow.value
     if (!row?.sbomComponentUuid) return
@@ -3110,6 +3262,13 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
         if (result.degraded) sbomFullSelectionUnsupported.value = true
         sbomComponents.value = result.rows
         sbomComponentsLoaded.value = true
+        // suggestionClaims recomputes into fresh objects, but an open confirm dialog holds a
+        // detached snapshot of the old one -- it would keep asserting a count the reviewer is
+        // about to sign off on that no longer matches the loaded rows. Close it instead.
+        if (bulkAcceptModalOpen.value) {
+            bulkAcceptModalOpen.value = false
+            bulkAcceptClaim.value = null
+        }
         loadSupportCoverage(forceRefresh)
         // Refresh invalidates the deeper graph too — rows may have changed.
         if (forceRefresh) {
