@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { buildSchema, validate, type GraphQLSchema } from 'graphql'
+import { buildSchema, validate, print, type GraphQLSchema } from 'graphql'
 import { SBOM_COMPONENTS_CORE_QUERY, SBOM_COMPONENTS_FULL_QUERY } from './sbomComponentsQuery'
 
 // Sibling of notificationInboxSchemaDrift.spec.ts, and load-bearing for the same
@@ -46,6 +46,18 @@ describe('SBOM components core selection vs the CE mirror schema (in-repo, alway
         if (!ceSchema) return
         const errors = validate(ceSchema, SBOM_COMPONENTS_FULL_QUERY).map(e => e.message)
         expect(errors.join(' ')).toMatch(/supportSuggestion/)
+    })
+
+    // Both Pro-ahead fields must sit in FULL. deviceSupportRisk is the one most likely to be
+    // "helpfully" promoted into CORE later -- it is a plain scalar, unlike the nested
+    // suggestion object -- and doing so would blank the whole tab on every lagging CE
+    // install. Pin it explicitly so that move fails here rather than in a customer's browser.
+    // No CE-schema guard here on purpose: this pin is pure text, so it must still fire in a
+    // checkout where the mirrored schema is missing -- that is exactly when the other checks
+    // go quiet and a CORE promotion would otherwise sail through.
+    it('deviceSupportRisk is in FULL only, never in CORE', () => {
+        expect(print(SBOM_COMPONENTS_FULL_QUERY)).toMatch(/deviceSupportRisk/)
+        expect(print(SBOM_COMPONENTS_CORE_QUERY)).not.toMatch(/deviceSupportRisk/)
     })
 })
 
