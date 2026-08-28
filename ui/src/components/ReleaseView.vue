@@ -953,8 +953,26 @@
                             <span
                                 v-if="supportCoverageLoaded"
                                 style="font-size: 12px; color: #666; margin-left: 4px;"
-                                title="Components in this org with a manufacturer (manual) support attestation -- a pre-submission disclosure-completeness signal.">
-                                Support attested: {{ supportCoverageAttested }} / {{ supportCoverageTotal }}
+                                title="Components across this whole organization that carry a manufacturer (manual) support attestation -- a pre-submission disclosure-completeness signal. Counted org-wide, not for this release alone.">
+                                Support attested (org-wide): {{ supportCoverageAttested }} / {{ supportCoverageTotal }}
+                            </span>
+                            <span
+                                v-if="deviceRiskSummary && deviceRiskSummary.kind === 'assessed' && deviceRiskSummary.count > 0"
+                                style="font-size: 12px; color: #d03050; font-weight: 600;"
+                                title="Components whose support ends before this device's own declared support window -- they go unsupported while the device is still fielded. Section 524B expects these to be disclosed and addressed.">
+                                {{ deviceRiskSummary.count }} outlived by this device
+                            </span>
+                            <span
+                                v-else-if="deviceRiskSummary && deviceRiskSummary.kind === 'assessed'"
+                                style="font-size: 12px; color: #18a058;"
+                                title="Every assessed component's support window reaches this device's own support horizon.">
+                                None outlived by this device
+                            </span>
+                            <span
+                                v-else-if="deviceRiskSummary && deviceRiskSummary.kind === 'noHorizon'"
+                                style="font-size: 12px; color: #f0a020;"
+                                title="This device release declares neither an end-of-support nor an end-of-life date, so component support windows cannot be compared against it. Set the device's support window on the release to enable this check.">
+                                Device declares no support window -- not checked
                             </span>
                         </n-space>
                         <div v-if="sbomComponentsLoading && !sbomComponentsLoaded">
@@ -2095,6 +2113,16 @@ async function goToRelease (uuid: string) {
     // right query (and its artifact handling) is used, and reset the lazy
     // product-artifacts flag.
     productArtifactsLoaded.value = false
+    // Same for the SBOM caches: this component is reused across releases rather than
+    // remounted, and loadSbomComponents() early-returns while sbomComponentsLoaded is true,
+    // so without this the next release renders the previous one's components. That was
+    // merely stale before; now the device-risk summary would state "N outlived by this
+    // device" about a device whose SBOM we are not showing.
+    sbomComponentsLoaded.value = false
+    sbomComponents.value = []
+    sbomGraphLoaded.value = false
+    sbomGraphByUuid.value = {}
+    sbomGraphDirty.value = true
     isLoading.value = true
     loadingBar.start()
     try {
@@ -2840,13 +2868,33 @@ const sbomGraphDirty: Ref<boolean> = ref(false)
 // group, type, or canonical purl (case-insensitive substring).
 const sbomSearchQueryInput: Ref<string> = ref('')
 const sbomSupportFilter: Ref<string> = ref('all')
-const supportFilterOptions = [
-    { label: 'All support', value: 'all' },
-    { label: 'Attested', value: 'attested' },
-    { label: 'Not attested', value: 'notAttested' },
-    { label: 'Past end-of-support', value: 'pastEos' },
-    { label: 'Approaching EOS (90d)', value: 'approaching' }
-]
+// The device-risk option is offered only where the verdict can exist at all -- otherwise it
+// filters to an empty table that reads as "nothing at risk" when the truth is "never
+// checked". Two ways it cannot exist: the backend gates the verdict to PRODUCT (device)
+// releases, and a backend too old to serve the field drops us to the CORE selection where it
+// was never requested. Same reasoning as deviceRiskSummary, which withholds on both.
+const deviceRiskAssessable: ComputedRef<boolean> = computed(
+    () => isProductRelease.value && !sbomFullSelectionUnsupported.value)
+const supportFilterOptions: ComputedRef<any[]> = computed(() => {
+    const opts: any[] = [
+        { label: 'All support', value: 'all' },
+        { label: 'Attested', value: 'attested' },
+        { label: 'Not attested', value: 'notAttested' },
+        { label: 'Past end-of-support', value: 'pastEos' },
+        { label: 'Approaching EOS (90d)', value: 'approaching' }
+    ]
+    if (deviceRiskAssessable.value) {
+        opts.push({ label: 'Outlived by this device', value: 'deviceRisk' })
+    }
+    return opts
+})
+// That option can vanish underneath a live selection (navigating to a component release, or
+// a load degrading to CORE), leaving the select rendering a value no longer in its options
+// and the table filtered on a verdict that cannot occur -- an empty table reading as a clean
+// bill of health. Fall back to showing everything instead.
+watch(deviceRiskAssessable, (assessable: boolean) => {
+    if (!assessable && sbomSupportFilter.value === 'deviceRisk') sbomSupportFilter.value = 'all'
+})
 function eosTimestamp (c: any): number | null {
     // Reuse the edit path's local-time conversion so the filter interprets the date identically.
     return isoDateToTs(c?.endOfSupportDate)
@@ -2872,6 +2920,7 @@ const filteredSbomComponents: ComputedRef<any[]> = computed((): any[] => {
             const t = eosTimestamp(c)
             if (t === null || t <= now || t > soon) return false
         }
+        if (f === 'deviceRisk' && !isDeviceRiskFlagged(c.deviceSupportRisk)) return false
         return true
     })
 })
@@ -3002,14 +3051,54 @@ async function loadSupportCoverage (force: boolean = false) {
 }
 
 // CORE selection: fields present on every deployed backend, including a CE mirror
-// lagging behind Pro. FULL adds supportSuggestion, which only exists once the backend
-// carries the suggestion surface. Without this split, selecting it against a lagging
-// CE backend fails validation for the WHOLE document and blanks the entire SBOM
-// components tab -- the enrichment field is advisory, so degrading to CORE (table
-// renders, no suggestion chips) is strictly better than showing nothing.
-// Set once a load proves the deployed backend rejects the suggestion field, so later
-// loads skip the reject-then-retry round-trip.
-const sbomSuggestionUnsupported: Ref<boolean> = ref(false)
+// lagging behind Pro. FULL adds supportSuggestion and deviceSupportRisk, which only exist
+// once the backend carries those surfaces. Without this split, selecting them against a
+// lagging CE backend fails validation for the WHOLE document and blanks the entire SBOM
+// components tab -- both are advisory, so degrading to CORE (table renders, no suggestion
+// chips and no device-risk flags) is strictly better than showing nothing.
+// Set once a load proves the deployed backend rejects the FULL selection, so later loads
+// skip the reject-then-retry round-trip.
+const sbomFullSelectionUnsupported: Ref<boolean> = ref(false)
+
+/**
+ * The device-risk summary shown beside the coverage counter, or null when there is nothing
+ * honest to say.
+ *
+ * Deliberately does NOT collapse to a bare count, because "0 at risk" and "we could not
+ * assess this" look identical to a reader and mean opposite things. Two cases produce zero
+ * flags for entirely different reasons:
+ *
+ *  - the device declares no support window, so every verdict is UNKNOWN and NOTHING was
+ *    checked -- reporting "0 at risk" there is a false all-clear on a regulatory screen;
+ *  - the device declares one and every assessed component outlasts it -- a real all-clear.
+ *
+ * We tell them apart without another round-trip: DeviceSupportRisk resolves to UNKNOWN only
+ * when the device has no horizon or the component carries no dates. So among components that
+ * DO carry a date, an all-UNKNOWN result can only mean the device declares no horizon.
+ *
+ * Counts the whole release, not the filtered view: whether a device outlives its components
+ * is a fact about the device, not about the reader's current search.
+ */
+const deviceRiskSummary: ComputedRef<{ kind: 'assessed' | 'noHorizon', count: number } | null> = computed(() => {
+    if (!isProductRelease.value || !sbomComponentsLoaded.value) return null
+    // Degraded to CORE: deviceSupportRisk was never selected, so every value is undefined.
+    // Reporting "no support window" from absent data would be a lie about the device.
+    if (sbomFullSelectionUnsupported.value) return null
+    const dated = sbomComponents.value.filter((row: any) => {
+        const c = row.component || {}
+        return !!(c.endOfSupportDate || c.endOfLifeDate)
+    })
+    if (!dated.length) return null
+    const assessed = dated.filter((row: any) => {
+        const risk = row.component?.deviceSupportRisk
+        return risk && risk !== 'UNKNOWN'
+    })
+    if (!assessed.length) return { kind: 'noHorizon', count: 0 }
+    return {
+        kind: 'assessed',
+        count: dated.filter((row: any) => isDeviceRiskFlagged(row.component?.deviceSupportRisk)).length
+    }
+})
 
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (!updatedRelease.value?.uuid) return
@@ -3017,8 +3106,8 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
     sbomComponentsLoading.value = true
     try {
         const result = await loadSbomComponentsForRelease(
-            graphqlClient as any, updatedRelease.value.uuid, sbomSuggestionUnsupported.value)
-        if (result.degraded) sbomSuggestionUnsupported.value = true
+            graphqlClient as any, updatedRelease.value.uuid, sbomFullSelectionUnsupported.value)
+        if (result.degraded) sbomFullSelectionUnsupported.value = true
         sbomComponents.value = result.rows
         sbomComponentsLoaded.value = true
         loadSupportCoverage(forceRefresh)
@@ -3131,6 +3220,54 @@ const SUPPORT_TAG: Record<string, { type: SupportTagType, label: string }> = {
     UNKNOWN: { type: 'default', label: 'Unknown' }
 }
 
+// DeviceSupportRisk (FDA-Readiness-1 PR5). A SEPARATE axis from the support status above,
+// and the reason it gets its own marker rather than folding into that tag: the status tag
+// answers "is this supported TODAY", the risk answers "does its support end before the
+// DEVICE's own horizon". A component can be Actively supported today and still fail the
+// device check -- e.g. support to 2030 inside a device fielded to 2031 -- which is exactly
+// the section-524B case a manufacturer must disclose, and which a status-only column shows
+// in reassuring green.
+//
+// Only the two flagged values render. OK needs no marker, and UNKNOWN must never render as
+// OK: it means "not assessed" (no device horizon, or no dates on the component).
+const DEVICE_RISK_LABEL: Record<string, string> = {
+    EOS_BEFORE_DEVICE: 'EOS before device',
+    EOL_BEFORE_DEVICE: 'EOL before device'
+}
+const DEVICE_RISK_DETAIL: Record<string, string> = {
+    EOS_BEFORE_DEVICE: 'This component stops receiving support before this device\'s declared'
+        + ' support window ends, so it goes unsupported while the device is still fielded.',
+    EOL_BEFORE_DEVICE: 'This component reaches end-of-life before this device\'s declared'
+        + ' support window ends, so it is out of life while the device is still fielded.'
+}
+// Derived from the label map rather than re-listing its keys: the map IS the set of flagged
+// verdicts, and a hand-maintained second copy fails silently -- a third flagged value would
+// render a tag while the summary counted zero and the filter hid the row.
+function isDeviceRiskFlagged (risk: any): boolean {
+    return !!risk && risk in DEVICE_RISK_LABEL
+}
+/**
+ * The risk marker, or null when this component is not flagged.
+ *
+ * Keyed on the verdict alone, deliberately -- NOT on supportSource. The backend derives the
+ * verdict from the dates and ignores the source, and the summary count and the filter are
+ * likewise source-agnostic. Rendering this only alongside an attested row would make the
+ * header count rows whose cell shows no marker the moment a non-MANUAL writer lands dates.
+ */
+function deviceRiskBadge (c: any): any {
+    if (!isDeviceRiskFlagged(c.deviceSupportRisk)) return null
+    return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+        trigger: () => h(NTag, { size: 'small', type: 'error', round: true, bordered: true },
+            () => DEVICE_RISK_LABEL[c.deviceSupportRisk]),
+        default: () => h('div', { style: 'font-size: 12px;' }, [
+            h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 'Outlived by this device'),
+            h('div', DEVICE_RISK_DETAIL[c.deviceSupportRisk]),
+            h('div', { style: 'margin-top: 4px;' },
+                'Disclose and address it, or plan a replacement before the device ships.')
+        ])
+    })
+}
+
 const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'name',
@@ -3177,11 +3314,18 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
             // stored is a MANUAL attestation by the reviewer, never a machine assertion.
             if (!c.supportSource) {
                 const sug = c.supportSuggestion
+                // A component can carry dates (hence a device verdict) without a source once a
+                // non-MANUAL writer exists, so the marker rides along here too -- see
+                // deviceRiskBadge. Today this is unreachable and costs one null check.
+                const unattestedRisk = deviceRiskBadge(c)
                 // Same gate as the Edit-support action below: a viewer who cannot attest
                 // must not be walked through a review that fails on save, and root
                 // components are excluded from manual attestation entirely.
                 const canAttest = isWritable.value && !c.isRoot
-                if (!sug || !canAttest) return h('span', { style: 'color: #999;' }, '—')
+                if (!sug || !canAttest) {
+                    return h('div', [h('span', { style: 'color: #999;' }, '—'),
+                        unattestedRisk ? h('div', { style: 'margin-top: 3px;' }, [unattestedRisk]) : null])
+                }
                 return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 460px;' }, {
                     trigger: () => h(NTag, {
                         size: 'small',
@@ -3208,6 +3352,13 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
             const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
             if (c.endOfSupportDate) {
                 els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
+            }
+            // The device check is a second, independent verdict -- see DEVICE_RISK_LABEL. The
+            // backend only ever returns a flagged value on a PRODUCT (device) release, so this
+            // needs no release-type gate of its own.
+            const risk = deviceRiskBadge(c)
+            if (risk) {
+                els.push(h('div', { style: 'margin-top: 3px;' }, [risk]))
             }
             return h('div', els)
         }
