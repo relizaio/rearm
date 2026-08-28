@@ -1,11 +1,13 @@
 // Release SBOM-components query, split CORE / FULL for schema-drift tolerance.
 //
 // The SAME UI ships to a Pro backend and to CE installs whose backend is a delayed
-// mirror of Pro. `supportSuggestion` (FDA-Readiness-1 PR4) exists on Pro before it
-// reaches the CE mirror, and GraphQL validates the WHOLE document -- so selecting it
-// against a lagging CE backend would reject the entire query and blank the whole SBOM
-// components tab, not just the suggestion chips. Suggestions are advisory, so degrading
-// to CORE (table renders, no chips) is strictly better than showing nothing.
+// mirror of Pro. `supportSuggestion` (FDA-Readiness-1 PR4) and `deviceSupportRisk`
+// (PR5) both exist on Pro before they reach the CE mirror, and GraphQL validates the
+// WHOLE document -- so selecting either against a lagging CE backend would reject the
+// entire query and blank the whole SBOM components tab, not just those two surfaces.
+// Both are advisory reads over facts the CORE selection already carries, so degrading
+// to CORE (table renders, no chips and no risk flags) is strictly better than showing
+// nothing.
 //
 // Both documents are written out in full rather than composed from a shared fragment
 // string, so both stay statically analysable: ui/scripts/validate-graphql.mjs skips
@@ -60,6 +62,7 @@ export const SBOM_COMPONENTS_FULL_QUERY = gql`
                 endOfLifeDate
                 supportSource
                 supportNotes
+                deviceSupportRisk
                 supportSuggestion {
                     endOfSupportDate
                     basis
@@ -80,13 +83,15 @@ export const SBOM_COMPONENTS_FULL_QUERY = gql`
 
 export interface SbomComponentsLoad {
     rows: any[]
-    // True when only CORE was served: rows render, suggestion chips are absent.
+    // True when only CORE was served: rows render, but suggestion chips and device-risk
+    // flags are absent. Callers must treat an absent device verdict as "not checked" rather
+    // than "not at risk".
     degraded: boolean
 }
 
 /**
  * Load a release's SBOM components, falling back to the CORE selection when the
- * deployed backend does not know the suggestion field.
+ * deployed backend does not know the FULL-only fields (suggestion, device-risk).
  *
  * @param skipFull set once a prior load proved the backend rejects FULL, to avoid
  *                 paying the reject-then-retry round-trip on every later load.
