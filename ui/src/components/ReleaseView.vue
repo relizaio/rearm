@@ -1320,6 +1320,7 @@ import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus } from '@/utils/releaseScanStatus'
+import { resolveApprovalRoles } from '@/utils/approvalRoles'
 import { processMetricsData } from '@/utils/metrics'
 import { annotateKnownExploited, fetchArtifactKevVulnIds } from '@/utils/kevService'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
@@ -2029,13 +2030,15 @@ async function fetchRelease () {
         approvalEntries.value.forEach(ae => {
             approvalMatrixCheckboxes.value[ae.uuid] = {}
             ae.approvalRequirements.forEach((ar: any) => {
-                availableApprovalIds.value[ar.allowedApprovalRoleIdExpanded[0].id] = ar.allowedApprovalRoleIdExpanded[0].displayView
+                const role = resolveApprovalRoles(ar)[0]
+                if (!role) return
+                availableApprovalIds.value[role.id] = role.displayView
                 let checkBoxValue = 'UNSET'
-                if (givenApprovals.value[ae.uuid] && (givenApprovals.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id] === 'APPROVED' || 
-                    givenApprovals.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id] === 'DISAPPROVED')) {
-                    checkBoxValue = givenApprovals.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id]
+                if (givenApprovals.value[ae.uuid] && (givenApprovals.value[ae.uuid][role.id] === 'APPROVED' ||
+                    givenApprovals.value[ae.uuid][role.id] === 'DISAPPROVED')) {
+                    checkBoxValue = givenApprovals.value[ae.uuid][role.id]
                 }
-                approvalMatrixCheckboxes.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id] = checkBoxValue
+                approvalMatrixCheckboxes.value[ae.uuid][role.id] = checkBoxValue
             })
         })
     }
@@ -5373,7 +5376,8 @@ const releaseApprovalTableData: ComputedRef<any[]> = computed((): any[] => {
 
             }
             ae.approvalRequirements.forEach((ar: any) => {
-                aeObj[ar.allowedApprovalRoleIdExpanded[0].id] = true
+                const role = resolveApprovalRoles(ar)[0]
+                if (role) aeObj[role.id] = true
             })
             return aeObj
         })

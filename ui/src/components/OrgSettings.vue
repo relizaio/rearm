@@ -1145,6 +1145,7 @@ import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
 import constants from '../utils/constants'
 import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
+import { resolveApprovalRoles } from '../utils/approvalRoles'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
@@ -4954,7 +4955,7 @@ const orgApprovalEntries: Ref<ApprovalEntry[]> = ref([])
 
 const approvalEntryTableData: ComputedRef<any[]> = computed((): any => {
     const data = orgApprovalEntries.value.map(oae => {
-        const approvalRoles = oae.approvalRequirements.map(oaear => oaear.allowedApprovalRoleIdExpanded[0].displayView)
+        const approvalRoles = oae.approvalRequirements.flatMap(oaear => resolveApprovalRoles(oaear).map(r => r.displayView))
         return {
             uuid: oae.uuid,
             approvalName: oae.approvalName,
@@ -4972,6 +4973,7 @@ async function fetchApprovalEntries () {
                     uuid
                     approvalName
                     approvalRequirements {
+                        allowedApprovalRoleIds
                         allowedApprovalRoleIdExpanded {
                             id
                             displayView
