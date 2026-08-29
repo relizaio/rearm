@@ -2213,6 +2213,13 @@ const storeObject : any = {
                             lastActivityAt
                             artifacts
                             commits
+                            primaryModel {
+                                uuid
+                                name
+                                version
+                                publisher
+                            }
+                            modelAssertion
                             policyEvents {
                                 policyUuid
                                 policyName
