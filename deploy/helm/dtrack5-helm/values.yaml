@@ -125,7 +125,7 @@ dependency-track:
     image:
       registry: docker.io
       repository: dependencytrack/apiserver
-      tag: 5.0.3@sha256:0cf15de2649d75ce4e7736b428d203f9630665d8bc843d15f0c6c5b23b56ada7
+      tag: 5.1.0@sha256:54ef9453ab731922c524c7d66bac51baa5284ce218406b00ab6b02e4e3e8f5cb
       pullPolicy: IfNotPresent
     topology: monolith
     # The api-server neither retries a failed DB pool init nor exits the JVM
@@ -148,7 +148,7 @@ dependency-track:
     image:
       registry: docker.io
       repository: dependencytrack/frontend
-      tag: 5.0.3@sha256:c8bb3f1b806f9ab2a854eec577a97a177d13befd488757f3ed61810d48ae6d9b
+      tag: 5.1.0@sha256:54fc593f4c3e25f8dc3a7b6346c31cde2a3b587a50d002836acf074689a4208f
       pullPolicy: IfNotPresent
     # Empty apiBaseUrl -> the UI issues relative /api requests, which the
     # frontend's own nginx proxies to the api-server (see
