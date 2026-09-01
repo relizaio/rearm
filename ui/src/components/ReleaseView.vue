@@ -2816,8 +2816,7 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
     if (sbomComponentsLoaded.value && !forceRefresh) return
     sbomComponentsLoading.value = true
     try {
-        const result = await loadSbomComponentsForRelease(graphqlClient as any, updatedRelease.value.uuid)
-        sbomComponents.value = result.rows
+        sbomComponents.value = await loadSbomComponentsForRelease(graphqlClient as any, updatedRelease.value.uuid)
         sbomComponentsLoaded.value = true
         // Refresh invalidates the deeper graph too — rows may have changed.
         if (forceRefresh) {
