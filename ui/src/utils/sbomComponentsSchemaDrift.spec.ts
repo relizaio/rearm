@@ -45,13 +45,13 @@ describe('SBOM components core selection vs the CE mirror schema (in-repo, alway
     it('the FULL selection is NOT yet valid against the CE mirror (split is load-bearing)', () => {
         if (!ceSchema) return
         const errors = validate(ceSchema, SBOM_COMPONENTS_FULL_QUERY).map(e => e.message)
-        expect(errors.join(' ')).toMatch(/supportSuggestion/)
+        expect(errors.join(' ')).toMatch(/deviceSupportRisk/)
     })
 
-    // Both Pro-ahead fields must sit in FULL. deviceSupportRisk is the one most likely to be
-    // "helpfully" promoted into CORE later -- it is a plain scalar, unlike the nested
-    // suggestion object -- and doing so would blank the whole tab on every lagging CE
-    // install. Pin it explicitly so that move fails here rather than in a customer's browser.
+    // The Pro-ahead field must sit in FULL. deviceSupportRisk is a plain scalar, which makes
+    // it an easy target to "helpfully" promote into CORE later -- doing so would blank the
+    // whole tab on every lagging CE install. Pin it explicitly so that move fails here rather
+    // than in a customer's browser.
     // No CE-schema guard here on purpose: this pin is pure text, so it must still fire in a
     // checkout where the mirrored schema is missing -- that is exactly when the other checks
     // go quiet and a CORE promotion would otherwise sail through.
