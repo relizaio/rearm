@@ -777,6 +777,19 @@ async function saveModifiedBranch () {
             )
         }
         
+        // A dependency without a branch is only legal when IGNORED (matches
+        // backend updateBranch validation) - fail fast with a pointed message
+        // instead of a server-side rejection.
+        const branchlessInvalid = (modifiedBranch.value.dependencies || []).find(
+            (d: any) => !d.branch && d.status !== 'IGNORED'
+        )
+        if (branchlessInvalid) {
+            const compName = store.getters.componentById(branchlessInvalid.uuid)?.name || branchlessInvalid.uuid
+            notify('error', 'Branch Required',
+                `Dependency on ${compName} has no branch selected. Select a branch or set its status to Excluded.`)
+            return
+        }
+
         // Track if branch type was changed to BASE
         const wasChangedToBase = modifiedBranch.value.type === 'BASE' && branchData.value.type !== 'BASE'
         
@@ -1323,7 +1336,14 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                 })
             }
             
-            if (!row.branch) return 'Unknown'
+            if (!row.branch) {
+                // A branchless (component-level) dependency is only legal as an
+                // exclusion; render it as such. Anything else is pre-validation
+                // data - label it so the fix (pick a branch or exclude) is clear.
+                return row.status === 'IGNORED'
+                    ? h('span', { style: 'opacity: 0.5' }, '— (excluded)')
+                    : h('span', { class: 'muted-12' }, 'No branch — select one or exclude')
+            }
 
             const isExcluded = row.status === 'IGNORED'
             const link = renderDependencyBranchLink(row.component, row.branch, row.branch.name)
