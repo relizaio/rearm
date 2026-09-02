@@ -47,6 +47,11 @@ projectProtocol: http
 projectHost: rearm.localhost
 useDefaultSecrets: true
 max_upload_size_in_MB: 50
+# SBOM reconciles processed per scheduler tick (relizaprops.sbomReconcileDrainBatch).
+# Raise for burst ingestion: a 20k-release burst test cleared backlog at ~245/min
+# at 250 (11G heap) vs ~66/min at the default 50. Size to expected peak
+# releases/min and available heap.
+sbom_reconcile_drain_batch: 50
 backend:
   logFormatType: "plain"
   enableDtrackCleanupScheduler: false
