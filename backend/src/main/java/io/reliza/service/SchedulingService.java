@@ -618,15 +618,22 @@ public class SchedulingService {
     FindingChangeEventBackfillService findingChangeEventBackfillService;
 
     /**
+     * Number of pending SBOM reconciles processed per tick. Bounds the work
+     * one drain claims while holding the advisory lock; raise for burst
+     * ingestion (see the 20k-release note in the reconcile drain) rather
+     * than shortening the tick. Configurable via
+     * {@code relizaprops.sbomReconcileDrainBatch} / {@code SBOM_RECONCILE_DRAIN_BATCH}.
+     */
+    @Value("${relizaprops.sbomReconcileDrainBatch:50}")
+    private int sbomReconcileDrainBatch;
+
+    /**
      * Number of outbox events drained per tick. Tuned: enough to make
      * progress on realistic per-org volumes without holding the advisory
      * lock unnecessarily long. Configurable via
      * {@code relizaprops.notificationOutboxBatch} for operator tuning
      * without a redeploy.
      */
-    @Value("${relizaprops.sbomReconcileDrainBatch:50}")
-    private int sbomReconcileDrainBatch;
-
     @Value("${relizaprops.notificationOutboxBatch:50}")
     private int notificationOutboxBatch;
 

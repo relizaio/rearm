@@ -21,6 +21,8 @@ services:
      # service's 8083.
      - RELIZAPROP_OCIARTIFACTS_SERVICE_HOST=http://oci-artifact-service:8083
      - MAX_UPLOAD_SIZE=50MB
+     # SBOM reconciles processed per scheduler tick; raise for burst ingestion
+     - SBOM_RECONCILE_DRAIN_BATCH=50
     depends_on:
      - rearm-postgresql
      - keycloak
