@@ -911,7 +911,7 @@ const storeObject : any = {
                 mutation: gql`
                     mutation updateInstance($inst: InstanceInput!) {
                         updateInstance(instance:$inst) {
-                            ${graphqlQueries.InstanceGqlData}
+                            ${graphqlQueries.InstanceCoreGqlData}
                         }
                     }`,
                 variables: {
@@ -1639,14 +1639,33 @@ const storeObject : any = {
             if (!instFetchProps.revision) instFetchProps.revision = -1
             const variables: any = { instanceUuid: instFetchProps.id, revision: instFetchProps.revision }
             if (instFetchProps.stateType) variables.stateType = instFetchProps.stateType
+            // core: skip DeployedRelease.releaseDetails on both release lists
+            // (the per-row release fan-out that dominates the query); the
+            // InstanceView tabs fetch those on demand via
+            // fetchInstanceReleaseDetails. Either shape is committed to the
+            // store under (uuid, revision); store readers of instanceById only
+            // use the shallow row fields, so the two shapes are interchangeable
+            // there. A reader that needs releaseDetails must fetch them itself.
             const response = await graphqlClient.query({
-                query: graphqlQueries.InstanceGql,
+                query: instFetchProps.core ? graphqlQueries.InstanceCoreGql : graphqlQueries.InstanceGql,
                 variables,
                 fetchPolicy: 'no-cache'
             })
             response.data.instance.revision = instFetchProps.revision
             context.commit('ADD_INSTANCE', response.data.instance)
             return response.data.instance
+        },
+        // params.part is the Instance field to resolve with releaseDetails:
+        // 'releases' (deployed) or 'targetReleases'. Returns
+        // { release, releaseDetails } pairs for that field only; the caller
+        // merges them onto the shallow rows it already holds.
+        async fetchInstanceReleaseDetails (context: any, params: { id: string, part: 'releases' | 'targetReleases' }) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.InstanceReleaseDetailsGql[params.part],
+                variables: { instanceUuid: params.id },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.instance ? (response.data.instance[params.part] || []) : []
         },
         async fetchInstances (context: any, id: string) {
             const response = await graphqlClient.query({

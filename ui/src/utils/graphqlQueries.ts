@@ -173,7 +173,37 @@ const CHILD_RELEASE_GQL_DATA = `
     }
 `
 
-const INSTANCE_GQL_DATA = `
+// Instance selection sets. The backend resolves DeployedRelease.releaseDetails,
+// InstanceProductMapPlan.*Details, deploymentFailures and deploymentHealth as
+// per-field resolvers, so the cost of an instance query is driven by what the
+// document asks for. The shallow deployed-release rows below are cheap (they
+// live on the instance record) and are what updateInstance sends back, so
+// every instance document keeps them; only releaseDetails -- one release
+// lookup plus its artifacts / source-code-entry / component fan-out per row --
+// is split out so InstanceView can defer it to the tab that renders it.
+const DEPLOYED_RELEASE_SHALLOW_GQL_DATA = `
+        timeSent
+        release
+        deliverable
+        namespace
+        properties
+        state
+        partOf
+        replicas {
+            id
+            state
+        }
+        isInError
+`
+const TARGET_RELEASE_SHALLOW_GQL_DATA = `
+        timeSent
+        release
+        deliverable
+        namespace
+        properties
+`
+// Everything on Instance before the two release lists ...
+const INSTANCE_HEAD_GQL_DATA = `
     uuid
     name
     instanceType
@@ -196,33 +226,10 @@ const INSTANCE_GQL_DATA = `
             defaultValue
         }
     }
-    releases {
-        timeSent
-        release
-        deliverable
-        namespace
-        properties
-        state
-        partOf
-        replicas {
-            id
-            state
-        }
-        isInError
-        releaseDetails {
-            ${MULTI_RELEASE_GQL_DATA}
-        }
-    }
-    targetReleases {
-        timeSent
-        release
-        deliverable
-        namespace
-        properties
-        releaseDetails {
-            ${MULTI_RELEASE_GQL_DATA}
-        }
-    }
+`
+// ... and everything after them. Both instance shapes below are composed
+// from these so the only difference between them is the release lists.
+const INSTANCE_TAIL_GQL_DATA = `
     unmatchedReleases {
         image
         digestRecords {
@@ -312,6 +319,36 @@ const INSTANCE_GQL_DATA = `
     status
     spawnType
 `
+// Slim shape: shallow release rows only. What InstanceView loads first.
+const INSTANCE_CORE_GQL_DATA = `
+    ${INSTANCE_HEAD_GQL_DATA}
+    releases {
+        ${DEPLOYED_RELEASE_SHALLOW_GQL_DATA}
+    }
+    targetReleases {
+        ${TARGET_RELEASE_SHALLOW_GQL_DATA}
+    }
+    ${INSTANCE_TAIL_GQL_DATA}
+`
+// Full shape: core plus resolved release details on both deployed-release
+// lists. Used where a single round trip must return everything (revision
+// comparison, legacy callers).
+const INSTANCE_GQL_DATA = `
+    ${INSTANCE_HEAD_GQL_DATA}
+    releases {
+        ${DEPLOYED_RELEASE_SHALLOW_GQL_DATA}
+        releaseDetails {
+            ${MULTI_RELEASE_GQL_DATA}
+        }
+    }
+    targetReleases {
+        ${TARGET_RELEASE_SHALLOW_GQL_DATA}
+        releaseDetails {
+            ${MULTI_RELEASE_GQL_DATA}
+        }
+    }
+    ${INSTANCE_TAIL_GQL_DATA}
+`
 
 const MULTI_INSTANCE_GQL_DATA = `
     uuid
@@ -372,6 +409,60 @@ const INSTANCE_GQL = gql`
 query FetchInstance($instanceUuid: ID!, $revision:Int, $stateType: InstanceStateType) {
     instance(instanceUuid: $instanceUuid, revision:$revision, stateType:$stateType) {
         ${INSTANCE_GQL_DATA}
+    }
+}`
+
+const INSTANCE_CORE_GQL = gql`
+query FetchInstanceCore($instanceUuid: ID!, $revision:Int, $stateType: InstanceStateType) {
+    instance(instanceUuid: $instanceUuid, revision:$revision, stateType:$stateType) {
+        ${INSTANCE_CORE_GQL_DATA}
+    }
+}`
+
+// Deferred halves of the instance view: release details for the deployed /
+// target release rows, keyed by the row's release uuid. Only the fields the
+// instance tables and the product-match tooltip read -- not the full release
+// fragment, whose artifact / ticket / metrics fan-out is the expensive part.
+// InstanceView merges these onto the shallow rows it already holds.
+const DEPLOYED_RELEASE_DETAILS_GQL_DATA = `
+            uuid
+            version
+            componentDetails {
+                uuid
+                name
+                type
+            }
+            sourceCodeEntryDetails {
+                uuid
+                commit
+                vcsRepository {
+                    uri
+                }
+            }
+`
+const INSTANCE_DEPLOYED_RELEASE_DETAILS_GQL = gql`
+query FetchInstanceDeployedReleaseDetails($instanceUuid: ID!) {
+    instance(instanceUuid: $instanceUuid, revision: -1) {
+        uuid
+        releases {
+            release
+            releaseDetails {
+                ${DEPLOYED_RELEASE_DETAILS_GQL_DATA}
+            }
+        }
+    }
+}`
+
+const INSTANCE_TARGET_RELEASE_DETAILS_GQL = gql`
+query FetchInstanceTargetReleaseDetails($instanceUuid: ID!) {
+    instance(instanceUuid: $instanceUuid, revision: -1) {
+        uuid
+        targetReleases {
+            release
+            releaseDetails {
+                ${DEPLOYED_RELEASE_DETAILS_GQL_DATA}
+            }
+        }
     }
 }`
 
@@ -1537,6 +1628,16 @@ export default {
     BranchGqlMutate: BRANCH_GQL_MUTATE,
     InstanceGql: INSTANCE_GQL,
     InstanceGqlData: INSTANCE_GQL_DATA,
+    InstanceCoreGql: INSTANCE_CORE_GQL,
+    InstanceCoreGqlData: INSTANCE_CORE_GQL_DATA,
+    DeployedReleaseShallowGqlData: DEPLOYED_RELEASE_SHALLOW_GQL_DATA,
+    TargetReleaseShallowGqlData: TARGET_RELEASE_SHALLOW_GQL_DATA,
+    // Keyed by the Instance field each document resolves, so callers can
+    // select the deferred half by field name (see store.fetchInstanceReleaseDetails).
+    InstanceReleaseDetailsGql: {
+        releases: INSTANCE_DEPLOYED_RELEASE_DETAILS_GQL,
+        targetReleases: INSTANCE_TARGET_RELEASE_DETAILS_GQL
+    },
     InstancesGql: INSTANCES_GQL,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,

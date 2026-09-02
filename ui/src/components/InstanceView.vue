@@ -20,15 +20,28 @@
             </div>
             <!-- Segmented sub-tab pill control — mirrors OrgIntegrations look-and-feel. -->
             <div class="subtab-bar">
-                <button class="subtab-pill" :class="{ active: activeTab === 'instance' }" @click="switchTab('instance')">
+                <button class="subtab-pill" :class="{ active: activeTab === 'instance' }" @click="switchTab('instance')" data-testid="instance-tab-instance">
                     <n-icon size="16" class="subtab-icon"><Server /></n-icon>
                     <span>{{ instanceWord }}</span>
                 </button>
-                <button class="subtab-pill" :class="{ active: activeTab === 'plan-history' }" @click="switchTab('plan-history')">
+                <button v-if="updatedInstance.instanceType !== InstanceType.CLUSTER" class="subtab-pill" :class="{ active: activeTab === 'target-releases' }" @click="switchTab('target-releases')" data-testid="instance-tab-target-releases">
+                    <n-icon size="16" class="subtab-icon"><Target /></n-icon>
+                    <span>Individual Target Releases</span>
+                </button>
+                <button v-if="updatedInstance.instanceType !== InstanceType.CLUSTER" class="subtab-pill" :class="{ active: activeTab === 'deployed-releases' }" @click="switchTab('deployed-releases')" data-testid="instance-tab-deployed-releases">
+                    <n-icon size="16" class="subtab-icon"><Rocket /></n-icon>
+                    <span>Deployed Component Releases</span>
+                </button>
+                <button class="subtab-pill" :class="{ active: activeTab === 'cd-failures' }" @click="switchTab('cd-failures')" data-testid="instance-tab-cd-failures">
+                    <n-icon size="16" class="subtab-icon"><AlertTriangle /></n-icon>
+                    <span>Deployment Failures</span>
+                    <span v-if="deploymentFailureCount > 0" class="subtab-count subtab-count-error" data-testid="instance-tab-cd-failures-count">{{ deploymentFailureCount }}</span>
+                </button>
+                <button class="subtab-pill" :class="{ active: activeTab === 'plan-history' }" @click="switchTab('plan-history')" data-testid="instance-tab-plan-history">
                     <n-icon size="16" class="subtab-icon"><History /></n-icon>
                     <span>Plan History</span>
                 </button>
-                <button class="subtab-pill" :class="{ active: activeTab === 'actual-history' }" @click="switchTab('actual-history')">
+                <button class="subtab-pill" :class="{ active: activeTab === 'actual-history' }" @click="switchTab('actual-history')" data-testid="instance-tab-actual-history">
                     <n-icon size="16" class="subtab-icon"><History /></n-icon>
                     <span>Actual History</span>
                 </button>
@@ -59,63 +72,6 @@
                 />
                 
                 
-                <div v-if="updatedInstance && updatedInstance.instanceType !== InstanceType.CLUSTER" class="instanceReleaseBlock individualTargetReleases">
-                    <div class="listHeaderText">Individual Target Releases:
-                        <n-dropdown v-if="updatedInstance.instanceType === InstanceType.STANDALONE_INSTANCE" title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
-                        <span>
-                                <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
-                                <Icon><CaretDownFilled/></Icon>
-                            </span>
-                        </n-dropdown>
-                        <n-icon v-if="isWritable" class="clickable" @click="showAddComponentTargetReleaseModal = true" title="Add Component Target Release" size="24"><CirclePlus /></n-icon>
-                    </div>
-                    <n-data-table :data="targetIndividualReleases" :columns="targetReleaseFeilds" />
-                    
-                </div>
-                <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER" class="instanceReleaseBlock actualReleasesOnInstance">
-                    <div class="listHeaderText">Deployed Component Releases:
-                        <n-dropdown v-if="!isChildInstance && updatedInstance.instanceType === InstanceType.STANDALONE_INSTANCE"  title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
-                        <span>
-                                <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
-                                <Icon><CaretDownFilled/></Icon>
-                            </span>
-                        </n-dropdown>
-                        <n-icon class="ml-1 clickable" @click="showAgentDataModal = true" title="Show Agent Data" size="20"><InfoCircle /></n-icon>
-                        <n-icon v-if="isWritable" class="ml-1 clickable" @click="clearAgentData" title="Clear Agent Data" size="20"><CircleX /></n-icon>
-                    </div>
-                    <n-data-table :data="deployedReleases" :columns="deployedReleaseFeilds"></n-data-table>
-                </div>
-                <div v-if="filteredDeploymentFailures.length" class="instanceReleaseBlock deploymentFailuresOnInstance">
-                    <div class="listHeaderText">
-                        Deployment Failures:
-                        <n-tooltip trigger="hover" placement="top" :style="{maxWidth: '460px'}">
-                            <template #trigger><n-icon class="ml-1 clickable" size="18"><InfoCircle /></n-icon></template>
-                            Failures reported by ReARM CD while reconciling this instance. A failure that repeats is shown once with its occurrence count — First Seen is when the current incident started, Last Seen is the most recent report. Rows disappear once the agent stops reporting the failure.
-                        </n-tooltip>
-                        <n-tag v-if="deploymentHealthChip" :type="deploymentHealthChip.type" size="small" round class="ml-1"
-                               :title="deploymentHealthChip.tip">
-                            {{ deploymentHealthChip.label }}
-                        </n-tag>
-                    </div>
-                    <n-data-table :data="filteredDeploymentFailures" :columns="deploymentFailureFields" />
-                </div>
-                <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER && filteredUnmatchedReleases.length"
-                     class="instanceReleaseBlock unmatchedImagesOnInstance">
-                    <div class="listHeaderText">
-                        Unmatched Deployed Images:
-                        <n-tooltip trigger="hover" placement="top" :style="{maxWidth: '420px'}">
-                            <template #trigger><n-icon class="ml-1 clickable" size="18"><InfoCircle /></n-icon></template>
-                            Images reported by the cluster watcher whose digest does not resolve to any known deliverable in this org. Typically third-party sidecars (redis, postgres, etc.) or pods missing build-time metadata.
-                        </n-tooltip>
-                        <n-dropdown v-if="!isChildInstance && updatedInstance.instanceType === InstanceType.STANDALONE_INSTANCE" title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
-                            <span>
-                                <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
-                                <Icon><CaretDownFilled/></Icon>
-                            </span>
-                        </n-dropdown>
-                    </div>
-                    <n-data-table :data="filteredUnmatchedReleases" :columns="unmatchedImageFields" />
-                </div>
                 <div v-if="updatedInstance" class="instancePropertiesBlock">
                     <div class="listHeaderText">{{ instanceWord }} Properties:
                         <n-icon v-if="isWritable" class="clickable" @click="showAddInstancePropertyModal = true" title="Add New Property Manually" size="24"><CirclePlus /></n-icon>
@@ -123,6 +79,74 @@
                     <n-data-table :data="updatedInstance.properties" :columns="instPropFeilds"></n-data-table>
                 </div>
                 </div>
+            </div>
+
+            <!-- ================= Individual Target Releases tab ================== -->
+            <div v-if="activeTab === 'target-releases' && updatedInstance && updatedInstance.instanceType !== InstanceType.CLUSTER" class="instanceReleaseBlock individualTargetReleases">
+                <div class="listHeaderText">Individual Target Releases:
+                    <n-dropdown v-if="showNamespaceFilter" title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
+                        <span>
+                            <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
+                            <Icon><CaretDownFilled/></Icon>
+                        </span>
+                    </n-dropdown>
+                    <n-icon v-if="isWritable" class="clickable" @click="showAddComponentTargetReleaseModal = true" title="Add Component Target Release" size="24"><CirclePlus /></n-icon>
+                </div>
+                <div v-if="targetDetailsLoading" class="historyLoading">Loading…</div>
+                <div v-else-if="targetDetailsFailed" class="historyEmpty">Could not load target release details. <a href="#" @click.prevent="retryReleaseDetails('targetReleases')">Retry</a></div>
+                <n-data-table v-else :data="targetIndividualReleases" :columns="targetReleaseFeilds" />
+            </div>
+
+            <!-- ================= Deployed Component Releases tab ================== -->
+            <div v-if="activeTab === 'deployed-releases' && updatedInstance && updatedInstance.instanceType !== InstanceType.CLUSTER">
+                <div class="instanceReleaseBlock actualReleasesOnInstance">
+                    <div class="listHeaderText">Deployed Component Releases:
+                        <n-dropdown v-if="showNamespaceFilter" title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
+                            <span>
+                                <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
+                                <Icon><CaretDownFilled/></Icon>
+                            </span>
+                        </n-dropdown>
+                        <n-icon class="ml-1 clickable" @click="showAgentDataModal = true" title="Show Agent Data" size="20"><InfoCircle /></n-icon>
+                        <n-icon v-if="isWritable" class="ml-1 clickable" @click="clearAgentData" title="Clear Agent Data" size="20"><CircleX /></n-icon>
+                    </div>
+                    <div v-if="deployedDetailsLoading" class="historyLoading">Loading…</div>
+                    <div v-else-if="deployedDetailsFailed" class="historyEmpty">Could not load deployed release details. <a href="#" @click.prevent="retryReleaseDetails('releases')">Retry</a></div>
+                    <n-data-table v-else :data="deployedReleases" :columns="deployedReleaseFeilds"></n-data-table>
+                </div>
+                <div v-if="filteredUnmatchedReleases.length" class="instanceReleaseBlock unmatchedImagesOnInstance">
+                    <div class="listHeaderText">
+                        Unmatched Deployed Images:
+                        <n-tooltip trigger="hover" placement="top" :style="{maxWidth: '420px'}">
+                            <template #trigger><n-icon class="ml-1 clickable" size="18"><InfoCircle /></n-icon></template>
+                            Images reported by the cluster watcher whose digest does not resolve to any known deliverable in this org. Typically third-party sidecars (redis, postgres, etc.) or pods missing build-time metadata.
+                        </n-tooltip>
+                    </div>
+                    <n-data-table :data="filteredUnmatchedReleases" :columns="unmatchedImageFields" />
+                </div>
+            </div>
+
+            <!-- ================= Deployment Failures (ReARM CD) tab ================== -->
+            <div v-if="activeTab === 'cd-failures'" class="instanceReleaseBlock deploymentFailuresOnInstance">
+                <div class="listHeaderText">
+                    Deployment Failures:
+                    <n-tooltip trigger="hover" placement="top" :style="{maxWidth: '460px'}">
+                        <template #trigger><n-icon class="ml-1 clickable" size="18"><InfoCircle /></n-icon></template>
+                        Failures reported by ReARM CD while reconciling this instance. A failure that repeats is shown once with its occurrence count — First Seen is when the current incident started, Last Seen is the most recent report. Rows disappear once the agent stops reporting the failure.
+                    </n-tooltip>
+                    <n-tag v-if="deploymentHealthChip" :type="deploymentHealthChip.type" size="small" round class="ml-1"
+                           :title="deploymentHealthChip.tip">
+                        {{ deploymentHealthChip.label }}
+                    </n-tag>
+                    <n-dropdown v-if="showNamespaceFilter" title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
+                        <span class="ml-1">
+                            <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
+                            <Icon><CaretDownFilled/></Icon>
+                        </span>
+                    </n-dropdown>
+                </div>
+                <n-data-table v-if="filteredDeploymentFailures.length" :data="filteredDeploymentFailures" :columns="deploymentFailureFields" />
+                <div v-else class="historyEmpty">No open deployment failures reported by ReARM CD{{ selectedNamespace && selectedNamespace !== 'ALL' ? ' in namespace ' + selectedNamespace : '' }}.</div>
             </div>
 
             <!-- ================= Plan History tab ================== -->
@@ -301,7 +325,7 @@
                                 class="addProperty"
                                 v-if="updatedInstance && updatedInstance.org"
                                 :orgProp="updatedInstance.org"
-                                :knownProducts="knownProducts"
+                                :productPlans="updatedInstance.productPlans"
                                 :knownNamespaces="knownNamespaces"
                                 :instProperties="updatedInstance.properties"
                                 :instanceType="updatedInstance.instanceType"
@@ -459,7 +483,7 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
 import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular, DismissCircle20Regular} from '@vicons/fluent'
-import { Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History, Bell } from '@vicons/tabler'
+import { Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, X, Check, Server, History, Bell, Target, Rocket, AlertTriangle } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'
@@ -521,8 +545,57 @@ function subscribeToDeploymentNotifications (): void {
 const envs: Ref<any[]> = ref([])
 
 // --- Tab state (URL-synced) ---
-type InstTab = 'instance' | 'plan-history' | 'actual-history'
-const activeTab = ref<InstTab>((route.query.instTab as InstTab) || 'instance')
+const INST_TABS = ['instance', 'target-releases', 'deployed-releases', 'cd-failures', 'plan-history', 'actual-history'] as const
+type InstTab = typeof INST_TABS[number]
+function isInstTab (t: unknown): t is InstTab {
+    return INST_TABS.includes(t as InstTab)
+}
+const activeTab = ref<InstTab>(isInstTab(route.query.instTab) ? route.query.instTab : 'instance')
+
+// The instance is fetched in two halves. The core document carries the
+// shallow deployed / target release rows (uuid, namespace, state -- what
+// updateInstance sends back and what the namespace filter and tab counts
+// need) but not DeployedRelease.releaseDetails, which the backend resolves
+// per row. Details are fetched only when the tab that renders them opens
+// (or when the product-match tooltip, which reads deployed versions, is
+// shown), and cached by release uuid for the life of the view so a core
+// refetch after a save does not pay for them again. Because the cache is
+// keyed by release uuid and merged onto whatever rows are current, a
+// response that arrives after the list changed can never resurrect a stale
+// list -- it only fills in details for rows that are still there.
+type ReleaseListPart = 'releases' | 'targetReleases'
+const RELEASE_LIST_PARTS: ReleaseListPart[] = ['releases', 'targetReleases']
+const releaseDetailCache = ref<Record<string, any>>({})
+const releaseDetailState: Record<ReleaseListPart, { loading: Ref<boolean>, failed: Ref<boolean> }> = {
+    releases: { loading: ref(false), failed: ref(false) },
+    targetReleases: { loading: ref(false), failed: ref(false) }
+}
+const releaseRows = (part: ReleaseListPart): any[] => (updatedInstance.value && updatedInstance.value[part]) || []
+// True when every row of the list has its details resolved (an empty list is
+// trivially loaded). Derived from the rows and the cache rather than stored,
+// so it cannot go stale when either changes.
+const releaseDetailsLoaded = (part: ReleaseListPart): boolean =>
+    releaseRows(part).every((r: any) => r.release in releaseDetailCache.value)
+const deployedDetailsLoaded = computed<boolean>(() => releaseDetailsLoaded('releases'))
+const targetDetailsLoaded = computed<boolean>(() => releaseDetailsLoaded('targetReleases'))
+const deployedDetailsLoading = releaseDetailState.releases.loading
+const targetDetailsLoading = releaseDetailState.targetReleases.loading
+const deployedDetailsFailed = releaseDetailState.releases.failed
+const targetDetailsFailed = releaseDetailState.targetReleases.failed
+
+const isCluster = computed<boolean>(() => updatedInstance.value && updatedInstance.value.instanceType === InstanceType.CLUSTER)
+// The two release tabs have neither a pill nor a panel on a CLUSTER, so a
+// URL that names one (a link copied from a standalone instance, or the child
+// drawer pushing its own tab onto the shared query) falls back to the
+// Instance tab instead of landing on a blank page and fetching for nothing.
+function tabAvailableHere (t: InstTab): InstTab {
+    return isCluster.value && (t === 'target-releases' || t === 'deployed-releases') ? 'instance' : t
+}
+// The namespace dropdown scopes the release, unmatched-image and failure
+// tables; it is only meaningful for a standalone instance, which is the one
+// type that can span namespaces.
+const showNamespaceFilter = computed<boolean>(() =>
+    updatedInstance.value && updatedInstance.value.instanceType === InstanceType.STANDALONE_INSTANCE)
 const planHistory: Ref<any[]> = ref([])
 const actualHistory: Ref<any[]> = ref([])
 const planHistoryLoading = ref(false)
@@ -613,6 +686,11 @@ const filteredDeploymentFailures: ComputedRef<any[]> = computed((): any[] => {
     return list.filter((f: any) => f.namespace === selectedNamespace.value)
 })
 
+// Unfiltered count for the tab pill -- the pill must reflect every open
+// failure regardless of the namespace filter, which only scopes the table.
+const deploymentFailureCount: ComputedRef<number> = computed((): number =>
+    ((updatedInstance.value && updatedInstance.value.deploymentFailures) || []).length)
+
 // Header chip. FAILING means the agent re-reported a failure recently;
 // DEGRADED means open failures exist but nothing recent — which is genuinely
 // ambiguous between "fixed" and "the agent stopped reporting", hence the
@@ -664,6 +742,16 @@ function buildMatchTooltipBody(row: any) {
         headerText = 'Not matching'
     }
     lines.push(h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, headerText))
+    if (!deployedDetailsLoaded.value) {
+        // Deployed release details are deferred; onMatchTooltipShow kicks off
+        // the fetch and this body re-renders once the versions are known.
+        // Don't draw the per-dependency rows yet: without actual versions
+        // every one would read as a red mismatch under a 'Matching' header.
+        lines.push(h('div', { style: 'font-style: italic; color: #888;' }, deployedDetailsFailed.value
+            ? 'Deployed release details could not be loaded. Open the Deployed Component Releases tab to retry.'
+            : 'Loading deployed releases...'))
+        return lines
+    }
 
     const deps = (row.featureSetDetails && row.featureSetDetails.dependencies) || []
     const targetParents = (row.targetReleaseDetails && row.targetReleaseDetails.parentReleases) || []
@@ -752,20 +840,6 @@ const namespacesForDropdown: ComputedRef<any[]> = computed((): any => {
         retNs = Array.from(namespaces).map(n => {return {key: n, label: n}})
     }
     return retNs
-})
-
-const knownProducts: ComputedRef<any[]> = computed((): any => {
-    let knownProducts = []
-    if (updatedInstance.value && updatedInstance.value.productPlans && updatedInstance.value.productPlans.length) {
-        knownProducts = updatedInstance.value.productPlans.map((p: any) => {
-            return {
-                label: p.featureSetDetails.componentDetails.name,
-                value: p.featureSetDetails.componentDetails.uuid
-            }
-        })
-    }
-    knownProducts.unshift({label:"", value:""})
-    return knownProducts
 })
 
 const knownNamespaces: ComputedRef<any[]> = computed((): any => {
@@ -982,11 +1056,66 @@ const switchTab = async function (t: InstTab) {
     await lazyLoadTab(t)
 }
 
+// Attach cached details to the rows of one list. Rows whose release is not
+// in the cache are left as they are (the tables skip rows without details).
+function applyReleaseDetails (part: ReleaseListPart) {
+    releaseRows(part).forEach((r: any) => {
+        if (r.release in releaseDetailCache.value) r.releaseDetails = releaseDetailCache.value[r.release]
+    })
+}
+
+// Fetch details for whichever rows of the list are not cached yet, then merge
+// them in. One request in flight per list; `attempt` bounds the follow-up
+// fetch that runs when the list changed underneath the request (a row added
+// by a save while the request was pending), so a backend that never returns
+// a row cannot spin this.
+async function ensureReleaseDetails (part: ReleaseListPart, attempt = 0) {
+    const state = releaseDetailState[part]
+    if (releaseDetailsLoaded(part) || state.loading.value) return
+    state.loading.value = true
+    state.failed.value = false
+    try {
+        const rows = await store.dispatch('fetchInstanceReleaseDetails', { id: instanceUuid, part })
+        rows.forEach((r: any) => {
+            // null is a resolved answer too (release gone): cache it so the
+            // row counts as loaded rather than re-fetching forever.
+            releaseDetailCache.value[r.release] = r.releaseDetails || null
+        })
+        applyReleaseDetails(part)
+    } catch (err: any) {
+        state.failed.value = true
+        console.error(err)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        state.loading.value = false
+    }
+    if (!state.failed.value && !releaseDetailsLoaded(part) && attempt < 2) {
+        await ensureReleaseDetails(part, attempt + 1)
+    }
+}
+
+function retryReleaseDetails (part: ReleaseListPart) {
+    releaseDetailState[part].failed.value = false
+    ensureReleaseDetails(part)
+}
+
+// The product-match tooltip lists actual deployed versions per dependency,
+// so opening it is the one place outside its tab that needs release details.
+// A failed fetch is not retried from here -- hovering must not spam error
+// toasts; the tab has an explicit Retry.
+function onMatchTooltipShow (show: boolean) {
+    if (show && !deployedDetailsFailed.value) ensureReleaseDetails('releases')
+}
+
 async function lazyLoadTab(t: InstTab) {
     if (t === 'plan-history' && !planHistoryLoaded.value) {
         await fetchPlanHistory()
     } else if (t === 'actual-history' && !actualHistoryLoaded.value) {
         await fetchActualHistory()
+    } else if (t === 'target-releases') {
+        await ensureReleaseDetails('targetReleases')
+    } else if (t === 'deployed-releases') {
+        await ensureReleaseDetails('releases')
     }
 }
 
@@ -995,7 +1124,7 @@ async function lazyLoadTab(t: InstTab) {
 // absent/invalid param means the default tab, matching the pre-fix
 // remount-initializer behavior.
 watch(() => route.query.instTab, async (t) => {
-    const next: InstTab = (t === 'instance' || t === 'plan-history' || t === 'actual-history') ? t : 'instance'
+    const next: InstTab = tabAvailableHere(isInstTab(t) ? t : 'instance')
     if (next !== activeTab.value) {
         activeTab.value = next
         await lazyLoadTab(next)
@@ -1038,7 +1167,7 @@ const handleEnvironmentChange = async function (newEnv: string) {
 const fetchInstance = async function() {
     if( instanceUuid === undefined || instanceUuid === null || instanceUuid === '')
         return
-    const instResp = await store.dispatch('fetchInstance', { id: instanceUuid })
+    const instResp = await store.dispatch('fetchInstance', { id: instanceUuid, core: true })
     const updatedInstancePrep = commonFunctions.deepCopy(instResp)
     // sort products
     if (updatedInstancePrep.productPlans && updatedInstancePrep.productPlans.length) {
@@ -1074,6 +1203,14 @@ const fetchInstance = async function() {
         }
     }
     updatedInstance.value = updatedInstancePrep
+    // The core document replaced both release lists with shallow rows; put
+    // the cached details back on the rows that are still there, then load
+    // whatever the open tab is missing. Not awaited: the view is rendered
+    // under Suspense on first mount, and a deep link to a heavy tab should
+    // paint the page with its inline loading state, not block on the fetch.
+    RELEASE_LIST_PARTS.forEach(applyReleaseDetails)
+    activeTab.value = tabAvailableHere(activeTab.value)
+    lazyLoadTab(activeTab.value)
 }
 
 const genProductRelease = async function () {
@@ -1177,12 +1314,13 @@ const toggleAlerts = async function (prl: any, value: boolean) {
 const save = async function () {
     try {
         await store.dispatch('updateInstance', updatedInstance.value)
-        await fetchInstance()
-        // Invalidate cached history so the next visit to a history tab re-fetches.
+        // Invalidate cached history before the refetch, so that if a history
+        // tab is the one open, fetchInstance -> lazyLoadTab reloads it.
         planHistoryLoaded.value = false
         actualHistoryLoaded.value = false
         planHistory.value = []
         actualHistory.value = []
+        await fetchInstance()
         notify('info', 'SAVED', 'Instance changes saved successfully!')
     } catch (errOnSave: any) {
         console.error(errOnSave)
@@ -1304,6 +1442,7 @@ const doExportCycloneDx = async function () {
 const onCreate = async function () {
     if( instanceUuid === undefined || instanceUuid === null || instanceUuid === '')
         return
+    releaseDetailCache.value = {}
     await fetchInstance()
 
     graphqlClient.query({
@@ -1313,14 +1452,8 @@ const onCreate = async function () {
         envs.value = envsResp.data.environmentTypes.map((e: any) => {return {label: e, key: e}})
     })
 
-    // History (Plan / Actual) is loaded lazily — only when the user clicks
-    // into the corresponding tab. If a tab is selected via URL on first
-    // mount, kick off the fetch now.
-    if (activeTab.value === 'plan-history') {
-        fetchPlanHistory()
-    } else if (activeTab.value === 'actual-history') {
-        fetchActualHistory()
-    }
+    // Tab content (history, release details) is loaded lazily by
+    // fetchInstance -> lazyLoadTab for whichever tab the URL selected.
     if(route.params.subinstuuid !== undefined && route.params.subinstuuid !== null && route.params.subinstuuid !== ''){
         selectedChildInstRowKey.value = [route.params.subinstuuid.toString()]
         showChildInstance.value = true
@@ -1439,7 +1572,8 @@ const matchedProductFields: any[] = [
                     trigger: 'hover',
                     placement: 'top',
                     width: 720,
-                    style: { maxWidth: '720px' }
+                    style: { maxWidth: '720px' },
+                    'onUpdate:show': onMatchTooltipShow
                 }, {
                     trigger: () => h(NIcon, {
                         size: 16,
@@ -1468,7 +1602,8 @@ const matchedProductFields: any[] = [
                     trigger: 'hover',
                     placement: 'top',
                     width: 720,
-                    style: { maxWidth: '720px' }
+                    style: { maxWidth: '720px' },
+                    'onUpdate:show': onMatchTooltipShow
                 }, {
                     trigger: () => h(NIcon, {
                         size: 16,
@@ -2117,6 +2252,15 @@ await onCreate()
     font-weight: 600;
 }
 .subtab-icon { display: inline-flex; }
+.subtab-count {
+    font-size: 11px; font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+.subtab-count-error {
+    background: #fde8e8; color: #b42318;
+    border: 1px solid #f5c2c2;
+}
 
 /* ---- History tab content ---- */
 .historyTab {
