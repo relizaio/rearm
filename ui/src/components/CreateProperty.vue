@@ -47,9 +47,10 @@
             <n-form-item path="namespace" :label="nsLabel">
                 <n-select v-if="props.instanceType === InstanceType.STANDALONE_INSTANCE" 
                             v-model:value="property.namespace"
-                            :options="props.knownNamespaces"
+                            :options="namespaceOptions"
                             tag
-                            filterable />
+                            filterable
+                            data-testid="create-property-namespace" />
                 <n-input v-else-if="props.instanceType === InstanceType.CLUSTER_INSTANCE" :disabled="true" :placeholder="props.reservedNs"></n-input>
                 <n-input v-else :disabled="true" placeholder="CLUSTER--WIDE"></n-input>
             </n-form-item>
@@ -79,7 +80,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ref, ComputedRef, computed, watch } from 'vue'
+import { ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
 import { FormInst, NForm, NFormItem, NInput, NButton, NSelect, useNotification, NotificationType } from 'naive-ui'
 import { PrismEditor } from 'vue-prism-editor';
@@ -113,6 +114,8 @@ const nsLabel: ComputedRef<string> = computed((): any => {
         label = 'Namespace (defaults to cluster wide for cluster)'
     else if(props.instanceType === InstanceType.CLUSTER_INSTANCE)
         label = 'Namespace (reserved namespace for the instance will be used)'
+    else if(productScopesNamespaces.value)
+        label = `Namespace (where ${selectedProductName.value} is deployed)`
     return label
 })
 const orgs: ComputedRef<any> = computed((): any => {
@@ -137,32 +140,74 @@ const property = ref({
     value: ''
 })
 
-// A property targets a product in a namespace, so once a namespace is picked
-// only products deployed there are offered. No namespace (cluster-wide) or a
-// non-standalone instance (single fixed namespace) offers every product.
-const namespaceScopesProducts: ComputedRef<boolean> = computed((): boolean =>
-    props.instanceType === InstanceType.STANDALONE_INSTANCE && !!property.value.namespace)
+// A property targets a product in a namespace, and on a standalone instance
+// (the one type that spans namespaces) the two must be a pair the instance
+// actually deploys. The lists scope each other -- pick a namespace and only
+// products deployed there are offered; pick a product and only its
+// namespaces are offered -- and pairValidator rejects anything else (the
+// namespace select accepts typed values, so the lists alone are not enough).
+// No namespace (cluster-wide) or no product leaves the other side unscoped.
+const isStandalone: ComputedRef<boolean> = computed((): boolean =>
+    props.instanceType === InstanceType.STANDALONE_INSTANCE)
+const plans = (): any[] => (props.productPlans as any[]) || []
+const planProductUuid = (plan: any): string =>
+    (plan.featureSetDetails && plan.featureSetDetails.componentDetails && plan.featureSetDetails.componentDetails.uuid) || ''
+const planProductName = (plan: any): string =>
+    (plan.featureSetDetails && plan.featureSetDetails.componentDetails && plan.featureSetDetails.componentDetails.name) || ''
+const namespaceScopesProducts: ComputedRef<boolean> = computed((): boolean => isStandalone.value && !!property.value.namespace)
+const productScopesNamespaces: ComputedRef<boolean> = computed((): boolean => isStandalone.value && !!property.value.product)
+const selectedProductName: ComputedRef<string> = computed((): string => {
+    const plan = plans().find((pl: any) => planProductUuid(pl) === property.value.product)
+    return plan ? planProductName(plan) : ''
+})
 const productOptions: ComputedRef<any[]> = computed((): any[] => {
-    const plans: any[] = (props.productPlans as any[]) || []
     const byUuid: Record<string, any> = {}
-    plans.forEach((plan: any) => {
+    plans().forEach((plan: any) => {
         if (namespaceScopesProducts.value && plan.namespace !== property.value.namespace) return
-        const comp = plan.featureSetDetails && plan.featureSetDetails.componentDetails
-        if (comp && comp.uuid && !byUuid[comp.uuid]) byUuid[comp.uuid] = { label: comp.name, value: comp.uuid }
+        const uuid = planProductUuid(plan)
+        if (uuid && !byUuid[uuid]) byUuid[uuid] = { label: planProductName(plan), value: uuid }
     })
+    // Keep the current selection in the list even when the namespace no
+    // longer includes it, so it still renders by name (pairValidator flags
+    // it) instead of collapsing to a bare uuid.
+    if (property.value.product && !byUuid[property.value.product]) {
+        const plan = plans().find((pl: any) => planProductUuid(pl) === property.value.product)
+        if (plan) byUuid[property.value.product] = { label: planProductName(plan), value: property.value.product }
+    }
     const opts = Object.values(byUuid).sort((a: any, b: any) => a.label.localeCompare(b.label))
+    opts.unshift({ label: '', value: '' })
+    return opts
+})
+const namespaceOptions: ComputedRef<any[]> = computed((): any[] => {
+    if (!productScopesNamespaces.value) return (props.knownNamespaces as any[]) || []
+    const seen: Record<string, boolean> = {}
+    const opts: any[] = []
+    plans().forEach((plan: any) => {
+        if (planProductUuid(plan) !== property.value.product || !plan.namespace || seen[plan.namespace]) return
+        seen[plan.namespace] = true
+        opts.push({ label: plan.namespace, value: plan.namespace })
+    })
+    opts.sort((a: any, b: any) => a.label.localeCompare(b.label))
     opts.unshift({ label: '', value: '' })
     return opts
 })
 const productLabel: ComputedRef<string> = computed((): string =>
     namespaceScopesProducts.value ? `Product (deployed in ${property.value.namespace})` : 'Product')
-// Changing the namespace can make the chosen product unavailable; clear it
-// rather than submit a product/namespace pair the instance does not have.
-watch(productOptions, (opts) => {
-    if (property.value.product && !opts.some((o: any) => o.value === property.value.product)) {
-        property.value.product = ''
-    }
-})
+// The product/namespace pair must be one of the instance's product plans.
+// Both fields validate it so either one turning invalid is flagged at once;
+// the namespace side carries the full message (returning an Error is how
+// naive-ui carries one) and the product side a short one, so the same
+// sentence is not shown twice.
+const pairDeployed = (): boolean => {
+    if (!isStandalone.value || !property.value.product || !property.value.namespace) return true
+    return plans().some((plan: any) =>
+        planProductUuid(plan) === property.value.product && plan.namespace === property.value.namespace)
+}
+const pairValidator = (): boolean | Error => pairDeployed() ||
+    new Error(`${selectedProductName.value || 'This product'} is not deployed in namespace ${property.value.namespace}`)
+// Deliberately no auto-clearing when one side changes: a pair that is no
+// longer deployed is reported by pairValidator next to the field, which is
+// clearer than a selection silently disappearing.
 
 const properties: ComputedRef<any> = computed((): any => {
     const storeProps = store.getters.propertiesOfOrg(property.value.org)
@@ -200,7 +245,9 @@ const rules = {
     value: {
         required: true,
         message: 'Property value is required'
-    }
+    },
+    namespace: { validator: pairValidator, trigger: ['blur', 'change'] },
+    product: { validator: pairDeployed, message: 'Not deployed in the selected namespace', trigger: ['blur', 'change'] }
 }
 
 const onReset = function () {
