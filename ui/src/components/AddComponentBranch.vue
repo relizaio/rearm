@@ -87,10 +87,13 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const org = ref(props.orgProp ? props.orgProp : myorg.value)
 const featureSetForm = ref<FormInst | null>(null)
 
-// Parent product and integration type are what the backend needs to create
-// the mapping; everything else on the form has a default.
+// Product (to pick the feature set from), feature set and integration type
+// are required; everything else on the form has a default. The feature-set
+// item only registers once a product is chosen, so an empty product is
+// reported by its own rule first.
 const rules: FormRules = {
     product: { required: true, message: 'Parent product is required', trigger: ['blur', 'change'] },
+    featureSet: { required: true, message: 'Feature set is required', trigger: ['blur', 'change'] },
     type: { required: true, message: 'Integration type is required', trigger: ['blur', 'change'] }
 }
 
