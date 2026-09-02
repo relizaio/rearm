@@ -36,7 +36,7 @@ The upstream chart is a pinned dependency, vendored into the repository:
 ```yaml
 dependencies:
 - name: dependency-track
-  version: "2.0.0-rc.3"          # exact: pre-release versions are not matched by range constraints
+  version: "2.3.0"               # exact pin; the image digests in values.yaml move together with it
   repository: "https://dependencytrack.github.io/helm-charts"
 ```
 
