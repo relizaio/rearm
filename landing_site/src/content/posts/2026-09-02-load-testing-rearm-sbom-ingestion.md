@@ -45,7 +45,7 @@ The ACR run is the interesting one for cloud deployments. ACR itself was never t
 
 ## The configuration knob this surfaced
 
-The ceiling on processing (reconciliation) throughput turned out to be a hard-coded scheduler batch size. It is now a configurable property, `relizaprops.sbomReconcileDrainBatch`, with a default of 50. At the tuned setting of 250 the post-burst backlog drains at roughly 250 releases per minute instead of roughly 66, which took the 20k end-to-end time on an in-cluster registry from over 6 hours down to 1h 21m.
+The ceiling on processing (reconciliation) throughput turned out to be a hard-coded scheduler batch size. It is now configurable through the `SBOM_RECONCILE_DRAIN_BATCH` environment variable, exposed in the Helm chart and docker-compose, with a default of 50. At the tuned setting of 250 the post-burst backlog drains at roughly 250 releases per minute instead of roughly 66, which took the 20k end-to-end time on an in-cluster registry from over 6 hours down to 1h 21m.
 
 One scope note: the instance's Dependency-Track integration remained enabled throughout the campaign, but [BEAR](https://github.com/relizaio/bear) SBOM enrichment was not in play. These numbers measure ReARM's own ingestion and reconciliation pipeline.
 
