@@ -325,7 +325,7 @@
                                 class="addProperty"
                                 v-if="updatedInstance && updatedInstance.org"
                                 :orgProp="updatedInstance.org"
-                                :knownProducts="knownProducts"
+                                :productPlans="updatedInstance.productPlans"
                                 :knownNamespaces="knownNamespaces"
                                 :instProperties="updatedInstance.properties"
                                 :instanceType="updatedInstance.instanceType"
@@ -840,20 +840,6 @@ const namespacesForDropdown: ComputedRef<any[]> = computed((): any => {
         retNs = Array.from(namespaces).map(n => {return {key: n, label: n}})
     }
     return retNs
-})
-
-const knownProducts: ComputedRef<any[]> = computed((): any => {
-    let knownProducts = []
-    if (updatedInstance.value && updatedInstance.value.productPlans && updatedInstance.value.productPlans.length) {
-        knownProducts = updatedInstance.value.productPlans.map((p: any) => {
-            return {
-                label: p.featureSetDetails.componentDetails.name,
-                value: p.featureSetDetails.componentDetails.uuid
-            }
-        })
-    }
-    knownProducts.unshift({label:"", value:""})
-    return knownProducts
 })
 
 const knownNamespaces: ComputedRef<any[]> = computed((): any => {

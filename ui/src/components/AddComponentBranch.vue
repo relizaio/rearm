@@ -1,25 +1,21 @@
 <template>
     <div class="addComponentBranchGlobal">
-        <n-form :model="featureSetObj">
+        <!-- The parent organization is always the current org (there is no
+             way to link a product from another org), so it is not a field. -->
+        <n-form ref="featureSetForm" :model="featureSetObj" :rules="rules">
             <n-form-item
                         v-if="!props.productUuid"
-                        label="Parent Organization" >
-                <n-select
-                        v-model:value="org"
-                        v-on:update:value="onOrgChange"
-                        :options="orgWithExt" />
-            </n-form-item>
-            <n-form-item
-                        v-if="!props.productUuid"
-                        path="featureSetObj.product"
+                        path="product"
                         label="Parent Product">
                 <n-select
                             v-on:update:value="value => {onComponentChange(value)}"
                             v-model:value="featureSetObj.product"
-                            required
-                            :options="products" />
+                            filterable
+                            placeholder="Select or type to filter products"
+                            :options="products"
+                            data-testid="link-fs-product" />
             </n-form-item>
-            <n-form-item    path="featureSetObj.featureSet"
+            <n-form-item    path="featureSet"
                             v-if="featureSetObj.product"
                             :label="myorg?.terminology?.featureSetLabel || 'Feature Set'">
                 <n-select
@@ -29,15 +25,17 @@
             </n-form-item>
             <n-form-item
                         v-if="!props.productUuid"
-                        path="featureSetObj.type"
+                        path="type"
                         label="Integration Type">
                 <n-select
                     v-model:value="featureSetObj.type"
+                    placeholder="Select integration type"
+                    data-testid="link-fs-type"
                     :options="deploymentType === 'INDIVIDUAL' ? [{value: 'INTEGRATE', label: 'INTEGRATE'}, {value: 'NONE', label: 'NONE'}] : [{value: 'INTEGRATE', label: 'INTEGRATE'}, {value: 'TARGET', label: 'TARGET'}, {value: 'FOLLOW', label: 'FOLLOW'}, {value: 'NONE', label: 'NONE'}]" />
             </n-form-item>
             <n-form-item
                         v-if="!props.productUuid && !props.namespace"
-                        path="featureSetObj.namespace"
+                        path="namespace"
                         label="Namespace">
                 <n-input
                         placeholder="Enter namespace, defaults to 'default' if left blank"
@@ -45,34 +43,19 @@
             </n-form-item>
             <n-form-item
                             v-if="!props.productUuid"
-                            path="featureSetObj.configuration"
-                            label="Extra Configuration (i.e. Helm values file)">
+                            path="configuration"
+                            label="Extra Configuration (optional, e.g. Helm values file)">
                 <n-select
                         tag
                         filterable
+                        clearable
+                        placeholder="Optional - leave empty for none"
                         :options='[{value: "default", label: "default"}, {value: "values-reliza.yaml", label: "values-reliza.yaml"}]'
                         v-model:value="featureSetObj.configuration" />
             </n-form-item>
-            <n-form-item
-                v-if="!props.productUuid"
-                path="featureSetObj.alertsEnabled"
-                label="Alerts"
-            >
-                <n-switch v-model:value="featureSetObj.alertsEnabled" size="large">
-                    <template #checked-icon>
-                        <NIcon>
-                            <AlertOn24Regular/>
-                        </NIcon>
-
-                    </template>
-                    <template #unchecked-icon>
-                        <NIcon>
-                            <AlertOff24Regular/>
-                        </NIcon>
-                    </template>
-                </n-switch>
-
-            </n-form-item>
+            <!-- The per-product Alerts switch is intentionally not shown: alerts
+                 are not wired to anything yet. alertsEnabled stays in the
+                 emitted object (always false) so the update input is unchanged. -->
             <n-button type="success" @click="onSubmit">Submit</n-button>
             <n-button type="warning" @click="onReset">Reset</n-button>
         </n-form>
@@ -87,9 +70,7 @@ export default {
 <script lang="ts" setup>
 import { useStore } from 'vuex'
 import { ComputedRef, computed, ref } from 'vue'
-import { NButton, NForm, NFormItem, NInput, NSelect, NSwitch, NIcon } from 'naive-ui'
-import { AlertOff24Regular, AlertOn24Regular} from '@vicons/fluent'
-import constants from '../utils/constants'
+import { FormInst, FormRules, NButton, NForm, NFormItem, NInput, NSelect } from 'naive-ui'
 
 const props = defineProps<{
     orgProp: String,
@@ -101,22 +82,17 @@ const emit = defineEmits(['addedComponentBranch'])
 
 const store = useStore()
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
-const initialOrg = props.orgProp ? props.orgProp : myorg.value
-const org = ref(initialOrg)
-const orgWithExt: ComputedRef<any> = computed((): any => {
-    const orgWithExt = []
-    const storeOrgs = store.getters.allOrganizations
-    storeOrgs.forEach((so: any) => {
-        if (so.uuid === initialOrg) {
-            const orgObj = {
-                label: so.name,
-                value: so.uuid
-            }
-            orgWithExt.push(orgObj)
-        }
-    })
-    return orgWithExt
-})
+// Always the current org: a product can only be linked from the org the
+// instance belongs to.
+const org = ref(props.orgProp ? props.orgProp : myorg.value)
+const featureSetForm = ref<FormInst | null>(null)
+
+// Parent product and integration type are what the backend needs to create
+// the mapping; everything else on the form has a default.
+const rules: FormRules = {
+    product: { required: true, message: 'Parent product is required', trigger: ['blur', 'change'] },
+    type: { required: true, message: 'Integration type is required', trigger: ['blur', 'change'] }
+}
 
 const products: ComputedRef<any> = computed((): any => {
     const storeComponents = store.getters.productsOfOrg(org.value)
@@ -126,7 +102,7 @@ const products: ComputedRef<any> = computed((): any => {
             value: proj.uuid
         }
         return projObj
-    })
+    }).sort((a: any, b: any) => a.label.localeCompare(b.label))
 })
 
 const deploymentType: ComputedRef<any> = computed((): any => store.getters.instanceById(props.instanceUuid, -1))
@@ -159,14 +135,6 @@ const branches: ComputedRef<any> = computed((): any => {
     return branches
 })
 
-const onOrgChange = function () {
-    if (org.value !== constants.ExternalPublicComponentsOrg) {
-        store.dispatch('fetchProducts', org.value)
-    }
-    featureSetObj.value.product = ''
-    featureSetObj.value.featureSet = ''
-}
-
 const onComponentChange = function (componentId: string) {
     featureSetObj.value.featureSet = ''
     // Force a network refresh so the dropdown reflects feature sets created /
@@ -197,8 +165,22 @@ const onReset = function () {
 }
 
 const onSubmit = function () {
-    emit('addedComponentBranch', featureSetObj.value)
-    onReset()
+    // Editing an existing link (productUuid set) only exposes the feature
+    // set, so the product/type rules do not apply there.
+    if (props.productUuid) {
+        emit('addedComponentBranch', featureSetObj.value)
+        onReset()
+        return
+    }
+    // validate() also returns a promise that rejects with the same errors
+    // the callback receives; the callback is the handler, so swallow the
+    // rejection instead of surfacing an unhandled one.
+    featureSetForm.value?.validate((errors) => {
+        if (!errors) {
+            emit('addedComponentBranch', featureSetObj.value)
+            onReset()
+        }
+    }).catch(() => {})
 }
 
 if (!org.value) {

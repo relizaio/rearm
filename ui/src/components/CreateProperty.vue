@@ -53,10 +53,12 @@
                 <n-input v-else-if="props.instanceType === InstanceType.CLUSTER_INSTANCE" :disabled="true" :placeholder="props.reservedNs"></n-input>
                 <n-input v-else :disabled="true" placeholder="CLUSTER--WIDE"></n-input>
             </n-form-item>
-            <n-form-item v-if="props.instanceType !== InstanceType.CLUSTER" path="product" label="Product">
+            <n-form-item v-if="props.instanceType !== InstanceType.CLUSTER" path="product" :label="productLabel">
                 <n-select
                             v-model:value="property.product"
-                            :options="props.knownProducts" />
+                            filterable
+                            :options="productOptions"
+                            data-testid="create-property-product" />
             </n-form-item>
             <n-form-item path="value" label="Value" v-if="property.dataType === 'JSON' || property.dataType === 'YAML'">
                 <prism-editor class="editor" v-model="property.value" :highlight="highlighter" line-numbers></prism-editor>
@@ -77,7 +79,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ref, ComputedRef, computed } from 'vue'
+import { ref, ComputedRef, computed, watch } from 'vue'
 import { useStore } from 'vuex'
 import { FormInst, NForm, NFormItem, NInput, NButton, NSelect, useNotification, NotificationType } from 'naive-ui'
 import { PrismEditor } from 'vue-prism-editor';
@@ -90,7 +92,9 @@ import constants from '@/utils/constants'
 
 const props = defineProps<{
     orgProp: String,
-    knownProducts: Array,
+    // The instance's product plans: { namespace, featureSetDetails.componentDetails{uuid,name} }.
+    // Products are offered per namespace from these.
+    productPlans: Array,
     knownNamespaces: Array,
     instProperties: Array,
     instanceType: String,
@@ -131,6 +135,33 @@ const property = ref({
     namespace: props.reservedNs,
     product: '',
     value: ''
+})
+
+// A property targets a product in a namespace, so once a namespace is picked
+// only products deployed there are offered. No namespace (cluster-wide) or a
+// non-standalone instance (single fixed namespace) offers every product.
+const namespaceScopesProducts: ComputedRef<boolean> = computed((): boolean =>
+    props.instanceType === InstanceType.STANDALONE_INSTANCE && !!property.value.namespace)
+const productOptions: ComputedRef<any[]> = computed((): any[] => {
+    const plans: any[] = (props.productPlans as any[]) || []
+    const byUuid: Record<string, any> = {}
+    plans.forEach((plan: any) => {
+        if (namespaceScopesProducts.value && plan.namespace !== property.value.namespace) return
+        const comp = plan.featureSetDetails && plan.featureSetDetails.componentDetails
+        if (comp && comp.uuid && !byUuid[comp.uuid]) byUuid[comp.uuid] = { label: comp.name, value: comp.uuid }
+    })
+    const opts = Object.values(byUuid).sort((a: any, b: any) => a.label.localeCompare(b.label))
+    opts.unshift({ label: '', value: '' })
+    return opts
+})
+const productLabel: ComputedRef<string> = computed((): string =>
+    namespaceScopesProducts.value ? `Product (deployed in ${property.value.namespace})` : 'Product')
+// Changing the namespace can make the chosen product unavailable; clear it
+// rather than submit a product/namespace pair the instance does not have.
+watch(productOptions, (opts) => {
+    if (property.value.product && !opts.some((o: any) => o.value === property.value.product)) {
+        property.value.product = ''
+    }
 })
 
 const properties: ComputedRef<any> = computed((): any => {
@@ -198,7 +229,7 @@ const onSubmit = async function () {
             }
             
         }
-    })
+    }).catch(() => {})
 }
 const notification = useNotification()
 
