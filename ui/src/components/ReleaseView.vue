@@ -480,7 +480,13 @@
                     </n-spin>
                 </n-form>
                 <n-form v-if="exportBomType === 'CLE'">
-                    <h3>Format: CLE 1.0.0 (JSON)</h3>
+                    <!-- Deliberately NOT labelled "CLE 1.0.0". That is a conformance claim on a
+                         file a customer may hand to a regulator, and we do not currently meet it:
+                         endOfSupport events carry no resolvable supportId (the spec makes it
+                         mandatory), event ids are recomputed per export rather than persisted, and
+                         there is no pagination. Restore the version claim only when those are
+                         fixed -- see ai-plans/fda-readiness-1-plan.md in rearm-core. -->
+                    <h3>Format: Common Lifecycle Enumeration (JSON)</h3>
                     <n-button type="success"
                         :disabled="bomExportPending"
                         @click.prevent="exportReleaseCle">
