@@ -1,7 +1,13 @@
 <!--
-  GENERATED. Source of truth is cyclonedx-taxonomy.md in the rearm-core repo,
-  carried here by backend/copy-src.sh. Edit it there, not here: a change made only
-  in this copy is silently reverted by the next sync.
+  SOURCE OF TRUTH: cyclonedx-taxonomy.md in the rearm-core repository, beside the code
+  that emits these properties. The copy in relizaio/rearm is GENERATED from it by
+  backend/copy-src.sh, so a change made only in that copy is reverted by the next sync.
+
+  It lives next to the code because it did not used to: this file existed only in the
+  public mirror, which the Pro build never touches, and that is how properties came to
+  be emitted into a REGISTERED CycloneDX namespace with no published definition. Keeping
+  it beside the emitters means a change adding a PROP_* constant can define it in the
+  same diff, and CyclonedxTaxonomyDocSyncTest fails the build if it does not.
 -->
 # `reliza` CycloneDX Taxonomy
 
