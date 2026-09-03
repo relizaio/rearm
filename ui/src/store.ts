@@ -728,7 +728,7 @@ const storeObject : any = {
             context.commit('ADD_RELEASES', response.data.releases)
             return response.data.releases
         },
-        updateMyOrg (context : any, orgUuid : string) {
+        async updateMyOrg (context : any, orgUuid : string) {
             // set local browser storage
             window.localStorage.setItem('relizaOrgUuid', orgUuid)
             await context.dispatch('resolveMyView', orgUuid)
