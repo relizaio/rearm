@@ -33,6 +33,15 @@
                 </span>
                 <span v-else><strong>Perspective: </strong><span style="font-size: 16px;">{{ currentPerspectiveName }}</span></span>
             </div>
+            <div class="horizontalNavElement horizontalNavElementView" data-testid="app-view-nav">
+                <span><strong>View: </strong></span>
+                <n-dropdown trigger="hover" :options="viewOptions" @select="setMyView">
+                    <span data-testid="app-view-dropdown">
+                        <span style="font-size: 16px;">{{ currentViewLabel }}</span>
+                        <Icon><CaretDownFilled/></Icon>
+                    </span>
+                </n-dropdown>
+            </div>
             <div class="horizontalNavIcons" v-if="myorg && !isPlayground" >
                 <span>
                     <router-link :to="{ name: 'profile'}"><n-icon class="clickable" title="Profile" size="20"><User /></n-icon></router-link>
@@ -60,6 +69,7 @@ export default {
 import { NDropdown, NIcon } from 'naive-ui'
 import { User, Settings, Logout } from '@vicons/tabler'
 import { useStore } from 'vuex'
+import { DASHBOARD_VIEWS, DASHBOARD_VIEW_LABELS, DashboardView, isDashboardView } from '@/utils/dashboardView'
 import { ComputedRef, computed, h, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CaretDownFilled } from '@vicons/antd'
@@ -157,6 +167,15 @@ const setMyPerspective = function (perspectiveUuid: string) {
     store.dispatch('updateMyPerspective', perspectiveUuid)
 }
 
+// View (Security | DevOps): same shape as the perspective dropdown; the store
+// remembers the choice per browser.
+const myview: ComputedRef<DashboardView> = computed((): DashboardView => store.getters.myview)
+const viewOptions = DASHBOARD_VIEWS.map((v) => ({ label: DASHBOARD_VIEW_LABELS[v], key: v }))
+const currentViewLabel: ComputedRef<string> = computed((): string => DASHBOARD_VIEW_LABELS[myview.value] || DASHBOARD_VIEW_LABELS.security)
+const setMyView = function (view: string) {
+    if (isDashboardView(view)) store.dispatch('updateMyView', view)
+}
+
 // Auto-select first available perspective when user has only perspective-scoped access
 watch([hasOnlyPerspectiveAccess, perspectives, myorg, myperspective], () => {
     if (!hasOnlyPerspectiveAccess.value || perspectives.value.length === 0) return
@@ -210,7 +229,7 @@ body {
     border-bottom-width: thin;
     border-bottom-color: #dfe4e5;
     display: grid;
-    grid-template-columns: 0.1fr 0.5fr 0.35fr 0.35fr 145px;
+    grid-template-columns: 0.1fr 0.4fr 0.3fr 0.3fr 0.25fr 145px;
     a {
         font-weight: bold;
         color: rgb(25, 25, 25);

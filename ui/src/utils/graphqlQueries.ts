@@ -523,6 +523,36 @@ query ComponentsOfPerspective($perspectiveUuid: ID!) {
     }
 }`
 
+// Org default view (Pro org setting). Deliberately its own tiny document:
+// the boot-time organizations query must keep working on a backend that
+// predates the field.
+const ORG_DEFAULT_VIEW_GQL = gql`
+query OrgDefaultView($orgUuid: ID!) {
+    organization(orgUuid: $orgUuid) {
+        uuid
+        settings {
+            defaultView
+        }
+    }
+}`
+
+// DevOps view on the component / product page: where is this thing deployed.
+// Pro-only query; the page degrades to a note when the backend lacks it.
+const DEPLOYED_TO_GQL = gql`
+query DeployedTo($componentUuid: ID!) {
+    deployedTo(componentUuid: $componentUuid) {
+        instanceUuid
+        instanceDisplayName
+        namespace
+        environment
+        featureSetUuid
+        featureSetName
+        releaseUuid
+        version
+        matched
+    }
+}`
+
 const INSTANCES_GQL = gql`
 query FetchInstances($orgUuid: ID!) {
     instancesOfOrganization(orgUuid: $orgUuid) {
@@ -1697,6 +1727,8 @@ export default {
     },
     InstancesGql: INSTANCES_GQL,
     InstanceStatusGql: INSTANCE_STATUS_GQL,
+    OrgDefaultViewGql: ORG_DEFAULT_VIEW_GQL,
+    DeployedToGql: DEPLOYED_TO_GQL,
     ComponentsOfPerspectiveGql: COMPONENTS_OF_PERSPECTIVE_GQL,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,

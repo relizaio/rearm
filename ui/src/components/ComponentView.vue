@@ -1,7 +1,18 @@
 <template>
     <div class="componentOuterWrapper">
         <n-grid x-gap="8" cols="10">
-            <n-gi span="10">
+            <!-- DevOps view (header View dropdown) swaps the two charts for the
+                 "Deployed to" table; Security keeps the charts. -->
+            <n-gi v-if="myview === 'devops'" span="10">
+                <deployed-to-widget
+                    v-if="componentData?.uuid"
+                    :org-uuid="myorg?.uuid || ''"
+                    :component-uuid="componentData.uuid"
+                    :component-type="componentData.type"
+                    @open-release="openReleaseFromDeployedTo"
+                />
+            </n-gi>
+            <n-gi v-else span="10">
                 <n-grid x-gap="12" cols="2">
                     <n-gi>
                         <releases-per-day-chart
@@ -1088,6 +1099,8 @@ import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
+import DeployedToWidget from './DeployedToWidget.vue'
+import { DashboardView } from '@/utils/dashboardView'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
@@ -1225,6 +1238,12 @@ async function copyToClipboard (text: string, label = 'uuid') {
 }
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+const myview: ComputedRef<DashboardView> = computed((): DashboardView => store.getters.myview)
+
+// The Deployed-to table links versions to the release page.
+function openReleaseFromDeployedTo (releaseUuid: string) {
+    router.push({ name: 'ReleaseView', params: { uuid: releaseUuid } })
+}
 const orguuid : Ref<string> = ref('')
 if (route.params.orguuid) {
     orguuid.value = route.params.orguuid.toString()
