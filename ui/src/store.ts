@@ -1667,6 +1667,25 @@ const storeObject : any = {
             })
             return response.data.instance ? (response.data.instance[params.part] || []) : []
         },
+        // DevOps dashboard reads. Neither is committed to the store: the status
+        // rows are a widget-local roll-up, and the perspective's components are
+        // only needed to scope them.
+        async fetchInstanceStatus (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.InstanceStatusGql,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.instancesOfOrganization || []
+        },
+        async fetchComponentsOfPerspective (context: any, perspectiveUuid: string) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.ComponentsOfPerspectiveGql,
+                variables: { perspectiveUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.componentsOfPerspective || []
+        },
         async fetchInstances (context: any, id: string) {
             const response = await graphqlClient.query({
                 query: graphqlQueries.InstancesGql,

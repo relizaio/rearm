@@ -1,8 +1,29 @@
 <template>
     <div class="home">
         <div class="dashboardBlock">
+            <!-- Dashboard views. Product Security is the page as it always was;
+                 DevOps swaps the security widgets for the instance status roll-up.
+                 URL-synced (?view=) and remembered per browser. -->
+            <div class="subtab-bar" data-testid="dashboard-view-bar">
+                <button class="subtab-pill" :class="{ active: dashView === 'security' }" @click="switchView('security')" data-testid="dashboard-view-security">
+                    <n-icon size="16" class="subtab-icon"><ShieldCheck /></n-icon>
+                    <span>Product Security</span>
+                </button>
+                <button class="subtab-pill" :class="{ active: dashView === 'devops' }" @click="switchView('devops')" data-testid="dashboard-view-devops">
+                    <n-icon size="16" class="subtab-icon"><Server /></n-icon>
+                    <span>DevOps</span>
+                </button>
+            </div>
             <n-grid x-gap="24" cols="2">
-                <n-gi>
+                <n-gi v-if="dashView === 'devops'" span="2">
+                    <instance-status-widget
+                        :org-uuid="myorg?.uuid || ''"
+                        :perspective-uuid="currentPerspectiveUuid"
+                        :perspective-name="currentPerspectiveName"
+                    />
+                </n-gi>
+                <n-gi v-if="dashView === 'devops'" span="2"><n-divider /></n-gi>
+                <n-gi v-if="dashView === 'security'">
                     <releases-per-day-chart
                         :type="releaseChartType"
                         :org-uuid="releaseChartProps.orgUuid"
@@ -10,7 +31,7 @@
                         :perspective-name="releaseChartProps.perspectiveName"
                     />
                 </n-gi>
-                <n-gi>
+                <n-gi v-if="dashView === 'security'">
                     <div>
                         <n-input-number style="display:inline-block; width:80px;" 
                             v-model:value="activeComponentsInput.maxComponents" />
@@ -36,8 +57,8 @@
                         :feature-set-label="featureSetLabel"
                     />
                 </n-gi>
-                <n-gi span="2"><n-divider /></n-gi>
-                <n-gi>
+                <n-gi v-if="dashView === 'security'" span="2"><n-divider /></n-gi>
+                <n-gi v-if="dashView === 'security'">
                     <findings-over-time-chart
                         :type="releaseChartType"
                         :org-uuid="myorg?.uuid"
@@ -474,8 +495,14 @@
                         />
                     </div>
                 </n-gi>
-                <n-gi span="2"><n-divider /></n-gi>
-                <n-gi span="1">
+                <n-gi v-if="dashView === 'devops'">
+                    <most-recent-releases-widget
+                        :org-uuid="myorg?.uuid || ''"
+                        :perspective-uuid="currentPerspectiveUuid"
+                    />
+                </n-gi>
+                <n-gi v-if="dashView === 'security'" span="2"><n-divider /></n-gi>
+                <n-gi v-if="dashView === 'security'" span="1">
                     <div>
                         <n-input-number style="display:inline-block; width:80px;" 
                             v-model:value="vulnerableComponentsInput.maxComponents" :min="1" />
@@ -512,7 +539,7 @@
                         <div v-else>No vulnerable {{ displayVulnerableComponentType().toLowerCase() }} found.</div>
                     </n-spin>
                 </n-gi>
-                <n-gi span="1">
+                <n-gi v-if="dashView === 'security'" span="1">
                     <most-recent-releases-widget
                         :org-uuid="myorg?.uuid || ''"
                         :perspective-uuid="currentPerspectiveUuid"
@@ -552,7 +579,7 @@ import GqlQueries from '../utils/graphqlQueries'
 import InstanceHistory from './InstanceHistory.vue'
 import { RouterLink } from 'vue-router'
 import { Commit } from '@vicons/carbon'
-import { AspectRatio, Box, Eye, QuestionMark, Refresh } from '@vicons/tabler'
+import { AspectRatio, Box, Eye, QuestionMark, Refresh, Server, ShieldCheck } from '@vicons/tabler'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import { useRouter, useRoute } from 'vue-router'
@@ -566,6 +593,7 @@ import ReleasesByCve from './ReleasesByCve.vue'
 import ComponentBranchesTable from './ComponentBranchesTable.vue'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 import MostRecentReleasesWidget from './MostRecentReleasesWidget.vue'
+import InstanceStatusWidget from './InstanceStatusWidget.vue'
 import { processMetricsData } from '@/utils/metrics'
 
 const store = useStore()
@@ -583,6 +611,39 @@ const notify = (type: NotificationType, title: string, content: string) => {
 }
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+
+// --- Dashboard view (Product Security | DevOps) ---
+// Resolution order: URL (?view=) so links are shareable, then the browser's
+// last choice, then Product Security so existing users see no change.
+const DASH_VIEWS = ['security', 'devops'] as const
+type DashView = typeof DASH_VIEWS[number]
+const DASH_VIEW_STORAGE_KEY = 'rearm_dashboard_view'
+function isDashView (v: unknown): v is DashView {
+    return DASH_VIEWS.includes(v as DashView)
+}
+function rememberedDashView (): DashView {
+    try {
+        const stored = window.localStorage.getItem(DASH_VIEW_STORAGE_KEY)
+        if (isDashView(stored)) return stored
+    } catch {
+        // storage unavailable (private mode / policy): fall through to default
+    }
+    return 'security'
+}
+const dashView = ref<DashView>(isDashView(route.query.view) ? route.query.view : rememberedDashView())
+async function switchView (v: DashView) {
+    if (v === dashView.value) return
+    dashView.value = v
+    try { window.localStorage.setItem(DASH_VIEW_STORAGE_KEY, v) } catch { /* see rememberedDashView */ }
+    await router.replace({ query: { ...route.query, view: v } })
+}
+// Back/forward or the Home nav link can land on a URL without ?view=; that
+// means "the remembered view", same as a fresh load.
+watch(() => route.query.view, (v) => {
+    const next: DashView = isDashView(v) ? v : rememberedDashView()
+    if (next !== dashView.value) dashView.value = next
+})
+
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
 const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
@@ -661,12 +722,12 @@ onMounted(() => {
     if (myorg.value) {
         initLoad()
     }
-    fetchMostVulnerableComponents()
+    fetchMostVulnerableIfShown()
 })
 watch(myorg, (currentValue, oldValue) => {
     activeComponentsInput.value.organization = myorg.value.uuid
     initLoad()
-    fetchMostVulnerableComponents()
+    fetchMostVulnerableIfShown()
 });
 
 
@@ -1300,7 +1361,25 @@ async function fetchMostVulnerableComponents () {
 }
 
 watch(() => [vulnerableComponentsInput.value.componentType, vulnerableComponentsInput.value.maxComponents, myperspective.value], () => {
-    fetchMostVulnerableComponents()
+    fetchMostVulnerableIfShown()
+})
+
+// Most Vulnerable is only rendered on the Product Security view, and unlike
+// the chart widgets it is fetched from this component rather than a child
+// that mounts with the view. Skip the fetch while DevOps is showing and
+// catch up when the user switches back, so the DevOps view does not pay for
+// a list it never renders.
+const mostVulnerableStale = ref(true)
+function fetchMostVulnerableIfShown () {
+    if (dashView.value === 'security') {
+        mostVulnerableStale.value = false
+        fetchMostVulnerableComponents()
+    } else {
+        mostVulnerableStale.value = true
+    }
+}
+watch(dashView, (v) => {
+    if (v === 'security' && mostVulnerableStale.value) fetchMostVulnerableIfShown()
 })
 
 const showVulnModalForComponent = ref(false)
@@ -1427,6 +1506,33 @@ function displayVulnerableComponentType () {
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
+/* ---- view bar -- mirrors the segmented pills on the instance page ---- */
+.subtab-bar {
+    display: inline-flex;
+    gap: 4px;
+    background: #F3F5F4;
+    padding: 4px;
+    border-radius: 10px;
+    margin: 0 0 14px;
+}
+.subtab-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    border: none; background: transparent;
+    border-radius: 7px;
+    font-size: 13px; font-weight: 500;
+    color: #5b6770; cursor: pointer;
+    transition: background .12s, color .12s;
+}
+.subtab-pill:hover { color: #2b3540; }
+.subtab-pill.active {
+    background: #FFFFFF;
+    color: #2b3540;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    font-weight: 600;
+}
+.subtab-icon { display: inline-flex; }
+
 .charts {
     display: grid;
 }

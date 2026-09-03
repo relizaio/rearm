@@ -466,6 +466,63 @@ query FetchInstanceTargetReleaseDetails($instanceUuid: ID!) {
     }
 }`
 
+// DevOps dashboard: one org-wide read for the instance status widget. Kept
+// separate from FetchInstances (the instances list) because deploymentHealth
+// and deploymentFailures resolve per instance on the backend, and the list
+// page has no use for them.
+const INSTANCE_STATUS_GQL = gql`
+query FetchInstanceStatus($orgUuid: ID!) {
+    instancesOfOrganization(orgUuid: $orgUuid) {
+        uuid
+        uri
+        name
+        displayName
+        instanceType
+        environment
+        releases {
+            namespace
+            isInError
+        }
+        productPlans {
+            featureSet
+            type
+            namespace
+            targetReleaseDetails {
+                version
+            }
+            featureSetDetails {
+                name
+                componentDetails {
+                    uuid
+                    name
+                }
+            }
+        }
+        productActuals {
+            featureSet
+            namespace
+            matchedRelease
+            matchedReleaseDetails {
+                version
+            }
+            notMatchingSince
+        }
+        deploymentHealth
+        deploymentFailures {
+            uuid
+        }
+    }
+}`
+
+const COMPONENTS_OF_PERSPECTIVE_GQL = gql`
+query ComponentsOfPerspective($perspectiveUuid: ID!) {
+    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+        uuid
+        name
+        type
+    }
+}`
+
 const INSTANCES_GQL = gql`
 query FetchInstances($orgUuid: ID!) {
     instancesOfOrganization(orgUuid: $orgUuid) {
@@ -1639,6 +1696,8 @@ export default {
         targetReleases: INSTANCE_TARGET_RELEASE_DETAILS_GQL
     },
     InstancesGql: INSTANCES_GQL,
+    InstanceStatusGql: INSTANCE_STATUS_GQL,
+    ComponentsOfPerspectiveGql: COMPONENTS_OF_PERSPECTIVE_GQL,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,
     ChildReleaseGqlData: CHILD_RELEASE_GQL_DATA,
