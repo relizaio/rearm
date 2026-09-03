@@ -466,6 +466,94 @@ query FetchInstanceTargetReleaseDetails($instanceUuid: ID!) {
     }
 }`
 
+// DevOps dashboard: one org-wide read for the instance status widget. Kept
+// separate from FetchInstances (the instances list) because deploymentHealth
+// and deploymentFailures resolve per instance on the backend, and the list
+// page has no use for them.
+const INSTANCE_STATUS_GQL = gql`
+query FetchInstanceStatus($orgUuid: ID!) {
+    instancesOfOrganization(orgUuid: $orgUuid) {
+        uuid
+        uri
+        name
+        displayName
+        instanceType
+        environment
+        releases {
+            namespace
+            isInError
+        }
+        productPlans {
+            featureSet
+            type
+            namespace
+            targetReleaseDetails {
+                version
+            }
+            featureSetDetails {
+                name
+                componentDetails {
+                    uuid
+                    name
+                }
+            }
+        }
+        productActuals {
+            featureSet
+            namespace
+            matchedRelease
+            matchedReleaseDetails {
+                version
+            }
+            notMatchingSince
+        }
+        deploymentHealth
+        deploymentFailures {
+            uuid
+        }
+    }
+}`
+
+const COMPONENTS_OF_PERSPECTIVE_GQL = gql`
+query ComponentsOfPerspective($perspectiveUuid: ID!) {
+    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+        uuid
+        name
+        type
+    }
+}`
+
+// Org default view (Pro org setting). Deliberately its own tiny document:
+// the boot-time organizations query must keep working on a backend that
+// predates the field. Uses the organizations list (the single-organization
+// query in the schema has no resolver and always returns null).
+const ORG_DEFAULT_VIEW_GQL = gql`
+query OrgDefaultView {
+    organizations {
+        uuid
+        settings {
+            defaultView
+        }
+    }
+}`
+
+// DevOps view on the component / product page: where is this thing deployed.
+// Pro-only query; the page degrades to a note when the backend lacks it.
+const DEPLOYED_TO_GQL = gql`
+query DeployedTo($componentUuid: ID!) {
+    deployedTo(componentUuid: $componentUuid) {
+        instanceUuid
+        instanceDisplayName
+        namespace
+        environment
+        featureSetUuid
+        featureSetName
+        releaseUuid
+        version
+        matched
+    }
+}`
+
 const INSTANCES_GQL = gql`
 query FetchInstances($orgUuid: ID!) {
     instancesOfOrganization(orgUuid: $orgUuid) {
@@ -1639,6 +1727,10 @@ export default {
         targetReleases: INSTANCE_TARGET_RELEASE_DETAILS_GQL
     },
     InstancesGql: INSTANCES_GQL,
+    InstanceStatusGql: INSTANCE_STATUS_GQL,
+    OrgDefaultViewGql: ORG_DEFAULT_VIEW_GQL,
+    DeployedToGql: DEPLOYED_TO_GQL,
+    ComponentsOfPerspectiveGql: COMPONENTS_OF_PERSPECTIVE_GQL,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,
     ChildReleaseGqlData: CHILD_RELEASE_GQL_DATA,

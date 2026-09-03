@@ -4,7 +4,12 @@ import gql from 'graphql-tag'
 import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
+import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
+import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
 import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
+
+// Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
+const VIEW_STORAGE_KEY = 'relizaView'
 
 const storeObject : any = {
     state () {
@@ -26,7 +31,11 @@ const storeObject : any = {
                 orgUuid: '',
                 appUuid: '00000000-0000-0000-0000-000000000000',
                 name: '',
-                perspectiveUuid: 'default'
+                perspectiveUuid: 'default',
+                // Dashboard / component-page view: 'security' | 'devops'. Resolved at
+                // boot from the browser's last choice, then the org default, then
+                // security. Header dropdown, like the perspective.
+                view: 'security'
             },
             perspectives: [],
             fetchUserStatus: null,
@@ -75,6 +84,9 @@ const storeObject : any = {
         },
         myperspective (state : any) {
             return state.iam.perspectiveUuid
+        },
+        myview (state : any) {
+            return state.iam.view
         },
         allPerspectives (state: any) {
             return state.perspectives.slice()
@@ -264,6 +276,9 @@ const storeObject : any = {
         },
         UPDATE_MY_PERSPECTIVE (state : any, uuid : string) {
             state.iam.perspectiveUuid = uuid
+        },
+        UPDATE_MY_VIEW (state : any, view : string) {
+            state.iam.view = view
         },
         SET_PERSPECTIVES (state: any, perspectives: any[]) {
             state.perspectives = perspectives
@@ -551,6 +566,10 @@ const storeObject : any = {
                     } else {
                         context.commit('UPDATE_MY_PERSPECTIVE', 'default')
                     }
+
+                    // Resolve the view: this browser's choice wins over the org
+                    // default, which wins over the built-in default.
+                    await context.dispatch('resolveMyView', myOrg)
                 } else {
                     console.error('Error fetching user organizations')
                 }
@@ -709,9 +728,10 @@ const storeObject : any = {
             context.commit('ADD_RELEASES', response.data.releases)
             return response.data.releases
         },
-        updateMyOrg (context : any, orgUuid : string) {
+        async updateMyOrg (context : any, orgUuid : string) {
             // set local browser storage
             window.localStorage.setItem('relizaOrgUuid', orgUuid)
+            await context.dispatch('resolveMyView', orgUuid)
             context.commit('UPDATE_MY_ORG', orgUuid)
             // Reset perspective to default when changing org
             context.dispatch('updateMyPerspective', 'default')
@@ -720,6 +740,56 @@ const storeObject : any = {
             // set local browser storage
             window.localStorage.setItem('relizaPerspectiveUuid', perspectiveUuid)
             context.commit('UPDATE_MY_PERSPECTIVE', perspectiveUuid)
+        },
+        // The org's default view lives in Pro org settings; a backend without the
+        // field (CE mirror lag) fails this single small document only, and the
+        // view falls back to the built-in default.
+        async fetchOrgDefaultView (context : any, orgUuid : string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: graphqlQueries.OrgDefaultViewGql,
+                    fetchPolicy: 'no-cache'
+                })
+                const org = (response.data.organizations || []).find((o: any) => o.uuid === orgUuid)
+                return dashboardViewFromWire(org?.settings?.defaultView)
+            } catch (err) {
+                console.error('Org default view unavailable, using built-in default', err)
+                return null
+            }
+        },
+        async resolveMyView (context : any, orgUuid : string) {
+            let stored: string | null = null
+            try { stored = window.localStorage.getItem(VIEW_STORAGE_KEY) } catch { /* storage unavailable */ }
+            let view: DashboardView = 'security'
+            if (isDashboardView(stored)) {
+                view = stored
+            } else if (orgUuid) {
+                view = (await context.dispatch('fetchOrgDefaultView', orgUuid)) || 'security'
+            }
+            context.commit('UPDATE_MY_VIEW', view)
+        },
+        async updateMyView (context : any, view : DashboardView) {
+            try { window.localStorage.setItem(VIEW_STORAGE_KEY, view) } catch { /* storage unavailable */ }
+            context.commit('UPDATE_MY_VIEW', view)
+        },
+        // Returns { rows, supported }: supported=false when the backend has no
+        // deployedTo query (CE mirror lag) so the page can say so instead of
+        // showing an empty table.
+        async fetchDeployedTo (context : any, componentUuid : string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: graphqlQueries.DeployedToGql,
+                    variables: { componentUuid },
+                    fetchPolicy: 'no-cache'
+                })
+                return { rows: response.data.deployedTo || [], supported: true }
+            } catch (err: any) {
+                if (classifyGraphqlError(err) === 'validation') {
+                    console.error('deployedTo query not available on this backend', err)
+                    return { rows: [], supported: false }
+                }
+                throw err
+            }
         },
         async fetchPerspectives (context : any, orgUuid : string) {
             try {
@@ -1666,6 +1736,25 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.instance ? (response.data.instance[params.part] || []) : []
+        },
+        // DevOps dashboard reads. Neither is committed to the store: the status
+        // rows are a widget-local roll-up, and the perspective's components are
+        // only needed to scope them.
+        async fetchInstanceStatus (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.InstanceStatusGql,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.instancesOfOrganization || []
+        },
+        async fetchComponentsOfPerspective (context: any, perspectiveUuid: string) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.ComponentsOfPerspectiveGql,
+                variables: { perspectiveUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.componentsOfPerspective || []
         },
         async fetchInstances (context: any, id: string) {
             const response = await graphqlClient.query({

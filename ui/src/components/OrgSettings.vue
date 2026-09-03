@@ -1057,6 +1057,24 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                         </n-space>
                     </n-form>
                 </div>
+                <div class="adminSettingsBlock mt-4" data-testid="org-default-view-block">
+                    <h5>Default View</h5>
+                    <p class="text-muted">The view (Security or DevOps) users of this organization land on. A user's own choice in the header, remembered in their browser, overrides this.</p>
+                    <n-form>
+                        <n-form-item label="Default View">
+                            <n-select
+                                v-model:value="orgDefaultView"
+                                :options="defaultViewOptions"
+                                style="max-width: 240px;"
+                                data-testid="org-default-view-select" />
+                        </n-form-item>
+                        <n-space>
+                            <n-button type="primary" @click="saveOrgDefaultView" :loading="savingOrgDefaultView" data-testid="org-default-view-save">
+                                Save Default View
+                            </n-button>
+                        </n-space>
+                    </n-form>
+                </div>
             </n-tab-pane>
             <n-tab-pane name="audit" tab="Audit" v-if="isOrgAdmin">
                 <n-tabs type="segment" :value="auditSubTab" @update:value="handleAuditSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
@@ -1143,6 +1161,7 @@ import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
+import { DASHBOARD_VIEWS, DASHBOARD_VIEW_LABELS, DashboardView, dashboardViewToWire } from '@/utils/dashboardView'
 import constants from '../utils/constants'
 import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
 import { resolveApprovalRoles } from '../utils/approvalRoles'
@@ -3380,7 +3399,44 @@ async function saveIgnoreViolation() {
     }
 }
 
+// Default view is a Pro-only org setting fetched by its own document (the
+// boot-time organizations query must keep working on a backend without it)
+// and saved by its own mutation call for the same reason.
+const orgDefaultView = ref<DashboardView>('security')
+const savingOrgDefaultView = ref(false)
+const defaultViewOptions = DASHBOARD_VIEWS.map((v) => ({ label: DASHBOARD_VIEW_LABELS[v], value: v }))
+async function loadOrgDefaultView() {
+    orgDefaultView.value = (await store.dispatch('fetchOrgDefaultView', orgResolved.value)) || 'security'
+}
+async function saveOrgDefaultView() {
+    savingOrgDefaultView.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateOrganizationDefaultView($orgUuid: ID!, $settings: SettingsInput!) {
+                    updateOrganizationSettings(orgUuid: $orgUuid, settings: $settings) {
+                        uuid
+                        settings {
+                            defaultView
+                        }
+                    }
+                }`,
+            variables: {
+                orgUuid: orgResolved.value,
+                settings: { defaultView: dashboardViewToWire(orgDefaultView.value) }
+            }
+        })
+        notify('success', 'Saved', `Default view set to ${DASHBOARD_VIEW_LABELS[orgDefaultView.value]}`)
+    } catch (err: any) {
+        console.error('Error saving default view:', err)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        savingOrgDefaultView.value = false
+    }
+}
+
 async function loadOrgSettings() {
+    await loadOrgDefaultView()
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
     orgSettings.branchSuffixMode = (s?.branchSuffixMode && s.branchSuffixMode !== 'INHERIT') ? s.branchSuffixMode : 'APPEND'
