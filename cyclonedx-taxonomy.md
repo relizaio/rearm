@@ -72,6 +72,10 @@ cannot alter and does not claim to have authored.
 Unless stated otherwise, each property MUST occur at most once per component and is
 placed in `components[].properties`.
 
+The **Since** column says which build emits a property, so a reader can tell what their
+own version produces. "unreleased" means it is in the ReARM source but has not reached a
+CE release yet; those arrive together at the next source sync.
+
 > **Applicability.** Releases before per-milestone support disclosure emit
 > `reliza:support:source` and `reliza:support:lastAssessed` WITHOUT the `:<milestone>`
 > suffix, carrying one value for the whole component. The suffix was added because a
@@ -80,17 +84,17 @@ placed in `components[].properties`.
 > carries support data, and no CE release has shipped a UI to enter any, so no published
 > BOM carries the unsuffixed form.
 
-| Property | Description |
-|----------|-------------|
-| `reliza:support:levelOfSupport` | The manufacturer's ATTESTED claim about what the component's upstream maintainer is doing. **The value is FDA's phrase verbatim and lowercase -- `actively maintained`, `no longer maintained`, `abandoned` -- NOT an enum name.** Match on those strings; there is no `ACTIVELY_MAINTAINED` on the wire. Absent when nobody has attested a level. Never emitted without `reliza:support:assessedAt` |
-| `reliza:support:assessedAt` | When a human assessed this component, as an RFC-3339 UTC instant. Caller-supplied, so it may precede the moment the assessment was recorded. Also emitted on its own, with no level, to record that a component WAS assessed and no upstream dates were found |
-| `reliza:support:justification` | The manufacturer's stated BASIS for the claim -- what they checked and what they found. Required by ReARM before a negative level (`no longer maintained`, `abandoned`) may be recorded, so a claim about a third party's project always ships with its evidence. Also carries the reason no upstream dates could be found, which is the whole disclosure for a component whose upstream publishes none |
-| `reliza:support:status` | DERIVED, never attested: the support state the recorded dates entail as of the moment the BOM was served. Known values: `SECURITY_ONLY`, `END_OF_SUPPORT`, `UNKNOWN`. See the note on derived values below |
-| `reliza:support:party` | Whether the organisation serving the BOM is the FIRST party for this component's support facts (its own software) or a THIRD party describing a component it does not control. Known values: `FIRST_PARTY`, `THIRD_PARTY` |
-| `reliza:support:source:<milestone>` | Provenance of one milestone's date, where `<milestone>` is `endOfGuaranteedSupport`, `endOfSupport` or `endOfLife`. Known values: `MANUAL` (a human recorded it), `SUPPLIER` (from a supplier-provided BOM), `ENRICHED` (machine-gathered). Per milestone, because one component's dates can come from different places |
-| `reliza:support:lastAssessed:<milestone>` | When that milestone's date was last assessed, as an RFC-3339 UTC instant. Per milestone, same reasoning |
-| `reliza:support:deviceSupportRisk` | DERIVED: whether the component's end-of-support falls before the enclosing device release's own end-of-support. Known values: `OK`, `EOS_BEFORE_DEVICE`, `UNKNOWN`. Emitted only for a product/device release |
-| `reliza:support:disclosure` | Document-level marker on `metadata.component`, describing how the support properties in this BOM were produced. Known value: `derived-non-attested-current-state` |
+| Property | Description | Since |
+|----------|-------------|-------|
+| `reliza:support:levelOfSupport` | The manufacturer's ATTESTED claim about what the component's upstream maintainer is doing. **The value is FDA's phrase verbatim and lowercase -- `actively maintained`, `no longer maintained`, `abandoned` -- NOT an enum name.** Match on those strings; there is no `ACTIVELY_MAINTAINED` on the wire. Absent when nobody has attested a level. Never emitted without `reliza:support:assessedAt` | unreleased; reaches CE at the next sync |
+| `reliza:support:assessedAt` | When a human assessed this component, as an RFC-3339 UTC instant. Caller-supplied, so it may precede the moment the assessment was recorded. Also emitted on its own, with no level, to record that a component WAS assessed and no upstream dates were found | unreleased; reaches CE at the next sync |
+| `reliza:support:justification` | The manufacturer's stated BASIS for the claim -- what they checked and what they found. Required by ReARM before a negative level (`no longer maintained`, `abandoned`) may be recorded, so a claim about a third party's project always ships with its evidence. Also carries the reason no upstream dates could be found, which is the whole disclosure for a component whose upstream publishes none | unreleased; reaches CE at the next sync |
+| `reliza:support:status` | DERIVED, never attested: the support state the recorded dates entail as of the moment the BOM was served. Known values: `SECURITY_ONLY`, `END_OF_SUPPORT`, `UNKNOWN`. See the note on derived values below | CE 26.08.95 |
+| `reliza:support:party` | Whether the organisation serving the BOM is the FIRST party for this component's support facts (its own software) or a THIRD party describing a component it does not control. Known values: `FIRST_PARTY`, `THIRD_PARTY` | unreleased; reaches CE at the next sync |
+| `reliza:support:source:<milestone>` | Provenance of one milestone's date, where `<milestone>` is `endOfGuaranteedSupport`, `endOfSupport` or `endOfLife`. Known values: `MANUAL` (a human recorded it), `SUPPLIER` (from a supplier-provided BOM), `ENRICHED` (machine-gathered). Per milestone, because one component's dates can come from different places | suffixed form unreleased; reaches CE at the next sync; unsuffixed in CE 26.08.95 |
+| `reliza:support:lastAssessed:<milestone>` | When that milestone's date was last assessed, as an RFC-3339 UTC instant. Per milestone, same reasoning | suffixed form unreleased; reaches CE at the next sync; unsuffixed in CE 26.08.95 |
+| `reliza:support:deviceSupportRisk` | DERIVED: whether the component's end-of-support falls before the enclosing device release's own end-of-support. Known values: `OK`, `EOS_BEFORE_DEVICE`, `UNKNOWN`. Emitted only for a product/device release | unreleased; reaches CE at the next sync |
+| `reliza:support:disclosure` | Document-level marker on `metadata.component`, describing how the support properties in this BOM were produced. Known value: `derived-non-attested-current-state` | CE 26.08.95 |
 
 ### A note on derived values
 
@@ -113,10 +117,10 @@ The enclosing device release's own lifecycle dates, written on `metadata.compone
 so a reader can compare component dates against the device's. Emitted only for a
 product/device release that declares at least one of them.
 
-| Property | Description |
-|----------|-------------|
-| `reliza:device:endOfSupport` | The device release's end-of-support date (ISO-8601 `YYYY-MM-DD`) |
-| `reliza:device:endOfLife` | The device release's end-of-life date (ISO-8601 `YYYY-MM-DD`) |
+| Property | Description | Since |
+|----------|-------------|-------|
+| `reliza:device:endOfSupport` | The device release's end-of-support date (ISO-8601 `YYYY-MM-DD`) | unreleased; reaches CE at the next sync |
+| `reliza:device:endOfLife` | The device release's end-of-life date (ISO-8601 `YYYY-MM-DD`) | unreleased; reaches CE at the next sync |
 
 ## Standard CycloneDX lifecycle keys written by ReARM
 
