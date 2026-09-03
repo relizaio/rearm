@@ -1,3 +1,8 @@
+<!--
+  GENERATED. Source of truth is cyclonedx-taxonomy.md in the rearm-core repo,
+  carried here by backend/copy-src.sh. Edit it there, not here: a change made only
+  in this copy is silently reverted by the next sync.
+-->
 # `reliza` CycloneDX Taxonomy
 
 This is the namespace for CycloneDX properties used by [Reliza](https://reliza.io/) and particularly by [ReARM](https://rearmhq.com).
@@ -73,6 +78,7 @@ placed in `components[].properties`.
 |----------|-------------|
 | `reliza:support:levelOfSupport` | The manufacturer's ATTESTED claim about what the component's upstream maintainer is doing. **The value is FDA's phrase verbatim and lowercase -- `actively maintained`, `no longer maintained`, `abandoned` -- NOT an enum name.** Match on those strings; there is no `ACTIVELY_MAINTAINED` on the wire. Absent when nobody has attested a level. Never emitted without `reliza:support:assessedAt` |
 | `reliza:support:assessedAt` | When a human assessed this component, as an RFC-3339 UTC instant. Caller-supplied, so it may precede the moment the assessment was recorded. Also emitted on its own, with no level, to record that a component WAS assessed and no upstream dates were found |
+| `reliza:support:justification` | The manufacturer's stated BASIS for the claim -- what they checked and what they found. Required by ReARM before a negative level (`no longer maintained`, `abandoned`) may be recorded, so a claim about a third party's project always ships with its evidence. Also carries the reason no upstream dates could be found, which is the whole disclosure for a component whose upstream publishes none |
 | `reliza:support:status` | DERIVED, never attested: the support state the recorded dates entail as of the moment the BOM was served. Known values: `SECURITY_ONLY`, `END_OF_SUPPORT`, `UNKNOWN`. See the note on derived values below |
 | `reliza:support:party` | Whether the organisation serving the BOM is the FIRST party for this component's support facts (its own software) or a THIRD party describing a component it does not control. Known values: `FIRST_PARTY`, `THIRD_PARTY` |
 | `reliza:support:source:<milestone>` | Provenance of one milestone's date, where `<milestone>` is `endOfGuaranteedSupport`, `endOfSupport` or `endOfLife`. Known values: `MANUAL` (a human recorded it), `SUPPLIER` (from a supplier-provided BOM), `ENRICHED` (machine-gathered). Per milestone, because one component's dates can come from different places |
