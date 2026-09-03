@@ -525,10 +525,11 @@ query ComponentsOfPerspective($perspectiveUuid: ID!) {
 
 // Org default view (Pro org setting). Deliberately its own tiny document:
 // the boot-time organizations query must keep working on a backend that
-// predates the field.
+// predates the field. Uses the organizations list (the single-organization
+// query in the schema has no resolver and always returns null).
 const ORG_DEFAULT_VIEW_GQL = gql`
-query OrgDefaultView($orgUuid: ID!) {
-    organization(orgUuid: $orgUuid) {
+query OrgDefaultView {
+    organizations {
         uuid
         settings {
             defaultView

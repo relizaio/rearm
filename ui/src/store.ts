@@ -748,10 +748,10 @@ const storeObject : any = {
             try {
                 const response = await graphqlClient.query({
                     query: graphqlQueries.OrgDefaultViewGql,
-                    variables: { orgUuid },
                     fetchPolicy: 'no-cache'
                 })
-                return dashboardViewFromWire(response.data.organization?.settings?.defaultView)
+                const org = (response.data.organizations || []).find((o: any) => o.uuid === orgUuid)
+                return dashboardViewFromWire(org?.settings?.defaultView)
             } catch (err) {
                 console.error('Org default view unavailable, using built-in default', err)
                 return null
