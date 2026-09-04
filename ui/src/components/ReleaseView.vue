@@ -910,16 +910,26 @@
                 </n-tab-pane>
                 <n-tab-pane name="bomComponents" tab="BOM Components">
                     <n-tabs type="line" v-model:value="bomSubTab" @update:value="handleBomSubTabSwitch" animated>
-                        <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomComponents.length ? ' · ' + sbomComponents.length : ''}`">
+                        <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomFilteredTotal ? ' \u00b7 ' + sbomFilteredTotal : ''}`">
                     <div class="container">
                         <n-space style="margin-bottom: 8px;" align="center">
                             <n-input
                                 v-if="sbomViewMode === 'list'"
                                 v-model:value="sbomSearchQueryInput"
-                                placeholder="Search SBOM components (name, version, group, type, purl)"
+                                @update:value="onSbomSearchInput"
+                                @clear="onSbomSearchInput"
+                                placeholder="Search by canonical purl"
                                 clearable
                                 size="small"
-                                style="width: 420px;"
+                                style="width: 320px;"
+                            />
+                            <n-select
+                                v-if="sbomViewMode === 'list'"
+                                v-model:value="sbomAttestationFilter"
+                                @update:value="onSbomFilterChange"
+                                size="small"
+                                style="width: 260px;"
+                                :options="sbomAttestationFilterOptions"
                             />
                             <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
                                 <n-radio-button value="list" label="List" />
@@ -955,15 +965,39 @@
                             <p>Loading SBOM components...</p>
                         </div>
                         <div v-else-if="sbomComponentsLoaded && sbomComponents.length === 0">
-                            <p>No SBOM components recorded for this release.</p>
+                            <!-- "the filter matched nothing" and "the release has no
+                                 components" are different facts, and the second one is a
+                                 claim about the SBOM. Saying it while a filter is active
+                                 would report an empty inventory for a release that has one. -->
+                            <p v-if="sbomAttestationFilter !== 'ALL' || sbomSearchQueryInput">
+                                No components match this filter.
+                                <template v-if="sbomAttestationFilter === 'UNATTESTED'">
+                                    Every component in this release has a support disclosure.
+                                </template>
+                            </p>
+                            <p v-else>No SBOM components recorded for this release.</p>
                         </div>
                         <div v-else-if="sbomComponentsLoaded && sbomViewMode === 'list'">
                             <n-data-table
-                                :data="filteredSbomComponents"
+                                :data="sbomComponents"
                                 :columns="sbomComponentsTableFields"
                                 :row-key="(row: any) => row.uuid"
-                                :pagination="{ pageSize: 15 }"
                             />
+                            <n-space align="center" style="margin-top: 8px;">
+                                <span style="font-size: 12px; color: #999;">
+                                    Showing {{ sbomComponents.length }} of {{ sbomFilteredTotal }}
+                                    <template v-if="sbomAttestationFilter !== 'ALL' || sbomSearchQueryInput">matching</template>
+                                    <template v-else>components</template>
+                                </span>
+                                <n-button
+                                    v-if="sbomHasMore"
+                                    size="small"
+                                    @click="loadMoreSbomComponents"
+                                    :loading="sbomPageLoading"
+                                    :disabled="sbomPageLoading">
+                                    Load more
+                                </n-button>
+                            </n-space>
                         </div>
                         <div v-else-if="sbomComponentsLoaded && sbomViewMode === 'tree'">
                             <div v-if="sbomGraphLoading && !sbomGraphLoaded">
@@ -1274,7 +1308,8 @@ import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
-import { loadSbomComponentsForRelease } from '@/utils/sbomComponentsQuery'
+import { loadSbomComponentsPage, loadSbomComponentsForRelease } from '@/utils/sbomComponentsQuery'
+import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
@@ -2803,29 +2838,72 @@ const sbomGraphByUuid: Ref<Record<string, any>> = ref({})
 // after reconcile changes.
 const sbomGraphDirty: Ref<boolean> = ref(false)
 
-// Client-side filter for the list view. Matches against any of name, version,
-// group, type, or canonical purl (case-insensitive substring).
+// Server-side filter and paging for the list view.
+//
+// The search used to be a client-side computed over the whole loaded release, and the
+// support filter did not exist here at all. Both moved to the server, and the search move
+// is a consequence of the filter move rather than an optimisation: ATTESTED/UNATTESTED are
+// evaluated with the SAME predicate the coverage gauge counts with, so a client-side filter
+// over a partially-loaded release could disagree with the gauge sitting above it -- the
+// in-step failure this feature has hit repeatedly. One filter, evaluated once, server-side.
+//
+// Note the search semantics changed with the move: the server matches the CANONICAL PURL
+// only, where the old client filter also matched name/version/group/type. The purl contains
+// group, name and version for every ecosystem we ingest, so this is narrower in form rather
+// than in practice; the placeholder says so.
 const sbomSearchQueryInput: Ref<string> = ref('')
-const filteredSbomComponents: ComputedRef<any[]> = computed((): any[] => {
-    const q = (sbomSearchQueryInput.value || '').trim().toLowerCase()
-    return sbomComponents.value.filter((row: any) => {
-        const c = row.component || {}
-        if (q) {
-            const haystack = [c.name, c.version, c.group, c.type, c.canonicalPurl].filter(Boolean).join(' ').toLowerCase()
-            if (!haystack.includes(q)) return false
-        }
-        return true
-    })
-})
+const sbomAttestationFilter: Ref<SupportAttestationFilter> = ref('ALL')
+// Labels say what the filter MEANS for disclosure, not just the enum name: "Not disclosed"
+// is the operator's word for UNATTESTED, and it is the same population the coverage gauge
+// counts as missing.
+const sbomAttestationFilterOptions = [
+    { label: 'All components', value: 'ALL' },
+    { label: 'Support disclosed', value: 'ATTESTED' },
+    { label: 'Not disclosed', value: 'UNATTESTED' }
+]
+// Components matching the CURRENT FILTER across all pages -- not the release's size, and
+// not the coverage denominator. Under UNATTESTED it falls as rows are attested, by design.
+const sbomFilteredTotal: Ref<number> = ref(0)
+const sbomCursor: Ref<string | null> = ref(null)
+const sbomHasMore: Ref<boolean> = ref(false)
+const sbomPageLoading: Ref<boolean> = ref(false)
+const SBOM_PAGE_SIZE = 50
+
+let sbomSearchDebounce: ReturnType<typeof setTimeout> | null = null
+
+/** Re-request from the start. Any filter change invalidates the cursor. */
+function reloadSbomComponentsFromStart () {
+    sbomCursor.value = null
+    loadSbomComponents(true)
+}
+
+function onSbomFilterChange () {
+    reloadSbomComponentsFromStart()
+}
+
+function onSbomSearchInput () {
+    // Debounced: every keystroke is a network round trip otherwise, and the server is doing
+    // an ILIKE over the release's component set.
+    if (sbomSearchDebounce) clearTimeout(sbomSearchDebounce)
+    sbomSearchDebounce = setTimeout(() => { reloadSbomComponentsFromStart() }, 300)
+}
 
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (!updatedRelease.value?.uuid) return
     if (sbomComponentsLoaded.value && !forceRefresh) return
     sbomComponentsLoading.value = true
     try {
-        sbomComponents.value = await loadSbomComponentsForRelease(graphqlClient as any, updatedRelease.value.uuid)
+        const page = await loadSbomComponentsPage(graphqlClient as any, updatedRelease.value.uuid, {
+            attestation: sbomAttestationFilter.value,
+            search: sbomSearchQueryInput.value,
+            limit: SBOM_PAGE_SIZE
+        })
+        sbomComponents.value = page.items
+        sbomFilteredTotal.value = page.totalCount
+        sbomCursor.value = page.endCursor
+        sbomHasMore.value = page.hasMore
         sbomComponentsLoaded.value = true
-        // Refresh invalidates the deeper graph too — rows may have changed.
+        // Refresh invalidates the deeper graph too -- rows may have changed.
         if (forceRefresh) {
             sbomGraphLoaded.value = false
             sbomGraphByUuid.value = {}
@@ -2835,6 +2913,38 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     } finally {
         sbomComponentsLoading.value = false
+    }
+}
+
+/**
+ * Append the next page.
+ *
+ * APPEND, not replace, and no page numbers: the cursor is forward-only, so there is no
+ * backward cursor to build a numbered pager on. Offering page numbers over a forward-only
+ * cursor would mean re-walking from the start on every jump and pretending otherwise.
+ *
+ * A rejected cursor surfaces as an error rather than restarting from the beginning. That is
+ * the server contract and it matters here: a silent restart would append the first page
+ * again and again while the operator scrolled, with no sign anything was wrong.
+ */
+async function loadMoreSbomComponents () {
+    if (!updatedRelease.value?.uuid || !sbomHasMore.value || sbomPageLoading.value) return
+    sbomPageLoading.value = true
+    try {
+        const page = await loadSbomComponentsPage(graphqlClient as any, updatedRelease.value.uuid, {
+            attestation: sbomAttestationFilter.value,
+            search: sbomSearchQueryInput.value,
+            limit: SBOM_PAGE_SIZE,
+            after: sbomCursor.value
+        })
+        sbomComponents.value = sbomComponents.value.concat(page.items)
+        sbomFilteredTotal.value = page.totalCount
+        sbomCursor.value = page.endCursor
+        sbomHasMore.value = page.hasMore
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        sbomPageLoading.value = false
     }
 }
 
