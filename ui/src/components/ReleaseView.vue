@@ -917,7 +917,8 @@
                              own total -- the two agree for the unfiltered case, which is
                              what makes conflating them tempting and wrong. -->
                         <n-alert
-                            v-if="sbomViewMode === 'list' && sbomComponentsLoaded"
+                            v-if="sbomViewMode === 'list' && sbomComponentsLoaded
+                                && !sbomCoverageLoading"
                             :type="sbomCoverageDisplay.tone === 'default' ? 'default'
                                 : sbomCoverageDisplay.tone"
                             :show-icon="sbomCoverageDisplay.warn"
@@ -1335,6 +1336,10 @@ import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
+import { coverageDisplay } from '@/utils/supportCoverageDisplay'
+import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
+import { loadReleaseSupportCoverage } from '@/utils/releaseSupportCoverage'
+import type { ReleaseSupportCoverage } from '@/utils/releaseSupportCoverage'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
@@ -2127,6 +2132,9 @@ async function goToRelease (uuid: string) {
     // piecemeal is how the tab label kept showing the old release's count over an empty
     // pane, and how a trailing debounce could re-mark the list loaded with A's rows.
     sbomPaging.reset()
+    // The gauge belongs to the release that was showing. Leaving it would caption the next
+    // release with the previous one's disclosure count.
+    sbomCoverage.value = null
     sbomGraphLoaded.value = false
     sbomGraphByUuid.value = {}
     sbomGraphDirty.value = true
@@ -2942,6 +2950,11 @@ function loadMoreSbomComponents () { sbomPaging.loadMore() }
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (forceRefresh) sbomForceRefreshPending = true
     await sbomPaging.load(forceRefresh)
+    // The gauge loads with the list, and ONLY with the list. Not from loadMore, and not from
+    // a filter or search change: coverage is release-scoped, so paging and filtering move
+    // the rows on screen without moving the number above them. Wiring it to those would make
+    // the gauge flicker on every keystroke while reporting the same value.
+    await loadSbomCoverage()
 }
 
 // Release-scoped support-disclosure gauge (FDA-Readiness-1).
