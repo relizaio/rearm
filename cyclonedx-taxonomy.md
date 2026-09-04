@@ -1,5 +1,5 @@
 <!--
-  SOURCE OF TRUTH: cyclonedx-taxonomy.md in the rearm-core repository, beside the code
+  SOURCE OF TRUTH: backend/cyclonedx-taxonomy.md in the rearm-core repository, beside the code
   that emits these properties. The copy in relizaio/rearm is GENERATED from it by
   backend/copy-src.sh, so a change made only in that copy is reverted by the next sync.
 
@@ -70,7 +70,9 @@ them. The one exception is a raw signed artifact downloaded unmodified, which Re
 cannot alter and does not claim to have authored.
 
 Unless stated otherwise, each property MUST occur at most once per component and is
-placed in `components[].properties`.
+placed in `components[].properties`. Two exceptions are noted in the table:
+`reliza:support:disclosure` is written once per document in `metadata.properties`, and
+the `reliza:device:*` pair is written on `metadata.component`.
 
 The **Since** column says which build emits a property, so a reader can tell what their
 own version produces. "unreleased" means it is in the ReARM source but has not reached a
@@ -94,7 +96,7 @@ CE release yet; those arrive together at the next source sync.
 | `reliza:support:source:<milestone>` | Provenance of one milestone's date, where `<milestone>` is `endOfGuaranteedSupport`, `endOfSupport` or `endOfLife`. Known values: `MANUAL` (a human recorded it), `SUPPLIER` (from a supplier-provided BOM), `ENRICHED` (machine-gathered). Per milestone, because one component's dates can come from different places | suffixed form unreleased; reaches CE at the next sync; unsuffixed in CE 26.08.95 |
 | `reliza:support:lastAssessed:<milestone>` | When that milestone's date was last assessed, as an RFC-3339 UTC instant. Per milestone, same reasoning | suffixed form unreleased; reaches CE at the next sync; unsuffixed in CE 26.08.95 |
 | `reliza:support:deviceSupportRisk` | DERIVED: whether the component's end-of-support falls before the enclosing device release's own end-of-support. Known values: `OK`, `EOS_BEFORE_DEVICE`, `UNKNOWN`. Emitted only for a product/device release | unreleased; reaches CE at the next sync |
-| `reliza:support:disclosure` | Document-level marker on `metadata.component`, describing how the support properties in this BOM were produced. Known value: `derived-non-attested-current-state` | CE 26.08.95 |
+| `reliza:support:disclosure` | Document-level marker in `metadata.properties` (NOT on `metadata.component`, where the `reliza:device:*` pair goes), describing how the support properties in this BOM were produced. Known value: `derived-non-attested-current-state` | CE 26.08.95 |
 
 ### A note on derived values
 
