@@ -912,6 +912,22 @@
                     <n-tabs type="line" v-model:value="bomSubTab" @update:value="handleBomSubTabSwitch" animated>
                         <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomFilteredTotal ? ' \u00b7 ' + sbomFilteredTotal : ''}`">
                     <div class="container">
+                        <!-- Release-scoped disclosure gauge. Rendered ABOVE the list and
+                             sourced from sbomComponentSupportCoverage, never from the list's
+                             own total -- the two agree for the unfiltered case, which is
+                             what makes conflating them tempting and wrong. -->
+                        <n-alert
+                            v-if="sbomViewMode === 'list' && sbomComponentsLoaded"
+                            :type="sbomCoverageDisplay.tone === 'default' ? 'default'
+                                : sbomCoverageDisplay.tone"
+                            :show-icon="sbomCoverageDisplay.warn"
+                            style="margin-bottom: 10px;">
+                            <div style="font-size: 13px;">{{ sbomCoverageDisplay.headline }}</div>
+                            <div v-if="sbomCoverageDisplay.exportNote"
+                                style="font-size: 12px; margin-top: 4px;">
+                                {{ sbomCoverageDisplay.exportNote }}
+                            </div>
+                        </n-alert>
                         <n-space style="margin-bottom: 8px;" align="center">
                             <n-input
                                 v-if="sbomViewMode === 'list'"
@@ -1328,7 +1344,7 @@ import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regu
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, supportTag } from '@/utils/supportStatusTag'
-import { NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NAlert, NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -2926,6 +2942,38 @@ function loadMoreSbomComponents () { sbomPaging.loadMore() }
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (forceRefresh) sbomForceRefreshPending = true
     await sbomPaging.load(forceRefresh)
+}
+
+// Release-scoped support-disclosure gauge (FDA-Readiness-1).
+//
+// Sourced from sbomComponentSupportCoverage(orgUuid, releaseUuid) and NOTHING ELSE. In
+// particular NOT from the component list's totalCount: the two are equal for the ALL filter
+// by construction, which is exactly what makes deriving one from the other tempting and
+// wrong. The gauge answers "how much of this release is disclosed"; the list total answers
+// "how many rows match your current filter", and it moves when the operator touches a
+// control. A gauge that shifted when someone typed in a search box would be reporting the
+// filter, not the release.
+const sbomCoverage: Ref<ReleaseSupportCoverage | null> = ref(null)
+const sbomCoverageLoading: Ref<boolean> = ref(false)
+const sbomCoverageDisplay: ComputedRef<CoverageDisplay> = computed(
+    (): CoverageDisplay => coverageDisplay(sbomCoverage.value))
+
+async function loadSbomCoverage () {
+    const releaseUuid = updatedRelease.value?.uuid
+    const orgUuid = updatedRelease.value?.orgDetails?.uuid
+    if (!releaseUuid || !orgUuid) return
+    sbomCoverageLoading.value = true
+    try {
+        sbomCoverage.value = await loadReleaseSupportCoverage(
+            graphqlClient as any, orgUuid, releaseUuid)
+    } catch (err: any) {
+        // A real failure, not schema drift -- the loader returns null for drift. Report it
+        // and leave the gauge unavailable rather than rendering a number we do not have.
+        sbomCoverage.value = null
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        sbomCoverageLoading.value = false
+    }
 }
 
 async function ensureSbomGraphLoaded (forceRefresh: boolean = false) {
