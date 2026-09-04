@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { buildSchema, validate, parse, type GraphQLSchema } from 'graphql'
-import { SBOM_COMPONENTS_PAGE_QUERY, SBOM_COMPONENTS_QUERY, SBOM_COMPONENTS_QUERY_CORE } from './sbomComponentsQuery'
+import {
+    SBOM_COMPONENTS_PAGE_QUERY,
+    SBOM_COMPONENTS_QUERY,
+    SBOM_COMPONENTS_QUERY_CORE,
+    SBOM_COMPONENT_CORE_FIELDS,
+    SBOM_COMPONENT_FIELDS
+} from './sbomComponentsQuery'
 
 /**
  * These documents interpolate a shared selection set (`${SBOM_COMPONENT_FIELDS}`), and
@@ -29,6 +35,22 @@ const proSchema = loadSchema(PRO_SCHEMA_PATH)
 
 const errorsAgainst = (schema: GraphQLSchema, doc: any) =>
     validate(schema, parse(doc.loc.source.body)).map(e => e.message)
+
+describe('the CORE/FULL split is a real split', () => {
+    /**
+     * If FULL ever collapses into CORE, deviceSupportRisk stops being requested by EVERY
+     * query and the device-risk column goes quietly blank -- no error, no failing document,
+     * just a disclosure that silently stops being made. FULL is built by appending so this
+     * cannot happen by reformatting, and asserted here so it cannot happen by editing.
+     */
+    it('FULL is not CORE, and differs by exactly deviceSupportRisk', () => {
+        expect(SBOM_COMPONENT_FIELDS).not.toBe(SBOM_COMPONENT_CORE_FIELDS)
+        expect(SBOM_COMPONENT_FIELDS).toContain('deviceSupportRisk')
+        expect(SBOM_COMPONENT_CORE_FIELDS).not.toContain('deviceSupportRisk')
+        expect(SBOM_COMPONENT_FIELDS.replace(/\s*deviceSupportRisk\n/, '\n'))
+            .toBe(SBOM_COMPONENT_CORE_FIELDS)
+    })
+})
 
 describe('SBOM component documents parse at all', () => {
     // The interpolation is textual. A missing brace or a stray field would previously have

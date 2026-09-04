@@ -24,10 +24,8 @@ export type SupportAttestationFilter = 'ALL' | 'ATTESTED' | 'UNATTESTED'
  * supportSource and endOfSupportDate DO exist on CE's SbomComponent; deviceSupportRisk is
  * the single field that does not.
  */
-export const SBOM_COMPONENT_CORE_FIELDS = `
-            uuid
-            sbomComponentUuid
-            component {
+/** The component sub-selection CE can serve. */
+const COMPONENT_CORE_SELECTION = `
                 uuid
                 canonicalPurl
                 type
@@ -37,21 +35,36 @@ export const SBOM_COMPONENT_CORE_FIELDS = `
                 isRoot
                 supportStatus
                 supportSource
-                endOfSupportDate
+                endOfSupportDate`
+
+/**
+ * CORE plus the Pro-only device verdict, by APPENDING rather than by text-substituting into
+ * CORE. An earlier revision derived FULL with a .replace() keyed on an exact indentation
+ * match, which is a silent failure waiting to happen: reformat the selection and the replace
+ * no-ops, FULL becomes identical to CORE, deviceSupportRisk vanishes from every query, and
+ * nothing fails -- the field simply stops being requested and the device-risk column goes
+ * quietly blank. Appending cannot fail that way. The spec also asserts FULL !== CORE.
+ *
+ * A caller served CORE must treat an absent deviceSupportRisk as "not checked", never as
+ * "not at risk" -- isDeviceRiskFlagged already does, since undefined is not a flagged value.
+ */
+const COMPONENT_FULL_SELECTION = COMPONENT_CORE_SELECTION + `
+                deviceSupportRisk`
+
+function releaseComponentFields (componentSelection: string): string {
+    return `
+            uuid
+            sbomComponentUuid
+            component {${componentSelection}
             }
             artifactParticipations {
                 artifact
                 exactPurls
             }`
+}
 
-/**
- * CORE plus the Pro-only device verdict. A caller served CORE must treat an absent
- * deviceSupportRisk as "not checked", never as "not at risk" -- isDeviceRiskFlagged already
- * does, since undefined is not a flagged value.
- */
-export const SBOM_COMPONENT_FIELDS = SBOM_COMPONENT_CORE_FIELDS.replace(
-    '                endOfSupportDate\n',
-    '                endOfSupportDate\n                deviceSupportRisk\n')
+export const SBOM_COMPONENT_CORE_FIELDS = releaseComponentFields(COMPONENT_CORE_SELECTION)
+export const SBOM_COMPONENT_FIELDS = releaseComponentFields(COMPONENT_FULL_SELECTION)
 
 /**
  * Paged, filtered load. Deliberately NOT selecting dependencies / dependedOnBy / ancestors:
