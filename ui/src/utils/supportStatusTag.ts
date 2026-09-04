@@ -48,9 +48,8 @@ export function supportTag (status: unknown): { type: SupportTagType, label: str
             && Object.prototype.hasOwnProperty.call(SUPPORT_TAG, status)) {
         return SUPPORT_TAG[status as LiveSupportStatus]
     }
-    console.error(
-        `[fda] unrecognised SupportStatus from the server: ${JSON.stringify(status)}.`
-        + ` This UI build knows only ${Object.keys(SUPPORT_TAG).join(', ')}.`
+    console.error('unrecognised SupportStatus from the server:', status,
+        `- this UI build knows only ${Object.keys(SUPPORT_TAG).join(', ')}.`
         + ' Rendering it as "Unknown" would assert it was never assessed.')
     return UNRECOGNISED_TAG
 }
@@ -69,11 +68,18 @@ export function supportTag (status: unknown): { type: SupportTagType, label: str
  * reading (EOL means end of SALE). Deliberately absent -- a label for a verdict the server
  * cannot send is a dead branch that reads as coverage.
  */
-export const DEVICE_RISK_LABEL: Record<string, string> = {
+export type FlaggedDeviceRisk = 'EOS_BEFORE_DEVICE'
+
+export const DEVICE_RISK_LABEL: Record<FlaggedDeviceRisk, string> = {
     EOS_BEFORE_DEVICE: 'EOS before device'
 }
 
-export const DEVICE_RISK_DETAIL: Record<string, string> = {
+/**
+ * Keyed on the SAME union as the label map, so the compiler enforces what a comment used to
+ * assert. deviceRiskBadge reads both, and a verdict present in LABEL but missing from DETAIL
+ * would render an empty tooltip body under a populated tag.
+ */
+export const DEVICE_RISK_DETAIL: Record<FlaggedDeviceRisk, string> = {
     EOS_BEFORE_DEVICE: 'This component stops receiving support before this device\'s declared'
         + ' support window ends, so it goes unsupported while the device is still fielded.'
 }
@@ -83,6 +89,13 @@ export const DEVICE_RISK_DETAIL: Record<string, string> = {
  * verdicts, and a hand-maintained second copy fails silently -- a second flagged value would
  * render a tag while a summary counted zero and a filter hid the row.
  */
-export function isDeviceRiskFlagged (risk: unknown): boolean {
-    return typeof risk === 'string' && risk in DEVICE_RISK_LABEL
+export function isDeviceRiskFlagged (risk: unknown): risk is FlaggedDeviceRisk {
+    // hasOwnProperty, not `in`. `'toString' in DEVICE_RISK_LABEL` is true, and the caller
+    // renders DEVICE_RISK_LABEL[risk] as a tag label -- so `in` would put
+    // Object.prototype.toString, a Function, on screen. supportTag above already guards this
+    // way; guarding one of the two is how the pair drifts. Not reachable from a conformant
+    // server, since deviceSupportRisk is a GraphQL enum, which is why this is consistency and
+    // defence rather than a live defect.
+    return typeof risk === 'string'
+        && Object.prototype.hasOwnProperty.call(DEVICE_RISK_LABEL, risk)
 }

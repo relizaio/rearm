@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
+    DEVICE_RISK_DETAIL,
     DEVICE_RISK_LABEL,
     SUPPORT_TAG,
     UNRECOGNISED_TAG,
@@ -68,6 +69,20 @@ describe('isDeviceRiskFlagged', () => {
     // not be made, which the column shows by simply having no marker, same as OK.
     it.each(['OK', 'UNKNOWN', null, undefined, ''])('does not flag %s', (risk) => {
         expect(isDeviceRiskFlagged(risk)).toBe(false)
+    })
+
+    // The same prototype hole supportTag guards against, one function away. Guarding one of
+    // the pair and not the other is how they drift; DEVICE_RISK_LABEL['toString'] would put
+    // Object.prototype.toString -- a Function -- on screen as a tag label.
+    it.each(['toString', 'constructor', 'hasOwnProperty'])(
+        'does not treat the inherited %s as a flagged verdict', (risk) => {
+            expect(isDeviceRiskFlagged(risk)).toBe(false)
+        })
+
+    // The label and detail maps are read together by the badge renderer. A verdict in one
+    // and not the other renders a populated tag over an empty tooltip.
+    it('label and detail maps agree on their keys', () => {
+        expect(Object.keys(DEVICE_RISK_LABEL).sort()).toEqual(Object.keys(DEVICE_RISK_DETAIL).sort())
     })
 
     // Removed from the backend enum when end-of-life was redefined as end of SALE. A label
