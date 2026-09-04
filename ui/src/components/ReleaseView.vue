@@ -1281,6 +1281,7 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
+import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, supportTag } from '@/utils/supportStatusTag'
 import { NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -2922,6 +2923,27 @@ function openSbomComponentGraphByPurl (purl: string) {
     window.open(href, '_blank')
 }
 
+/**
+ * The support badge for a component, or null when it is not flagged.
+ *
+ * The mapping, the fail-loud path for an unrecognised status, and the flagged-verdict set
+ * all live in utils/supportStatusTag.ts so they can be tested -- see
+ * supportStatusTag.spec.ts. The rendering stays here because it needs naive-ui.
+ */
+function deviceRiskBadge (c: any): any {
+    if (!isDeviceRiskFlagged(c.deviceSupportRisk)) return null
+    return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+        trigger: () => h(NTag, { size: 'small', type: 'error', round: true, bordered: true },
+            () => DEVICE_RISK_LABEL[c.deviceSupportRisk]),
+        default: () => h('div', { style: 'font-size: 12px;' }, [
+            h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 'Outlived by this device'),
+            h('div', DEVICE_RISK_DETAIL[c.deviceSupportRisk]),
+            h('div', { style: 'margin-top: 4px;' },
+                'Disclose and address it, or plan a replacement before the device ships.')
+        ])
+    })
+}
+
 const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'name',
@@ -2954,6 +2976,40 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
         key: 'purl',
         title: 'Canonical purl',
         render: (row: any) => h('span', { style: 'word-break: break-all; font-family: monospace; font-size: 12px;' }, row.component?.canonicalPurl || '')
+    },
+    {
+        key: 'support',
+        title: 'Support',
+        sorter: (a: any, b: any) => (a.component?.supportStatus || '').localeCompare(b.component?.supportStatus || ''),
+        render: (row: any) => {
+            const c = row.component || {}
+            // Un-attested components have no supportSource -> a neutral dash, not UNKNOWN.
+            // The distinction is the point of this column: "nobody has recorded anything" and
+            // "somebody recorded that it is unknown" are different disclosures.
+            if (!c.supportSource) {
+                // A component can carry dates (hence a device verdict) without a source once a
+                // non-MANUAL writer exists, so the marker rides along here too -- see
+                // deviceRiskBadge. Today this is unreachable and costs one null check.
+                const unattestedRisk = deviceRiskBadge(c)
+                // Escaped, not a literal em-dash: the source stays plain ASCII per
+                // coding_principles, and the rendered output is identical.
+                return h('div', [h('span', { style: 'color: #999;' }, '\u2014'),
+                    unattestedRisk ? h('div', { style: 'margin-top: 3px;' }, [unattestedRisk]) : null])
+            }
+            const tag = supportTag(c.supportStatus)
+            const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
+            if (c.endOfSupportDate) {
+                els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
+            }
+            // The device check is a second, independent verdict -- see DEVICE_RISK_LABEL. The
+            // backend only ever returns a flagged value on a PRODUCT (device) release, so this
+            // needs no release-type gate of its own.
+            const risk = deviceRiskBadge(c)
+            if (risk) {
+                els.push(h('div', { style: 'margin-top: 3px;' }, [risk]))
+            }
+            return h('div', els)
+        }
     },
     {
         key: 'artifacts',

@@ -16,6 +16,10 @@ export const SBOM_COMPONENTS_QUERY = gql`
                 name
                 version
                 isRoot
+                supportStatus
+                supportSource
+                endOfSupportDate
+                deviceSupportRisk
             }
             artifactParticipations {
                 artifact
