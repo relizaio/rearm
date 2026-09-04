@@ -41,8 +41,25 @@ const EXPORT_NOTE: Record<Exclude<SupportExportState, 'ENABLED'>, string> = {
  * grey label beside it would be the failure rendered as success.
  *
  * @param coverage null when the server cannot answer -- see loadReleaseSupportCoverage.
+ * @param error    set when the request FAILED, which is a different thing. The loader takes
+ *                 care to separate drift (null, honest) from real errors (thrown); folding
+ *                 them back together here would state a durable capability fact because a
+ *                 request 502'd, and would hide that a retry works.
  */
-export function coverageDisplay (coverage: ReleaseSupportCoverage | null): CoverageDisplay {
+export function coverageDisplay (
+    coverage: ReleaseSupportCoverage | null,
+    error?: string | null
+): CoverageDisplay {
+    if (error) {
+        return {
+            tone: 'warning',
+            headline: 'Could not load support coverage. Retry, or reload the release.',
+            exportNote: null,
+            // A warning: something IS wrong, and unlike an unanswerable server it is
+            // actionable.
+            warn: true
+        }
+    }
     if (!coverage) {
         return {
             tone: 'default',

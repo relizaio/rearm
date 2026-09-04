@@ -919,8 +919,7 @@
                         <n-alert
                             v-if="sbomViewMode === 'list' && sbomComponentsLoaded
                                 && !sbomCoverageLoading"
-                            :type="sbomCoverageDisplay.tone === 'default' ? 'default'
-                                : sbomCoverageDisplay.tone"
+                            :type="sbomCoverageDisplay.tone"
                             :show-icon="sbomCoverageDisplay.warn"
                             style="margin-bottom: 10px;">
                             <div style="font-size: 13px;">{{ sbomCoverageDisplay.headline }}</div>
@@ -1338,8 +1337,7 @@ import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
-import { loadReleaseSupportCoverage } from '@/utils/releaseSupportCoverage'
-import type { ReleaseSupportCoverage } from '@/utils/releaseSupportCoverage'
+import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
@@ -2132,9 +2130,10 @@ async function goToRelease (uuid: string) {
     // piecemeal is how the tab label kept showing the old release's count over an empty
     // pane, and how a trailing debounce could re-mark the list loaded with A's rows.
     sbomPaging.reset()
-    // The gauge belongs to the release that was showing. Leaving it would caption the next
-    // release with the previous one's disclosure count.
-    sbomCoverage.value = null
+    // The gauge belongs to the release that was showing, and has its own fence for the same
+    // reason: a coverage response for the previous release would caption this one with the
+    // old disclosure count. Clearing the ref alone only handles the synchronous case.
+    sbomCoverageState.reset()
     sbomGraphLoaded.value = false
     sbomGraphByUuid.value = {}
     sbomGraphDirty.value = true
@@ -2966,27 +2965,15 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
 // "how many rows match your current filter", and it moves when the operator touches a
 // control. A gauge that shifted when someone typed in a search box would be reporting the
 // filter, not the release.
-const sbomCoverage: Ref<ReleaseSupportCoverage | null> = ref(null)
-const sbomCoverageLoading: Ref<boolean> = ref(false)
+const sbomCoverageState = useReleaseSupportCoverage(graphqlClient as any)
+const sbomCoverage = sbomCoverageState.coverage
+const sbomCoverageLoading = sbomCoverageState.loading
 const sbomCoverageDisplay: ComputedRef<CoverageDisplay> = computed(
-    (): CoverageDisplay => coverageDisplay(sbomCoverage.value))
+    (): CoverageDisplay => coverageDisplay(sbomCoverage.value, sbomCoverageState.error.value))
 
 async function loadSbomCoverage () {
-    const releaseUuid = updatedRelease.value?.uuid
-    const orgUuid = updatedRelease.value?.orgDetails?.uuid
-    if (!releaseUuid || !orgUuid) return
-    sbomCoverageLoading.value = true
-    try {
-        sbomCoverage.value = await loadReleaseSupportCoverage(
-            graphqlClient as any, orgUuid, releaseUuid)
-    } catch (err: any) {
-        // A real failure, not schema drift -- the loader returns null for drift. Report it
-        // and leave the gauge unavailable rather than rendering a number we do not have.
-        sbomCoverage.value = null
-        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
-    } finally {
-        sbomCoverageLoading.value = false
-    }
+    await sbomCoverageState.load(
+        updatedRelease.value?.orgDetails?.uuid, updatedRelease.value?.uuid)
 }
 
 async function ensureSbomGraphLoaded (forceRefresh: boolean = false) {
