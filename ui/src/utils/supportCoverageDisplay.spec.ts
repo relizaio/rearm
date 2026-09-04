@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { coverageDisplay } from './supportCoverageDisplay'
 import type { SupportExportState } from './releaseSupportCoverage'
 
@@ -40,6 +40,25 @@ describe('coverageDisplay', () => {
         expect(note).toContain('NOT')
         expect(note).not.toBe(coverageDisplay(cov(5, 10, 'DISABLED')).exportNote)
         expect(note).not.toBe(coverageDisplay(cov(5, 10, 'UNKNOWN')).exportNote)
+    })
+
+    /**
+     * A value from a newer server. Without a guard the map lookup returns undefined, the
+     * template's v-if hides the note, and the operator gets a red alert with nothing
+     * explaining it -- alarming and uninformative at once. The sibling supportStatusTag
+     * module already guards its enum this way; review found the two handled oppositely.
+     */
+    it('never leaves an unrecognised export state without a sentence', () => {
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const d = coverageDisplay(cov(1240, 1240, 'SOMETHING_NEW' as SupportExportState))
+        expect(d.warn).toBe(true)
+        expect(d.tone).toBe('error')
+        expect(d.exportNote, 'a red alert with no explanation is the worst outcome here')
+            .toBeTruthy()
+        // The UNKNOWN wording is already correct for "we do not know what the state is".
+        expect(d.exportNote).toBe(coverageDisplay(cov(1, 2, 'UNKNOWN')).exportNote)
+        expect(err).toHaveBeenCalledOnce()
+        err.mockRestore()
     })
 
     it('gives each state its own sentence rather than one generic caveat', () => {

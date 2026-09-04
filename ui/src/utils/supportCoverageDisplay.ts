@@ -88,7 +88,34 @@ export function coverageDisplay (
         // most likely to act on the gauge precisely when it reads 100%.
         tone: attested === total && total > 0 ? 'error' : 'warning',
         headline,
-        exportNote: EXPORT_NOTE[exportState],
+        exportNote: exportNoteFor(exportState),
         warn: true
     }
+}
+
+/**
+ * The sentence for a non-ENABLED export state, or the UNKNOWN copy when this build does not
+ * recognise the value.
+ *
+ * A bare `EXPORT_NOTE[state]` returns undefined for a state a newer server introduces, and
+ * the template hides an absent note -- leaving a RED ALERT WITH NO SENTENCE EXPLAINING IT.
+ * That is the worst of both: alarming and uninformative, on the screen whose whole job is to
+ * say what is and is not being disclosed. The Pro schema explicitly anticipates this field
+ * growing a third state, so it is a matter of when.
+ *
+ * Falls back to the UNKNOWN copy rather than inventing one, because that copy is already
+ * exactly right for the situation: we do not know what the export state is, so do not assume
+ * exports carry the disclosure. Logged so whoever added the value finds out.
+ *
+ * This is the same guard supportStatusTag.ts applies to SupportStatus, and it is here
+ * because review pointed out the two were handled oppositely in the same feature.
+ */
+function exportNoteFor (exportState: Exclude<SupportExportState, 'ENABLED'>): string {
+    if (Object.prototype.hasOwnProperty.call(EXPORT_NOTE, exportState)) {
+        return EXPORT_NOTE[exportState]
+    }
+    console.error('unrecognised SupportExportState from the server:', exportState,
+        `- this UI build knows only ${Object.keys(EXPORT_NOTE).join(', ')}.`
+        + ' Falling back to the UNKNOWN wording rather than showing an unexplained alert.')
+    return EXPORT_NOTE.UNKNOWN
 }
