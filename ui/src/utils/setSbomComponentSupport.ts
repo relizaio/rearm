@@ -27,6 +27,7 @@ export const SET_SBOM_COMPONENT_SUPPORT = gql`
         $endOfLifeDate: String
         $supportNotes: String
         $clearMilestones: [SupportMilestoneType!]
+        $state: SupportState
         $reason: String
     ) {
         setSbomComponentSupport(
@@ -39,6 +40,7 @@ export const SET_SBOM_COMPONENT_SUPPORT = gql`
             endOfLifeDate: $endOfLifeDate
             supportNotes: $supportNotes
             clearMilestones: $clearMilestones
+            state: $state
             reason: $reason
         ) {
             uuid
@@ -47,6 +49,7 @@ export const SET_SBOM_COMPONENT_SUPPORT = gql`
             endOfSupportDate
             attestedLevelOfSupport
             justification
+            attestationState
         }
     }`
 

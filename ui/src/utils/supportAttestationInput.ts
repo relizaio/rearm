@@ -26,6 +26,15 @@ export interface AttestationForm {
      * make every untouched form a clear.
      */
     clearJustification: boolean
+    /**
+     * Set to ATTESTED only when re-asserting a WITHDRAWN attestation; null otherwise.
+     *
+     * Omitting it means PRESERVE, so a form that never sent it saved the justification and
+     * the reason onto a still-withdrawn row -- the audit trail looked immaculate and the
+     * component stayed withdrawn and uncounted. The bulk path already forces ATTESTED for
+     * exactly this reason; the single-component form has to as well.
+     */
+    state: 'ATTESTED' | null
 }
 
 export function emptyAttestationForm (): AttestationForm {
@@ -39,7 +48,8 @@ export function emptyAttestationForm (): AttestationForm {
         supportNotes: '',
         reason: '',
         clearMilestones: [],
-        clearJustification: false
+        clearJustification: false,
+        state: null
     }
 }
 
@@ -81,6 +91,7 @@ export function attestationVariables (
     if (form.endOfSupportDate) vars.endOfSupportDate = form.endOfSupportDate
     if (form.endOfLifeDate) vars.endOfLifeDate = form.endOfLifeDate
     if (form.clearMilestones.length) vars.clearMilestones = form.clearMilestones
+    if (form.state) vars.state = form.state
     return vars
 }
 

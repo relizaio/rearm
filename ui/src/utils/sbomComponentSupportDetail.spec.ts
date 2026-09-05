@@ -4,9 +4,9 @@ import { loadSbomComponentSupportDetail } from './sbomComponentSupportDetail'
 describe('loadSbomComponentSupportDetail', () => {
     it('returns the stored attestation', async () => {
         const query = vi.fn().mockResolvedValue({
-            data: { sbomComponent: { uuid: 'c-1', attestationState: 'ATTESTED', justification: 'x' } }
+            data: { getReleaseSbomComponentGraph: { component: { uuid: 'c-1', attestationState: 'ATTESTED', justification: 'x' } } }
         })
-        const r = await loadSbomComponentSupportDetail({ query } as any, 'c-1')
+        const r = await loadSbomComponentSupportDetail({ query } as any, 'rel-1', 'c-1')
         expect(r).toEqual({ kind: 'ok', attestation: { uuid: 'c-1', attestationState: 'ATTESTED', justification: 'x' } })
     })
 
@@ -14,8 +14,8 @@ describe('loadSbomComponentSupportDetail', () => {
     // another's attestation, because an omitted field means "keep" under PATCH semantics --
     // so a cached form would re-send values that had already changed underneath it.
     it('always hits the network', async () => {
-        const query = vi.fn().mockResolvedValue({ data: { sbomComponent: null } })
-        await loadSbomComponentSupportDetail({ query } as any, 'c-1')
+        const query = vi.fn().mockResolvedValue({ data: { getReleaseSbomComponentGraph: null } })
+        await loadSbomComponentSupportDetail({ query } as any, 'rel-1', 'c-1')
         expect(query.mock.calls[0][0].fetchPolicy).toBe('network-only')
     })
 
@@ -27,17 +27,17 @@ describe('loadSbomComponentSupportDetail', () => {
     it('reports drift as unsupported, distinctly from an unattested component', async () => {
         const drift = vi.fn().mockRejectedValue(
             new Error('Cannot query field "attestationState" on type "SbomComponent"'))
-        expect(await loadSbomComponentSupportDetail({ query: drift } as any, 'c-1'))
+        expect(await loadSbomComponentSupportDetail({ query: drift } as any, 'rel-1', 'c-1'))
             .toEqual({ kind: 'unsupported' })
 
-        const empty = vi.fn().mockResolvedValue({ data: { sbomComponent: null } })
-        expect(await loadSbomComponentSupportDetail({ query: empty } as any, 'c-1'))
+        const empty = vi.fn().mockResolvedValue({ data: { getReleaseSbomComponentGraph: null } })
+        expect(await loadSbomComponentSupportDetail({ query: empty } as any, 'rel-1', 'c-1'))
             .toEqual({ kind: 'ok', attestation: null })
     })
 
     it('propagates real errors rather than reporting them as unsupported', async () => {
         const query = vi.fn().mockRejectedValue(new Error('Not authorized'))
-        await expect(loadSbomComponentSupportDetail({ query } as any, 'c-1'))
+        await expect(loadSbomComponentSupportDetail({ query } as any, 'rel-1', 'c-1'))
             .rejects.toThrow('Not authorized')
     })
 })

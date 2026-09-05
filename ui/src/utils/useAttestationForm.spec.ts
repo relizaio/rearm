@@ -108,6 +108,38 @@ describe('un-retracting a withdrawn attestation', () => {
         expect(f.canSubmit()).toBe(true)
     })
 
+    /**
+     * The defect a browser probe caught that every other check missed: the audit row was
+     * correct, the reason landed, the toast said saved -- and the component stayed
+     * WITHDRAWN, because state is preserved when omitted.
+     */
+    it('sends state ATTESTED, or the re-assertion does not happen', () => {
+        const f = useAttestationForm()
+        f.open(existing({ attestationState: 'WITHDRAWN' }))
+        f.form.reason = 'supplier confirmed the original window'
+        expect(attestationVariables('c-1', f.form).state).toBe('ATTESTED')
+    })
+
+    /**
+     * The most likely un-retract of all: the original claim was right and the withdrawal was
+     * the mistake, so nothing needs editing. The form refused this until the pending state
+     * change was counted as a change.
+     */
+    it('allows a pure un-retract with a reason and no other edit', () => {
+        const f = useAttestationForm()
+        f.open(existing({ attestationState: 'WITHDRAWN' }))
+        f.form.reason = 'the withdrawal was filed against the wrong component'
+        expect(f.dirty()).toBe(true)
+        expect(f.canSubmit()).toBe(true)
+    })
+
+    it('does not touch state on an ordinary edit', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.supportNotes = 'note'
+        expect('state' in attestationVariables('c-1', f.form)).toBe(false)
+    })
+
     it('does not demand a reason for an ordinary edit', () => {
         const f = useAttestationForm()
         f.open(existing())

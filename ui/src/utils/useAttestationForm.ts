@@ -53,6 +53,10 @@ export function useAttestationForm () {
         form.endOfSupportDate = existing.endOfSupportDate ?? null
         form.endOfLifeDate = existing.endOfLifeDate ?? null
         form.supportNotes = existing.supportNotes ?? ''
+        // Re-asserting is the POINT of opening a withdrawn attestation, and it does not
+        // happen by itself: state is preserved when omitted, so saving without this leaves
+        // the row withdrawn and still uncounted while every other field updates.
+        form.state = existing.attestationState === 'WITHDRAWN' ? 'ATTESTED' : null
     }
 
     /** Re-asserting a withdrawn claim is a reversal; the audit row is its only trace. */
@@ -118,6 +122,11 @@ export function useAttestationForm () {
 
     function dirty (): boolean {
         if (!seeded) return !isEmptyAttestation(form)
+        // Re-asserting a withdrawn attestation IS the change, even when no field differs.
+        // Without this the form refuses a pure un-retract -- reason supplied, nothing else
+        // edited -- which is the most likely un-retract there is: the original claim was
+        // right and the withdrawal was the mistake.
+        if (form.state === 'ATTESTED') return true
         return milestoneChanged() || justificationRevised()
             || (form.levelOfSupport ?? null) !== (seeded.attestedLevelOfSupport ?? null)
             || (form.party ?? null) !== (seeded.supportParty ?? null)

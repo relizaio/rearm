@@ -3122,7 +3122,8 @@ async function openAttestForm (row: any) {
     attestLoading.value = true
     try {
         const res = await loadSbomComponentSupportDetail(
-            graphqlClient as any, row.component?.uuid || row.sbomComponentUuid)
+            graphqlClient as any, updatedRelease.value.uuid,
+            row.component?.uuid || row.sbomComponentUuid)
         if (res.kind === 'unsupported') {
             attestUnsupported.value = true
             return
@@ -3146,20 +3147,36 @@ async function saveAttestation () {
     // way a modal fires twice, and the second write would bump the audit revision again.
     if (attestSaving.value || !attestForm.canSubmit()) return
     attestSaving.value = true
+    let saved = false
     try {
         await setSbomComponentSupport(graphqlClient as any,
             attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid,
             attestForm.form)
         attestModalOpen.value = false
-        notify('success', 'Saved', 'Support attestation recorded.')
-        // forceRefresh, because the gauge only re-reads with the list -- and an attestation
-        // is exactly the thing that moves the number above the table. Without this the write
-        // succeeds and the gauge stays stale, which reads to an operator as a failure.
-        await loadSbomComponents(true)
+        saved = true
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     } finally {
         attestSaving.value = false
+    }
+    if (!saved) return
+    // Refreshed OUTSIDE the write's try, and reported separately.
+    //
+    // forceRefresh, because the gauge only re-reads with the list and an attestation is
+    // exactly what moves the number above the table -- without it the write succeeds and the
+    // gauge stays stale, which reads as a failure.
+    //
+    // But a refresh failure is NOT a write failure. Inside the same try it would produce
+    // "Saved" followed by "Error" for a write that landed perfectly, leaving the operator
+    // unable to tell whether to redo it -- which is the exact ambiguity this screen exists to
+    // remove. Say which half failed.
+    try {
+        await loadSbomComponents(true)
+        notify('success', 'Saved', 'Support attestation recorded.')
+    } catch (err: any) {
+        notify('warning', 'Saved, but not refreshed',
+            'The attestation was recorded. The component list could not be reloaded, so the'
+            + ' coverage figure above may be out of date until you refresh.')
     }
 }
 
