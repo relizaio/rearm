@@ -1,0 +1,152 @@
+import { describe, expect, it, vi } from 'vitest'
+import { useBulkAttest, BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS } from './useBulkAttest'
+
+/** A client whose page responses are scripted, and whose mutations are recorded. */
+function scripted (pages: Array<{ items: string[], hasMore: boolean }>) {
+    let call = 0
+    const query = vi.fn(async () => {
+        const p = pages[call++]
+        return {
+            data: {
+                getReleaseSbomComponentsPage: {
+                    items: p.items.map(id => ({ sbomComponentUuid: id, component: { uuid: id } })),
+                    totalCount: 999,
+                    endCursor: p.items[p.items.length - 1] ?? null,
+                    hasMore: p.hasMore
+                }
+            }
+        }
+    })
+    const mutate = vi.fn(async (opts: any) => ({
+        data: {
+            bulkSetSbomComponentSupport: {
+                appliedCount: opts.variables.sbomComponentUuids.length,
+                skippedCount: 0,
+                failedCount: 0,
+                results: opts.variables.sbomComponentUuids.map((id: string) =>
+                    ({ sbomComponentUuid: id, outcome: 'APPLIED', message: null }))
+            }
+        }
+    }))
+    return { client: { query, mutate } as any, query, mutate }
+}
+const ids = (n: number, p = 'c') => Array.from({ length: n }, (_, i) => `${p}${i}`)
+
+describe('collecting the work queue', () => {
+    it('walks every page before writing anything', async () => {
+        const { client, query, mutate } = scripted([
+            { items: ids(500), hasMore: true },
+            { items: ids(120, 'd'), hasMore: false }
+        ])
+        const b = useBulkAttest()
+        const res = await b.collect(client, 'rel-1', 'UNATTESTED', '')
+        expect(res.ids.length).toBe(620)
+        expect(query).toHaveBeenCalledTimes(2)
+        // COLLECT-THEN-WRITE: nothing is written during the walk. Keyset makes interleaving
+        // safe, but each APPLIED shrinks the UNATTESTED set under the cursor, and a walk that
+        // does not write cannot be wrong about it at all.
+        expect(mutate).not.toHaveBeenCalled()
+    })
+
+    it('walks at the page limit the ruling fixed', async () => {
+        const { client, query } = scripted([{ items: ids(3), hasMore: false }])
+        const b = useBulkAttest()
+        await b.collect(client, 'rel-1', 'UNATTESTED', '')
+        expect(query.mock.calls[0][0].variables.limit).toBe(BULK_WALK_LIMIT)
+        expect(query.mock.calls[0][0].variables.attestation).toBe('UNATTESTED')
+    })
+
+    it('follows the cursor rather than re-reading page one', async () => {
+        const { client, query } = scripted([
+            { items: ids(500), hasMore: true },
+            { items: ids(10, 'd'), hasMore: false }
+        ])
+        const b = useBulkAttest()
+        await b.collect(client, 'rel-1', 'UNATTESTED', '')
+        expect(query.mock.calls[0][0].variables.after).toBeNull()
+        expect(query.mock.calls[1][0].variables.after).toBe('c499')
+    })
+
+    /**
+     * A browser is the wrong place to hold an unbounded id list, and an operator who has
+     * accidentally cleared the filter should be stopped rather than served. Refuses with an
+     * instruction, not a truncated result -- a silently truncated sweep would report success
+     * over a fraction of the release.
+     */
+    it('refuses a release larger than the cap instead of truncating', async () => {
+        const pages = Array.from({ length: 12 }, () => ({ items: ids(500), hasMore: true }))
+        const { client } = scripted(pages)
+        const b = useBulkAttest()
+        const res = await b.collect(client, 'rel-1', 'UNATTESTED', '')
+        expect(res.tooLarge).toBe(true)
+        expect(res.ids.length).toBeLessThanOrEqual(BULK_MAX_IDS + BULK_WALK_LIMIT)
+        expect(b.error.value).toMatch(/narrow/i)
+    })
+
+    it('stops cleanly on an empty release', async () => {
+        const { client } = scripted([{ items: [], hasMore: false }])
+        const b = useBulkAttest()
+        expect((await b.collect(client, 'rel-1', 'UNATTESTED', '')).ids).toEqual([])
+    })
+})
+
+describe('submitting', () => {
+    it('batches at the ruled size', async () => {
+        const { client, mutate } = scripted([])
+        const b = useBulkAttest()
+        await b.submit(client, ids(450), { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'swept' })
+        expect(mutate).toHaveBeenCalledTimes(3)
+        expect(mutate.mock.calls[0][0].variables.sbomComponentUuids.length).toBe(BULK_BATCH_SIZE)
+        expect(mutate.mock.calls[2][0].variables.sbomComponentUuids.length).toBe(50)
+    })
+
+    it('aggregates outcomes across batches', async () => {
+        const { client } = scripted([])
+        const b = useBulkAttest()
+        const r = await b.submit(client, ids(250), { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'swept' })
+        expect(r.applied).toBe(250)
+        expect(r.results.length).toBe(250)
+    })
+
+    /**
+     * Zero on a fresh walk, because the walk collected only UNATTESTED components. Non-zero
+     * means somebody attested one of them between the walk and the write -- worth surfacing,
+     * not hiding: it tells the operator their sweep raced a colleague.
+     */
+    it('surfaces SKIPPED_ATTESTED as a concurrency signal', async () => {
+        const mutate = vi.fn(async (opts: any) => ({
+            data: { bulkSetSbomComponentSupport: {
+                appliedCount: 1, skippedCount: 1, failedCount: 0,
+                results: [
+                    { sbomComponentUuid: 'a', outcome: 'APPLIED', message: null },
+                    { sbomComponentUuid: 'b', outcome: 'SKIPPED_ATTESTED', message: null }
+                ]
+            } }
+        }))
+        const b = useBulkAttest()
+        const r = await b.submit({ mutate } as any, ['a', 'b'], { justification: 'swept' })
+        expect(r.skippedAttested).toBe(1)
+        expect(r.concurrentWriteDetected).toBe(true)
+    })
+
+    /**
+     * A batch failing mid-sweep must not discard the batches that landed: the operator needs
+     * to know how much of the work is done before deciding whether to re-run.
+     */
+    it('keeps the outcomes of batches that landed when a later one throws', async () => {
+        let n = 0
+        const mutate = vi.fn(async (opts: any) => {
+            if (++n === 2) throw new Error('gateway timeout')
+            return { data: { bulkSetSbomComponentSupport: {
+                appliedCount: opts.variables.sbomComponentUuids.length, skippedCount: 0, failedCount: 0,
+                results: opts.variables.sbomComponentUuids.map((id: string) =>
+                    ({ sbomComponentUuid: id, outcome: 'APPLIED', message: null }))
+            } } }
+        })
+        const b = useBulkAttest()
+        const r = await b.submit({ mutate } as any, ids(300), { justification: 'swept' })
+        expect(r.applied).toBe(BULK_BATCH_SIZE)
+        expect(r.aborted).toBe(true)
+        expect(r.error).toContain('gateway timeout')
+    })
+})
