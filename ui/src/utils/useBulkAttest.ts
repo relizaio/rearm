@@ -2,8 +2,33 @@ import { ref, type Ref } from 'vue'
 import gql from 'graphql-tag'
 import { loadSbomComponentsPage } from './sbomComponentsQuery'
 import type { SupportAttestationFilter } from './sbomComponentsQuery'
-import type { MutationClient } from './setSbomComponentSupport'
+import { isSchemaDriftError } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
+
+/**
+ * DriftFallbackClient declares only `query`; the write needs `mutate`.
+ *
+ * Declared here rather than imported because the attestation-form branch that owns the
+ * shared version is not merged yet -- and an earlier revision imported it anyway. That
+ * escaped every gate: a type-only import is erased by esbuild, so vite build, vitest and
+ * eslint all passed while the symbol was silently `any`. Consolidate when that branch lands.
+ */
+export interface MutationClient extends DriftFallbackClient {
+    mutate (opts: { mutation: unknown, variables: Record<string, unknown> }): Promise<{ data?: any }>
+}
+
+/**
+ * The backend enums, mirrored exactly. NOT `string`.
+ *
+ * This feature has already shipped two invented members (MANUFACTURER, SUPPLIER, borrowed
+ * from unrelated enums) which reached the operator as "your server is out of date", because
+ * a bad enum value is a variable-coercion failure, which is a validation error, which
+ * isSchemaDriftError reports as drift. The document drift spec cannot see variable values --
+ * only the coercion spec beside it can, and it exists for that reason.
+ */
+export type BulkLevelOfSupport = 'ACTIVELY_MAINTAINED' | 'NO_LONGER_MAINTAINED' | 'ABANDONED'
+export type BulkSupportParty = 'FIRST_PARTY' | 'THIRD_PARTY'
+export type BulkOutcomeKind = 'APPLIED' | 'SKIPPED_ROOT' | 'SKIPPED_ATTESTED' | 'FAILED'
 
 /** Page size for the collect walk. */
 export const BULK_WALK_LIMIT = 500
@@ -66,9 +91,9 @@ export const BULK_SET_SUPPORT = gql`
  * belongs.
  */
 export interface BulkAttestInput {
-    levelOfSupport?: string | null
+    levelOfSupport?: BulkLevelOfSupport | null
     justification?: string | null
-    party?: string | null
+    party?: BulkSupportParty | null
     endOfGuaranteedSupportDate?: string | null
     endOfSupportDate?: string | null
     endOfLifeDate?: string | null
@@ -81,8 +106,12 @@ export interface BulkOutcome {
     skippedRoot: number
     failed: number
     results: Array<{ sbomComponentUuid: string, outcome: string, message: string | null }>
+    /** Outcomes this build does not recognise, so the counters cannot silently stop summing. */
+    unknownOutcomes: number
     /** A batch threw; earlier batches still landed. */
     aborted: boolean
+    /** The operator stopped it between batches; everything already sent has landed. */
+    stoppedEarly: boolean
     error: string | null
     /**
      * True when anything came back SKIPPED_ATTESTED. On a fresh walk that should be zero --
@@ -93,12 +122,69 @@ export interface BulkOutcome {
     concurrentWriteDetected: boolean
 }
 
+/** How many components the confirmation shows by name. A count alone hides a wrong filter. */
+export const SAMPLE_SIZE = 10
+
+export interface BulkCollectResult {
+    ids: string[]
+    /** Refused outright -- too large, drift, or an error. `ids` is empty. */
+    refused: boolean
+    /** The filter's total from the server, for "800 of 2,431 undisclosed". */
+    backlogTotal: number
+    sample: Array<{ uuid: string, name: string, version: string }>
+}
+
+/**
+ * Problems that would fail EVERY item, checked before a multi-minute walk.
+ *
+ * Without this the operator picks ABANDONED, leaves the basis blank, waits for the walk, and
+ * gets back 800 identical FAILED outcomes -- the server rejects a negative level with no
+ * justification per item, and rejects a wholly empty attestation as "must record something".
+ */
+export function validateBulkInput (input: BulkAttestInput): string[] {
+    const out: string[] = []
+    const hasBasis = !!(input.justification && input.justification.trim())
+    const hasDate = !!(input.endOfGuaranteedSupportDate || input.endOfSupportDate
+        || input.endOfLifeDate)
+    if (!input.levelOfSupport && !hasDate && !hasBasis) {
+        out.push('Record something: a level of support, a date, or a justification.')
+    }
+    if ((input.levelOfSupport === 'NO_LONGER_MAINTAINED'
+            || input.levelOfSupport === 'ABANDONED') && !hasBasis) {
+        out.push(`A level of ${input.levelOfSupport} is a negative claim about someone else's`
+            + ' project, so it needs a justification -- and in a sweep that one basis is'
+            + ' asserted for every component selected.')
+    }
+    return out
+}
+
+function emptyOutcome (why: string): BulkOutcome {
+    return {
+        applied: 0, skippedAttested: 0, skippedRoot: 0, failed: 0, results: [],
+        aborted: true, error: why, concurrentWriteDetected: false, stoppedEarly: false,
+        unknownOutcomes: 0
+    }
+}
+
+/**
+ * Bulk support attestation: walk a filter, collect ids, write them in batches.
+ *
+ * The shape is collect-then-write and the reasoning is in `collect`. Everything else here
+ * exists because a sweep writes a regulatory claim across up to five thousand components on
+ * one operator action, so every ambiguous state has to resolve toward refusing.
+ */
 export function useBulkAttest () {
     const collecting = ref(false)
     const submitting = ref(false)
     const collected: Ref<string[]> = ref([])
     const progress = ref(0)
     const error: Ref<string | null> = ref(null)
+    const sample: Ref<Array<{ uuid: string, name: string, version: string }>> = ref([])
+    const backlogTotal = ref(0)
+    let cancelRequested = false
+
+    /** Stop after the batch in flight. Nothing already sent can be recalled. */
+    function requestCancel (): void { cancelRequested = true }
 
     /**
      * Walk the filter and collect ids. WRITES NOTHING.
@@ -113,53 +199,118 @@ export function useBulkAttest () {
         releaseUuid: string,
         attestation: SupportAttestationFilter,
         search: string
-    ): Promise<{ ids: string[], tooLarge: boolean }> {
+    ): Promise<BulkCollectResult> {
         collecting.value = true
         error.value = null
+        collected.value = []
+        sample.value = []
+        backlogTotal.value = 0
         const ids: string[] = []
         let after: string | null = null
-        let tooLarge = false
+        let refused = false
         try {
             for (;;) {
                 const page = await loadSbomComponentsPage(client, releaseUuid, {
                     attestation, search, limit: BULK_WALK_LIMIT, after
                 })
-                for (const row of page.items) {
-                    ids.push(row.sbomComponentUuid || row.component?.uuid)
-                }
-                if (ids.length > BULK_MAX_IDS) {
-                    tooLarge = true
-                    error.value = `This selection has more than ${BULK_MAX_IDS} components --`
-                        + ' too large for bulk attest from the browser. Narrow it with the'
-                        + ' search box and sweep in parts.'
+                // A DEGRADED page is the whole release, unfiltered -- the loader falls back
+                // to the unpaged query when the server cannot page or filter. Walking it
+                // would turn "sweep the 800 undisclosed matching log4j" into "sweep
+                // everything", and the confirmation count would be honest about the size
+                // while being wrong about WHICH. The cap does not catch this: the set is a
+                // legitimate size, just the wrong set. Abort.
+                if (page.degraded) {
+                    refused = true
+                    error.value = 'This server cannot filter or page SBOM components, so a'
+                        + ' bulk sweep here would attest every component in the release'
+                        + ' rather than the ones you selected. Bulk attest is unavailable.'
                     break
                 }
+                if (!ids.length) backlogTotal.value = page.totalCount
+                // Refused on the FIRST page when the server already says the set is too big,
+                // rather than after eleven round trips that fetch full component rows to
+                // keep one field each.
+                if (page.totalCount > BULK_MAX_IDS) {
+                    refused = true
+                    error.value = `This selection has ${page.totalCount} components, more than`
+                        + ` the ${BULK_MAX_IDS} a browser sweep will attempt. Narrow it with`
+                        + ' the search box and sweep in parts.'
+                    break
+                }
+                const before = ids.length
+                for (const row of page.items) {
+                    // Skip rather than substitute the component uuid: the two are equal today
+                    // but the mutation wants sbom_components.uuid, and guessing manufactures
+                    // a FAILED outcome out of missing data.
+                    const id = row.sbomComponentUuid
+                    if (!id) continue
+                    ids.push(id)
+                    if (sample.value.length < SAMPLE_SIZE) {
+                        sample.value.push({
+                            uuid: id,
+                            name: row.component?.name ?? '(unnamed)',
+                            version: row.component?.version ?? ''
+                        })
+                    }
+                }
                 if (!page.hasMore || !page.endCursor) break
+                // A page that adds nothing while claiming more would loop forever. The
+                // current server cannot do that, but the loop should not depend on a
+                // server invariant to terminate.
+                if (ids.length === before) {
+                    refused = true
+                    error.value = 'The server returned an empty page while reporting more'
+                        + ' results. Bulk attest stopped rather than looping.'
+                    break
+                }
                 after = page.endCursor
             }
         } catch (err: any) {
+            refused = true
             error.value = err?.message || String(err)
         } finally {
             collecting.value = false
         }
-        collected.value = tooLarge ? [] : ids
-        return { ids, tooLarge }
+        // NO ids when refusing. Handing back a partial list next to a flag invites a caller
+        // to destructure { ids } and sweep a truncated set -- exactly the silent partial the
+        // refusal exists to prevent.
+        if (refused) return { ids: [], refused: true, backlogTotal: backlogTotal.value, sample: [] }
+        // Deduped. A duplicate straddling two batches is written twice, and the second write
+        // re-asserts and re-dates the attestation the first just made -- the server dedupes
+        // only within one request.
+        const unique = Array.from(new Set(ids))
+        collected.value = unique
+        return { ids: unique, refused: false, backlogTotal: backlogTotal.value, sample: sample.value }
     }
 
     /** Write in batches, aggregating per-item outcomes. */
     async function submit (
         client: MutationClient,
         ids: string[],
-        input: BulkAttestInput
+        input: BulkAttestInput,
+        sweptFilter: SupportAttestationFilter = 'UNATTESTED'
     ): Promise<BulkOutcome> {
+        // Checked, not merely set. Two concurrent submits with the same ids both see an
+        // empty already-attested set server-side and both write, so the second re-asserts
+        // and re-dates an attestation the first just made.
+        if (submitting.value) return emptyOutcome('a sweep is already running')
         submitting.value = true
+        cancelRequested = false
+        // One composable, one place to read a failure from. Leaving a failed collect's
+        // message on screen through a successful submit is its own kind of wrong answer.
+        error.value = null
         progress.value = 0
         const out: BulkOutcome = {
             applied: 0, skippedAttested: 0, skippedRoot: 0, failed: 0,
-            results: [], aborted: false, error: null, concurrentWriteDetected: false
+            results: [], aborted: false, error: null, concurrentWriteDetected: false,
+            stoppedEarly: false, unknownOutcomes: 0
         }
         try {
             for (let i = 0; i < ids.length; i += BULK_BATCH_SIZE) {
+                // Checked between batches, never mid-batch: a batch already sent has already
+                // committed, item by item, so there is nothing to stop. "Stop after the
+                // current batch" is the only honest offer.
+                if (cancelRequested) { out.stoppedEarly = true; break }
                 const slice = ids.slice(i, i + BULK_BATCH_SIZE)
                 const resp = await client.mutate({
                     mutation: BULK_SET_SUPPORT,
@@ -182,10 +333,26 @@ export function useBulkAttest () {
                     else if (item.outcome === 'SKIPPED_ATTESTED') out.skippedAttested += 1
                     else if (item.outcome === 'SKIPPED_ROOT') out.skippedRoot += 1
                     else if (item.outcome === 'FAILED') out.failed += 1
+                    // No silent else. A future or misspelled outcome would otherwise be
+                    // counted nowhere, so the four counters would stop summing to
+                    // results.length and a batch that did something would report 0/0/0.
+                    else out.unknownOutcomes += 1
                 }
                 progress.value = Math.min(i + slice.length, ids.length)
             }
         } catch (err: any) {
+            // A write must never degrade. The CE mirror does not declare this mutation at
+            // all, so a drifted server means the sweep cannot be performed -- not that it
+            // should be attempted narrower. Named, so the operator knows it is the server
+            // and not their input.
+            if (isSchemaDriftError(err)) {
+                out.aborted = true
+                out.error = 'This server cannot perform a bulk attestation: it does not'
+                    + ' support the bulk mutation, so nothing further was written.'
+                submitting.value = false
+                out.concurrentWriteDetected = false
+                return out
+            }
             // Batches that landed are kept: the operator needs to know how much of the work
             // is done before deciding whether to re-run. Re-running is safe -- already
             // attested components come back SKIPPED_ATTESTED -- but only if they can see it.
@@ -194,9 +361,17 @@ export function useBulkAttest () {
         } finally {
             submitting.value = false
         }
-        out.concurrentWriteDetected = out.skippedAttested > 0
+        // Only a race signal when the walk selected UNATTESTED components. Sweeping under
+        // ALL returns SKIPPED_ATTESTED for every already-attested row by design, and so does
+        // the recommended re-run after a partial failure. Telling the operator a colleague
+        // intervened in either case would be crying wolf, and the wolf message names a
+        // colleague.
+        out.concurrentWriteDetected = sweptFilter === 'UNATTESTED' && out.skippedAttested > 0
         return out
     }
 
-    return { collect, submit, collecting, submitting, collected, progress, error }
+    return {
+        collect, submit, requestCancel, validateBulkInput,
+        collecting, submitting, collected, progress, error, sample, backlogTotal
+    }
 }
