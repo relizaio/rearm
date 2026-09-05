@@ -518,11 +518,15 @@
                     </n-alert>
 
                     <n-form-item label="Level of support">
-                        <n-select v-model:value="attestForm.form.levelOfSupport" clearable
+                        <!-- Not clearable: the mutation has no way to remove a recorded
+                             level, so an x here would be a gesture the system cannot
+                             perform -- it emptied the box, sent nothing, and reported
+                             success. -->
+                        <n-select v-model:value="attestForm.form.levelOfSupport"
                             :options="LEVEL_OPTIONS" placeholder="Not stated" />
                     </n-form-item>
                     <n-form-item label="Who the claim is about">
-                        <n-select v-model:value="attestForm.form.party" clearable
+                        <n-select v-model:value="attestForm.form.party"
                             :options="PARTY_OPTIONS" placeholder="Unknown" />
                     </n-form-item>
                     <n-form-item label="Justification (basis for the claim -- exported)">
@@ -581,11 +585,24 @@
                             records your basis alone -- no level, no dates -- which is a
                             complete disclosure of what you actually know.
                         </div>
+                        <!-- Only offered where it can honour that promise. A recorded level
+                             cannot be removed at all, and blanking a field here means
+                             "leave it alone", so on an attested row this would publish the
+                             old level against a basis written to mean the opposite. -->
+                        <n-alert v-if="!attestForm.canUseNothingPublished()" type="warning"
+                            :show-icon="false" style="font-size: 12px;">
+                            Not available here: this component already has a recorded level or
+                            dates, and those cannot be removed by this action. Change the
+                            level above, or use "Remove recorded values" for the dates.
+                        </n-alert>
                         <n-input-group>
                             <n-input v-model:value="attestNothingPublishedText"
+                                :disabled="!attestForm.canUseNothingPublished()"
                                 placeholder="e.g. supplier declined to state a support level" />
-                            <n-button :disabled="!attestNothingPublishedText.trim()"
-                                @click="applyNothingPublished">Use this</n-button>
+                            <n-button
+                                :disabled="!attestNothingPublishedText.trim()
+                                    || !attestForm.canUseNothingPublished()"
+                                @click="applyNothingPublished">Replace form with this</n-button>
                         </n-input-group>
                     </n-card>
 
@@ -611,7 +628,7 @@
                 </div>
                 <template #footer>
                     <n-space justify="end">
-                        <n-button size="small" @click="attestModalOpen = false">Cancel</n-button>
+                        <n-button size="small" @click="cancelAttest">Cancel</n-button>
                         <n-button size="small" type="primary"
                             :disabled="attestUnsupported || attestLoading || attestSaving
                                 || !attestForm.canSubmit()"
@@ -1463,6 +1480,7 @@ import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
 import { useAttestationForm } from '@/utils/useAttestationForm'
+import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
 import { setSbomComponentSupport } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
@@ -3096,25 +3114,34 @@ const attestSaving: Ref<boolean> = ref(false)
 const attestUnsupported: Ref<boolean> = ref(false)
 const attestNothingPublishedText: Ref<string> = ref('')
 
-const LEVEL_OPTIONS = [
+const LEVEL_OPTIONS: Array<{ label: string, value: LevelOfSupport }> = [
     { label: 'Actively maintained', value: 'ACTIVELY_MAINTAINED' },
     { label: 'No longer maintained', value: 'NO_LONGER_MAINTAINED' },
     { label: 'Abandoned', value: 'ABANDONED' }
 ]
 // The party is an attribute OF the attestation -- who the claim is about, first party or
 // third -- so it belongs inside the form rather than beside it as its own control.
-const PARTY_OPTIONS = [
-    { label: 'First party (our own component)', value: 'MANUFACTURER' },
-    { label: 'Third party (someone else\'s project)', value: 'SUPPLIER' },
-    { label: 'Third party, via another channel', value: 'THIRD_PARTY' }
+// Typed against the union so a value the backend does not declare is a COMPILE error. The
+// first version of this array invented two, and they failed only at request time -- wearing
+// the costume of an out-of-date server.
+const PARTY_OPTIONS: Array<{ label: string, value: SupportParty }> = [
+    { label: 'First party (our own component)', value: 'FIRST_PARTY' },
+    { label: 'Third party (someone else\'s project)', value: 'THIRD_PARTY' }
 ]
-const MILESTONE_CLEAR_OPTIONS = [
+const MILESTONE_CLEAR_OPTIONS: Array<{ label: string, value: SupportMilestoneType }> = [
     { label: 'End of guaranteed support', value: 'END_OF_GUARANTEED_SUPPORT' },
     { label: 'End of support', value: 'END_OF_SUPPORT' },
     { label: 'End of life', value: 'END_OF_LIFE' }
 ]
 
+let attestGen = 0
+
 async function openAttestForm (row: any) {
+    // Generation guard. attestRow is set synchronously but the seed load is awaited, so
+    // cancelling and opening a different component can land A's attestation in a form whose
+    // row is B -- and the save then diffs A's baseline and writes the result to B's uuid.
+    // An attestation recorded against the wrong component is silent and near-undetectable.
+    const gen = ++attestGen
     attestRow.value = row
     attestUnsupported.value = false
     attestNothingPublishedText.value = ''
@@ -3124,17 +3151,26 @@ async function openAttestForm (row: any) {
         const res = await loadSbomComponentSupportDetail(
             graphqlClient as any, updatedRelease.value.uuid,
             row.component?.uuid || row.sbomComponentUuid)
+        if (gen !== attestGen) return
         if (res.kind === 'unsupported') {
             attestUnsupported.value = true
             return
         }
         attestForm.open(res.attestation)
     } catch (err: any) {
+        if (gen !== attestGen) return
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
         attestModalOpen.value = false
     } finally {
-        attestLoading.value = false
+        if (gen === attestGen) attestLoading.value = false
     }
+}
+
+/** Closing invalidates any in-flight seed, so a late response cannot reopen or reseed. */
+function cancelAttest () {
+    attestGen += 1
+    attestLoading.value = false
+    attestModalOpen.value = false
 }
 
 function applyNothingPublished () {

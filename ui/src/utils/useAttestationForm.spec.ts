@@ -189,7 +189,9 @@ describe('un-retracting a withdrawn attestation', () => {
     it('does not demand a reason for an ordinary edit', () => {
         const f = useAttestationForm()
         f.open(existing())
-        f.form.supportNotes = 'note'
+        // Deliberately NOT a notes-only edit: notes are stored per-milestone, so that is
+        // blocked on its own. Revising the basis is the ordinary no-reason-needed change.
+        f.form.justification = 'rechecked the upstream release feed in September'
         expect(f.errors()).toEqual([])
     })
 })
@@ -229,6 +231,137 @@ describe('"assessed, nothing published"', () => {
         f.assessedNothingPublished('supplier declined to state a support level')
         expect(f.form.clearJustification).toBe(false)
         expect(attestationVariables('c-1', f.form).justification).not.toBe('')
+    })
+})
+
+describe('a save that would send nothing is refused', () => {
+    /**
+     * The failure this replaced: emptying a seeded box enabled Save, the baseline diff then
+     * omitted the emptied field, and the mutation went out as the component id alone --
+     * behind a green "Saved. Support attestation recorded." A success message for a write
+     * that changed nothing is worse than an error on a form meant to produce a defensible
+     * record.
+     */
+    it.each(['justification', 'supportNotes'] as const)(
+        'refuses a save after emptying the seeded %s', (field) => {
+            const f = useAttestationForm()
+            f.open(existing())
+            ;(f.form as any)[field] = ''
+            expect(f.sendsAnything()).toBe(false)
+            expect(f.canSubmit()).toBe(false)
+        })
+
+    it('refuses a save after blanking a seeded date', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.endOfSupportDate = null
+        expect(f.canSubmit()).toBe(false)
+    })
+
+    it('still allows a save that genuinely changes something', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.justification = 'rechecked the upstream release feed in September'
+        expect(f.canSubmit()).toBe(true)
+    })
+})
+
+describe('"assessed, nothing published" does not cancel a pending un-retract', () => {
+    /**
+     * It resets the form, and state carries the PENDING UN-RETRACT set at open(). Dropping
+     * it left the row withdrawn and uncounted behind a success toast -- the same defect this
+     * feature shipped once already, reached by a different route.
+     */
+    it('keeps state ATTESTED and the reason', () => {
+        const f = useAttestationForm()
+        f.open(existing({ attestationState: 'WITHDRAWN' }))
+        f.form.reason = 'withdrawal was filed against the wrong component'
+        f.assessedNothingPublished('supplier declined to state a support level')
+        expect(f.form.state).toBe('ATTESTED')
+        expect(f.form.reason).toBe('withdrawal was filed against the wrong component')
+        expect(f.variables('c-1').state).toBe('ATTESTED')
+        expect(f.canSubmit()).toBe(true)
+    })
+})
+
+describe('contradictions and affordance honesty', () => {
+    // Clearing a date that is already stored is the ordinary case, not a contradiction.
+    it('allows clearing a seeded milestone', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.clearMilestones = ['END_OF_SUPPORT']
+        f.form.reason = 'the date belonged to the superseded claim'
+        expect(f.errors()).toEqual([])
+        expect(f.canSubmit()).toBe(true)
+    })
+
+    /**
+     * Typing a replacement date while also ticking its clear is a contradiction the server
+     * refuses outright. The builder silently preferred the clear, so the operator's new date
+     * evaporated with no warning.
+     */
+    it('refuses setting and clearing the same milestone', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.endOfSupportDate = '2032-06-01'
+        f.confirmJustification()
+        f.form.clearMilestones = ['END_OF_SUPPORT']
+        f.form.reason = 'r'
+        expect(f.errors().some(e => e.includes('setting and clearing'))).toBe(true)
+        expect(f.canSubmit()).toBe(false)
+    })
+
+    /**
+     * The card promises "no level, no dates". Under PATCH, blanking those omits them, and
+     * omit means preserve -- so on a row carrying a level it would leave that level
+     * published against a justification written to mean the opposite. There is no way to
+     * unset a level at all, so the card is only offered where it can tell the truth.
+     */
+    it('is unavailable when the row already carries a level or dates', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        expect(f.canUseNothingPublished()).toBe(false)
+    })
+
+    it('is available on a fresh row and on a justification-only row', () => {
+        const fresh = useAttestationForm()
+        fresh.open(null)
+        expect(fresh.canUseNothingPublished()).toBe(true)
+        const basisOnly = useAttestationForm()
+        basisOnly.open(existing({
+            attestedLevelOfSupport: null, endOfSupportDate: null,
+            endOfGuaranteedSupportDate: null, endOfLifeDate: null
+        }))
+        expect(basisOnly.canUseNothingPublished()).toBe(true)
+    })
+})
+
+describe('internal notes are per-milestone server-side', () => {
+    /**
+     * The server reads supportNotes only inside its staged-milestone loop, and SupportData
+     * has no record-level notes field. A notes-only save therefore reported success and
+     * stored nothing -- and the backend's own comment calls that text "often the only
+     * evidence of what the assessor checked".
+     *
+     * Blocked rather than silently dropped. Whether notes should become record-level or the
+     * form should present them per-milestone is a design decision, not something to paper
+     * over here.
+     */
+    it('refuses a notes-only edit instead of discarding it', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.supportNotes = 'called the vendor again on 3 Sep'
+        expect(f.canSubmit()).toBe(false)
+        expect(f.errors().some(e => e.includes('stored against a date'))).toBe(true)
+    })
+
+    it('allows notes alongside a date change, which is where they land', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.supportNotes = 'vendor confirmed by email'
+        f.form.endOfSupportDate = '2032-01-01'
+        f.confirmJustification()
+        expect(f.errors()).toEqual([])
     })
 })
 

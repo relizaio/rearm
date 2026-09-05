@@ -3,7 +3,17 @@
 import type { SupportAttestationFilter } from './sbomComponentsQuery'
 
 export type LevelOfSupport = 'ACTIVELY_MAINTAINED' | 'NO_LONGER_MAINTAINED' | 'ABANDONED'
-export type SupportParty = 'MANUFACTURER' | 'SUPPLIER' | 'THIRD_PARTY'
+/**
+ * EXACTLY the members of the backend SupportParty enum.
+ *
+ * An earlier revision invented MANUFACTURER and SUPPLIER -- values borrowed from two
+ * unrelated enums -- so two of the three options an operator could pick were rejected at
+ * variable coercion. That is a GraphQL VALIDATION error, which isSchemaDriftError classifies
+ * as drift, so picking "First party" against a fully capable Pro backend produced "This
+ * server cannot store a full support attestation. Upgrade the backend before attesting."
+ * The same disguise the detail query wore, on the write path where it is harder to notice.
+ */
+export type SupportParty = 'FIRST_PARTY' | 'THIRD_PARTY'
 export type SupportMilestoneType =
     'END_OF_GUARANTEED_SUPPORT' | 'END_OF_SUPPORT' | 'END_OF_LIFE'
 
