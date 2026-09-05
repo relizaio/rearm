@@ -245,7 +245,8 @@ describe('submitting', () => {
     it('batches at the ruled size', async () => {
         const { client, mutate } = scripted([])
         const b = useBulkAttest()
-        await b.submit(client, ids(450), { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'swept' })
+        await b.submit(client, ids(450),
+            { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'swept', reason: 'r' } as any)
         expect(mutate).toHaveBeenCalledTimes(3)
         expect(mutate.mock.calls[0][0].variables.sbomComponentUuids.length).toBe(BULK_BATCH_SIZE)
         expect(mutate.mock.calls[2][0].variables.sbomComponentUuids.length).toBe(50)
@@ -254,7 +255,8 @@ describe('submitting', () => {
     it('aggregates outcomes across batches', async () => {
         const { client } = scripted([])
         const b = useBulkAttest()
-        const r = await b.submit(client, ids(250), { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'swept' })
+        const r = await b.submit(client, ids(250),
+            { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'swept', reason: 'r' } as any)
         expect(r.applied).toBe(250)
         expect(r.results.length).toBe(250)
     })
@@ -275,7 +277,8 @@ describe('submitting', () => {
             } }
         }))
         const b = useBulkAttest()
-        const r = await b.submit({ mutate } as any, ['a', 'b'], { justification: 'swept' })
+        const r = await b.submit({ mutate } as any, ['a', 'b'],
+            { justification: 'swept', reason: 'r' } as any)
         expect(r.skippedAttested).toBe(1)
         expect(r.concurrentWriteDetected).toBe(true)
     })
@@ -288,6 +291,31 @@ describe('submitting', () => {
      * The counters must not silently stop summing to results.length. A server that renames
      * or adds an outcome would otherwise report "0 attested." over components it wrote.
      */
+    /**
+     * The reason rule must not be enforceable only by the caller's disabled-button binding.
+     * A sweep with no reason produces hundreds of audit rows that record nothing about why
+     * the batch happened, and the server will accept every one of them.
+     */
+    it('refuses to write a sweep with no reason, whatever the caller did', async () => {
+        const { client, mutate } = scripted([])
+        const out = await useBulkAttest().submit(client, ids(3),
+            { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'j', reason: '   ' } as any)
+        expect(mutate, 'nothing may be written').not.toHaveBeenCalled()
+        expect(out.applied).toBe(0)
+        expect(out.aborted).toBe(true)
+        expect(out.retryable).toBe(false)
+        expect(out.error).toMatch(/needs a reason/)
+    })
+
+    /** The same gate covers the rest of validateBulkInput, not just the reason. */
+    it('refuses a negative level with no basis at the write, not only in the form', async () => {
+        const { client, mutate } = scripted([])
+        const out = await useBulkAttest().submit(client, ids(3),
+            { levelOfSupport: 'ABANDONED', justification: '', reason: 'r' } as any)
+        expect(mutate).not.toHaveBeenCalled()
+        expect(out.error).toMatch(/negative claim/)
+    })
+
     it('counts an outcome it does not recognise rather than dropping it', async () => {
         const { client, mutate } = scripted([])
         mutate.mockImplementation(async (o: any) => ({
@@ -401,7 +429,8 @@ describe('submitting', () => {
             } } }
         })
         const b = useBulkAttest()
-        const r = await b.submit({ mutate } as any, ids(300), { justification: 'swept' })
+        const r = await b.submit({ mutate } as any, ids(300),
+            { justification: 'swept', reason: 'r' } as any)
         expect(r.applied).toBe(BULK_BATCH_SIZE)
         expect(r.aborted).toBe(true)
         expect(r.error).toContain('gateway timeout')

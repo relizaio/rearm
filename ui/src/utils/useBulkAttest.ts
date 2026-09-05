@@ -312,6 +312,15 @@ export function useBulkAttest () {
         // empty already-attested set server-side and both write, so the second re-asserts
         // and re-dates an attestation the first just made.
         if (submitting.value) return emptyOutcome('a sweep is already running')
+        // Checked HERE, not only in the caller's gate. validateBulkInput was exported and
+        // never called by the composable, so the mandatory-reason rule lived entirely in
+        // ReleaseView's disabled-button binding -- and the server accepts a null reason. A
+        // second caller, or a refactor of that binding, would silently write a sweep whose
+        // audit rows say nothing about why it happened, which is the one thing that marks
+        // thousands of writes as a single act rather than thousands of separate judgements.
+        // The composable is the reusable unit, so the invariant belongs on it.
+        const invalid = validateBulkInput(input)
+        if (invalid.length) return emptyOutcome(invalid.join(' '))
         submitting.value = true
         cancelRequested = false
         // One composable, one place to read a failure from. Leaving a failed collect's
