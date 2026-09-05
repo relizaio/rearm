@@ -3,8 +3,7 @@
 import gql from 'graphql-tag'
 import { isSchemaDriftError } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
-import { attestationVariables } from './supportAttestationInput'
-import type { AttestationForm } from './supportAttestationInput'
+interface VariableSource { variables: (uuid: string) => Record<string, unknown> }
 
 /**
  * The full Pro mutation. Twelve arguments; the CE mirror currently declares four.
@@ -81,12 +80,12 @@ export interface AttestationResult {
 export async function setSbomComponentSupport (
     client: DriftFallbackClient,
     sbomComponentUuid: string,
-    form: AttestationForm
+    form: VariableSource
 ): Promise<AttestationResult> {
     try {
         const resp = await (client as any).mutate({
             mutation: SET_SBOM_COMPONENT_SUPPORT,
-            variables: attestationVariables(sbomComponentUuid, form)
+            variables: form.variables(sbomComponentUuid)
         })
         return (resp.data as any)?.setSbomComponentSupport
     } catch (err: any) {

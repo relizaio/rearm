@@ -68,28 +68,58 @@ export function emptyAttestationForm (): AttestationForm {
  * A populated clearMilestones survives that rule deliberately: clearing is an explicit
  * instruction that happens to be about absence.
  */
+export const MILESTONE_FIELD_TO_TYPE: Record<string, SupportMilestoneType> = {
+    endOfGuaranteedSupportDate: 'END_OF_GUARANTEED_SUPPORT',
+    endOfSupportDate: 'END_OF_SUPPORT',
+    endOfLifeDate: 'END_OF_LIFE'
+}
+
+/**
+ * @param baseline the stored attestation the form was seeded from. When supplied, fields
+ *        EQUAL to it are omitted.
+ *
+ *        This is not an optimisation. A seeded form holds the stored dates, so without a
+ *        diff every save re-sends them -- which re-stamps each milestone's lastAssessed and
+ *        asserts a fresh assessment that never happened, quietly ageing the record forward.
+ *        It also makes clearing impossible: sending endOfSupportDate while asking to clear
+ *        END_OF_SUPPORT is rejected outright as "cannot set and clear the same milestone in
+ *        one call".
+ */
 export function attestationVariables (
     sbomComponentUuid: string,
-    form: AttestationForm
+    form: AttestationForm,
+    baseline?: Partial<Record<string, unknown>> | null
 ): Record<string, unknown> {
     const vars: Record<string, unknown> = { sbomComponentUuid }
     const text = (v: string) => (v && v.trim() ? v.trim() : undefined)
+    const unchanged = (field: string, value: unknown): boolean =>
+        !!baseline && (baseline[field] ?? null) === (value ?? null)
 
-    if (form.levelOfSupport) vars.levelOfSupport = form.levelOfSupport
+    if (form.levelOfSupport && !unchanged('attestedLevelOfSupport', form.levelOfSupport)) {
+        vars.levelOfSupport = form.levelOfSupport
+    }
     // The wire name is supportParty, not party. Pinned by a spec: a rename on either side
     // would stop sending it and the server would read that as "leave the party alone".
-    if (form.party) vars.supportParty = form.party
+    if (form.party && !unchanged('supportParty', form.party)) vars.supportParty = form.party
     // Order matters: an explicit clear wins over typed text, so a user who types and then
     // clicks Clear gets the clear they asked for rather than the text they abandoned.
     if (form.clearJustification) vars.justification = ''
-    else if (text(form.justification)) vars.justification = text(form.justification)
-    if (text(form.supportNotes)) vars.supportNotes = text(form.supportNotes)
-    if (text(form.reason)) vars.reason = text(form.reason)
-    if (form.endOfGuaranteedSupportDate) {
-        vars.endOfGuaranteedSupportDate = form.endOfGuaranteedSupportDate
+    else if (text(form.justification) && !unchanged('justification', text(form.justification))) {
+        vars.justification = text(form.justification)
     }
-    if (form.endOfSupportDate) vars.endOfSupportDate = form.endOfSupportDate
-    if (form.endOfLifeDate) vars.endOfLifeDate = form.endOfLifeDate
+    if (text(form.supportNotes) && !unchanged('supportNotes', text(form.supportNotes))) {
+        vars.supportNotes = text(form.supportNotes)
+    }
+    if (text(form.reason)) vars.reason = text(form.reason)
+    for (const field of Object.keys(MILESTONE_FIELD_TO_TYPE)) {
+        const value = (form as any)[field] as string | null
+        if (!value) continue
+        // Never set a milestone this save is also clearing: the server refuses the pair, and
+        // a seeded form holds the stored date, so a clear would otherwise always collide.
+        if (form.clearMilestones.includes(MILESTONE_FIELD_TO_TYPE[field])) continue
+        if (unchanged(field, value)) continue
+        vars[field] = value
+    }
     if (form.clearMilestones.length) vars.clearMilestones = form.clearMilestones
     if (form.state) vars.state = form.state
     return vars

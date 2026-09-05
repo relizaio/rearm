@@ -91,6 +91,52 @@ describe('justification confirm-or-revise on a milestone change', () => {
     })
 })
 
+describe('variables are diffed against what was seeded', () => {
+    /**
+     * A seeded form holds the stored dates. Re-sending them re-stamps each milestone's
+     * lastAssessed, asserting a fresh assessment nobody made -- the record quietly ageing
+     * itself forward. Only what actually changed goes on the wire.
+     */
+    it('sends nothing but the id when nothing changed', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        expect(Object.keys(f.variables('c-1'))).toEqual(['sbomComponentUuid'])
+    })
+
+    it('sends only the field that moved', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.endOfLifeDate = '2035-01-01'
+        f.confirmJustification()
+        expect(f.variables('c-1')).toEqual({
+            sbomComponentUuid: 'c-1', endOfLifeDate: '2035-01-01'
+        })
+    })
+
+    /**
+     * The failure the browser probe hit: the seeded date and a clear of the same milestone
+     * went out together, and the server refused the pair outright -- "cannot set and clear
+     * the same milestone in one call". A clear could therefore never succeed from a seeded
+     * form.
+     */
+    it('never sets a milestone it is also clearing', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.clearMilestones = ['END_OF_SUPPORT']
+        f.form.reason = 'the date belonged to the superseded claim'
+        const v = f.variables('c-1')
+        expect('endOfSupportDate' in v).toBe(false)
+        expect(v.clearMilestones).toEqual(['END_OF_SUPPORT'])
+    })
+
+    it('still sends an unchanged level when re-asserting, since state travels with it', () => {
+        const f = useAttestationForm()
+        f.open(existing({ attestationState: 'WITHDRAWN' }))
+        f.form.reason = 'withdrawal was filed in error'
+        expect(f.variables('c-1').state).toBe('ATTESTED')
+    })
+})
+
 describe('un-retracting a withdrawn attestation', () => {
     /**
      * Re-asserting a withdrawn claim is a reversal, and the audit row is the only record it

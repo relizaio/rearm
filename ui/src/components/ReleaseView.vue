@@ -3151,7 +3151,7 @@ async function saveAttestation () {
     try {
         await setSbomComponentSupport(graphqlClient as any,
             attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid,
-            attestForm.form)
+            attestForm)
         attestModalOpen.value = false
         saved = true
     } catch (err: any) {

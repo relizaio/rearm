@@ -3,6 +3,7 @@ import {
     emptyAttestationForm,
     validateAttestation,
     isEmptyAttestation,
+    attestationVariables,
     type AttestationForm,
     type LevelOfSupport,
     type SupportParty
@@ -138,8 +139,14 @@ export function useAttestationForm () {
         return dirty() && errors().length === 0 && !isEmptyAttestation(form)
     }
 
+    /** Variables for this save, diffed against what the form was seeded with. */
+    function variables (sbomComponentUuid: string): Record<string, unknown> {
+        return attestationVariables(sbomComponentUuid, form, seeded as any)
+    }
+
     return {
         form,
+        variables,
         open,
         isUnRetract,
         milestoneChanged,
