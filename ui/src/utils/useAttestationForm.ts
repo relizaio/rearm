@@ -154,6 +154,54 @@ export function useAttestationForm () {
         form.milestoneNotes = notes
     }
 
+    /**
+     * Fold completed writes into the baseline, so they stop counting as pending edits.
+     *
+     * Needed because a save can be PARTIAL: the writes are serialised, so call 1 of 2 can
+     * land and call 2 throw. Without this the form still shows both edits as outstanding,
+     * the operator resubmits, and milestone 1 is written a second time -- re-stamping its
+     * lastAssessed for an assessment that happened once. The record would then claim two
+     * re-assessments where there was one.
+     */
+    function markSaved (sets: Array<Record<string, unknown>>): void {
+        const seeded = (seededRef.value ?? {}) as any
+        for (const set of sets) {
+            for (const [type, field] of Object.entries(MILESTONE_TYPE_TO_FIELD)) {
+                if (set[field] !== undefined && set.supportNotes !== undefined) {
+                    const list = (seeded.supportMilestones ?? []).slice()
+                    const at = list.findIndex((m: any) => m.milestoneType === type)
+                    const row = { milestoneType: type, date: set[field] as string,
+                        notes: set.supportNotes as string }
+                    if (at >= 0) list[at] = { ...list[at], ...row }
+                    else list.push(row)
+                    seeded.supportMilestones = list
+                }
+            }
+            if (set.levelOfSupport !== undefined) seeded.attestedLevelOfSupport = set.levelOfSupport
+            if (set.supportParty !== undefined) seeded.supportParty = set.supportParty
+            if (set.justification !== undefined) seeded.justification = set.justification
+            for (const field of Object.values(MILESTONE_TYPE_TO_FIELD)) {
+                if (set[field] !== undefined && set.supportNotes === undefined) {
+                    seeded[field] = set[field]
+                }
+            }
+            if (set.state !== undefined) seeded.attestationState = set.state
+        }
+        seededRef.value = { ...seeded }
+        // Re-seed ONLY the milestones that landed. Re-seeding all of them would overwrite a
+        // still-pending edit on another milestone with its stored value -- silently
+        // discarding the very change the operator is about to retry.
+        for (const set of sets) {
+            for (const [type, field] of Object.entries(MILESTONE_TYPE_TO_FIELD)) {
+                if (set[field] !== undefined && set.supportNotes !== undefined
+                        && type in form.milestoneNotes) {
+                    (form.milestoneNotes as any)[type] = set.supportNotes as string
+                }
+            }
+        }
+        if ((seededRef.value as any).attestationState !== 'WITHDRAWN') form.state = null
+    }
+
     function errors (): string[] {
         const out = validateAttestation(form)
         if (isUnRetract() && !form.reason.trim()) {
@@ -252,7 +300,11 @@ export function useAttestationForm () {
     function variableSets (sbomComponentUuid: string): Array<Record<string, unknown>> {
         const sets: Array<Record<string, unknown>> = []
         const base = variables(sbomComponentUuid)
-        if (Object.keys(base).length > 1) sets.push(base)
+        // A reason on its own is not a change. It annotates one, so a base set carrying
+        // nothing but the id and a reason would write an audit revision explaining an edit
+        // that never happened.
+        const substantive = Object.keys(base).filter(k => k !== 'sbomComponentUuid' && k !== 'reason')
+        if (substantive.length > 0) sets.push(base)
         const reason = form.reason.trim()
         for (const type of editedMilestoneNotes()) {
             const field = MILESTONE_TYPE_TO_FIELD[type as keyof typeof MILESTONE_TYPE_TO_FIELD]
@@ -277,6 +329,7 @@ export function useAttestationForm () {
         sendsAnything,
         variableSets,
         editedMilestoneNotes,
+        markSaved,
         canUseNothingPublished,
         open,
         isUnRetract,

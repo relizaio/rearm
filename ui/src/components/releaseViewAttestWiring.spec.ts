@@ -20,6 +20,22 @@ const code = source
     .map(l => l.replace(/(^|[^:])\/\/.*$/, '$1'))
     .join('\n')
 
+/**
+ * The whole body of a top-level function, rather than a fixed number of characters.
+ *
+ * The first version sliced 1400 chars from the declaration, and two assertions started
+ * failing the moment saveAttestation grew -- reporting missing wiring that was present a few
+ * lines further down. A guard that fails as the code it guards gets longer is a guard that
+ * will be deleted.
+ */
+function functionBody (name: string): string {
+    const start = code.indexOf(`async function ${name} (`)
+    if (start < 0) return ''
+    const rest = code.slice(start + 1)
+    const next = rest.search(/\n(async )?function /)
+    return next < 0 ? rest : rest.slice(0, next)
+}
+
 describe('the attestation form is wired into ReleaseView', () => {
     it.each([
         ['useAttestationForm', '@/utils/useAttestationForm'],
@@ -52,8 +68,7 @@ describe('the attestation form is wired into ReleaseView', () => {
      * while the number above the table stayed stale, which reads to an operator as a failure.
      */
     it('refreshes the list AND gauge after a successful save', () => {
-        const save = code.slice(code.indexOf('async function saveAttestation'))
-            .slice(0, 1400)
+        const save = functionBody('saveAttestation')
         expect(save, 'saveAttestation must force a reload so the gauge re-reads')
             .toMatch(/loadSbomComponents\s*\(\s*true\s*\)/)
     })
@@ -70,15 +85,24 @@ describe('the attestation form is wired into ReleaseView', () => {
 
     // One supportNotes argument per call means two milestones must be serialised.
     it('serialises the writes rather than issuing one', () => {
-        const save = code.slice(code.indexOf('async function saveAttestation')).slice(0, 1600)
-        expect(save).toMatch(/for\s*\(\s*const\s+vars\s+of\s+attestForm\.variableSets/)
+        expect(functionBody('saveAttestation'))
+            .toMatch(/for\s*\(\s*const\s+vars\s+of\s+sets/)
     })
 
     // A double-click on OK is the classic way a modal writes twice; under an audit trail
     // that shows up as two revisions for one intended edit.
     it('guards the save against a double submit', () => {
-        const save = code.slice(code.indexOf('async function saveAttestation')).slice(0, 400)
-        expect(save).toMatch(/attestSaving\.value/)
+        expect(functionBody('saveAttestation')).toMatch(/attestSaving\.value/)
+    })
+
+    /**
+     * A serialised save can land call 1 and fail call 2. Reporting that as a plain failure
+     * makes the operator resubmit both, re-stamping the milestone that already landed.
+     */
+    it('folds completed writes into the baseline on a partial failure', () => {
+        const save = functionBody('saveAttestation')
+        expect(save, 'a partial save must not leave landed writes pending')
+            .toMatch(/markSaved\s*\(\s*done\s*\)/)
     })
 
     // Root components are never attested: the server skips them and the gauge excludes them.

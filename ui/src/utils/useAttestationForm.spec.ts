@@ -424,6 +424,58 @@ describe('notes are per milestone', () => {
     })
 })
 
+describe('a partial save leaves only the remainder pending', () => {
+    /**
+     * Writes are serialised, so call 1 of 2 can land and call 2 throw. Reporting that as a
+     * plain failure makes the operator resubmit BOTH, and the milestone that already landed
+     * gets written again -- re-stamping its lastAssessed for an assessment that happened
+     * once, so the record claims two re-assessments where there was one.
+     */
+    it('drops the completed write and keeps the failed one pending', () => {
+        const f = useAttestationForm()
+        f.open(existing({
+            supportMilestones: [
+                { milestoneType: 'END_OF_SUPPORT', date: '2030-01-01', notes: 'a' },
+                { milestoneType: 'END_OF_LIFE', date: '2031-01-01', notes: 'b' }
+            ],
+            endOfLifeDate: '2031-01-01'
+        }))
+        f.form.milestoneNotes.END_OF_SUPPORT = 'a2'
+        f.form.milestoneNotes.END_OF_LIFE = 'b2'
+        const sets = f.variableSets('c-1')
+        expect(sets.length).toBe(2)
+
+        // First landed, second threw.
+        f.markSaved([sets[0]])
+
+        const remaining = f.variableSets('c-1')
+        expect(remaining.length).toBe(1)
+        expect(remaining[0].supportNotes).toBe('b2')
+        expect(remaining[0].endOfLifeDate).toBe('2031-01-01')
+    })
+
+    it('reports nothing pending once every write has landed', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.milestoneNotes.END_OF_SUPPORT = 'reconfirmed'
+        const sets = f.variableSets('c-1')
+        f.markSaved(sets)
+        expect(f.variableSets('c-1')).toEqual([])
+        expect(f.canSubmit()).toBe(false)
+    })
+
+    // A landed un-retract must not be re-sent either.
+    it('clears the pending un-retract once it has landed', () => {
+        const f = useAttestationForm()
+        f.open(existing({ attestationState: 'WITHDRAWN' }))
+        f.form.reason = 'withdrawal was filed in error'
+        const sets = f.variableSets('c-1')
+        f.markSaved(sets)
+        expect(f.form.state).toBeNull()
+        expect(f.variableSets('c-1')).toEqual([])
+    })
+})
+
 describe('submission gating', () => {
     it('refuses a save that would send nothing', () => {
         const f = useAttestationForm()

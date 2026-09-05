@@ -3193,19 +3193,43 @@ async function saveAttestation () {
     if (attestSaving.value || !attestForm.canSubmit()) return
     attestSaving.value = true
     let saved = false
+    const done: Array<Record<string, unknown>> = []
+    let attestFailedTotal = 0
     try {
         // SERIALISED: the mutation takes one supportNotes argument, so notes for two
         // milestones in one call would land on both. One call per edited milestone, each
         // its own audit revision -- honest rather than clever. Sequential, not parallel:
         // they touch the same optimistic-locked row.
         const componentUuid = attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid
-        for (const vars of attestForm.variableSets(componentUuid)) {
-            await setSbomComponentSupportVars(graphqlClient as any, vars)
+        const sets = attestForm.variableSets(componentUuid)
+        attestFailedTotal = sets.length
+        try {
+            for (const vars of sets) {
+                await setSbomComponentSupportVars(graphqlClient as any, vars)
+                done.push(vars)
+            }
+            attestModalOpen.value = false
+        } finally {
+            // PARTIAL SUCCESS IS REAL on a serialised save, and reporting it as a plain
+            // failure is worse than useless: the operator resubmits, and the milestone that
+            // already landed is written a second time -- re-stamping its lastAssessed for an
+            // assessment that happened once. Fold what landed into the baseline so a retry
+            // sends only the remainder.
+            if (done.length) attestForm.markSaved(done)
         }
-        attestModalOpen.value = false
         saved = true
     } catch (err: any) {
-        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        if (done.length) {
+            notify('warning', `Saved ${done.length} of ${attestFailedTotal} changes`,
+                'The rest could not be saved: '
+                + commonFunctions.parseGraphQLError(err.message)
+                + ' What already saved has been kept; pressing Save again sends only the'
+                + ' remainder.')
+            // Still refresh: part of the record moved, so the list and gauge are stale.
+            saved = true
+        } else {
+            notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        }
     } finally {
         attestSaving.value = false
     }
