@@ -496,6 +496,161 @@
                 </n-form>
             </n-modal>
             <n-modal
+                v-model:show="bulkModalOpen"
+                preset="card"
+                style="width: 720px;"
+                :mask-closable="!bulk.submitting.value"
+                :closable="!bulk.submitting.value"
+                title="Attest every component matching this filter">
+                <!-- COMPOSE -->
+                <div v-if="bulkStage === 'compose'">
+                    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
+                        This writes the same attestation to every component matching the
+                        current filter. There is no bulk undo: correcting it means
+                        withdrawing each component individually, and a withdrawn claim stays
+                        on the record.
+                    </n-alert>
+                    <n-form label-placement="top">
+                        <n-form-item label="Level of support">
+                            <n-select v-model:value="bulkForm.levelOfSupport"
+                                :options="LEVEL_OPTIONS" placeholder="Not stated" />
+                        </n-form-item>
+                        <n-form-item label="Who the claim is about">
+                            <n-select v-model:value="bulkForm.party"
+                                :options="PARTY_OPTIONS" placeholder="Unknown" />
+                        </n-form-item>
+                        <n-form-item label="Justification (exported, customer-visible)">
+                            <n-input v-model:value="bulkForm.justification" type="textarea"
+                                :rows="3"
+                                placeholder="Must be true of EVERY component in the selection." />
+                        </n-form-item>
+                        <n-form-item label="End of support (optional)">
+                            <n-date-picker v-model:formatted-value="bulkForm.endOfSupportDate"
+                                value-format="yyyy-MM-dd" type="date" clearable
+                                style="width: 100%;" />
+                        </n-form-item>
+                        <n-alert v-if="bulkForm.endOfSupportDate" type="warning"
+                            :show-icon="false" style="font-size: 12px; margin-bottom: 12px;">
+                            This one date will be published as a manufacturer-stated
+                            end-of-support fact for every component in the selection, and it
+                            drives each component's derived support status and device-risk
+                            verdict. Only set it if it is true of all of them.
+                        </n-alert>
+                        <n-form-item label="Reason for this sweep (audit only, never exported)">
+                            <n-input v-model:value="bulkForm.reason"
+                                placeholder="Why this batch is being written." />
+                        </n-form-item>
+                    </n-form>
+                    <n-alert v-for="e in bulkErrors" :key="e" type="error" :show-icon="false"
+                        style="margin-top: 8px; font-size: 12px;">{{ e }}</n-alert>
+                    <n-alert v-if="bulk.error.value" type="error" :show-icon="true"
+                        style="margin-top: 8px;">{{ bulk.error.value }}</n-alert>
+                </div>
+
+                <!-- CONFIRM: the count alone cannot catch a filter that silently reset -->
+                <div v-else-if="bulkStage === 'confirm'">
+                    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
+                        <div style="font-size: 14px; font-weight: 600;">
+                            {{ bulkCollected.ids.length }} of {{ bulkCollected.backlogTotal }}
+                            components will be attested.
+                        </div>
+                        <div style="font-size: 12px; margin-top: 6px;">
+                            Filter <strong>{{ sbomAppliedFilter }}</strong><span
+                                v-if="sbomAppliedSearch">, search
+                                <strong>"{{ sbomAppliedSearch }}"</strong></span>.
+                            There is no bulk undo.
+                        </div>
+                    </n-alert>
+                    <div style="font-size: 12px; margin-bottom: 6px;">Including:</div>
+                    <ul style="font-size: 12px; margin: 0 0 12px 18px;">
+                        <li v-for="c in bulkCollected.sample" :key="c.uuid">
+                            {{ c.name }} {{ c.version }}
+                        </li>
+                        <li v-if="bulkCollected.ids.length > bulkCollected.sample.length">
+                            and {{ bulkCollected.ids.length - bulkCollected.sample.length }} more
+                        </li>
+                    </ul>
+                    <n-alert type="default" :show-icon="false" style="font-size: 12px;">
+                        Writing: level
+                        <strong>{{ bulkForm.levelOfSupport || 'not stated' }}</strong>;
+                        justification <strong>"{{ bulkForm.justification || '(none)' }}"</strong>
+                        <span v-if="bulkForm.endOfSupportDate">; end of support
+                            <strong>{{ bulkForm.endOfSupportDate }}</strong></span>.
+                    </n-alert>
+                    <div v-if="bulk.submitting.value" style="margin-top: 12px;">
+                        <n-progress type="line"
+                            :percentage="Math.round(100 * bulk.progress.value
+                                / Math.max(bulkCollected.ids.length, 1))" />
+                        <div style="font-size: 12px;">
+                            {{ bulk.progress.value }} of {{ bulkCollected.ids.length }} sent.
+                            Everything already sent has been written and cannot be recalled.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DONE: grouped by what the operator must DO about it -->
+                <div v-else-if="bulkStage === 'done' && bulkResult">
+                    <n-alert :type="bulkResult.failed ? 'warning' : 'success'" :show-icon="true">
+                        {{ bulkResult.applied }} attested.
+                        <span v-if="bulkResult.skippedRoot">
+                            {{ bulkResult.skippedRoot }} skipped as the release's own
+                            component.</span>
+                        <span v-if="bulkResult.failed"> {{ bulkResult.failed }} failed.</span>
+                    </n-alert>
+                    <!-- Not hidden: on a fresh UNATTESTED walk this should be zero, so a
+                         non-zero count means a colleague attested one of these between the
+                         walk and the write. -->
+                    <n-alert v-if="bulkResult.concurrentWriteDetected" type="warning"
+                        :show-icon="true" style="margin-top: 8px; font-size: 12px;">
+                        {{ bulkResult.skippedAttested }} were skipped because they had already
+                        been attested. They were undisclosed when this sweep started, so
+                        somebody else recorded them while it ran. Their attestations were left
+                        untouched.
+                    </n-alert>
+                    <n-alert v-if="bulkResult.stoppedEarly" type="warning" :show-icon="true"
+                        style="margin-top: 8px; font-size: 12px;">
+                        Stopped after the batch in flight. Re-running the same sweep is safe:
+                        components already attested are skipped, not rewritten.
+                    </n-alert>
+                    <n-alert v-if="bulkResult.error" type="error" :show-icon="true"
+                        style="margin-top: 8px; font-size: 12px;">
+                        {{ bulkResult.error }} Re-running the same sweep is safe and completes
+                        the remainder.
+                    </n-alert>
+                    <div v-if="bulkResult.failed" style="margin-top: 10px;">
+                        <div style="font-size: 12px; font-weight: 600;">Failures</div>
+                        <ul style="font-size: 12px; margin: 4px 0 0 18px;">
+                            <li v-for="(count, message) in bulkFailureGroups" :key="message">
+                                {{ message }} &times; {{ count }}
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <template #footer>
+                    <n-space justify="end">
+                        <n-button size="small" :disabled="bulk.submitting.value"
+                            @click="bulkModalOpen = false">
+                            {{ bulkStage === 'done' ? 'Close' : 'Cancel' }}
+                        </n-button>
+                        <n-button v-if="bulkStage === 'compose'" size="small" type="primary"
+                            :disabled="bulkErrors.length > 0 || bulk.collecting.value"
+                            :loading="bulk.collecting.value"
+                            @click="collectBulkTargets">Review selection</n-button>
+                        <n-button v-if="bulkStage === 'confirm' && !bulk.submitting.value"
+                            size="small" @click="bulkStage = 'compose'">Back</n-button>
+                        <n-button v-if="bulkStage === 'confirm'" size="small" type="error"
+                            :disabled="bulk.submitting.value || !bulkCollected.ids.length"
+                            :loading="bulk.submitting.value"
+                            @click="runBulkAttest">
+                            Attest {{ bulkCollected.ids.length }} components
+                        </n-button>
+                        <n-button v-if="bulkStage === 'confirm' && bulk.submitting.value"
+                            size="small" @click="bulk.requestCancel()">Stop after this batch</n-button>
+                    </n-space>
+                </template>
+            </n-modal>
+            <n-modal
                 v-model:show="attestModalOpen"
                 preset="card"
                 style="width: 640px;"
@@ -1091,6 +1246,13 @@
                                 :disabled="sbomDegraded"
                                 :options="sbomAttestationFilterOptions"
                             />
+                            <n-button
+                                v-if="sbomViewMode === 'list' && isWritable
+                                    && sbomAppliedFilter === 'UNATTESTED'"
+                                size="small" type="primary" ghost
+                                @click="openBulkAttest">
+                                Attest all shown
+                            </n-button>
                             <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
                                 <n-radio-button value="list" label="List" />
                                 <n-radio-button value="tree" label="Tree" />
@@ -1480,6 +1642,7 @@ import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
+import { useBulkAttest, validateBulkInput } from '@/utils/useBulkAttest'
 import { useAttestationForm } from '@/utils/useAttestationForm'
 import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
@@ -1494,9 +1657,9 @@ import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regu
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, supportTag } from '@/utils/supportStatusTag'
-import { NAlert, NBadge, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
-import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -3101,6 +3264,78 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
     // the rows on screen without moving the number above them. Wiring it to those would make
     // the gauge flicker on every keystroke while reporting the same value.
     await loadSbomCoverage()
+}
+
+// Bulk attestation over the current filter (FDA-Readiness-1 PR5.4).
+//
+// The walk and the writes live in useBulkAttest; this is selection, confirmation and
+// reporting. The confirmation is the load-bearing part: a sweep writes a regulatory claim
+// across up to five thousand components on one click, and there is no bulk undo.
+const bulk = useBulkAttest()
+const bulkModalOpen: Ref<boolean> = ref(false)
+const bulkStage: Ref<'compose' | 'confirm' | 'done'> = ref('compose')
+const bulkForm = reactive({
+    levelOfSupport: null as LevelOfSupport | null,
+    party: null as SupportParty | null,
+    justification: '',
+    endOfSupportDate: null as string | null,
+    reason: ''
+})
+const bulkCollected: Ref<{ ids: string[], backlogTotal: number,
+    sample: Array<{ uuid: string, name: string, version: string }> }> =
+    ref({ ids: [], backlogTotal: 0, sample: [] })
+const bulkResult: Ref<any> = ref(null)
+const bulkAssessedAt: Ref<string> = ref('')
+
+/** Failures grouped by message: 800 identical validation errors are one line, not 800. */
+const bulkFailureGroups: ComputedRef<Record<string, number>> = computed(() => {
+    const out: Record<string, number> = {}
+    for (const r of bulkResult.value?.results ?? []) {
+        if (r.outcome !== 'FAILED') continue
+        const key = r.message || 'no reason given'
+        out[key] = (out[key] ?? 0) + 1
+    }
+    return out
+})
+
+const bulkErrors: ComputedRef<string[]> = computed(
+    (): string[] => validateBulkInput({ ...bulkForm, assessedAt: bulkAssessedAt.value }))
+
+function openBulkAttest () {
+    bulkStage.value = 'compose'
+    bulkResult.value = null
+    bulkCollected.value = { ids: [], backlogTotal: 0, sample: [] }
+    Object.assign(bulkForm, {
+        levelOfSupport: null, party: null, justification: '', endOfSupportDate: null, reason: ''
+    })
+    bulkModalOpen.value = true
+}
+
+/**
+ * Walk the CURRENTLY APPLIED filter and collect ids. Writes nothing.
+ *
+ * Uses the applied filter and search, never the live inputs: during the search debounce
+ * those differ, and sweeping what the box says rather than what the list shows is exactly
+ * how an operator attests the wrong set.
+ */
+async function collectBulkTargets () {
+    if (!updatedRelease.value?.uuid) return
+    const res = await bulk.collect(graphqlClient as any, updatedRelease.value.uuid,
+        sbomAppliedFilter.value, sbomAppliedSearch.value)
+    if (res.refused) return
+    bulkCollected.value = { ids: res.ids, backlogTotal: res.backlogTotal, sample: res.sample }
+    bulkStage.value = 'confirm'
+}
+
+async function runBulkAttest () {
+    // One instant for the whole sweep, captured HERE -- at the moment the operator confirms,
+    // not per write. The sweep is one act of assessment.
+    bulkAssessedAt.value = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+    bulkResult.value = await bulk.submit(graphqlClient as any, bulkCollected.value.ids,
+        { ...bulkForm, assessedAt: bulkAssessedAt.value }, sbomAppliedFilter.value)
+    bulkStage.value = 'done'
+    // The gauge and the list both moved.
+    await loadSbomComponents(true)
 }
 
 // Per-component attestation form (FDA-Readiness-1 PR5.3).

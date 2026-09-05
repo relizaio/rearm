@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { useBulkAttest, BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS } from './useBulkAttest'
+import {
+    useBulkAttest, validateBulkInput,
+    BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS
+} from './useBulkAttest'
 
 /** A client whose page responses are scripted, and whose mutations are recorded. */
 function scripted (pages: Array<{ items: string[], hasMore: boolean }>) {
@@ -201,6 +204,40 @@ describe('the walk refuses anything it cannot vouch for', () => {
         const b = useBulkAttest()
         await b.collect(client, 'rel-1', 'UNATTESTED', 'log4j')
         expect(query.mock.calls[0][0].variables.search).toBe('log4j')
+    })
+})
+
+describe('the sweep is recorded as one action', () => {
+    /**
+     * One instant for the whole sweep, captured at confirmation. Omitted, the server stamps
+     * `now` inside each per-item transaction, so the components carry instants spread across
+     * the sweep -- and that instant is what the exported BOM publishes as "a human looked,
+     * and when". Spread instants describe a stream of individual assessments.
+     */
+    it('sends the same assessedAt on every batch', async () => {
+        const { client, mutate } = scripted([])
+        const b = useBulkAttest()
+        const at = '2026-09-05T13:40:00Z'
+        await b.submit(client, ids(450), {
+            levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'swept',
+            reason: 'closing the backlog', assessedAt: at
+        })
+        expect(mutate).toHaveBeenCalledTimes(3)
+        for (const call of mutate.mock.calls) expect(call[0].variables.assessedAt).toBe(at)
+    })
+
+    // Mandatory for bulk even though the server only requires it for un-retracting.
+    it('refuses a sweep with no reason', () => {
+        expect(validateBulkInput({ levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'x' })
+            .some(e => e.includes('needs a reason'))).toBe(true)
+        expect(validateBulkInput({
+            levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'x', reason: 'closing the backlog'
+        })).toEqual([])
+    })
+
+    it('still refuses a negative level with no basis, reason or not', () => {
+        expect(validateBulkInput({ levelOfSupport: 'ABANDONED', reason: 'r' })
+            .some(e => e.includes('negative claim'))).toBe(true)
     })
 })
 

@@ -4,31 +4,12 @@ import { loadSbomComponentsPage } from './sbomComponentsQuery'
 import type { SupportAttestationFilter } from './sbomComponentsQuery'
 import { isSchemaDriftError } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
+import type { MutationClient } from './setSbomComponentSupport'
+import type { LevelOfSupport, SupportParty } from './supportAttestationInput'
 
-/**
- * DriftFallbackClient declares only `query`; the write needs `mutate`.
- *
- * Declared here rather than imported because the attestation-form branch that owns the
- * shared version is not merged yet -- and an earlier revision imported it anyway. That
- * escaped every gate: a type-only import is erased by esbuild, so vite build, vitest and
- * eslint all passed while the symbol was silently `any`. Consolidate when that branch lands.
- */
-export interface MutationClient extends DriftFallbackClient {
-    mutate (opts: { mutation: unknown, variables: Record<string, unknown> }): Promise<{ data?: any }>
-}
-
-/**
- * The backend enums, mirrored exactly. NOT `string`.
- *
- * This feature has already shipped two invented members (MANUFACTURER, SUPPLIER, borrowed
- * from unrelated enums) which reached the operator as "your server is out of date", because
- * a bad enum value is a variable-coercion failure, which is a validation error, which
- * isSchemaDriftError reports as drift. The document drift spec cannot see variable values --
- * only the coercion spec beside it can, and it exists for that reason.
- */
-export type BulkLevelOfSupport = 'ACTIVELY_MAINTAINED' | 'NO_LONGER_MAINTAINED' | 'ABANDONED'
-export type BulkSupportParty = 'FIRST_PARTY' | 'THIRD_PARTY'
-export type BulkOutcomeKind = 'APPLIED' | 'SKIPPED_ROOT' | 'SKIPPED_ATTESTED' | 'FAILED'
+// One definition of the backend enums, shared with the per-component form. A local copy
+// would be a second place for them to drift from the schema, and this feature has already
+// shipped two invented members that reached the operator as "your server is out of date".
 
 /** Page size for the collect walk. */
 export const BULK_WALK_LIMIT = 500
@@ -63,6 +44,7 @@ export const BULK_SET_SUPPORT = gql`
         $endOfSupportDate: String
         $endOfLifeDate: String
         $reason: String
+        $assessedAt: String
     ) {
         bulkSetSbomComponentSupport(
             sbomComponentUuids: $sbomComponentUuids
@@ -73,6 +55,7 @@ export const BULK_SET_SUPPORT = gql`
             endOfSupportDate: $endOfSupportDate
             endOfLifeDate: $endOfLifeDate
             reason: $reason
+            assessedAt: $assessedAt
         ) {
             appliedCount
             skippedCount
@@ -91,13 +74,22 @@ export const BULK_SET_SUPPORT = gql`
  * belongs.
  */
 export interface BulkAttestInput {
-    levelOfSupport?: BulkLevelOfSupport | null
+    levelOfSupport?: LevelOfSupport | null
     justification?: string | null
-    party?: BulkSupportParty | null
+    party?: SupportParty | null
     endOfGuaranteedSupportDate?: string | null
     endOfSupportDate?: string | null
     endOfLifeDate?: string | null
     reason?: string | null
+    /**
+     * ONE instant for the whole sweep, captured when the operator confirms.
+     *
+     * Omitting it makes the server stamp `now` inside each per-item transaction, so 800
+     * components carry 800 slightly different assessment instants SPREAD ACROSS the sweep --
+     * a record that reads as a stream of individual assessments rather than the one action
+     * it was. The instant is what the exported BOM publishes as "a human looked, and when".
+     */
+    assessedAt?: string | null
 }
 
 export interface BulkOutcome {
@@ -148,6 +140,15 @@ export function validateBulkInput (input: BulkAttestInput): string[] {
         || input.endOfLifeDate)
     if (!input.levelOfSupport && !hasDate && !hasBasis) {
         out.push('Record something: a level of support, a date, or a justification.')
+    }
+    // Mandatory for a sweep even though the server only demands it for un-retracting.
+    // Nothing else in the record distinguishes one action across 800 components from 800
+    // individual judgements: assessmentSource is MANUAL either way. reason is per-write,
+    // audit-only and never exported, which makes it the right carrier for the method.
+    if (!input.reason || !input.reason.trim()) {
+        out.push('A bulk sweep needs a reason. It is written to every audit row and is the'
+            + ' only record of why this batch happened -- and the only thing that marks these'
+            + ' as one action rather than hundreds of separate judgements.')
     }
     if ((input.levelOfSupport === 'NO_LONGER_MAINTAINED'
             || input.levelOfSupport === 'ABANDONED') && !hasBasis) {
@@ -322,7 +323,8 @@ export function useBulkAttest () {
                         endOfGuaranteedSupportDate: input.endOfGuaranteedSupportDate || null,
                         endOfSupportDate: input.endOfSupportDate || null,
                         endOfLifeDate: input.endOfLifeDate || null,
-                        reason: input.reason || null
+                        reason: input.reason || null,
+                        assessedAt: input.assessedAt || null
                     }
                 })
                 const r = (resp.data as any)?.bulkSetSbomComponentSupport
