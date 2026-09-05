@@ -106,6 +106,15 @@ export interface BulkOutcome {
     stoppedEarly: boolean
     error: string | null
     /**
+     * Whether re-running the same sweep can complete the remainder. False for schema drift
+     * (the server will never accept it) and for a refused re-entry (another sweep owns the
+     * work). The distinction is carried here rather than left to the UI to infer from the
+     * message text: "re-running is safe and completes the remainder" is actively false
+     * advice on a drifted server, and telling an operator to retry a write that cannot
+     * succeed is worse than saying nothing.
+     */
+    retryable: boolean
+    /**
      * True when anything came back SKIPPED_ATTESTED. On a fresh walk that should be zero --
      * the walk collected only UNATTESTED components -- so a non-zero count means somebody
      * attested one between the walk and the write. Surfaced rather than hidden: it tells the
@@ -116,6 +125,14 @@ export interface BulkOutcome {
 
 /** How many components the confirmation shows by name. A count alone hides a wrong filter. */
 export const SAMPLE_SIZE = 10
+
+/** The empty form. One definition, so adding a field cannot miss the reset site. */
+export function emptyBulkForm (): BulkAttestInput {
+    return {
+        levelOfSupport: null, party: null, justification: '',
+        endOfSupportDate: null, reason: ''
+    }
+}
 
 export interface BulkCollectResult {
     ids: string[]
@@ -163,7 +180,7 @@ function emptyOutcome (why: string): BulkOutcome {
     return {
         applied: 0, skippedAttested: 0, skippedRoot: 0, failed: 0, results: [],
         aborted: true, error: why, concurrentWriteDetected: false, stoppedEarly: false,
-        unknownOutcomes: 0
+        unknownOutcomes: 0, retryable: false
     }
 }
 
@@ -304,7 +321,7 @@ export function useBulkAttest () {
         const out: BulkOutcome = {
             applied: 0, skippedAttested: 0, skippedRoot: 0, failed: 0,
             results: [], aborted: false, error: null, concurrentWriteDetected: false,
-            stoppedEarly: false, unknownOutcomes: 0
+            stoppedEarly: false, unknownOutcomes: 0, retryable: false
         }
         try {
             for (let i = 0; i < ids.length; i += BULK_BATCH_SIZE) {
@@ -351,6 +368,7 @@ export function useBulkAttest () {
                 out.aborted = true
                 out.error = 'This server cannot perform a bulk attestation: it does not'
                     + ' support the bulk mutation, so nothing further was written.'
+                out.retryable = false
                 submitting.value = false
                 out.concurrentWriteDetected = false
                 return out
@@ -360,6 +378,7 @@ export function useBulkAttest () {
             // attested components come back SKIPPED_ATTESTED -- but only if they can see it.
             out.aborted = true
             out.error = err?.message || String(err)
+            out.retryable = true
         } finally {
             submitting.value = false
         }

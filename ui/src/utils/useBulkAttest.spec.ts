@@ -284,6 +284,112 @@ describe('submitting', () => {
      * A batch failing mid-sweep must not discard the batches that landed: the operator needs
      * to know how much of the work is done before deciding whether to re-run.
      */
+    /**
+     * The counters must not silently stop summing to results.length. A server that renames
+     * or adds an outcome would otherwise report "0 attested." over components it wrote.
+     */
+    it('counts an outcome it does not recognise rather than dropping it', async () => {
+        const { client, mutate } = scripted([])
+        mutate.mockImplementation(async (o: any) => ({
+            data: {
+                bulkSetSbomComponentSupport: {
+                    results: o.variables.sbomComponentUuids.map((id: string, i: number) =>
+                        ({ sbomComponentUuid: id, outcome: i === 0 ? 'DEFERRED' : 'APPLIED',
+                            message: null }))
+                }
+            }
+        }))
+        const b = useBulkAttest()
+        const out = await b.submit(client, ids(4), { levelOfSupport: 'ACTIVELY_MAINTAINED',
+            justification: 'j', reason: 'r' } as any)
+        expect(out.unknownOutcomes).toBe(1)
+        expect(out.applied).toBe(3)
+        expect(out.applied + out.skippedAttested + out.skippedRoot + out.failed
+            + out.unknownOutcomes).toBe(out.results.length)
+    })
+
+    /**
+     * "Stop after this batch" is the only honest offer: a batch already sent has committed
+     * item by item. So the cancel must take effect BETWEEN batches -- not lose the batch in
+     * flight, and not keep going.
+     */
+    it('stops between batches, keeping what the batch in flight wrote', async () => {
+        const { client, mutate } = scripted([])
+        const b = useBulkAttest()
+        mutate.mockImplementation(async (o: any) => {
+            b.requestCancel()
+            return {
+                data: {
+                    bulkSetSbomComponentSupport: {
+                        results: o.variables.sbomComponentUuids.map((id: string) =>
+                            ({ sbomComponentUuid: id, outcome: 'APPLIED', message: null }))
+                    }
+                }
+            }
+        })
+        const out = await b.submit(client, ids(BULK_BATCH_SIZE * 3),
+            { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'j', reason: 'r' } as any)
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(out.stoppedEarly).toBe(true)
+        expect(out.applied).toBe(BULK_BATCH_SIZE)
+        // Re-running is the advertised recovery, so it must not be reported as unretryable.
+        expect(out.aborted).toBe(false)
+    })
+
+    /**
+     * Two concurrent submits with the same ids both see an empty already-attested set
+     * server-side, so both write -- the second re-asserting and re-dating what the first
+     * just recorded. The refusal must also not claim a retry will help while the first is
+     * still running.
+     */
+    it('refuses a second concurrent sweep, and does not offer a retry', async () => {
+        const { client, mutate } = scripted([])
+        let release: () => void = () => {}
+        mutate.mockImplementation(async (o: any) => {
+            await new Promise<void>(r => { release = r })
+            return {
+                data: {
+                    bulkSetSbomComponentSupport: {
+                        results: o.variables.sbomComponentUuids.map((id: string) =>
+                            ({ sbomComponentUuid: id, outcome: 'APPLIED', message: null }))
+                    }
+                }
+            }
+        })
+        const b = useBulkAttest()
+        const input = { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'j', reason: 'r' }
+        const first = b.submit(client, ids(2), input as any)
+        await Promise.resolve()
+        const second = await b.submit(client, ids(2), input as any)
+        expect(second.applied).toBe(0)
+        expect(second.aborted).toBe(true)
+        expect(second.retryable).toBe(false)
+        expect(second.error).toMatch(/already running/)
+        release()
+        expect((await first).applied).toBe(2)
+        expect(mutate).toHaveBeenCalledTimes(1)
+    })
+
+    /**
+     * A drifted server can never accept this mutation, so "re-running completes the
+     * remainder" is advice that cannot come true. A transient failure is the opposite. The
+     * UI must not have to tell them apart by reading the message.
+     */
+    it('marks drift unretryable and a transient failure retryable', async () => {
+        const input = { levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'j', reason: 'r' }
+        const drift = scripted([])
+        drift.mutate.mockRejectedValue(new Error(
+            'Unknown field \'bulkSetSbomComponentSupport\' on type \'Mutation\''))
+        const a = await useBulkAttest().submit(drift.client, ids(2), input as any)
+        expect(a.retryable).toBe(false)
+        expect(a.error).toMatch(/does not.*support the bulk mutation/)
+
+        const flaky = scripted([])
+        flaky.mutate.mockRejectedValue(new Error('Network error: 503'))
+        const c = await useBulkAttest().submit(flaky.client, ids(2), input as any)
+        expect(c.retryable).toBe(true)
+    })
+
     it('keeps the outcomes of batches that landed when a later one throws', async () => {
         let n = 0
         const mutate = vi.fn(async (opts: any) => {
