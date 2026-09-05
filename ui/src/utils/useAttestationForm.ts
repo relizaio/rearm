@@ -5,6 +5,7 @@ import {
     isEmptyAttestation,
     attestationVariables,
     MILESTONE_FIELD_TO_TYPE,
+    MILESTONE_TYPE_TO_FIELD,
     type AttestationForm,
     type LevelOfSupport,
     type SupportParty
@@ -20,6 +21,7 @@ export interface ExistingAttestation {
     endOfSupportDate?: string | null
     endOfLifeDate?: string | null
     supportNotes?: string | null
+    supportMilestones?: Array<{ milestoneType: string, date?: string | null, notes?: string | null }>
 }
 
 const MILESTONE_FIELDS = [
@@ -60,7 +62,13 @@ export function useAttestationForm () {
         form.endOfGuaranteedSupportDate = existing.endOfGuaranteedSupportDate ?? null
         form.endOfSupportDate = existing.endOfSupportDate ?? null
         form.endOfLifeDate = existing.endOfLifeDate ?? null
-        form.supportNotes = existing.supportNotes ?? ''
+        // Seeded from each milestone's OWN notes, not from the flat supportNotes field --
+        // that field is only the END_OF_SUPPORT milestone's notes under another name.
+        for (const m of existing.supportMilestones ?? []) {
+            if (m.milestoneType in form.milestoneNotes) {
+                (form.milestoneNotes as any)[m.milestoneType] = m.notes ?? ''
+            }
+        }
         // Re-asserting is the POINT of opening a withdrawn attestation, and it does not
         // happen by itself: state is preserved when omitted, so saving without this leaves
         // the row withdrawn and still uncounted while every other field updates.
@@ -133,14 +141,17 @@ export function useAttestationForm () {
         // this card silently cancel the re-assertion, leaving the row withdrawn and
         // uncounted behind a success toast. That is the same defect this feature already
         // shipped once. reason survives because the guards that demand one still apply.
-        const notes = form.supportNotes
         const state = form.state
         const reason = form.reason
+        const notes = { ...form.milestoneNotes }
         Object.assign(form, emptyAttestationForm())
         form.justification = justification
-        form.supportNotes = notes
         form.state = state
         form.reason = reason
+        // Milestone notes are restored, not blanked. Blanking them reads as an EDIT to each
+        // milestone's notes -- against dates this same reset just cleared -- so the form
+        // demanded a date for a note the operator never touched.
+        form.milestoneNotes = notes
     }
 
     function errors (): string[] {
@@ -160,17 +171,12 @@ export function useAttestationForm () {
                     + ' Pick one: clear it, or enter the new date.')
             }
         }
-        // supportNotes is stored PER MILESTONE, not per component: the server reads it only
-        // inside the staged-milestone loop, and SupportData has no record-level notes field.
-        // So a notes-only edit is silently discarded, and notes saved alongside one date land
-        // on THAT milestone. Blocked rather than silently dropped, pending a decision on
-        // whether notes should become record-level (backend) or per-milestone (UI).
-        const notesChanged = (form.supportNotes ?? '').trim()
-            !== ((seededRef.value?.supportNotes ?? '') as string).trim()
-        if (notesChanged && !milestoneChanged() && form.clearMilestones.length === 0) {
-            out.push('Internal notes are stored against a date, not against the component, so'
-                + ' a notes-only change cannot be saved. Edit a date as well, or record the'
-                + ' text in the justification if it belongs in the disclosure.')
+        for (const type of editedMilestoneNotes()) {
+            const field = MILESTONE_TYPE_TO_FIELD[type as keyof typeof MILESTONE_TYPE_TO_FIELD]
+            if (!(form as any)[field]) {
+                out.push(`Notes for ${type.replace(/_/g, ' ').toLowerCase()} need a date --`
+                    + ' the note is stored against the date, so set the date first.')
+            }
         }
         if (needsJustificationDecision()) {
             out.push('A date changed. Confirm the recorded basis still holds, or revise it --'
@@ -190,7 +196,7 @@ export function useAttestationForm () {
         return milestoneChanged() || justificationRevised()
             || (form.levelOfSupport ?? null) !== (seeded.attestedLevelOfSupport ?? null)
             || (form.party ?? null) !== (seeded.supportParty ?? null)
-            || (form.supportNotes ?? '').trim() !== (seeded.supportNotes ?? '').trim()
+            || editedMilestoneNotes().length > 0
             || form.clearJustification || form.clearMilestones.length > 0
     }
 
@@ -205,11 +211,23 @@ export function useAttestationForm () {
      * message for a no-op is worse than an error.
      */
     function sendsAnything (): boolean {
-        return Object.keys(variables('x')).length > 1
+        return variableSets('x').length > 0
     }
 
     function canSubmit (): boolean {
         return dirty() && errors().length === 0 && sendsAnything()
+    }
+
+    function storedNote (type: string): string {
+        const m = (seededRef.value?.supportMilestones ?? [])
+            .find(x => x.milestoneType === type)
+        return (m?.notes ?? '').trim()
+    }
+
+    /** Milestone types whose notes the operator has edited. */
+    function editedMilestoneNotes (): string[] {
+        return Object.keys(form.milestoneNotes)
+            .filter(t => (form.milestoneNotes as any)[t].trim() !== storedNote(t))
     }
 
     /** Variables for this save, diffed against what the form was seeded with. */
@@ -217,10 +235,48 @@ export function useAttestationForm () {
         return attestationVariables(sbomComponentUuid, form, seededRef.value as any)
     }
 
+    /**
+     * Every write this save needs, in order.
+     *
+     * SERIALISED because the mutation takes ONE supportNotes argument: notes for two
+     * milestones in a single call would land on both, cross-contaminating the evidence for
+     * each date. One call per edited milestone instead, each its own audit revision, which
+     * is the honest shape rather than a clever one.
+     *
+     * A notes write carries that milestone's own date UNCHANGED, because the server only
+     * writes notes onto milestones it is staging. That re-stamps the milestone's
+     * lastAssessed, which is correct: revising what you checked is a re-assessment of that
+     * milestone. The diff rule is "never send a date the operator did not touch" -- editing
+     * its notes counts as touching it.
+     */
+    function variableSets (sbomComponentUuid: string): Array<Record<string, unknown>> {
+        const sets: Array<Record<string, unknown>> = []
+        const base = variables(sbomComponentUuid)
+        if (Object.keys(base).length > 1) sets.push(base)
+        const reason = form.reason.trim()
+        for (const type of editedMilestoneNotes()) {
+            const field = MILESTONE_TYPE_TO_FIELD[type as keyof typeof MILESTONE_TYPE_TO_FIELD]
+            const date = (form as any)[field]
+            if (!date) continue
+            const set: Record<string, unknown> = {
+                sbomComponentUuid,
+                [field]: date,
+                supportNotes: (form.milestoneNotes as any)[type].trim()
+            }
+            // Carried onto every write so each audit revision explains itself rather than
+            // leaving the follow-up rows unexplained.
+            if (reason) set.reason = reason
+            sets.push(set)
+        }
+        return sets
+    }
+
     return {
         form,
         variables,
         sendsAnything,
+        variableSets,
+        editedMilestoneNotes,
         canUseNothingPublished,
         open,
         isUnRetract,

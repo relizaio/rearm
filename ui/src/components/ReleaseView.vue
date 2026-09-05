@@ -535,21 +535,22 @@
                             placeholder="What you checked and what you found." />
                     </n-form-item>
 
-                    <n-form-item label="End of guaranteed support">
-                        <n-input v-model:value="attestForm.form.endOfGuaranteedSupportDate"
-                            placeholder="YYYY-MM-DD" />
-                    </n-form-item>
-                    <n-form-item label="End of support">
-                        <n-input v-model:value="attestForm.form.endOfSupportDate"
-                            placeholder="YYYY-MM-DD" />
-                    </n-form-item>
-                    <n-form-item label="End of life (end of sale)">
-                        <n-input v-model:value="attestForm.form.endOfLifeDate"
-                            placeholder="YYYY-MM-DD" />
-                    </n-form-item>
-                    <n-form-item label="Internal notes (never exported)">
-                        <n-input v-model:value="attestForm.form.supportNotes" type="textarea"
-                            :rows="2" />
+                    <!-- Notes live WITH their date, because that is where the server stores
+                         them: supportNotes is written onto the milestones being staged, and
+                         a milestone's notes are the evidence for that date. A single
+                         component-level box was a lie about the storage model -- a
+                         notes-only edit went nowhere, and notes saved with one date landed
+                         on that milestone alone. -->
+                    <n-form-item v-for="m in MILESTONE_FIELDS" :key="m.type" :label="m.label">
+                        <n-space vertical style="width: 100%;">
+                            <n-date-picker
+                                v-model:formatted-value="attestForm.form[m.field]"
+                                value-format="yyyy-MM-dd" type="date" clearable
+                                style="width: 100%;" :placeholder="'YYYY-MM-DD'" />
+                            <n-input v-model:value="attestForm.form.milestoneNotes[m.type]"
+                                type="textarea" :rows="2"
+                                :placeholder="'What you checked for this date (internal, never exported)'" />
+                        </n-space>
                     </n-form-item>
 
                     <!-- Confirm-or-revise. The stored basis was written for the dates that
@@ -1482,7 +1483,7 @@ import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
 import { useAttestationForm } from '@/utils/useAttestationForm'
 import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
-import { setSbomComponentSupport } from '@/utils/setSbomComponentSupport'
+import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
@@ -3128,6 +3129,14 @@ const PARTY_OPTIONS: Array<{ label: string, value: SupportParty }> = [
     { label: 'First party (our own component)', value: 'FIRST_PARTY' },
     { label: 'Third party (someone else\'s project)', value: 'THIRD_PARTY' }
 ]
+// One row per milestone: its date and the notes that justify it.
+const MILESTONE_FIELDS: Array<{ type: SupportMilestoneType, field: string, label: string }> = [
+    { type: 'END_OF_GUARANTEED_SUPPORT', field: 'endOfGuaranteedSupportDate',
+        label: 'End of guaranteed support' },
+    { type: 'END_OF_SUPPORT', field: 'endOfSupportDate', label: 'End of support' },
+    { type: 'END_OF_LIFE', field: 'endOfLifeDate', label: 'End of life (end of sale)' }
+]
+
 const MILESTONE_CLEAR_OPTIONS: Array<{ label: string, value: SupportMilestoneType }> = [
     { label: 'End of guaranteed support', value: 'END_OF_GUARANTEED_SUPPORT' },
     { label: 'End of support', value: 'END_OF_SUPPORT' },
@@ -3185,9 +3194,14 @@ async function saveAttestation () {
     attestSaving.value = true
     let saved = false
     try {
-        await setSbomComponentSupport(graphqlClient as any,
-            attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid,
-            attestForm)
+        // SERIALISED: the mutation takes one supportNotes argument, so notes for two
+        // milestones in one call would land on both. One call per edited milestone, each
+        // its own audit revision -- honest rather than clever. Sequential, not parallel:
+        // they touch the same optimistic-locked row.
+        const componentUuid = attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid
+        for (const vars of attestForm.variableSets(componentUuid)) {
+            await setSbomComponentSupportVars(graphqlClient as any, vars)
+        }
         attestModalOpen.value = false
         saved = true
     } catch (err: any) {

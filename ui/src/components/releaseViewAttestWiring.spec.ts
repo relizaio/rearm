@@ -24,7 +24,7 @@ describe('the attestation form is wired into ReleaseView', () => {
     it.each([
         ['useAttestationForm', '@/utils/useAttestationForm'],
         ['loadSbomComponentSupportDetail', '@/utils/sbomComponentSupportDetail'],
-        ['setSbomComponentSupport', '@/utils/setSbomComponentSupport']
+        ['setSbomComponentSupportVars', '@/utils/setSbomComponentSupport']
     ])('imports %s from %s', (symbol, module) => {
         expect(source, `${symbol} is used but not imported -- the build will not catch this`)
             .toMatch(new RegExp(
@@ -56,6 +56,22 @@ describe('the attestation form is wired into ReleaseView', () => {
             .slice(0, 1400)
         expect(save, 'saveAttestation must force a reload so the gauge re-reads')
             .toMatch(/loadSbomComponents\s*\(\s*true\s*\)/)
+    })
+
+    /**
+     * Notes must be rendered per milestone, not as one component-level box. The server
+     * stores them against the staged milestone, so a single box discarded a notes-only edit
+     * and mislabelled notes saved alongside one date.
+     */
+    it('renders notes per milestone rather than one component-level box', () => {
+        expect(code).toContain('milestoneNotes[m.type]')
+        expect(code).not.toContain('form.supportNotes')
+    })
+
+    // One supportNotes argument per call means two milestones must be serialised.
+    it('serialises the writes rather than issuing one', () => {
+        const save = code.slice(code.indexOf('async function saveAttestation')).slice(0, 1600)
+        expect(save).toMatch(/for\s*\(\s*const\s+vars\s+of\s+attestForm\.variableSets/)
     })
 
     // A double-click on OK is the classic way a modal writes twice; under an audit trail

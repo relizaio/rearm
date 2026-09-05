@@ -3,7 +3,12 @@
 import gql from 'graphql-tag'
 import { isSchemaDriftError } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
-interface VariableSource { variables: (uuid: string) => Record<string, unknown> }
+
+/** DriftFallbackClient declares only query; the write needs mutate. */
+export interface MutationClient extends DriftFallbackClient {
+    mutate (opts: { mutation: unknown, variables: Record<string, unknown> }): Promise<{ data?: any }>
+}
+
 
 /**
  * The full Pro mutation. Twelve arguments; the CE mirror currently declares four.
@@ -77,15 +82,21 @@ export interface AttestationResult {
 /**
  * Write one component's attestation. Throws on refusal or failure; never partially writes.
  */
-export async function setSbomComponentSupport (
-    client: DriftFallbackClient,
-    sbomComponentUuid: string,
-    form: VariableSource
+/**
+ * One write, given ready-made variables.
+ *
+ * Takes variables rather than a form because a single save may need SEVERAL writes: the
+ * mutation carries one supportNotes argument, so notes for two milestones must be
+ * serialised or they cross-contaminate. The caller owns that sequencing.
+ */
+export async function setSbomComponentSupportVars (
+    client: MutationClient,
+    variables: Record<string, unknown>
 ): Promise<AttestationResult> {
     try {
-        const resp = await (client as any).mutate({
+        const resp = await client.mutate({
             mutation: SET_SBOM_COMPONENT_SUPPORT,
-            variables: form.variables(sbomComponentUuid)
+            variables
         })
         return (resp.data as any)?.setSbomComponentSupport
     } catch (err: any) {

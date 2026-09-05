@@ -10,7 +10,9 @@ const existing = (over: Record<string, unknown> = {}) => ({
     endOfGuaranteedSupportDate: null,
     endOfSupportDate: '2030-01-01',
     endOfLifeDate: null,
-    supportNotes: '',
+    supportMilestones: [
+        { milestoneType: 'END_OF_SUPPORT', date: '2030-01-01', notes: 'vendor advisory of 3 March' }
+    ],
     ...over
 })
 
@@ -76,7 +78,7 @@ describe('justification confirm-or-revise on a milestone change', () => {
     it('does not ask when no milestone moved', () => {
         const f = useAttestationForm()
         f.open(existing())
-        f.form.supportNotes = 'chased the supplier again'
+        f.form.justification = 'rechecked the upstream feed'
         expect(f.needsJustificationDecision()).toBe(false)
     })
 
@@ -182,7 +184,7 @@ describe('un-retracting a withdrawn attestation', () => {
     it('does not touch state on an ordinary edit', () => {
         const f = useAttestationForm()
         f.open(existing())
-        f.form.supportNotes = 'note'
+        f.form.justification = 'rechecked the upstream feed'
         expect('state' in attestationVariables('c-1', f.form)).toBe(false)
     })
 
@@ -242,14 +244,13 @@ describe('a save that would send nothing is refused', () => {
      * that changed nothing is worse than an error on a form meant to produce a defensible
      * record.
      */
-    it.each(['justification', 'supportNotes'] as const)(
-        'refuses a save after emptying the seeded %s', (field) => {
-            const f = useAttestationForm()
-            f.open(existing())
-            ;(f.form as any)[field] = ''
-            expect(f.sendsAnything()).toBe(false)
-            expect(f.canSubmit()).toBe(false)
-        })
+    it('refuses a save after emptying the seeded justification', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.justification = ''
+        expect(f.sendsAnything()).toBe(false)
+        expect(f.canSubmit()).toBe(false)
+    })
 
     it('refuses a save after blanking a seeded date', () => {
         const f = useAttestationForm()
@@ -336,32 +337,90 @@ describe('contradictions and affordance honesty', () => {
     })
 })
 
-describe('internal notes are per-milestone server-side', () => {
+describe('notes are per milestone', () => {
     /**
-     * The server reads supportNotes only inside its staged-milestone loop, and SupportData
-     * has no record-level notes field. A notes-only save therefore reported success and
-     * stored nothing -- and the backend's own comment calls that text "often the only
-     * evidence of what the assessor checked".
-     *
-     * Blocked rather than silently dropped. Whether notes should become record-level or the
-     * form should present them per-milestone is a design decision, not something to paper
-     * over here.
+     * The server reads supportNotes only inside its staged-milestone loop and writes it onto
+     * the milestones being staged; SupportMilestoneFact.notes is documented as "the text
+     * that justified [the date]... often the only evidence of what the assessor checked".
+     * The flat supportNotes field is just the END_OF_SUPPORT milestone's notes under another
+     * name. So the form follows the model instead of fighting it.
      */
-    it('refuses a notes-only edit instead of discarding it', () => {
+    it('seeds each milestone note from its own milestone', () => {
         const f = useAttestationForm()
         f.open(existing())
-        f.form.supportNotes = 'called the vendor again on 3 Sep'
-        expect(f.canSubmit()).toBe(false)
-        expect(f.errors().some(e => e.includes('stored against a date'))).toBe(true)
+        expect(f.form.milestoneNotes.END_OF_SUPPORT).toBe('vendor advisory of 3 March')
+        expect(f.form.milestoneNotes.END_OF_LIFE).toBe('')
     })
 
-    it('allows notes alongside a date change, which is where they land', () => {
+    /**
+     * A notes-only edit sends that milestone's OWN date alongside the text, unchanged,
+     * because the server writes notes only onto milestones it is staging. That re-stamps
+     * the milestone's lastAssessed, and that is correct rather than a breach of the diff
+     * rule: revising what you checked IS a re-assessment of that milestone. The rule stays
+     * "never send a date the operator did not touch" -- editing its notes counts as
+     * touching it.
+     */
+    it('sends the milestone date with its notes, and nothing else', () => {
         const f = useAttestationForm()
         f.open(existing())
-        f.form.supportNotes = 'vendor confirmed by email'
-        f.form.endOfSupportDate = '2032-01-01'
+        f.form.milestoneNotes.END_OF_SUPPORT = 'vendor reconfirmed by email on 3 Sep'
+        expect(f.variableSets('c-1')).toEqual([{
+            sbomComponentUuid: 'c-1',
+            endOfSupportDate: '2030-01-01',
+            supportNotes: 'vendor reconfirmed by email on 3 Sep'
+        }])
+    })
+
+    /**
+     * One supportNotes argument per call, so two milestones' notes in a single call would
+     * land on both and cross-contaminate the evidence for each date. Serialised instead:
+     * one call per edited milestone, each its own audit revision.
+     */
+    it('serialises rather than cross-contaminating two milestones', () => {
+        const f = useAttestationForm()
+        f.open(existing({
+            supportMilestones: [
+                { milestoneType: 'END_OF_SUPPORT', date: '2030-01-01', notes: 'a' },
+                { milestoneType: 'END_OF_LIFE', date: '2031-01-01', notes: 'b' }
+            ],
+            endOfLifeDate: '2031-01-01'
+        }))
+        f.form.milestoneNotes.END_OF_SUPPORT = 'a2'
+        f.form.milestoneNotes.END_OF_LIFE = 'b2'
+        const sets = f.variableSets('c-1')
+        expect(sets.length).toBe(2)
+        expect(sets.map(x => x.supportNotes)).toEqual(['a2', 'b2'])
+        expect(sets[0].endOfSupportDate).toBe('2030-01-01')
+        expect(sets[1].endOfLifeDate).toBe('2031-01-01')
+        expect('supportNotes' in sets[0] && 'endOfLifeDate' in sets[0]).toBe(false)
+    })
+
+    // The server has nowhere to put a note for a milestone that does not exist.
+    it('refuses notes on a milestone with no date', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.milestoneNotes.END_OF_LIFE = 'orphan note'
+        expect(f.canSubmit()).toBe(false)
+        expect(f.errors().some(e => e.includes('set the date first'))).toBe(true)
+    })
+
+    it('accepts notes on a milestone whose date is set in the same save', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.endOfLifeDate = '2035-01-01'
+        f.form.milestoneNotes.END_OF_LIFE = 'supplier end-of-sale notice'
         f.confirmJustification()
         expect(f.errors()).toEqual([])
+    })
+
+    it('carries the reason onto every write so each audit revision explains itself', () => {
+        const f = useAttestationForm()
+        f.open(existing({ attestationState: 'WITHDRAWN' }))
+        f.form.reason = 'withdrawal was filed in error'
+        f.form.milestoneNotes.END_OF_SUPPORT = 'reconfirmed'
+        const sets = f.variableSets('c-1')
+        expect(sets.length).toBeGreaterThan(1)
+        for (const set of sets) expect(set.reason).toBe('withdrawal was filed in error')
     })
 })
 

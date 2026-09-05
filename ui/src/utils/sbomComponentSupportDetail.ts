@@ -40,7 +40,11 @@ export const SBOM_COMPONENT_SUPPORT_DETAIL = gql`
                 endOfGuaranteedSupportDate
                 endOfSupportDate
                 endOfLifeDate
-                supportNotes
+                supportMilestones {
+                    milestoneType
+                    date
+                    notes
+                }
             }
         }
     }`

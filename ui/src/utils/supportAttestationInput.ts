@@ -24,7 +24,16 @@ export interface AttestationForm {
     endOfGuaranteedSupportDate: string | null
     endOfSupportDate: string | null
     endOfLifeDate: string | null
-    supportNotes: string
+    /**
+     * Notes PER MILESTONE, keyed by type -- not one component-level box.
+     *
+     * That follows the storage model rather than fighting it: the server writes
+     * supportNotes onto the milestones it is staging, and SupportMilestoneFact.notes is
+     * documented as "the text that justified [the date]... often the only evidence of what
+     * the assessor checked". The flat supportNotes field is just the END_OF_SUPPORT
+     * milestone's notes, left over from the pre-milestone column.
+     */
+    milestoneNotes: Record<SupportMilestoneType, string>
     reason: string
     clearMilestones: SupportMilestoneType[]
     /**
@@ -55,7 +64,11 @@ export function emptyAttestationForm (): AttestationForm {
         endOfGuaranteedSupportDate: null,
         endOfSupportDate: null,
         endOfLifeDate: null,
-        supportNotes: '',
+        milestoneNotes: {
+            END_OF_GUARANTEED_SUPPORT: '',
+            END_OF_SUPPORT: '',
+            END_OF_LIFE: ''
+        },
         reason: '',
         clearMilestones: [],
         clearJustification: false,
@@ -117,9 +130,6 @@ export function attestationVariables (
     else if (text(form.justification) && !unchanged('justification', text(form.justification))) {
         vars.justification = text(form.justification)
     }
-    if (text(form.supportNotes) && !unchanged('supportNotes', text(form.supportNotes))) {
-        vars.supportNotes = text(form.supportNotes)
-    }
     if (text(form.reason)) vars.reason = text(form.reason)
     for (const field of Object.keys(MILESTONE_FIELD_TO_TYPE)) {
         const value = (form as any)[field] as string | null
@@ -175,6 +185,13 @@ export function validateAttestation (form: AttestationForm): string[] {
 /** Nothing to send beyond the id -- the caller should not fire a mutation at all. */
 export function isEmptyAttestation (form: AttestationForm): boolean {
     return Object.keys(attestationVariables('x', form)).length === 1
+}
+
+/** The mutation argument that carries each milestone's date. */
+export const MILESTONE_TYPE_TO_FIELD: Record<SupportMilestoneType, string> = {
+    END_OF_GUARANTEED_SUPPORT: 'endOfGuaranteedSupportDate',
+    END_OF_SUPPORT: 'endOfSupportDate',
+    END_OF_LIFE: 'endOfLifeDate'
 }
 
 // Re-exported so the form and the list agree on the filter type without a second import
