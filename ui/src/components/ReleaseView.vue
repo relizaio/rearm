@@ -496,6 +496,131 @@
                 </n-form>
             </n-modal>
             <n-modal
+                v-model:show="attestModalOpen"
+                preset="card"
+                style="width: 640px;"
+                title="Record support attestation">
+                <div v-if="attestLoading"><n-spin size="small" /> Loading current attestation...</div>
+                <!-- A server that cannot store a full attestation gets a refusal, not a
+                     narrower form. Writing what it CAN take would drop the level and the
+                     justification while reporting success. -->
+                <n-alert v-else-if="attestUnsupported" type="error" :show-icon="true">
+                    This server cannot store a full support attestation: it accepts only the
+                    milestone dates and internal notes, so the level of support and the
+                    justification would be silently dropped. Nothing was written.
+                </n-alert>
+                <div v-else>
+                    <n-alert v-if="attestForm.isUnRetract()" type="warning" :show-icon="true"
+                        style="margin-bottom: 12px;">
+                        This attestation was withdrawn. Saving re-asserts it, so a reason is
+                        required -- the audit row is the only record that the withdrawal was
+                        reversed.
+                    </n-alert>
+
+                    <n-form-item label="Level of support">
+                        <n-select v-model:value="attestForm.form.levelOfSupport" clearable
+                            :options="LEVEL_OPTIONS" placeholder="Not stated" />
+                    </n-form-item>
+                    <n-form-item label="Who the claim is about">
+                        <n-select v-model:value="attestForm.form.party" clearable
+                            :options="PARTY_OPTIONS" placeholder="Unknown" />
+                    </n-form-item>
+                    <n-form-item label="Justification (basis for the claim -- exported)">
+                        <n-input v-model:value="attestForm.form.justification" type="textarea"
+                            :rows="3"
+                            placeholder="What you checked and what you found." />
+                    </n-form-item>
+
+                    <n-form-item label="End of guaranteed support">
+                        <n-input v-model:value="attestForm.form.endOfGuaranteedSupportDate"
+                            placeholder="YYYY-MM-DD" />
+                    </n-form-item>
+                    <n-form-item label="End of support">
+                        <n-input v-model:value="attestForm.form.endOfSupportDate"
+                            placeholder="YYYY-MM-DD" />
+                    </n-form-item>
+                    <n-form-item label="End of life (end of sale)">
+                        <n-input v-model:value="attestForm.form.endOfLifeDate"
+                            placeholder="YYYY-MM-DD" />
+                    </n-form-item>
+                    <n-form-item label="Internal notes (never exported)">
+                        <n-input v-model:value="attestForm.form.supportNotes" type="textarea"
+                            :rows="2" />
+                    </n-form-item>
+
+                    <!-- Confirm-or-revise. The stored basis was written for the dates that
+                         were there at the time; moving one leaves it vouching for a claim it
+                         was never about. -->
+                    <n-alert v-if="attestForm.needsJustificationDecision()" type="warning"
+                        :show-icon="true" style="margin-bottom: 12px;">
+                        A date changed. Does the recorded basis still hold?
+                        <n-button size="tiny" style="margin-left: 8px;"
+                            @click="attestForm.confirmJustification()">
+                            It still holds
+                        </n-button>
+                        <span style="margin-left: 8px; font-size: 12px;">
+                            or edit the justification above to revise it.
+                        </span>
+                    </n-alert>
+
+                    <n-form-item v-if="attestForm.isUnRetract()
+                        || attestForm.form.clearJustification
+                        || attestForm.form.clearMilestones.length"
+                        label="Reason for this edit (audit only, never exported)">
+                        <n-input v-model:value="attestForm.form.reason"
+                            placeholder="Why this change is being made." />
+                    </n-form-item>
+
+                    <!-- SEPARATE REGION, and deliberately far from the clear controls below.
+                         This RECORDS a basis and nothing else; clearing REMOVES one. They
+                         look alike in the data and are opposites in meaning. -->
+                    <n-card size="small" title="Assessed, nothing published"
+                        style="margin-top: 16px;">
+                        <div style="font-size: 12px; margin-bottom: 8px;">
+                            Use when you asked and the supplier would not state a level. This
+                            records your basis alone -- no level, no dates -- which is a
+                            complete disclosure of what you actually know.
+                        </div>
+                        <n-input-group>
+                            <n-input v-model:value="attestNothingPublishedText"
+                                placeholder="e.g. supplier declined to state a support level" />
+                            <n-button :disabled="!attestNothingPublishedText.trim()"
+                                @click="applyNothingPublished">Use this</n-button>
+                        </n-input-group>
+                    </n-card>
+
+                    <n-card size="small" title="Remove recorded values"
+                        style="margin-top: 24px;">
+                        <div style="font-size: 12px; margin-bottom: 8px;">
+                            Removing is destructive and needs a reason above.
+                        </div>
+                        <n-checkbox v-model:checked="attestForm.form.clearJustification">
+                            Clear the justification
+                        </n-checkbox>
+                        <n-form-item label="Clear dates" style="margin-top: 8px;">
+                            <n-select v-model:value="attestForm.form.clearMilestones"
+                                multiple clearable :options="MILESTONE_CLEAR_OPTIONS"
+                                placeholder="None" />
+                        </n-form-item>
+                    </n-card>
+
+                    <n-alert v-for="e in attestForm.errors()" :key="e" type="error"
+                        :show-icon="false" style="margin-top: 10px; font-size: 12px;">
+                        {{ e }}
+                    </n-alert>
+                </div>
+                <template #footer>
+                    <n-space justify="end">
+                        <n-button size="small" @click="attestModalOpen = false">Cancel</n-button>
+                        <n-button size="small" type="primary"
+                            :disabled="attestUnsupported || attestLoading || attestSaving
+                                || !attestForm.canSubmit()"
+                            :loading="attestSaving"
+                            @click="saveAttestation">Save</n-button>
+                    </n-space>
+                </template>
+            </n-modal>
+            <n-modal
                 v-model:show="showDownloadArtifactModal"
                 title='Download Artifact'
                 preset="dialog"
@@ -1337,6 +1462,9 @@ import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
+import { useAttestationForm } from '@/utils/useAttestationForm'
+import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
+import { setSbomComponentSupport } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
@@ -1347,7 +1475,7 @@ import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regu
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, supportTag } from '@/utils/supportStatusTag'
-import { NAlert, NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NAlert, NBadge, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -2956,6 +3084,85 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
     await loadSbomCoverage()
 }
 
+// Per-component attestation form (FDA-Readiness-1 PR5.3).
+//
+// The rules about when a save is allowed live in useAttestationForm, outside this file, so
+// they can be tested; what follows is opening, saving and refreshing.
+const attestForm = useAttestationForm()
+const attestModalOpen: Ref<boolean> = ref(false)
+const attestRow: Ref<any> = ref(null)
+const attestLoading: Ref<boolean> = ref(false)
+const attestSaving: Ref<boolean> = ref(false)
+const attestUnsupported: Ref<boolean> = ref(false)
+const attestNothingPublishedText: Ref<string> = ref('')
+
+const LEVEL_OPTIONS = [
+    { label: 'Actively maintained', value: 'ACTIVELY_MAINTAINED' },
+    { label: 'No longer maintained', value: 'NO_LONGER_MAINTAINED' },
+    { label: 'Abandoned', value: 'ABANDONED' }
+]
+// The party is an attribute OF the attestation -- who the claim is about, first party or
+// third -- so it belongs inside the form rather than beside it as its own control.
+const PARTY_OPTIONS = [
+    { label: 'First party (our own component)', value: 'MANUFACTURER' },
+    { label: 'Third party (someone else\'s project)', value: 'SUPPLIER' },
+    { label: 'Third party, via another channel', value: 'THIRD_PARTY' }
+]
+const MILESTONE_CLEAR_OPTIONS = [
+    { label: 'End of guaranteed support', value: 'END_OF_GUARANTEED_SUPPORT' },
+    { label: 'End of support', value: 'END_OF_SUPPORT' },
+    { label: 'End of life', value: 'END_OF_LIFE' }
+]
+
+async function openAttestForm (row: any) {
+    attestRow.value = row
+    attestUnsupported.value = false
+    attestNothingPublishedText.value = ''
+    attestModalOpen.value = true
+    attestLoading.value = true
+    try {
+        const res = await loadSbomComponentSupportDetail(
+            graphqlClient as any, row.component?.uuid || row.sbomComponentUuid)
+        if (res.kind === 'unsupported') {
+            attestUnsupported.value = true
+            return
+        }
+        attestForm.open(res.attestation)
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        attestModalOpen.value = false
+    } finally {
+        attestLoading.value = false
+    }
+}
+
+function applyNothingPublished () {
+    attestForm.assessedNothingPublished(attestNothingPublishedText.value)
+    attestNothingPublishedText.value = ''
+}
+
+async function saveAttestation () {
+    // Guarded here as well as by the disabled button: a double-click on OK is the classic
+    // way a modal fires twice, and the second write would bump the audit revision again.
+    if (attestSaving.value || !attestForm.canSubmit()) return
+    attestSaving.value = true
+    try {
+        await setSbomComponentSupport(graphqlClient as any,
+            attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid,
+            attestForm.form)
+        attestModalOpen.value = false
+        notify('success', 'Saved', 'Support attestation recorded.')
+        // forceRefresh, because the gauge only re-reads with the list -- and an attestation
+        // is exactly the thing that moves the number above the table. Without this the write
+        // succeeds and the gauge stays stale, which reads to an operator as a failure.
+        await loadSbomComponents(true)
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        attestSaving.value = false
+    }
+}
+
 // Release-scoped support-disclosure gauge (FDA-Readiness-1).
 //
 // Sourced from sbomComponentSupportCoverage(orgUuid, releaseUuid) and NOTHING ELSE. In
@@ -3175,6 +3382,13 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
         title: 'Actions',
         render: (row: any) => {
             const els: any[] = [h(NButton, { size: 'small', onClick: () => openSbomComponentGraph(row) }, () => 'View graph')]
+            // Root components are the release's own coordinate, never a third-party
+            // dependency to disclose -- the server skips them and the gauge excludes them,
+            // so offering the action would be offering a no-op.
+            if (isWritable.value && !row.component?.isRoot) {
+                els.push(h(NButton, { size: 'small', type: 'primary', ghost: true,
+                    onClick: () => openAttestForm(row) }, () => 'Attest'))
+            }
             return h('div', { style: 'display: flex; gap: 6px;' }, els)
         }
     }
