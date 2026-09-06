@@ -356,10 +356,19 @@ export function useBulkAttest () {
                 progress.value = Math.min(i + slice.length, ids.length)
             }
         } catch (err: any) {
-            // A write must never degrade. The CE mirror does not declare this mutation at
-            // all, so a drifted server means the sweep cannot be performed -- not that it
-            // should be attempted narrower. Named, so the operator knows it is the server
-            // and not their input.
+            // A write must never degrade: a drifted server means the sweep cannot be
+            // performed, not that it should be attempted narrower. Named, so the operator
+            // knows it is the server and not their input.
+            //
+            // KEPT after the CE schema sync, unlike the sibling drift paths that were deleted
+            // with it. Those existed only because CE lacked a field and are unreachable now
+            // that it does not. This one carries something the sync did not resolve: it is
+            // the only place that marks an outcome UNRETRYABLE. Every other failure here is
+            // worth re-running -- already-attested components come back SKIPPED_ATTESTED --
+            // but a server that cannot accept the mutation never will, and telling an
+            // operator "re-running completes the remainder" about a write that can never
+            // succeed is worse than saying nothing. That reasoning is about drift in
+            // general, not about CE, so it survives the thing that prompted it.
             if (isSchemaDriftError(err)) {
                 out.aborted = true
                 out.error = 'This server cannot perform a bulk attestation: it does not'
