@@ -122,6 +122,12 @@ ociArtifactService:
   registryHost: registry.relizahub.com
   registryUser: changeme # change
   registryToken: changeme # change
+  # true  -- the chart creates oci-registry-secrets from registryUser/registryToken above.
+  # false -- YOU must provide a Secret named oci-registry-secrets with keys
+  #          REGISTRY_USERNAME and REGISTRY_TOKEN. The service has no anonymous mode: it
+  #          exits fatally on empty credentials, so if that Secret is absent the pod will
+  #          not start, and kubernetes will say which Secret is missing. Prefer
+  #          bundledRegistry below if you have no external registry.
   create_secret_in_chart: true
   # Bundled OCI registry (zot), opt-in. Mirrors the compose stack's
   # bundled registry: turn this on and artifacts are stored in-cluster,
