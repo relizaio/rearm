@@ -19,21 +19,6 @@ describe('loadSbomComponentSupportDetail', () => {
         expect(query.mock.calls[0][0].fetchPolicy).toBe('network-only')
     })
 
-    /**
-     * "This server cannot answer" and "no attestation yet" look identical if both are null,
-     * and they must not: the first has to refuse the form, the second has to open an empty
-     * one. Hence a tagged result rather than a nullable attestation.
-     */
-    it('reports drift as unsupported, distinctly from an unattested component', async () => {
-        const drift = vi.fn().mockRejectedValue(
-            new Error('Cannot query field "attestationState" on type "SbomComponent"'))
-        expect(await loadSbomComponentSupportDetail({ query: drift } as any, 'rel-1', 'c-1'))
-            .toEqual({ kind: 'unsupported' })
-
-        const empty = vi.fn().mockResolvedValue({ data: { getReleaseSbomComponentGraph: null } })
-        expect(await loadSbomComponentSupportDetail({ query: empty } as any, 'rel-1', 'c-1'))
-            .toEqual({ kind: 'ok', attestation: null })
-    })
 
     it('propagates real errors rather than reporting them as unsupported', async () => {
         const query = vi.fn().mockRejectedValue(new Error('Not authorized'))

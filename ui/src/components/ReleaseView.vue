@@ -679,14 +679,6 @@
                 style="width: 640px;"
                 title="Record support attestation">
                 <div v-if="attestLoading"><n-spin size="small" /> Loading current attestation...</div>
-                <!-- A server that cannot store a full attestation gets a refusal, not a
-                     narrower form. Writing what it CAN take would drop the level and the
-                     justification while reporting success. -->
-                <n-alert v-else-if="attestUnsupported" type="error" :show-icon="true">
-                    This server cannot store a full support attestation: it accepts only the
-                    milestone dates and internal notes, so the level of support and the
-                    justification would be silently dropped. Nothing was written.
-                </n-alert>
                 <div v-else>
                     <n-alert v-if="attestForm.isUnRetract()" type="warning" :show-icon="true"
                         style="margin-bottom: 12px;">
@@ -809,7 +801,7 @@
                     <n-space justify="end">
                         <n-button size="small" @click="cancelAttest">Cancel</n-button>
                         <n-button size="small" type="primary"
-                            :disabled="attestUnsupported || attestLoading || attestSaving
+                            :disabled="attestLoading || attestSaving
                                 || !attestForm.canSubmit()"
                             :loading="attestSaving"
                             @click="saveAttestation">Save</n-button>
@@ -3445,7 +3437,6 @@ const attestModalOpen: Ref<boolean> = ref(false)
 const attestRow: Ref<any> = ref(null)
 const attestLoading: Ref<boolean> = ref(false)
 const attestSaving: Ref<boolean> = ref(false)
-const attestUnsupported: Ref<boolean> = ref(false)
 const attestNothingPublishedText: Ref<string> = ref('')
 
 const LEVEL_OPTIONS: Array<{ label: string, value: LevelOfSupport }> = [
@@ -3485,7 +3476,6 @@ async function openAttestForm (row: any) {
     // An attestation recorded against the wrong component is silent and near-undetectable.
     const gen = ++attestGen
     attestRow.value = row
-    attestUnsupported.value = false
     attestNothingPublishedText.value = ''
     attestModalOpen.value = true
     attestLoading.value = true
@@ -3494,10 +3484,6 @@ async function openAttestForm (row: any) {
             graphqlClient as any, updatedRelease.value.uuid,
             row.component?.uuid || row.sbomComponentUuid)
         if (gen !== attestGen) return
-        if (res.kind === 'unsupported') {
-            attestUnsupported.value = true
-            return
-        }
         attestForm.open(res.attestation)
     } catch (err: any) {
         if (gen !== attestGen) return
