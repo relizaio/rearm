@@ -1257,7 +1257,6 @@
                                 placeholder="Search by canonical purl"
                                 clearable
                                 size="small"
-                                :disabled="sbomDegraded"
                                 style="width: 320px;"
                             />
                             <n-select
@@ -1266,14 +1265,12 @@
                                 @update:value="onSbomFilterChange"
                                 size="small"
                                 style="width: 260px;"
-                                :disabled="sbomDegraded"
                                 :options="sbomAttestationFilterOptions"
                             />
                             <n-button
                                 v-if="sbomViewMode === 'list' && isWritable
                                     && sbomAppliedFilter === 'UNATTESTED'"
                                 size="small" type="primary" ghost
-                                :disabled="sbomDegraded"
                                 @click="openBulkAttest">
                                 Attest all shown
                             </n-button>
@@ -1340,10 +1337,6 @@
                                     Showing {{ sbomComponents.length }} of {{ sbomFilteredTotal }}
                                     <template v-if="sbomFilterIsActive">matching</template>
                                     <template v-else>components</template>
-                                    <template v-if="sbomDegraded">
-                                        &mdash; this server cannot filter or page SBOM
-                                        components, so the whole release is shown unfiltered.
-                                    </template>
                                 </span>
                                 <n-button
                                     v-if="sbomHasMore"
@@ -3266,7 +3259,6 @@ const sbomSearchQueryInput = sbomPaging.searchInput
 const sbomAttestationFilter = sbomPaging.filter
 const sbomAppliedFilter = sbomPaging.appliedFilter
 const sbomAppliedSearch = sbomPaging.appliedSearch
-const sbomDegraded = sbomPaging.degraded
 
 // Labels key off the APPLIED filter, never the control: during the debounce and any
 // in-flight request they differ, and "3 matching" over unfiltered rows is a claim about the

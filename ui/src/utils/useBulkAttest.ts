@@ -231,19 +231,6 @@ export function useBulkAttest () {
                 const page = await loadSbomComponentsPage(client, releaseUuid, {
                     attestation, search, limit: BULK_WALK_LIMIT, after
                 })
-                // A DEGRADED page is the whole release, unfiltered -- the loader falls back
-                // to the unpaged query when the server cannot page or filter. Walking it
-                // would turn "sweep the 800 undisclosed matching log4j" into "sweep
-                // everything", and the confirmation count would be honest about the size
-                // while being wrong about WHICH. The cap does not catch this: the set is a
-                // legitimate size, just the wrong set. Abort.
-                if (page.degraded) {
-                    refused = true
-                    error.value = 'This server cannot filter or page SBOM components, so a'
-                        + ' bulk sweep here would attest every component in the release'
-                        + ' rather than the ones you selected. Bulk attest is unavailable.'
-                    break
-                }
                 if (!ids.length) backlogTotal.value = page.totalCount
                 // Refused on the FIRST page when the server already says the set is too big,
                 // rather than after eleven round trips that fetch full component rows to

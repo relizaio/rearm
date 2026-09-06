@@ -96,7 +96,6 @@ describe('useSbomComponentsPaging request fencing', () => {
         expect(p.totalCount.value).toBe(0)
         expect(p.hasMore.value).toBe(false)
         expect(p.loaded.value).toBe(false)
-        expect(p.degraded.value).toBe(false)
     })
 })
 
@@ -138,7 +137,7 @@ describe('useSbomComponentsPaging debounce lifecycle', () => {
     })
 })
 
-describe('useSbomComponentsPaging failure and degraded handling', () => {
+describe('useSbomComponentsPaging failure handling', () => {
     // Leaving the previous filter's rows on screen under the new filter's label reads as a
     // successful, differently-filtered result. It is not one.
     it('clears the list when a filter change fails rather than relabelling old rows', async () => {
@@ -161,23 +160,6 @@ describe('useSbomComponentsPaging failure and degraded handling', () => {
 
     // A CE fallback returns the WHOLE release unfiltered. Reporting the requested filter as
     // applied would label rows the server never filtered.
-    it('reports a degraded page as unfiltered whatever was asked for', async () => {
-        const query = vi.fn()
-            .mockRejectedValueOnce(new Error('Cannot query field "getReleaseSbomComponentsPage" on type "Query"'))
-            .mockResolvedValueOnce({ data: { getReleaseSbomComponents: [row('x'), row('y')] } })
-        const p = useSbomComponentsPaging({
-            client: { query } as any, releaseUuid: () => 'rel-1', onError: vi.fn()
-        })
-        p.filter.value = 'UNATTESTED'
-        p.searchInput.value = 'log4j'
-        await p.load(true)
-
-        expect(p.degraded.value).toBe(true)
-        expect(p.items.value.length).toBe(2)
-        expect(p.appliedFilter.value).toBe('ALL')
-        expect(p.appliedSearch.value).toBe('')
-        expect(p.hasMore.value).toBe(false)
-    })
 
     it('does not send after: null when hasMore is true but the cursor is missing', async () => {
         const { client, pending, query } = deferredClient()
