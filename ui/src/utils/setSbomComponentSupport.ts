@@ -1,7 +1,6 @@
 // The per-component attestation write.
 
 import gql from 'graphql-tag'
-import { isSchemaDriftError } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
 
 /** DriftFallbackClient declares only query; the write needs mutate. */
@@ -57,19 +56,6 @@ export const SET_SBOM_COMPONENT_SUPPORT = gql`
         }
     }`
 
-/**
- * Names what a narrower server cannot store, rather than saying "unsupported".
- *
- * An operator told "this server does not support that" has no idea whether to retry, work
- * around it, or escalate. An operator told the level of support and the justification would
- * not be saved knows immediately that the thing they came to record is the thing that
- * cannot be recorded.
- */
-export const DRIFT_REFUSAL =
-    'This server cannot store a full support attestation: it accepts only the milestone'
-    + ' dates and internal notes, so the level of support and the justification would be'
-    + ' silently dropped. Nothing was written. Upgrade the backend before attesting.'
-
 export interface AttestationResult {
     uuid: string
     supportStatus: string | null
@@ -93,14 +79,9 @@ export async function setSbomComponentSupportVars (
     client: MutationClient,
     variables: Record<string, unknown>
 ): Promise<AttestationResult> {
-    try {
-        const resp = await client.mutate({
-            mutation: SET_SBOM_COMPONENT_SUPPORT,
-            variables
-        })
-        return (resp.data as any)?.setSbomComponentSupport
-    } catch (err: any) {
-        if (isSchemaDriftError(err)) throw new Error(DRIFT_REFUSAL)
-        throw err
-    }
+    const resp = await client.mutate({
+        mutation: SET_SBOM_COMPONENT_SUPPORT,
+        variables
+    })
+    return (resp.data as any)?.setSbomComponentSupport
 }
