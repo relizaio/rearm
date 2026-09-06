@@ -118,6 +118,19 @@ manages it outside the chart should not be blocked from starting.
       name: {{ $zotSecret }}
       key: REGISTRY_TOKEN
 {{- else }}
+{{- /* NOT optional. The oci-artifact service exits fatally when REGISTRY_USERNAME,
+     REGISTRY_TOKEN or REGISTRY_HOST is empty ("REGISTRY_USERNAME or REGISTRY_TOKEN or
+     REGISTRY_HOST not set", main.go), so there is no configuration in which an absent
+     secret is survivable -- it does not support anonymous registries.
+
+     With optional: true, a missing oci-registry-secrets does not stop the pod starting:
+     it starts with empty credentials and dies, and keeps dying. Observed in a live
+     deployment at 1560 restarts, showing only CrashLoopBackOff, with the actual cause
+     (create_secret_in_chart false and no externally-managed secret) visible nowhere
+     except the container log.
+
+     Required instead, so kubernetes reports the real fault on the pod:
+     CreateContainerConfigError, secret "oci-registry-secrets" not found. */}}
 - name: REGISTRY_HOST
   value: {{ .Values.ociArtifactService.registryHost }}
 - name: REGISTRY_USERNAME
@@ -125,13 +138,11 @@ manages it outside the chart should not be blocked from starting.
     secretKeyRef:
       name: oci-registry-secrets
       key: REGISTRY_USERNAME
-      optional: true
 - name: REGISTRY_TOKEN
   valueFrom:
     secretKeyRef:
       name: oci-registry-secrets
       key: REGISTRY_TOKEN
-      optional: true
 {{- end }}
 {{- end -}}
 
