@@ -158,9 +158,6 @@ describe('useSbomComponentsPaging failure handling', () => {
         expect(onError).toHaveBeenCalledOnce()
     })
 
-    // A CE fallback returns the WHOLE release unfiltered. Reporting the requested filter as
-    // applied would label rows the server never filtered.
-
     it('does not send after: null when hasMore is true but the cursor is missing', async () => {
         const { client, pending, query } = deferredClient()
         const p = useSbomComponentsPaging({ client, releaseUuid: () => 'rel-1', onError: vi.fn() })

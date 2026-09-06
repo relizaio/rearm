@@ -44,9 +44,10 @@ export const SBOM_COMPONENT_SUPPORT_DETAIL = gql`
     }`
 
 /**
- * Kept as a tagged shape rather than collapsed to the attestation, because "no attestation
- * yet" is a null the caller must be able to tell from a failure -- they look alike and the
- * form seeds differently.
+ * One arm, and the tag is vestigial: failures throw now, so nothing discriminates on `kind`
+ * and the nullable attestation carries the whole signal. Left rather than flattened because
+ * every caller reads `.attestation` either way -- but do not read the tag as implying there
+ * is another case.
  */
 export type SupportDetailResult =
     | { kind: 'ok', attestation: ExistingAttestation | null }
@@ -57,10 +58,10 @@ export async function loadSbomComponentSupportDetail (
     sbomComponentUuid: string
 ): Promise<SupportDetailResult> {
     const resp = await client.query({
-            query: SBOM_COMPONENT_SUPPORT_DETAIL,
-            variables: { releaseUuid, sbomComponentUuid },
-            // Never cached: the form seeds from this, and editing a stale copy is how one
-            // operator silently overwrites another's attestation under PATCH semantics.
+        query: SBOM_COMPONENT_SUPPORT_DETAIL,
+        variables: { releaseUuid, sbomComponentUuid },
+        // Never cached: the form seeds from this, and editing a stale copy is how one
+        // operator silently overwrites another's attestation under PATCH semantics.
         fetchPolicy: 'network-only'
     })
     const c = (resp.data as any)?.getReleaseSbomComponentGraph?.component

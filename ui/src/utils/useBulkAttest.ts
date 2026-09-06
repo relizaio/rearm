@@ -2,7 +2,7 @@ import { ref, type Ref } from 'vue'
 import gql from 'graphql-tag'
 import { loadSbomComponentsPage } from './sbomComponentsQuery'
 import type { SupportAttestationFilter } from './sbomComponentsQuery'
-import { isSchemaDriftError } from './graphqlDriftFallback'
+import { classifyGraphqlError, isSchemaDriftError } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
 import type { MutationClient } from './setSbomComponentSupport'
 import type { LevelOfSupport, SupportParty } from './supportAttestationInput'
@@ -360,16 +360,24 @@ export function useBulkAttest () {
             // performed, not that it should be attempted narrower. Named, so the operator
             // knows it is the server and not their input.
             //
-            // KEPT after the CE schema sync, unlike the sibling drift paths that were deleted
-            // with it. Those existed only because CE lacked a field and are unreachable now
-            // that it does not. This one carries something the sync did not resolve: it is
-            // the only place that marks an outcome UNRETRYABLE. Every other failure here is
-            // worth re-running -- already-attested components come back SKIPPED_ATTESTED --
-            // but a server that cannot accept the mutation never will, and telling an
-            // operator "re-running completes the remainder" about a write that can never
-            // succeed is worse than saying nothing. That reasoning is about drift in
-            // general, not about CE, so it survives the thing that prompted it.
-            if (isSchemaDriftError(err)) {
+            // KEPT after the CE schema sync, unlike the sibling drift paths deleted with it.
+            // Those existed only because CE lacked a field and are unreachable now that it
+            // does not. This one survives because it is the only place an ATTEMPTED WRITE is
+            // marked unretryable: every other failure here is worth re-running -- already
+            // attested components come back SKIPPED_ATTESTED -- but a server that cannot
+            // accept the mutation never will, and "re-running completes the remainder" about
+            // a write that can never succeed is worse than saying nothing.
+            //
+            // NARROWED to a classified validation verdict, deliberately not isSchemaDriftError.
+            // That helper also returns true for a BARE HTTP 400, because per GraphQL-over-HTTP
+            // 400 is the validation status even when an edge proxy has stripped the body --
+            // sound for a READ that can retry narrower, wrong here. This deployment has a WAF
+            // in front of /graphql that does exactly that stripping, and on such a 400 this
+            // branch would assert the server lacks the mutation AND tell the operator not to
+            // retry: a durable capability claim, plus discouragement from the one action that
+            // fixes it. An unreadable 400 falls through to the generic branch below, which
+            // keeps what landed and stays retryable.
+            if (classifyGraphqlError(err) === 'validation') {
                 out.aborted = true
                 out.error = 'This server cannot perform a bulk attestation: it does not'
                     + ' support the bulk mutation, so nothing further was written.'

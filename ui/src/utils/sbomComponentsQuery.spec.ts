@@ -47,7 +47,19 @@ describe('loadSbomComponentsPage', () => {
             items: [{ uuid: 'a' }], totalCount: 312, endCursor: 'c-1', hasMore: true
         })
         expect(await loadSbomComponentsPage(client, 'rel-1')).toEqual({
-            items: [{ uuid: 'a' }], totalCount: 312, endCursor: 'c-1', hasMore: true,
+            items: [{ uuid: 'a' }], totalCount: 312, endCursor: 'c-1', hasMore: true
+        })
+    })
+
+    /**
+     * The defensive coalescing survives the fallback's removal, so its test should have too:
+     * only the `degraded: false` expectation needed dropping. Its sibling in
+     * releaseSupportCoverage.spec.ts kept the equivalent case.
+     */
+    it('coalesces an absent page to an empty one rather than to undefined', async () => {
+        const { client } = clientReturning(null)
+        expect(await loadSbomComponentsPage(client, 'rel-1')).toEqual({
+            items: [], totalCount: 0, endCursor: null, hasMore: false
         })
     })
 
@@ -59,10 +71,6 @@ describe('loadSbomComponentsPage', () => {
         })
         expect((await loadSbomComponentsPage(client, 'rel-1')).hasMore).toBe(false)
     })
-
-
-    // The CE mirror lacks the paged query until the schema sync lands, and this UI ships in
-    // the CE repo. Without the fallback the SBOM tab renders a toolbar over nothing there.
 
     // A rejected cursor is NOT schema drift. Retrying it as a full unfiltered reload would
     // turn a broken walk into a silently different result set.

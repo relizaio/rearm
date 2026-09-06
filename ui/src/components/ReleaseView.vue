@@ -3302,7 +3302,7 @@ const bulkForm: BulkAttestInput = reactive(emptyBulkForm())
 /**
  * A collected selection carries the filter and search it was walked under. Kept WITH the
  * ids rather than read live at confirm and submit time: the search debounce can reassign
- * the applied filter behind the open modal, and a degraded page resets it to ALL. Reading
+ * the applied filter behind the open modal. Reading
  * it live would let the confirmation describe one set while writing another, and would
  * evaluate the concurrent-write check against a filter the walk never used.
  */

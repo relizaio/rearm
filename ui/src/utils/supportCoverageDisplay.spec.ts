@@ -78,7 +78,7 @@ describe('coverageDisplay', () => {
         const d = coverageDisplay(null)
         expect(d.warn).toBe(false)
         expect(d.tone).toBe('default')
-        expect(d.headline).toContain('No support coverage')
+        expect(d.headline).toContain('has not loaded yet')
         expect(d.exportNote).toBeNull()
     })
 

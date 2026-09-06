@@ -40,8 +40,9 @@ const EXPORT_NOTE: Record<Exclude<SupportExportState, 'ENABLED'>, string> = {
  * and it is precisely what a default-off export setting produces. A green gauge with a small
  * grey label beside it would be the failure rendered as success.
  *
- * @param coverage null before the first load resolves, and when the org has no coverage row
- *                 at all -- see loadReleaseSupportCoverage.
+ * @param coverage null ONLY before the first load resolves. The loader throws rather than
+ *                 returning null for a malformed answer, so this branch can no longer be
+ *                 reached by a failure -- which is what lets it read as benign.
  * @param error    set when the request FAILED, which is a different thing and must stay
  *                 separate: folding them together would report "no number available" for a
  *                 request that merely 502'd, hiding that a retry works.
@@ -63,7 +64,7 @@ export function coverageDisplay (
     if (!coverage) {
         return {
             tone: 'default',
-            headline: 'No support coverage to show for this release yet.',
+            headline: 'Support coverage has not loaded yet.',
             exportNote: null,
             // Not a warning: nothing is being claimed, correctly or otherwise. An operator
             // seeing this knows they have no number, which is different from having a bad

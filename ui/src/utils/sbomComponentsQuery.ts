@@ -15,15 +15,13 @@ import type { DriftFallbackClient } from './graphqlDriftFallback'
 export type SupportAttestationFilter = 'ALL' | 'ATTESTED' | 'UNATTESTED'
 
 /**
- * Everything the CE mirror schema can serve today.
+ * The base component sub-selection.
  *
- * The CORE/FULL split is back, for exactly the reason it existed before #311 removed it as
- * "no longer needed": deviceSupportRisk is Pro-only until the CE schema sync lands, and this
- * component ships IN the CE repo. Verified rather than assumed -- supportStatus,
- * supportSource and endOfSupportDate DO exist on CE's SbomComponent; deviceSupportRisk is
- * the single field that does not.
+ * Split from the full one while deviceSupportRisk was Pro-only and CE needed a narrower
+ * query. Both schemas carry every field here now, so the split no longer guards an edition
+ * difference -- it is kept only because FULL is defined by APPENDING to it, which is what
+ * makes an added field impossible to lose (see the note on COMPONENT_FULL_SELECTION).
  */
-/** The component sub-selection CE can serve. */
 const COMPONENT_CORE_SELECTION = `
                 uuid
                 canonicalPurl
@@ -42,7 +40,7 @@ const COMPONENT_CORE_SELECTION = `
  * match, which is a silent failure waiting to happen: reformat the selection and the replace
  * no-ops, FULL becomes identical to CORE, deviceSupportRisk vanishes from every query, and
  * nothing fails -- the field simply stops being requested and the device-risk column goes
- * quietly blank. Appending cannot fail that way. The spec also asserts FULL !== CORE.
+ * quietly blank. Appending cannot fail that way.
  *
  * A caller served CORE must treat an absent deviceSupportRisk as "not checked", never as
  * "not at risk" -- isDeviceRiskFlagged already does, since undefined is not a flagged value.
@@ -100,7 +98,6 @@ export const SBOM_COMPONENTS_QUERY = gql`
         getReleaseSbomComponents(releaseUuid: $releaseUuid) {${SBOM_COMPONENT_FIELDS}
         }
     }`
-
 
 export interface SbomComponentsPage {
     items: any[]

@@ -184,6 +184,25 @@ describe('the sweep is recorded as one action', () => {
      * the sweep -- and that instant is what the exported BOM publishes as "a human looked,
      * and when". Spread instants describe a stream of individual assessments.
      */
+    /**
+     * NOT a drift assertion -- a design guard on the client document, and it outlived the CE
+     * sync that removed its file-mates. supportNotes is per-component EVIDENCE: what someone
+     * checked about THAT component. Fanning one string across a sweep would attach the same
+     * evidence to hundreds of components nobody looked at individually, which is worse than
+     * no evidence because it reads as work that was done. The mutation accepts the argument
+     * on both schemas, so nothing but this stops it being sent.
+     */
+    it('does not send supportNotes, whatever the caller passes', async () => {
+        const { client, mutate } = scripted([])
+        await useBulkAttest().submit(client, ids(3), {
+            levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'j', reason: 'r',
+            supportNotes: 'checked the upstream release notes'
+        } as any)
+        const vars = mutate.mock.calls[0][0].variables
+        expect(Object.keys(vars)).not.toContain('supportNotes')
+        expect(JSON.stringify(vars)).not.toContain('upstream release notes')
+    })
+
     it('sends the same assessedAt on every batch', async () => {
         const { client, mutate } = scripted([])
         const b = useBulkAttest()

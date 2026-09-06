@@ -19,8 +19,7 @@ describe('loadSbomComponentSupportDetail', () => {
         expect(query.mock.calls[0][0].fetchPolicy).toBe('network-only')
     })
 
-
-    it('propagates real errors rather than reporting them as unsupported', async () => {
+    it('propagates real errors rather than swallowing them', async () => {
         const query = vi.fn().mockRejectedValue(new Error('Not authorized'))
         await expect(loadSbomComponentSupportDetail({ query } as any, 'rel-1', 'c-1'))
             .rejects.toThrow('Not authorized')

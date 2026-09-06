@@ -58,9 +58,14 @@ export async function loadReleaseSupportCoverage (
         fetchPolicy: 'network-only'
     })
     const cov = (resp.data as any)?.sbomComponentSupportCoverage
-    // The query is nullable: an org with no components answers with no coverage row rather
-    // than zeros, and that is not the same as a failure.
-    if (!cov) return null
+    // A THROW, not a null. The field is nullable on the wire, but the resolver always builds
+    // a row -- an org with no components answers 0/0, and a bad org or a release outside it
+    // is an error, never an empty answer. So nothing here means the response was malformed,
+    // which is a failure and must reach the caller as one. Returning null would render it
+    // through the display's "nothing to show yet" branch: a failure dressed as a benign
+    // state, which is exactly what the note on coverageDisplay's error argument warns
+    // against.
+    if (!cov) throw new Error('the server returned no support coverage for this release')
     return {
         total: cov.total ?? 0,
         attested: cov.attested ?? 0,

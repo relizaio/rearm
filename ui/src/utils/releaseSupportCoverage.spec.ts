@@ -17,15 +17,22 @@ describe('loadReleaseSupportCoverage', () => {
             .toEqual({ total: 10, attested: 3, exportState: 'DISABLED' })
     })
 
-
-    it('returns null when the field is absent rather than inventing zeroes', async () => {
+    /**
+     * THROWS on an absent field -- it does not invent zeroes, and it no longer returns null
+     * either. The resolver always builds a row (an org with no components answers 0/0, and a
+     * bad org or a foreign release is an error), so nothing here means a malformed response,
+     * which is a failure. Returning null would route it to the display's "has not loaded yet"
+     * branch: a failure rendered as a benign state.
+     */
+    it('throws when the field is absent rather than inventing zeroes or a null', async () => {
         const query = vi.fn().mockResolvedValue({ data: {} })
-        expect(await loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1')).toBeNull()
+        await expect(loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1'))
+            .rejects.toThrow(/no support coverage/)
     })
 
     // Auth, transport, a rejected org: real errors, and the caller must see them. Swallowing
     // them as "unavailable" would render a missing-data state over a broken request.
-    it('propagates non-drift errors', async () => {
+    it('propagates errors', async () => {
         const query = vi.fn().mockRejectedValue(new Error('Not authorized'))
         await expect(loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1'))
             .rejects.toThrow('Not authorized')
