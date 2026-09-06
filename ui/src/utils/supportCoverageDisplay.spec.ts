@@ -69,11 +69,16 @@ describe('coverageDisplay', () => {
 
     // Absent is "not checked", never a default. And it is not an alarm: no claim is being
     // made, and treating a missing number as a warning trains operators to ignore real ones.
-    it('reports an unavailable gauge as unavailable, not as a state', () => {
+    /**
+     * No coverage is not a coverage state. It must not render as a number, and it must not
+     * render as an alarm either -- an operator who learns to ignore this would ignore the
+     * DISABLED-export warning that looks similar and means something.
+     */
+    it('reports an absent gauge as absent, not as a state and not as a warning', () => {
         const d = coverageDisplay(null)
         expect(d.warn).toBe(false)
         expect(d.tone).toBe('default')
-        expect(d.headline).toContain('not available')
+        expect(d.headline).toContain('No support coverage')
         expect(d.exportNote).toBeNull()
     })
 

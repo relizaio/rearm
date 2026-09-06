@@ -1,7 +1,6 @@
 // FDA-Readiness-1: release-scoped support-disclosure coverage, and whether exports carry it.
 
 import gql from 'graphql-tag'
-import { isSchemaDriftError } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
 
 /**
@@ -39,13 +38,12 @@ export interface ReleaseSupportCoverage {
 /**
  * The release's coverage, or null when this server cannot answer the question.
  *
- * NO FALLBACK QUERY HERE, and that is a deliberate difference from the component list. The
- * CE mirror's sbomComponentSupportCoverage takes only orgUuid -- it has no releaseUuid
- * argument at all -- so the only thing a CE server could answer is the ORG-WIDE number.
- * That is a different question, not a degraded answer to this one: "34 of 1,240 components
- * across your whole organisation" rendered against one release would be confidently wrong in
- * a way an operator has no way to detect. Returning null and letting the caller say "not
- * available on this server" is the honest failure.
+ * NO FALLBACK QUERY HERE, and the reason outlives the CE schema lag that first prompted it:
+ * an org-wide coverage number rendered against one release -- "34 of 1,240 components across
+ * your whole organisation" -- would be confidently wrong in a way an operator has no way to
+ * detect. A narrower answer to a different question is not a degraded answer to this one. So
+ * a server that cannot answer this query produces an ERROR the caller reports, never a
+ * substitute number.
  *
  * Same rule as an absent deviceSupportRisk: absent is "not checked", never a default.
  */
@@ -54,27 +52,21 @@ export async function loadReleaseSupportCoverage (
     orgUuid: string,
     releaseUuid: string
 ): Promise<ReleaseSupportCoverage | null> {
-    try {
-        const resp = await client.query({
-            query: RELEASE_SUPPORT_COVERAGE_QUERY,
-            variables: { orgUuid, releaseUuid },
-            fetchPolicy: 'network-only'
-        })
-        const cov = (resp.data as any)?.sbomComponentSupportCoverage
-        if (!cov) return null
-        return {
-            total: cov.total ?? 0,
-            attested: cov.attested ?? 0,
-            // Non-null on the wire, but a defensive fall-through to UNKNOWN rather than to a
-            // state that would reassure: if the field ever arrives missing, "we do not know"
-            // is the only answer that cannot mislead.
-            exportState: (cov.supportExportState as SupportExportState) || 'UNKNOWN'
-        }
-    } catch (err: any) {
-        // Schema drift means this server predates the release-scoped gauge or the export
-        // state. Anything else -- auth, transport, a rejected org -- is a real error and
-        // belongs with the caller.
-        if (!isSchemaDriftError(err)) throw err
-        return null
+    const resp = await client.query({
+        query: RELEASE_SUPPORT_COVERAGE_QUERY,
+        variables: { orgUuid, releaseUuid },
+        fetchPolicy: 'network-only'
+    })
+    const cov = (resp.data as any)?.sbomComponentSupportCoverage
+    // The query is nullable: an org with no components answers with no coverage row rather
+    // than zeros, and that is not the same as a failure.
+    if (!cov) return null
+    return {
+        total: cov.total ?? 0,
+        attested: cov.attested ?? 0,
+        // Non-null on the wire, but a defensive fall-through to UNKNOWN rather than to a
+        // state that would reassure: if the field ever arrives missing, "we do not know"
+        // is the only answer that cannot mislead.
+        exportState: (cov.supportExportState as SupportExportState) || 'UNKNOWN'
     }
 }

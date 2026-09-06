@@ -17,21 +17,6 @@ describe('loadReleaseSupportCoverage', () => {
             .toEqual({ total: 10, attested: 3, exportState: 'DISABLED' })
     })
 
-    /**
-     * The load-bearing one. CE's sbomComponentSupportCoverage takes ONLY orgUuid -- it has
-     * no releaseUuid argument -- so the single thing a CE server could answer is the
-     * ORG-WIDE number. That is a different question, not a degraded answer to this one:
-     * "34 of 1,240 across your whole organisation" rendered against one release is
-     * confidently wrong in a way an operator cannot detect. Null, and say so.
-     */
-    it('returns null on schema drift instead of falling back to the org-wide number', async () => {
-        const query = vi.fn().mockRejectedValue(
-            new Error('Unknown argument "releaseUuid" on field "Query.sbomComponentSupportCoverage"'))
-        expect(await loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1')).toBeNull()
-        // Exactly one attempt. A second call would be a fallback query, which is what this
-        // deliberately does not do.
-        expect(query).toHaveBeenCalledOnce()
-    })
 
     it('returns null when the field is absent rather than inventing zeroes', async () => {
         const query = vi.fn().mockResolvedValue({ data: {} })
