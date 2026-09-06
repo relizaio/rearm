@@ -2,6 +2,7 @@ package io.reliza.model.tea;
 
 import java.net.URI;
 import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -39,10 +40,21 @@ public class TeaCleEvent {
 
   private TeaCleEventType type;
 
+  // @DateTimeFormat is a SPRING BINDING annotation; Jackson ignores it. Without
+  // @JsonFormat these serialise through Utils.OM (WRITE_DATES_AS_TIMESTAMPS) as a
+  // nanosecond decimal instead of the ISO-8601 string the CLE spec requires.
+  // WARNING: this file IS regenerated out of repo -- be61124d ("switch to TEA
+  // 0.4.0") bulk-replaced all 34 model/tea files and silently dropped an earlier
+  // hand-edit, restored 7.5h later in 2856f6ab. Re-apply these two annotations
+  // after any TEA bump; TeaTransformerServiceTest.wrapAsCleDocumentEmitsIso8601-
+  // StringTimestamps is the tripwire that catches it. Full reasoning lives on
+  // TeaTransformerService.wrapAsCleDocument.
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  @JsonFormat(shape = JsonFormat.Shape.STRING)
   private OffsetDateTime effective;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  @JsonFormat(shape = JsonFormat.Shape.STRING)
   private OffsetDateTime published;
 
   private @Nullable String version;

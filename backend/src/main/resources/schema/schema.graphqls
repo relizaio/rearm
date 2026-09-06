@@ -97,6 +97,60 @@ type Query {
 	# component and the exact (qualifier-carrying) purls each one used.
 	getReleaseSbomComponents(releaseUuid: ID!): [ReleaseSbomComponent]
 
+	# Paged, filtered view of the SAME release component set, for the support
+	# attestation table. Separate from the unpaged query above rather than
+	# replacing it: the graph view needs every node and the release's own root
+	# component, while this one excludes root (a root is the release's own
+	# artifact coordinate, never a third-party dependency to disclose) so that
+	# its ALL total is the same denominator sbomComponentSupportCoverage
+	# reports. Both resolve the release through the same path, PRODUCT unwind
+	# included.
+	#
+	# attestation filters against the SAME SQL body the coverage gauge counts
+	# with, and UNATTESTED is its exact complement -- so the rows this returns
+	# are exactly the ones the gauge says are missing. search is a
+	# case-insensitive substring of the canonical purl, with LIKE metacharacters
+	# treated as literals. limit is clamped to the range 1..500 and defaults to
+	# 50 -- a limit of 0 becomes 1, since a zero-size page would page forever.
+	#
+	# KEYSET pagination, not offset. after is the uuid of the last item you saw
+	# (endCursor); omit it for the first page. This is not a house-style
+	# deviation for its own sake -- attestation:UNATTESTED is a predicate over
+	# MUTABLE state, and attesting a page removes those rows from the set. An
+	# offset would index into a set that had shifted underneath it and skip
+	# exactly as many components as were just written, leaving the operator
+	# paged to the end with the gauge still short and no way to find what was
+	# missed. A cursor anchored to the sort key is unaffected by rows
+	# disappearing behind it, so "select all unattested" walks every row
+	# exactly once with no client-side protocol to get wrong.
+	#
+	# The cursor component only has to still EXIST, not still match the filter
+	# -- under UNATTESTED you will have just attested it out of the set. An
+	# unrecognised cursor is an error, never a silent restart from the
+	# beginning, which would turn a sweep into an infinite loop.
+	#
+	# totalCount is the FILTERED population, not the release size and not the
+	# coverage denominator. Keep reading the gauge from
+	# sbomComponentSupportCoverage: it is release-scoped on purpose and must
+	# not be recomputed per page.
+	#
+	# LIMITATION, deliberate: only the page is hydrated, so ALL THREE graph
+	# fields on the returned rows are page-scoped, not release-scoped --
+	# dependencies, dependedOnBy and ancestors. A component that depends on 40
+	# things will report only those that happened to sort onto the same page,
+	# which is WRONG data presented as complete, not merely partial. Do not
+	# select them here. Each row's own parents array IS complete. Use the
+	# unpaged getReleaseSbomComponents, or getReleaseSbomComponentGraph for a
+	# single component, when the graph edges matter -- resolving them here
+	# would mean loading the whole BOM, which is the cost this query exists to
+	# avoid.
+	getReleaseSbomComponentsPage(
+		releaseUuid: ID!,
+		attestation: SupportAttestationFilter = ALL,
+		search: String,
+		limit: Int,
+		after: ID): ReleaseSbomComponentsPage!
+
 	# Single-component graph view: the merged ReleaseSbomComponent row for
 	# (release, canonical sbom component), with the same dependencies /
 	# dependedOnBy resolvers as getReleaseSbomComponents. Returns null when
@@ -155,8 +209,18 @@ type Query {
 	releasesBySbomComponents(orgUuid: ID!, sbomComponentUuids: [ID]!, perspectiveUuid: ID): [ComponentWithBranches]
 	sbomComponentSearchNative(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToSbom]
 	searchSbomComponentByPurl(orgUuid: ID!, purl: String!): ID
-	# FDA-Readiness-1: support-disclosure completeness for an org (attested vs total non-root components).
-	sbomComponentSupportCoverage(orgUuid: ID!): SbomComponentSupportCoverage
+	# releaseUuid is OPTIONAL and additive: omit it for the org-wide readiness number
+	# (unchanged behaviour), pass it to scope the count to one release's own components.
+	#
+	# Both scopes are intended. Org-wide answers "how ready is this organisation"; the
+	# release scope answers "how much of THIS BOM is disclosed", which is the only number
+	# that may sit beside an export -- a gauge reading 100% next to a release whose export
+	# carries nothing is the failure that scope exists to prevent.
+	#
+	# The release scope resolves its components through the same path the component list
+	# walks, PRODUCT dependency unwind included, so the gauge and the list beneath it cannot
+	# disagree. An empty release returns 0/0 rather than falling back to the org number.
+	sbomComponentSupportCoverage(orgUuid: ID!, releaseUuid: ID): SbomComponentSupportCoverage
 	
 	getAllOrganizations: [Organization]
 	
@@ -166,24 +230,32 @@ type Query {
 	exportAsObomManual(releaseUuid: ID!): String
 
 	"""
-	Export a CLE-spec-valid JSON document for a component (or product).
-	The events array is the same chronological union the TEA endpoint
-	returns; this query wraps it with the spec-required `$schema` and
-	`lastUpdated` metadata so the response stands alone as a CLE document.
+	Export a Common Lifecycle Enumeration (CLE) JSON document for a component
+	(or product). The events array is the same chronological union the TEA
+	endpoint returns; this query wraps it with `$schema` and `lastUpdated`
+	metadata so the response stands alone as a CLE document.
+
+	NOT currently CLE-1.0.0 CONFORMANT, and deliberately no longer described as
+	such: endOfSupport events carry no supportId (the spec makes it mandatory)
+	and no definitions.support[], because the support-policy catalog was
+	removed -- see ai-plans/fda-readiness-1-plan.md P1. Event ids are also
+	recomputed per export rather than persisted. Do not reinstate a conformance
+	claim here until board t20260831-115702-299 and -13297 land.
 	"""
 	exportComponentCleManual(componentUuid: ID!): String
 
 	"""
-	Export a CLE-spec-valid JSON document for a single release. Mirrors
-	exportComponentCleManual at the release level -- events come from
-	transformReleaseToCle.
+	Export a Common Lifecycle Enumeration (CLE) JSON document for a single
+	release. Mirrors exportComponentCleManual at the release level -- events
+	come from transformReleaseToCle. Carries the same conformance caveat; see
+	exportComponentCleManual above.
 	"""
 	exportReleaseCleManual(releaseUuid: ID!): String
 	
 	# User Groups
 	getUserGroups(org: ID!): [UserGroupWebDto]
 	getTeams(org: ID!): [TeamWebDto]
-	
+
 	# Vulnerability Analysis
 	getVulnAnalysis(org: ID!): [VulnAnalysisWebDto]
 	getVulnAnalysisByComponent(componentUuid: ID!): [VulnAnalysisWebDto]
@@ -742,10 +814,93 @@ type Mutation {
 	# (e.g. an earlier async reconcile failed). Returns true on success; throws on failure so the
 	# caller sees the underlying error.
 	reconcileReleaseSbomComponents(releaseUuid: ID!): Boolean
-	# FDA-Readiness-1: manufacturer attests a component's support level / EOS-EOL dates.
+	# FDA-Readiness-1: manufacturer attests a component's support level / milestone dates.
 	# Server-set source=MANUAL, attester recorded, appended to the append-only attestation
-	# history. supportStatus is derived on read, not set here. Dates are ISO-8601 (YYYY-MM-DD).
-	setSbomComponentSupport(sbomComponentUuid: ID!, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String): SbomComponent
+	# history. Dates are ISO-8601 (YYYY-MM-DD).
+	#
+	# levelOfSupport is the manufacturer's ATTESTED claim about what the upstream maintainer
+	# is actually doing -- the thing FDA asks for, which cannot be computed from dates. It is
+	# stored, and is NOT the same field as the derived supportStatus; the two are surfaced
+	# separately and never reconciled, so a reviewer can see when they disagree.
+	#
+	# assessedAt is an RFC-3339 instant stating when the HUMAN assessed, which need not be
+	# when they filed it ("read the advisory on the 12th, recorded it on the 30th"). Omit it
+	# to mean now. A malformed value is rejected, never silently defaulted.
+	#
+	# state: WITHDRAWN retracts an attestation without erasing it -- the row and its history
+	# survive, and exports stop making the claim. This is how a mistaken attestation is
+	# corrected, because a regulatory record is superseded rather than deleted.
+	#
+	# Each date argument is independent: an omitted one leaves that milestone's own date AND
+	# provenance untouched (so e.g. an EOL asserted from a different source than EOS survives
+	# an EOS-only edit) -- only a non-null value upserts that milestone.
+	#
+	# reason records WHY this write happened. It is stored on the audit row and is NEVER
+	# exported. Do not confuse it with justification, which is the basis for the
+	# level-of-support CLAIM and IS exported: keeping them separate is what stops a milestone
+	# removal note ("removed a typo'd EOL") from becoming the stated reason a third party's
+	# project was called abandoned. REQUIRED when clearMilestones is non-empty.
+	#
+	# clearMilestones REMOVES milestones, and is the only way to correct a mistaken date. A
+	# null date means "leave alone", so without this a typo'd endOfLife is re-merged by every
+	# later write and permanently blocks any date after it; WITHDRAWN is not a substitute,
+	# because it suppresses the whole component from exports and coverage rather than removing
+	# the one wrong fact. Clearing still SUPERSEDES rather than erases: the removal writes an
+	# audit row carrying `reason`, so the history keeps what was claimed, when it was
+	# withdrawn and why. Setting and clearing the same milestone in one call is rejected.
+	#
+	# assessedAt dates the level-of-support claim and is PRESERVED across writes that do not
+	# supply it or re-assert a level, so editing a date cannot silently re-date an older
+	# attestation.
+	setSbomComponentSupport(sbomComponentUuid: ID!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, state: SupportState, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, clearMilestones: [SupportMilestoneType!], reason: String): SbomComponent
+
+	# Attest MANY components in one pass, reporting PER COMPONENT rather than as a count.
+	#
+	# Three rules: ROOT components are skipped (the application itself is not a third-party
+	# dependency to attest); an already-attested component is SKIPPED, never overwritten, so a
+	# sweep cannot flatten a considered per-component judgement; and therefore a re-run applies
+	# nothing. Each component is written in its own transaction, so one rejection fails that
+	# component alone.
+	#
+	# The result carries a per-item list, not just a count, because skip-and-report is only
+	# useful if the caller can show WHICH rows were skipped and why -- "312 applied" of 450
+	# leaves an operator no way to find the other 138, and the two skip reasons need
+	# different responses.
+	#
+	# That list is WRAPPED in a response type rather than returned bare, matching the other
+	# bulk mutations in this file. The input is an unbounded [ID!]!, so this surface will
+	# eventually need to say something about the batch as a whole -- a cap, a truncation
+	# flag -- and a bare list can never gain a sibling field without a breaking change. The
+	# schema is carried into the Community Edition verbatim, so that change is not available
+	# later.
+	#
+	# "Already attested" here means exactly what the coverage gauge means: a MANUAL attestation
+	# that is not WITHDRAWN. Row-existence would be a different, weaker test, and a bulk sweep
+	# that used it could never close the gap the gauge reports -- a withdrawn attestation reads
+	# as unattested on the gauge, so bulk must be able to re-attest it.
+	#
+	# SINGLE-ORG BY CONSTRUCTION: the organization is taken from the FIRST component in
+	# sbomComponentUuids and every other id must resolve within it. Ids from another org
+	# come back as FAILED "component not found in this organization" rather than being
+	# written, so a caller cannot smuggle a foreign component into an authorized batch.
+	#
+	# NO state OR clearMilestones ARGUMENT, deliberately. Both would be dead on this mutation:
+	# it only writes rows it has judged un-attested, so any row with a milestone to clear is
+	# skipped first, and on a fresh row a clear is rejected as "not set" -- clearMilestones
+	# could never succeed. A bulk WITHDRAWN is likewise incoherent: fresh attestations are
+	# implicitly ATTESTED, so it would conjure an assessment and retract it in one call. Use
+	# the single-component mutation for both. `reason` IS accepted: it records why this batch
+	# happened, on the audit row.
+	# batchId: OPTIONAL, and normally omitted. The server issues one per call and returns it
+	# on SbomComponentSupportBulkResponse; pass that value back on batches 2..n of a paged
+	# sweep so the whole sweep is ONE id in the audit history. Supplying an arbitrary id is
+	# accepted and not validated -- see the resolver for why validating it would break the
+	# legitimate paged case, and what that exposure is bounded to.
+	#
+	# At most 1000 uuids per call (SbomComponentService.BULK_SUPPORT_MAX_IDS). A larger call
+	# is refused outright rather than truncated, because a silently truncated sweep reports
+	# success over components it never wrote. Split and reuse the batchId.
+	bulkSetSbomComponentSupport(sbomComponentUuids: [ID!]!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, reason: String, batchId: ID): SbomComponentSupportBulkResponse!
 	"""
 	Recompute a release's findings metrics from CURRENT scan and KEV state:
 	re-gathers the release's artifacts, merges their (fan-out-maintained)
@@ -822,7 +977,7 @@ type Mutation {
 	updateUserGroup(userGroup: UpdateUserGroupInput!): UserGroupWebDto
 	createTeam(team: CreateTeamInput!): TeamWebDto
 	updateTeam(team: UpdateTeamInput!): TeamWebDto
-	
+
 	# Vulnerability Analysis
 	createVulnAnalysis(analysis: CreateVulnAnalysisInput!): VulnAnalysisWebDto
 	updateVulnAnalysis(analysis: UpdateVulnAnalysisInput!): VulnAnalysisWebDto
@@ -3224,6 +3379,17 @@ type Release {
 	eos: String
 	eol: String
 	"""
+	Provenance for the device support window (eos/eol), DERIVED from the most
+	recent SUPPORT_WINDOW update event rather than stored separately. Null on a
+	release whose window has never been touched (including one set only at
+	release creation before this field existed).
+	"""
+	supportWindowSource: ProgrammaticType
+	# Id of whoever/whatever last touched the window -- a user id for MANUAL, an API key id for API. Not gated by supportWindowSource; use it to tell the two kinds of id apart.
+	supportWindowAssertedBy: ID
+	# When the window was last touched -- CLE "published" for the resulting endOfSupport/endOfLife event.
+	supportWindowLastAssessed: DateTime
+	"""
 	Component name snapshot captured when a sid PURL was first emitted for this release (D6).
 	Immutable once set. Null on releases pre-dating sid enablement and on releases of
 	EXTERNAL components.
@@ -4322,6 +4488,14 @@ input ReleaseInput {
 	gudidStatus: GudidStatus
 	eos: String
 	eol: String
+	"""
+	Update-only: explicitly unset eos, distinct from omitting the field (which
+	leaves it unchanged). Wins over a concurrently-supplied eos value. Ignored
+	on create (there is nothing to clear yet).
+	"""
+	clearEos: Boolean
+	# Update-only: explicitly unset eol. See clearEos.
+	clearEol: Boolean
 	vcsUri: String
 	repoPath: String
 }
@@ -6080,22 +6254,73 @@ type SbomComponent {
 	name: String
 	version: String
 	isRoot: Boolean
-	# FDA-Readiness-1 per-component support disclosure. supportStatus is DERIVED
-	# from the dates and the current date (never stored). Dates are ISO-8601
-	# (YYYY-MM-DD); supportLastAssessed is a UTC RFC-3339 instant. supportNotes is
-	# internal-only (shown to authorized org users, never injected into an export).
+	# FDA-Readiness-1 per-component support disclosure. Dates + provenance live per-milestone
+	# (see supportMilestones); supportStatus is DERIVED from them and the current date (never
+	# stored). Dates are ISO-8601 (YYYY-MM-DD); supportLastAssessed is a UTC RFC-3339 instant.
+	# supportNotes is internal-only (shown to authorized org users, never injected into an
+	# export). endOfSupportDate/endOfLifeDate/supportSource/supportLastAssessed/supportNotes
+	# are BACK-COMPAT convenience fields meaning "the END_OF_SUPPORT milestone's own values" --
+	# not a component-wide value now that provenance is per-milestone; use supportMilestones
+	# for the full per-date detail (e.g. an EOL asserted from a different source than EOS).
 	supportStatus: SupportStatus
+	# The manufacturer's ATTESTED level of support: what the upstream maintainer is actually
+	# doing. Stored, not computed -- see SupportStatus. DELIBERATELY SEPARATE from
+	# supportStatus, which is what the dates entail. When they disagree (a far-future EOL on
+	# a library abandoned in practice), both are served and a reviewer judges; reconciling
+	# them server-side would discard the disagreement, which is the signal worth having.
+	# Never consume this without assessedAt: an undated claim cannot be weighed.
+	attestedLevelOfSupport: LevelOfSupport
+	# The same claim in FDA's own words, lowercase and verbatim ("actively maintained"),
+	# which is what the guidance and CycloneDX taxonomy PR #186 expect on the wire.
+	#
+	# Today this happens to equal name().toLowerCase().replace('_',' '), so it looks like a
+	# transform a client could do itself. Do NOT rely on that: the mapping is a deliberate
+	# per-constant table precisely so a guidance revision changing FDA's wording is a
+	# one-line server change rather than a break in every consumer that reimplemented the
+	# rule. The coincidence holds for these three values and is not a contract.
+	attestedLevelOfSupportText: String
+	# When the HUMAN assessed (RFC-3339, UTC). Caller-supplied, so it may precede the moment
+	# the attestation was filed; the system's own record time lives in the audit history.
+	assessedAt: String
+	# The user who made the attestation.
+	assertedBy: ID
+	# The manufacturer's stated basis for the claim -- what they checked and what they found.
+	# The part a reviewer actually reads when the dates are absent or contested.
+	justification: String
+	# ATTESTED or WITHDRAWN. A WITHDRAWN attestation is retracted: it keeps its history but
+	# is not injected into exports, so it reads as unassessed rather than as a live claim.
+	attestationState: SupportState
+	endOfGuaranteedSupportDate: String
 	endOfSupportDate: String
 	endOfLifeDate: String
 	supportSource: SupportSource
 	supportLastAssessed: String
 	supportNotes: String
+	# Full per-milestone detail: independent date + provenance for each milestone actually
+	# asserted (0-3 entries). notes is internal-only here too, never exported.
+	supportMilestones: [SupportMilestone!]!
+	# Whether the manufacturer is the FIRST party for this component (its own device/release)
+	# or a THIRD party making a claim about a component it has no operational control over
+	# (e.g. log4j). Null means UNKNOWN -- never inferred from isRoot. Orthogonal to
+	# supportSource: a supplier-provided BOM asserting a date for the org's OWN in-house
+	# library is a first-party fact learned through a supplier channel, not a third-party one.
+	supportParty: SupportParty
+	# DERIVED (never stored): does this component's declared support window end before the
+	# enclosing DEVICE's support horizon (the PRODUCT release's eos)? UNKNOWN
+	# for non-PRODUCT releases, org-scoped reads, or when a horizon is missing.
+	deviceSupportRisk: DeviceSupportRisk
 }
 
-# Per-component support level. Derived from the support dates + current date; the
-# manufacturer attests the DATES, not this value. Aligns to FDA support adjectives
-# and IMDRF N60 lifecycle stages. SECURITY_ONLY and ABANDONED are reserved for
-# later slices (not yet produced from the two stored dates alone).
+# The DERIVED per-component support state: what the stored dates entail as of a clock, and
+# nothing more. The manufacturer's own claim is a different field with a different type --
+# see LevelOfSupport and attestedLevelOfSupport. The two are shown side by side and are never
+# reconciled: a maintainer can publish a far-future end-of-support and have abandoned the
+# library in practice, and a reviewer needs to see both.
+#
+# ACTIVELY_SUPPORTED, ABANDONED and END_OF_LIFE are retained but NEVER returned. The first two
+# moved to LevelOfSupport as attested claims; END_OF_LIFE was retired because it means END OF
+# SALE, which is not a support state. They stay because this enum is published in the CE
+# schema and removing a value would break consumers who already hold it.
 enum SupportStatus {
 	ACTIVELY_SUPPORTED
 	SECURITY_ONLY
@@ -6105,20 +6330,214 @@ enum SupportStatus {
 	UNKNOWN
 }
 
-# Provenance of a support assertion, set server-side per write path.
+# Provenance of one milestone's support assertion, set server-side per write path.
+# Independent per milestone -- see SupportMilestone.
 enum SupportSource {
 	MANUAL
 	SUPPLIER
 	ENRICHED
 }
 
+# Which per-component support milestone is being asserted. Scoped to per-component
+# support only; a full per-component CLE mapping (e.g. endOfDevelopment) is out of
+# scope here -- CLE 1.0.0 treats per-component assertions as third-party claims,
+# future-scope there. Device-level CLE events are a separate axis.
+enum SupportMilestoneType {
+	# Bug fixes stop, security fixes continue. Feeds SupportStatus.SECURITY_ONLY.
+	END_OF_GUARANTEED_SUPPORT
+	# All support ceases (transfer of risk) -- the date FDA's disclosure wants.
+	END_OF_SUPPORT
+	# The component reaches end of life.
+	END_OF_LIFE
+}
+
+# One independently-provenanced support milestone assertion. An entry's presence IS the
+# assertion of that date. notes is internal-only, never exported.
+#
+# NOTE the nullability change from the previous shape: these fields are no longer
+# non-null. The facts now live in the attestation's JSONB rather than in a table whose
+# NOT NULL constraints enforced them, so the schema states what the storage can actually
+# guarantee. Claiming non-null here and serving null on a hand-edited or partially
+# migrated payload would be a runtime error at the client, which is a worse failure than
+# an honest nullable field.
+type SupportMilestone {
+	milestoneType: SupportMilestoneType!
+	date: String
+	source: SupportSource
+	lastAssessed: String
+	assertedBy: ID
+	notes: String
+}
+
+# The manufacturer's ATTESTED claim about what a component's upstream maintainer is
+# actually doing -- FDA's "level of support provided through monitoring and maintenance
+# from the software component manufacturer" (V.A.4(b)). Distinct from SupportStatus,
+# which is derived from dates, and never reconciled with it.
+#
+# Deliberately THREE members and no "unknown": FDA gives three words, CycloneDX taxonomy
+# PR #186 has three, and CLE has no such vocabulary. "Assessed but indeterminate" is a
+# null level plus a justification, which is the L1021-1022 mechanism for being unable to
+# provide the information and a stronger record than an undefined token.
+#
+# NO_LONGER_MAINTAINED and ABANDONED are negative claims about a named third party and
+# REQUIRE a justification. FDA defines neither term, so an organisation must define the
+# boundary once in its submission narrative and apply it consistently; ReARM ships no
+# default definition for either.
+enum LevelOfSupport {
+	ACTIVELY_MAINTAINED
+	NO_LONGER_MAINTAINED
+	ABANDONED
+}
+
+# What a bulk attestation did to one component.
+enum SupportBulkOutcome {
+	# The attestation was written.
+	APPLIED
+	# Skipped: the component is the application itself, not a third-party dependency.
+	SKIPPED_ROOT
+	# Skipped: an attestation already exists. A bulk pass never overwrites one -- that is what
+	# makes a re-run idempotent and what protects an earlier per-component judgement.
+	SKIPPED_ATTESTED
+	# This component's write was rejected; `message` says why. The batch continued.
+	FAILED
+}
+
+enum SupportAttestationFilter {
+	# Every non-root component in the release.
+	ALL
+	# Only those the coverage gauge counts as disclosed.
+	ATTESTED
+	# Only those the gauge counts as missing -- the bulk-attest work queue.
+	UNATTESTED
+}
+
+type ReleaseSbomComponentsPage {
+	items: [ReleaseSbomComponent!]!
+	# Components matching the filter, across all pages. Under attestation:UNATTESTED this
+	# is a moving target by design -- it is the size of the remaining work, so it falls as
+	# you attest. Do not derive "is there another page" from it; use hasMore.
+	totalCount: Int!
+	limit: Int!
+	# Pass as `after` to get the next page. Null on an empty page.
+	endCursor: ID
+	# Answered by over-fetching one row, not by arithmetic on totalCount.
+	hasMore: Boolean!
+}
+
+# A bulk attestation's outcome. The counts are derived server-side from results, so a
+# client rendering "312 applied, 138 skipped" and a client iterating the list cannot
+# disagree about the same run.
+type SbomComponentSupportBulkResponse {
+	results: [SbomComponentSupportBulkResult!]!
+	appliedCount: Int!
+	skippedCount: Int!
+	failedCount: Int!
+	# Correlates every audit row this call wrote. SERVER-minted; pass it back as the
+	# batchId argument on batches 2..n of a paged sweep so the whole sweep is one id in
+	# the audit history. Without it nothing in the record distinguishes an 800-component
+	# sweep from 800 separate judgements -- assessmentSource is MANUAL either way.
+	# Always present, including on an empty call.
+	batchId: ID!
+}
+
+# One component's outcome from a bulk attestation.
+type SbomComponentSupportBulkResult {
+	sbomComponentUuid: ID!
+	outcome: SupportBulkOutcome!
+	# Why, when the outcome is FAILED; null otherwise. Deliberately never echoes the
+	# attestation content back -- a caller that treats the response as confirmation of what
+	# was stored is not re-reading, and the stored value is the one that matters.
+	message: String
+}
+
+# Lifecycle of the attestation RECORD itself, as opposed to the support lifecycle of
+# the component it describes. WITHDRAWN exists because a regulatory record is corrected
+# by superseding it, never by erasing it: a manufacturer who finds an attestation was
+# made in error must be able to say so on the record, and deleting the row would destroy
+# the history that makes the correction credible.
+enum SupportState {
+	ATTESTED
+	WITHDRAWN
+}
+
+# Whether the manufacturer is the first party for a component's support facts (its own
+# device/release) or a third party making a claim about a component it has no
+# operational control over (e.g. log4j).
+enum SupportParty {
+	FIRST_PARTY
+	THIRD_PARTY
+}
+
+# DERIVED per-component verdict: whether the component's declared support window ends
+# before the DEVICE's support horizon (the Feb-2026 FDA signal). The device horizon is
+# The device horizon is the PRODUCT release's eos; there is no end-of-life fallback, because
+# end-of-life means end of SALE. Computed from the component's end-of-support and the device
+# release's support window; never stored.
+enum DeviceSupportRisk {
+	OK
+	EOS_BEFORE_DEVICE
+	UNKNOWN
+}
+
 # Support-disclosure completeness for an org. attested = non-root components with a
 # MANUFACTURER (MANUAL) attestation (excludes machine ENRICHED / supplier-declared
 # provenance, which are not a manufacturer disclosure). total = all non-root components.
 # Per-source counts can be added as new fields additively if needed.
+"""
+Whether an org's BOM exports carry the FDA support-disclosure properties.
+
+Deliberately NOT a Boolean -- see supportExportState on SbomComponentSupportCoverage.
+"""
+enum SupportExportState {
+	"""Exports carry the support properties."""
+	ENABLED
+	"""Exports omit them; the coverage counts describe data that is not being shipped."""
+	DISABLED
+	"""
+	Some export paths carry them and others do not -- the state today. Artifact BOM
+	downloads inject; the SPDX-augmented form and the release-level SBOM export do not.
+	Treat as "do not assume this export carries the disclosure".
+	"""
+	PARTIAL
+	"""The server could not determine the setting. Never collapse this to ENABLED or DISABLED."""
+	UNKNOWN
+}
+
 type SbomComponentSupportCoverage {
 	total: Int!
 	attested: Int!
+	"""
+	Whether this org's BOM exports actually CARRY the support properties these counts
+	describe. Returned by the SAME resolver as the counts, deliberately: a client that
+	fetched coverage and export state separately could render a full-coverage gauge beside
+	an export that silently carries nothing, and that combination is precisely the failure
+	a default-off export setting creates. One response, one resolver, cannot drift.
+
+	An ENUM rather than a Boolean because an export setting is the kind of field that grows
+	a third state -- inherited from a parent scope, per-release override, enabled-but-nothing
+	-to-inject -- and this schema is published verbatim to the Community Edition, where a
+	Boolean could not grow one without breaking clients. Same shape as sidPurlMode, which
+	models org-level configuration the same way.
+
+	Read-only today, and PARTIAL, because that is what the code does. Injection has exactly
+	one call site -- the native CycloneDX single-artifact download. The SPDX-augmented branch
+	of that same download serves the BOM un-injected, and the release-level SBOM export
+	(releaseSbomExport) never injects at all. Reporting ENABLED would be false: an org at
+	full coverage can export a release SBOM carrying no disclosure at all. When an export
+	control lands it reads the real setting instead; the field shape does not change, so no
+	client needs updating.
+
+	UNKNOWN is a real answer, not a placeholder: once this reads a stored setting, that
+	setting can be absent or unreadable, and saying so beats guessing. Clients must render
+	UNKNOWN as unknown and must NOT collapse it to either state -- a gauge that silently
+	assumes exports carry disclosures is the failure this field exists to prevent.
+
+	NON-NULL deliberately. UNKNOWN carries "not determined" in band, so allowing null too
+	would give the same condition two representations and put clients in the position of
+	handling both -- which is the dual-representation problem choosing an enum over a
+	Boolean was meant to avoid in the first place. There is exactly one answer shape.
+	"""
+	supportExportState: SupportExportState!
 }
 
 # One row per (release, canonical component). artifactParticipations lists
