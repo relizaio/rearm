@@ -53,15 +53,18 @@
                 <h4>{{ terms.shipments }} <span class="subtle">({{ terms.installedBase }})</span></h4>
                 <n-icon v-if="isWritable" @click="openShipModal()" class="icons clickable" :title="terms.shipAction" size="22"><CirclePlus /></n-icon>
                 <n-tabs v-model:value="shipmentTab" type="segment" size="small" animated data-testid="shipment-tabs">
-                    <n-tab-pane name="software" :tab="`Software (${softwareShipments.length})`">
-                        <n-data-table :columns="softwareShipmentColumns" :data="softwareShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
-                    </n-tab-pane>
                     <n-tab-pane name="hardware" :tab="`Hardware (${hardwareShipments.length})`">
                         <n-data-table :columns="shipmentColumns" :data="hardwareShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
                     </n-tab-pane>
+                    <n-tab-pane name="samd" :tab="`SaMD (${samdShipments.length})`">
+                        <n-data-table :columns="shipmentColumns" :data="samdShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
+                    </n-tab-pane>
+                    <n-tab-pane name="software" :tab="`Software (${softwareShipments.length})`">
+                        <n-data-table :columns="softwareShipmentColumns" :data="softwareShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
+                    </n-tab-pane>
                 </n-tabs>
 
-                <!-- Devices of selected hardware shipment -->
+                <!-- Units of the selected HARDWARE / SAMD shipment -->
                 <template v-if="selectedShipment && selectedShipment.kind !== 'SOFTWARE'">
                     <h4 style="margin-top: 12px;">Devices <span class="subtle">of selected {{ terms.shipment.toLowerCase() }}</span></h4>
                     <n-icon v-if="isWritable" @click="openDeviceModal()" class="icons clickable" title="Add device" size="22"><CirclePlus /></n-icon>
@@ -109,12 +112,13 @@
                     Editing shipment of <strong>{{ releaseLabel(shipForm.release) || shortUuid(shipForm.release) }}</strong> — product / feature set are fixed; adjust the rest. Fields marked * are required.
                 </div>
                 <div v-if="resolvedIdentity" class="identityBox" data-testid="ship-kind-box">
-                    <n-tag size="small" :type="isSoftwareShipment ? 'success' : 'info'">{{ isSoftwareShipment ? 'Software shipment' : 'Hardware shipment' }}</n-tag>
+                    <n-tag size="small" :type="isSoftwareShipment ? 'success' : 'info'">{{ shipmentKindLabel(resolvedIdentity.shipmentKind) }}</n-tag>
                     <template v-if="resolvedIdentity.deviceClass !== 'NONE'">
                         &middot; {{ terms.deviceIdentity }}: <n-tag size="small" type="info">{{ resolvedIdentity.deviceClass }}</n-tag>
                         <span v-if="resolvedIdentity.udiDi"> &middot; UDI-DI: <code>{{ resolvedIdentity.udiDi }}</code></span>
                     </template>
-                    <span v-if="isSoftwareShipment" class="subtle"> &middot; a software release{{ resolvedIdentity.deviceClass !== 'NONE' ? ' (SaMD)' : '' }}: no quantity or batch facts; optionally applied to devices at this site</span>
+                    <span v-if="isSoftwareShipment" class="subtle"> &middot; plain software: no quantity or batch facts; optionally applied to devices at this site</span>
+                    <span v-else-if="resolvedIdentity.shipmentKind === 'SAMD'" class="subtle"> &middot; software as a medical device: shipped and tracked per unit like hardware</span>
                 </div>
                 <div v-if="!editingShipmentUuid" class="subtle" style="margin-bottom: 6px;">Fields marked * are required.</div>
                 <n-form-item label="Release *">
@@ -309,13 +313,16 @@ const emptyContact = () => ({ address: '', phone: '', email: '' })
 const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contact: emptyContact(), notes: '' })
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
 const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null, devices: [] })
-// Shipment kind follows the feature set: hardware present -> a physical batch,
-// otherwise (plain software, SaMD) a software release that may be applied to
+// Shipment kind comes from the feature set's component classification (nature +
+// deviceClass): HARDWARE = physical batch, SAMD = software medical device shipped and
+// tracked per unit like hardware, SOFTWARE = plain software that may be applied to
 // devices at the site. The server derives the same value; this only drives the form.
 const isSoftwareShipment = computed(() => resolvedIdentity.value?.shipmentKind === 'SOFTWARE')
-const shipmentTab = ref('software')
+const shipmentKindLabel = (k: string) => k === 'SOFTWARE' ? 'Software shipment' : k === 'SAMD' ? 'SaMD shipment' : 'Hardware shipment'
+const shipmentTab = ref('hardware')
 const softwareShipments = computed(() => shipments.value.filter((s: any) => s.kind === 'SOFTWARE'))
-const hardwareShipments = computed(() => shipments.value.filter((s: any) => s.kind !== 'SOFTWARE'))
+const samdShipments = computed(() => shipments.value.filter((s: any) => s.kind === 'SAMD'))
+const hardwareShipments = computed(() => shipments.value.filter((s: any) => s.kind !== 'SOFTWARE' && s.kind !== 'SAMD'))
 const siteDevices: Ref<any[]> = ref([])
 const siteDeviceOptions = computed(() => siteDevices.value.map((d: any) => ({ label: summarizeIds(d.identifiers) || shortUuid(d.uuid), value: d.uuid })))
 async function loadSiteDevices (siteUuid: string) {
@@ -416,7 +423,7 @@ watch(() => route.params.siteuuid, async (v) => {
     selectedSiteUuid.value = v ? v.toString() : ''
     selectedShipmentUuid.value = ''; devices.value = []
     await Promise.all([loadShipments(selectedSiteUuid.value), loadSiteDevices(selectedSiteUuid.value)])
-    if (!softwareShipments.value.length && hardwareShipments.value.length) shipmentTab.value = 'hardware'
+    shipmentTab.value = hardwareShipments.value.length || !(samdShipments.value.length || softwareShipments.value.length) ? 'hardware' : samdShipments.value.length ? 'samd' : 'software'
 })
 
 // ---- columns ----
