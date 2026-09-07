@@ -78,7 +78,7 @@
     },
     {
       "q": "Need to know what's actually running?",
-      "name": "Deployment Governance",
+      "name": "Deployment Governance, DevOps, BYOC",
       "c1": "#F08A4B",
       "c2": "#F4B04B"
     },
@@ -104,7 +104,7 @@
     },
     {
       "q": "What exactly is deployed in production right now?",
-      "page": "Deployment Governance"
+      "page": "Deployment Governance, DevOps, BYOC"
     },
     {
       "q": "Which of our code did agents write, and under what approval?",
@@ -524,10 +524,10 @@
       "id": "3h",
       "href": "#3h",
       "path": "/use-cases/deployment-governance",
-      "label": "Deployment Governance",
-      "persona": "FOR PLATFORM + DEVOPS LEADS",
-      "h1": "What should be running, what is actually running, and the delta.",
-      "pain": "Release records say what was approved. Nobody can prove what is deployed where right now. ReARM closes the loop between plan and actual.",
+      "label": "Deployment Governance, DevOps, BYOC",
+      "persona": "FOR PLATFORM + DEVOPS TEAMS, AND VENDORS SHIPPING INTO CUSTOMER CLOUDS",
+      "h1": "Your software, their cloud. ReARM decides what runs there.",
+      "pain": "Bring Your Own Cloud means your product runs on infrastructure you do not operate: a customer's VPC, a partner's cluster, an air-gapped site. CI cannot push there, and once it ships nobody can say which version is live. ReARM holds the plan; ReARM CD inside each cluster pulls it, applies it, and reports back.",
       "a1": "rgba(240,138,75,0.10)",
       "a2": "rgba(244,176,75,0.10)",
       "stripLabel": "EVIDENCE",
@@ -538,43 +538,49 @@
       "evidence": "INSTANCES · ENVIRONMENTS · FEATURE-SET TARGETING · RUNTIME EVIDENCE",
       "publicDemo": true,
       "shot": "[ SCREENSHOT 8: instances page, plan vs actual side by side ]",
-      "note": false,
+      "note": "Instances, secrets, feature-set deploys and ReARM CD control are part of ReARM Pro.",
       "steps": [
         {
           "num": "01",
-          "title": "Instances and environments registered",
-          "body": "Every instance and environment is a first-class object in ReARM, not a spreadsheet row.",
-          "cap": "Deployment Model"
+          "title": "Each target is an instance",
+          "cap": "Deployment Model",
+          "body": "Every cluster, namespace or site you deploy into is registered as an instance in ReARM, grouped into clusters, with its own secrets and configuration. Customer infrastructure becomes a first-class object in ReARM."
         },
         {
           "num": "02",
-          "title": "Plan vs actual, continuously reconciled",
-          "body": "Approved and expected state vs observed state, resolved side by side and kept current.",
-          "cap": "Reconciliation"
+          "title": "Ship by pointing, not pushing",
+          "cap": "Feature Sets",
+          "body": "A feature set pins the exact component and product releases that ship together. Point an instance at it and ReARM records the target. Nothing is pushed from CI, and no CI credentials ever reach the customer's cloud."
         },
         {
           "num": "03",
-          "title": "Drift surfaced immediately",
-          "body": "The moment actual diverges from plan, it is visible. No quarterly audits to find out.",
-          "cap": "Drift Detection"
+          "title": "ReARM CD pulls it in",
+          "cap": "ReARM CD",
+          "body": "A small open-source agent installed in the customer's cluster connects outbound to ReARM, watches the instance's target, reconciles the running workloads to match, and reports what actually landed. Sensitive configuration is transmitted securely: encrypted for that cluster alone, so only it can open it."
         },
         {
           "num": "04",
-          "title": "Feature-set targeting",
-          "body": "Point an instance at a feature set; ReARM reconciles what should land there. Your CI/CD queries ReARM for the latest release that passed all required approval gates and promotes only that version. No approved status in ReARM, no deployment.",
-          "cap": "Feature Sets"
+          "title": "Promotion follows approvals",
+          "cap": "Release Policies",
+          "body": "Which releases each environment takes is configurable per environment: for example, test instances take every release while staging and production take only releases that passed the approval gates you define. Promotion is a change of target in ReARM, and rollback is the previous feature set."
         },
         {
           "num": "05",
-          "title": "Evidence, extended to runtime",
-          "body": "The same evidence trail that covers releases now covers what actually runs.",
-          "cap": "Audit Evidence"
+          "title": "Plan versus actual, per instance or per customer",
+          "cap": "Drift Detection",
+          "body": "Every instance shows expected against observed state side by side. When a cluster drifts, a manual hotfix or a failed rollout, it is visible immediately, not at the next support call."
         },
         {
           "num": "06",
-          "title": "ReARM CD closes the loop",
-          "body": "ReARM CD, the open-source deployment controller, pulls each instance's expected state from ReARM, applies it, and reports back what actually landed. The reconcile loop that keeps plan and actual honest.",
-          "cap": "ReARM CD"
+          "title": "Evidence follows the deployment",
+          "cap": "Audit Evidence",
+          "body": "What was approved, what was targeted, what ran and when, per instance, in one immutable history. The SBOM, findings and approvals attached to a release travel with it into the deployment record."
+        },
+        {
+          "num": "07",
+          "title": "Air-gapped sites",
+          "cap": "Distribution",
+          "body": "Where nothing can connect, the release goes out instead of the agent coming in. The CLI resolves which release an environment is cleared for under your approvals, packages it with its artifacts and evidence as a bundle you carry across the gap, and ReARM records the transfer against the site, as a distribution target or a placeholder instance, so what landed there is still on record."
         }
       ],
       "img": "/screenshots/19-instance-page.png"
