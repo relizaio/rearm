@@ -533,6 +533,10 @@ const storeObject : any = {
                                     vexComplianceFramework
                                     sidPurlMode
                                     sidAuthoritySegments
+                                    fdaAssessmentNarrative
+                                    fdaPatchesMayCeaseStatement
+                                    fdaRiskTransferProcessRef
+                                    fdaRiskIncreasesNotice
                                 }
                             }
                         }`,

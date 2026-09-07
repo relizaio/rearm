@@ -939,6 +939,67 @@
                             <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
                         </n-form-item>
 
+                        <!-- FDA-Readiness-1 7f. These four are rendered into the generated
+                             submission and labeling documents. No default text ships: they
+                             are the manufacturer's own commitments, and words nobody here
+                             wrote going out over their name is the failure the whole
+                             feature exists to avoid. -->
+                        <n-divider style="margin: 22px 0 10px;">
+                            <span style="font-size: 13px;">FDA submission and labeling text</span>
+                        </n-divider>
+                        <n-alert type="default" :show-icon="false"
+                            style="font-size: 12px; margin-bottom: 14px; max-width: 760px;">
+                            Written once here, rendered into every generated document. A
+                            document whose required text is missing is <strong>not
+                            generated</strong> rather than generated with the section
+                            blank &mdash; on a submission a reviewer expects gaps, but on a
+                            patient-facing statement a silent gap is itself misleading.
+                            Text saved here cannot yet be cleared from this form; edit it
+                            instead.
+                        </n-alert>
+
+                        <n-form-item label="Assessment justification (submission)">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
+                                    type="textarea" :rows="5" style="max-width: 760px;"
+                                    placeholder="How components were assessed, and why an upstream end-of-support date is unavailable for most of them." />
+                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                    What the guidance asks for literally: the justification
+                                    for why per-component support information cannot be
+                                    included. Most components in a real SBOM have no
+                                    published upstream date, so this is the centre of the
+                                    submission, not a footnote.
+                                </span>
+                            </div>
+                        </n-form-item>
+
+                        <n-form-item label="Patches may cease at end of support (labeling)">
+                            <n-input v-model:value="orgSettings.fdaPatchesMayCeaseStatement"
+                                type="textarea" :rows="3" style="max-width: 760px;"
+                                placeholder="After end of support, security patches and software updates may no longer be provided." />
+                        </n-form-item>
+
+                        <n-form-item label="Risk-transfer process reference (labeling)">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-input v-model:value="orgSettings.fdaRiskTransferProcessRef"
+                                    style="max-width: 760px;"
+                                    placeholder="e.g. DHF-PROC-4471 rev C, or a URL to the controlled document" />
+                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                    A <strong>reference</strong>, not the process itself.
+                                    Pasting the process here creates a second, unversioned
+                                    copy that will drift from the controlled original.
+                                </span>
+                            </div>
+                        </n-form-item>
+
+                        <n-form-item label="Risk increases over time (labeling)">
+                            <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
+                                type="textarea" :rows="3" style="max-width: 760px;"
+                                placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
+                        </n-form-item>
+
+                        <n-divider style="margin: 22px 0 10px;" />
+
                         <n-form-item>
                             <template #label>
                                 <span style="display: inline-flex; align-items: center; gap: 6px;">
@@ -1341,7 +1402,14 @@ const orgSettings = reactive({
     sidPurlMode: 'DISABLED' as SidPurlMode,
     // Authority segments are stored as a list of decoded strings ("Acme Robotics",
     // not "Acme%20Robotics"). The backend percent-encodes when emitting sid PURLs.
-    sidAuthoritySegments: [] as string[]
+    sidAuthoritySegments: [] as string[],
+    // FDA-Readiness-1 7f. Manufacturer-authored prose rendered into the generated
+    // submission and labeling documents. Empty string here means "not authored yet";
+    // it is never SENT as an empty string -- see the save handler.
+    fdaAssessmentNarrative: '',
+    fdaPatchesMayCeaseStatement: '',
+    fdaRiskTransferProcessRef: '',
+    fdaRiskIncreasesNotice: ''
 })
 
 const vexComplianceFrameworkOptions = [
@@ -3435,6 +3503,21 @@ async function saveOrgDefaultView() {
     }
 }
 
+/**
+ * The four FDA prose fields, with empty ones left OUT of the payload entirely.
+ * Returns a partial object to spread into the settings variables.
+ */
+function proseOrOmit (): Record<string, string> {
+    const out: Record<string, string> = {}
+    const fields = ['fdaAssessmentNarrative', 'fdaPatchesMayCeaseStatement',
+        'fdaRiskTransferProcessRef', 'fdaRiskIncreasesNotice'] as const
+    for (const f of fields) {
+        const v = (orgSettings[f] || '').trim()
+        if (v) out[f] = v
+    }
+    return out
+}
+
 async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
@@ -3446,6 +3529,10 @@ async function loadOrgSettings() {
     orgSettings.sidAuthoritySegments = Array.isArray(s?.sidAuthoritySegments)
         ? [...s.sidAuthoritySegments]
         : []
+    orgSettings.fdaAssessmentNarrative = s?.fdaAssessmentNarrative || ''
+    orgSettings.fdaPatchesMayCeaseStatement = s?.fdaPatchesMayCeaseStatement || ''
+    orgSettings.fdaRiskTransferProcessRef = s?.fdaRiskTransferProcessRef || ''
+    orgSettings.fdaRiskIncreasesNotice = s?.fdaRiskIncreasesNotice || ''
 }
 
 async function saveOrgSettings() {
@@ -3483,6 +3570,10 @@ async function saveOrgSettings() {
                             vexComplianceFramework
                             sidPurlMode
                             sidAuthoritySegments
+                            fdaAssessmentNarrative
+                            fdaPatchesMayCeaseStatement
+                            fdaRiskTransferProcessRef
+                            fdaRiskIncreasesNotice
                         }
                     }
                 }`,
@@ -3495,7 +3586,18 @@ async function saveOrgSettings() {
                     sidPurlMode: orgSettings.sidPurlMode,
                     // DISABLED implies "no segments"; sending an empty list lets the server
                     // null them out cleanly per applySidPurlPatch.
-                    sidAuthoritySegments: orgSettings.sidPurlMode === 'DISABLED' ? [] : trimmedSegments
+                    sidAuthoritySegments: orgSettings.sidPurlMode === 'DISABLED' ? [] : trimmedSegments,
+                    // OMITTED when empty, never sent as ''. Two reasons, and both bite:
+                    // the server REFUSES a blank (it is the one value that would satisfy a
+                    // "slot is present" check while carrying nothing), so sending '' would
+                    // make an unrelated settings save fail; and under PATCH semantics
+                    // omitting leaves the stored prose alone, so editing a toggle cannot
+                    // silently erase text a manufacturer signed.
+                    //
+                    // The cost, stated rather than hidden: prose cannot currently be
+                    // CLEARED from this form. Clearing needs an explicit signal, the way
+                    // the attestation mutation uses clearMilestones -- not yet built.
+                    ...proseOrOmit()
                 }
             },
             fetchPolicy: 'no-cache'
