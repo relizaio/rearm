@@ -24,13 +24,6 @@
                     <n-tag size="small" :type="domainTagType" style="margin-left: 6px;">{{ selectedClient.domain || 'GENERIC' }}</n-tag>
                 </h4>
                 <div v-if="selectedClient.contact" class="contactLine">{{ formatContact(selectedClient.contact) }}</div>
-                <n-space size="small" style="margin: 4px 0;">
-                    <n-button v-if="isWritable" size="tiny" @click="openClientModal(selectedClient)">Edit</n-button>
-                    <n-popconfirm v-if="isWritable" @positive-click="deleteClient(selectedClient)">
-                        <template #trigger><n-button size="tiny" type="error">Archive</n-button></template>
-                        Archive client {{ selectedClient.name }} with all its sites, shipments, and devices?
-                    </n-popconfirm>
-                </n-space>
                 <h4>Sites</h4>
                 <n-icon v-if="isWritable" @click="openSiteModal()" class="icons clickable" title="Add Site" size="22"><CirclePlus /></n-icon>
                 <n-data-table :columns="siteColumns" :data="sites" :row-class-name="siteRowClass" :row-props="siteRowProps" size="small" />
@@ -43,26 +36,23 @@
             <template v-if="selectedSite">
                 <h4>{{ selectedSite.name }}</h4>
                 <div v-if="selectedSite.contact" class="contactLine">{{ formatContact(selectedSite.contact) }}</div>
-                <n-space size="small" style="margin: 4px 0;">
-                    <n-button v-if="isWritable" size="tiny" @click="openSiteModal(selectedSite)">Edit</n-button>
-                    <n-popconfirm v-if="isWritable" @positive-click="deleteSite(selectedSite)">
-                        <template #trigger><n-button size="tiny" type="error">Archive</n-button></template>
-                        Archive site {{ selectedSite.name }} with its shipments and devices?
-                    </n-popconfirm>
-                </n-space>
                 <h4>{{ terms.shipments }} <span class="subtle">({{ terms.installedBase }})</span></h4>
                 <n-icon v-if="isWritable" @click="openShipModal()" class="icons clickable" :title="terms.shipAction" size="22"><CirclePlus /></n-icon>
-                <n-tabs v-model:value="shipmentTab" type="segment" size="small" animated data-testid="shipment-tabs">
-                    <n-tab-pane name="hardware" :tab="`Hardware (${hardwareShipments.length})`">
+                <n-tabs v-if="showHardwareTab || showSamdTab" v-model:value="shipmentTab" type="segment" size="small" animated data-testid="shipment-tabs">
+                    <n-tab-pane v-if="showHardwareTab" name="hardware" :tab="`Hardware (${hardwareShipments.length})`">
                         <n-data-table :columns="shipmentColumns" :data="hardwareShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
                     </n-tab-pane>
-                    <n-tab-pane name="samd" :tab="`SaMD (${samdShipments.length})`">
+                    <n-tab-pane v-if="showSamdTab" name="samd" :tab="`SaMD (${samdShipments.length})`">
                         <n-data-table :columns="shipmentColumns" :data="samdShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
                     </n-tab-pane>
                     <n-tab-pane name="software" :tab="`Software (${softwareShipments.length})`">
                         <n-data-table :columns="softwareShipmentColumns" :data="softwareShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
                     </n-tab-pane>
                 </n-tabs>
+                <!-- software-only organization: no tabs, just the software shipments -->
+                <div v-else data-testid="shipment-tabs" data-software-only="true">
+                    <n-data-table :columns="softwareShipmentColumns" :data="softwareShipments" :row-class-name="shipmentRowClass" :row-props="shipmentRowProps" size="small" />
+                </div>
 
                 <!-- Units of the selected HARDWARE / SAMD shipment -->
                 <template v-if="selectedShipment && !isPlainSoftware(selectedShipment)">
@@ -195,7 +185,7 @@ import { ref, Ref, computed, ComputedRef, reactive, h, onMounted, watch } from '
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NTabPane, NTabs, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType } from 'naive-ui'
-import { CirclePlus, InfoCircle, Edit as EditIcon } from '@vicons/tabler'
+import { CirclePlus, InfoCircle, Edit as EditIcon, Archive as ArchiveIcon } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -327,6 +317,27 @@ const shipmentTab = ref('hardware')
 const softwareShipments = computed(() => shipments.value.filter(isPlainSoftware))
 const samdShipments = computed(() => shipments.value.filter(isSamd))
 const hardwareShipments = computed(() => shipments.value.filter(isHardware))
+// Which tabs make sense here follows the org's component classification: no hardware
+// components -> software only; SaMD only for MEDICAL-framed clients of an org that has SaMD
+// components. A kind that already has rows stays visible so nothing is hidden by accident.
+const orgHasHardware = ref(false)
+const orgHasSamd = ref(false)
+async function loadOrgClassification () {
+    try {
+        const resp: any = await graphqlClient.query({ query: gql`query componentsClassification($o: ID!) { components(orgUuid: $o, componentType: ANY) { uuid nature deviceClass } }`, variables: { o: orguuid.value }, fetchPolicy: 'no-cache' })
+        const comps: any[] = resp.data.components || []
+        orgHasHardware.value = comps.some(isHardware)
+        orgHasSamd.value = comps.some(isSamd)
+    } catch (e) { orgHasHardware.value = false; orgHasSamd.value = false }
+}
+const showHardwareTab = computed(() => orgHasHardware.value || hardwareShipments.value.length > 0)
+const showSamdTab = computed(() => (selectedClient.value?.domain === 'MEDICAL' && orgHasSamd.value) || samdShipments.value.length > 0)
+const pickShipmentTab = () => {
+    const visible = [showHardwareTab.value ? 'hardware' : '', showSamdTab.value ? 'samd' : '', 'software'].filter(Boolean)
+    const counts: Record<string, number> = { hardware: hardwareShipments.value.length, samd: samdShipments.value.length, software: softwareShipments.value.length }
+    shipmentTab.value = visible.find(t => counts[t] > 0) || visible[0]
+}
+watch([showHardwareTab, showSamdTab], () => { if (!['hardware', 'samd', 'software'].includes(shipmentTab.value) || (shipmentTab.value === 'hardware' && !showHardwareTab.value) || (shipmentTab.value === 'samd' && !showSamdTab.value)) pickShipmentTab() })
 const siteDevices: Ref<any[]> = ref([])
 const siteDeviceOptions = computed(() => siteDevices.value.map((d: any) => ({ label: summarizeIds(d.identifiers) || shortUuid(d.uuid), value: d.uuid })))
 async function loadSiteDevices (siteUuid: string) {
@@ -427,15 +438,27 @@ watch(() => route.params.siteuuid, async (v) => {
     selectedSiteUuid.value = v ? v.toString() : ''
     selectedShipmentUuid.value = ''; devices.value = []
     await Promise.all([loadShipments(selectedSiteUuid.value), loadSiteDevices(selectedSiteUuid.value)])
-    shipmentTab.value = hardwareShipments.value.length || !(samdShipments.value.length || softwareShipments.value.length) ? 'hardware' : samdShipments.value.length ? 'samd' : 'software'
+    pickShipmentTab()
 })
 
 // ---- columns ----
+// Edit / archive live inside the list row (no header label); clicks must not select the row.
+const rowActions = (r: any, edit: (x: any) => void, archive: (x: any) => Promise<void>, confirmText: string) => h('span', { style: 'white-space: nowrap;', onClick: (e: Event) => e.stopPropagation() }, [
+    h(NIcon, { size: 18, class: 'icons clickable', title: 'Edit', style: 'margin-right: 8px;', onClick: () => edit(r) }, { default: () => h(EditIcon) }),
+    h(NPopconfirm, { onPositiveClick: () => archive(r) }, {
+        trigger: () => h(NIcon, { size: 18, class: 'icons clickable', title: 'Archive', style: 'color: #d03050;' }, { default: () => h(ArchiveIcon) }),
+        default: () => confirmText
+    })
+])
 const clientColumns = [
     { key: 'name', title: 'Name' },
-    { key: 'domain', title: 'Framing', render: (r: any) => h(NTag, { size: 'small' }, { default: () => r.domain || 'GENERIC' }) }
+    { key: 'domain', title: 'Framing', render: (r: any) => h(NTag, { size: 'small' }, { default: () => r.domain || 'GENERIC' }) },
+    ...(isWritable ? [{ key: 'actions', title: '', width: 70, render: (r: any) => rowActions(r, openClientModal, deleteClient, `Archive client ${r.name} with all its sites, shipments, and devices?`) }] : [])
 ]
-const siteColumns = [{ key: 'name', title: 'Name' }]
+const siteColumns = [
+    { key: 'name', title: 'Name' },
+    ...(isWritable ? [{ key: 'actions', title: '', width: 70, render: (r: any) => rowActions(r, openSiteModal, deleteSite, `Archive site ${r.name} with its shipments and devices?`) }] : [])
+]
 const shipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
     {
@@ -708,6 +731,7 @@ const fleetDriftColumns = [
 const driftRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => router.push({ name: 'DeviceView', params: { deviceuuid: r.device.uuid } }) })
 
 onMounted(async () => {
+    loadOrgClassification()
     store.dispatch('fetchProducts', orguuid.value)
     loadFleetDrift()
     await loadClients()
