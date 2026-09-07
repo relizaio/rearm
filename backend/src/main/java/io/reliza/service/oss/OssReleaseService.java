@@ -629,8 +629,10 @@ public class OssReleaseService {
 		//
 		// Old values are captured BEFORE any setter runs. That ordering is the whole point --
 		// reading rData after setting it records oldValue == newValue, which is the defect
-		// t20260831-044941-4111 filed against NOTES and TAGS, and which the VERSION block
-		// immediately above still has on this side.
+		// t20260831-044941-4111 filed against NOTES and TAGS. On THIS side that defect is
+		// still live in all three of NOTES, TAGS and the VERSION block immediately above; it
+		// was fixed upstream, and the fix is in a file the sync does not carry. So this block
+		// captures first rather than following its neighbours.
 		boolean clearingEos = Boolean.TRUE.equals(releaseDto.getClearEos());
 		boolean clearingEol = Boolean.TRUE.equals(releaseDto.getClearEol());
 		LocalDate oldEos = rData.getEos();
@@ -644,6 +646,10 @@ public class OssReleaseService {
 			// write) on purpose: this inline check gives the update caller a specific
 			// RelizaException instead of the generic IllegalStateException, while the one in
 			// validateReleaseData is what makes the invariant hold for every writer.
+			//
+			// The two messages are NOT identical -- validateReleaseData prefixes "Release ".
+			// Only this path is reachable from the device-window form, so nobody sees both
+			// today, but do not describe the rule as having a single wording.
 			if (null != newEos && null != newEol && newEos.isAfter(newEol)) {
 				throw new RelizaException("eos must not be after eol (device support window)");
 			}

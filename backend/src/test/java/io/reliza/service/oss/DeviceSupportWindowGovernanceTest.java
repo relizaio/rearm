@@ -7,7 +7,13 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-import org.junit.jupiter.api.Assertions;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -98,9 +104,9 @@ public class DeviceSupportWindowGovernanceTest {
 		Organization org = testInitializer.obtainOrganization();
 		UUID releaseUuid = createRelease(org.getUuid(), LocalDate.parse("2030-01-01"), null);
 		List<ReleaseUpdateEvent> events = supportWindowEvents(releaseUuid);
-		Assertions.assertEquals(1, events.size(),
+		assertEquals(1, events.size(),
 				"a window set at creation must not be invisible in history");
-		Assertions.assertEquals("eos=2030-01-01, eol=null", events.get(0).newValue());
+		assertEquals("eos=2030-01-01, eol=null", events.get(0).newValue());
 	}
 
 	@Test
@@ -112,17 +118,18 @@ public class DeviceSupportWindowGovernanceTest {
 				.uuid(releaseUuid).eos(LocalDate.parse("2030-01-01")).eol(LocalDate.parse("2033-12-31")).build(), WU);
 
 		ReleaseData after = current(releaseUuid);
-		Assertions.assertEquals(LocalDate.parse("2030-01-01"), after.getEos());
-		Assertions.assertEquals(LocalDate.parse("2033-12-31"), after.getEol());
+		assertEquals(LocalDate.parse("2030-01-01"), after.getEos());
+		assertEquals(LocalDate.parse("2033-12-31"), after.getEol());
 		List<ReleaseUpdateEvent> events = supportWindowEvents(releaseUuid);
-		Assertions.assertEquals(1, events.size());
-		Assertions.assertEquals("eos=null, eol=null", events.get(0).oldValue());
-		Assertions.assertEquals("eos=2030-01-01, eol=2033-12-31", events.get(0).newValue());
-		Assertions.assertNotNull(events.get(0).wu(), "the attester must be recorded");
+		assertEquals(1, events.size());
+		assertEquals("eos=null, eol=null", events.get(0).oldValue());
+		assertEquals("eos=2030-01-01, eol=2033-12-31", events.get(0).newValue());
+		assertNotNull(events.get(0).wu(), "the attester must be recorded");
 	}
 
 	/**
-	 * The exact defect the sibling NOTES/TAGS emitters had (PR #464): reading the old
+	 * The exact defect the sibling NOTES/TAGS emitters have (rearm-saas#464 fixed it there;
+	 * on this side they still carry it): reading the old
 	 * value back AFTER the setter ran yields oldValue == newValue, corrupting the
 	 * correction trail. Pinned explicitly per the task notes' own request.
 	 */
@@ -135,12 +142,12 @@ public class DeviceSupportWindowGovernanceTest {
 				.uuid(releaseUuid).eos(LocalDate.parse("2031-06-15")).build(), WU);
 
 		List<ReleaseUpdateEvent> events = supportWindowEvents(releaseUuid);
-		Assertions.assertEquals(2, events.size(), "creation + one correction");
+		assertEquals(2, events.size(), "creation + one correction");
 		ReleaseUpdateEvent correction = events.get(1);
-		Assertions.assertNotEquals(correction.oldValue(), correction.newValue(),
+		assertNotEquals(correction.oldValue(), correction.newValue(),
 				"a real change must never record oldValue == newValue");
-		Assertions.assertEquals("eos=2030-01-01, eol=2033-12-31", correction.oldValue());
-		Assertions.assertEquals("eos=2031-06-15, eol=2033-12-31", correction.newValue(),
+		assertEquals("eos=2030-01-01, eol=2033-12-31", correction.oldValue());
+		assertEquals("eos=2031-06-15, eol=2033-12-31", correction.newValue(),
 				"eol was not part of this update and must be preserved, not dropped");
 	}
 
@@ -153,11 +160,11 @@ public class DeviceSupportWindowGovernanceTest {
 				.uuid(releaseUuid).clearEos(true).build(), WU);
 
 		ReleaseData after = current(releaseUuid);
-		Assertions.assertNull(after.getEos(), "clearEos must actually unset the field");
+		assertNull(after.getEos(), "clearEos must actually unset the field");
 		List<ReleaseUpdateEvent> events = supportWindowEvents(releaseUuid);
-		Assertions.assertEquals(2, events.size(), "creation + one clear");
-		Assertions.assertEquals("eos=2030-01-01, eol=null", events.get(1).oldValue());
-		Assertions.assertEquals("eos=null, eol=null", events.get(1).newValue(),
+		assertEquals(2, events.size(), "creation + one clear");
+		assertEquals("eos=2030-01-01, eol=null", events.get(1).oldValue());
+		assertEquals("eos=null, eol=null", events.get(1).newValue(),
 				"a clear is distinguishable from never-set only through THIS event existing");
 	}
 
@@ -171,7 +178,7 @@ public class DeviceSupportWindowGovernanceTest {
 		ossReleaseService.updateRelease(ReleaseDto.builder()
 				.uuid(releaseUuid).eos(LocalDate.parse("2099-01-01")).clearEos(true).build(), WU);
 
-		Assertions.assertNull(current(releaseUuid).getEos());
+		assertNull(current(releaseUuid).getEos());
 	}
 
 	@Test
@@ -179,7 +186,7 @@ public class DeviceSupportWindowGovernanceTest {
 		Organization org = testInitializer.obtainOrganization();
 		UUID releaseUuid = createRelease(org.getUuid(), null, LocalDate.parse("2030-01-01"));
 
-		Assertions.assertThrows(RelizaException.class, () -> ossReleaseService.updateRelease(
+		assertThrows(RelizaException.class, () -> ossReleaseService.updateRelease(
 				ReleaseDto.builder().uuid(releaseUuid).eos(LocalDate.parse("2031-01-01")).build(), WU),
 				"eos after the existing eol must be rejected even when eol itself is untouched");
 	}
@@ -192,8 +199,8 @@ public class DeviceSupportWindowGovernanceTest {
 		ossReleaseService.updateRelease(ReleaseDto.builder()
 				.uuid(releaseUuid).notes("unrelated edit").build(), WU);
 
-		Assertions.assertNull(current(releaseUuid).getEos());
-		Assertions.assertTrue(supportWindowEvents(releaseUuid).isEmpty(),
+		assertNull(current(releaseUuid).getEos());
+		assertTrue(supportWindowEvents(releaseUuid).isEmpty(),
 				"a release that never declared a window must stay unaffected by unrelated updates");
 	}
 
@@ -201,20 +208,20 @@ public class DeviceSupportWindowGovernanceTest {
 	public void provenanceIsDerivedFromTheLatestSupportWindowEvent() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		UUID releaseUuid = createRelease(org.getUuid(), null, null);
-		Assertions.assertNull(current(releaseUuid).getSupportWindowSource(),
+		assertNull(current(releaseUuid).getSupportWindowSource(),
 				"never-touched window must have no provenance");
 
 		UUID apiKeyId = UUID.randomUUID();
-		WhoUpdated apiCaller = WhoUpdated.getWhoUpdated(ProgrammaticType.API, apiKeyId, null);
+		WhoUpdated apiCaller = WhoUpdated.getApiWhoUpdated(apiKeyId, null);
 		ossReleaseService.updateRelease(ReleaseDto.builder()
 				.uuid(releaseUuid).eos(LocalDate.parse("2030-01-01")).build(), apiCaller);
 
 		ReleaseData after = current(releaseUuid);
-		Assertions.assertEquals(ProgrammaticType.API, after.getSupportWindowSource(),
+		assertEquals(ProgrammaticType.API, after.getSupportWindowSource(),
 				"a programmatic setter must be distinguishable from a human one");
-		Assertions.assertEquals(apiKeyId, after.getSupportWindowAssertedBy(),
+		assertEquals(apiKeyId, after.getSupportWindowAssertedBy(),
 				"assertedBy is NOT gated by source -- an API key id is still worth tracing, not nulled out");
-		Assertions.assertNotNull(after.getSupportWindowLastAssessed());
+		assertNotNull(after.getSupportWindowLastAssessed());
 	}
 
 	/**
@@ -227,11 +234,11 @@ public class DeviceSupportWindowGovernanceTest {
 	@Test
 	public void eosAfterEolIsRejectedAtCreationToo() {
 		Organization org = testInitializer.obtainOrganization();
-		IllegalStateException e = Assertions.assertThrows(IllegalStateException.class,
+		IllegalStateException e = assertThrows(IllegalStateException.class,
 				() -> createRelease(org.getUuid(), LocalDate.parse("2035-01-01"), LocalDate.parse("2030-01-01")),
 				"createRelease must not persist an inverted window -- validateReleaseData is the "
 				+ "single enforcement point for every writer, not just the update path");
-		Assertions.assertTrue(e.getMessage().contains("eos") && e.getMessage().contains("eol"), e.getMessage());
+		assertTrue(e.getMessage().contains("eos") && e.getMessage().contains("eol"), e.getMessage());
 	}
 
 	@Test
@@ -242,7 +249,7 @@ public class DeviceSupportWindowGovernanceTest {
 		ossReleaseService.updateRelease(ReleaseDto.builder()
 				.uuid(releaseUuid).eos(LocalDate.parse("2030-01-01")).build(), WU);
 
-		Assertions.assertEquals(ReleaseUpdateAction.ADDED, supportWindowEvents(releaseUuid).get(0).rua());
+		assertEquals(ReleaseUpdateAction.ADDED, supportWindowEvents(releaseUuid).get(0).rua());
 	}
 
 	@Test
@@ -254,7 +261,7 @@ public class DeviceSupportWindowGovernanceTest {
 				.uuid(releaseUuid).clearEos(true).clearEol(true).build(), WU);
 
 		List<ReleaseUpdateEvent> events = supportWindowEvents(releaseUuid);
-		Assertions.assertEquals(ReleaseUpdateAction.REMOVED, events.get(events.size() - 1).rua(),
+		assertEquals(ReleaseUpdateAction.REMOVED, events.get(events.size() - 1).rua(),
 				"a full clear is a removal, not a value change -- an audit view filtered on REMOVED must see it");
 	}
 
@@ -267,7 +274,7 @@ public class DeviceSupportWindowGovernanceTest {
 				.uuid(releaseUuid).clearEos(true).build(), WU);
 
 		List<ReleaseUpdateEvent> events = supportWindowEvents(releaseUuid);
-		Assertions.assertEquals(ReleaseUpdateAction.CHANGED, events.get(events.size() - 1).rua(),
+		assertEquals(ReleaseUpdateAction.CHANGED, events.get(events.size() - 1).rua(),
 				"eol is still set, so the window still exists -- this is a change, not a removal");
 	}
 
@@ -290,18 +297,18 @@ public class DeviceSupportWindowGovernanceTest {
 
 		ossReleaseService.updateRelease(ReleaseDto.builder()
 				.uuid(releaseUuid).eos(LocalDate.parse("2029-01-01")).build(), WU);
-		Assertions.assertEquals(LocalDate.parse("2029-01-01"), current(releaseUuid).getEos(),
+		assertEquals(LocalDate.parse("2029-01-01"), current(releaseUuid).getEos(),
 				"eos did not survive updateRelease -- the write path is ignoring the field");
 
 		ossReleaseService.updateRelease(ReleaseDto.builder()
 				.uuid(releaseUuid).eol(LocalDate.parse("2031-01-01")).build(), WU);
 		ReleaseData after = current(releaseUuid);
-		Assertions.assertEquals(LocalDate.parse("2031-01-01"), after.getEol(),
+		assertEquals(LocalDate.parse("2031-01-01"), after.getEol(),
 				"eol did not survive updateRelease");
-		Assertions.assertEquals(LocalDate.parse("2029-01-01"), after.getEos(),
+		assertEquals(LocalDate.parse("2029-01-01"), after.getEos(),
 				"a later eol-only update must not disturb eos");
 
-		Assertions.assertEquals(2, supportWindowEvents(releaseUuid).size(),
+		assertEquals(2, supportWindowEvents(releaseUuid).size(),
 				"each write must leave its own SUPPORT_WINDOW row -- the trail is what a"
 						+ " Device Support Statement is defended with");
 	}
