@@ -1834,8 +1834,15 @@ const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
     deviceWindow.eos !== deviceWindowBaseline.eos || deviceWindow.eol !== deviceWindowBaseline.eol)
 
 function seedDeviceWindow () {
-    deviceWindow.eos = updatedRelease.value?.eos || null
-    deviceWindow.eol = updatedRelease.value?.eol || null
+    // UNDEFINED means the query did not ask for the field; NULL means the server says it is
+    // not declared. Coercing the first to the second blanks a stored window and greys out
+    // Save, so the editor looks permanently broken while the value sits safely in the
+    // database. Both release queries select eos/eol now, so this should be unreachable --
+    // it is here because it was NOT unreachable an hour ago, and a third query would
+    // reintroduce it silently.
+    const r: any = updatedRelease.value
+    if (r?.eos !== undefined) deviceWindow.eos = r.eos || null
+    if (r?.eol !== undefined) deviceWindow.eol = r.eol || null
     deviceWindowBaseline.eos = deviceWindow.eos
     deviceWindowBaseline.eol = deviceWindow.eol
     deviceWindowError.value = null

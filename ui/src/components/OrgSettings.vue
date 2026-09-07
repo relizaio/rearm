@@ -954,8 +954,9 @@
                             generated</strong> rather than generated with the section
                             blank &mdash; on a submission a reviewer expects gaps, but on a
                             patient-facing statement a silent gap is itself misleading.
-                            Text saved here cannot yet be cleared from this form; edit it
-                            instead.
+                            To remove text, clear the box and save &mdash; an emptied field
+                            is recorded as deliberately blank, and a field you do not touch
+                            is left exactly as it was.
                         </n-alert>
 
                         <n-form-item label="Assessment justification (submission)">

@@ -732,6 +732,13 @@ const DELIVERABLE_DETAIL_DATA = `
 `
 
 const singleReleaseDataNoParent = `
+    # eos / eol: the DEVICE support window. Selected by BOTH release queries deliberately.
+    # fetchRelease switches to the full query once the artifacts tab has been visited, so a
+    # field present in only one of them reads as "not declared" from that point on -- which
+    # for this pair is a meaningful value, not an obvious absence, so the omission is
+    # invisible rather than loud.
+    eos
+    eol
     createdDate
     org
     hardware
