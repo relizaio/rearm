@@ -65,7 +65,7 @@
                 </n-tabs>
 
                 <!-- Units of the selected HARDWARE / SAMD shipment -->
-                <template v-if="selectedShipment && selectedShipment.kind !== 'SOFTWARE'">
+                <template v-if="selectedShipment && !isPlainSoftware(selectedShipment)">
                     <h4 style="margin-top: 12px;">Devices <span class="subtle">of selected {{ terms.shipment.toLowerCase() }}</span></h4>
                     <n-icon v-if="isWritable" @click="openDeviceModal()" class="icons clickable" title="Add device" size="22"><CirclePlus /></n-icon>
                     <n-data-table :columns="deviceColumns" :data="devices" :row-props="deviceRowProps" size="small" />
@@ -112,13 +112,13 @@
                     Editing shipment of <strong>{{ releaseLabel(shipForm.release) || shortUuid(shipForm.release) }}</strong> — product / feature set are fixed; adjust the rest. Fields marked * are required.
                 </div>
                 <div v-if="resolvedIdentity" class="identityBox" data-testid="ship-kind-box">
-                    <n-tag size="small" :type="isSoftwareShipment ? 'success' : 'info'">{{ shipmentKindLabel(resolvedIdentity.shipmentKind) }}</n-tag>
+                    <n-tag size="small" :type="isSoftwareShipment ? 'success' : 'info'">{{ shipmentKindLabel(resolvedIdentity) }}</n-tag>
                     <template v-if="resolvedIdentity.deviceClass !== 'NONE'">
                         &middot; {{ terms.deviceIdentity }}: <n-tag size="small" type="info">{{ resolvedIdentity.deviceClass }}</n-tag>
                         <span v-if="resolvedIdentity.udiDi"> &middot; UDI-DI: <code>{{ resolvedIdentity.udiDi }}</code></span>
                     </template>
                     <span v-if="isSoftwareShipment" class="subtle"> &middot; plain software: no quantity or batch facts; optionally applied to devices at this site</span>
-                    <span v-else-if="resolvedIdentity.shipmentKind === 'SAMD'" class="subtle"> &middot; software as a medical device: shipped and tracked per unit like hardware</span>
+                    <span v-else-if="isSamd(resolvedIdentity)" class="subtle"> &middot; software as a medical device: shipped and tracked per unit like hardware</span>
                 </div>
                 <div v-if="!editingShipmentUuid" class="subtle" style="margin-bottom: 6px;">Fields marked * are required.</div>
                 <n-form-item label="Release *">
@@ -313,16 +313,20 @@ const emptyContact = () => ({ address: '', phone: '', email: '' })
 const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contact: emptyContact(), notes: '' })
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
 const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null, devices: [] })
-// Shipment kind comes from the feature set's component classification (nature +
-// deviceClass): HARDWARE = physical batch, SAMD = software medical device shipped and
-// tracked per unit like hardware, SOFTWARE = plain software that may be applied to
-// devices at the site. The server derives the same value; this only drives the form.
-const isSoftwareShipment = computed(() => resolvedIdentity.value?.shipmentKind === 'SOFTWARE')
-const shipmentKindLabel = (k: string) => k === 'SOFTWARE' ? 'Software shipment' : k === 'SAMD' ? 'SaMD shipment' : 'Hardware shipment'
+// Shipments carry the same two-axis classification as components: nature (HARDWARE /
+// SOFTWARE, hardware if any constituent component is hardware) and deviceClass. HARDWARE =
+// physical batch; SOFTWARE + MEDICAL_* = SaMD, shipped and tracked per unit like hardware;
+// SOFTWARE + NONE = plain software that may be applied to devices at the site. The server
+// derives and stores both; this only drives the form and the tabs.
+const isHardware = (x: any) => x?.nature === 'HARDWARE'
+const isSamd = (x: any) => !isHardware(x) && !!x?.deviceClass && x.deviceClass !== 'NONE'
+const isPlainSoftware = (x: any) => !isHardware(x) && !isSamd(x)
+const isSoftwareShipment = computed(() => !!resolvedIdentity.value && isPlainSoftware(resolvedIdentity.value))
+const shipmentKindLabel = (x: any) => isHardware(x) ? 'Hardware shipment' : isSamd(x) ? 'SaMD shipment' : 'Software shipment'
 const shipmentTab = ref('hardware')
-const softwareShipments = computed(() => shipments.value.filter((s: any) => s.kind === 'SOFTWARE'))
-const samdShipments = computed(() => shipments.value.filter((s: any) => s.kind === 'SAMD'))
-const hardwareShipments = computed(() => shipments.value.filter((s: any) => s.kind !== 'SOFTWARE' && s.kind !== 'SAMD'))
+const softwareShipments = computed(() => shipments.value.filter(isPlainSoftware))
+const samdShipments = computed(() => shipments.value.filter(isSamd))
+const hardwareShipments = computed(() => shipments.value.filter(isHardware))
 const siteDevices: Ref<any[]> = ref([])
 const siteDeviceOptions = computed(() => siteDevices.value.map((d: any) => ({ label: summarizeIds(d.identifiers) || shortUuid(d.uuid), value: d.uuid })))
 async function loadSiteDevices (siteUuid: string) {
@@ -370,7 +374,7 @@ const onCreateUnitId = () => ({ idType: 'SERIAL', idValue: '' })
 // ---- GraphQL ----
 const CLIENT_FIELDS = 'uuid org name domain contact { address phone email } notes'
 const SITE_FIELDS = 'uuid org client name contact { address phone email } notes'
-const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes kind devices identifiers { idType idValue } choiceResolutions { choiceRef selectedRefs }'
+const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes nature deviceClass devices identifiers { idType idValue } choiceResolutions { choiceRef selectedRefs }'
 const DEVICE_FIELDS = 'uuid org shippedProduct site versionDrift notes identifiers { idType idValue } plan { expectedRelease } actual { reportedRelease reportedAt source } tracking { receivedDate patientId disposition dispositionDate }'
 
 async function loadClients () {
@@ -397,7 +401,7 @@ async function resolveIdentity () {
     resolvedIdentity.value = null
     if (!shipForm.featureSet) return
     try {
-        const resp: any = await graphqlClient.query({ query: gql`query fsdi($fs: ID!, $org: ID!) { featureSetDeviceIdentity(featureSetUuid: $fs, orgUuid: $org) { deviceClass udiDi hasHardware shipmentKind } }`, variables: { fs: shipForm.featureSet, org: orguuid.value }, fetchPolicy: 'no-cache' })
+        const resp: any = await graphqlClient.query({ query: gql`query fsdi($fs: ID!, $org: ID!) { featureSetDeviceIdentity(featureSetUuid: $fs, orgUuid: $org) { deviceClass udiDi nature } }`, variables: { fs: shipForm.featureSet, org: orguuid.value }, fetchPolicy: 'no-cache' })
         resolvedIdentity.value = resp.data.featureSetDeviceIdentity
     } catch (e: any) { /* invalid uuid etc */ }
 }
