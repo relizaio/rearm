@@ -672,7 +672,7 @@
     {
       "name": "Enterprise",
       "price": "$75",
-      "unit": "/write user/mo",
+      "unit": "/user/mo",
       "border": "#E3E5EC",
       "bg": "#fff",
       "popular": false,
