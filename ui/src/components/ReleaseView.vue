@@ -1015,6 +1015,43 @@
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
             <n-tabs style="padding-left:0.2%;" type="segment" @update:value="handleTabSwitch" animated>
                 <n-tab-pane name="components" tab="Components">
+                    <!-- The DEVICE support window. PRODUCT releases only: it is the device's
+                         horizon, and every component verdict (deviceSupportRisk) is measured
+                         against it. Deliberately editable after assembly -- a window is
+                         declared years after a device ships and revised as it ages, so a
+                         DRAFT-only gate would mean no shipped device could ever have one. -->
+                    <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
+                        <h3>Device support window</h3>
+                        <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                            Shown separately and never merged: end of support and end of sale
+                            are different facts, and a reader of the Device Support Statement
+                            is entitled to both. Blank means <strong>not declared</strong>,
+                            which is a fact in its own right &mdash; not an unknown to fill in.
+                        </n-alert>
+                        <n-space align="end" style="margin-bottom: 8px;">
+                            <div>
+                                <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
+                                <n-date-picker v-model:formatted-value="deviceWindow.eos"
+                                    value-format="yyyy-MM-dd" type="date" clearable
+                                    @update:formatted-value="deviceWindowError = null"
+                                    :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                            </div>
+                            <div>
+                                <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
+                                <n-date-picker v-model:formatted-value="deviceWindow.eol"
+                                    value-format="yyyy-MM-dd" type="date" clearable
+                                    @update:formatted-value="deviceWindowError = null"
+                                    :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                            </div>
+                            <n-button v-if="isWritable" size="small" type="primary"
+                                :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
+                                @click="saveDeviceWindow">Save window</n-button>
+                        </n-space>
+                        <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
+                            style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
+                            {{ deviceWindowError }}
+                        </n-alert>
+                    </div>
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Components
                             <Icon v-if="isWritable && isUpdatable"
@@ -1648,6 +1685,8 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import { formatSupportWindow } from '@/utils/supportWindowDisplay'
+import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
@@ -1760,6 +1799,112 @@ async function loadAcollections() {
         buildCombinedHistory()
     } catch (e) {
         console.error('Failed to fetch acollections:', e)
+    }
+}
+
+/**
+ * Renders the backend's compact support-window string ("eos=2030-06-30, eol=null") as
+ * something a person reads. Kept lenient: an unrecognised shape is shown verbatim rather
+ * than dropped, because a history row that silently omits what it recorded is worse than
+ * an ugly one.
+ */
+/**
+ * The device support window, edited independently of the release body.
+ *
+ * NARROW PARTIAL, not the whole release: the save sends { uuid, eos, eol, clearEos,
+ * clearEol } and nothing else. That matters beyond tidiness -- updateRelease treats a null
+ * list as "no change" (Utils.diffUuidLists), so omitting artifacts and commits leaves them
+ * attached, whereas posting a whole stale release object could detach them.
+ *
+ * It also sidesteps the DRAFT gate in save(), correctly. That gate protects a release's
+ * CONTENTS once assembled; a support window is the opposite kind of fact -- declared after
+ * assembly and revised as the device ages.
+ *
+ * There IS a server-side lifecycle gate -- the resolver calls the 2-arg updateRelease
+ * overload, which is UpdateReleaseStrength.DRAFT_ONLY. It does not fire here only because
+ * ReleaseDto.isAssemblyRequested trips on parentReleases / sourceCodeEntry / commits /
+ * inbound / outboundDeliverables, none of which this narrow payload sends. That is the
+ * load-bearing reason to keep the payload narrow: WIDENING IT ARMS THE GATE and an
+ * assembled release stops accepting window edits.
+ */
+const deviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
+const deviceWindowBaseline = reactive({ eos: null as string | null, eol: null as string | null })
+const savingDeviceWindow: Ref<boolean> = ref(false)
+const deviceWindowError: Ref<string | null> = ref(null)
+
+const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
+    deviceWindow.eos !== deviceWindowBaseline.eos || deviceWindow.eol !== deviceWindowBaseline.eol)
+
+function seedDeviceWindow () {
+    // UNDEFINED means the query did not ask for the field; NULL means the server says it is
+    // not declared. Coercing the first to the second blanks a stored window and greys out
+    // Save, so the editor looks permanently broken while the value sits safely in the
+    // database. Both release queries select eos/eol now, so this should be unreachable --
+    // it is here because it was NOT unreachable an hour ago, and a third query would
+    // reintroduce it silently.
+    const r: any = updatedRelease.value
+    if (r?.eos !== undefined) deviceWindow.eos = r.eos || null
+    if (r?.eol !== undefined) deviceWindow.eol = r.eol || null
+    deviceWindowBaseline.eos = deviceWindow.eos
+    deviceWindowBaseline.eol = deviceWindow.eol
+    deviceWindowError.value = null
+}
+
+async function saveDeviceWindow () {
+    savingDeviceWindow.value = true
+    deviceWindowError.value = null
+    try {
+        // Baseline diff, same shape as the prose form. A date that did not change is
+        // omitted; one that was SET and is now empty sends its clear flag, because null on
+        // this path means "keep" -- the backend reads clearEos/clearEol as the explicit
+        // signal and nothing else can express it.
+        // org is ID! on ReleaseInput, so even the narrowest partial must carry it -- a
+        // {uuid, eos} payload is rejected at GraphQL validation before the resolver is
+        // reached. Everything else is still omitted, which is what keeps artifacts and
+        // commits attached (updateRelease treats a null list as no change).
+        const vars = deviceWindowVariables(
+            updatedRelease.value.uuid,
+            updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid,
+            deviceWindow, deviceWindowBaseline)
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateDeviceSupportWindow($release: ReleaseInput!) {
+                    updateRelease(release: $release) { uuid eos eol }
+                }`,
+            variables: { release: vars }
+        })
+        // From the mutation's OWN response, BEFORE anything that can throw. The write has
+        // committed; this is now the truth, and it is already in hand. Refreshing via the
+        // refetch instead meant a refetch failure left the baseline stale on a committed
+        // write -- and the user could then not even clear the date they had just set,
+        // because dirty was false and Save was disabled with nothing explaining why.
+        const saved = (resp?.data as any)?.updateRelease
+        if (saved) {
+            deviceWindow.eos = saved.eos || null
+            deviceWindow.eol = saved.eol || null
+            deviceWindowBaseline.eos = deviceWindow.eos
+            deviceWindowBaseline.eol = deviceWindow.eol
+        }
+        notify('success', 'Saved', 'Device support window updated.')
+    } catch (err: any) {
+        // The SERVER's message, verbatim. The coherence rule (eos must not be after eol)
+        // is enforced for every writer, not just this form, so pre-validating here would
+        // invent a SECOND wording that could drift from the enforced one. Note the server
+        // already has two: this inline guard, and validateReleaseData, which prefixes
+        // "Release ". Only the inline path is reachable from this form, so no operator sees
+        // both -- but do not read this as there being one canonical message.
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(err)
+    } finally {
+        savingDeviceWindow.value = false
+    }
+
+    // Deliberately outside the try: a refetch keeps the rest of the page in step, but the
+    // save above has already been reported from the mutation's own response, so a refetch
+    // failure must not be dressed up as a failed save.
+    try {
+        await fetchRelease()
+    } catch (e) {
+        // The window itself is correct on screen; the surrounding page may be stale.
     }
 }
 
@@ -1933,6 +2078,10 @@ onMounted(async () => {
     loadingBar.start()
     isProductRelease.value = await detectIsProduct()
     await fetchRelease()
+    // AFTER fetchRelease, never before: the baseline has to reflect what the server holds,
+    // and seeding against an empty release would show a declared window as blank and then
+    // treat re-typing it as a change.
+    seedDeviceWindow()
     await fetchReleaseKeys()
     await loadDtrackConfigured()
     if (hasPendingStatuses()) ensureStatusPolling()
@@ -2477,6 +2626,7 @@ async function goToRelease (uuid: string) {
     try {
         isProductRelease.value = await detectIsProduct()
         await fetchRelease()
+        seedDeviceWindow()
         await fetchReleaseKeys()
     } finally {
         isLoading.value = false
@@ -5608,6 +5758,15 @@ const releaseHistoryFields = computed(() => [
             }
             if (row.rus === 'LIFECYCLE') {
                 const txt = `${resolveLifecycleLabel(row.oldValue)} -> ${resolveLifecycleLabel(row.newValue)}`
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
+            }
+            // A SUPPORT_WINDOW event carries old/new values and NO objectId, so without
+            // this branch it falls through to `return row.objectId` and the row renders
+            // blank -- a Scope column saying the window changed, next to nothing saying
+            // what it changed to. That line is what a Device Support Statement is defended
+            // with, so it has to read.
+            if (row.rus === 'SUPPORT_WINDOW') {
+                const txt = `${formatSupportWindow(row.oldValue)} -> ${formatSupportWindow(row.newValue)}`
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             // For artifact events from acollections, show type with info icon

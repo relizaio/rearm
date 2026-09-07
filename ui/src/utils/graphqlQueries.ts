@@ -731,7 +731,14 @@ const DELIVERABLE_DETAIL_DATA = `
     }
 `
 
+// eos / eol: the DEVICE support window. Selected by BOTH release queries deliberately.
+// fetchRelease switches to the full query once the artifacts tab has been visited, so a
+// field present in only one of them reads as "not declared" from that point on -- which for
+// this pair is a meaningful value, not an obvious absence, so the omission is invisible
+// rather than loud. releaseFragmentsSchemaDrift.spec.ts asserts the pairing.
 const singleReleaseDataNoParent = `
+    eos
+    eol
     createdDate
     org
     hardware
@@ -1270,9 +1277,15 @@ query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
     }
 }`
 
+// eos / eol: the DEVICE support window. Selected here rather than fetched on demand because
+// the release view seeds its editor from the loaded release, and an unselected field reads
+// as "not declared" -- a meaningful value here, so the omission would be invisible rather
+// than obviously broken. Must stay in step with singleReleaseDataNoParent.
 const singleReleaseProductNoParent = `
     createdDate
     org
+    eos
+    eol
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}

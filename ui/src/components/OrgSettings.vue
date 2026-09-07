@@ -939,6 +939,70 @@
                             <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
                         </n-form-item>
 
+                        <!-- FDA-Readiness-1 7f. These four are rendered into the generated
+                             submission and labeling documents. No default text ships: they
+                             are the manufacturer's own commitments, and words nobody here
+                             wrote going out over their name is the failure the whole
+                             feature exists to avoid. -->
+                        <n-divider />
+                        <h6>FDA submission and labeling text</h6>
+                        <p class="text-muted" style="max-width: 760px;">
+                            Written once here, rendered into every generated document. A
+                            document whose required text is missing is <strong>not
+                            generated</strong> rather than generated with the section
+                            blank &mdash; on a submission a reviewer expects gaps, but on a
+                            patient-facing statement a silent gap is itself misleading.
+                            To remove text, clear the box and save &mdash; an emptied field
+                            is recorded as deliberately blank, and a field you do not touch
+                            is left exactly as it was.
+                        </p>
+
+                        <n-form-item label="Assessment justification (submission)">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                    type="textarea" :rows="5" style="max-width: 760px;"
+                                    placeholder="How components were assessed, and why an upstream end-of-support date is unavailable for most of them." />
+                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                    What the guidance asks for literally: the justification
+                                    for why per-component support information cannot be
+                                    included. Most components in a real SBOM have no
+                                    published upstream date, so this is the centre of the
+                                    submission, not a footnote.
+                                </span>
+                            </div>
+                        </n-form-item>
+
+                        <n-form-item label="Patches may cease at end of support (labeling)">
+                            <n-input v-model:value="orgSettings.fdaPatchesMayCeaseStatement"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                type="textarea" :rows="3" style="max-width: 760px;"
+                                placeholder="After end of support, security patches and software updates may no longer be provided." />
+                        </n-form-item>
+
+                        <n-form-item label="Risk-transfer process reference (labeling)">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-input v-model:value="orgSettings.fdaRiskTransferProcessRef"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                    style="max-width: 760px;"
+                                    placeholder="e.g. DHF-PROC-4471 rev C, or a URL to the controlled document" />
+                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                    A <strong>reference</strong>, not the process itself.
+                                    Pasting the process here creates a second, unversioned
+                                    copy that will drift from the controlled original.
+                                </span>
+                            </div>
+                        </n-form-item>
+
+                        <n-form-item label="Risk increases over time (labeling)">
+                            <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                type="textarea" :rows="3" style="max-width: 760px;"
+                                placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
+                        </n-form-item>
+
+                        <n-divider style="margin: 22px 0 10px;" />
+
                         <n-form-item>
                             <template #label>
                                 <span style="display: inline-flex; align-items: center; gap: 6px;">
@@ -1156,6 +1220,7 @@ import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderP
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
@@ -1341,7 +1406,14 @@ const orgSettings = reactive({
     sidPurlMode: 'DISABLED' as SidPurlMode,
     // Authority segments are stored as a list of decoded strings ("Acme Robotics",
     // not "Acme%20Robotics"). The backend percent-encodes when emitting sid PURLs.
-    sidAuthoritySegments: [] as string[]
+    sidAuthoritySegments: [] as string[],
+    // FDA-Readiness-1 7f. Manufacturer-authored prose rendered into the generated
+    // submission and labeling documents. Empty string here means "not authored yet";
+    // it is never SENT as an empty string -- see the save handler.
+    fdaAssessmentNarrative: '',
+    fdaPatchesMayCeaseStatement: '',
+    fdaRiskTransferProcessRef: '',
+    fdaRiskIncreasesNotice: ''
 })
 
 const vexComplianceFrameworkOptions = [
@@ -3435,6 +3507,15 @@ async function saveOrgDefaultView() {
     }
 }
 
+/**
+ * What the four prose fields held when this form last agreed with the server.
+ *
+ * proseDiff reads it to tell an untouched field (omit) from an emptied one (send '', a
+ * deliberate clear), so it must be refreshed from every write that COMMITS -- see
+ * saveOrgSettings, which takes it from the mutation response rather than a follow-up read.
+ */
+const proseBaseline: Record<string, string> = {}
+
 async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
@@ -3446,6 +3527,11 @@ async function loadOrgSettings() {
     orgSettings.sidAuthoritySegments = Array.isArray(s?.sidAuthoritySegments)
         ? [...s.sidAuthoritySegments]
         : []
+    const seeded = proseBaselineFrom(s)
+    for (const f of FDA_PROSE_FIELDS) {
+        orgSettings[f] = seeded[f]
+        proseBaseline[f] = seeded[f]
+    }
 }
 
 async function saveOrgSettings() {
@@ -3483,6 +3569,10 @@ async function saveOrgSettings() {
                             vexComplianceFramework
                             sidPurlMode
                             sidAuthoritySegments
+                            fdaAssessmentNarrative
+                            fdaPatchesMayCeaseStatement
+                            fdaRiskTransferProcessRef
+                            fdaRiskIncreasesNotice
                         }
                     }
                 }`,
@@ -3495,7 +3585,11 @@ async function saveOrgSettings() {
                     sidPurlMode: orgSettings.sidPurlMode,
                     // DISABLED implies "no segments"; sending an empty list lets the server
                     // null them out cleanly per applySidPurlPatch.
-                    sidAuthoritySegments: orgSettings.sidPurlMode === 'DISABLED' ? [] : trimmedSegments
+                    sidAuthoritySegments: orgSettings.sidPurlMode === 'DISABLED' ? [] : trimmedSegments,
+                    // Diffed, not dumped: untouched fields are omitted so an unrelated
+                    // toggle cannot disturb prose, and a field the user emptied goes as ''
+                    // which the server reads as a deliberate clear.
+                    ...proseDiff(orgSettings, proseBaseline)
                 }
             },
             fetchPolicy: 'no-cache'
@@ -3504,8 +3598,20 @@ async function saveOrgSettings() {
         const result = (resp.data as any)?.updateOrganizationSettings
         if (result) {
             store.commit('UPDATE_ORGANIZATION', result)
-            // Sync local form with server-canonicalized values.
-            await loadOrgSettings()
+            // BEFORE anything that can throw. The mutation has COMMITTED by this point, so
+            // the baseline it implies is now the truth, and it is already in hand -- the
+            // mutation selects all four fields. Refreshing it via the re-read below instead
+            // meant a failed re-read left the baseline stale AND reported the committed
+            // save as a failure; the operator's next clear then compared '' against a stale
+            // '', omitted the field, and said "Settings Saved" while the server still held
+            // the text. That is fabricated prose reaching a patient-facing document, which
+            // is the exact failure this feature exists to prevent.
+            const savedSettings = (result as any)?.settings
+            const refreshed = proseBaselineFrom(savedSettings)
+            for (const f of FDA_PROSE_FIELDS) {
+                orgSettings[f] = refreshed[f]
+                proseBaseline[f] = refreshed[f]
+            }
             notify('success', 'Settings Saved', 'Organization settings updated successfully.')
         } else {
             notify('warning', 'Save Warning', 'Save completed but no response received.')
@@ -3514,6 +3620,17 @@ async function saveOrgSettings() {
         notify('error', 'Save Failed', commonFunctions.extractGraphQLErrorMessage(err))
     } finally {
         savingOrgSettings.value = false
+    }
+
+    // Deliberately AFTER the try and outside it: this is a convenience re-read that syncs
+    // the non-prose fields with whatever the server canonicalised. It does a network round
+    // trip and can fail on its own; when it does, the save above still happened and has
+    // already been reported honestly, so a failure here must not be dressed up as one.
+    try {
+        await loadOrgSettings()
+    } catch (err: any) {
+        notify('warning', 'Refresh Failed',
+            'Settings were saved, but reloading them failed. Reload the page to see the stored values.')
     }
 }
 
