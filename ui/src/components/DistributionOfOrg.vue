@@ -144,7 +144,7 @@
                 <n-form-item label="Ship date"><n-date-picker style="width: 100%;" type="date" clearable v-model:formatted-value="shipForm.shipDate" value-format="yyyy-MM-dd" placeholder="defaults to today" /></n-form-item>
                 <n-form-item v-if="isSoftwareShipment" label="Applies to devices (optional)">
                     <n-select v-model:value="shipForm.devices" multiple filterable clearable :options="siteDeviceOptions" data-testid="ship-devices"
-                        :placeholder="siteDeviceOptions.length ? 'Pick devices from hardware shipments at this site, or leave empty' : 'No devices at this site yet — leave empty'" />
+                        :placeholder="siteDeviceOptions.length ? 'Pick devices from hardware or SaMD shipments at this site, or leave empty' : 'No devices at this site yet — leave empty'" />
                 </n-form-item>
                 <n-form-item v-if="!isSoftwareShipment" label="Quantity *"><n-input-number v-model:value="shipForm.quantity" :min="1" /></n-form-item>
                 <n-form-item v-if="!isSoftwareShipment" label="Batch identifiers">
