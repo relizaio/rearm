@@ -1861,14 +1861,22 @@ function selectBranchFromLatest (uuid: string) {
 }
 
 function handleTabChange (tabName: string) {
-    // Clear selected branch when switching tabs
-    selectedBranchUuid.value = ''
+    // Branches / Feature Sets: open the base branch right away so the pane
+    // is never empty on the first click. Other tabs start with no selection.
+    let preselect = ''
+    if (tabName === 'branches') {
+        const list = branches.value || []
+        const base = list.find((b: any) => b.type === 'BASE') || [...list].sort((a: any, b: any) => isMain(b) - isMain(a))[0]
+        preselect = base ? base.uuid : ''
+    }
+    selectedBranchUuid.value = preselect
 
     router.push({
         name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
         params: {
             orguuid: route.params.orguuid,
-            compuuid: componentUuid
+            compuuid: componentUuid,
+            ...(preselect ? { branchuuid: preselect } : {})
         },
         query: { ...route.query, tab: tabName }
     })

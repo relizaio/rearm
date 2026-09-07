@@ -51,13 +51,13 @@ export default {
 // circles mirror the home widget.
 import { ref, Ref, h, watch, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { NDataTable, NIcon, NInputNumber, NTag, NTooltip, NSpace, useNotification, DataTableColumns } from 'naive-ui'
+import { NDataTable, NIcon, NInputNumber, NTag, NTooltip, useNotification, DataTableColumns } from 'naive-ui'
 import { Refresh, Star, CalendarTime } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
-import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
+import { renderVulnerabilityCells, renderViolationCells } from '@/utils/releaseScanCells'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{
@@ -128,9 +128,6 @@ function formatDateTime (dateStr: string): string {
     return dateStr ? new Date(dateStr).toLocaleString('en-CA') : ''
 }
 
-const circle = (title: string, color: string, value: any, onClick: () => void) =>
-    h('span', { title, class: 'circle', style: { background: color, cursor: 'pointer', fontSize: '0.8em' }, onClick: (e: Event) => { e.stopPropagation(); onClick() } }, String(value ?? 0))
-
 const columns: DataTableColumns<any> = [
     {
         title: () => props.featureSetLabel,
@@ -181,32 +178,16 @@ const columns: DataTableColumns<any> = [
         ])
     },
     {
-        title: 'Scan',
-        key: 'scan',
-        width: 320,
-        render: (row: any) => {
-            const status = getReleaseScanStatus(row, dtrackConfigured.value)
-            if (status.kind !== 'ready') {
-                return h('span', {
-                    title: status.title,
-                    style: { display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap',
-                        background: status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }
-                }, status.label)
-            }
-            if (!row.metrics?.lastScanned) return ''
-            const m = row.metrics
-            return h(NSpace, { size: 1 }, () => [
-                circle('Critical Severity Vulnerabilities', constants.VulnerabilityColors.CRITICAL, m.critical, () => openVulnModal(row, 'CRITICAL', ['Vulnerability', 'Weakness'])),
-                circle('High Severity Vulnerabilities', constants.VulnerabilityColors.HIGH, m.high, () => openVulnModal(row, 'HIGH', ['Vulnerability', 'Weakness'])),
-                circle('Medium Severity Vulnerabilities', constants.VulnerabilityColors.MEDIUM, m.medium, () => openVulnModal(row, 'MEDIUM', ['Vulnerability', 'Weakness'])),
-                circle('Low Severity Vulnerabilities', constants.VulnerabilityColors.LOW, m.low, () => openVulnModal(row, 'LOW', ['Vulnerability', 'Weakness'])),
-                circle('Vulnerabilities with Unassigned Severity', constants.VulnerabilityColors.UNASSIGNED, m.unassigned, () => openVulnModal(row, 'UNASSIGNED', ['Vulnerability', 'Weakness'])),
-                h('div', { style: 'width: 12px;' }),
-                circle('Licensing Policy Violations', constants.ViolationColors.LICENSE, m.policyViolationsLicenseTotal, () => openVulnModal(row, '', 'Violation')),
-                circle('Security Policy Violations', constants.ViolationColors.SECURITY, m.policyViolationsSecurityTotal, () => openVulnModal(row, '', 'Violation')),
-                circle('Operational Policy Violations', constants.ViolationColors.OPERATIONAL, m.policyViolationsOperationalTotal, () => openVulnModal(row, '', 'Violation'))
-            ])
-        }
+        title: 'Vulnerabilities',
+        key: 'vulnerabilities',
+        width: 240,
+        render: (row: any) => renderVulnerabilityCells(row, getReleaseScanStatus(row, dtrackConfigured.value), openVulnModal)
+    },
+    {
+        title: 'Violations',
+        key: 'violations',
+        width: 160,
+        render: (row: any) => renderViolationCells(row, getReleaseScanStatus(row, dtrackConfigured.value), openVulnModal)
     }
 ]
 
