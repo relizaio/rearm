@@ -39,6 +39,36 @@ function asReleaseQuery (fragment: string) {
     }`)
 }
 
+// The two SINGLE-release documents, which are full DocumentNodes rather than fragments.
+//
+// They are exactly the hole this file's header describes, one level up: both interpolate
+// ${...}, so scripts/validate-graphql skips them -- and it does not count skips of that
+// kind in its "N skipped" line either, so the report UNDERSTATES what went unchecked.
+//
+// The pairing below is the load-bearing part. fetchRelease uses the product-simplified
+// document until the Underlying Artifacts tab is visited and the FULL one afterwards, so a
+// field selected by only one of them is present or absent depending on which tabs the
+// operator happened to click. eos/eol shipped in the simplified query alone: the editor
+// saved correctly, then the refetch read undefined, blanked both pickers and reset the
+// baseline -- so the window looked permanently unsaveable while the value sat safely in the
+// database. A comment used to be the only thing holding these two in step.
+const SINGLE_RELEASE_DOCUMENTS: Array<[string, any]> = [
+    ['SingleReleaseGql', graphqlQueries.SingleReleaseGql],
+    ['SingleReleaseProductGql', graphqlQueries.SingleReleaseProductGql]
+]
+
+describe('single-release documents vs the CE schema', () => {
+    it.each(SINGLE_RELEASE_DOCUMENTS)('%s is valid against the CE schema', (_name, doc) => {
+        expect(validate(ceSchema, doc).map(e => e.message)).toEqual([])
+    })
+
+    it.each(SINGLE_RELEASE_DOCUMENTS)('%s selects the device support window', (_name, doc) => {
+        const printed = doc.loc?.source?.body ?? ''
+        expect(printed).toMatch(/\beos\b/)
+        expect(printed).toMatch(/\beol\b/)
+    })
+})
+
 describe('release selection fragments vs the CE schema', () => {
     it.each(RELEASE_FRAGMENTS)('%s is valid against the CE schema', (_name, fragment) => {
         expect(validate(ceSchema, asReleaseQuery(fragment)).map(e => e.message)).toEqual([])

@@ -1033,12 +1033,14 @@
                                 <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
                                 <n-date-picker v-model:formatted-value="deviceWindow.eos"
                                     value-format="yyyy-MM-dd" type="date" clearable
+                                    @update:formatted-value="deviceWindowError = null"
                                     :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
                             </div>
                             <div>
                                 <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
                                 <n-date-picker v-model:formatted-value="deviceWindow.eol"
                                     value-format="yyyy-MM-dd" type="date" clearable
+                                    @update:formatted-value="deviceWindowError = null"
                                     :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
                             </div>
                             <n-button v-if="isWritable" size="small" type="primary"
@@ -1683,6 +1685,8 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import { formatSupportWindow } from '@/utils/supportWindowDisplay'
+import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
@@ -1804,14 +1808,6 @@ async function loadAcollections() {
  * than dropped, because a history row that silently omits what it recorded is worse than
  * an ugly one.
  */
-function formatSupportWindow (value: string | null | undefined): string {
-    if (!value) return 'not declared'
-    const m = /^eos=(.*), eol=(.*)$/.exec(value)
-    if (!m) return value
-    const part = (v: string) => (v === 'null' ? 'not declared' : v)
-    return `EOS ${part(m[1])}, EOL ${part(m[2])}`
-}
-
 /**
  * The device support window, edited independently of the release body.
  *
@@ -1822,8 +1818,14 @@ function formatSupportWindow (value: string | null | undefined): string {
  *
  * It also sidesteps the DRAFT gate in save(), correctly. That gate protects a release's
  * CONTENTS once assembled; a support window is the opposite kind of fact -- declared after
- * assembly and revised as the device ages. There is no server-side lifecycle gate on
- * updateRelease, so this is a UI restriction that should not apply here.
+ * assembly and revised as the device ages.
+ *
+ * There IS a server-side lifecycle gate -- the resolver calls the 2-arg updateRelease
+ * overload, which is UpdateReleaseStrength.DRAFT_ONLY. It does not fire here only because
+ * ReleaseDto.isAssemblyRequested trips on parentReleases / sourceCodeEntry / commits /
+ * inbound / outboundDeliverables, none of which this narrow payload sends. That is the
+ * load-bearing reason to keep the payload narrow: WIDENING IT ARMS THE GATE and an
+ * assembled release stops accepting window edits.
  */
 const deviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
 const deviceWindowBaseline = reactive({ eos: null as string | null, eol: null as string | null })
@@ -1860,27 +1862,29 @@ async function saveDeviceWindow () {
         // {uuid, eos} payload is rejected at GraphQL validation before the resolver is
         // reached. Everything else is still omitted, which is what keeps artifacts and
         // commits attached (updateRelease treats a null list as no change).
-        const vars: Record<string, unknown> = {
-            uuid: updatedRelease.value.uuid,
-            org: updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
-        }
-        if (deviceWindow.eos !== deviceWindowBaseline.eos) {
-            if (deviceWindow.eos) vars.eos = deviceWindow.eos
-            else if (deviceWindowBaseline.eos) vars.clearEos = true
-        }
-        if (deviceWindow.eol !== deviceWindowBaseline.eol) {
-            if (deviceWindow.eol) vars.eol = deviceWindow.eol
-            else if (deviceWindowBaseline.eol) vars.clearEol = true
-        }
-        await graphqlClient.mutate({
+        const vars = deviceWindowVariables(
+            updatedRelease.value.uuid,
+            updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid,
+            deviceWindow, deviceWindowBaseline)
+        const resp = await graphqlClient.mutate({
             mutation: gql`
                 mutation updateDeviceSupportWindow($release: ReleaseInput!) {
                     updateRelease(release: $release) { uuid eos eol }
                 }`,
             variables: { release: vars }
         })
-        await fetchRelease()
-        seedDeviceWindow()
+        // From the mutation's OWN response, BEFORE anything that can throw. The write has
+        // committed; this is now the truth, and it is already in hand. Refreshing via the
+        // refetch instead meant a refetch failure left the baseline stale on a committed
+        // write -- and the user could then not even clear the date they had just set,
+        // because dirty was false and Save was disabled with nothing explaining why.
+        const saved = (resp?.data as any)?.updateRelease
+        if (saved) {
+            deviceWindow.eos = saved.eos || null
+            deviceWindow.eol = saved.eol || null
+            deviceWindowBaseline.eos = deviceWindow.eos
+            deviceWindowBaseline.eol = deviceWindow.eol
+        }
         notify('success', 'Saved', 'Device support window updated.')
     } catch (err: any) {
         // The SERVER's message, verbatim. The coherence rule (eos must not be after eol)
@@ -1889,9 +1893,18 @@ async function saveDeviceWindow () {
         // already has two: this inline guard, and validateReleaseData, which prefixes
         // "Release ". Only the inline path is reachable from this form, so no operator sees
         // both -- but do not read this as there being one canonical message.
-        deviceWindowError.value = commonFunctions.parseGraphQLError(err.message)
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(err)
     } finally {
         savingDeviceWindow.value = false
+    }
+
+    // Deliberately outside the try: a refetch keeps the rest of the page in step, but the
+    // save above has already been reported from the mutation's own response, so a refetch
+    // failure must not be dressed up as a failed save.
+    try {
+        await fetchRelease()
+    } catch (e) {
+        // The window itself is correct on screen; the surrounding page may be stale.
     }
 }
 
