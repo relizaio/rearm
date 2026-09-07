@@ -28,6 +28,7 @@ import io.reliza.repositories.ArtifactSbomComponentRepository;
 import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentSupportAuditRepository;
+import io.reliza.repositories.SbomComponentSupportRepository;
 import io.reliza.service.SbomComponentService.ComponentPurlToSbom;
 import io.reliza.service.SbomComponentService.SbomComponentSearchQuery;
 
@@ -47,6 +48,7 @@ class SbomComponentPurlSearchTest {
 	@Mock private ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	@Mock private ReleaseArtifactIndexRepository releaseArtifactIndexRepository;
 	@Mock private ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
+	@Mock private SbomComponentSupportRepository sbomComponentSupportRepository;
 	@Mock private SbomComponentSupportAuditRepository sbomComponentSupportAuditRepository;
 
 	private SbomComponentService service;
@@ -58,7 +60,7 @@ class SbomComponentPurlSearchTest {
 		service = new SbomComponentService(
 				sbomComponentRepository, artifactSbomComponentRepository,
 				releaseArtifactIndexRepository, artifactCanonicalMapRepository,
-				sbomComponentSupportAuditRepository);
+				sbomComponentSupportRepository, sbomComponentSupportAuditRepository);
 	}
 
 	private SbomComponent comp(String canonicalPurl) {

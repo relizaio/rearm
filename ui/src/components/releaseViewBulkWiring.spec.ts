@@ -89,7 +89,7 @@ describe('the bulk sweep is wired into ReleaseView', () => {
      * The confirmation must quote the filter the WALK used, in the operator's words --
      * "Not disclosed", not the wire value UNATTESTED. Read live instead, it can move
      * between collect and confirm: the search debounce reassigns the applied filter behind
-     * the open modal, and a degraded page resets it to ALL.
+     * the open modal.
      */
     it('pins the walked filter and search onto the selection itself', () => {
         const collect = functionBody('collectBulkTargets')

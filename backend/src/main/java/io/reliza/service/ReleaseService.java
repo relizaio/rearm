@@ -214,6 +214,9 @@ public class ReleaseService {
 	@Autowired
 	private VexImportService vexImportService;
 
+	@Autowired
+	private SupportInjectionService supportInjectionService;
+
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
 	private final ReleaseRepository repository;
@@ -806,7 +809,11 @@ public class ReleaseService {
 	 * @throws RelizaException if no SBOMs found or merge fails
 	 * @throws JacksonException if BOM JSON processing fails
 	 */
-	private UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
+	// Package-private, not private, solely so ReleaseServiceForgedSupportStripTest can
+	// substitute the merge without a database and a live rebom: the forged-provenance strip
+	// on the merged export is a security control, and the only test that proves it is the
+	// one that drives the real public egress end to end.
+	UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
 			ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu, 
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
@@ -838,7 +845,30 @@ public class ReleaseService {
 			ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu, 
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
 		UUID releaseBomId = getReleaseBomId(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, wu, excludeCoverageTypes);
-		return rebomService.findBomByIdJson(releaseBomId, org);
+		JsonNode mergedBom = rebomService.findBomByIdJson(releaseBomId, org);
+		// The merged bom is assembled from component boms we did not write. A component bom
+		// uploaded with a reliza:support:* property carries it into this document unchanged,
+		// where SupportBomInjector's contract says every such property was written by us --
+		// so the forged one is served under our attribution. Stripping is UNCONDITIONAL and
+		// separate from injection: injection is a content choice an operator opts into, this
+		// is a security control, and tying them together would mean turning the feature off
+		// made spoofing easier. Applied here rather than at each caller so a new consumer of
+		// the merged bom cannot silently reintroduce the hole; both current callers (the JSON
+		// export and the VDR component enrichment below) need it.
+		//
+		// Not a full disclosure: this strips and stamps the marker, it injects nothing. The
+		// merged export still carries no support facts -- see t20260826-172851-10180.
+		try {
+			supportInjectionService.stripForgedProvenanceAndMark(mergedBom);
+		} catch (Exception stripEx) {
+			// Same posture as the download path: never fail a bom export over the add-on. But
+			// unlike injection this failure is a security-control failure, so it is logged as
+			// an error and the document is served WITHOUT our disclosure marker, which is the
+			// honest signal that we did not vouch for it.
+			log.error("Forged-support strip failed for release {} (org {}); serving unmarked: {}",
+					releaseUuid, org, stripEx.getMessage(), stripEx);
+		}
+		return mergedBom;
 	}
 	
 	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException{

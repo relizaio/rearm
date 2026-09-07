@@ -18,29 +18,21 @@ describe('loadReleaseSupportCoverage', () => {
     })
 
     /**
-     * The load-bearing one. CE's sbomComponentSupportCoverage takes ONLY orgUuid -- it has
-     * no releaseUuid argument -- so the single thing a CE server could answer is the
-     * ORG-WIDE number. That is a different question, not a degraded answer to this one:
-     * "34 of 1,240 across your whole organisation" rendered against one release is
-     * confidently wrong in a way an operator cannot detect. Null, and say so.
+     * THROWS on an absent field -- it does not invent zeroes, and it no longer returns null
+     * either. The resolver always builds a row (an org with no components answers 0/0, and a
+     * bad org or a foreign release is an error), so nothing here means a malformed response,
+     * which is a failure. Returning null would route it to the display's "has not loaded yet"
+     * branch: a failure rendered as a benign state.
      */
-    it('returns null on schema drift instead of falling back to the org-wide number', async () => {
-        const query = vi.fn().mockRejectedValue(
-            new Error('Unknown argument "releaseUuid" on field "Query.sbomComponentSupportCoverage"'))
-        expect(await loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1')).toBeNull()
-        // Exactly one attempt. A second call would be a fallback query, which is what this
-        // deliberately does not do.
-        expect(query).toHaveBeenCalledOnce()
-    })
-
-    it('returns null when the field is absent rather than inventing zeroes', async () => {
+    it('throws when the field is absent rather than inventing zeroes or a null', async () => {
         const query = vi.fn().mockResolvedValue({ data: {} })
-        expect(await loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1')).toBeNull()
+        await expect(loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1'))
+            .rejects.toThrow(/no support coverage/)
     })
 
     // Auth, transport, a rejected org: real errors, and the caller must see them. Swallowing
     // them as "unavailable" would render a missing-data state over a broken request.
-    it('propagates non-drift errors', async () => {
+    it('propagates errors', async () => {
         const query = vi.fn().mockRejectedValue(new Error('Not authorized'))
         await expect(loadReleaseSupportCoverage({ query } as any, 'org-1', 'rel-1'))
             .rejects.toThrow('Not authorized')

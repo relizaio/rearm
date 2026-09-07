@@ -33,7 +33,6 @@ export interface SbomComponentsPaging {
     loadingMore: Ref<boolean>
     loaded: Ref<boolean>
     failed: Ref<boolean>
-    degraded: Ref<boolean>
     filter: Ref<SupportAttestationFilter>
     searchInput: Ref<string>
     /**
@@ -75,7 +74,6 @@ export function useSbomComponentsPaging (deps: SbomComponentsPagingDeps): SbomCo
     const loadingMore = ref(false)
     const loaded = ref(false)
     const failed = ref(false)
-    const degraded = ref(false)
     const filter: Ref<SupportAttestationFilter> = ref('ALL')
     const searchInput = ref('')
     const appliedFilter: Ref<SupportAttestationFilter> = ref('ALL')
@@ -113,11 +111,8 @@ export function useSbomComponentsPaging (deps: SbomComponentsPagingDeps): SbomCo
             totalCount.value = page.totalCount
             cursor = page.endCursor
             hasMore.value = page.hasMore
-            degraded.value = page.degraded
-            // A degraded page is the WHOLE release, unfiltered. Reporting the requested
-            // filter as applied would label rows the server never filtered.
-            appliedFilter.value = page.degraded ? 'ALL' : reqFilter
-            appliedSearch.value = page.degraded ? '' : reqSearch
+            appliedFilter.value = reqFilter
+            appliedSearch.value = reqSearch
             loaded.value = true
             failed.value = false
             if (deps.onDataReplaced) deps.onDataReplaced()
@@ -201,7 +196,6 @@ export function useSbomComponentsPaging (deps: SbomComponentsPagingDeps): SbomCo
         loadingMore.value = false
         loaded.value = false
         failed.value = false
-        degraded.value = false
         appliedFilter.value = filter.value
         appliedSearch.value = searchInput.value
     }
@@ -214,7 +208,7 @@ export function useSbomComponentsPaging (deps: SbomComponentsPagingDeps): SbomCo
     }
 
     return {
-        items, totalCount, hasMore, loading, loadingMore, loaded, failed, degraded,
+        items, totalCount, hasMore, loading, loadingMore, loaded, failed,
         filter, searchInput, appliedFilter, appliedSearch,
         load, loadMore, onFilterChange, onSearchInput, reset, dispose
     }

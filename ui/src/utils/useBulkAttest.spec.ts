@@ -103,36 +103,6 @@ describe('collecting the work queue', () => {
 })
 
 describe('the walk refuses anything it cannot vouch for', () => {
-    /**
-     * THE critical one, flagged independently by four review lenses. loadSbomComponentsPage
-     * falls back to the UNPAGED, UNFILTERED query on schema drift -- and isSchemaDriftError
-     * treats ANY http 400 as drift, including one whose body an edge proxy stripped. So a
-     * transient 400 turns "sweep the 40 undisclosed matching openssl" into "sweep every
-     * undisclosed component in the release", with hasMore false so the walk looks complete.
-     *
-     * The count in the confirmation would be honest about the size and wrong about WHICH.
-     * The cap does not catch it: the set is a legitimate size, just the wrong set.
-     */
-    it('refuses a degraded page instead of sweeping the whole release', async () => {
-        // Routed by document: the paged query drifts, the unpaged fallback answers with the
-        // whole release. That is exactly what a stripped-body 400 at the edge produces.
-        const drifting = vi.fn(async (opts: any) => {
-            const body = opts.query?.loc?.source?.body ?? ''
-            if (body.includes('getReleaseSbomComponentsPage')) {
-                // The realistic trigger: a server that does not declare the paged query.
-                // isSchemaDriftError matches on the validation phrasing (or an HTTP 400
-                // signal), and this is what a CE backend actually returns.
-                throw new Error('Cannot query field "getReleaseSbomComponentsPage" on type "Query"')
-            }
-            return { data: { getReleaseSbomComponents:
-                Array.from({ length: 700 }, (_, i) => ({ sbomComponentUuid: `x${i}` })) } }
-        })
-        const b = useBulkAttest()
-        const res = await b.collect({ query: drifting } as any, 'rel-1', 'UNATTESTED', 'openssl')
-        expect(res.refused).toBe(true)
-        expect(res.ids).toEqual([])
-        expect(b.error.value).toMatch(/cannot filter|unavailable/i)
-    })
 
     /**
      * A walk that dies half way must not present a prefix as the work queue. The backend
@@ -199,7 +169,7 @@ describe('the walk refuses anything it cannot vouch for', () => {
         expect((await b.collect({ query } as any, 'rel-1', 'UNATTESTED', '')).ids).toEqual(['a', 'c'])
     })
 
-    it('passes the search through -- its silent loss is what the degraded case costs', async () => {
+    it('passes the search through -- sweeping an unfiltered set is the cost of losing it', async () => {
         const { client, query } = scripted([{ items: ids(2), hasMore: false }])
         const b = useBulkAttest()
         await b.collect(client, 'rel-1', 'UNATTESTED', 'log4j')
@@ -214,6 +184,25 @@ describe('the sweep is recorded as one action', () => {
      * the sweep -- and that instant is what the exported BOM publishes as "a human looked,
      * and when". Spread instants describe a stream of individual assessments.
      */
+    /**
+     * NOT a drift assertion -- a design guard on the client document, and it outlived the CE
+     * sync that removed its file-mates. supportNotes is per-component EVIDENCE: what someone
+     * checked about THAT component. Fanning one string across a sweep would attach the same
+     * evidence to hundreds of components nobody looked at individually, which is worse than
+     * no evidence because it reads as work that was done. The mutation accepts the argument
+     * on both schemas, so nothing but this stops it being sent.
+     */
+    it('does not send supportNotes, whatever the caller passes', async () => {
+        const { client, mutate } = scripted([])
+        await useBulkAttest().submit(client, ids(3), {
+            levelOfSupport: 'ACTIVELY_MAINTAINED', justification: 'j', reason: 'r',
+            supportNotes: 'checked the upstream release notes'
+        } as any)
+        const vars = mutate.mock.calls[0][0].variables
+        expect(Object.keys(vars)).not.toContain('supportNotes')
+        expect(JSON.stringify(vars)).not.toContain('upstream release notes')
+    })
+
     it('sends the same assessedAt on every batch', async () => {
         const { client, mutate } = scripted([])
         const b = useBulkAttest()

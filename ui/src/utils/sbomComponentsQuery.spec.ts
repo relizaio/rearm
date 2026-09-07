@@ -47,8 +47,19 @@ describe('loadSbomComponentsPage', () => {
             items: [{ uuid: 'a' }], totalCount: 312, endCursor: 'c-1', hasMore: true
         })
         expect(await loadSbomComponentsPage(client, 'rel-1')).toEqual({
-            items: [{ uuid: 'a' }], totalCount: 312, endCursor: 'c-1', hasMore: true,
-            degraded: false
+            items: [{ uuid: 'a' }], totalCount: 312, endCursor: 'c-1', hasMore: true
+        })
+    })
+
+    /**
+     * The defensive coalescing survives the fallback's removal, so its test should have too:
+     * only the `degraded: false` expectation needed dropping. Its sibling in
+     * releaseSupportCoverage.spec.ts kept the equivalent case.
+     */
+    it('coalesces an absent page to an empty one rather than to undefined', async () => {
+        const { client } = clientReturning(null)
+        expect(await loadSbomComponentsPage(client, 'rel-1')).toEqual({
+            items: [], totalCount: 0, endCursor: null, hasMore: false
         })
     })
 
@@ -59,27 +70,6 @@ describe('loadSbomComponentsPage', () => {
             items: [{ uuid: 'a' }], totalCount: 999, endCursor: 'c-1', hasMore: false
         })
         expect((await loadSbomComponentsPage(client, 'rel-1')).hasMore).toBe(false)
-    })
-
-    it('degrades to an empty page when the field is absent', async () => {
-        const query = vi.fn().mockResolvedValue({ data: {} })
-        expect(await loadSbomComponentsPage({ query } as any, 'rel-1')).toEqual({
-            items: [], totalCount: 0, endCursor: null, hasMore: false, degraded: false
-        })
-    })
-
-    // The CE mirror lacks the paged query until the schema sync lands, and this UI ships in
-    // the CE repo. Without the fallback the SBOM tab renders a toolbar over nothing there.
-    it('falls back to the unpaged query when the server does not know the paged one', async () => {
-        const query = vi.fn()
-            .mockRejectedValueOnce(new Error('Cannot query field "getReleaseSbomComponentsPage" on type "Query"'))
-            .mockResolvedValueOnce({ data: { getReleaseSbomComponents: [{ uuid: 'a' }, { uuid: 'b' }] } })
-        const res = await loadSbomComponentsPage({ query } as any, 'rel-1', { attestation: 'UNATTESTED' })
-        expect(res.degraded).toBe(true)
-        expect(res.items.length).toBe(2)
-        // The fallback returned everything: there is no next page to walk to.
-        expect(res.hasMore).toBe(false)
-        expect(res.endCursor).toBeNull()
     })
 
     // A rejected cursor is NOT schema drift. Retrying it as a full unfiltered reload would
