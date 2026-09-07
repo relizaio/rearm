@@ -1,11 +1,8 @@
 <template>
     <div class="latestReleases">
         <div class="latestReleasesHeader">
-            <span class="latestReleasesTitle">Latest release per {{ props.featureSetLabel.toLowerCase() }}</span>
-            <n-switch v-model:value="includeArchived" size="small" @update:value="fetchLatest">
-                <template #checked>archived included</template>
-                <template #unchecked>active only</template>
-            </n-switch>
+            <span class="latestReleasesTitle">Most recent releases across {{ props.featureSetLabel.toLowerCase() }}es</span>
+            <n-input-number v-model:value="limit" size="small" :min="1" :max="200" :step="5" style="width: 110px;" data-testid="latest-limit" @update:value="onLimitChange" />
             <n-icon class="clickable" size="18" title="Refresh" @click="fetchLatest"><Refresh /></n-icon>
         </div>
         <n-data-table
@@ -16,7 +13,7 @@
             :row-class-name="rowClassName"
             :row-key="(row: any) => row.uuid"
             :loading="loading"
-            :pagination="rows.length > 25 ? { pageSize: 25 } : false" />
+            :pagination="rows.length > 50 ? { pageSize: 50 } : false" />
         <div v-if="!loading && !rows.length && !loadError" class="latestReleasesEmpty">No releases yet.</div>
         <div v-if="loadError" class="latestReleasesEmpty">{{ loadError }}</div>
         <vulnerability-modal
@@ -46,14 +43,15 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-// Newest release on every branch of a component / product, newest first --
-// the "what is the latest on each branch" view. Rows are branches; clicking
-// one selects it exactly like the Branches tab does, so the right-hand
-// branch pane follows. Scan status and vulnerability circles mirror the
-// home page's Most Recent Releases widget.
+// The N most recent releases of a component / product across all its
+// branches, newest first -- the home page's Most Recent Releases widget
+// scoped to one component. N is the user's choice, remembered in the
+// browser. The branch cell opens that branch in detail mode; the version
+// cell (or the row) opens the release. Scan status and vulnerability
+// circles mirror the home widget.
 import { ref, Ref, h, watch, onMounted } from 'vue'
-import { RouterLink } from 'vue-router'
-import { NDataTable, NIcon, NSwitch, NTag, NTooltip, NSpace, useNotification, DataTableColumns } from 'naive-ui'
+import { RouterLink, useRouter } from 'vue-router'
+import { NDataTable, NIcon, NInputNumber, NTag, NTooltip, NSpace, useNotification, DataTableColumns } from 'naive-ui'
 import { Refresh, Star, CalendarTime } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
@@ -76,10 +74,23 @@ const props = withDefaults(defineProps<{
 })
 const emit = defineEmits<{ (e: 'selectBranch', branchUuid: string): void }>()
 
+const router = useRouter()
 const notification = useNotification()
 const loading = ref(false)
 const loadError = ref('')
-const includeArchived = ref(false)
+const LIMIT_STORAGE_KEY = 'rearmLatestReleasesLimit'
+function storedLimit (): number {
+    try {
+        const v = parseInt(window.localStorage.getItem(LIMIT_STORAGE_KEY) || '', 10)
+        return Number.isFinite(v) && v > 0 ? Math.min(v, 200) : 20
+    } catch { return 20 }
+}
+const limit = ref(storedLimit())
+function onLimitChange (v: number | null) {
+    if (!v || v < 1) return
+    try { window.localStorage.setItem(LIMIT_STORAGE_KEY, String(v)) } catch {}
+    fetchLatest()
+}
 const rows: Ref<any[]> = ref([])
 const dtrackConfigured = ref(false)
 
@@ -88,11 +99,11 @@ async function fetchLatest () {
     loadError.value = ''
     try {
         const response = await graphqlClient.query({
-            query: GqlQueries.LatestReleasesPerBranchGql,
-            variables: { componentUuid: props.componentUuid, includeArchived: includeArchived.value },
+            query: GqlQueries.LatestReleasesOfComponentGql,
+            variables: { componentUuid: props.componentUuid, limit: limit.value },
             fetchPolicy: 'no-cache'
         })
-        rows.value = (response.data as any).latestReleasesOfComponentPerBranch || []
+        rows.value = (response.data as any).latestReleasesOfComponent || []
     } catch (error: any) {
         console.error('Error fetching latest releases per branch:', error)
         rows.value = []
@@ -118,7 +129,7 @@ function formatDateTime (dateStr: string): string {
 }
 
 const circle = (title: string, color: string, value: any, onClick: () => void) =>
-    h('span', { title, class: 'circle', style: { background: color, cursor: 'pointer' }, onClick: (e: Event) => { e.stopPropagation(); onClick() } }, String(value ?? 0))
+    h('span', { title, class: 'circle', style: { background: color, cursor: 'pointer', fontSize: '0.8em' }, onClick: (e: Event) => { e.stopPropagation(); onClick() } }, String(value ?? 0))
 
 const columns: DataTableColumns<any> = [
     {
@@ -134,15 +145,17 @@ const columns: DataTableColumns<any> = [
             if (badge) {
                 els.push(h(NTag, { size: 'small', type: badge.type, bordered: false }, () => badge.label))
             }
-            if (b.status === 'ARCHIVED') {
-                els.push(h(NTag, { size: 'small', bordered: false }, () => 'archived'))
-            }
-            return h('div', { style: 'display: flex; align-items: center; gap: 6px;' }, els)
+            return h('div', {
+                style: 'display: flex; align-items: center; gap: 6px; cursor: pointer;',
+                title: `Open ${props.featureSetLabel.toLowerCase()} ${b.name || ''}`,
+                onClick: (e: Event) => { e.stopPropagation(); if (b.uuid) emit('selectBranch', b.uuid) }
+            }, els)
         }
     },
     {
-        title: 'Latest Release',
+        title: 'Release',
         key: 'version',
+        width: 260,
         render: (row: any) => h(RouterLink, {
             to: { name: 'ReleaseView', params: { uuid: row.uuid } },
             'data-testid': 'latest-release-link',
@@ -152,11 +165,13 @@ const columns: DataTableColumns<any> = [
     {
         title: 'Lifecycle',
         key: 'lifecycle',
+        width: 200,
         render: (row: any) => row.lifecycle
     },
     {
         title: 'Created',
         key: 'createdDate',
+        width: 150,
         render: (row: any) => h('span', { style: 'display: inline-flex; align-items: center; gap: 4px;' }, [
             formatDate(row.createdDate),
             h(NTooltip, { trigger: 'hover', delay: 200 }, {
@@ -168,6 +183,7 @@ const columns: DataTableColumns<any> = [
     {
         title: 'Scan',
         key: 'scan',
+        width: 320,
         render: (row: any) => {
             const status = getReleaseScanStatus(row, dtrackConfigured.value)
             if (status.kind !== 'ready') {
@@ -195,7 +211,7 @@ const columns: DataTableColumns<any> = [
 
 const rowProps = (row: any) => ({
     style: 'cursor: pointer;',
-    onClick: () => { if (row.branchDetails?.uuid) emit('selectBranch', row.branchDetails.uuid) }
+    onClick: () => { if (row.uuid) router.push({ name: 'ReleaseView', params: { uuid: row.uuid } }) }
 })
 const rowClassName = (row: any) => (props.selectedBranchUuid && row.branchDetails?.uuid === props.selectedBranchUuid) ? 'selectedRow' : ''
 
@@ -256,16 +272,5 @@ onMounted(async () => {
 }
 :deep(.selectedRow td) {
     background-color: #f1f1f1 !important;
-}
-:deep(.circle) {
-    display: inline-block;
-    min-width: 22px;
-    height: 22px;
-    line-height: 22px;
-    border-radius: 11px;
-    color: white;
-    font-size: 0.75em;
-    text-align: center;
-    padding: 0 4px;
 }
 </style>

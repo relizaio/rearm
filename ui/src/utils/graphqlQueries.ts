@@ -1703,12 +1703,12 @@ query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!,
     }
 }`
 
-// Newest release on every branch of a component (one row per branch), for
-// the component page's Latest tab. branchDetails is widened beyond the shared
-// fragment so the row can show the branch type / status without a store lookup.
-const LATEST_RELEASES_PER_BRANCH_GQL = gql`
-query latestReleasesOfComponentPerBranch($componentUuid: ID!, $includeArchived: Boolean) {
-    latestReleasesOfComponentPerBranch(componentUuid: $componentUuid, includeArchived: $includeArchived) {
+// Most recent releases of a component across all its branches, for the
+// component page's Latest tab. branchDetails is widened beyond the shared
+// fragment so the row can show the branch type without a store lookup.
+const LATEST_RELEASES_OF_COMPONENT_GQL = gql`
+query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
+    latestReleasesOfComponent(componentUuid: $componentUuid, limit: $limit) {
         ${MULTI_RELEASE_GQL_DATA}
         branchDetails {
             uuid
@@ -1769,7 +1769,7 @@ export default {
     EnvironmentTypesGql: ENVIRONMENT_TYPES_GQL,
     ReleasesByDateRangeGql: RELEASES_BY_DATE_RANGE_GQL,
     ReleasesByDateRangeAndPerspectiveGql: RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL,
-    LatestReleasesPerBranchGql: LATEST_RELEASES_PER_BRANCH_GQL,
+    LatestReleasesOfComponentGql: LATEST_RELEASES_OF_COMPONENT_GQL,
     FeatureSetsUsingComponentGql: FEATURE_SETS_USING_COMPONENT_GQL,
     FeatureSetsUsingBranchGql: FEATURE_SETS_USING_BRANCH_GQL,
 }
