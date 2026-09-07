@@ -77,7 +77,16 @@ public class ReleaseDto {
 	/** End-of-life date (cyber-device support window). */
 	@JsonProperty
 	private LocalDate eol;
-
+	/**
+	 * Update-only: explicitly unset eos, distinct from omitting the field (which
+	 * leaves it unchanged). Wins over a concurrently-supplied {@code eos} value,
+	 * mirroring {@code UpdateComponentDto.clearOwner}.
+	 */
+	@JsonProperty
+	private Boolean clearEos;
+	/** Update-only: explicitly unset eol. See {@link #clearEos}. */
+	@JsonProperty
+	private Boolean clearEol;
 	/** System-controlled — set by the orchestrator on release create, immutable thereafter. */
 	@JsonProperty
 	private String sidComponentName;

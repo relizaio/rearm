@@ -706,6 +706,7 @@ public class OrganizationService {
 
 			applySidPurlPatch(settings, settingsPatch);
 
+
 			od.setSettings(settings);
 			
 			Organization org = getOrganizationService.getOrganization(orgUuid)

@@ -6,9 +6,12 @@ package io.reliza.service;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -19,16 +22,21 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.OptimisticLockException;
+import jakarta.persistence.PersistenceException;
 import jakarta.persistence.PersistenceContext;
 
 import io.reliza.common.HeapPressureGuard;
@@ -37,24 +45,39 @@ import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.AcollectionData.DiffComponent;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactCanonicalMap;
-import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.ArtifactData;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactSbomComponent;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentIdentity;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.FlowControl;
+import io.reliza.model.LevelOfSupport;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseArtifactIndex;
-import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.SbomComponentData;
 import io.reliza.model.SbomComponentFlowControl;
+import io.reliza.model.SbomComponentPage;
+import io.reliza.model.SbomComponentSupport;
 import io.reliza.model.SbomComponentSupportAudit;
+import io.reliza.model.SupportAttestationFilter;
+import io.reliza.model.SupportAttestationRequest;
+import io.reliza.model.SupportBulkOutcome;
+import io.reliza.model.SupportBulkResult;
+import io.reliza.model.SupportData;
+import io.reliza.model.SupportExportState;
+import io.reliza.model.SupportMilestoneFact;
+import io.reliza.model.SupportMilestoneType;
+import io.reliza.model.SupportParty;
 import io.reliza.model.SupportSource;
+import io.reliza.model.SupportState;
+import io.reliza.model.SupportStatus;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.ParsedBomComponent;
@@ -66,6 +89,8 @@ import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentSupportAuditRepository;
+import io.reliza.repositories.SbomComponentSupportRepository;
+import io.reliza.repositories.SbomComponentSupportRepository.SupportPayloadRow;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -123,7 +148,14 @@ public class SbomComponentService {
 
 	/**
 	 * Self-injection so {@link #processPendingReconciles(int)} can call the
-	 * {@code @Transactional} reconcile method through Spring's proxy.
+	 * {@code @Transactional} reconcile method through Spring's proxy, and so
+	 * {@link #bulkSetSbomComponentSupport} can reach
+	 * {@link #setSbomComponentSupportIsolated} and pick up its REQUIRES_NEW propagation.
+	 *
+	 * <p>A direct {@code this.*} call bypasses AOP entirely. For the bulk path that is not a
+	 * nicety: without a transaction per item, one rejected component marks the whole batch
+	 * rollback-only, and catching the exception does not undo that -- every component that had
+	 * already succeeded would vanish at commit, which is the opposite of skip-and-report.
 	 */
 	@Autowired @Lazy private SbomComponentService self;
 
@@ -207,6 +239,7 @@ public class SbomComponentService {
 	private final ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	private final ReleaseArtifactIndexRepository releaseArtifactIndexRepository;
 	private final ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
+	private final SbomComponentSupportRepository sbomComponentSupportRepository;
 	private final SbomComponentSupportAuditRepository sbomComponentSupportAuditRepository;
 
 	SbomComponentService(
@@ -214,11 +247,13 @@ public class SbomComponentService {
 			ArtifactSbomComponentRepository artifactSbomComponentRepository,
 			ReleaseArtifactIndexRepository releaseArtifactIndexRepository,
 			ArtifactCanonicalMapRepository artifactCanonicalMapRepository,
+			SbomComponentSupportRepository sbomComponentSupportRepository,
 			SbomComponentSupportAuditRepository sbomComponentSupportAuditRepository) {
 		this.sbomComponentRepository = sbomComponentRepository;
 		this.artifactSbomComponentRepository = artifactSbomComponentRepository;
 		this.releaseArtifactIndexRepository = releaseArtifactIndexRepository;
 		this.artifactCanonicalMapRepository = artifactCanonicalMapRepository;
+		this.sbomComponentSupportRepository = sbomComponentSupportRepository;
 		this.sbomComponentSupportAuditRepository = sbomComponentSupportAuditRepository;
 	}
 
@@ -1715,7 +1750,18 @@ private static int currentReconcileFailureCount(Release r) {
 	// Read API — synthesize per-release view from artifact-keyed rows
 	// ===================================================================
 
-	public List<ReleaseSbomComponent> listReleaseSbomComponents(UUID releaseUuid) {
+	/**
+	 * The {@code artifact_sbom_components} rows a release resolves to: itself, plus every
+	 * transitive dependency when it is a PRODUCT.
+	 *
+	 * <p>Extracted so the release-scoped support-coverage count walks THE SAME PATH as the
+	 * component list it sits above. That path is not a SQL join and cannot be made into one
+	 * -- the product dependency unwind happens in Java -- so a coverage query that
+	 * approximated it with "components in the org that appear in this release" would drift
+	 * from the list beneath it. Reusing this method makes the two agree by construction
+	 * rather than by inspection, and a test asserts the equality regardless.
+	 */
+	public List<ArtifactSbomComponent> resolveReleaseArtifactComponents(UUID releaseUuid) {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		if (ord.isEmpty()) return List.of();
 		ReleaseData rd = ord.get();
@@ -1743,22 +1789,78 @@ private static int currentReconcileFailureCount(Release r) {
 		}
 		if (canonicalSet.isEmpty()) return List.of();
 
-		// Bulk-fetch every artifact_sbom_components row for the canonical set.
-		List<ArtifactSbomComponent> rows = artifactSbomComponentRepository
-				.findByOrgAndCanonicalArtifactUuidIn(orgUuid, canonicalSet);
+		return artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuidIn(orgUuid, canonicalSet);
+	}
+
+	/** The distinct canonical component uuids a release resolves to. */
+	public Set<UUID> findReleaseComponentUuids(UUID releaseUuid) {
+		Set<UUID> ids = new LinkedHashSet<>();
+		for (ArtifactSbomComponent r : resolveReleaseArtifactComponents(releaseUuid)) {
+			ids.add(r.getSbomComponentUuid());
+		}
+		return ids;
+	}
+
+	public List<ReleaseSbomComponent> listReleaseSbomComponents(UUID releaseUuid) {
+		return listReleaseSbomComponents(releaseUuid, null);
+	}
+
+	/**
+	 * The release's merged component rows, optionally narrowed to {@code restrictTo}.
+	 *
+	 * <p>{@code null} means the whole release -- the graph view, and the historical
+	 * behaviour. A non-null set is a PAGE, and the narrowing happens before the bulk entity
+	 * load, not after the merge: that load is the reason the unpaged call gets expensive on
+	 * a large PRODUCT unwind, so filtering its result would page the output while still
+	 * paying the whole BOM's cost.
+	 *
+	 * <p>Parents of the retained rows are still fetched even when their own row is off-page,
+	 * because a parent edge renders its source's canonical purl. Dropping them would show a
+	 * page whose dependency column is blank wherever the parent happened to sort onto
+	 * another page.
+	 */
+	public List<ReleaseSbomComponent> listReleaseSbomComponents(UUID releaseUuid, Set<UUID> restrictTo) {
+		return listReleaseSbomComponents(releaseUuid, restrictTo, null);
+	}
+
+	/**
+	 * As above, but reusing artifact rows the caller has already resolved.
+	 *
+	 * <p>{@code preResolved} exists because resolving a release is NOT cheap and the paged
+	 * path was doing it twice per request: once in {@code listReleaseSbomComponentPage} to
+	 * get the id set the SQL slices, and again here. Each resolution loads the release, walks
+	 * the PRODUCT dependency unwind, and fetches EVERY artifact_sbom_components row for the
+	 * whole release -- work that the restriction then discards down to one page. Narrowing
+	 * the hydration while paying for the unwind twice would have made the paged query slower
+	 * than the unpaged one it replaces on exactly the large PRODUCT releases it exists for.
+	 */
+	public List<ReleaseSbomComponent> listReleaseSbomComponents(UUID releaseUuid,
+			Set<UUID> restrictTo, List<ArtifactSbomComponent> preResolved) {
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		if (ord.isEmpty()) return List.of();
+		UUID orgUuid = ord.get().getOrg();
+		if (orgUuid == null) return List.of();
+		if (restrictTo != null && restrictTo.isEmpty()) return List.of();
+
+		List<ArtifactSbomComponent> rows = null != preResolved
+				? preResolved
+				: resolveReleaseArtifactComponents(releaseUuid);
 		if (rows.isEmpty()) return List.of();
 
 		// Group rows by sbom_component_uuid to build the per-release view.
 		Map<UUID, List<ArtifactSbomComponent>> byComponent = new LinkedHashMap<>();
 		for (ArtifactSbomComponent r : rows) {
+			if (restrictTo != null && !restrictTo.contains(r.getSbomComponentUuid())) continue;
 			byComponent.computeIfAbsent(r.getSbomComponentUuid(), k -> new ArrayList<>()).add(r);
 		}
+		if (byComponent.isEmpty()) return List.of();
 
-		// Bulk-fetch canonical components referenced by rows + their parents
+		// Bulk-fetch canonical components referenced by RETAINED rows + their parents
 		// (we need their canonical purls for the rendered parent entries).
 		Set<UUID> referencedIds = new HashSet<>(byComponent.keySet());
-		for (ArtifactSbomComponent r : rows) {
-			if (r.getParents() != null) {
+		for (List<ArtifactSbomComponent> group : byComponent.values()) {
+			for (ArtifactSbomComponent r : group) {
+				if (r.getParents() == null) continue;
 				for (Map<String, Object> p : r.getParents()) {
 					UUID src = parseUuid(p.get("sourceSbomComponentUuid"));
 					if (src != null) referencedIds.add(src);
@@ -1910,9 +2012,40 @@ private static int currentReconcileFailureCount(Release r) {
 	public Map<UUID, SbomComponent> findSbomComponentsByIds(Collection<UUID> ids, UUID orgUuid) {
 		if (ids == null || ids.isEmpty() || orgUuid == null) return Map.of();
 		Map<UUID, SbomComponent> out = new LinkedHashMap<>();
-		sbomComponentRepository.findAllById(ids).forEach(sc -> {
-			if (orgUuid.equals(sc.getOrg())) out.put(sc.getUuid(), sc);
-		});
+		// Array-bound, not findAllById. A derived IN list binds one parameter per element
+		// against the 65,535-parameter protocol cap, and this is the load the BULK write path
+		// runs -- the same bug this codebase already fixed one method away on the read side.
+		// The org filter moved into the query with it: the previous version read every
+		// requested row and discarded the foreign ones in Java, which is the right answer
+		// obtained by reading rows belonging to other organizations.
+		sbomComponentRepository.findByOrgAndUuidIn(orgUuid.toString(), joinUuids(ids))
+				.forEach(sc -> out.put(sc.getUuid(), sc));
+		return out;
+	}
+
+	/**
+	 * Bulk-load support attestations for a batch of components -- one query for an entire
+	 * release's component list (or any other multi-component read), never per component.
+	 * Mirrors {@link #findSbomComponentsByIds}. Components with no attestation are simply
+	 * absent from the result, as are components whose attestation this build cannot read
+	 * (logged, never downgraded to "not assessed"). Org-scoped in the query, not merely by
+	 * caller convention.
+	 */
+	public Map<UUID, SupportData> findSupportByComponentIds(UUID orgUuid, Collection<UUID> ids) {
+		if (orgUuid == null || ids == null || ids.isEmpty()) return Map.of();
+		Map<UUID, SupportData> out = new HashMap<>();
+		for (SupportPayloadRow row : sbomComponentSupportRepository
+				.findRawByComponentUuids(orgUuid.toString(), joinUuids(ids))) {
+			try {
+				out.put(row.getComponentUuid(), SupportData.parse(row.getPayload()));
+			} catch (RuntimeException e) {
+				// Excluded, not downgraded: a payload this build cannot read is NOT the same
+				// fact as "never assessed" and must not be served as one. The row is left
+				// untouched so a newer build can still read it.
+				log.warn("Unreadable support attestation for sbom component {}; excluded from"
+						+ " this read: {}", row.getComponentUuid(), e.getMessage(), e);
+			}
+		}
 		return out;
 	}
 
@@ -2396,77 +2529,380 @@ private static int currentReconcileFailureCount(Release r) {
 	private record ParentEdge(String sourceFullPurl, String targetFullPurl) {}
 
 	/**
-	 * Manufacturer (MANUAL) attestation of a component's support facts. Sets the
-	 * dates, stamps supportSource=MANUAL plus the attester and supportLastAssessed,
-	 * and appends an after-image row to the attestation history -- all in one tx.
-	 * The derived status is computed on read, never written here. Throws
-	 * {@link OptimisticLockingFailureException} if a concurrent reconcile bumped the
-	 * row's revision; the caller retries. The reconcile path load-merges and leaves
-	 * these columns untouched, so it never clobbers an attestation.
+	 * Manufacturer (MANUAL) attestation of a component's support level and milestone dates.
+	 * The only public write path; SUPPLIER / ENRICHED writers in later slices call
+	 * {@link #applySupport} with their own source so they cannot drift on the merge, save
+	 * and audit semantics. Runs in one tx.
 	 *
 	 * @param assertedBy the authenticated user making the attestation
+	 *
+	 * <p>Writes a null batch id: a single-component attestation is not a sweep, and recording
+	 * a batch of one would destroy the distinction the column exists to draw.
 	 */
 	@Transactional
-	public SbomComponent setSbomComponentSupport(UUID sbomComponentUuid, LocalDate endOfSupportDate,
-			LocalDate endOfLifeDate, String supportNotes, UUID assertedBy) {
-		return applySupport(sbomComponentUuid, endOfSupportDate, endOfLifeDate, supportNotes,
-				SupportSource.MANUAL, assertedBy);
+	public SbomComponentSupport setSbomComponentSupport(UUID sbomComponentUuid,
+			SupportAttestationRequest request, UUID assertedBy) {
+		return applySupport(sbomComponentUuid, request, SupportSource.MANUAL, assertedBy, null);
 	}
 
 	/**
-	 * Shared write core for every support provenance (MANUAL now; SUPPLIER / ENRICHED
-	 * writers in later slices call this same path so they cannot drift on the
-	 * stamp / save / audit-revision semantics). Validates the date invariant for
-	 * every caller (not just the web layer), stamps the facts + source + attester,
-	 * saves, and appends the after-image to the attestation history in one tx. The
-	 * status is derived on read, never written. A concurrent reconcile that bumps the
-	 * row's @Version makes the version-checked UPDATE fail at COMMIT, surfacing as
-	 * {@link OptimisticLockingFailureException} for the caller to retry; the reconcile
-	 * path load-merges and never touches these columns. Runs in the caller's tx.
+	 * Shared write core for every support provenance. Loads the component's current
+	 * attestation (if any), MERGES the staged milestone dates onto it, validates the
+	 * ordering across the EFFECTIVE dates -- the value staged this call where supplied, else
+	 * whatever is already stored for a milestone this call does not touch -- and appends the
+	 * whole after-image to the audit history. A partial edit can therefore never leave an
+	 * incoherent combination on record.
+	 *
+	 * <p>The attestation lives in its own row, so a concurrent BOM reconcile CANNOT conflict
+	 * with it: reconcile only ever touches {@code sbom_components}. The optimistic-lock retry
+	 * that the caller still performs now guards one thing only -- two attestation writes to
+	 * the SAME component racing each other.
+	 *
+	 * <p>Runs in the caller's tx.
+	 *
+	 * @param batchId the sweep this write belongs to, or null when it is not part of one. Only
+	 *        reaches the audit row; it is never part of the attestation itself, so it cannot
+	 *        appear in an exported BOM.
 	 */
-	private SbomComponent applySupport(UUID sbomComponentUuid, LocalDate endOfSupportDate,
-			LocalDate endOfLifeDate, String supportNotes, SupportSource source, UUID assertedBy) {
-		if (endOfSupportDate != null && endOfLifeDate != null && endOfSupportDate.isAfter(endOfLifeDate)) {
-			throw new IllegalArgumentException("endOfSupportDate must not be after endOfLifeDate");
-		}
+	private SbomComponentSupport applySupport(UUID sbomComponentUuid,
+			SupportAttestationRequest request, SupportSource source, UUID assertedBy,
+			UUID batchId) {
 		SbomComponent sc = sbomComponentRepository.findById(sbomComponentUuid)
 				.orElseThrow(() -> new IllegalArgumentException(
 						"sbom component not found: " + sbomComponentUuid));
+
+		SbomComponentSupport row = sbomComponentSupportRepository
+				.findBySbomComponentUuid(sbomComponentUuid)
+				.orElseGet(() -> {
+					SbomComponentSupport fresh = new SbomComponentSupport();
+					fresh.setSbomComponentUuid(sbomComponentUuid);
+					fresh.setOrg(sc.getOrg());
+					return fresh;
+				});
+		SupportData existing = row.getSupportData();
+
+		// A FRESH row must carry at least one substantive fact. Without this, an entirely
+		// empty request creates an attestation -- assessmentSource=MANUAL, assessedAt=now --
+		// which counts toward coverage and which the injector exports as an assessedAt
+		// disclosure. A caller who sent nothing would have a record asserting a human
+		// assessed the component. That is the same conjured assessment the
+		// cannot-clear-an-unset-milestone guard prevents, reached through another door.
+		//
+		// JUSTIFICATION ALONE IS SUFFICIENT AND MUST STAY SO. "I looked, upstream publishes
+		// nothing" is the case this whole storage shape exists for, and the tempting
+		// shorthand -- require a level or a date -- rejects exactly it. The paired test
+		// asserts BOTH directions for that reason.
+		//
+		// Scoped to fresh rows only: a partial write against an EXISTING attestation is the
+		// PATCH contract and must keep working with any subset of fields, including none.
+		if (null == existing
+				&& null == request.levelOfSupport()
+				&& null == request.endOfGuaranteedSupportDate()
+				&& null == request.endOfSupportDate()
+				&& null == request.endOfLifeDate()
+				&& (null == request.justification() || request.justification().isBlank())) {
+			throw new IllegalArgumentException(
+					"a first attestation must record something: supply a levelOfSupport, a"
+							+ " milestone date, or a justification");
+		}
+		Map<SupportMilestoneType, SupportMilestoneFact> existingByType =
+				existing == null ? Map.of() : existing.milestones();
+
+		Map<SupportMilestoneType, LocalDate> staged = new EnumMap<>(SupportMilestoneType.class);
+		if (request.endOfGuaranteedSupportDate() != null) {
+			staged.put(SupportMilestoneType.END_OF_GUARANTEED_SUPPORT, request.endOfGuaranteedSupportDate());
+		}
+		if (request.endOfSupportDate() != null) {
+			staged.put(SupportMilestoneType.END_OF_SUPPORT, request.endOfSupportDate());
+		}
+		if (request.endOfLifeDate() != null) {
+			staged.put(SupportMilestoneType.END_OF_LIFE, request.endOfLifeDate());
+		}
+		// A CHANGED level must not INHERIT the previous claim's basis. Scoped to exactly that:
+		// only when a level already exists, changes, and a basis is on the row that would
+		// otherwise carry over. A FIRST attestation needs no such guard -- there is nothing to
+		// inherit -- and requiring one there would be over-strict for a positive claim, which
+		// FDA asks no basis for.
+		//
+		// A justification is the basis for one specific claim, so a changed claim invalidates
+		// it. Gating this on the NEW level needing a justification was not enough: flipping
+		// ABANDONED -> ACTIVELY_MAINTAINED skipped both checks, the old text survived by
+		// supplied-wins merge, and the served BOM then carried "actively maintained" next to
+		// "upstream archived the repository". This PR is what made that visible -- before it,
+		// the field never left the database.
+		boolean levelChanges = null != request.levelOfSupport() && null != existing
+				&& request.levelOfSupport() != existing.levelOfSupport();
+		boolean wouldInheritABasis = null != existing && null != existing.justification()
+				&& !existing.justification().isBlank();
+		if (levelChanges && wouldInheritABasis && null == request.justification()) {
+			throw new IllegalArgumentException(
+					"changing levelOfSupport to " + request.levelOfSupport()
+							+ " requires a justification, or an empty one to clear the previous"
+							+ " basis: a basis belongs to the claim it was written for");
+		}
+		if (!request.clearMilestones().isEmpty()
+				&& (null == request.reason() || request.reason().isBlank())) {
+			// The audit keeps after-images only, so "milestone X was removed" is recoverable
+			// only by diffing consecutive rows -- and nothing there says WHY. Requiring the
+			// reason at the point of removal is what makes a deletion from a regulatory
+			// record attributable rather than merely traceable.
+			//
+			// It goes on the AUDIT ROW, not into support_data.justification. Those are
+			// different facts, and an earlier revision conflated them: the removal note
+			// overwrote the basis for any negative level attestation on the same row, which
+			// PR 3 is about to start exporting.
+			throw new IllegalArgumentException(
+					"reason is required when clearing a milestone");
+		}
+		// Setting and clearing the same milestone in one call is a caller bug, not something
+		// to resolve by precedence -- silently honouring one of them writes a regulatory fact
+		// the caller did not unambiguously ask for. Clearing something that is not set is
+		// rejected for a sharper reason: it would take the fresh-row branch below and CREATE
+		// an attestation, stamping assessmentSource=MANUAL and assessedAt=now, which then
+		// counts toward coverage and exports as "a human looked" -- an assessment conjured
+		// out of a deletion nobody could have performed.
+		for (SupportMilestoneType clear : request.clearMilestones()) {
+			if (staged.containsKey(clear)) {
+				throw new IllegalArgumentException(
+						"cannot set and clear the same milestone in one call: " + clear);
+			}
+			if (!existingByType.containsKey(clear)) {
+				throw new IllegalArgumentException(
+						"cannot clear a milestone that is not set: " + clear);
+			}
+		}
+
+		// Validate against the dates that will actually be STORED -- staged where supplied,
+		// existing where untouched, and absent where cleared. Validating before the clears
+		// were applied would let a bad date block its own removal.
+		Map<SupportMilestoneType, SupportMilestoneFact> effectiveExisting =
+				new EnumMap<>(SupportMilestoneType.class);
+		effectiveExisting.putAll(existingByType);
+		effectiveExisting.keySet().removeAll(request.clearMilestones());
+		validateSupportOrdering(
+				effectiveDate(SupportMilestoneType.END_OF_GUARANTEED_SUPPORT, staged, effectiveExisting),
+				effectiveDate(SupportMilestoneType.END_OF_SUPPORT, staged, effectiveExisting));
+
 		ZonedDateTime now = ZonedDateTime.now();
-		sc.setEndOfSupportDate(endOfSupportDate);
-		sc.setEndOfLifeDate(endOfLifeDate);
-		sc.setSupportSource(source);
-		sc.setSupportNotes(supportNotes);
-		sc.setSupportAssertedBy(assertedBy);
-		sc.setSupportLastAssessed(now);
-		sc.setLastUpdatedDate(now);
-		SbomComponent saved = sbomComponentRepository.save(sc);
-		// Flush now to apply the version-checked UPDATE and read the TRUE post-update
-		// revision (rather than predicting a bump that a no-op rewrite would skip). A
-		// mid-@Service flush throws the untranslated jakarta OptimisticLockException, so
-		// convert it to Spring's type here -- otherwise the caller's retry (which catches
-		// OptimisticLockingFailureException) would miss a concurrent-reconcile conflict.
+		// CALLER-SUPPLIED assessment instant. "I read the vendor advisory on 12 August and
+		// recorded it on 30 August" has to be expressible: forcing these equal makes ALCOA
+		// Contemporaneous unsatisfiable. The system's own record time is the audit row's
+		// assertedDate, written below from `now`.
+		//
+		// assessedAt DATES THE LEVEL-OF-SUPPORT CLAIM, so it is PRESERVED unless the caller
+		// either supplies one or re-asserts the level. An earlier revision re-stamped it on
+		// every write while preserving the level itself, so editing an unrelated date silently
+		// moved a months-old "abandoned" attestation to today -- a claim nobody re-assessed,
+		// now carrying a fresh date. A falsely dated claim is worse than an undated one: P2's
+		// whole staleness answer is that a reviewer can judge a claim's age, which requires
+		// the date to be true. Per-milestone lastAssessed is a different fact and DOES move,
+		// because a staged date genuinely was assessed on this call.
+		// TWO DIFFERENT INSTANTS. Conflating them is what this fix is about.
+		//
+		// thisAssessment: when THIS call's assessment happened. Every milestone staged by
+		// this call gets it, because a date supplied now genuinely was assessed now.
+		// Passing the preserved record-level value here instead would stamp a brand-new
+		// milestone with a months-old assessment date -- asserting a human assessed a fact
+		// before that fact existed, which is the same fabrication as a re-stamped level.
+		String thisAssessment = utcInstant(null != request.assessedAt() ? request.assessedAt() : now);
+		//
+		// assessedAt: when the LEVEL-OF-SUPPORT claim was assessed. Preserved only while
+		// there IS a level and this call does not re-assert it. On a row with no level the
+		// field dates the assessment generally -- and the injector now publishes it as a
+		// standalone disclosure -- so freezing it there would publish a stale date forever.
+		String assessedAt;
+		if (null != request.assessedAt()
+				|| null == existing || null == existing.assessedAt()
+				|| null == existing.levelOfSupport() || null != request.levelOfSupport()) {
+			assessedAt = thisAssessment;
+		} else {
+			assessedAt = existing.assessedAt();
+		}
+
+		Map<SupportMilestoneType, SupportMilestoneFact> merged =
+				new EnumMap<>(SupportMilestoneType.class);
+		merged.putAll(existingByType);
+		merged.keySet().removeAll(request.clearMilestones());
+		for (Map.Entry<SupportMilestoneType, LocalDate> entry : staged.entrySet()) {
+			// Omitted notes leave the existing note in place, like every other omitted
+			// field. Correcting a date must not silently delete the text that justified
+			// it -- that text is often the only evidence of what the assessor checked.
+			SupportMilestoneFact prior = existingByType.get(entry.getKey());
+			String notes = request.supportNotes() != null ? request.supportNotes()
+					: (prior == null ? null : prior.notes());
+			merged.put(entry.getKey(), new SupportMilestoneFact(
+					entry.getValue().toString(), source, thisAssessment, assertedBy, notes));
+		}
+
+		SupportData data = new SupportData(
+				request.levelOfSupport() != null || existing == null
+						? request.levelOfSupport() : existing.levelOfSupport(),
+				// STATE IS PRESERVED, NOT DEFAULTED, when the caller omits it -- same rule
+				// as every other field here. Hard-defaulting to ATTESTED meant any later
+				// partial write (correcting a date, a future SUPPLIER/ENRICHED writer)
+				// silently un-retracted a WITHDRAWN attestation and republished a claim
+				// the manufacturer had taken back into every exported BOM.
+				request.state() != null ? request.state()
+						: (existing == null ? SupportState.ATTESTED : existing.state()),
+				request.party() != null || existing == null ? request.party() : existing.party(),
+				// NOTE for whoever adds the first non-MANUAL writer: this overwrites the
+				// record-level assessment source unconditionally. An ENRICHED touch on a
+				// human-attested "nothing published" row would erase the only evidence a
+				// human attested it, and drop it out of countAttestedNonRootByOrg. Decide
+				// the precedence rule there; today MANUAL is the only writer.
+				source,
+				assessedAt,
+				assertedBy,
+				// justification is the level-of-support basis ONLY. A milestone removal's
+				// reason goes on the audit row, so a clear can no longer overwrite it.
+				// Supplied-wins, with blank normalised to null so an explicit clear does not
+				// store whitespace that would later read as a basis.
+				request.justification() != null || existing == null
+						? blankToNull(request.justification()) : existing.justification(),
+				merged);
+
+		// INVARIANT ON THE STORED RESULT, not on the request. A negative claim about a named
+		// third party's project must carry its basis: that is the substantiation record, the
+		// per-component corroboration of the 7f narrative, and the only thing separating a
+		// considered judgement from "no commits lately". FDA defines neither term.
+		//
+		// Checking the REQUEST was not enough, and failed in the direction that matters. A
+		// partial write omitting levelOfSupport but sending justification:"" passed the
+		// request check, then the merge rule (supplied-wins) blanked the stored justification
+		// on an ABANDONED row -- leaving exactly the unsupported negative claim the rule
+		// exists to prevent. Validate what will actually be persisted.
+		if (null != data.levelOfSupport() && data.levelOfSupport().requiresJustification()
+				&& (null == data.justification() || data.justification().isBlank())) {
+			throw new IllegalArgumentException(
+					"justification is required for levelOfSupport " + data.levelOfSupport());
+		}
+
+		row.setCanonicalPurl(sc.getCanonicalPurl());
+		row.setSupportData(data);
+		row.setLastUpdatedDate(now);
+		SbomComponentSupport saved = sbomComponentSupportRepository.save(row);
+		// Flush now so a concurrent write's conflict surfaces here rather than at commit.
+		// TWO different conflicts are possible and both must reach the caller's retry as
+		// the SAME type, because the caller cannot sensibly distinguish them:
+		//
+		//   * UPDATE of an existing attestation -> @Version optimistic lock failure. A
+		//     mid-@Service flush throws the untranslated jakarta OptimisticLockException.
+		//   * INSERT of the FIRST attestation for a component, raced by another writer ->
+		//     @Version cannot help (there is no prior row); both callers take the
+		//     orElseGet branch above and insert with distinct random PKs, and the
+		//     sbom_component_support_component_unique constraint rejects the loser.
+		//
+		// The second case used to escape as a raw Hibernate ConstraintViolationException:
+		// Spring's exception translation does not run here because the flush is on the
+		// directly-injected EntityManager rather than a repository proxy. Two users filing
+		// the first attestation on one component at the same time saw a raw database error.
 		try {
 			entityManager.flush();
-		} catch (jakarta.persistence.OptimisticLockException ole) {
-			throw new ObjectOptimisticLockingFailureException(SbomComponent.class, sbomComponentUuid, ole);
+		} catch (OptimisticLockException ole) {
+			throw new ObjectOptimisticLockingFailureException(
+					SbomComponentSupport.class, sbomComponentUuid, ole);
+		} catch (PersistenceException pe) {
+			if (isConcurrentFirstAttestation(pe)) {
+				throw new ObjectOptimisticLockingFailureException(
+						SbomComponentSupport.class, sbomComponentUuid, pe);
+			}
+			throw pe;
 		}
-		writeSupportAudit(saved, saved.getRevision(), now);
+		writeSupportAudit(saved, assertedBy, now, request.reason(), batchId);
 		return saved;
 	}
 
-	/** Append the asserted (after-image) values plus attester to the history table. */
-	private void writeSupportAudit(SbomComponent sc, int supportRevision, ZonedDateTime assertedDate) {
+	/**
+	 * Is this flush failure a lost race to insert the FIRST attestation for a component,
+	 * as opposed to any other integrity violation? Matched on the named constraint rather
+	 * than on the exception type alone, because a flush covers the whole persistence
+	 * context: with open-in-view the caller may have other pending work, and treating an
+	 * unrelated violation as retryable would silently retry something that can never
+	 * succeed.
+	 */
+	private static boolean isConcurrentFirstAttestation(Throwable t) {
+		for (Throwable c = t; c != null; c = c.getCause()) {
+			if (c instanceof ConstraintViolationException cve
+					&& null != cve.getConstraintName()
+					&& cve.getConstraintName().contains("sbom_component_support_component_unique")) {
+				return true;
+			}
+			if (c.getCause() == c) break;
+		}
+		return false;
+	}
+
+	private static String blankToNull(String value) {
+		return (null == value || value.isBlank()) ? null : value;
+	}
+
+	/**
+	 * UUIDs as one comma-joined parameter for the {@code = ANY(string_to_array(...))} queries.
+	 * See those queries for why an {@code IN} list is not used: it binds one parameter per
+	 * element against a 65,535 protocol cap that a large release reaches.
+	 */
+	/**
+	 * Public because the uuid[] cast convention now has more than one caller, and a second
+	 * open-coded copy of the join is a silent must-stay-in-step pair with the SQL that parses
+	 * it. See the array-bound queries in SbomComponentSupportRepository for why the ids
+	 * travel as one parameter.
+	 */
+	public static String joinUuids(Collection<UUID> uuids) {
+		return uuids.stream().map(UUID::toString).collect(Collectors.joining(","));
+	}
+
+	/** RFC-3339 UTC instant. Never ZonedDateTime.toString(), which leaks a zone id. */
+	private static String utcInstant(ZonedDateTime zdt) {
+		return zdt.toInstant().truncatedTo(ChronoUnit.SECONDS).toString();
+	}
+
+	private static LocalDate effectiveDate(SupportMilestoneType type,
+			Map<SupportMilestoneType, LocalDate> staged,
+			Map<SupportMilestoneType, SupportMilestoneFact> existing) {
+		if (staged.containsKey(type)) {
+			return staged.get(type);
+		}
+		SupportMilestoneFact f = existing.get(type);
+		return f == null ? null : f.dateValue();
+	}
+
+	/**
+	 * EOGS &lt;= EOS, nulls skipped -- across the EFFECTIVE dates.
+	 *
+	 * <p><b>END-OF-LIFE IS NOT ORDERED AGAINST EITHER</b> (operator decision D5,
+	 * 2026-09-03). CycloneDX defines end-of-life as END OF SALE, which routinely precedes
+	 * end of support by years, so the old EOS &lt;= EOL rule was not merely unnecessary --
+	 * it REJECTED conformant data. A supplier BOM whose milestones follow the published
+	 * CycloneDX definitions was refused on ingest, and the SUPPLIER writer slice calls this
+	 * same path, so the guard would have blocked it outright.
+	 */
+	private static void validateSupportOrdering(LocalDate eogs, LocalDate eos) {
+		if (eogs != null && eos != null && eogs.isAfter(eos)) {
+			throw new IllegalArgumentException("endOfGuaranteedSupportDate must not be after endOfSupportDate");
+		}
+	}
+
+	/**
+	 * Append the whole after-image to the history table. {@code assertedDate} is the SYSTEM's
+	 * record of when this write happened, deliberately distinct from
+	 * {@code supportData.assessedAt} (when the human assessed). {@code reason} is why the
+	 * write happened, deliberately distinct from {@code supportData.justification} (the basis
+	 * for the level-of-support claim) -- see {@link SupportAttestationRequest}.
+	 * {@code batchId} correlates the rows of one sweep and is null for a single-component
+	 * write. All three are audit-only: none reaches {@code support_data}, which is the
+	 * after-image an export ships.
+	 */
+	private void writeSupportAudit(SbomComponentSupport row, UUID assertedBy,
+			ZonedDateTime assertedDate, String reason, UUID batchId) {
 		SbomComponentSupportAudit audit = new SbomComponentSupportAudit();
-		audit.setSbomComponentUuid(sc.getUuid());
-		audit.setOrg(sc.getOrg());
-		audit.setSupportRevision(supportRevision);
-		audit.setEndOfSupportDate(sc.getEndOfSupportDate());
-		audit.setEndOfLifeDate(sc.getEndOfLifeDate());
-		audit.setSupportSource(sc.getSupportSource());
-		audit.setSupportNotes(sc.getSupportNotes());
-		audit.setSupportAssertedBy(sc.getSupportAssertedBy());
+		audit.setSbomComponentUuid(row.getSbomComponentUuid());
+		audit.setOrg(row.getOrg());
+		audit.setSupportRevision(row.getRevision());
+		audit.setSupportData(row.getSupportData());
+		audit.setAssertedBy(assertedBy);
 		audit.setAssertedDate(assertedDate);
+		audit.setReason(reason);
+		audit.setBatchId(batchId);
 		sbomComponentSupportAuditRepository.save(audit);
 	}
 
@@ -2476,11 +2912,415 @@ private static int currentReconcileFailureCount(Release r) {
 	 * incomplete disclosure, so this feeds a pre-submission readiness signal.
 	 */
 	public SupportCoverage getSupportCoverage(UUID orgUuid) {
-		long total = sbomComponentRepository.countNonRootByOrg(orgUuid.toString());
-		long attested = sbomComponentRepository.countAttestedNonRootByOrg(orgUuid.toString());
+		return getSupportCoverage(orgUuid, null);
+	}
+
+	/**
+	 * Support-disclosure coverage, org-wide when {@code releaseUuid} is null and scoped to one
+	 * release's components when it is not. Both scopes are intended and both have a consumer:
+	 * org-wide is the readiness dashboard; release-scoped is what the export gauge needs,
+	 * because the number has to describe the BOM actually being served.
+	 *
+	 * <p>The release scope resolves its component set through
+	 * {@link #findReleaseComponentUuids}, the SAME path {@code listReleaseSbomComponents}
+	 * walks -- including the PRODUCT dependency unwind. Deriving it any other way would let
+	 * the gauge disagree with the component list directly beneath it, which is the in-step
+	 * failure this feature has already hit twice by other routes.
+	 *
+	 * <p>An empty release yields 0/0 rather than falling back to org scope: a release with no
+	 * components has no coverage to report, and answering with the org's number would be
+	 * confidently wrong.
+	 */
+	public SupportCoverage getSupportCoverage(UUID orgUuid, UUID releaseUuid) {
+		if (null == releaseUuid) {
+			long total = sbomComponentRepository.countNonRootByOrg(orgUuid.toString());
+			long attested = sbomComponentSupportRepository.countAttestedNonRootByOrg(
+					orgUuid.toString(),
+					names(LevelOfSupport.values()), names(SupportParty.values()),
+					names(SupportState.values()), names(SupportSource.values()),
+					names(SupportMilestoneType.values()));
+			return new SupportCoverage(total, attested);
+		}
+		Set<UUID> componentUuids = findReleaseComponentUuids(releaseUuid);
+		if (componentUuids.isEmpty()) return new SupportCoverage(0, 0);
+		// Joined into ONE parameter rather than an IN list: a PRODUCT unwind over a large
+		// release can reach thousands of components, and the Postgres JDBC protocol caps a
+		// statement at 65,535 bound parameters. Safe as text because these are UUIDs.
+		String ids = joinUuids(componentUuids);
+		long total = sbomComponentRepository.countNonRootByOrgAndComponentUuidIn(
+				orgUuid.toString(), ids);
+		long attested = sbomComponentSupportRepository.countAttestedNonRootByOrgAndComponentUuidIn(
+				orgUuid.toString(), ids,
+				names(LevelOfSupport.values()), names(SupportParty.values()),
+				names(SupportState.values()), names(SupportSource.values()),
+				names(SupportMilestoneType.values()));
 		return new SupportCoverage(total, attested);
+	}
+
+	/**
+	 * One filtered, ordered page of a release's non-root component ids.
+	 *
+	 * <p>Ids, deliberately. The caller hydrates only what the page contains: the merged
+	 * release rows carry uuids and edges, and everything a table shows -- purl, name,
+	 * version, level of support, milestone dates -- comes from two further loads keyed by
+	 * component id. Filtering and slicing after those loads would mean paying the whole
+	 * BOM's cost to display fifty rows, which is the cost pagination exists to avoid.
+	 *
+	 * <p>The release scope resolves through {@link #findReleaseComponentUuids}, the same path
+	 * the unpaged list and the coverage gauge walk, PRODUCT unwind included. The gauge stays
+	 * RELEASE-scoped and is not recomputed per page: "34 of 1,240 disclosed" describes the
+	 * BOM being served, and a page-scoped version of it would change as the operator clicked
+	 * through pages while the BOM it describes did not.
+	 *
+	 * @param limit page size; clamped to the range 1..{@value #RELEASE_PAGE_MAX_LIMIT}
+	 * @param after uuid of the last item seen, or null for the first page; an unrecognised
+	 *        cursor is rejected rather than restarting the walk
+	 */
+	public SbomComponentPage listReleaseSbomComponentPage(UUID orgUuid, UUID releaseUuid,
+			SupportAttestationFilter attestation, String search, int limit, UUID after)
+			throws RelizaException {
+		int lim = Math.min(Math.max(limit, 1), RELEASE_PAGE_MAX_LIMIT);
+		SupportAttestationFilter filter =
+				null == attestation ? SupportAttestationFilter.ALL : attestation;
+
+		// The cursor's sort position. Looked up rather than carried on the wire so the cursor
+		// stays an opaque id: encoding the purl into it would publish a second, redundant
+		// copy of the sort key that a client could hand back inconsistently.
+		//
+		// A cursor that does not resolve is REJECTED, not treated as "start from the
+		// beginning". Silently restarting is how a "select all unattested" walk becomes an
+		// infinite loop that re-attests the first page forever. Note the component only has
+		// to still EXIST -- it does not have to still match the filter, which is the whole
+		// point: under UNATTESTED the caller has just attested it out of the set, and the
+		// cursor must still know where it sat.
+		//
+		// RelizaException, not IllegalArgumentException: the latter has no handler and lands
+		// in handleGeneric, which returns "Internal server error" and logs an ERROR stack
+		// trace. A stale cursor is a ROUTINE event -- leave the tab open while the SBOM is
+		// re-uploaded and the old canonical row is reaped -- so that would be both alert
+		// noise and useless to the client. "Never a silent restart" only helps if the caller
+		// can TELL a stale cursor from an outage and decide to restart the walk itself.
+		//
+		// Validated BEFORE the empty-release short-circuit below, so "a bad cursor always
+		// errors" holds on every release rather than every non-empty one.
+		String afterPurl = null;
+		if (null != after) {
+			SbomComponent anchor = sbomComponentRepository.findById(after)
+					.filter(c -> orgUuid.equals(c.getOrg()))
+					.orElseThrow(() -> new RelizaException(
+							"unknown pagination cursor: " + after));
+			afterPurl = anchor.getCanonicalPurl();
+		}
+
+		// Resolved ONCE here and handed back on the page, rather than via
+		// findReleaseComponentUuids, so the caller's follow-up merge does not resolve the
+		// release a second time. See SbomComponentPage#resolvedArtifactRows.
+		List<ArtifactSbomComponent> artifactRows = resolveReleaseArtifactComponents(releaseUuid);
+		Set<UUID> componentUuids = new LinkedHashSet<>();
+		for (ArtifactSbomComponent r : artifactRows) componentUuids.add(r.getSbomComponentUuid());
+		if (componentUuids.isEmpty()) return SbomComponentPage.empty(lim);
+		String ids = joinUuids(componentUuids);
+
+		// Wrapped here rather than at the wire so the caller never has to know the match is a
+		// LIKE, and so a search containing % or _ cannot silently widen the match.
+		String searchLike = (null == search || search.isBlank())
+				? null
+				: "%" + search.strip().replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+
+		String code = sqlCode(filter);
+		long total = sbomComponentRepository.countReleaseComponentPage(
+				orgUuid.toString(), ids, searchLike, code,
+				names(LevelOfSupport.values()), names(SupportParty.values()),
+				names(SupportState.values()), names(SupportSource.values()),
+				names(SupportMilestoneType.values()));
+		// One more than the page, to learn whether another page exists without a second
+		// query -- and without comparing against totalCount, which under UNATTESTED describes
+		// a population that changes as the caller writes.
+		List<UUID> fetched = sbomComponentRepository.findReleaseComponentPage(
+				orgUuid.toString(), ids, searchLike, code,
+				names(LevelOfSupport.values()), names(SupportParty.values()),
+				names(SupportState.values()), names(SupportSource.values()),
+				names(SupportMilestoneType.values()), afterPurl, after, lim + 1);
+		boolean hasMore = fetched.size() > lim;
+		List<UUID> page = hasMore ? List.copyOf(fetched.subList(0, lim)) : List.copyOf(fetched);
+		UUID endCursor = page.isEmpty() ? null : page.get(page.size() - 1);
+		return new SbomComponentPage(page, total, lim, endCursor, hasMore, artifactRows);
+	}
+
+	/**
+	 * The SQL literal for a filter value.
+	 *
+	 * <p>A switch EXPRESSION with no default, deliberately. The page SQL branches on three
+	 * literals and has no ELSE, so a fourth enum constant added without a matching SQL branch
+	 * would make every branch false: an empty page and a zero total, with no error and no log,
+	 * indistinguishable from "nothing matched". Exhaustiveness moves that from a silent
+	 * runtime wrong answer to a compile error at the moment the constant is added.
+	 */
+	private static String sqlCode(SupportAttestationFilter f) {
+		return switch (f) {
+			case ALL -> SupportAttestationFilter.CODE_ALL;
+			case ATTESTED -> SupportAttestationFilter.CODE_ATTESTED;
+			case UNATTESTED -> SupportAttestationFilter.CODE_UNATTESTED;
+		};
+	}
+
+	/**
+	 * Page-size ceiling. A caller asking for the whole BOM in one page is asking for the
+	 * unpaged query, which still exists for the graph view; this bound keeps a mistyped
+	 * limit from turning the paged endpoint back into the thing it replaced.
+	 */
+	public static final int RELEASE_PAGE_MAX_LIMIT = 500;
+
+	/**
+	 * Most components one bulk support attestation may carry.
+	 *
+	 * <p>Public and enforced HERE, next to {@link #RELEASE_PAGE_MAX_LIMIT}, for the same two
+	 * reasons that one is: a caller that is not the GraphQL resolver is bounded too, and a
+	 * test can assert against the constant instead of retyping the number.
+	 *
+	 * <p>What it bounds is amplification, not volume. {@code RateLimitingFilter} charges one
+	 * token per REQUEST, not per item, so an unbounded call buys N components of work -- each
+	 * in its own REQUIRES_NEW transaction -- for the price of a one-component call, and holds
+	 * a connection long enough to starve the pool for the whole tenant. Per-item rate limiting
+	 * is deliberately not the answer: the amplification factor is the problem, so bound it.
+	 *
+	 * <p>Not the client's 5,000-id walk cap, which is ergonomics on a UI that this mutation is
+	 * directly callable around. Our client batches at 200, so it never comes near this.
+	 */
+	public static final int BULK_SUPPORT_MAX_IDS = 1000;
+
+	/**
+	 * The names this build understands for an enum, for the coverage query's validity
+	 * predicates. Derived rather than hardcoded so the SQL cannot drift from the Java.
+	 */
+	private static List<String> names(Enum<?>[] values) {
+		return Arrays.stream(values).map(Enum::name).toList();
+	}
+
+	/**
+	 * Attest many components in one pass, reporting PER COMPONENT rather than as a count.
+	 *
+	 * <p>Three rules, carried from the deleted bulk-accept path:
+	 * <ul>
+	 *   <li>ROOT components are skipped -- the application itself is not a third-party
+	 *       dependency to attest, and it is excluded from the coverage denominator too.</li>
+	 *   <li>Already-attested components are SKIPPED, never overwritten. A bulk sweep must not
+	 *       flatten a considered per-component judgement someone made earlier.</li>
+	 *   <li>Therefore idempotent: a second run over the same set applies nothing.</li>
+	 * </ul>
+	 *
+	 * <p>Each component is written in its OWN transaction, so a rejection -- a negative level
+	 * with no justification, say -- fails that component and no other. A single shared
+	 * transaction would mark itself rollback-only on the first failure and discard the
+	 * successful writes at commit, which is the opposite of skip-and-report.
+	 */
+	public List<SupportBulkResult> bulkSetSbomComponentSupport(UUID orgUuid,
+			Collection<UUID> sbomComponentUuids, SupportAttestationRequest request, UUID assertedBy,
+			UUID batchId) {
+		if (null == sbomComponentUuids || sbomComponentUuids.isEmpty()) return List.of();
+		// Bound here as well as at the resolver. The resolver's check exists to refuse before
+		// authorization and before any DB touch, with a message a GraphQL caller can act on;
+		// this one exists so the bound is a property of the WRITE, not of one entry point into
+		// it. A future caller that is not the resolver would otherwise be unbounded.
+		if (sbomComponentUuids.size() > BULK_SUPPORT_MAX_IDS) {
+			throw new IllegalArgumentException("a bulk support attestation is limited to "
+					+ BULK_SUPPORT_MAX_IDS + " components per call; " + sbomComponentUuids.size()
+					+ " were supplied");
+		}
+
+		// Deduplicated: a uuid repeated in the input would otherwise be written twice, and the
+		// second pass re-asserts and re-dates the attestation the first one just made.
+		Set<UUID> requested = new LinkedHashSet<>(sbomComponentUuids);
+		Map<UUID, SbomComponent> components = findSbomComponentsByIds(requested, orgUuid);
+
+		// "Already attested" MUST mean what the coverage gauge means, or a bulk sweep cannot
+		// close exactly the gap the gauge reports. Row-existence is NOT that definition: a
+		// WITHDRAWN attestation, or one carrying only machine-sourced data, is UNATTESTED on
+		// the gauge, and skipping it here would leave the operator unable to fill it in.
+		// An earlier revision reused the export read for this and claimed it avoided a second
+		// definition of "attested" -- it did the opposite, because that read has no definition
+		// at all. Parse and apply the same predicate the SQL applies.
+		Set<UUID> alreadyAttested = new HashSet<>();
+		// Rows this pass would UN-RETRACT. Tracked separately because they need a reason and
+		// an ordinary fresh attestation does not -- see the guard in the loop.
+		Set<UUID> withdrawn = new HashSet<>();
+		Map<UUID, String> unreadable = new LinkedHashMap<>();
+		for (SupportPayloadRow existing : sbomComponentSupportRepository
+				.findRawByComponentUuids(orgUuid.toString(), joinUuids(components.keySet()))) {
+			try {
+				SupportData sd = SupportData.parse(existing.getPayload());
+				if (sd.hasManualAttestation() && SupportState.WITHDRAWN != sd.state()) {
+					alreadyAttested.add(existing.getComponentUuid());
+				} else if (SupportState.WITHDRAWN == sd.state()) {
+					withdrawn.add(existing.getComponentUuid());
+				}
+			} catch (RuntimeException e) {
+				// Never treat an unreadable payload as "not assessed" -- that is the read-path
+				// rule, and silently overwriting a claim this build cannot parse is exactly
+				// the destruction it exists to prevent.
+				//
+				// Logged WITH the cause, per SupportData.parse's contract: the message that
+				// reaches the wire is parse's own wrapper, which deliberately names no field
+				// or value, so the cause here is the only record of WHICH field failed. The
+				// sibling bulk read in findSupportByComponentIds does the same.
+				log.warn("bulk support write: unreadable existing attestation on component {}"
+						+ " in org {}; reporting FAILED and leaving it untouched",
+						existing.getComponentUuid(), orgUuid, e);
+				unreadable.put(existing.getComponentUuid(), e.getMessage());
+			}
+		}
+
+		List<SupportBulkResult> results = new ArrayList<>();
+		for (UUID uuid : requested) {
+			SbomComponent sc = components.get(uuid);
+			if (null == sc) {
+				results.add(SupportBulkResult.failed(uuid, "component not found in this organization"));
+				continue;
+			}
+			// Root first: root-ness is a property of the COMPONENT, not of its payload, so a
+			// root with an unreadable attestation is still a root and reporting it as FAILED
+			// would put a component that never needs attesting into the operator's error list.
+			if (SbomComponentData.dataFromRecord(sc).root()) {
+				results.add(SupportBulkResult.skipped(uuid, SupportBulkOutcome.SKIPPED_ROOT));
+				continue;
+			}
+			if (unreadable.containsKey(uuid)) {
+				results.add(SupportBulkResult.failed(uuid,
+						"existing attestation cannot be read by this build: " + unreadable.get(uuid)));
+				continue;
+			}
+			if (alreadyAttested.contains(uuid)) {
+				results.add(SupportBulkResult.skipped(uuid, SupportBulkOutcome.SKIPPED_ATTESTED));
+				continue;
+			}
+			// Un-retracting needs a reason, for the same argument that makes clearing need
+			// one. This pass forces state=ATTESTED, so a withdrawn row silently becomes a
+			// live claim again -- and the audit row is the ONLY trace that the withdrawal was
+			// ever reversed. Without a reason that row records a state change and no why,
+			// which for a regulatory record is the part that matters. Fresh attestations are
+			// unaffected: there is nothing being reversed.
+			if (withdrawn.contains(uuid)
+					&& (null == request.reason() || request.reason().isBlank())) {
+				results.add(SupportBulkResult.failed(uuid,
+						"this component's attestation was withdrawn; supply a reason to"
+								+ " re-attest it"));
+				continue;
+			}
+			try {
+				// state is forced to ATTESTED, not left null. Null PRESERVES the stored state,
+				// and the row this pass is most likely to touch is a WITHDRAWN one -- the gauge
+				// counts those as missing, which is why bulk re-attests them at all. Leaving it
+				// null would APPLY the write and leave the component still uncounted, so the
+				// sweep would report success while the number it exists to move stayed put.
+				//
+				// This is not the incoherent case the mutation refuses: a bulk WITHDRAWN would
+				// conjure an assessment and retract it in one call. Asserting ATTESTED is just
+				// what "attest these components" means.
+				self.setSbomComponentSupportIsolated(uuid, withAttestedState(request), assertedBy,
+						batchId);
+				results.add(SupportBulkResult.applied(uuid));
+			} catch (IllegalArgumentException e) {
+				// Validation messages are written FOR a user and name the field at fault.
+				results.add(SupportBulkResult.failed(uuid, e.getMessage()));
+			} catch (RuntimeException e) {
+				// Everything else -- a DataAccessException, a constraint name, a driver
+				// message -- is written for an operator reading logs, not for a UI. Log the
+				// detail and return something a person can act on without leaking internals.
+				log.error("Bulk support attestation failed for sbom component {}: {}",
+						uuid, e.getMessage(), e);
+				results.add(SupportBulkResult.failed(uuid,
+						"could not be written; see server logs for this component"));
+				// Reset the persistence context before the next component.
+				//
+				// REQUIRES_NEW does NOT give each item a fresh one in production. Spring's
+				// open-in-view is on (Boot default; nothing here disables it), so a
+				// non-transactional EntityManager is already bound to the request thread,
+				// and JpaTransactionManager.doBegin reuses a bound unsynchronized holder
+				// rather than creating one. Each item gets its own TRANSACTION; all of them
+				// share one persistence context.
+				//
+				// That matters only for a failure at flush -- an optimistic-lock conflict or
+				// a unique-constraint violation on a first attestation, both translated a few
+				// hundred lines above. JPA requires an EntityManager to be discarded after a
+				// failed flush, so without this clear the items AFTER the failure can fail
+				// spuriously against a poisoned context: one real conflict reported as a
+				// whole tail of failures, which is precisely the batch-wide collapse
+				// per-item isolation exists to prevent.
+				//
+				// NOT reachable from the test suite: tests are not web requests, so no
+				// open-in-view holder is bound, so REQUIRES_NEW really does create a fresh
+				// EntityManager per item there and the poisoned-context path cannot occur.
+				// Safe to call unconditionally -- nothing else in a bulk mutation request is
+				// holding managed entities across the loop.
+				entityManager.clear();
+			}
+		}
+		return results;
+	}
+
+	/** The request as a positive attestation, whatever the stored state was. */
+	private static SupportAttestationRequest withAttestedState(SupportAttestationRequest r) {
+		return new SupportAttestationRequest(r.levelOfSupport(), SupportState.ATTESTED, r.party(),
+				r.justification(), r.assessedAt(), r.endOfGuaranteedSupportDate(),
+				r.endOfSupportDate(), r.endOfLifeDate(), r.supportNotes(), r.clearMilestones(),
+				r.reason());
+	}
+
+	/**
+	 * One component's write, in its own transaction. Called only through the self proxy from
+	 * {@link #bulkSetSbomComponentSupport}; see the note on that method for why the isolation
+	 * is load-bearing rather than defensive.
+	 *
+	 * @param batchId the sweep every component in this loop shares. REQUIRES_NEW is a
+	 *        transaction boundary, not a thread one, so the id passes through unchanged.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public SbomComponentSupport setSbomComponentSupportIsolated(UUID sbomComponentUuid,
+			SupportAttestationRequest request, UUID assertedBy, UUID batchId) {
+		return applySupport(sbomComponentUuid, request, SupportSource.MANUAL, assertedBy, batchId);
 	}
 
 	/** Coverage counts for the support-disclosure completeness metric. */
 	public record SupportCoverage(long total, long attested) {}
+
+	/**
+	 * Whether BOM exports for this org actually carry the support properties the coverage
+	 * counts describe.
+	 *
+	 * <p>A CONSTANT {@code PARTIAL} today, which is the honest answer and not the one this
+	 * started as. An earlier revision returned ENABLED, reasoning that injection is un-gated
+	 * -- true, but of a NARROWER surface than the claim. {@code injectCurrentSupport} has
+	 * exactly ONE production call site, the native CycloneDX single-artifact download; the
+	 * SPDX-augmented branch beside it serves the BOM un-injected, and the release-level SBOM
+	 * export never injects at all. So an org at 100% coverage can export a release SBOM
+	 * carrying no disclosure while a gauge reports exports are on -- the identical
+	 * lie-by-omission a default-off toggle would create, and it would have shipped on day one.
+	 *
+	 * <p>Reporting a hopeful DISABLED because a decision says the toggle should default off
+	 * would be the mirror-image error: this must describe the running system, not the
+	 * intended one.
+	 *
+	 * <p>THIS METHOD IS THE SEAM the export toggle replaces. When it lands, this reads the
+	 * org setting instead and every caller keeps working unchanged.
+	 * {@code SupportExportGateTest} is the test that names the gate: it asserts BOTH this
+	 * method's value and that NO class under {@code src/main/java} outside this one mentions
+	 * it, so it fails the moment a gate appears anywhere and has to be updated by whoever adds
+	 * it. That is how this stops being a constant rather than quietly staying one.
+	 *
+	 * <p>An earlier revision of this javadoc claimed the forged-provenance strip "runs on
+	 * every egress regardless of what this returns". THAT IS FALSE, and worth correcting here
+	 * rather than quietly: the strip runs inside {@code SupportBomInjector.inject}, so it
+	 * reaches exactly the paths injection reaches. The release-level SBOM export calls
+	 * neither, so a forged {@code reliza:support:*} baked into an uploaded component BOM
+	 * survives into the merged export untouched -- while {@code SupportBomInjector}'s javadoc
+	 * asserts any such property provably came from us. An anti-spoofing control that holds on
+	 * one egress and not another is worse than none, because the documentation says it holds.
+	 *
+	 * <p>Tracked as board task {@code t20260826-172851-10180}, open since 2026-08-26. It is
+	 * the same gap that makes this method return PARTIAL, and closing it is what lets this
+	 * return ENABLED or DISABLED: one setting gating every egress, strip included.
+	 */
+	public SupportExportState supportExportState(UUID orgUuid) {
+		return SupportExportState.PARTIAL;
+	}
 }

@@ -143,6 +143,22 @@ public class Utils {
 				new org.cyclonedx.util.serializer.LicenseChoiceSerializer(false, org.cyclonedx.Version.VERSION_16));
 		CDX_OM.registerModule(cdxModule);
 	}
+
+	/**
+	 * The ONLY mapper that may bind a JSONB payload that hypersistence
+	 * {@code JsonBinaryType} wrote -- currently {@code SupportData}.
+	 *
+	 * <p>This IS hypersistence's own mapper, not a copy: reading a stored payload
+	 * with any other configuration risks parsing it differently from the way the
+	 * entity path would, and a divergence there is silent. {@link #OM} cannot be
+	 * used, because it is Jackson 3 ({@code tools.jackson}) and the payloads were
+	 * written by Jackson 2.
+	 *
+	 * <p>Exposed here rather than reached for directly so that the codebase keeps a
+	 * single place where named mappers and their constraints are written down.
+	 */
+	public static final com.fasterxml.jackson.databind.ObjectMapper JSONB_OM =
+			io.hypersistence.utils.hibernate.type.util.ObjectMapperWrapper.INSTANCE.getObjectMapper();
 	
 	public static final ZoneId UTC_ZONE_ID = ZoneId.of("UTC");
 	public static final ZoneOffset UTC_ZONE_OFFSET = ZoneOffset.of("Z");

@@ -11,12 +11,21 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 
+import io.reliza.model.DeviceSupportRisk;
+import io.reliza.model.LevelOfSupport;
+import io.reliza.model.SupportAttestationFilter;
+import io.reliza.model.SupportBulkOutcome;
+import io.reliza.model.SupportExportState;
+import io.reliza.model.SupportMilestoneType;
+import io.reliza.model.SupportParty;
 import io.reliza.model.SupportSource;
+import io.reliza.model.SupportState;
 import io.reliza.model.SupportStatus;
 
 /**
@@ -37,7 +46,7 @@ class SupportEnumsSchemaEnumSyncTest {
 	@Test
 	void supportStatusEnumIsInSync() {
 		Set<String> javaValues = Arrays.stream(SupportStatus.values()).map(Enum::name)
-				.collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+				.collect(Collectors.toCollection(TreeSet::new));
 		Set<String> schemaValues = readSchemaEnum("SupportStatus");
 		assertEquals(javaValues, schemaValues,
 				"GraphQL enum SupportStatus drifted from Java enum;"
@@ -46,12 +55,111 @@ class SupportEnumsSchemaEnumSyncTest {
 	}
 
 	@Test
+	void levelOfSupportEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(LevelOfSupport.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("LevelOfSupport");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum LevelOfSupport drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	/**
+	 * The only INPUT enum in this family, and the one whose drift is silent.
+	 *
+	 * <p>An output enum that drifts fails loudly at serialization. This one is an argument,
+	 * and its values are also SQL literals in the release-page filter: a schema value with no
+	 * Java constant is a coercion error at request time rather than at build time, and the
+	 * SQL branches on the names with no ELSE, so the failure mode is an empty page rather
+	 * than an error. Pinned here as well as in the service test that asserts the constants
+	 * equal the names.
+	 */
+	/** Wire enum, so a member added on one side and not the other is a coercion error. */
+	@Test
+	void supportExportStateEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportExportState.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportExportState");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum SupportExportState drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	@Test
+	void supportAttestationFilterEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportAttestationFilter.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportAttestationFilter");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum SupportAttestationFilter drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	@Test
+	void supportBulkOutcomeEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportBulkOutcome.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportBulkOutcome");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum SupportBulkOutcome drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	@Test
+	void supportStateEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportState.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportState");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum SupportState drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	@Test
 	void supportSourceEnumIsInSync() {
 		Set<String> javaValues = Arrays.stream(SupportSource.values()).map(Enum::name)
-				.collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+				.collect(Collectors.toCollection(TreeSet::new));
 		Set<String> schemaValues = readSchemaEnum("SupportSource");
 		assertEquals(javaValues, schemaValues,
 				"GraphQL enum SupportSource drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	@Test
+	void deviceSupportRiskEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(DeviceSupportRisk.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("DeviceSupportRisk");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum DeviceSupportRisk drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	@Test
+	void supportMilestoneTypeEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportMilestoneType.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportMilestoneType");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum SupportMilestoneType drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
+	}
+
+	@Test
+	void supportPartyEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportParty.values()).map(Enum::name)
+				.collect(Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportParty");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum SupportParty drifted from Java enum;"
 						+ " missing in schema: " + diff(javaValues, schemaValues)
 						+ "; extra in schema: " + diff(schemaValues, javaValues));
 	}
@@ -62,6 +170,8 @@ class SupportEnumsSchemaEnumSyncTest {
 		return r;
 	}
 
+	private static final Pattern DOCSTRING = Pattern.compile("\"\"\"[\\s\\S]*?\"\"\"");
+
 	/** Returns the enum values declared in the GraphQL schema file. */
 	private static Set<String> readSchemaEnum(String enumName) {
 		String schema = readSchema();
@@ -69,7 +179,12 @@ class SupportEnumsSchemaEnumSyncTest {
 		while (m.find()) {
 			if (!enumName.equals(m.group(1))) continue;
 			Set<String> out = new TreeSet<>();
-			for (String raw : m.group(2).split("\\R")) {
+			// Strip """...""" descriptions before splitting. The parser previously handled
+			// only # comments, because every support enum used them -- so the first enum to
+			// document its MEMBERS (which is how a description reaches introspection, where
+			// # comments never do) had each documentation line read as an enum value.
+			String body = DOCSTRING.matcher(m.group(2)).replaceAll("");
+			for (String raw : body.split("\\R")) {
 				String line = raw.trim();
 				int hash = line.indexOf('#');
 				if (hash >= 0) line = line.substring(0, hash).trim();

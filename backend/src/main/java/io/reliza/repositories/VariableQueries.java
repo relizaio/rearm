@@ -1421,7 +1421,7 @@ class VariableQueries {
 			SELECT * FROM rearm.teams
 				WHERE record_data->>'org' = :orgUuidAsString
 			""";
-	
+
 	protected static final String FIND_USER_GROUPS_BY_USER_AND_ORGANIZATION = """
 			SELECT * FROM rearm.user_groups
 				WHERE record_data->>'org' = :orgUuidAsString

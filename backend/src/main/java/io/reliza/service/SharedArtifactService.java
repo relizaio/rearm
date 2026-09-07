@@ -30,6 +30,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CarryForwardArm;
 import io.reliza.model.dto.CarryForwardPairing;
@@ -234,6 +235,17 @@ public class SharedArtifactService {
 	}
 	
 	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad) throws Exception{
+		return downloadArtifact(ad, null);
+	}
+
+	/**
+	 * As {@link #downloadArtifact(ArtifactData)}, but weaves the per-component device-support-risk
+	 * verdict + device-anchor properties against {@code device} (the support window of the PRODUCT
+	 * release the download was launched from; {@code ReleaseData.eos}/{@code eol}). Null on a
+	 * non-PRODUCT release or when the caller has no unambiguous device release -- nothing
+	 * device-related is emitted, the rest of the support disclosure is unchanged.
+	 */
+	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad, DeviceLifecycle device) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
         log.info("download artifacts for ad: {}", ad);
 
@@ -241,23 +253,32 @@ public class SharedArtifactService {
 			byte[] byteArray;
 			// For SPDX, augmented BOM is the converted CycloneDX
 			if(ad.getBomFormat().equals(BomFormat.SPDX)){
-				String rebom;
+				JsonNode rebom;
 				// Support version parameter for SPDX augmented downloads
 				if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
 					try {
 						Integer version = Integer.parseInt(ad.getVersion());
-						rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
+						rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version);
 					} catch (NumberFormatException e) {
 						// Version is not numeric, fall back to latest converted CycloneDX
-						rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX);
 					}
 				} else {
 					// No version specified, return latest converted CycloneDX
-					rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX);
 				}
-				// Support injection into the SPDX-augmented (converted CycloneDX) download is a
-				// later slice; served as-is for now.
-				byteArray = rebom.getBytes();
+				// Support INJECTION into the SPDX-augmented (converted CycloneDX) download is
+				// still a later slice -- this document carries no support facts. But the STRIP
+				// is not part of that slice and does not wait for it: an uploader-forged
+				// reliza:support:* property would otherwise be served here under the attribution
+				// SupportBomInjector's contract gives it. Strip always, inject conditionally.
+				try {
+					supportInjectionService.stripForgedProvenanceAndMark(rebom);
+				} catch (Exception stripEx) {
+					log.error("Forged-support strip failed for SPDX-augmented artifact {} (org {});"
+							+ " serving unmarked: {}", ad.getUuid(), ad.getOrg(), stripEx.getMessage(), stripEx);
+				}
+				byteArray = rebom.toString().getBytes(StandardCharsets.UTF_8);
 			} else {
 				// Native CycloneDX: fetch the BOM as a JsonNode, inject the CURRENT (derived,
 				// non-attested, current-state) per-component support facts, then serialize. The
@@ -276,7 +297,7 @@ public class SharedArtifactService {
 					bomNode = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg());
 				}
 				try {
-					supportInjectionService.injectCurrentSupport(bomNode, ad.getOrg());
+					supportInjectionService.injectCurrentSupport(bomNode, ad.getOrg(), device);
 				} catch (Exception supportEx) {
 					// Support injection is an add-on -- never fail the core BOM download because
 					// of a support-resolution error (transient DB, unexpected node shape). Serve
@@ -384,7 +405,7 @@ public class SharedArtifactService {
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
 
 		if(null != ad.getInternalBom()){
-			String rebom;
+			JsonNode rebom;
 			// For SPDX BOMs, pass the format to get original SPDX instead of converted CycloneDX
 			BomFormat format = ad.getBomFormat().equals(BomFormat.SPDX) ? BomFormat.SPDX : null;
 			log.info("downloadRawArtifact: bomFormat={}, format parameter={}, internalBomId={}, version={}", 
@@ -396,28 +417,46 @@ public class SharedArtifactService {
 					Integer version = Integer.parseInt(ad.getVersion());
 					log.info("Downloading version-specific raw BOM: version={}, format={}", version, ad.getBomFormat());
 					// Use findRawBomByVersion for both SPDX and CycloneDX when version is specified
-					rebom = rebomService.findRawBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
+					rebom = rebomService.findRawBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version);
 				} catch (NumberFormatException e) {
 					// Version is not numeric, fall back to latest with format
 					log.warn("Version is not numeric: {}, falling back to latest", ad.getVersion());
 					if (ad.getBomFormat().equals(BomFormat.SPDX)) {
-						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format).toString();
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format);
 					} else {
-						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg());
 					}
 				}
 			} else {
 				// No version specified - download latest
 				if (ad.getBomFormat().equals(BomFormat.SPDX)) {
 					log.info("Downloading latest raw SPDX BOM with format: {}", format);
-					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format).toString();
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format);
 				} else {
 					log.info("Downloading latest raw CycloneDX BOM");
-					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg());
 				}
 			}
 			
-			byte[] byteArray = rebom.getBytes();
+			// "Raw" means AS INGESTED -- not enriched, not injected. It does not mean the
+			// uploader's bytes: this is already a Jackson round trip through rebom, so byte
+			// fidelity was never on offer and no signature survives the path either. What it
+			// does mean is that ReARM is still serving this document under its own authority,
+			// and reliza:support:* / reliza:device:* are namespaces the taxonomy reserves --
+			// no legitimate upload carries them. So the sweep runs here too, and the marker
+			// says what it did: stripped, nothing disclosed. Leaving this one egress out would
+			// have left the whole guarantee decidable only by knowing which URL you used.
+			//
+			// The structural fix is refusing the reserved namespace at INGEST so no stored BOM
+			// carries it -- board task t20260905-155742-30573. Until then the sweep is the only
+			// thing standing between an uploader's claim and our attribution.
+			try {
+				supportInjectionService.stripForgedProvenanceAndMark(rebom);
+			} catch (Exception stripEx) {
+				log.error("Forged-support strip failed for raw artifact {} (org {}); serving"
+						+ " unmarked: {}", ad.getUuid(), ad.getOrg(), stripEx.getMessage(), stripEx);
+			}
+			byte[] byteArray = rebom.toString().getBytes(StandardCharsets.UTF_8);
 			String bomFileName = ad.getTags().stream()
 				.filter(t -> t.key().equals(CommonVariables.FILE_NAME_FIELD))
 				.map(t -> t.value())

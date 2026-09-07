@@ -38,6 +38,7 @@ import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentSupportAuditRepository;
+import io.reliza.repositories.SbomComponentSupportRepository;
 
 /** Unit tests for the BEAR-enrichment puller in {@link SbomComponentService}. */
 @ExtendWith(MockitoExtension.class)
@@ -47,6 +48,7 @@ class SbomComponentEnrichmentPullerTest {
 	@Mock private ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	@Mock private ReleaseArtifactIndexRepository releaseArtifactIndexRepository;
 	@Mock private ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
+	@Mock private SbomComponentSupportRepository sbomComponentSupportRepository;
 	@Mock private SbomComponentSupportAuditRepository sbomComponentSupportAuditRepository;
 	@Mock private ReleaseRepository releaseRepository;
 	@Mock private RebomService rebomService;
@@ -61,7 +63,7 @@ class SbomComponentEnrichmentPullerTest {
 		service = new SbomComponentService(
 				sbomComponentRepository, artifactSbomComponentRepository,
 				releaseArtifactIndexRepository, artifactCanonicalMapRepository,
-				sbomComponentSupportAuditRepository);
+				sbomComponentSupportRepository, sbomComponentSupportAuditRepository);
 		ReflectionTestUtils.setField(service, "releaseRepository", releaseRepository);
 		ReflectionTestUtils.setField(service, "rebomService", rebomService);
 		ReflectionTestUtils.setField(service, "artifactService", artifactService);

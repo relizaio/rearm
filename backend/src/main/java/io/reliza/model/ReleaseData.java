@@ -5,6 +5,7 @@
 package io.reliza.model;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,6 +27,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalState;
+import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.EnvironmentType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.SidPurlUtils;
@@ -70,7 +72,9 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		MARKETING_VERSION,
 		TRIGGER,
 		INPUT_TRIGGER,
-		APPROVED_ENVIRONMENT
+		APPROVED_ENVIRONMENT,
+		/** The section-524B device support window (eos/eol). See {@code ReleaseData.eos}/{@code eol}. */
+		SUPPORT_WINDOW
 	}
 	
 	public enum ReleaseUpdateAction {
@@ -297,6 +301,86 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	private java.time.LocalDate eol;
 
 	/**
+	 * The most recent SUPPORT_WINDOW {@link ReleaseUpdateEvent}, or null if the
+	 * device support window (eos/eol) has never been touched. Provenance for
+	 * the window is DERIVED from this event rather than duplicated into
+	 * separate stored fields -- {@code ReleaseUpdateEvent.wu} already carries
+	 * the attester and human-vs-programmatic distinction, and {@code date}
+	 * already carries the assessment timestamp; storing a second copy would
+	 * just be two values that can drift.
+	 *
+	 * <p>{@code updateEvents} is append-only in write order (every writer calls
+	 * {@link #addUpdateEvent}, nothing re-sorts it), so "most recent" is simply
+	 * the LAST matching entry -- no date comparison needed, and so no tie-break
+	 * ambiguity when two events share a timestamp (coarse clock resolution, a
+	 * frozen clock in tests) the way a date-based comparison would have.
+	 */
+	private ReleaseUpdateEvent latestSupportWindowEvent() {
+		if (null == updateEvents) return null;
+		ReleaseUpdateEvent latest = null;
+		for (ReleaseUpdateEvent ue : updateEvents) {
+			if (ue.rus() == ReleaseUpdateScope.SUPPORT_WINDOW) latest = ue;
+		}
+		return latest;
+	}
+
+	/** Who/what last touched the device support window -- human (MANUAL/API) vs machine (AUTO). Null if never set. */
+	@JsonIgnore
+	public ProgrammaticType getSupportWindowSource() {
+		ReleaseUpdateEvent ev = latestSupportWindowEvent();
+		return (null == ev || null == ev.wu()) ? null : ev.wu().getCreatedType();
+	}
+
+	/**
+	 * The {@code WhoUpdated.lastUpdatedBy} id of whoever/whatever last touched the
+	 * device support window -- a user id for a MANUAL/UI setter, an API key id for
+	 * an API setter. NOT gated by {@link #getSupportWindowSource}: an API-key
+	 * caller's id is still useful for tracing which key made the change. Use
+	 * {@code supportWindowSource} to tell the two kinds of id apart. Null if never
+	 * set.
+	 */
+	@JsonIgnore
+	public UUID getSupportWindowAssertedBy() {
+		ReleaseUpdateEvent ev = latestSupportWindowEvent();
+		return (null == ev || null == ev.wu()) ? null : ev.wu().getLastUpdatedBy();
+	}
+
+	/** When the device support window was last touched (CLE "published" for the resulting event). Null if never set. */
+	@JsonIgnore
+	public ZonedDateTime getSupportWindowLastAssessed() {
+		ReleaseUpdateEvent ev = latestSupportWindowEvent();
+		return null == ev ? null : ev.date();
+	}
+
+	/**
+	 * Compact old/new value for a SUPPORT_WINDOW {@link ReleaseUpdateEvent} -- one
+	 * string, since the event record carries a single oldValue/newValue pair, not
+	 * separate eos/eol slots. Used identically at creation and at update so the
+	 * trail is consistently formatted and greppable.
+	 */
+	public static String supportWindowValueString(LocalDate eos, LocalDate eol) {
+		return "eos=" + (null == eos ? "null" : eos) + ", eol=" + (null == eol ? "null" : eol);
+	}
+
+	/**
+	 * ADDED when the window went from wholly unset to at least partially set,
+	 * REMOVED when it went the other way, CHANGED for every other edit (partial
+	 * modification while the window remains at least partially set). Distinct
+	 * from the CHANGED-only shape NOTES/TAGS/VERSION use because a support
+	 * window, unlike those, can be fully cleared back to "never set" -- an
+	 * audit trail that renders every clear as a CHANGED "to null" would make a
+	 * REMOVED-filtered view miss every full removal.
+	 */
+	public static ReleaseUpdateAction supportWindowAction(LocalDate oldEos, LocalDate oldEol,
+			LocalDate newEos, LocalDate newEol) {
+		boolean hadWindow = null != oldEos || null != oldEol;
+		boolean hasWindow = null != newEos || null != newEol;
+		if (!hadWindow && hasWindow) return ReleaseUpdateAction.ADDED;
+		if (hadWindow && !hasWindow) return ReleaseUpdateAction.REMOVED;
+		return ReleaseUpdateAction.CHANGED;
+	}
+
+	/**
 	 * Component name captured at first sid emission. Immutable thereafter — a later
 	 * component rename does not retroactively edit historical releases. Null when sid
 	 * was never emitted for this release.
@@ -475,6 +559,23 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		}
 		if (maxTagCount > 1) {
 			vr.setErrors(List.of("Release cannot have more than one tag with the same key"));
+		}
+
+		/** device support window (section-524B) **/
+		// The single enforcement point for both eos<=eol AND every write path: every
+		// save (create and update alike) funnels through OssReleaseService.saveRelease,
+		// which calls this method -- so the invariant holds even for a future writer
+		// that doesn't go through doUpdateRelease's own inline check.
+		//
+		// Rebuild via a fresh mutable list rather than vr.getErrors().add(...): the
+		// tags branch above replaces errors with List.of(...), which is IMMUTABLE, so
+		// calling .add() straight on it would throw if BOTH checks fail on the same
+		// release. This has to tolerate that regardless of whether the tags branch's
+		// own list happens to be mutable.
+		if (null != rd.getEos() && null != rd.getEol() && rd.getEos().isAfter(rd.getEol())) {
+			List<String> errors = new ArrayList<>(vr.getErrors());
+			errors.add("Release eos must not be after eol (device support window)");
+			vr.setErrors(errors);
 		}
 		return vr;
 	}

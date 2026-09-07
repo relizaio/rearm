@@ -420,7 +420,6 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		}
 	}
 
-
 	@JsonProperty
 	private UUID uuid;
 	@JsonProperty(CommonVariables.NAME_FIELD)
@@ -461,7 +460,6 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private List<GlobalTeamAssignmentRule> globalTeamAssignmentRules = new LinkedList<>();
-
 
 	public void removeInvitee(String email, UUID whoInvited){
 		boolean found = false;
