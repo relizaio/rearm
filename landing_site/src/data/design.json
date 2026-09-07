@@ -526,7 +526,7 @@
       "path": "/use-cases/deployment-governance",
       "label": "Deployment Governance, DevOps, BYOC",
       "persona": "FOR PLATFORM + DEVOPS TEAMS, AND VENDORS SHIPPING INTO CUSTOMER CLOUDS",
-      "h1": "Your software, their cloud. ReARM decides what runs there.",
+      "h1": "DevOps, BYOC, Air-Gap at Scale.",
       "pain": "Bring Your Own Cloud means your product runs on infrastructure you do not operate: a customer's VPC, a partner's cluster, an air-gapped site. CI cannot push there, and once it ships nobody can say which version is live. ReARM holds the plan; ReARM CD inside each cluster pulls it, applies it, and reports back.",
       "a1": "rgba(240,138,75,0.10)",
       "a2": "rgba(244,176,75,0.10)",
