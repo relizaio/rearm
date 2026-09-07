@@ -1273,6 +1273,12 @@ query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
 const singleReleaseProductNoParent = `
     createdDate
     org
+    # eos / eol: the DEVICE support window. Selected here rather than fetched on demand
+    # because the release view seeds its editor from the loaded release, and an unselected
+    # field reads as "not declared" -- a meaningful value here, so the omission would be
+    # invisible rather than obviously broken.
+    eos
+    eol
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}
