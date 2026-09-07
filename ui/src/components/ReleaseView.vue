@@ -81,7 +81,11 @@
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
-                    <n-form-item>
+                    <!-- Hidden for the addendum rather than left enabled and ignored. The
+                         addendum always walks the whole release scope, so an operator who
+                         ticked "Top Level Dependencies Only" and got a full-scope document
+                         would have no way to tell the control had been dropped on the floor. -->
+                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
                                 Select SBOM configuration for export
@@ -153,7 +157,7 @@
                             />
                         </n-radio-group>
                     </n-form-item>
-                    <n-form-item>
+                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
                         <span style="display: inline-flex; align-items: center;">
                             Top Level Dependencies Only:
                             <n-tooltip trigger="hover">
@@ -167,7 +171,7 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
-                    <n-form-item>
+                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
                         <span style="display: inline-flex; align-items: center;">
                             Ignore Optional Dependencies:
                             <n-tooltip trigger="hover">
@@ -4963,7 +4967,8 @@ async function uploadNewBomVersion (art: any) {
 }
 
 /**
- * The FDA support addendum: a DIFFERENT DOCUMENT that shares the export modal.
+ * The FDA support addendum (FDA-Readiness-1 7g): a DIFFERENT DOCUMENT that shares the
+ * export modal.
  *
  * Assembled client-side by collectAddendumData, which is deliberately document-agnostic --
  * the PDF and the Device Support Statement consume the same collector unchanged. A
@@ -4977,9 +4982,18 @@ async function uploadNewBomVersion (art: any) {
 async function exportFdaAddendum () {
     try {
         bomExportPending.value = true
+        const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
+        if (!orgUuid) {
+            // Refused in the same voice as every other refusal. Without this the operator
+            // gets a raw GraphQL variable-coercion message about $orgUuid, which reads as a
+            // server fault rather than as "this release did not carry its org".
+            Swal.fire('Addendum not generated',
+                'This release did not carry an organization, so the labeling statements'
+                + ' cannot be resolved. Reload the page and try again.', 'error')
+            return
+        }
         const result = await collectAddendumData(
-            graphqlClient as any, updatedRelease.value.uuid,
-            updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
+            graphqlClient as any, updatedRelease.value.uuid, orgUuid)
         if (!result.ok) {
             Swal.fire('Addendum not generated', result.error, 'error')
             return
@@ -4988,11 +5002,22 @@ async function exportFdaAddendum () {
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
         link.download = addendumFileName(result.data)
+        // append -> click -> remove -> revoke, following utils/bovExport.ts rather than the
+        // older exports in this file: revoking the URL of a DETACHED anchor races the
+        // browser's own fetch of it in some engines, and a silently empty download is a
+        // particularly bad failure for a document someone is about to file.
+        document.body.appendChild(link)
         link.click()
+        document.body.removeChild(link)
         window.URL.revokeObjectURL(link.href)
         notify('success', 'Addendum exported',
             `${result.data.totalComponents} components, ${result.data.unassessedComponents} with no attestation.`)
     } catch (err: any) {
+        // extractGraphQLErrorMessage, not the parseGraphQLError(err.message) its neighbours
+        // use: this catch only fires on throws collectAddendumData did NOT convert into a
+        // refusal, so err may be anything -- and parseGraphQLError calls startsWith on its
+        // argument, throwing a TypeError out of the catch itself when there is no string
+        // message. That exact defect was found on the previous PR in this feature.
         Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')
     } finally {
         bomExportPending.value = false

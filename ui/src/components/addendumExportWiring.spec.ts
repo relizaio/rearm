@@ -14,6 +14,26 @@ import { ADDENDUM_COLUMNS } from '@/utils/addendumCsv'
 const source = readFileSync(
     fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
 
+/**
+ * The handler's body, sliced to its own closing brace by BRACE DEPTH.
+ *
+ * An earlier version cut at the next `\nasync function`, which silently produced the wrong
+ * text -- or an empty string -- the moment a helper was inserted between the two functions.
+ * A spec that reads as protection and checks nothing is worse than no spec.
+ */
+function handlerBody (): string {
+    const start = source.indexOf('async function exportFdaAddendum')
+    if (start < 0) throw new Error('no exportFdaAddendum in ReleaseView.vue')
+    let depth = 0
+    let i = source.indexOf('{', start)
+    const open = i
+    for (; i < source.length; i++) {
+        if (source[i] === '{') depth++
+        else if (source[i] === '}' && --depth === 0) break
+    }
+    return source.slice(open, i + 1)
+}
+
 describe('the FDA addendum export is wired into the export modal', () => {
     it.each([
         ['collectAddendumData', '@/utils/addendumData'],
@@ -44,16 +64,29 @@ describe('the FDA addendum export is wired into the export modal', () => {
     // The refusal must reach the operator. A silent failure here means they believe they
     // hold a complete document.
     it('surfaces a refusal instead of downloading anything', () => {
-        const fn = source.slice(source.indexOf('async function exportFdaAddendum'))
-        const body = fn.slice(0, fn.indexOf('\nasync function', 1))
+        const body = handlerBody()
         expect(body).toMatch(/if \(!result\.ok\)/)
         expect(body.indexOf('if (!result.ok)')).toBeLessThan(body.indexOf('new Blob'))
     })
 
-    it('releases the object URL it creates', () => {
-        const fn = source.slice(source.indexOf('async function exportFdaAddendum'))
-        const body = fn.slice(0, fn.indexOf('\nasync function', 1))
+    it('refuses before querying when the release carries no org', () => {
+        const body = handlerBody()
+        expect(body.indexOf('if (!orgUuid)')).toBeLessThan(body.indexOf('collectAddendumData('))
+    })
+
+    // The BOM-shaping controls do not apply to the addendum, so they are HIDDEN rather than
+    // left enabled and silently ignored -- an operator who ticked "Top Level Dependencies
+    // Only" and got a full-scope document would have no way to tell.
+    it('hides the BOM-shaping controls when the addendum is selected', () => {
+        const gates = source.match(/v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'"/g) || []
+        expect(gates.length).toBeGreaterThanOrEqual(3)
+    })
+
+    it('appends, clicks, removes, then revokes the object URL', () => {
+        const body = handlerBody()
         expect(body).toContain('revokeObjectURL')
+        expect(body.indexOf('appendChild')).toBeLessThan(body.indexOf('link.click()'))
+        expect(body.indexOf('link.click()')).toBeLessThan(body.indexOf('revokeObjectURL'))
     })
 })
 

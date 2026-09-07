@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { addendumRow, addendumHeaderRows, renderAddendumCsv, addendumFileName,
-    ADDENDUM_COLUMNS, NOT_ASSESSED } from './addendumCsv'
+    ADDENDUM_COLUMNS, NOT_ASSESSED, LEVEL_NOT_STATED } from './addendumCsv'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
     return {
         sbomComponentUuid: 'sc-1', name: 'log4j-core', group: 'org.apache', version: '2.14.1',
         purl: 'pkg:maven/org.apache/log4j-core@2.14.1', attestationState: 'ATTESTED',
-        levelOfSupport: 'actively maintained', endOfSupportDate: '2030-01-01',
+        levelOfSupport: 'actively maintained', levelOfSupportEnum: 'ACTIVELY_MAINTAINED',
+        endOfSupportDate: '2030-01-01',
         justification: null, assessedAt: '2026-09-01T00:00:00Z', ...over
     }
 }
@@ -43,8 +44,25 @@ describe('addendumRow', () => {
 
     it('emits the justification when there is no level', () => {
         const row = addendumRow(comp({ levelOfSupport: null, justification: 'no upstream date published' }))
-        expect(row[3]).toBe(NOT_ASSESSED)
         expect(row[5]).toBe('no upstream date published')
+    })
+
+    // REGRESSION: a level is OPTIONAL on an attestation, and a justification-only
+    // attestation is exactly the L1021-1022 case. Printing "not assessed" for it made the
+    // table contradict its own header -- "10 with a support attestation" above ten rows
+    // each reading not assessed.
+    it('distinguishes an attested component with no level from an unassessed one', () => {
+        expect(addendumRow(comp({ levelOfSupport: null }))[3]).toBe(LEVEL_NOT_STATED)
+        expect(addendumRow(comp({ attestationState: null, levelOfSupport: null }))[3]).toBe(NOT_ASSESSED)
+        expect(LEVEL_NOT_STATED).not.toBe(NOT_ASSESSED)
+    })
+
+    // A retracted attestation is not injected into exports. Emitting its justification would
+    // republish a claim the manufacturer formally withdrew.
+    it('states nothing at all for a WITHDRAWN component, justification included', () => {
+        const row = addendumRow(comp({ attestationState: 'WITHDRAWN', levelOfSupport: null,
+            justification: 'retracted reasoning' }))
+        expect(row[5]).toBeNull()
     })
 
     // Blank would read as an omission -- something the exporter forgot. The honest claim is
@@ -119,7 +137,8 @@ describe('renderAddendumCsv', () => {
         const csv = renderAddendumCsv(data({ components: [comp(), comp({ name: 'other' })] }))
         // slice(1) drops the UTF-8 BOM, which is part of the document, not of the first cell
         const lines = csv.slice(1).split('\r\n')
-        expect(lines[0]).toBe('FDA software support addendum')
+        // padded to the table width, so a strict reader (pandas) can parse the whole file
+        expect(lines[0]).toBe('FDA software support addendum' + ','.repeat(ADDENDUM_COLUMNS.length - 1))
         expect(lines).toContain(ADDENDUM_COLUMNS.join(','))
         const idx = lines.indexOf(ADDENDUM_COLUMNS.join(','))
         expect(lines.slice(idx + 1).filter(l => l.length).length).toBe(2)

@@ -11,7 +11,9 @@
 
 import gql from 'graphql-tag'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
-import { BULK_WALK_LIMIT, BULK_MAX_IDS } from './useBulkAttest'
+// PAGE SIZE only. That reuse is uncontroversial: it is one server, one resolver, and the
+// same round-trip economics. The CEILING below is deliberately NOT borrowed -- see it.
+import { BULK_WALK_LIMIT } from './useBulkAttest'
 // The counts come from the GAUGE's own loader, not a second copy of its query. The header
 // block states "N of M assessed" and the screen states the same thing; two queries would be
 // two chances for the document to disagree with the page the operator generated it from.
@@ -34,6 +36,7 @@ const ADDENDUM_COMPONENT_SELECTION = `
                 version
                 canonicalPurl
                 attestationState
+                attestedLevelOfSupport
                 attestedLevelOfSupportText
                 endOfSupportDate
                 justification
@@ -80,6 +83,22 @@ export const ADDENDUM_ORG_QUERY = gql`
         }
     }`
 
+/**
+ * The most components this will assemble into a document.
+ *
+ * Its OWN constant, not the bulk sweep's. An earlier revision borrowed BULK_MAX_IDS and
+ * justified it as "the same scope, so a release the sweep refuses this must refuse too" --
+ * which is simply false. The sweep walks the operator's current FILTER and search; this
+ * always walks `attestation: ALL`. On a 6,000-component release with 4,000 unattested the
+ * sweep proceeds and this refuses, the opposite of what that claim asserted.
+ *
+ * The number bounds a different thing for a different reason: every row is held in memory
+ * and rendered into a single string the browser must also hold. It is set equal to the
+ * sweep's ceiling today because both are "about as much as a browser should be asked to do
+ * in one go", not because either derives from the other.
+ */
+export const ADDENDUM_MAX_COMPONENTS = 5000
+
 /** One component's support facts, exactly as stored. No rendering. */
 export interface AddendumComponent {
     sbomComponentUuid: string | null
@@ -91,6 +110,13 @@ export interface AddendumComponent {
     attestationState: string | null
     /** FDA's phrase, verbatim and lowercase, or null when no level was attested. */
     levelOfSupport: string | null
+    /**
+     * The same claim as an ENUM member. Carried alongside the text because the mapping is
+     * one-way by design -- schema.graphqls warns against reversing text back to the enum --
+     * and a PDF renderer that wants to style or group by level needs the stable token, not
+     * the sentence.
+     */
+    levelOfSupportEnum: string | null
     endOfSupportDate: string | null
     justification: string | null
     assessedAt: string | null
@@ -171,6 +197,7 @@ export function toAddendumComponent (row: any): AddendumComponent {
         purl: blankToNull(c.canonicalPurl),
         attestationState: blankToNull(c.attestationState),
         levelOfSupport: blankToNull(c.attestedLevelOfSupportText),
+        levelOfSupportEnum: blankToNull(c.attestedLevelOfSupport),
         endOfSupportDate: blankToNull(c.endOfSupportDate),
         justification: blankToNull(c.justification),
         assessedAt: blankToNull(c.assessedAt)
@@ -215,13 +242,21 @@ export async function collectAddendumData (
         const release = (releaseResp.data as any)?.release
         if (!release) return { ok: false, error: 'The release could not be loaded. No addendum was generated.' }
         const org = (orgResp.data as any)?.organization
-        const coverage = coverageResp
-        if (!coverage) {
-            return { ok: false, error: 'Support coverage could not be loaded, so the assessed and'
-                + ' unassessed counts cannot be stated. No addendum was generated.' }
+        // Refused, symmetrically with the release above. The org carries three of the four
+        // labeling statements; tolerating a null organization would emit a document that is
+        // silently missing exactly what it exists to carry. A null SETTINGS is different and
+        // is fine -- that just means nobody has authored the prose yet.
+        if (!org) {
+            return { ok: false, error: 'The organization could not be loaded, so the labeling'
+                + ' statements cannot be included. No addendum was generated.' }
         }
+        // loadReleaseSupportCoverage THROWS rather than returning null when the response is
+        // malformed, so there is no null branch to write here -- a coverage failure lands in
+        // the catch below and refuses there.
+        const coverage = coverageResp
 
         const components: AddendumComponent[] = []
+        const seen = new Set<string>()
         let after: string | null = null
         let totalCount = 0
         for (;;) {
@@ -233,19 +268,44 @@ export async function collectAddendumData (
             const page = resp?.data?.getReleaseSbomComponentsPage
             if (!page) return { ok: false, error: 'The component list could not be loaded. No addendum was generated.' }
             if (!components.length) totalCount = page.totalCount || 0
-            if (totalCount > BULK_MAX_IDS) {
+            if (totalCount > ADDENDUM_MAX_COMPONENTS) {
                 return { ok: false, error: `This release has ${totalCount} components, more than the`
-                    + ` ${BULK_MAX_IDS} a browser-side document will assemble. Generate it from a`
+                    + ` ${ADDENDUM_MAX_COMPONENTS} a browser-side document will assemble. Generate it from a`
                     + ' narrower release, or ask for the server-rendered report.' }
             }
             const before = components.length
-            for (const row of page.items || []) components.push(toAddendumComponent(row))
+            for (const row of page.items || []) {
+                const c = toAddendumComponent(row)
+                // Deduped as we go, as the bulk sweep does. A duplicate is not a cosmetic
+                // problem here: a component listed twice inflates the row count, and the
+                // count is what a reviewer reads.
+                if (c.sbomComponentUuid && seen.has(c.sbomComponentUuid)) continue
+                if (c.sbomComponentUuid) seen.add(c.sbomComponentUuid)
+                components.push(c)
+            }
+            // The REAL bound, on rows actually held rather than on the number the server
+            // reported. totalCount is latched from the first page and is the server's own
+            // claim; a walk that keeps yielding rows past it must stop regardless.
+            if (components.length > ADDENDUM_MAX_COMPONENTS) {
+                return { ok: false, error: `This release yielded more than the`
+                    + ` ${ADDENDUM_MAX_COMPONENTS} components a browser-side document will`
+                    + ' assemble. No addendum was generated.' }
+            }
             if (!page.hasMore || !page.endCursor) break
             // A page that adds nothing while claiming more would loop forever. The current
             // server cannot do that; the loop must not depend on a server invariant.
             if (components.length === before) {
                 return { ok: false, error: 'The server returned an empty page while reporting more'
                     + ' results. The addendum was not generated rather than being truncated.' }
+            }
+            // A cursor that does not ADVANCE is the same failure wearing a different mask,
+            // and the empty-page guard above does not catch it: a stuck cursor that keeps
+            // returning the same row appends every time, so the walk runs forever -- or, if
+            // the duplicated total happens to match the gauge, produces a document listing
+            // one component thousands of times that passes every other check here.
+            if (page.endCursor === after) {
+                return { ok: false, error: 'The server returned the same page cursor twice.'
+                    + ' The addendum was not generated rather than looping.' }
             }
             after = page.endCursor
         }
@@ -254,6 +314,18 @@ export async function collectAddendumData (
         // moments apart, so a mismatch means the BOM changed underneath the walk -- and the
         // resulting document would state a count its own rows contradict. That is worth
         // refusing over: the counts are the part a reviewer actually reads.
+        // The ATTESTED count is reconciled as well, and for a sharper reason than the total.
+        // isLiveAttestation reads attestationState; the gauge's numerator additionally
+        // requires a MANUAL assessment source. Those agree today because MANUAL is the only
+        // write path that exists -- the moment a SUPPLIER or ENRICHED writer lands they
+        // diverge, and the document would say "0 attested" above a table showing levels and
+        // dates. Comparing them here makes that divergence refuse instead of print.
+        const liveRows = components.filter(isLiveAttestation).length
+        if (coverage.attested !== liveRows) {
+            return { ok: false, error: `The attestation counts do not agree (${liveRows} rows`
+                + ` carry a live attestation, ${coverage.attested} reported). No addendum was`
+                + ' generated.' }
+        }
         if (coverage.total !== components.length) {
             return { ok: false, error: `The component list changed while the addendum was being`
                 + ` assembled (${components.length} rows collected, ${coverage.total} reported).`
