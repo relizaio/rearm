@@ -483,8 +483,7 @@
         "Pinned Composition",
         "Aggregated SBOM"
       ],
-      "evidence": "COMPONENT SBOMS · FEATURE SETS · PINNED PRODUCT RELEASES · AGGREGATED SBOM · FINDINGS",
-      "stepsLabel": "HOW PRODUCT SECURITY TEAMS USE ReARM FOR THIS"
+      "evidence": "COMPONENT SBOMS · FEATURE SETS · PINNED PRODUCT RELEASES · AGGREGATED SBOM · FINDINGS"
     },
     {
       "id": "3f",
