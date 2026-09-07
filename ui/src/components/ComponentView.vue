@@ -1056,18 +1056,23 @@
                     </div>
                 </div>
                 <div class="componentDetails">
-                    <n-tabs v-if="componentData && componentData.type === 'COMPONENT'" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
-                        <n-tab-pane name="branches" tab="Branches">
+                    <n-tabs v-if="componentData" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
+                        <n-tab-pane name="latest" tab="Latest">
+                            <latest-releases-of-component
+                                :componentUuid="componentUuid"
+                                :orgUuid="String(route.params.orguuid)"
+                                :selectedBranchUuid="selectedBranchUuid"
+                                :featureSetLabel="words.branchFirstUpper"
+                                :refreshToken="latestRefreshToken"
+                                @selectBranch="selectBranch" />
+                        </n-tab-pane>
+                        <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
                             <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
-                        <n-tab-pane name="pull-requests" tab="Pull Requests">
-                            <n-data-table :data="pullRequests" :columns="pullRequestFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
-                        </n-tab-pane>
-                        <n-tab-pane name="tags" tab="Tags">
+                        <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">
                             <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
                     </n-tabs>
-                    <n-data-table v-else :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                 </div>
             </n-gi>
             <n-gi span="7">
@@ -1098,6 +1103,7 @@ import commonFunctions from '../utils/commonFunctions'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
+import LatestReleasesOfComponent from './LatestReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import DeployedToWidget from './DeployedToWidget.vue'
 import { DashboardView } from '@/utils/dashboardView'
@@ -1447,7 +1453,9 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
-const selectedTab: Ref<string> = ref((route.query.tab as string) || 'branches')
+const selectedTab: Ref<string> = ref((route.query.tab as string) || 'latest')
+// Bumped after branch list changes so the Latest tab refetches.
+const latestRefreshToken = ref(0)
 const branchCollapseState: Ref<any> = ref({})
 const selectedPullRequest: Ref<string> = routePrnumber !== '' ? ref(branchRouteId + '-pr-' + routePrnumber) : ref('')
 branchCollapseState.value['branchCollapse' + branchRouteId] = true
@@ -1747,7 +1755,9 @@ const resourceGroupMap: ComputedRef<any> = computed((): any => {
 })
 
 const branches: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'PULL_REQUEST' && b.type !== 'TAG').map((b: any) => ({...b, key: b.uuid}))
+    // Pull-request branches (names starting with pull/ or pullrequest/, a legacy
+    // pipeline convention) stay in this list with a PR badge; tags have their own tab.
+    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'TAG').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
         // sort - TODO make sort configurable
         storeBranches.sort((a: any, b: any) => {
@@ -1779,19 +1789,6 @@ const mainBranch: ComputedRef<string> = computed((): any => {
         if (!mainBranch) mainBranch = branches.value[0].uuid
     }
     return mainBranch
-})
-
-const pullRequests: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'PULL_REQUEST').map((b: any) => ({...b, key: b.uuid}))
-    if (storeBranches && storeBranches.length) {
-        // Sort by creation date in descending order (newest first)
-        storeBranches.sort((a: any, b: any) => {
-            const dateA = a.createdDate ? new Date(a.createdDate).getTime() : 0
-            const dateB = b.createdDate ? new Date(b.createdDate).getTime() : 0
-            return dateB - dateA
-        })
-    }
-    return storeBranches
 })
 
 const tags: ComputedRef<any> = computed((): any => {
@@ -2234,6 +2231,7 @@ const onCreateBranchSubmit = async function() {
             }
             const createBranchResp = await store.dispatch('createBranch', createBranchObject.value)
             await store.dispatch('fetchBranches', { componentId: componentUuid, forceRefresh: true })
+            latestRefreshToken.value++
             onCreateBranchReset()
             showAddBranchModal.value = false
             selectBranch(createBranchResp.uuid)
@@ -2955,6 +2953,9 @@ const branchFields: any[] = [
         key: 'name',
         render: (row: any) => {
             const children: any[] = [h('span', row.name)]
+            if (row.type === 'PULL_REQUEST') {
+                children.push(h(NTag, { size: 'small', type: 'info', bordered: false, title: 'Pull request branch' }, () => 'PR'))
+            }
             if (row.type === 'BASE') {
                 children.push(h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NIcon, {
@@ -3008,26 +3009,6 @@ if (!isComponent.value && isWritable){
 
 const branchTableRowKey = (row: any) => row.uuid
 
-// Pull Request fields - same as branch fields but with "Pull Request" header
-const pullRequestFields: any[] = [
-    {
-        title: 'Pull Request',
-        key: 'name'
-    },
-    {
-        title: 'Schema',
-        key: 'versionSchema',
-        render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
-    },
-    {
-        title: '',
-        key: 'archive',
-        width: 50,
-        render: archiveActionCell,
-    }
-]
-
-// Tag fields - same as branch fields but with "Tag" header
 const tagFields: any[] = [
     {
         title: 'Tag',
@@ -3610,6 +3591,7 @@ async function loadUserGroups() {
 async function initLoad() {
     const compUuid = route.params.compuuid.toString()
     await store.dispatch('fetchBranches', compUuid)
+    latestRefreshToken.value++
     let storeComponent = store.getters.componentById(compUuid)
     if (!storeComponent || !storeComponent.versionType) {
         storeComponent = await store.dispatch('fetchComponentFull', compUuid)
