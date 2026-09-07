@@ -3507,6 +3507,15 @@ async function saveOrgDefaultView() {
     }
 }
 
+/**
+ * What the four prose fields held when this form last agreed with the server.
+ *
+ * proseDiff reads it to tell an untouched field (omit) from an emptied one (send '', a
+ * deliberate clear), so it must be refreshed from every write that COMMITS -- see
+ * saveOrgSettings, which takes it from the mutation response rather than a follow-up read.
+ */
+const proseBaseline: Record<string, string> = {}
+
 async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
