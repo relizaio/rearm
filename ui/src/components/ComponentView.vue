@@ -40,7 +40,7 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <n-gi span="3">
+            <n-gi :span="selectedTab === 'latest' ? 10 : 3">
                 <div class="componentTop">
                     <div class="componentSummary">
                         <h5 v-if="componentData">
@@ -1064,7 +1064,7 @@
                                 :selectedBranchUuid="selectedBranchUuid"
                                 :featureSetLabel="words.branchFirstUpper"
                                 :refreshToken="latestRefreshToken"
-                                @selectBranch="selectBranch" />
+                                @selectBranch="selectBranchFromLatest" />
                         </n-tab-pane>
                         <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
                             <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
@@ -1075,7 +1075,7 @@
                     </n-tabs>
                 </div>
             </n-gi>
-            <n-gi span="7">
+            <n-gi v-if="selectedTab !== 'latest'" span="7">
                 <div v-if="marketingVersionEnabled" class="marketingReleases">
                     <mrkt-releases-of-component :component="updatedComponent.uuid" />
                 </div>
@@ -1842,6 +1842,22 @@ function selectBranch (uuid: string) {
             query: cleanQuery
         })
     }
+}
+
+// A row in the Latest tab opens the branch in detail mode: the Latest tab
+// owns the full width, so the branch pane only exists under the Branches tab.
+function selectBranchFromLatest (uuid: string) {
+    selectedTab.value = 'branches'
+    selectedBranchUuid.value = uuid
+    router.push({
+        name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+        params: {
+            orguuid: route.params.orguuid,
+            compuuid: componentUuid,
+            branchuuid: uuid
+        },
+        query: { ...route.query, tab: 'branches' }
+    })
 }
 
 function handleTabChange (tabName: string) {
