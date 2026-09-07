@@ -2343,6 +2343,33 @@ type Settings {
 	deliveries, read marks). Null means the 90-day default.
 	"""
 	notificationRetentionDays: Int
+	"""
+	The submission-level justification: what FDA L1021-1022 asks for literally, the reason
+	per-component support information cannot be included. At the measured 2.3% upstream
+	coverage this is the centre of a submission rather than a footnote.
+
+	Null is a real state, not a default. A document with an empty REQUIRED slot is blocked
+	rather than generated with the section missing -- on a submission a reviewer expects
+	gaps, but on the patient-facing Device Support Statement a silent gap is itself
+	misleading under 502(a)(1). No product-shipped default text: these are the
+	manufacturer's own commitments.
+	"""
+	fdaAssessmentNarrative: String
+	"""
+	Labeling VI.A.2: that patches and software updates may cease at end of support.
+	"""
+	fdaPatchesMayCeaseStatement: String
+	"""
+	Labeling VI.A.3: a REFERENCE to the controlled risk-transfer process -- an identifier or
+	URL, never the process itself. Plans are design-history-file records, and a pasted copy
+	becomes a second, unversioned original that drifts from the controlled one.
+	"""
+	fdaRiskTransferProcessRef: String
+	"""
+	Labeling VI.A.4: that end-user cybersecurity risk can be expected to increase over
+	time.
+	"""
+	fdaRiskIncreasesNotice: String
 }
 
 """
@@ -4283,6 +4310,57 @@ input SettingsInput {
 	value unchanged (90-day default applies when never set).
 	"""
 	notificationRetentionDays: Int
+	"""
+	The submission-level justification: what FDA L1021-1022 asks for literally, the reason
+	per-component support information cannot be included. At the measured 2.3% upstream
+	coverage this is the centre of a submission rather than a footnote.
+
+	Null is a real state, not a default. A document with an empty REQUIRED slot is blocked
+	rather than generated with the section missing -- on a submission a reviewer expects
+	gaps, but on the patient-facing Device Support Statement a silent gap is itself
+	misleading under 502(a)(1). No product-shipped default text: these are the
+	manufacturer's own commitments.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaAssessmentNarrative: String
+	"""
+	Labeling VI.A.2: that patches and software updates may cease at end of support.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaPatchesMayCeaseStatement: String
+	"""
+	Labeling VI.A.3: a REFERENCE to the controlled risk-transfer process -- an identifier or
+	URL, never the process itself. Plans are design-history-file records, and a pasted copy
+	becomes a second, unversioned original that drifts from the controlled one.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaRiskTransferProcessRef: String
+	"""
+	Labeling VI.A.4: that end-user cybersecurity risk can be expected to increase over
+	time.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaRiskIncreasesNotice: String
 }
 
 input PermissionInput {
@@ -5556,6 +5634,11 @@ enum ReleaseUpdateScopeEnum {
 	TRIGGER
 	INPUT_TRIGGER
 	APPROVED_ENVIRONMENT
+	# The section-524B device support window (eos/eol). Present in the Java enum since the
+	# window landed; missing here until 2026-09-07, which meant a release that had ever had
+	# its window set could not be SERIALIZED -- the whole release query failed with
+	# "Unknown value 'SUPPORT_WINDOW'" and the page would not load.
+	SUPPORT_WINDOW
 }
 
 enum ReleaseUpdateActionEnum {

@@ -105,6 +105,58 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty
 		private Integer notificationRetentionDays;
 
+		/**
+		 * FDA-Readiness-1 section 7f. Manufacturer-authored prose that the generated
+		 * submission documents render. Org-level because all four say something about how
+		 * THIS manufacturer assesses and supports, not about one device.
+		 *
+		 * <p>Nullable throughout, and null is a real state rather than a default to paper
+		 * over: a document with an empty required slot is BLOCKED rather than generated with
+		 * the section missing. On a submission a reviewer expects gaps, but on the
+		 * patient-facing Device Support Statement a silent gap is itself the misleading
+		 * thing under 502(a)(1).
+		 *
+		 * <p>There is deliberately NO product-shipped default text for any of them. These
+		 * are the manufacturer's own commitments; shipping wording they did not write and
+		 * then putting it over their name is the failure this feature exists to avoid.
+		 */
+		@JsonProperty
+		private String fdaAssessmentNarrative;
+
+		/** Statement that patches/updates may cease at end of support (labeling VI.A.2). */
+		@JsonProperty
+		private String fdaPatchesMayCeaseStatement;
+
+		/**
+		 * REFERENCE to the controlled risk-transfer process (labeling VI.A.3) -- an
+		 * identifier or URL, not the process itself. Plans and processes are
+		 * design-history-file records; pasting one into a generated artifact creates a
+		 * second, unversioned copy that drifts from the controlled original.
+		 */
+		@JsonProperty
+		private String fdaRiskTransferProcessRef;
+
+		/** Notice that end-user cybersecurity risk increases over time (labeling VI.A.4). */
+		@JsonProperty
+		private String fdaRiskIncreasesNotice;
+
+		/**
+		 * Bound on each prose field.
+		 *
+		 * <p>8,000 rather than the 20,000 an earlier revision used, and the reason is the
+		 * READ side rather than the write. These live on the organization record, which
+		 * {@code getOrganizationData} materialises fresh on every call -- including from
+		 * {@code AuthorizationService}, i.e. on the authorization path of ordinary requests.
+		 * Four fields at 20,000 was up to 80KB of extra JSONB parsed per request to carry
+		 * text that is read when a document is generated.
+		 *
+		 * <p>Still generous for what these are. Three of the four are single statements, and
+		 * the risk-transfer slot is a REFERENCE to a controlled document by design, not the
+		 * process. Only the assessment narrative is prose of any length, and 8,000
+		 * characters is several pages of it.
+		 */
+		public static final int FDA_PROSE_MAX_LENGTH = 8000;
+
 		public static final int NOTIFICATION_RETENTION_DAYS_DEFAULT = 90;
 		public static final int NOTIFICATION_RETENTION_DAYS_MIN = 14;
 		public static final int NOTIFICATION_RETENTION_DAYS_MAX = 730;
