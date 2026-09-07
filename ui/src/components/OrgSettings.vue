@@ -3503,17 +3503,35 @@ async function saveOrgDefaultView() {
     }
 }
 
+const FDA_PROSE_FIELDS = ['fdaAssessmentNarrative', 'fdaPatchesMayCeaseStatement',
+    'fdaRiskTransferProcessRef', 'fdaRiskIncreasesNotice'] as const
+
 /**
- * The four FDA prose fields, with empty ones left OUT of the payload entirely.
- * Returns a partial object to spread into the settings variables.
+ * What the server last told us each prose field holds. Refreshed on load and after a
+ * successful save, so the diff below compares against stored state rather than against
+ * whatever the form happened to start with.
  */
-function proseOrOmit (): Record<string, string> {
+const proseBaseline: Record<string, string> = {}
+
+/**
+ * The four prose fields, DIFFED against the baseline -- same shape as the attestation
+ * form's attestationVariables(uuid, form, baseline).
+ *
+ *   unchanged           -> omitted, so saving an unrelated toggle cannot touch prose
+ *   emptied from text   -> sent as '', which the server reads as a deliberate CLEAR
+ *   changed             -> sent trimmed
+ *
+ * Sending '' for a field that was ALREADY empty is pointless traffic, but worse than
+ * that it would be a clear the user did not ask for on a field somebody else may have
+ * filled in since this form loaded. So only a genuine emptying is sent.
+ */
+function proseDiff (): Record<string, string> {
     const out: Record<string, string> = {}
-    const fields = ['fdaAssessmentNarrative', 'fdaPatchesMayCeaseStatement',
-        'fdaRiskTransferProcessRef', 'fdaRiskIncreasesNotice'] as const
-    for (const f of fields) {
-        const v = (orgSettings[f] || '').trim()
-        if (v) out[f] = v
+    for (const f of FDA_PROSE_FIELDS) {
+        const current = (orgSettings[f] || '').trim()
+        const stored = (proseBaseline[f] || '').trim()
+        if (current === stored) continue
+        out[f] = current
     }
     return out
 }
@@ -3529,10 +3547,10 @@ async function loadOrgSettings() {
     orgSettings.sidAuthoritySegments = Array.isArray(s?.sidAuthoritySegments)
         ? [...s.sidAuthoritySegments]
         : []
-    orgSettings.fdaAssessmentNarrative = s?.fdaAssessmentNarrative || ''
-    orgSettings.fdaPatchesMayCeaseStatement = s?.fdaPatchesMayCeaseStatement || ''
-    orgSettings.fdaRiskTransferProcessRef = s?.fdaRiskTransferProcessRef || ''
-    orgSettings.fdaRiskIncreasesNotice = s?.fdaRiskIncreasesNotice || ''
+    for (const f of FDA_PROSE_FIELDS) {
+        orgSettings[f] = (s as any)?.[f] || ''
+        proseBaseline[f] = orgSettings[f]
+    }
 }
 
 async function saveOrgSettings() {
@@ -3587,17 +3605,10 @@ async function saveOrgSettings() {
                     // DISABLED implies "no segments"; sending an empty list lets the server
                     // null them out cleanly per applySidPurlPatch.
                     sidAuthoritySegments: orgSettings.sidPurlMode === 'DISABLED' ? [] : trimmedSegments,
-                    // OMITTED when empty, never sent as ''. Two reasons, and both bite:
-                    // the server REFUSES a blank (it is the one value that would satisfy a
-                    // "slot is present" check while carrying nothing), so sending '' would
-                    // make an unrelated settings save fail; and under PATCH semantics
-                    // omitting leaves the stored prose alone, so editing a toggle cannot
-                    // silently erase text a manufacturer signed.
-                    //
-                    // The cost, stated rather than hidden: prose cannot currently be
-                    // CLEARED from this form. Clearing needs an explicit signal, the way
-                    // the attestation mutation uses clearMilestones -- not yet built.
-                    ...proseOrOmit()
+                    // Diffed, not dumped: untouched fields are omitted so an unrelated
+                    // toggle cannot disturb prose, and a field the user emptied goes as ''
+                    // which the server reads as a deliberate clear.
+                    ...proseDiff()
                 }
             },
             fetchPolicy: 'no-cache'
