@@ -312,4 +312,81 @@ public class DeviceSupportWindowGovernanceTest {
 				"each write must leave its own SUPPORT_WINDOW row -- the trail is what a"
 						+ " Device Support Statement is defended with");
 	}
+
+	/**
+	 * Re-sending the SAME window must append NO second event.
+	 *
+	 * <p>The highest-value gap in this file, because the pressure is constant: CI rebuilds
+	 * re-send the same dto on every build. Drop the Objects.equals guard and every other test
+	 * here still passes while a shipped device accumulates one SUPPORT_WINDOW row per build --
+	 * an audit trail that says the manufacturer revised their support commitment hundreds of
+	 * times, when they never touched it.
+	 */
+	@Test
+	public void reWritingTheSameWindowAppendsNoEvent() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		UUID releaseUuid = createRelease(org.getUuid(), null, null);
+		ossReleaseService.updateRelease(ReleaseDto.builder()
+				.uuid(releaseUuid).eos(LocalDate.parse("2030-01-01")).eol(LocalDate.parse("2033-12-31")).build(), WU);
+		assertEquals(1, supportWindowEvents(releaseUuid).size());
+
+		for (int i = 0; i < 3; i++) {
+			ossReleaseService.updateRelease(ReleaseDto.builder()
+					.uuid(releaseUuid).eos(LocalDate.parse("2030-01-01")).eol(LocalDate.parse("2033-12-31")).build(), WU);
+		}
+		assertEquals(1, supportWindowEvents(releaseUuid).size(),
+				"an unchanged window must not append an event -- a CI rebuild re-sends the"
+						+ " same dto on every build");
+	}
+
+	/**
+	 * clearEol beats a concurrently-supplied eol, the mirror of the clearEos case.
+	 *
+	 * <p>Untested until now, and the asymmetry is reachable: inverting the precedence for eol
+	 * ALONE leaves all the other cases green, because nothing else supplies both a clear flag
+	 * and a value on the same side.
+	 */
+	@Test
+	public void clearEolWinsOverAConcurrentlySuppliedEolValue() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		UUID releaseUuid = createRelease(org.getUuid(), LocalDate.parse("2030-01-01"), LocalDate.parse("2033-12-31"));
+
+		ossReleaseService.updateRelease(ReleaseDto.builder()
+				.uuid(releaseUuid).eol(LocalDate.parse("2040-01-01")).clearEol(true).build(), WU);
+
+		ReleaseData after = current(releaseUuid);
+		assertNull(after.getEol(), "an explicit clear must not lose to a value riding along");
+		assertEquals(LocalDate.parse("2030-01-01"), after.getEos(), "eos must be untouched");
+	}
+
+	/** An eol-only update that lands EARLIER than the stored eos is refused. */
+	@Test
+	public void anEolOnlyUpdateEarlierThanTheStoredEosIsRejected() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		UUID releaseUuid = createRelease(org.getUuid(), LocalDate.parse("2033-01-01"), null);
+
+		assertThrows(RelizaException.class, () -> ossReleaseService.updateRelease(
+				ReleaseDto.builder().uuid(releaseUuid).eol(LocalDate.parse("2030-01-01")).build(), WU));
+	}
+
+	/**
+	 * A rejected window write must leave the stored window ALONE. Asserting the throw is not
+	 * enough: the setters run after the guard, but a future reordering would make the throw
+	 * arrive with the fields already mutated.
+	 */
+	@Test
+	public void aRejectedWindowWritePersistsNothing() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		UUID releaseUuid = createRelease(org.getUuid(), LocalDate.parse("2030-01-01"), LocalDate.parse("2033-12-31"));
+		int eventsBefore = supportWindowEvents(releaseUuid).size();
+
+		assertThrows(RelizaException.class, () -> ossReleaseService.updateRelease(
+				ReleaseDto.builder().uuid(releaseUuid).eos(LocalDate.parse("2035-01-01")).build(), WU));
+
+		ReleaseData after = current(releaseUuid);
+		assertEquals(LocalDate.parse("2030-01-01"), after.getEos(), "eos must be unchanged");
+		assertEquals(LocalDate.parse("2033-12-31"), after.getEol(), "eol must be unchanged");
+		assertEquals(eventsBefore, supportWindowEvents(releaseUuid).size(),
+				"a rejected write must not leave an audit row claiming it happened");
+	}
 }
