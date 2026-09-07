@@ -65,6 +65,12 @@
   ],
   "useCasePanels": [
     {
+      "q": "Shipping products made of many components?",
+      "name": "SBOM Aggregation",
+      "c1": "#7B6CF6",
+      "c2": "#5EEBC3"
+    },
+    {
       "q": "Shipping a regulated medical device?",
       "name": "Medical Devices",
       "c1": "#5EEBC3",
@@ -421,6 +427,64 @@
     }
   ],
   "ucPages": [
+    {
+      "label": "SBOM Aggregation",
+      "path": "/use-cases/sbom-aggregation",
+      "persona": "FOR PRODUCT SECURITY + ENGINEERING TEAMS SHIPPING MULTI-COMPONENT PRODUCTS",
+      "h1": "One SBOM per product version, assembled from what actually shipped.",
+      "pain": "A product is dozens of components, each with its own repository, pipeline and SBOM. The customer asks for one SBOM for the version they received. Stitching it together by hand means guessing which component versions went into that release, and guessing wrong.",
+      "steps": [
+        {
+          "num": "01",
+          "title": "Component releases arrive from CI",
+          "cap": "SBOM/XBOM Management",
+          "body": "Every pipeline run creates a component release in ReARM and attaches the SBOM it produced. Nothing to collect later: the SBOM is recorded at build time, against the exact version it describes."
+        },
+        {
+          "num": "02",
+          "title": "Products are assembled by rules",
+          "cap": "Feature Sets",
+          "body": "A product's feature set defines which component branches belong to it. Rules decide when a new component release rolls into a new product release, automatically or after approval. No one maintains a version matrix by hand."
+        },
+        {
+          "num": "03",
+          "title": "Every product release is pinned",
+          "cap": "Feature Sets",
+          "body": "Each product release records the exact component releases it contains. Ask ReARM what went into product version 3.2.1 and the answer is a list of pinned versions, not a best guess from dates."
+        },
+        {
+          "num": "04",
+          "title": "Aggregated SBOM on demand",
+          "cap": "SBOM/XBOM Management",
+          "body": "For any product release, ReARM merges the component SBOMs into one product SBOM: one document that covers everything shipped in that version, ready to hand to a customer, a regulator or a scanner."
+        },
+        {
+          "num": "05",
+          "title": "Delivered with the product",
+          "cap": "Distribution",
+          "body": "Aggregated SBOMs are ready to be served downstream, so each customer can receive the SBOM for the version they run, and the versions before it."
+        },
+        {
+          "num": "06",
+          "title": "Findings follow the aggregate",
+          "cap": "Findings Aggregation",
+          "body": "New vulnerabilities are evaluated against every component pinned in every shipped product version, so a finding in one library maps straight to the product versions and customers it affects."
+        }
+      ],
+      "note": false,
+      "shot": false,
+      "a1": "rgba(123,108,246,0.10)",
+      "a2": "rgba(94,235,195,0.10)",
+      "id": "3e",
+      "href": "#3e",
+      "publicDemo": true,
+      "stripLabel": "EVIDENCE",
+      "strip": [
+        "Pinned Composition",
+        "Aggregated SBOM"
+      ],
+      "evidence": "COMPONENT SBOMS · FEATURE SETS · PINNED PRODUCT RELEASES · AGGREGATED SBOM · FINDINGS"
+    },
     {
       "id": "3f",
       "href": "#3f",
