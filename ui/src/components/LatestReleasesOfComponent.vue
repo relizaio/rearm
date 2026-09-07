@@ -189,7 +189,8 @@ const columns: DataTableColumns<any> = [
             if (status.kind !== 'ready') {
                 return h('span', {
                     title: status.title,
-                    style: { display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', background: status.color }
+                    style: { display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap',
+                        background: status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }
                 }, status.label)
             }
             if (!row.metrics?.lastScanned) return ''
