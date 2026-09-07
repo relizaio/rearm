@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -693,6 +694,17 @@ public class OrganizationService {
 				settings.setVexComplianceFramework(settingsPatch.getVexComplianceFramework());
 			}
 
+			// PATCH, same as every field above and same as the attestation write: omitted
+			// leaves the stored value alone, supplied-blank clears it to null.
+			applyProse(settingsPatch.getFdaAssessmentNarrative(), settings::setFdaAssessmentNarrative,
+					"fdaAssessmentNarrative");
+			applyProse(settingsPatch.getFdaPatchesMayCeaseStatement(), settings::setFdaPatchesMayCeaseStatement,
+					"fdaPatchesMayCeaseStatement");
+			applyProse(settingsPatch.getFdaRiskTransferProcessRef(), settings::setFdaRiskTransferProcessRef,
+					"fdaRiskTransferProcessRef");
+			applyProse(settingsPatch.getFdaRiskIncreasesNotice(), settings::setFdaRiskIncreasesNotice,
+					"fdaRiskIncreasesNotice");
+
 			Integer retentionDays = settingsPatch.getNotificationRetentionDays();
 			if (retentionDays != null) {
 				if (retentionDays < OrganizationData.Settings.NOTIFICATION_RETENTION_DAYS_MIN
@@ -723,6 +735,44 @@ public class OrganizationService {
 			log.error("Exception when updating organization settings", e);
 			throw new RelizaException("Could not update organization settings");
 		}
+	}
+
+	/**
+	 * One prose field of the FDA document set, under this codebase's existing PATCH
+	 * contract: OMITTED (null) leaves the stored value alone, SUPPLIED-BLANK is a
+	 * deliberate CLEAR, and anything else is trimmed and stored.
+	 *
+	 * <p>Same BLANK-VS-OMITTED rule as the attestation write
+	 * ({@code SbomComponentService.applySupport}, via {@code blankToNull}); this one also
+	 * strips, which that one does not. Deliberately not a second idiom for the same thing --
+	 * an earlier revision here refused blanks and reserved clearing for a future
+	 * {@code clearFdaProse} list, which is one contract too many for one codebase.
+	 *
+	 * <p>Blank normalises to NULL rather than to an empty string, so storage never holds
+	 * whitespace that a later reader would have to re-check. That keeps the document
+	 * generator's "required slot is missing" test a null test.
+	 *
+	 * <p>Refusing a blank was also worse for the operator: someone who empties a wrong
+	 * risk-transfer reference and saves would be told nothing while the stale value
+	 * survived -- and the generator would later ship it into a patient-facing document.
+	 * That is precisely the fabrication the empty-slot block exists to prevent.
+	 */
+	private static void applyProse(String value, Consumer<String> setter,
+			String fieldName) throws RelizaException {
+		if (null == value) return;
+		// Raw length BEFORE strip(). Raw length is an upper bound on stripped length, so
+		// this cannot reject anything valid, and it avoids allocating one more full copy of
+		// a hostile body just to refuse it.
+		if (value.length() > OrganizationData.Settings.FDA_PROSE_MAX_LENGTH) {
+			throw new RelizaException(fieldName + " exceeds the "
+					+ OrganizationData.Settings.FDA_PROSE_MAX_LENGTH + " character limit");
+		}
+		String trimmed = value.strip();
+		if (trimmed.length() > OrganizationData.Settings.FDA_PROSE_MAX_LENGTH) {
+			throw new RelizaException(fieldName + " exceeds the "
+					+ OrganizationData.Settings.FDA_PROSE_MAX_LENGTH + " character limit");
+		}
+		setter.accept(trimmed.isEmpty() ? null : trimmed);
 	}
 
 	/**
