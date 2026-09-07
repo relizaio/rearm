@@ -21,6 +21,7 @@ export const productNav = [
 
 export const useCaseNav = [
   { label: 'SBOM Aggregation', href: '/use-cases/sbom-aggregation/' },
+  { label: 'VEX Exploitability eXchange', href: '/use-cases/vex-exploitability-exchange/' },
   { label: 'Medical Devices', href: '/use-cases/medical-devices/' },
   { label: 'Field Digital Twin', href: '/use-cases/field-digital-twin/' },
   { label: 'Deployment Governance, DevOps, BYOC', href: '/use-cases/deployment-governance/' },
@@ -34,6 +35,7 @@ export const pageHrefs: Record<string, string> = {
   'Release Policies': '/product/release-policies/',
   'AI Governance': '/product/ai-governance/',
   'SBOM Aggregation': '/use-cases/sbom-aggregation/',
+  'VEX Exploitability eXchange': '/use-cases/vex-exploitability-exchange/',
   'Medical Devices': '/use-cases/medical-devices/',
   'Field Digital Twin': '/use-cases/field-digital-twin/',
   'Deployment Governance': '/use-cases/deployment-governance/',

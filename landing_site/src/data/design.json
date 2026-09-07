@@ -71,6 +71,12 @@
       "c2": "#5EEBC3"
     },
     {
+      "q": "Drowning in CVEs that don't apply?",
+      "name": "VEX Exploitability eXchange",
+      "c1": "#C86CD8",
+      "c2": "#5B7CFA"
+    },
+    {
       "q": "Shipping a regulated medical device?",
       "name": "Medical Devices",
       "c1": "#5EEBC3",
@@ -484,6 +490,64 @@
         "Aggregated SBOM"
       ],
       "evidence": "COMPONENT SBOMS · FEATURE SETS · PINNED PRODUCT RELEASES · AGGREGATED SBOM · FINDINGS"
+    },
+    {
+      "label": "VEX Exploitability eXchange",
+      "path": "/use-cases/vex-exploitability-exchange",
+      "persona": "FOR PRODUCT SECURITY TEAMS RECEIVING AND ISSUING VEX",
+      "h1": "Vendor said \"not affected\". Prove it, apply it, and pass it on.",
+      "pain": "Scanners flag thousands of CVEs; most do not apply to how the code is actually used. Vendors send VEX documents saying so, your own reviews produce more, and the decisions end up in tickets and spreadsheets where nobody can trace who decided what, for which version, on what evidence.",
+      "steps": [
+        {
+          "num": "01",
+          "title": "VEX is just another artifact",
+          "cap": "SBOM/XBOM Management",
+          "body": "Attach a CycloneDX-VEX or OpenVEX document to a release from the UI, the CLI or your pipeline. ReARM matches every statement against the release's SBOM inventory, so a claim only lands where the affected component actually is."
+        },
+        {
+          "num": "02",
+          "title": "Trust depends on who is talking",
+          "cap": "Findings Aggregation",
+          "body": "A vendor's \"exploitable\" is accepted at once; a vendor's \"not affected\" is staged for your review, because that is where downplaying happens. Your own analyses auto-accept; third-party claims always wait. Import mode and issuer trust compose, and the least permissive wins."
+        },
+        {
+          "num": "03",
+          "title": "One decision, the right scope",
+          "cap": "Findings Aggregation",
+          "body": "A claim can apply to one release, a branch, a whole component, or the entire portfolio. ReARM records it once at the scope you choose, and stages any claim that contradicts an existing broader decision for review instead of silently overriding it."
+        },
+        {
+          "num": "04",
+          "title": "Conditional claims wait for evidence",
+          "cap": "Release Policies",
+          "body": "\"Not affected, protected at perimeter\" is only true while the perimeter holds. ReARM defers such decisions until someone attests the mitigation is in place, with the evidence recorded; waive it and the decision is never written."
+        },
+        {
+          "num": "05",
+          "title": "Review with the original in view",
+          "cap": "Audit Evidence",
+          "body": "Every staged statement is reviewed next to the verbatim VEX it came from and any existing analysis it would touch. Accept, modify, or reject with a required comment; who decided what, and when, stays on record."
+        },
+        {
+          "num": "06",
+          "title": "Export VEX for your customers",
+          "cap": "Distribution",
+          "body": "Your decisions re-emit as CycloneDX-VEX or OpenVEX per release, so the VEX you ship downstream carries the same provenance you demanded upstream, and survives a round trip."
+        }
+      ],
+      "note": false,
+      "shot": false,
+      "a1": "rgba(200,108,216,0.10)",
+      "a2": "rgba(91,124,250,0.10)",
+      "id": "3d",
+      "href": "#3d",
+      "publicDemo": true,
+      "stripLabel": "EVIDENCE",
+      "strip": [
+        "CycloneDX-VEX · OpenVEX",
+        "Trust Gate"
+      ],
+      "evidence": "VEX IMPORT · TRUST GATE · SCOPED ANALYSIS · MITIGATION ATTESTATIONS · VEX EXPORT"
     },
     {
       "id": "3f",
