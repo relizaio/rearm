@@ -1884,8 +1884,11 @@ async function saveDeviceWindow () {
         notify('success', 'Saved', 'Device support window updated.')
     } catch (err: any) {
         // The SERVER's message, verbatim. The coherence rule (eos must not be after eol)
-        // is enforced for every writer, not just this form, so echoing the server keeps one
-        // wording; pre-validating here would invent a second that could drift from it.
+        // is enforced for every writer, not just this form, so pre-validating here would
+        // invent a SECOND wording that could drift from the enforced one. Note the server
+        // already has two: this inline guard, and validateReleaseData, which prefixes
+        // "Release ". Only the inline path is reachable from this form, so no operator sees
+        // both -- but do not read this as there being one canonical message.
         deviceWindowError.value = commonFunctions.parseGraphQLError(err.message)
     } finally {
         savingDeviceWindow.value = false
