@@ -69,9 +69,22 @@ export const ADDENDUM_RELEASE_QUERY = gql`
         }
     }`
 
+/**
+ * The ORGANIZATIONS LIST, filtered client-side -- not organization(orgUuid:).
+ *
+ * That single-organization query is declared in the schema but HAS NO RESOLVER and always
+ * returns null; it appears under "Unmapped fields" in the DGS schema report at startup.
+ * graphqlQueries.ts records the same trap in the comment above ORG_DEFAULT_VIEW_GQL, which
+ * is where this should have been read from the first time.
+ *
+ * Nothing static catches it: the field exists, so validate-graphql passes and the schema
+ * drift spec passes. It surfaced only when the live probe refused with "the organization
+ * could not be loaded" -- which is the refusal working exactly as intended, on a bug of ours
+ * rather than a server's.
+ */
 export const ADDENDUM_ORG_QUERY = gql`
-    query getAddendumOrg($orgUuid: ID!) {
-        organization(orgUuid: $orgUuid) {
+    query getAddendumOrg {
+        organizations {
             uuid
             name
             settings {
@@ -236,12 +249,13 @@ export async function collectAddendumData (
     try {
         const [releaseResp, orgResp, coverageResp] = await Promise.all([
             client.query({ query: ADDENDUM_RELEASE_QUERY, variables: { releaseUuid, orgUuid }, fetchPolicy: 'network-only' }),
-            client.query({ query: ADDENDUM_ORG_QUERY, variables: { orgUuid }, fetchPolicy: 'network-only' }),
+            client.query({ query: ADDENDUM_ORG_QUERY, variables: {}, fetchPolicy: 'network-only' }),
             loadReleaseSupportCoverage(client, orgUuid, releaseUuid)
         ])
         const release = (releaseResp.data as any)?.release
         if (!release) return { ok: false, error: 'The release could not be loaded. No addendum was generated.' }
-        const org = (orgResp.data as any)?.organization
+        const orgs = (orgResp.data as any)?.organizations || []
+        const org = orgs.find((o: any) => o?.uuid === orgUuid) || null
         // Refused, symmetrically with the release above. The org carries three of the four
         // labeling statements; tolerating a null organization would emit a document that is
         // silently missing exactly what it exists to carry. A null SETTINGS is different and

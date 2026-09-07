@@ -100,7 +100,10 @@ function fakeClient (opts: {
                 throw new Error('boom')
             }
             if (query === ADDENDUM_RELEASE_QUERY) return { data: { release: 'release' in opts ? opts.release : { uuid: 'r1' } } }
-            if (query === ADDENDUM_ORG_QUERY) return { data: { organization: 'org' in opts ? opts.org : { uuid: 'o1' } } }
+            if (query === ADDENDUM_ORG_QUERY) {
+                const o = 'org' in opts ? opts.org : { uuid: 'o1' }
+                return { data: { organizations: o ? [o] : [] } }
+            }
             if (query === ADDENDUM_PAGE_QUERY) {
                 const page = pages.shift()
                 if (page === undefined) throw new Error('walked past the end of the fixture')
@@ -339,6 +342,39 @@ describe('collectAddendumData', () => {
 
     // The org carries three of the four labeling statements; tolerating a null organization
     // would emit a document silently missing what it exists to carry.
+    // REGRESSION: this used organization(orgUuid:), which is declared in the schema but has
+    // NO RESOLVER and always returns null. Nothing static caught it -- the field exists, so
+    // validate-graphql and the drift spec both passed. Only the live probe did, by refusing.
+    it('reads the org from the organizations LIST, which has a resolver', async () => {
+        const client = fakeClient({
+            release: okRelease, org: okOrg, coverage: { total: 0, attested: 0 },
+            pages: [{ items: [], totalCount: 0, endCursor: null, hasMore: false }]
+        })
+        const res = await collectAddendumData(client as any, 'r1', 'o1')
+        expect(res.ok).toBe(true)
+        if (!res.ok) return
+        expect(res.data.orgName).toBe('Acme')
+    })
+
+    it('picks the right org out of a multi-org list', async () => {
+        const client = {
+            query: async ({ query }: any) => {
+                if (query === ADDENDUM_RELEASE_QUERY) return { data: { release: okRelease } }
+                if (query === ADDENDUM_ORG_QUERY) return { data: { organizations: [
+                    { uuid: 'other', name: 'Wrong Org', settings: { fdaAssessmentNarrative: 'wrong' } },
+                    okOrg
+                ] } }
+                if (query === ADDENDUM_PAGE_QUERY) return { data: { getReleaseSbomComponentsPage: { items: [], totalCount: 0, endCursor: null, hasMore: false } } }
+                return { data: { sbomComponentSupportCoverage: { total: 0, attested: 0, supportExportState: 'FULL' } } }
+            }
+        }
+        const res = await collectAddendumData(client as any, 'r1', 'o1')
+        expect(res.ok).toBe(true)
+        if (!res.ok) return
+        expect(res.data.orgName).toBe('Acme')
+        expect(res.data.narrative).toBe('org words')
+    })
+
     it('REFUSES when the organization cannot be loaded', async () => {
         const client = fakeClient({ release: okRelease, org: null,
             coverage: { total: 0, attested: 0 },
