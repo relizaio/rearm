@@ -34,7 +34,7 @@ const { page } = Astro.props;
 
   <section class="steps">
     <div class="container">
-      <div class="eyebrow eyebrow--muted steps-label">HOW TEAMS USE ReARM FOR THIS</div>
+      <div class="eyebrow eyebrow--muted steps-label">{page.stepsLabel ?? 'HOW TEAMS USE ReARM FOR THIS'}</div>
       <div class="steps-grid">
         {page.steps.map((s) => (
           <div class="step-card">

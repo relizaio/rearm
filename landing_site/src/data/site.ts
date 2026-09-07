@@ -54,6 +54,7 @@ export type UcPage = {
   id: string; path: string; label: string; persona: string; h1: string; pain: string;
   a1: string; a2: string; stripLabel: string; strip: string[]; evidence: string;
   publicDemo: boolean; shot: string | false; note: string | false; steps: UcStep[];
+  stepsLabel?: string;
 };
 
 export const levels = design.levels as string[];

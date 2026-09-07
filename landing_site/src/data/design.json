@@ -432,13 +432,13 @@
       "path": "/use-cases/sbom-aggregation",
       "persona": "FOR PRODUCT SECURITY + ENGINEERING TEAMS SHIPPING MULTI-COMPONENT PRODUCTS",
       "h1": "One SBOM per product version, assembled from what actually shipped.",
-      "pain": "A product is dozens of components, each with its own repository, pipeline and SBOM. The customer asks for one SBOM for the version they received. Stitching it together by hand means guessing which component versions went into that release, and guessing wrong.",
+      "pain": "A product is dozens of components, each with its own repository, pipeline and SBOM. The customer asks for one SBOM for the version they received. Stitching it together by hand means guessing which component versions went into that release.",
       "steps": [
         {
           "num": "01",
           "title": "Component releases arrive from CI",
           "cap": "SBOM/XBOM Management",
-          "body": "Every pipeline run creates a component release in ReARM and attaches the SBOM it produced. Nothing to collect later: the SBOM is recorded at build time, against the exact version it describes."
+          "body": "Every pipeline run creates a component release in ReARM and attaches the SBOMs it produced. Nothing to collect later: the SBOMs are recorded at build time, against the exact version they describe."
         },
         {
           "num": "02",
@@ -462,7 +462,7 @@
           "num": "05",
           "title": "Delivered with the product",
           "cap": "Distribution",
-          "body": "Aggregated SBOMs are ready to be served downstream, so each customer can receive the SBOM for the version they run, and the versions before it."
+          "body": "Aggregated SBOMs are ready to be served downstream, so each customer can receive the SBOM for each version they run."
         },
         {
           "num": "06",
@@ -483,7 +483,8 @@
         "Pinned Composition",
         "Aggregated SBOM"
       ],
-      "evidence": "COMPONENT SBOMS · FEATURE SETS · PINNED PRODUCT RELEASES · AGGREGATED SBOM · FINDINGS"
+      "evidence": "COMPONENT SBOMS · FEATURE SETS · PINNED PRODUCT RELEASES · AGGREGATED SBOM · FINDINGS",
+      "stepsLabel": "HOW PRODUCT SECURITY TEAMS USE ReARM FOR THIS"
     },
     {
       "id": "3f",
