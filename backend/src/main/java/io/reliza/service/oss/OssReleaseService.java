@@ -4,6 +4,7 @@
 
 package io.reliza.service.oss;
 
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -616,6 +617,43 @@ public class OssReleaseService {
 			rData.setVersion(releaseDto.getVersion());
 			rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.VERSION, ReleaseUpdateAction.CHANGED, rData.getVersion(),
 					releaseDto.getVersion(), null, ZonedDateTime.now(), wu));
+		}
+		// Device support window (eos/eol, section-524B). PORTED from rearm-saas rather than
+		// synced: this file lives under oss/, which copy-src.sh never copies, so CE keeps its
+		// own. The schema, ReleaseData and ReleaseInput ARE synced, which is what made the gap
+		// silent -- CE advertised eos/eol/clearEos/clearEol, stored them on the model, and
+		// dropped every write on the floor with an HTTP 200.
+		//
+		// clearEos/clearEol win over a concurrently-supplied value: an explicit "remove it"
+		// must not be ignored because a stale date rode along in the same payload.
+		//
+		// Old values are captured BEFORE any setter runs. That ordering is the whole point --
+		// reading rData after setting it records oldValue == newValue, which is the defect
+		// t20260831-044941-4111 filed against NOTES and TAGS, and which the VERSION block
+		// immediately above still has on this side.
+		boolean clearingEos = Boolean.TRUE.equals(releaseDto.getClearEos());
+		boolean clearingEol = Boolean.TRUE.equals(releaseDto.getClearEol());
+		LocalDate oldEos = rData.getEos();
+		LocalDate oldEol = rData.getEol();
+		// Resolve the new value first, then diff -- avoids deriving the
+		// clearing-vs-supplied-vs-unchanged branch twice.
+		LocalDate newEos = clearingEos ? null : (null != releaseDto.getEos() ? releaseDto.getEos() : oldEos);
+		LocalDate newEol = clearingEol ? null : (null != releaseDto.getEol() ? releaseDto.getEol() : oldEol);
+		if (!Objects.equals(newEos, oldEos) || !Objects.equals(newEol, oldEol)) {
+			// Duplicated with ReleaseData.validateReleaseData (which saveRelease calls on every
+			// write) on purpose: this inline check gives the update caller a specific
+			// RelizaException instead of the generic IllegalStateException, while the one in
+			// validateReleaseData is what makes the invariant hold for every writer.
+			if (null != newEos && null != newEol && newEos.isAfter(newEol)) {
+				throw new RelizaException("eos must not be after eol (device support window)");
+			}
+			rData.setEos(newEos);
+			rData.setEol(newEol);
+			rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.SUPPORT_WINDOW,
+					ReleaseData.supportWindowAction(oldEos, oldEol, newEos, newEol),
+					ReleaseData.supportWindowValueString(oldEos, oldEol),
+					ReleaseData.supportWindowValueString(newEos, newEol),
+					null, ZonedDateTime.now(), wu));
 		}
 		if(null != releaseDto.getParentReleases()){
 			sharedReleaseService.checkCircularDependency(r.getUuid(), releaseDto.getParentReleases());
@@ -1563,6 +1601,23 @@ public class OssReleaseService {
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.RELEASE_CREATED, ReleaseUpdateAction.ADDED, null, null, null,
 				ZonedDateTime.now(), wu);
 		rData.addUpdateEvent(rue);
+		// A support window set AT creation is otherwise invisible in history -- the only
+		// trace would be the bare fields, with no attester, timestamp or provenance. Ported
+		// alongside the update-path block above, for the same reason: this file is CE's own
+		// fork and copy-src.sh never carries it.
+		//
+		// DEAD on the rebuild/PENDING-update branch below (ova.isPresent() && existing
+		// release): this rData, and the ADDED event just stamped on it, is discarded there in
+		// favour of calling updateRelease(...) against the REAL existing release, whose diff
+		// logic re-derives the correct action (CHANGED, not ADDED, if a window already
+		// existed). Left rather than skipped for that branch because it is harmless today; if
+		// a future refactor starts reusing this rData, this comment is the warning that the
+		// event's action would be wrong for anything but a genuinely fresh release.
+		if (null != rData.getEos() || null != rData.getEol()) {
+			rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.SUPPORT_WINDOW, ReleaseUpdateAction.ADDED,
+					null, ReleaseData.supportWindowValueString(rData.getEos(), rData.getEol()),
+					null, ZonedDateTime.now(), wu));
+		}
 
 		if (ova.isPresent() && null != ova.get().getRelease()) {
 			//Release already exists, proceeding with an update to the existing release
