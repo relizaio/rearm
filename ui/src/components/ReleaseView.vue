@@ -81,7 +81,11 @@
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
-                    <n-form-item>
+                    <!-- Hidden for the addendum rather than left enabled and ignored. The
+                         addendum always walks the whole release scope, so an operator who
+                         ticked "Top Level Dependencies Only" and got a full-scope document
+                         would have no way to tell the control had been dropped on the floor. -->
+                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
                                 Select SBOM configuration for export
@@ -112,8 +116,22 @@
                             <n-radio-button value="JSON">CycloneDX 1.6 (JSON)</n-radio-button>
                             <n-radio-button value="CSV">CSV</n-radio-button>
                             <n-radio-button value="EXCEL">EXCEL</n-radio-button>
+                            <!-- Its own export TYPE, not a toggle on the BOM export. The
+                                 addendum is a different document that happens to share this
+                                 modal: it is assembled in the browser from the support
+                                 attestations and the org prose, and the BOM-shaping options
+                                 below do not apply to it. A checkbox would imply it rides
+                                 along with whichever format was picked. -->
+                            <n-radio-button value="FDA_ADDENDUM">FDA support addendum (CSV)</n-radio-button>
                         </n-radio-group>
                     </n-form-item>
+                    <n-alert v-if="selectedSbomMediaType === 'FDA_ADDENDUM'" type="default"
+                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
+                        Every component in this release with its level of support, the end-of-support
+                        date where one is attested and the justification where none is, plus the
+                        device support window and the assessment justification. The counts come from
+                        the coverage gauge, so this document and the page always agree.
+                    </n-alert>
                     <n-form-item v-if="selectedSbomMediaType === 'JSON'">
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
@@ -139,7 +157,7 @@
                             />
                         </n-radio-group>
                     </n-form-item>
-                    <n-form-item>
+                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
                         <span style="display: inline-flex; align-items: center;">
                             Top Level Dependencies Only:
                             <n-tooltip trigger="hover">
@@ -153,7 +171,7 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
-                    <n-form-item>
+                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
                         <span style="display: inline-flex; align-items: center;">
                             Ignore Optional Dependencies:
                             <n-tooltip trigger="hover">
@@ -1685,6 +1703,8 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import { collectAddendumData } from '@/utils/addendumData'
+import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
@@ -4946,7 +4966,68 @@ async function uploadNewBomVersion (art: any) {
     
 }
 
+/**
+ * The FDA support addendum (FDA-Readiness-1 7g): a DIFFERENT DOCUMENT that shares the
+ * export modal.
+ *
+ * Assembled client-side by collectAddendumData, which is deliberately document-agnostic --
+ * the PDF and the Device Support Statement consume the same collector unchanged. A
+ * server-rendered CSV would have been a second source of truth for the same document.
+ *
+ * REFUSES rather than downloading a partial. A truncated addendum is the dangerous output:
+ * a regulatory document that looks complete while under-reporting how many components have
+ * no support attestation, which is the one number a reviewer is looking for. The collector
+ * returns no data at all on any refusal, so there is nothing here to accidentally save.
+ */
+async function exportFdaAddendum () {
+    try {
+        bomExportPending.value = true
+        const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
+        if (!orgUuid) {
+            // Refused in the same voice as every other refusal. Without this the operator
+            // gets a raw GraphQL variable-coercion message about $orgUuid, which reads as a
+            // server fault rather than as "this release did not carry its org".
+            Swal.fire('Addendum not generated',
+                'This release did not carry an organization, so the labeling statements'
+                + ' cannot be resolved. Reload the page and try again.', 'error')
+            return
+        }
+        const result = await collectAddendumData(
+            graphqlClient as any, updatedRelease.value.uuid, orgUuid)
+        if (!result.ok) {
+            Swal.fire('Addendum not generated', result.error, 'error')
+            return
+        }
+        const blob = new Blob([renderAddendumCsv(result.data)], { type: 'text/csv;charset=utf-8' })
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = addendumFileName(result.data)
+        // append -> click -> remove -> revoke, following utils/bovExport.ts rather than the
+        // older exports in this file: revoking the URL of a DETACHED anchor races the
+        // browser's own fetch of it in some engines, and a silently empty download is a
+        // particularly bad failure for a document someone is about to file.
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(link.href)
+        notify('success', 'Addendum exported',
+            `${result.data.totalComponents} components, ${result.data.unassessedComponents} with no attestation.`)
+    } catch (err: any) {
+        // extractGraphQLErrorMessage, not the parseGraphQLError(err.message) its neighbours
+        // use: this catch only fires on throws collectAddendumData did NOT convert into a
+        // refusal, so err may be anything -- and parseGraphQLError calls startsWith on its
+        // argument, throwing a TypeError out of the catch itself when there is no string
+        // message. That exact defect was found on the previous PR in this feature.
+        Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')
+    } finally {
+        bomExportPending.value = false
+    }
+}
+
 async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
+    // Routed here rather than from the template so the button keeps one handler and the
+    // modal cannot end up with two spinners disagreeing about whether an export is running.
+    if (mediaType === 'FDA_ADDENDUM') return exportFdaAddendum()
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
