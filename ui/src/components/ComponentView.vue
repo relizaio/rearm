@@ -1067,7 +1067,7 @@
                                 @selectBranch="selectBranchFromLatest" />
                         </n-tab-pane>
                         <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
-                            <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                            <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
                         <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">
                             <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
@@ -3012,24 +3012,27 @@ const branchFields: any[] = [
         render: archiveActionCell,
     },]
 
-if (!isComponent.value && isWritable){
-    branchFields.push({
-        title: '',
-        key: 'manage',
-        render: (row: any) => {
-            return h(
-                NIcon, 
-                {
-                    title: 'Clone ' + words.value.branchFirstUpper,
-                    class: 'icons clickable',
-                    size: 25,
-                    onClick: () => {cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; showCloneBranchModal.value = true}
-                }, 
-                () => h(Copy)
-            )
-        }
-    })
+// Clone lives on product feature sets for writers. isComponent / isWritable
+// only settle once the component loads, so the column is attached reactively
+// rather than pushed once at setup (which silently never ran for products).
+const cloneBranchColumn = {
+    title: '',
+    key: 'manage',
+    width: 50,
+    render: (row: any) => {
+        return h(
+            NIcon,
+            {
+                title: 'Clone ' + words.value.branchFirstUpper,
+                class: 'icons clickable',
+                size: 25,
+                onClick: () => { cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; showCloneBranchModal.value = true }
+            },
+            () => h(Copy)
+        )
+    }
 }
+const branchColumns = computed(() => (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields)
 
 const branchTableRowKey = (row: any) => row.uuid
 
