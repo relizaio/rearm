@@ -67,12 +67,24 @@ Two layers, both emitted together and both governed by that single setting.
 | `reliza:support:source:<milestone>` | Where each milestone date came from |
 | `cdx:lifecycle:milestone:endOfSupport` (and `endOfLife`, `endOfGuaranteedSupport`) | Standard CycloneDX milestone dates |
 
-**A `declarations` block** at the document level, in CycloneDX's own attestation vocabulary --
-`claims[]` naming what was attested about which component, `evidence[]` carrying the value, the
-assessment instant and the person who recorded it, and `assessors[]` naming the organization.
+**A `declarations` block** at the document level, in CycloneDX's own attestation vocabulary:
+
+- `claims[]` -- what was attested about which component. A claim targets a component's
+  `bom-ref`; where a component arrived without one, ReARM assigns a namespaced
+  `reliza:bomref:` identifier so the claim has something to point at, and removes it again on
+  any export that does not carry the claim.
+- `evidence[]` -- the attested value, the assessment instant, and the person who recorded it.
+  Milestone dates appear here too, each with its own assessment instant.
+- `assessors[]` -- the assessing organization and whether the assessment is third-party.
+- `attestations[]` -- the join between an assessor and the claims it made, so a reader can tell
+  who asserted what.
+
 This requires CycloneDX 1.6; a BOM served at an earlier spec version carries the properties only.
 
-The two layers describe the same facts under the same names, so a consumer can reconcile them.
+The two layers describe the same facts under the same names **and the same values**, so a
+consumer can reconcile them: `reliza:support:party` reads `FIRST_PARTY`/`THIRD_PARTY` in both.
+The CycloneDX party role (`manufacturer`/`supplier`) appears only where it belongs, on the
+assessor.
 
 ### The disclosure marker
 
