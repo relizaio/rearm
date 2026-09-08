@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { addendumRow, addendumHeaderRows, renderAddendumCsv, addendumFileName,
-    ADDENDUM_COLUMNS, NOT_ASSESSED, LEVEL_NOT_STATED } from './addendumCsv'
+import { renderAddendumCsv, addendumFileName } from './addendumCsv'
+import { addendumRow, addendumHeaderRows, ADDENDUM_COLUMNS, NOT_ASSESSED,
+    LEVEL_NOT_STATED } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
