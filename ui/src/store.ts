@@ -4,6 +4,8 @@ import gql from 'graphql-tag'
 import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
+import { loadWithSchemaDriftFallback } from './utils/graphqlDriftFallback'
+import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
 import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
@@ -11,11 +13,21 @@ import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
 // Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
 const VIEW_STORAGE_KEY = 'relizaView'
 
+
 const storeObject : any = {
     state () {
         return {
             resourceGroups: [],
             organizations: [],
+            /**
+             * Whether THIS backend declares Settings.supportInjection.
+             *
+             * False when the organizations query had to fall back to the core document, which
+             * is how a CE mirror predating the deferred sync behaves. OrgSettings hides the
+             * export-injection toggle rather than offering a control whose write the server
+             * would reject.
+             */
+            supportInjectionSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -243,6 +255,9 @@ const storeObject : any = {
         },
         SET_ORGANIZATIONS (state : any, organizations : any[]) {
             state.organizations = organizations
+        },
+        SET_SUPPORT_INJECTION_SUPPORTED (state : any, supported : boolean) {
+            state.supportInjectionSupported = supported
         },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
@@ -508,41 +523,24 @@ const storeObject : any = {
         async fetchMyOrganizations (context: any) : Promise<string> {
             let myOrg = ''
             try {
-                const data = await graphqlClient.query({
-                    query: gql`
-                        query organizations {
-                            organizations {
-                                uuid
-                                name
-                                type
-                                approvalRoles {
-                                    id
-                                    displayView
-                                }
-                                terminology {
-                                    featureSetLabel
-                                }
-                                ignoreViolation {
-                                    licenseViolationRegexIgnore
-                                    securityViolationRegexIgnore
-                                    operationalViolationRegexIgnore
-                                }
-                                settings {
-                                    justificationMandatory
-                                    branchSuffixMode
-                                    vexComplianceFramework
-                                    sidPurlMode
-                                    sidAuthoritySegments
-                                    fdaAssessmentNarrative
-                                    fdaPatchesMayCeaseStatement
-                                    fdaRiskTransferProcessRef
-                                    fdaRiskIncreasesNotice
-                                }
-                            }
-                        }`,
-                    fetchPolicy: 'no-cache'
-                })
-                const orgs = data.data.organizations
+                // DRIFT-TOLERANT, and load-bearing rather than defensive: every page derives
+                // myorg from this one query. A field the backend does not declare fails the
+                // WHOLE document, the catch below commits nothing, myorg stays null, and the
+                // unguarded myorg.uuid derefs across the app abort the render -- a blank white
+                // page with no navigation. supportInjection reaches CE only at the deferred
+                // sync, so shipping it unguarded would blank CE for the entire mirror-lag
+                // window. Verified in a browser: without this, the app renders nothing.
+                //
+                // CORE omits supportInjection and nothing else, so a backend that rejects the
+                // full document still gets every other setting.
+                const { data: orgs, degraded } = await loadWithSchemaDriftFallback(
+                    graphqlClient as any, {
+                        fullQuery: ORGANIZATIONS_FULL,
+                        coreQuery: ORGANIZATIONS_CORE,
+                        variables: {},
+                        extractPath: (d: any) => d?.organizations
+                    })
+                context.commit('SET_SUPPORT_INJECTION_SUPPORTED', !degraded)
                 context.commit('SET_ORGANIZATIONS', orgs)
                 if (orgs.length) {
                     const storedOrg = window.localStorage.getItem('relizaOrgUuid')

@@ -994,6 +994,30 @@
                             </div>
                         </n-form-item>
 
+                        <!-- The export toggle sits WITH the FDA text because it is the same
+                             decision: what a generated document or export says about support.
+                             Default OFF (D3), so this is the control a manufacturer preparing
+                             a submission must deliberately turn on. -->
+                        <!-- Hidden entirely on a backend that does not declare the field --
+                             a CE mirror before the deferred sync. Offering a switch whose
+                             write the server would reject is worse than not offering it. -->
+                        <n-form-item v-if="supportInjectionSupported"
+                            label="Carry support attestations in BOM exports">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-switch v-model:value="supportInjectionEnabled"
+                                    :disabled="savingOrgSettings" />
+                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                    Off by default. When on, BOM exports carry this
+                                    organization's support attestations &mdash; the artifact
+                                    download, the SPDX-augmented download and the release SBOM
+                                    export. The raw artifact download never carries them.
+                                    <strong>Forged support properties are always removed,
+                                    whatever this is set to</strong>; this controls only
+                                    whether our own attestations are added.
+                                </span>
+                            </div>
+                        </n-form-item>
+
                         <n-form-item label="Risk increases over time (labeling)">
                             <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
                                     :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
@@ -3516,6 +3540,27 @@ async function saveOrgDefaultView() {
  */
 const proseBaseline: Record<string, string> = {}
 
+/**
+ * The export toggle as a Boolean for n-switch, mapped to the two-member enum on save.
+ *
+ * A Boolean in the FORM and an enum on the WIRE: the schema deliberately uses an enum so the
+ * field can grow a third state without breaking published clients, but there are two states
+ * to choose between today and a switch is what an operator expects for that. The mapping
+ * lives in one place, here, so the form cannot invent a value the schema does not declare.
+ */
+/**
+ * Whether this backend declares the field at all.
+ *
+ * The store sets it false when the organizations query had to fall back to its core document,
+ * which is how a CE mirror predating the deferred sync behaves. The toggle is hidden then,
+ * and the field is never sent -- so the shared settings mutation stays valid.
+ */
+const supportInjectionSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.supportInjectionSupported !== false)
+
+const supportInjectionEnabled: Ref<boolean> = ref(false)
+const supportInjectionBaseline: Ref<boolean> = ref(false)
+
 async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
@@ -3527,6 +3572,10 @@ async function loadOrgSettings() {
     orgSettings.sidAuthoritySegments = Array.isArray(s?.sidAuthoritySegments)
         ? [...s.sidAuthoritySegments]
         : []
+    // ENABLED is the only truthy value; anything else -- DISABLED, null, unset, or a state
+    // this build does not know -- reads as off, which matches the server's own default rule.
+    supportInjectionEnabled.value = s?.supportInjection === 'ENABLED'
+    supportInjectionBaseline.value = supportInjectionEnabled.value
     const seeded = proseBaselineFrom(s)
     for (const f of FDA_PROSE_FIELDS) {
         orgSettings[f] = seeded[f]
@@ -3589,7 +3638,13 @@ async function saveOrgSettings() {
                     // Diffed, not dumped: untouched fields are omitted so an unrelated
                     // toggle cannot disturb prose, and a field the user emptied goes as ''
                     // which the server reads as a deliberate clear.
-                    ...proseDiff(orgSettings, proseBaseline)
+                    ...proseDiff(orgSettings, proseBaseline),
+                    // Sent only when actually changed, for the same reason: the mutation is a
+                    // PATCH, and an unchanged field has no business in it.
+                    ...(supportInjectionSupported.value
+                        && supportInjectionEnabled.value !== supportInjectionBaseline.value
+                        ? { supportInjection: supportInjectionEnabled.value ? 'ENABLED' : 'DISABLED' }
+                        : {})
                 }
             },
             fetchPolicy: 'no-cache'
@@ -3607,6 +3662,14 @@ async function saveOrgSettings() {
             // the text. That is fabricated prose reaching a patient-facing document, which
             // is the exact failure this feature exists to prevent.
             const savedSettings = (result as any)?.settings
+            // NOT selected back from the mutation. Adding supportInjection to the response
+            // selection makes the WHOLE updateOrganizationSettings document invalid on a
+            // backend without the field -- so every save, including the four prose slots and
+            // sid PURL, would fail on a CE mirror. The baseline advances to what the server
+            // just ACCEPTED instead, which it did accept: the field is only ever sent when
+            // the toggle is supported, and a rejected mutation lands in the catch below with
+            // the baseline untouched.
+            supportInjectionBaseline.value = supportInjectionEnabled.value
             const refreshed = proseBaselineFrom(savedSettings)
             for (const f of FDA_PROSE_FIELDS) {
                 orgSettings[f] = refreshed[f]

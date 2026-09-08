@@ -11,6 +11,16 @@ export interface CoverageDisplay {
     headline: string
     /** The export-state sentence. Null only when exports carry everything. */
     exportNote: string | null
+    /**
+     * The state in plain words -- "export injection ON" / "OFF" / "could not be read".
+     * Required beside the gauge by decision D3: the export state has to be stated, not
+     * inferred from whether a warning happens to be showing.
+     *
+     * Present whenever coverage has loaded. Null in the two pre-data branches (error,
+     * not-yet-loaded), where there is no state to name and naming one would be a claim built
+     * on a request that did not return.
+     */
+    stateLabel: string | null
     /** True when the operator must not read this as "ready to submit". */
     warn: boolean
 }
@@ -24,7 +34,57 @@ export interface CoverageDisplay {
  * disclosure, so the reassuring reading is available, and the file they actually attach to a
  * submission is the one that does not.
  */
+/**
+ * The state named in plain words beside the gauge, for EVERY state including ENABLED.
+ *
+ * Decision D3 calls this a build requirement, not a suggestion: with injection defaulting
+ * OFF, a gauge reporting full attestation coverage beside an export carrying nothing is a lie
+ * by omission, and the fix is to say the export state out loud rather than leave it to be
+ * inferred from the absence of a warning.
+ *
+ * UNKNOWN IS NOT "OFF". DISABLED says the organization chose not to export attestations;
+ * UNKNOWN says the setting could not be read. Rendering the second as the first states a
+ * choice nobody made -- so it reads "could not be read", and the operator is told to find out
+ * rather than reassured.
+ */
+const EXPORT_STATE_LABEL: Record<SupportExportState, string> = {
+    ENABLED: 'export injection ON',
+    DISABLED: 'export injection OFF',
+    // NOT the bare enum name. PARTIAL is retired and never returned by a current server, but
+    // an older one can still send it, and "export injection PARTIAL" is none of the three
+    // things this label promises -- on the one surface whose job is to say the export state
+    // in plain words. It means what it always meant: do not assume the export carries it.
+    PARTIAL: 'export injection PARTIAL -- do not assume the release export carries it',
+    UNKNOWN: 'export injection could not be read'
+}
+
+/**
+ * The label for a state, falling back to the unreadable wording for a value this build does
+ * not know.
+ *
+ * Same reasoning as exportNoteFor: a newer server can introduce a state, and the honest thing
+ * to say about a value we cannot interpret is that we could not read it -- never "OFF", which
+ * would be a claim about the organization's configuration.
+ *
+ * PRIVATE, like its mirror exportNoteFor. It was briefly exported with no importer, and the
+ * spec then justified a relaxed log-count assertion on the premise that it "can be called
+ * without the note" -- a premise nothing exercised.
+ */
+function exportStateLabel (exportState: SupportExportState): string {
+    if (Object.prototype.hasOwnProperty.call(EXPORT_STATE_LABEL, exportState)) {
+        return EXPORT_STATE_LABEL[exportState]
+    }
+    console.error('unrecognised SupportExportState from the server:', exportState,
+        `- this UI build knows only ${Object.keys(EXPORT_STATE_LABEL).join(', ')}.`
+        + ' Labelling it unreadable rather than asserting the export is off.')
+    return EXPORT_STATE_LABEL.UNKNOWN
+}
+
 const EXPORT_NOTE: Record<Exclude<SupportExportState, 'ENABLED'>, string> = {
+    // RETIRED: the server no longer returns it now that one setting gates every egress. Kept
+    // because a UI build can meet an older server, and an unrecognised state falls back to the
+    // UNKNOWN copy -- which would be less accurate than this sentence for a server that
+    // genuinely is in the old split state.
     PARTIAL: 'Support disclosure ships on artifact downloads only \u2014 NOT on the release'
         + ' SBOM export, which is the file usually attached to a submission.',
     DISABLED: 'Exports carry no support disclosure.',
@@ -56,6 +116,9 @@ export function coverageDisplay (
             tone: 'warning',
             headline: 'Could not load support coverage. Retry, or reload the release.',
             exportNote: null,
+            // No state to name: the request failed, so we know nothing about the setting.
+            // Naming one here would be a claim built on a failed request.
+            stateLabel: null,
             // A warning: something IS wrong, and unlike an unanswerable server it is
             // actionable.
             warn: true
@@ -66,6 +129,9 @@ export function coverageDisplay (
             tone: 'default',
             headline: 'Support coverage has not loaded yet.',
             exportNote: null,
+            // No state to name yet -- naming one here would assert something about the org's
+            // configuration on the strength of a request that has not returned.
+            stateLabel: null,
             // Not a warning: nothing is being claimed, correctly or otherwise. An operator
             // seeing this knows they have no number, which is different from having a bad
             // one, and treating it as an alarm would train them to ignore real ones.
@@ -81,6 +147,7 @@ export function coverageDisplay (
             tone: attested === total ? 'success' : 'warning',
             headline,
             exportNote: null,
+            stateLabel: exportStateLabel(exportState),
             warn: attested !== total
         }
     }
@@ -90,6 +157,7 @@ export function coverageDisplay (
         tone: attested === total && total > 0 ? 'error' : 'warning',
         headline,
         exportNote: exportNoteFor(exportState),
+        stateLabel: exportStateLabel(exportState),
         warn: true
     }
 }
