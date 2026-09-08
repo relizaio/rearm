@@ -119,8 +119,10 @@ export function addendumPdfFileName (d: AddendumData): string {
  * The addendum's CSV path already builds a Blob and drives an anchor; using the same idiom
  * keeps one download path to reason about, and it is the one that revokes its object URL.
  */
-export function renderAddendumPdfBlob (d: AddendumData): Promise<Blob> {
-    return new Promise((resolve) => {
-        pdfMake.createPdf(buildAddendumDocDefinition(d) as any).getBlob((blob: Blob) => resolve(blob))
-    })
+export async function renderAddendumPdfBlob (d: AddendumData): Promise<Blob> {
+    // getBlob() is PROMISE-BASED in pdfmake 0.3 (`async getBlob()`, typed
+    // `getBlob(): Promise<Blob>`). An earlier revision passed it a callback, as 0.2 took --
+    // the callback was simply never invoked, so the promise never settled and the export
+    // spinner span forever with no error anywhere. Awaiting it is the whole fix.
+    return pdfMake.createPdf(buildAddendumDocDefinition(d) as any).getBlob()
 }

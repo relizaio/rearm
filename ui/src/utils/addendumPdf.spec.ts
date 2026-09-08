@@ -3,10 +3,11 @@ import { describe, it, expect, vi } from 'vitest'
 // pdfmake pulls its font VFS in at import time, which is a megabyte of base64 and needs a
 // browser-ish global. Stubbed because nothing here renders: the whole point of returning a
 // plain doc definition is that the document can be asserted without pdfmake at all.
-vi.mock('pdfmake/build/pdfmake', () => ({ default: { vfs: null, createPdf: vi.fn() } }))
+const createPdf = vi.fn()
+vi.mock('pdfmake/build/pdfmake', () => ({ default: { vfs: null, get createPdf () { return createPdf } } }))
 vi.mock('pdfmake/build/vfs_fonts', () => ({ default: { vfs: {} } }))
 
-import { buildAddendumDocDefinition, addendumPdfFileName } from './addendumPdf'
+import { buildAddendumDocDefinition, addendumPdfFileName, renderAddendumPdfBlob } from './addendumPdf'
 import { ADDENDUM_COLUMNS } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
@@ -155,5 +156,33 @@ describe('addendumPdfFileName', () => {
     it('falls back to the uuid and strips anything path-unsafe', () => {
         expect(addendumPdfFileName(data({ releaseVersion: null }))).toBe('fda-support-addendum-r-1.pdf')
         expect(addendumPdfFileName(data({ releaseVersion: 'feature/x y' }))).toBe('fda-support-addendum-feature-x-y.pdf')
+    })
+})
+
+/**
+ * The pdfmake SEAM, which the doc-definition tests deliberately cannot cover.
+ *
+ * Mocking pdfmake is right for asserting the document -- but it means the integration with
+ * pdfmake itself has no unit coverage at all, and that is exactly where this shipped a bug:
+ * getBlob() is PROMISE-BASED in 0.3, an earlier revision passed it a 0.2-style callback, the
+ * callback was never invoked, and the export spinner span forever with no error. The live
+ * probe was the only thing that caught it.
+ *
+ * These two assertions close that specific hole: the promise must actually settle, and the
+ * callback form must not come back.
+ */
+describe('renderAddendumPdfBlob', () => {
+    it('resolves the blob getBlob() returns, rather than waiting on a callback', async () => {
+        const fake = new Blob(['%PDF-'], { type: 'application/pdf' })
+        createPdf.mockReturnValue({ getBlob: () => Promise.resolve(fake) })
+        await expect(renderAddendumPdfBlob(data())).resolves.toBe(fake)
+    })
+
+    it('calls getBlob with NO arguments -- the callback form never settles in 0.3', async () => {
+        const getBlob = vi.fn(() => Promise.resolve(new Blob(['%PDF-'])))
+        createPdf.mockReturnValue({ getBlob })
+        await renderAddendumPdfBlob(data())
+        expect(getBlob).toHaveBeenCalledTimes(1)
+        expect(getBlob.mock.calls[0]).toHaveLength(0)
     })
 })
