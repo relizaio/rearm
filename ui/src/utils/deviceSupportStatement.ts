@@ -14,6 +14,7 @@ import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
 import type { AddendumComponent, AddendumData } from './addendumData'
 import { isLiveAttestation } from './addendumData'
+import { releaseSlug, PROSE_SLOT_LABELS } from './addendumDocument'
 import { fontCoverageRefusal } from './pdfFontCoverage'
 
 pdfMake.vfs = pdfFonts.vfs
@@ -35,9 +36,9 @@ export const NOT_DECLARED = 'not declared'
  * `label` is what the UI names when it blocks; `field` is where the operator fixes it.
  */
 export const REQUIRED_PROSE_SLOTS: Array<{ key: keyof AddendumData, label: string }> = [
-    { key: 'patchesMayCeaseStatement', label: 'Patches may cease at end of support' },
-    { key: 'riskTransferProcessRef', label: 'Risk-transfer process reference' },
-    { key: 'riskIncreasesNotice', label: 'Risk increases over time' }
+    { key: 'patchesMayCeaseStatement', label: PROSE_SLOT_LABELS.patchesMayCease },
+    { key: 'riskTransferProcessRef', label: PROSE_SLOT_LABELS.riskTransferRef },
+    { key: 'riskIncreasesNotice', label: PROSE_SLOT_LABELS.riskIncreases }
 ]
 
 /** Where an operator goes to author them. Named in the block message so it is actionable. */
@@ -89,9 +90,21 @@ export function statementBlockReason (d: AddendumData): string | null {
  */
 export function componentsEndingBeforeDevice (d: AddendumData): Array<{ name: string, date: string }> {
     if (!d.deviceEos) return []
-    return d.components
-        .filter(c => isLiveAttestation(c) && c.endOfSupportDate && c.endOfSupportDate < (d.deviceEos as string))
-        .map(c => ({ name: displayName(c), date: c.endOfSupportDate as string }))
+    // COLLAPSED BY NAME, keeping the EARLIEST date. The version is deliberately not shown --
+    // it means nothing to this reader -- which makes one library at three versions three rows
+    // saying different things about the same name, reading as the document disagreeing with
+    // itself. The earliest date is the one that matters: it is when this reader first loses
+    // supported software.
+    const earliest = new Map<string, string>()
+    for (const c of d.components) {
+        if (!isLiveAttestation(c) || !c.endOfSupportDate) continue
+        if (!(c.endOfSupportDate < (d.deviceEos as string))) continue
+        const name = displayName(c)
+        const seen = earliest.get(name)
+        if (!seen || c.endOfSupportDate < seen) earliest.set(name, c.endOfSupportDate)
+    }
+    return [...earliest.entries()]
+        .map(([name, date]) => ({ name, date }))
         .sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name) : a.date.localeCompare(b.date)))
 }
 
@@ -103,7 +116,13 @@ function displayName (c: AddendumComponent): string {
 /** Every string the document prints, for the font-coverage check. */
 function statementStrings (d: AddendumData): Array<string | null | undefined> {
     return [
+        STATEMENT_TITLE, NOT_DECLARED,
         d.componentName, d.releaseVersion, d.orgName,
+        // Rendered in the facts table and the footer. Server-generated today -- dates, a
+        // uuid, an ISO instant -- so unreachable in practice, but the invariant this function
+        // states is "every string the document prints", and the next field added to the
+        // footer would otherwise escape the whitelist silently.
+        d.deviceEos, d.deviceEol, d.releaseUuid, d.generatedAt,
         d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice,
         ...componentsEndingBeforeDevice(d).flatMap(c => [c.name, c.date])
     ]
@@ -112,21 +131,30 @@ function statementStrings (d: AddendumData): Array<string | null | undefined> {
 /**
  * What this document covers, and -- equally important -- what it does not.
  *
- * FDA labeling VI.A lists FOUR asks. This document answers ONE of them, and says so on its
- * face so nobody reads shipping it as satisfying VI.A. The other three are the manufacturer's
- * own commitments and process; under section 3 there is no product-shipped default text for
- * any of them, which is exactly why they are org-authored prose rather than generated.
+ * FDA labeling VI.A lists FOUR asks. Exactly one of them -- end-of-support and end-of-life
+ * information -- is GENERATED here from the manufacturer's recorded data. The other three are
+ * reproduced verbatim from text the manufacturer authored; this document neither generates
+ * nor checks them.
+ *
+ * THAT DISTINCTION IS THE WHOLE POINT, and an earlier revision destroyed it: it said the
+ * document "does not cover" the other three and then printed all three, in the same order,
+ * under their own headings -- while REFUSING to generate at all unless the manufacturer had
+ * authored them. Every statement it produced contradicted itself on its face, which is
+ * precisely the misleading-labeling risk under 502(a)(1) this module exists to avoid.
+ *
+ * The risk-transfer item gets its own sentence because there the gap is substantive rather
+ * than editorial: the slot holds a REFERENCE to a controlled DHF document, so the process
+ * itself genuinely is not in this document and a reader must not infer otherwise.
  */
-const COVERAGE_STATEMENT = 'This document provides end-of-support and end-of-life information'
-    + ' for this device and its software, which is one of the four items FDA labeling guidance'
-    + ' section VI.A suggests may be included in labeling.'
-const NOT_COVERED = [
-    'That the manufacturer may no longer be able to provide security patches or software'
-        + ' updates after end of support.',
-    'The manufacturer\'s pre-established process for transferring cybersecurity risk if this'
-        + ' device remains in service past end of support.',
-    'That cybersecurity risk to users can be expected to increase over time.'
-]
+const COVERAGE_GENERATED = 'The support dates below are generated from the manufacturer\'s'
+    + ' records. They answer one of the four items FDA labeling guidance section VI.A suggests'
+    + ' may be included in labeling, and it is the only one of the four this document generates.'
+const COVERAGE_AUTHORED = 'The three statements that follow the dates are the manufacturer\'s'
+    + ' own words, reproduced here unchanged. They are not generated, completed or verified by'
+    + ' the system that produced this document.'
+const COVERAGE_REFERENCE = 'Where this document refers to the manufacturer\'s process for'
+    + ' transferring risk, it gives a reference to that controlled document. The process itself'
+    + ' is held separately and is not reproduced here.'
 
 /**
  * The document definition: plain JSON, no rendering, so the spec asserts structure directly.
@@ -143,9 +171,9 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
         { text: d.orgName || '', style: 'subtitle', margin: [0, 0, 0, 14] },
 
         { text: 'What this document covers', style: 'h2' },
-        { text: COVERAGE_STATEMENT, style: 'body' },
-        { text: 'It does not cover the following, which the manufacturer addresses separately:', style: 'body' },
-        { ul: NOT_COVERED, style: 'body', margin: [0, 0, 0, 14] },
+        { text: COVERAGE_GENERATED, style: 'body' },
+        { text: COVERAGE_AUTHORED, style: 'body' },
+        { text: COVERAGE_REFERENCE, style: 'body', margin: [0, 0, 0, 14] },
 
         { text: 'Support dates for this device', style: 'h2' },
         {
@@ -219,11 +247,15 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
 }
 
 export function deviceSupportStatementFileName (d: AddendumData): string {
-    const raw = d.releaseVersion || d.releaseUuid || 'release'
-    const slug = String(raw).replace(/[^A-Za-z0-9._-]+/g, '-')
-    return `device-support-statement-${slug || 'release'}.pdf`
+    return `device-support-statement-${releaseSlug(d)}.pdf`
 }
 
 export async function renderDeviceSupportStatementBlob (d: AddendumData): Promise<Blob> {
+    // Enforced HERE as well as at the call site. The builder casts the prose slots to string
+    // and would emit { text: null } into pdfmake -- a silent empty section, exactly what the
+    // block exists to prevent. One guard in one caller is not a guarantee when the function
+    // is exported and nothing type-checks the template that calls it.
+    const blocked = statementBlockReason(d)
+    if (blocked) throw new Error(blocked)
     return pdfMake.createPdf(buildDeviceSupportStatementDefinition(d) as any).getBlob()
 }

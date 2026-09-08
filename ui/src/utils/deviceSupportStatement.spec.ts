@@ -5,7 +5,7 @@ vi.mock('pdfmake/build/vfs_fonts', () => ({ default: { vfs: {} } }))
 
 import { buildDeviceSupportStatementDefinition, statementBlockReason, missingProseSlots,
     componentsEndingBeforeDevice, deviceSupportStatementFileName, STATEMENT_TITLE,
-    NOT_DECLARED, REQUIRED_PROSE_SLOTS } from './deviceSupportStatement'
+    NOT_DECLARED, REQUIRED_PROSE_SLOTS, renderDeviceSupportStatementBlob } from './deviceSupportStatement'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
@@ -184,12 +184,36 @@ describe('buildDeviceSupportStatementDefinition', () => {
         expect(s).toContain('one of the four')
     })
 
-    it('names the other three as addressed separately', () => {
+    it('distinguishes what it generates from what it reproduces', () => {
         const s = flat(data())
-        expect(s).toContain('security patches or software updates')
-        expect(s).toContain('transferring cybersecurity risk')
-        expect(s).toContain('increase over time')
-        expect(s).toContain('addresses separately')
+        expect(s).toContain('generated from the manufacturer')
+        expect(s).toContain("manufacturer's own words, reproduced here unchanged")
+        expect(s).toContain('not generated, completed or verified')
+    })
+
+    // The risk-transfer gap is SUBSTANTIVE rather than editorial: the slot holds a reference
+    // to a controlled document, so the process itself genuinely is not here.
+    it('says the risk-transfer process itself is not reproduced', () => {
+        expect(flat(data())).toContain('is not reproduced here')
+    })
+
+    /**
+     * REGRESSION, and the reason this file exists in its current shape.
+     *
+     * An earlier revision declared the document "does not cover" three items and then printed
+     * all three, in the same order, under their own headings -- while REFUSING to generate
+     * unless the manufacturer had authored them. Every statement it produced contradicted
+     * itself on its face. The two specs that were supposed to guard the coverage block
+     * asserted the wrong text and stayed green through it.
+     */
+    it('never claims not to cover something it then prints', () => {
+        const d = data()
+        const s = flat(d)
+        expect(s).not.toContain('does not cover')
+        for (const slot of [d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice]) {
+            const hits = s.split(slot as string).length - 1
+            expect(hits, `"${slot}" should appear exactly once`).toBe(1)
+        }
     })
 
     // Two distinct facts. An EOS-else-EOL horizon is right for a risk comparison and wrong
@@ -275,5 +299,57 @@ describe('deviceSupportStatementFileName', () => {
     it('falls back rather than throwing when both version and uuid are absent', () => {
         expect(deviceSupportStatementFileName(data({ releaseVersion: null, releaseUuid: null as any })))
             .toBe('device-support-statement-release.pdf')
+    })
+})
+
+describe('what the statement must never carry', () => {
+    // The addendum's assessment narrative is written for a submission reviewer, not for a
+    // patient. A regression that printed it here would pass every other test in this file.
+    it('omits the technical assessment narrative', () => {
+        expect(flat(data({ narrative: 'a very technical justification' })))
+            .not.toContain('a very technical justification')
+    })
+})
+
+describe('componentsEndingBeforeDevice, duplicate names', () => {
+    // The version is deliberately not shown -- it means nothing to this reader -- so one
+    // library at three versions rendered three rows saying different things about the same
+    // name, which reads as the document disagreeing with itself.
+    it('collapses one name to its EARLIEST date', () => {
+        const out = componentsEndingBeforeDevice(data({
+            components: [
+                comp({ name: 'log4j-core', version: '2.14.1', endOfSupportDate: '2029-01-01' }),
+                comp({ name: 'log4j-core', version: '2.15.0', endOfSupportDate: '2027-06-01' }),
+                comp({ name: 'log4j-core', version: '2.16.0', endOfSupportDate: '2028-03-01' })
+            ]
+        }))
+        expect(out).toEqual([{ name: 'log4j-core', date: '2027-06-01' }])
+    })
+
+    it('collapses exact duplicates rather than repeating a row', () => {
+        expect(componentsEndingBeforeDevice(data({
+            components: [comp(), comp(), comp()]
+        }))).toHaveLength(1)
+    })
+
+    it('keeps genuinely different names apart', () => {
+        expect(componentsEndingBeforeDevice(data({
+            components: [comp({ name: 'a' }), comp({ name: 'b' })]
+        }))).toHaveLength(2)
+    })
+})
+
+describe('renderDeviceSupportStatementBlob', () => {
+    // The builder casts the prose slots to string and would emit { text: null } into pdfmake
+    // -- a silent empty section, exactly what the block exists to prevent. One guard in one
+    // caller is not a guarantee when the function is exported and no vue-tsc checks callers.
+    it('refuses to render a document its own preconditions forbid', async () => {
+        await expect(renderDeviceSupportStatementBlob(data({ patchesMayCeaseStatement: null })))
+            .rejects.toThrow(/Patches may cease/)
+    })
+
+    it('refuses to render for a component release', async () => {
+        await expect(renderDeviceSupportStatementBlob(data({ componentType: 'COMPONENT' })))
+            .rejects.toThrow(/product release/)
     })
 })

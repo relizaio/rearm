@@ -131,6 +131,18 @@
                             <n-radio-button value="DEVICE_STATEMENT">Device support statement (PDF)</n-radio-button>
                         </n-radio-group>
                     </n-form-item>
+                    <n-alert v-if="selectedSbomMediaType === 'DEVICE_STATEMENT'" type="default"
+                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
+                        A plain-language statement for patients, caregivers and biomedical
+                        engineers: the device's support dates, and the manufacturer's own
+                        labeling text. Generated for PRODUCT releases only, and only once all
+                        three organization statements have been authored.
+                        <span v-if="!isProductReleaseForStatement" style="display:block; margin-top:6px;">
+                            <strong>This is a component release</strong>, so the statement
+                            cannot be generated here &mdash; open the product release that
+                            ships it.
+                        </span>
+                    </n-alert>
                     <n-alert v-if="isAddendumExport" type="default"
                         :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
                         Every component in this release with its level of support, the end-of-support
@@ -2844,6 +2856,16 @@ const selectedSbomMediaType = ref('JSON')
 const isAddendumExport: ComputedRef<boolean> = computed((): boolean =>
     selectedSbomMediaType.value === 'FDA_ADDENDUM' || selectedSbomMediaType.value === 'FDA_ADDENDUM_PDF')
 
+/**
+ * Whether the release on screen can carry a device support statement.
+ *
+ * Read from the release already in hand, so the modal says so BEFORE an export attempt walks
+ * the whole component list only to refuse. The renderer still refuses independently -- this
+ * is a courtesy, not the guard.
+ */
+const isProductReleaseForStatement: ComputedRef<boolean> = computed((): boolean =>
+    updatedRelease.value?.componentDetails?.type === 'PRODUCT')
+
 /** Every FDA document, for the controls that apply to none of them. */
 const isFdaDocumentExport: ComputedRef<boolean> = computed((): boolean =>
     isAddendumExport.value || selectedSbomMediaType.value === 'DEVICE_STATEMENT')
@@ -5133,19 +5155,6 @@ async function uploadNewBomVersion (art: any) {
 }
 
 /**
- * The FDA support addendum (FDA-Readiness-1 7g): a DIFFERENT DOCUMENT that shares the
- * export modal.
- *
- * Assembled client-side by collectAddendumData, which is deliberately document-agnostic --
- * the PDF and the Device Support Statement consume the same collector unchanged. A
- * server-rendered CSV would have been a second source of truth for the same document.
- *
- * REFUSES rather than downloading a partial. A truncated addendum is the dangerous output:
- * a regulatory document that looks complete while under-reporting how many components have
- * no support attestation, which is the one number a reviewer is looking for. The collector
- * returns no data at all on any refusal, so there is nothing here to accidentally save.
- */
-/**
  * The Device Support Statement (FDA labeling VI.A), for a patient, caregiver or biomed reader.
  *
  * Same collector as the addendum, so the two documents cannot disagree about the device's
@@ -5193,6 +5202,19 @@ async function exportDeviceSupportStatement () {
     }
 }
 
+/**
+ * The FDA support addendum (FDA-Readiness-1 7g): a DIFFERENT DOCUMENT that shares the
+ * export modal.
+ *
+ * Assembled client-side by collectAddendumData, which is deliberately document-agnostic --
+ * the PDF and the Device Support Statement consume the same collector unchanged. A
+ * server-rendered CSV would have been a second source of truth for the same document.
+ *
+ * REFUSES rather than downloading a partial. A truncated addendum is the dangerous output:
+ * a regulatory document that looks complete while under-reporting how many components have
+ * no support attestation, which is the one number a reviewer is looking for. The collector
+ * returns no data at all on any refusal, so there is nothing here to accidentally save.
+ */
 async function exportFdaAddendum (mediaType: string) {
     try {
         bomExportPending.value = true
