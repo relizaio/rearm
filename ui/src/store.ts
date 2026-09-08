@@ -537,6 +537,7 @@ const storeObject : any = {
                                     fdaPatchesMayCeaseStatement
                                     fdaRiskTransferProcessRef
                                     fdaRiskIncreasesNotice
+                                    supportInjection
                                 }
                             }
                         }`,

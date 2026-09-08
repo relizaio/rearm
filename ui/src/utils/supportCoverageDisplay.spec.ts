@@ -57,7 +57,10 @@ describe('coverageDisplay', () => {
             .toBeTruthy()
         // The UNKNOWN wording is already correct for "we do not know what the state is".
         expect(d.exportNote).toBe(coverageDisplay(cov(1, 2, 'UNKNOWN')).exportNote)
-        expect(err).toHaveBeenCalledOnce()
+        // TWICE, once from each guard: the note and the label are independently reachable
+        // -- exportStateLabel is exported and can be called without the note -- so each
+        // reports rather than relying on the other having already done so.
+        expect(err).toHaveBeenCalledTimes(2)
         err.mockRestore()
     })
 
@@ -87,5 +90,49 @@ describe('coverageDisplay', () => {
         // 0 of 0 with exports off is not a success, but it is not an error either -- there is
         // no disclosure to fail to ship.
         expect(coverageDisplay(cov(0, 0, 'DISABLED')).tone).toBe('warning')
+    })
+})
+
+describe('the export state is stated beside the gauge', () => {
+    // Decision D3 calls this a build requirement. With injection defaulting OFF, a coverage
+    // figure beside an export carrying nothing is a lie by omission -- so the state is named
+    // rather than left to be inferred from the presence of a warning.
+    it('names ON when injection is enabled', () => {
+        expect(coverageDisplay(cov(2, 2, 'ENABLED')).stateLabel).toBe('export injection ON')
+    })
+
+    it('names OFF when injection is disabled', () => {
+        expect(coverageDisplay(cov(2, 2, 'DISABLED')).stateLabel).toBe('export injection OFF')
+    })
+
+    // THE ONE THAT MATTERS. DISABLED says the organization chose not to export attestations;
+    // UNKNOWN says the setting could not be read. Rendering the second as the first states a
+    // choice nobody made.
+    it('says UNKNOWN could not be read, and never calls it OFF', () => {
+        const label = coverageDisplay(cov(2, 2, 'UNKNOWN')).stateLabel as string
+        expect(label).toBe('export injection could not be read')
+        expect(label).not.toContain('OFF')
+    })
+
+    it('names a state for every value the server can return', () => {
+        for (const state of ['ENABLED', 'DISABLED', 'UNKNOWN'] as const) {
+            expect(coverageDisplay(cov(1, 2, state)).stateLabel, state).toBeTruthy()
+        }
+    })
+
+    // An unrecognised value from a newer server must not be reported as OFF either.
+    it('labels an unknown value unreadable rather than asserting it is off', () => {
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const label = coverageDisplay(cov(1, 2, 'SOMETHING_NEW' as any)).stateLabel as string
+        expect(label).toBe('export injection could not be read')
+        expect(label).not.toContain('OFF')
+        err.mockRestore()
+    })
+
+    // Nothing has been established before the first load, or after a failed one, so naming a
+    // state would be a claim built on no data.
+    it('names no state before data and after an error', () => {
+        expect(coverageDisplay(null).stateLabel).toBeNull()
+        expect(coverageDisplay(null, 'boom').stateLabel).toBeNull()
     })
 })

@@ -1353,7 +1353,19 @@
                             :type="sbomCoverageDisplay.tone"
                             :show-icon="sbomCoverageDisplay.warn"
                             style="margin-bottom: 10px;">
-                            <div style="font-size: 13px;">{{ sbomCoverageDisplay.headline }}</div>
+                            <div style="font-size: 13px;">
+                                {{ sbomCoverageDisplay.headline }}
+                                <!-- The export state, ALWAYS stated when known, beside the
+                                     coverage number rather than inferred from whether a
+                                     warning happens to be showing. Decision D3 makes this a
+                                     build requirement: with injection defaulting off, a full
+                                     coverage figure next to an export carrying nothing is a
+                                     lie by omission. UNKNOWN renders as "could not be read",
+                                     never as OFF -- that would state a choice nobody made. -->
+                                <strong v-if="sbomCoverageDisplay.stateLabel">
+                                    &mdash; {{ sbomCoverageDisplay.stateLabel }}
+                                </strong>
+                            </div>
                             <div v-if="sbomCoverageDisplay.exportNote"
                                 style="font-size: 12px; margin-top: 4px;">
                                 {{ sbomCoverageDisplay.exportNote }}

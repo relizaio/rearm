@@ -89,3 +89,50 @@ describe('the device support window is wired into ReleaseView', () => {
         expect(body.indexOf('deviceWindowBaseline.eos =')).toBeLessThan(body.indexOf('await fetchRelease()'))
     })
 })
+
+describe('the export injection toggle is wired into OrgSettings', () => {
+    it('declares the switch state and its baseline', () => {
+        expect(orgSettings).toMatch(/const supportInjectionEnabled\b/)
+        expect(orgSettings).toMatch(/const supportInjectionBaseline\b/)
+    })
+
+    it('binds a switch, disabled while saving', () => {
+        const tag = orgSettings.match(/<n-switch v-model:value="supportInjectionEnabled"[\s\S]*?\/>/)
+        expect(tag).not.toBeNull()
+        expect(tag![0]).toContain(':disabled="savingOrgSettings"')
+    })
+
+    // A Boolean in the form, the ENUM on the wire. The schema uses an enum so the field can
+    // grow a third state without breaking published clients, so the form must never send a
+    // bare true/false.
+    it('maps the switch to the enum, never to a boolean', () => {
+        expect(orgSettings).toMatch(/supportInjection: supportInjectionEnabled\.value \? 'ENABLED' : 'DISABLED'/)
+        expect(orgSettings).not.toMatch(/supportInjection: supportInjectionEnabled\.value\s*[,}]/)
+    })
+
+    // PATCH: an unchanged toggle has no business in the mutation, exactly as for the prose.
+    it('sends the field only when it changed', () => {
+        expect(orgSettings).toMatch(/supportInjectionEnabled\.value !== supportInjectionBaseline\.value/)
+    })
+
+    // Only ENABLED is on. DISABLED, null, unset, or a value this build does not know all read
+    // as off -- which is the server's own default rule (D3).
+    it('treats only ENABLED as on when seeding', () => {
+        expect(orgSettings).toMatch(/supportInjection === 'ENABLED'/)
+    })
+
+    // Same rule the prose baseline follows: from the mutation response, before anything that
+    // can throw, so a failed re-read cannot leave the form claiming an unsaved state.
+    it('refreshes the baseline from the mutation response', () => {
+        const save = orgSettings.slice(orgSettings.indexOf('async function saveOrgSettings'))
+        const body = save.slice(0, save.indexOf('\nasync function', 1))
+        expect(body.indexOf('savedSettings?.supportInjection')).toBeLessThan(body.indexOf('await loadOrgSettings()'))
+    })
+
+    it('selects the field in the mutation response and in the store query', () => {
+        expect(orgSettings).toMatch(/^\s+supportInjection$/m)
+        const store = readFileSync(
+            fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
+        expect(store).toMatch(/^\s+supportInjection$/m)
+    })
+})
