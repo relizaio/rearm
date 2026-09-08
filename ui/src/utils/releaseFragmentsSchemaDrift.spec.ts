@@ -78,8 +78,15 @@ describe('single-release documents vs the CE schema', () => {
      * when the sync lands this fails, and the documents move back to a CE assertion.
      */
     it.each(SINGLE_RELEASE_DOCUMENTS)('%s is still ahead of CE, pending the sync', (_name, doc) => {
-        const errs = validate(ceSchema, doc).map(e => e.message).join(' ')
-        expect(errs).toContain('fdaAssessmentNarrative')
+        const errs = validate(ceSchema, doc).map(e => e.message)
+        // EVERY error must be the expected one, not merely "the expected one appears".
+        // Joining and asking toContain was near-worthless: an unrelated typo -- a misspelled
+        // artifactDetails subfield, say -- adds its own message while the expected string is
+        // still present, so the assertion passed on a broken document. Combined with the Pro
+        // check being skippable on a checkout without a rearm-core sibling, these two
+        // documents could have ended up with no real validity checking at all.
+        expect(errs.length).toBeGreaterThan(0)
+        expect(errs.filter(e => !e.includes('fdaAssessmentNarrative'))).toEqual([])
     })
 
     it.each(SINGLE_RELEASE_DOCUMENTS)('%s selects the device support window', (_name, doc) => {

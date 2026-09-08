@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { narrativeLength, formatNarrativeChange } from './narrativeHistory'
+import { readFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'url'
 
 describe('narrativeLength', () => {
     it('is the string length when the value was stored whole', () => {
@@ -19,6 +21,16 @@ describe('narrativeLength', () => {
         expect(narrativeLength(null)).toBe(0)
         expect(narrativeLength(undefined)).toBe(0)
         expect(narrativeLength('')).toBe(0)
+    })
+
+    // The marker is appended ONLY above the 200-character cut, so a SHORT narrative that
+    // genuinely ends in a marker-shaped phrase -- prose quoting an earlier history row --
+    // was stored whole and must be measured by its own length. Without the length guard
+    // this reported 42.
+    it('ignores a trailing marker on a value short enough to have been stored whole', () => {
+        const authored = 'the prior row read ... (42 characters)'
+        expect(authored.length).toBeLessThan(200)
+        expect(narrativeLength(authored)).toBe(authored.length)
     })
 
     // The marker is only meaningful at the END. Narrative prose could legitimately contain
@@ -70,5 +82,32 @@ describe('formatNarrativeChange', () => {
 
     it('falls back to a neutral phrase rather than rendering a blank cell', () => {
         expect(formatNarrativeChange(null, null)).toBe('narrative unchanged')
+    })
+})
+
+/**
+ * The regex above encodes a format string that lives in ANOTHER REPOSITORY. If
+ * ReleaseData.narrativeExcerpt ever rewords -- "chars", a different separator -- narrativeLength
+ * silently reverts to reporting ~218 for every long narrative, which is precisely the
+ * wrong-number-in-the-audit-trail failure it exists to prevent, with nothing failing.
+ *
+ * Reading the Java source is the same trick the schema drift specs use, and it is the only
+ * thing that couples the two.
+ */
+describe('the excerpt marker still matches the backend that writes it', () => {
+    const PRO_RELEASE_DATA = fileURLToPath(new URL(
+        '../../../../rearm-core/backend/src/main/java/io/reliza/model/ReleaseData.java', import.meta.url))
+
+    it.runIf(existsSync(PRO_RELEASE_DATA))('emits "... (N characters)" and cuts at 200', () => {
+        const java = readFileSync(PRO_RELEASE_DATA, 'utf8')
+        expect(java).toContain('NARRATIVE_EVENT_EXCERPT_MAX = 200')
+        expect(java).toContain('+ "... (" + narrative.length() + " characters)"')
+    })
+
+    it.runIf(existsSync(PRO_RELEASE_DATA))('produces a value this parser reads correctly', () => {
+        // Reproduce the backend expression exactly, then round-trip it.
+        const narrative = 'x'.repeat(9000)
+        const backendWould = narrative.substring(0, 200) + '... (' + narrative.length + ' characters)'
+        expect(narrativeLength(backendWould)).toBe(9000)
     })
 })

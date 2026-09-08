@@ -10,6 +10,16 @@
 const EXCERPT_MARKER = /\.\.\. \((\d+) characters\)$/
 
 /**
+ * The excerpt length the backend cuts at, mirroring ReleaseData.NARRATIVE_EVENT_EXCERPT_MAX.
+ *
+ * Load-bearing for the guard below, not decoration: the marker is appended ONLY when the
+ * narrative exceeded this, so a short narrative that legitimately ENDS in something
+ * marker-shaped -- prose quoting an earlier history row, say -- must be measured by its own
+ * length rather than believed. Without the guard that narrative reports 42 characters.
+ */
+const EXCERPT_MAX = 200
+
+/**
  * How long the narrative actually was, given what the event carries.
  *
  * THE POINT OF THIS FUNCTION: the event value is an EXCERPT, so its own `.length` is 200-ish
@@ -21,7 +31,9 @@ const EXCERPT_MARKER = /\.\.\. \((\d+) characters\)$/
 export function narrativeLength (eventValue: string | null | undefined): number {
     if (!eventValue) return 0
     const m = EXCERPT_MARKER.exec(eventValue)
-    return m ? Number(m[1]) : eventValue.length
+    // Both conditions. A value at or under the cut was stored WHOLE, so any marker in it is
+    // the author's own text and not ours.
+    return (m && eventValue.length > EXCERPT_MAX) ? Number(m[1]) : eventValue.length
 }
 
 /** Thousands separators, so a five-digit count is readable at a glance in a table. */

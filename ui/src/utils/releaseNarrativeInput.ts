@@ -1,9 +1,5 @@
 // Release narrative form state -> updateRelease variables, honouring the PATCH contract.
 
-import { FDA_PROSE_MAX_LENGTH } from './fdaProseInput'
-
-export { FDA_PROSE_MAX_LENGTH }
-
 /**
  * Build the narrow partial for a per-release narrative write.
  *
@@ -36,8 +32,14 @@ export function releaseNarrativeVariables (
     return { uuid, org, fdaAssessmentNarrative: now }
 }
 
-/** True when the form differs from what the server last confirmed. */
-export function releaseNarrativeDirty (
+/**
+ * True when the form differs from what the server last confirmed.
+ *
+ * Named "differs" rather than "dirty" because ReleaseView owns a computed called
+ * releaseNarrativeDirty; importing this under an alias would have given one function two
+ * names, tested under one and read under the other.
+ */
+export function releaseNarrativeDiffers (
     current: string | null | undefined,
     baseline: string | null | undefined
 ): boolean {

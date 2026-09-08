@@ -1750,8 +1750,8 @@ import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import { collectAddendumData } from '@/utils/addendumData'
 import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
-import { releaseNarrativeVariables, releaseNarrativeDirty as releaseNarrativeNotEqual,
-    FDA_PROSE_MAX_LENGTH } from '@/utils/releaseNarrativeInput'
+import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
+import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -1937,7 +1937,7 @@ const savingReleaseNarrative: Ref<boolean> = ref(false)
 const releaseNarrativeError: Ref<string | null> = ref(null)
 
 const releaseNarrativeDirty: ComputedRef<boolean> = computed((): boolean =>
-    releaseNarrativeNotEqual(releaseNarrative.value, releaseNarrativeBaseline.value))
+    releaseNarrativeDiffers(releaseNarrative.value, releaseNarrativeBaseline.value))
 
 /** Whether this release currently overrides, as opposed to inheriting. */
 const releaseNarrativeIsOverridden: ComputedRef<boolean> = computed((): boolean =>
@@ -1971,7 +1971,7 @@ async function saveReleaseNarrative () {
         // Null means the form is not dirty. Firing a mutation anyway would append nothing on
         // the server (it diffs too) but would still cost a round trip and a toast claiming
         // something happened.
-        if (!vars) { savingReleaseNarrative.value = false; return }
+        if (!vars) return
         const resp = await graphqlClient.mutate({
             mutation: gql`
                 mutation updateReleaseNarrative($release: ReleaseInput!) {
@@ -1985,10 +1985,17 @@ async function saveReleaseNarrative () {
         if (saved) {
             releaseNarrative.value = saved.fdaAssessmentNarrative || ''
             releaseNarrativeBaseline.value = releaseNarrative.value
+            // INSIDE the guard, and worded from the REFRESHED baseline. Outside it, an empty
+            // response left the baseline at its pre-save value, so authoring a narrative
+            // reported "cleared" and clearing one reported "updated" -- a confident sentence
+            // stating the opposite of what the operator had just done. OrgSettings gets this
+            // right with the same else-branch.
+            notify('success', 'Saved', releaseNarrativeBaseline.value
+                ? 'Release justification updated.'
+                : 'Release justification cleared; this release now inherits the organization default.')
+        } else {
+            notify('warning', 'Save Warning', 'Save completed but no response received.')
         }
-        notify('success', 'Saved', releaseNarrativeBaseline.value
-            ? 'Release justification updated.'
-            : 'Release justification cleared; this release now inherits the organization default.')
     } catch (err: any) {
         releaseNarrativeError.value = commonFunctions.extractGraphQLErrorMessage(err)
     } finally {

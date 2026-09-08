@@ -31,7 +31,8 @@ function functionBody (name: string): string {
 describe('the release narrative editor is wired into ReleaseView', () => {
     it.each([
         ['releaseNarrativeVariables', '@/utils/releaseNarrativeInput'],
-        ['FDA_PROSE_MAX_LENGTH', '@/utils/releaseNarrativeInput'],
+        ['releaseNarrativeDiffers', '@/utils/releaseNarrativeInput'],
+        ['FDA_PROSE_MAX_LENGTH', '@/utils/fdaProseInput'],
         ['formatNarrativeChange', '@/utils/narrativeHistory']
     ])('imports %s from %s', (symbol, module) => {
         expect(source).toMatch(new RegExp(
@@ -84,10 +85,20 @@ describe('the release narrative editor is wired into ReleaseView', () => {
     // The author must see what an override replaces. Without the default on screen,
     // "override" is an instruction to write something without being told what it displaces.
     it('shows the org default read-only beneath the editor', () => {
-        expect(source).toMatch(/orgNarrativeDefault/)
-        const tag = source.match(/:value="orgNarrativeDefault"[\s\S]{0,120}/)
         expect(source).toMatch(/readonly :value="orgNarrativeDefault"/)
-        expect(tag).not.toBeNull()
+    })
+
+    // REGRESSION: the success toast used to sit OUTSIDE the `saved` guard and take its
+    // wording from a baseline that is still the pre-save value when the response is empty --
+    // so authoring a narrative reported "cleared" and clearing one reported "updated".
+    it('reports success only inside the saved guard, and warns otherwise', () => {
+        const body = functionBody('saveReleaseNarrative')
+        const guard = body.indexOf('if (saved)')
+        const success = body.indexOf("notify('success'")
+        const elseWarn = body.indexOf("notify('warning'")
+        expect(guard).toBeGreaterThan(-1)
+        expect(success).toBeGreaterThan(guard)
+        expect(elseWarn).toBeGreaterThan(success)
     })
 
     // A FDA_NARRATIVE event carries no objectId, so without its own branch the history row

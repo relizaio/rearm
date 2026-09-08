@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { releaseNarrativeVariables, releaseNarrativeDirty, FDA_PROSE_MAX_LENGTH } from './releaseNarrativeInput'
+import { releaseNarrativeVariables, releaseNarrativeDiffers } from './releaseNarrativeInput'
+import { FDA_PROSE_MAX_LENGTH } from './fdaProseInput'
 
 const U = '11111111-1111-1111-1111-111111111111'
 const O = '22222222-2222-2222-2222-222222222222'
@@ -49,17 +50,17 @@ describe('releaseNarrativeVariables', () => {
     })
 })
 
-describe('releaseNarrativeDirty', () => {
+describe('releaseNarrativeDiffers', () => {
     it('is false for equal values and whitespace-only differences', () => {
-        expect(releaseNarrativeDirty('same', 'same')).toBe(false)
-        expect(releaseNarrativeDirty('  same  ', 'same')).toBe(false)
-        expect(releaseNarrativeDirty(null, '')).toBe(false)
+        expect(releaseNarrativeDiffers('same', 'same')).toBe(false)
+        expect(releaseNarrativeDiffers('  same  ', 'same')).toBe(false)
+        expect(releaseNarrativeDiffers(null, '')).toBe(false)
     })
 
     it('is true for a real edit and for a clear', () => {
-        expect(releaseNarrativeDirty('new', 'old')).toBe(true)
-        expect(releaseNarrativeDirty('', 'old')).toBe(true)
-        expect(releaseNarrativeDirty('new', null)).toBe(true)
+        expect(releaseNarrativeDiffers('new', 'old')).toBe(true)
+        expect(releaseNarrativeDiffers('', 'old')).toBe(true)
+        expect(releaseNarrativeDiffers('new', null)).toBe(true)
     })
 })
 
