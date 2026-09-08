@@ -1,57 +1,73 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { buildSchema, validate, type GraphQLSchema } from 'graphql'
+import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './organizationsQuery'
 
 /**
- * The export-injection setting, checked against the schemas that declare it.
+ * The organizations query, validated as a DOCUMENT against both schemas.
  *
- * The store's organizations query and the OrgSettings mutation both select
- * `settings { supportInjection }`. Neither is validated by scripts/validate-graphql -- the
- * store document interpolates nothing but lives outside the scanned utils, and the mutation
- * is inline in a .vue file -- so a typo here would surface at runtime as a GraphQL validation
- * error, which isSchemaDriftError reports as the server being out of date. A typo of ours
- * wearing somebody else's outdated backend as a costume; that has happened twice on this
- * feature already.
+ * An earlier version of this file matched `supportInjection` with a regex over the schema
+ * text and over store.ts. That proved nothing about whether the selection sits in a document
+ * the server will accept -- and the failure it was supposed to guard is exactly what shipped:
+ * adding the field to the shared organizations query made the whole document invalid on a
+ * backend without it, so `myorg` stayed null and every page rendered blank. A text match
+ * cannot see that. Validation can, and this is what the three sibling drift specs already do.
+ *
+ * CE is read EAGERLY, not under runIf: the CE schema ships in this repo, so its absence is a
+ * broken checkout and should fail the suite rather than silently drop the assertion that
+ * matters most here.
  */
-const CE_SCHEMA = fileURLToPath(new URL(
+const CE_SCHEMA_PATH = fileURLToPath(new URL(
     '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA = fileURLToPath(new URL(
+const PRO_SCHEMA_PATH = fileURLToPath(new URL(
     '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
 
-const ORG_SETTINGS = fileURLToPath(new URL('../components/OrgSettings.vue', import.meta.url))
-const STORE = fileURLToPath(new URL('../store.ts', import.meta.url))
+const ceSchema = buildSchema(readFileSync(CE_SCHEMA_PATH, 'utf8'))
+const proSchema: GraphQLSchema | null = existsSync(PRO_SCHEMA_PATH)
+    ? buildSchema(readFileSync(PRO_SCHEMA_PATH, 'utf8'))
+    : null
 
-describe('the supportInjection setting matches the Pro schema', () => {
-    it.runIf(existsSync(PRO_SCHEMA))('is declared on Settings and SettingsInput', () => {
-        const schema = readFileSync(PRO_SCHEMA, 'utf8')
-        expect(schema).toMatch(/^\s+supportInjection: SupportInjectionSetting$/m)
-        // Both the read type and the input type: the UI reads it and writes it.
-        expect((schema.match(/supportInjection: SupportInjectionSetting/g) || []).length)
-            .toBeGreaterThanOrEqual(2)
-    })
+const errorsAgainst = (schema: GraphQLSchema, doc: any) =>
+    validate(schema, doc).map(e => e.message)
 
-    // The form maps a switch to these two members. A third member appearing means the switch
-    // is no longer sufficient, and whoever adds it should find that out here.
-    it.runIf(existsSync(PRO_SCHEMA))('has exactly the two members the switch maps to', () => {
-        const schema = readFileSync(PRO_SCHEMA, 'utf8')
-        const body = schema.slice(schema.indexOf('enum SupportInjectionSetting'))
-        const members = body.slice(0, body.indexOf('}'))
-            .split('\n').map(l => l.trim())
-            .filter(l => /^[A-Z_]+$/.test(l))
-        expect(members).toEqual(['ENABLED', 'DISABLED'])
-    })
-
-    it('is selected wherever the UI reads it', () => {
-        expect(readFileSync(STORE, 'utf8')).toMatch(/^\s+supportInjection$/m)
-        expect(readFileSync(ORG_SETTINGS, 'utf8')).toMatch(/^\s+supportInjection$/m)
+describe('the organizations query survives a backend without supportInjection', () => {
+    it('has the CE mirror schema available', () => {
+        expect(ceSchema, `CE mirror schema not found at ${CE_SCHEMA_PATH}`).not.toBeNull()
     })
 
     /**
-     * The CE gap is EXPECTED and TEMPORARY, asserted so it cannot quietly become permanent:
-     * CE gains the field at the deferred sync, and when it does this fails and the assertion
-     * moves to the positive form above.
+     * THE ONE THAT MATTERS. Every page derives myorg from this query, so a document CE cannot
+     * answer takes the whole app down -- not just the setting. CORE is what the fallback
+     * serves, and it must be answerable by the mirror as it stands today.
      */
-    it.runIf(existsSync(CE_SCHEMA))('is still ahead of CE, pending the sync', () => {
-        expect(readFileSync(CE_SCHEMA, 'utf8')).not.toContain('SupportInjectionSetting')
+    it('CORE is valid against the CE schema, so the app never blanks', () => {
+        expect(errorsAgainst(ceSchema, ORGANIZATIONS_CORE)).toEqual([])
+    })
+
+    /**
+     * And FULL is NOT, today -- which is why the fallback exists rather than being defensive
+     * decoration. When the deferred sync lands this fails, and the fallback can be retired
+     * along with it.
+     */
+    it('FULL is still ahead of CE, pending the sync', () => {
+        const errs = errorsAgainst(ceSchema, ORGANIZATIONS_FULL)
+        expect(errs.length).toBeGreaterThan(0)
+        expect(errs.filter(e => !e.includes('supportInjection'))).toEqual([])
+    })
+
+    it.runIf(proSchema)('both documents are valid against the Pro schema', () => {
+        expect(errorsAgainst(proSchema as GraphQLSchema, ORGANIZATIONS_CORE)).toEqual([])
+        expect(errorsAgainst(proSchema as GraphQLSchema, ORGANIZATIONS_FULL)).toEqual([])
+    })
+
+    // The form maps a switch to exactly two members. A third means the switch is no longer
+    // sufficient, and whoever adds it should find that out here.
+    it.runIf(proSchema)('the setting enum has exactly the two members the switch maps to', () => {
+        const schema = readFileSync(PRO_SCHEMA_PATH, 'utf8')
+        const body = schema.slice(schema.indexOf('enum SupportInjectionSetting'))
+        const members = body.slice(0, body.indexOf('}'))
+            .split('\n').map(l => l.trim()).filter(l => /^[A-Z_]+$/.test(l))
+        expect(members).toEqual(['ENABLED', 'DISABLED'])
     })
 })

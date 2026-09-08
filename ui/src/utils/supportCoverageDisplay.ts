@@ -12,12 +12,13 @@ export interface CoverageDisplay {
     /** The export-state sentence. Null only when exports carry everything. */
     exportNote: string | null
     /**
-     * The state in plain words, ALWAYS present -- "export injection ON" / "OFF" / "could not
-     * be read". Required beside the gauge by decision D3: the export state has to be stated,
-     * not inferred from whether a warning happens to be showing.
+     * The state in plain words -- "export injection ON" / "OFF" / "could not be read".
+     * Required beside the gauge by decision D3: the export state has to be stated, not
+     * inferred from whether a warning happens to be showing.
      *
-     * Null only in the two pre-data branches (error, not-yet-loaded), where there is no state
-     * to name yet.
+     * Present whenever coverage has loaded. Null in the two pre-data branches (error,
+     * not-yet-loaded), where there is no state to name and naming one would be a claim built
+     * on a request that did not return.
      */
     stateLabel: string | null
     /** True when the operator must not read this as "ready to submit". */
@@ -46,10 +47,14 @@ export interface CoverageDisplay {
  * choice nobody made -- so it reads "could not be read", and the operator is told to find out
  * rather than reassured.
  */
-export const EXPORT_STATE_LABEL: Record<SupportExportState, string> = {
+const EXPORT_STATE_LABEL: Record<SupportExportState, string> = {
     ENABLED: 'export injection ON',
     DISABLED: 'export injection OFF',
-    PARTIAL: 'export injection PARTIAL',
+    // NOT the bare enum name. PARTIAL is retired and never returned by a current server, but
+    // an older one can still send it, and "export injection PARTIAL" is none of the three
+    // things this label promises -- on the one surface whose job is to say the export state
+    // in plain words. It means what it always meant: do not assume the export carries it.
+    PARTIAL: 'export injection PARTIAL -- do not assume the release export carries it',
     UNKNOWN: 'export injection could not be read'
 }
 
@@ -60,8 +65,12 @@ export const EXPORT_STATE_LABEL: Record<SupportExportState, string> = {
  * Same reasoning as exportNoteFor: a newer server can introduce a state, and the honest thing
  * to say about a value we cannot interpret is that we could not read it -- never "OFF", which
  * would be a claim about the organization's configuration.
+ *
+ * PRIVATE, like its mirror exportNoteFor. It was briefly exported with no importer, and the
+ * spec then justified a relaxed log-count assertion on the premise that it "can be called
+ * without the note" -- a premise nothing exercised.
  */
-export function exportStateLabel (exportState: SupportExportState): string {
+function exportStateLabel (exportState: SupportExportState): string {
     if (Object.prototype.hasOwnProperty.call(EXPORT_STATE_LABEL, exportState)) {
         return EXPORT_STATE_LABEL[exportState]
     }

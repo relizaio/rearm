@@ -57,9 +57,9 @@ describe('coverageDisplay', () => {
             .toBeTruthy()
         // The UNKNOWN wording is already correct for "we do not know what the state is".
         expect(d.exportNote).toBe(coverageDisplay(cov(1, 2, 'UNKNOWN')).exportNote)
-        // TWICE, once from each guard: the note and the label are independently reachable
-        // -- exportStateLabel is exported and can be called without the note -- so each
-        // reports rather than relying on the other having already done so.
+        // Twice, once from each guard. Both are private and both run on this path, so the
+        // pair reports together; an earlier comment justified this on the premise that the
+        // label function was independently callable, which nothing exercised.
         expect(err).toHaveBeenCalledTimes(2)
         err.mockRestore()
     })
@@ -114,8 +114,16 @@ describe('the export state is stated beside the gauge', () => {
         expect(label).not.toContain('OFF')
     })
 
+    // PARTIAL is retired but an older server can still send it, and it must not render as a
+    // bare enum name -- that is none of the three things the label promises.
+    it('renders PARTIAL as words, not as the enum name', () => {
+        const label = coverageDisplay(cov(1, 2, 'PARTIAL')).stateLabel as string
+        expect(label).not.toBe('export injection PARTIAL')
+        expect(label).toContain('do not assume')
+    })
+
     it('names a state for every value the server can return', () => {
-        for (const state of ['ENABLED', 'DISABLED', 'UNKNOWN'] as const) {
+        for (const state of ['ENABLED', 'DISABLED', 'PARTIAL', 'UNKNOWN'] as const) {
             expect(coverageDisplay(cov(1, 2, state)).stateLabel, state).toBeTruthy()
         }
     })

@@ -20,6 +20,31 @@ const orgSettings = readFileSync(
 const releaseView = readFileSync(
     fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
 
+
+/**
+ * The function body, sliced by BRACE DEPTH.
+ *
+ * Cutting at the next `\nasync function` is the idiom this family retired twice: it silently
+ * yields the wrong text -- or an empty string -- the moment a helper is inserted between two
+ * functions.
+ */
+function functionBody (name: string): string {
+    // Both spacings: this file writes `saveOrgSettings()` and `loadOrgSettings()` without a
+    // space, and other functions with one. Throwing on a miss rather than returning '' is the
+    // point -- a rename must fail loudly, not silently assert against an empty string.
+    const start = [`function ${name} (`, `function ${name}(`]
+        .map(sig => orgSettings.indexOf(sig)).filter(i => i >= 0).sort((a, b) => a - b)[0]
+    if (start === undefined) throw new Error(`no function ${name} in OrgSettings.vue`)
+    let depth = 0
+    let i = orgSettings.indexOf('{', start)
+    const open = i
+    for (; i < orgSettings.length; i++) {
+        if (orgSettings[i] === '{') depth++
+        else if (orgSettings[i] === '}' && --depth === 0) break
+    }
+    return orgSettings.slice(open, i + 1)
+}
+
 describe('the FDA prose form is wired into OrgSettings', () => {
     it.each([
         ['FDA_PROSE_FIELDS'], ['FDA_PROSE_MAX_LENGTH'], ['proseDiff'], ['proseBaselineFrom']
@@ -123,16 +148,40 @@ describe('the export injection toggle is wired into OrgSettings', () => {
 
     // Same rule the prose baseline follows: from the mutation response, before anything that
     // can throw, so a failed re-read cannot leave the form claiming an unsaved state.
-    it('refreshes the baseline from the mutation response', () => {
-        const save = orgSettings.slice(orgSettings.indexOf('async function saveOrgSettings'))
-        const body = save.slice(0, save.indexOf('\nasync function', 1))
-        expect(body.indexOf('savedSettings?.supportInjection')).toBeLessThan(body.indexOf('await loadOrgSettings()'))
+    // PRESENCE FIRST, then ordering. The ordering assertion alone passed when the line was
+    // ABSENT, because indexOf returns -1 and -1 is less than every real index -- so deleting
+    // the baseline refresh entirely left this file green. A spec that reads as protection and
+    // checks nothing is worse than no spec.
+    it('advances the baseline before the follow-up re-read', () => {
+        const body = functionBody('saveOrgSettings')
+        expect(body).toContain('supportInjectionBaseline.value = supportInjectionEnabled.value')
+        expect(body.indexOf('supportInjectionBaseline.value = supportInjectionEnabled.value'))
+            .toBeLessThan(body.indexOf('await loadOrgSettings()'))
     })
 
-    it('selects the field in the mutation response and in the store query', () => {
-        expect(orgSettings).toMatch(/^\s+supportInjection$/m)
-        const store = readFileSync(
-            fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
-        expect(store).toMatch(/^\s+supportInjection$/m)
+    // The field must NOT be selected back from the mutation: adding it to the response
+    // selection makes the whole document invalid on a backend without it, so every settings
+    // save fails -- prose slots and sid PURL included.
+    it('does not select supportInjection in the mutation response', () => {
+        const mutation = orgSettings.slice(orgSettings.indexOf('updateOrganizationSettings'))
+        const doc = mutation.slice(0, mutation.indexOf('`,'))
+        expect(doc).not.toMatch(/^\s+supportInjection$/m)
+    })
+
+    // And it is never SENT to a backend that cannot store it.
+    it('sends the field only when the backend supports it', () => {
+        expect(orgSettings).toMatch(/supportInjectionSupported\.value\s*\n?\s*&&/)
+        expect(orgSettings).toMatch(/v-if="supportInjectionSupported"/)
+    })
+
+    // The store's FULL document carries it; CORE deliberately does not, so a backend without
+    // the field still answers. supportInjectionSchemaDrift.spec.ts validates both documents
+    // against both schemas, which is the assertion that actually protects this.
+    it('is carried by the store FULL document only', () => {
+        const q = readFileSync(
+            fileURLToPath(new URL('../utils/organizationsQuery.ts', import.meta.url)), 'utf8')
+        expect(q).toContain('supportInjection')
+        expect(q).toContain('ORGANIZATIONS_CORE')
+        expect(q).toContain('ORGANIZATIONS_FULL')
     })
 })
