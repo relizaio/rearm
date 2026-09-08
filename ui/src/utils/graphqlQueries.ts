@@ -731,14 +731,18 @@ const DELIVERABLE_DETAIL_DATA = `
     }
 `
 
-// eos / eol: the DEVICE support window. Selected by BOTH release queries deliberately.
+// eos / eol / fdaAssessmentNarrative: the DEVICE support window and the per-release FDA
+// narrative override. Selected by BOTH release queries deliberately.
 // fetchRelease switches to the full query once the artifacts tab has been visited, so a
 // field present in only one of them reads as "not declared" from that point on -- which for
-// this pair is a meaningful value, not an obvious absence, so the omission is invisible
-// rather than loud. releaseFragmentsSchemaDrift.spec.ts asserts the pairing.
+// these is a meaningful value, not an obvious absence, so the omission is invisible rather
+// than loud. That exact bug shipped once on eos/eol: the editor saved correctly, the refetch
+// read undefined, and the pickers blanked while the value sat safely in the database.
+// releaseFragmentsSchemaDrift.spec.ts asserts the pairing for all three.
 const singleReleaseDataNoParent = `
     eos
     eol
+    fdaAssessmentNarrative
     createdDate
     org
     hardware
@@ -1280,12 +1284,15 @@ query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
 // eos / eol: the DEVICE support window. Selected here rather than fetched on demand because
 // the release view seeds its editor from the loaded release, and an unselected field reads
 // as "not declared" -- a meaningful value here, so the omission would be invisible rather
-// than obviously broken. Must stay in step with singleReleaseDataNoParent.
+// than obviously broken. Must stay in step with singleReleaseDataNoParent -- the drift spec
+// asserts it, because a comment was the only thing holding the pair together when eos/eol
+// diverged.
 const singleReleaseProductNoParent = `
     createdDate
     org
     eos
     eol
+    fdaAssessmentNarrative
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}

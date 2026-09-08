@@ -1070,6 +1070,51 @@
                             {{ deviceWindowError }}
                         </n-alert>
                     </div>
+                    <!-- The per-release FDA assessment narrative OVERRIDE. Beside the window
+                         because both are device-level facts an auditor reads together, and
+                         PRODUCT-gated for the same reason. The org default is shown
+                         read-only underneath so the author can see what they are replacing:
+                         without it, "override" is an instruction to write something without
+                         being told what it displaces. -->
+                    <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
+                        <h3>Assessment justification for this release</h3>
+                        <p class="text-muted" style="max-width: 760px;">
+                            Overrides the organization default below, for this release only.
+                            Leave it empty to inherit. Clearing a saved override returns this
+                            release to the default &mdash; it does not remove the
+                            justification from the generated documents.
+                        </p>
+                        <n-input v-model:value="releaseNarrative" type="textarea" :rows="5"
+                            style="max-width: 760px;"
+                            :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                            :disabled="!isWritable || savingReleaseNarrative"
+                            @update:value="releaseNarrativeError = null"
+                            placeholder="Leave empty to use the organization default." />
+                        <div style="margin-top: 8px;">
+                            <n-button v-if="isWritable" size="small" type="primary"
+                                :disabled="!releaseNarrativeDirty" :loading="savingReleaseNarrative"
+                                @click="saveReleaseNarrative">Save justification</n-button>
+                            <span v-if="!releaseNarrativeIsOverridden" class="text-muted"
+                                style="font-size: 12px; margin-left: 10px;">
+                                This release currently inherits the organization default.
+                            </span>
+                        </div>
+                        <n-alert v-if="releaseNarrativeError" type="error" :show-icon="true"
+                            style="font-size: 12px; max-width: 720px; margin-top: 10px;">
+                            {{ releaseNarrativeError }}
+                        </n-alert>
+                        <div style="margin-top: 14px;">
+                            <div class="text-muted" style="font-size: 12px;">
+                                Organization default (read-only, edited in Organization Settings)
+                            </div>
+                            <n-input v-if="orgNarrativeDefault" type="textarea" :rows="3"
+                                style="max-width: 760px;" readonly :value="orgNarrativeDefault" />
+                            <span v-else class="text-muted" style="font-size: 12px;">
+                                No organization default has been authored yet. With no override
+                                here either, generated documents carry no justification section.
+                            </span>
+                        </div>
+                    </div>
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Components
                             <Icon v-if="isWritable && isUpdatable"
@@ -1705,6 +1750,9 @@ import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import { collectAddendumData } from '@/utils/addendumData'
 import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
+import { releaseNarrativeVariables, releaseNarrativeDirty as releaseNarrativeNotEqual,
+    FDA_PROSE_MAX_LENGTH } from '@/utils/releaseNarrativeInput'
+import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
@@ -1868,6 +1916,93 @@ function seedDeviceWindow () {
     deviceWindowBaseline.eos = deviceWindow.eos
     deviceWindowBaseline.eol = deviceWindow.eol
     deviceWindowError.value = null
+}
+
+/**
+ * The per-release FDA assessment narrative override.
+ *
+ * NULL MEANS INHERIT, not empty, which is why the form distinguishes "no override" from "an
+ * override that happens to be blank" -- the latter cannot exist, because a supplied empty
+ * string is how the server is told to clear.
+ */
+const releaseNarrative: Ref<string> = ref('')
+/**
+ * What the server last confirmed. Refreshed from the MUTATION RESPONSE, never only from a
+ * follow-up read: on the org prose form that mistake meant a failed re-read reported a
+ * committed save as failed AND left the baseline stale, so the operator's next clear was
+ * silently omitted while the server kept the text.
+ */
+const releaseNarrativeBaseline: Ref<string> = ref('')
+const savingReleaseNarrative: Ref<boolean> = ref(false)
+const releaseNarrativeError: Ref<string | null> = ref(null)
+
+const releaseNarrativeDirty: ComputedRef<boolean> = computed((): boolean =>
+    releaseNarrativeNotEqual(releaseNarrative.value, releaseNarrativeBaseline.value))
+
+/** Whether this release currently overrides, as opposed to inheriting. */
+const releaseNarrativeIsOverridden: ComputedRef<boolean> = computed((): boolean =>
+    !!(releaseNarrativeBaseline.value || '').trim())
+
+/** The org-level default, shown read-only so the author sees what an override replaces. */
+const orgNarrativeDefault: ComputedRef<string> = computed((): string =>
+    (store.getters.myorg?.settings?.fdaAssessmentNarrative) || '')
+
+function seedReleaseNarrative () {
+    // UNDEFINED means the query did not ask; NULL means the server says there is no
+    // override. Same distinction the device window needs, and for the same reason: coercing
+    // the first to the second blanks a stored value and greys out Save. Both release queries
+    // select the field now, and the drift spec asserts the pairing.
+    const r: any = updatedRelease.value
+    if (r?.fdaAssessmentNarrative !== undefined) {
+        releaseNarrative.value = r.fdaAssessmentNarrative || ''
+    }
+    releaseNarrativeBaseline.value = releaseNarrative.value
+    releaseNarrativeError.value = null
+}
+
+async function saveReleaseNarrative () {
+    savingReleaseNarrative.value = true
+    releaseNarrativeError.value = null
+    try {
+        const vars = releaseNarrativeVariables(
+            updatedRelease.value.uuid,
+            updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid,
+            releaseNarrative.value, releaseNarrativeBaseline.value)
+        // Null means the form is not dirty. Firing a mutation anyway would append nothing on
+        // the server (it diffs too) but would still cost a round trip and a toast claiming
+        // something happened.
+        if (!vars) { savingReleaseNarrative.value = false; return }
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateReleaseNarrative($release: ReleaseInput!) {
+                    updateRelease(release: $release) { uuid fdaAssessmentNarrative }
+                }`,
+            variables: { release: vars }
+        })
+        // From the mutation's OWN response, before anything that can throw. The write has
+        // committed; this is the truth and it is already in hand.
+        const saved = (resp?.data as any)?.updateRelease
+        if (saved) {
+            releaseNarrative.value = saved.fdaAssessmentNarrative || ''
+            releaseNarrativeBaseline.value = releaseNarrative.value
+        }
+        notify('success', 'Saved', releaseNarrativeBaseline.value
+            ? 'Release justification updated.'
+            : 'Release justification cleared; this release now inherits the organization default.')
+    } catch (err: any) {
+        releaseNarrativeError.value = commonFunctions.extractGraphQLErrorMessage(err)
+    } finally {
+        savingReleaseNarrative.value = false
+    }
+
+    // Outside the try: a refetch keeps the rest of the page in step, but the save has already
+    // been reported from the mutation response, so a refetch failure must not be dressed up
+    // as a failed save.
+    try {
+        await fetchRelease()
+    } catch (e) {
+        // The justification itself is correct on screen; the surrounding page may be stale.
+    }
 }
 
 async function saveDeviceWindow () {
@@ -2102,6 +2237,7 @@ onMounted(async () => {
     // and seeding against an empty release would show a declared window as blank and then
     // treat re-typing it as a change.
     seedDeviceWindow()
+    seedReleaseNarrative()
     await fetchReleaseKeys()
     await loadDtrackConfigured()
     if (hasPendingStatuses()) ensureStatusPolling()
@@ -2647,6 +2783,7 @@ async function goToRelease (uuid: string) {
         isProductRelease.value = await detectIsProduct()
         await fetchRelease()
         seedDeviceWindow()
+        seedReleaseNarrative()
         await fetchReleaseKeys()
     } finally {
         isLoading.value = false
@@ -5848,6 +5985,19 @@ const releaseHistoryFields = computed(() => [
             // with, so it has to read.
             if (row.rus === 'SUPPORT_WINDOW') {
                 const txt = `${formatSupportWindow(row.oldValue)} -> ${formatSupportWindow(row.newValue)}`
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
+            }
+            // Same shape as SUPPORT_WINDOW: a FDA_NARRATIVE event carries old/new values and
+            // no objectId, so without this branch the row falls through to `return
+            // row.objectId` and renders BLANK -- a Scope column saying the justification
+            // changed, beside nothing saying anything about it.
+            //
+            // Lengths, never the text. The stored values are 200-character EXCERPTS, so
+            // rendering them would show a sentence stopping mid-word; and this table is a
+            // dense list of every change to the release, where paragraphs of regulatory prose
+            // make the surrounding rows unreadable. The full current text is one panel away.
+            if (row.rus === 'FDA_NARRATIVE') {
+                const txt = formatNarrativeChange(row.oldValue, row.newValue)
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             // For artifact events from acollections, show type with info icon
