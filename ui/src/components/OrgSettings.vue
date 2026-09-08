@@ -1926,9 +1926,9 @@ const allComponents = computed(() => [...orgComponents.value, ...orgProducts.val
 // Instance + cluster lists used by the ScopedPermissions component to
 // expose per-instance and per-cluster permission sections (replaces
 // the old UI's userInstancePermissionColumns / userClusterPermissionColumns
-// data tables). DevOps Read/Write grants are only honored on SAAS, so we
-// short-circuit the lists to empty on other installation types — that hides
-// the corresponding sections everywhere ScopedPermissions is rendered
+// data tables). Instances and clusters exist on every non-OSS installation;
+// on OSS we short-circuit the lists to empty, which hides the corresponding
+// sections everywhere ScopedPermissions is rendered
 // (users, user groups, programmatic access, free-form keys).
 const orgInstancesAndClusters = computed(() => {
     if (myUser.value?.installationType === 'OSS') return []
