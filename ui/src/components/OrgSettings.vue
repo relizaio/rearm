@@ -1214,7 +1214,7 @@ async function loadTabSpecificData (tabName: string) {
             loadPerspectives(),
             store.dispatch('fetchComponents', orgResolved.value),
             store.dispatch('fetchProducts', orgResolved.value),
-            ...(myUser.value.installationType === 'SAAS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
+            ...(myUser.value.installationType !== 'OSS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
         ])
         loadInvitedUsers(true)
     } else if (tabName === "userGroups") {
@@ -1222,11 +1222,11 @@ async function loadTabSpecificData (tabName: string) {
         // type, so a PRODUCT/ANY rule would otherwise preview "matches 0".
         store.dispatch('fetchProducts', orgResolved.value)
         await loadUsers() // Load users for the user selection dropdown
-        if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
+        if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadUserGroups()
     } else if (tabName === "programmaticAccess") {
         await loadUsers()
-        if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
+        if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
     } else if (tabName === "freeFormKeys") {
         // Same as programmaticAccess — formatValuesForApiKeys() resolves
@@ -1236,7 +1236,7 @@ async function loadTabSpecificData (tabName: string) {
         // only formats when both lists are non-empty) and the column
         // ends up blank for FREEFORM rows.
         await loadUsers()
-        if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
+        if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
     } else if (tabName === "policies") {
         fetchApprovalEntries()
@@ -1931,7 +1931,7 @@ const allComponents = computed(() => [...orgComponents.value, ...orgProducts.val
 // the corresponding sections everywhere ScopedPermissions is rendered
 // (users, user groups, programmatic access, free-form keys).
 const orgInstancesAndClusters = computed(() => {
-    if (myUser.value?.installationType !== 'SAAS') return []
+    if (myUser.value?.installationType === 'OSS') return []
     const all = (store.getters.instancesOfOrg(orgResolved.value) || [])
     return all.filter((x: any) => x.revision === -1 && (x.status === 'ACTIVE' || !x.status))
 })
