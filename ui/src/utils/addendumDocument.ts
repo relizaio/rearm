@@ -16,6 +16,15 @@
 import type { AddendumComponent, AddendumData } from './addendumData'
 import { isLiveAttestation } from './addendumData'
 
+/**
+ * The document's own title, owned here because every renderer needs it and one of them also
+ * needs to RECOGNISE it: the PDF prints it as a heading and must then drop the matching row
+ * from its facts table. When that comparison was against a copy of the literal, renaming the
+ * title printed it twice -- once as a heading, once as a fact row with an empty value -- and
+ * the guard test kept passing, because it asserted the absence of the OLD string.
+ */
+export const ADDENDUM_TITLE = 'FDA software support addendum'
+
 export const ADDENDUM_COLUMNS = [
     'Component', 'Version', 'PURL', 'Level of support', 'End of support',
     'Justification', 'Attestation state', 'Last assessed'
@@ -44,7 +53,7 @@ export const NOT_ASSESSED = 'not assessed'
 export const LEVEL_NOT_STATED = 'not stated -- see justification'
 
 /** Fully-qualified name: group is part of a component's identity, not decoration. */
-export function displayName (c: AddendumComponent): string | null {
+function displayName (c: AddendumComponent): string | null {
     if (c.group && c.name) return `${c.group}:${c.name}`
     return c.name || c.group || null
 }
@@ -96,7 +105,7 @@ export function addendumRow (c: AddendumComponent): unknown[] {
  */
 export function addendumHeaderRows (d: AddendumData): unknown[][] {
     const rows: unknown[][] = [
-        ['FDA software support addendum'],
+        [ADDENDUM_TITLE],
         ['Organization', d.orgName],
         ['Device', d.componentName],
         ['Release', d.releaseVersion],
@@ -137,4 +146,22 @@ export function displayOrder (components: AddendumComponent[]): AddendumComponen
         if (an !== bn) return an < bn ? -1 : 1
         return (a.version || '').localeCompare(b.version || '')
     })
+}
+
+/**
+ * The filename stem both renderers share, so the CSV and the PDF for one release sort
+ * together in a downloads folder.
+ *
+ * Shared rather than duplicated: each renderer had its own copy of this expression, and each
+ * spec hardcoded its own expected filename, so changing the sanitising rule in one and not
+ * the other would have passed every test while breaking the stated contract.
+ *
+ * Falls back through version, then uuid, then a fixed stem. The last step matters: both
+ * copies threw a TypeError when version AND uuid were absent, turning a nameless release
+ * into a failed export rather than an awkwardly named file.
+ */
+export function addendumFileStem (d: AddendumData): string {
+    const raw = d.releaseVersion || d.releaseUuid || 'release'
+    const slug = String(raw).replace(/[^A-Za-z0-9._-]+/g, '-')
+    return `fda-support-addendum-${slug || 'release'}`
 }

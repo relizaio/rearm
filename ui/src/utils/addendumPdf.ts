@@ -12,7 +12,8 @@
 import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
 import type { AddendumData } from './addendumData'
-import { ADDENDUM_COLUMNS, addendumRow, addendumHeaderRows, displayOrder } from './addendumDocument'
+import { ADDENDUM_COLUMNS, ADDENDUM_TITLE, addendumRow, addendumHeaderRows, displayOrder,
+    addendumFileStem } from './addendumDocument'
 
 pdfMake.vfs = pdfFonts.vfs
 
@@ -26,10 +27,71 @@ pdfMake.vfs = pdfFonts.vfs
  */
 const COLUMN_WIDTHS = [110, 55, '*', 85, 62, '*', 62, 92]
 
-/** A cell that must never be blank in a regulatory table. */
+/**
+ * Coerce a value for a table cell.
+ *
+ * Empty for null/undefined -- and that is NOT the same as a blank meaning "nothing recorded".
+ * Whether a cell says "not assessed" or stands empty was decided upstream in addendumRow;
+ * this only turns an absent value into an empty string rather than the text "null".
+ */
 function cell (value: unknown): string {
     if (null === value || undefined === value) return ''
     return String(value)
+}
+
+/**
+ * The codepoint ranges the bundled Roboto can actually draw.
+ *
+ * pdfmake ships ROBOTO ONLY. A character it has no glyph for is not flagged, substituted or
+ * warned about -- it is silently DROPPED, so a component named in Japanese produces an EMPTY
+ * cell in a regulatory document while the CSV for the same release shows the text. Blank is
+ * the one thing this document must never be ambiguous about.
+ *
+ * Determined by RENDERING and extracting, not by reading a spec: Latin (including Extended-A,
+ * Turkish and Vietnamese), Greek, Cyrillic, punctuation and currency draw; Latin Extended-B,
+ * arrows, emoji, Hebrew, Arabic, Hangul, Thai, Devanagari and CJK do not.
+ *
+ * DELIBERATELY CONSERVATIVE. It is a whitelist, so an unlisted script is refused rather than
+ * rendered blank, and it will refuse some characters Roboto could in fact draw. That trade is
+ * the point: a false refusal is visible, explained and recoverable via the CSV, while a false
+ * render is an invisible hole in a document someone files.
+ */
+const RENDERABLE = [
+    [0x09, 0x0a], [0x0d, 0x0d],
+    [0x20, 0x17f],      // Basic Latin, Latin-1 Supplement, Latin Extended-A
+    [0x370, 0x3ff],     // Greek
+    [0x400, 0x4ff],     // Cyrillic
+    [0x1e00, 0x1eff],   // Latin Extended Additional (Vietnamese)
+    [0x2010, 0x201f],   // dashes and quotation marks
+    [0x2020, 0x2027], [0x2030, 0x203a],
+    [0x20a0, 0x20bf],   // currency
+    [0x2122, 0x2122]    // trade mark
+]
+
+function isRenderable (code: number): boolean {
+    return RENDERABLE.some(([lo, hi]) => code >= lo && code <= hi)
+}
+
+/**
+ * The characters in this document that the PDF font cannot draw, or null if there are none.
+ *
+ * Returned rather than thrown so the caller refuses in the same voice as every other addendum
+ * refusal -- no document at all, with a reason, instead of one that quietly omits words the
+ * manufacturer wrote.
+ */
+export function findUnrenderableText (d: AddendumData): string | null {
+    const offenders = new Set<string>()
+    const scan = (v: unknown) => {
+        const t = cell(v)
+        for (const ch of t) if (!isRenderable(ch.codePointAt(0) as number)) offenders.add(ch)
+    }
+    for (const row of addendumHeaderRows(d)) row.forEach(scan)
+    for (const c of d.components) addendumRow(c).forEach(scan)
+    if (!offenders.size) return null
+    const sample = [...offenders].slice(0, 12).join(' ')
+    return 'This release contains characters the PDF font cannot draw (' + sample + ').'
+        + ' They would be silently dropped, leaving blank cells in a document that is meant to'
+        + ' be complete. Export the CSV instead -- it carries every character.'
 }
 
 /**
@@ -56,7 +118,7 @@ export function buildAddendumDocDefinition (d: AddendumData): Record<string, unk
         pageOrientation: 'landscape',
         pageMargins: [28, 34, 28, 46],
         content: [
-            { text: 'FDA software support addendum', style: 'title' },
+            { text: ADDENDUM_TITLE, style: 'title' },
             // The header block, rendered as label/value pairs from the SAME source the CSV
             // header uses. Rows the CSV emits as spacers come through with no label, so they
             // are dropped rather than rendered as empty lines.
@@ -66,7 +128,7 @@ export function buildAddendumDocDefinition (d: AddendumData): Record<string, unk
                     widths: [190, '*'],
                     body: headerRows
                         .filter(r => r.length && null !== r[0] && undefined !== r[0] && '' !== String(r[0]))
-                        .filter(r => String(r[0]) !== 'FDA software support addendum')
+                        .filter(r => String(r[0]) !== ADDENDUM_TITLE)
                         .map(r => [{ text: cell(r[0]), bold: true }, { text: cell(r[1]) }])
                 },
                 layout: 'noBorders',
@@ -79,7 +141,7 @@ export function buildAddendumDocDefinition (d: AddendumData): Record<string, unk
                     body: body.length > 1 ? body : [...body, [{
                         text: 'This release contains no SBOM components.',
                         colSpan: ADDENDUM_COLUMNS.length, alignment: 'center', italics: true
-                    }, {}, {}, {}, {}, {}, {}, {}]]
+                    }, ...Array(ADDENDUM_COLUMNS.length - 1).fill({})]]
                 },
                 layout: 'lightHorizontalLines'
             }
@@ -109,8 +171,7 @@ export function buildAddendumDocDefinition (d: AddendumData): Record<string, unk
 
 /** Same stem as the CSV, so the pair sorts together in a downloads folder. */
 export function addendumPdfFileName (d: AddendumData): string {
-    const slug = (d.releaseVersion || d.releaseUuid).replace(/[^A-Za-z0-9._-]+/g, '-')
-    return `fda-support-addendum-${slug}.pdf`
+    return `${addendumFileStem(d)}.pdf`
 }
 
 /**

@@ -7,8 +7,9 @@ const createPdf = vi.fn()
 vi.mock('pdfmake/build/pdfmake', () => ({ default: { vfs: null, get createPdf () { return createPdf } } }))
 vi.mock('pdfmake/build/vfs_fonts', () => ({ default: { vfs: {} } }))
 
-import { buildAddendumDocDefinition, addendumPdfFileName, renderAddendumPdfBlob } from './addendumPdf'
-import { ADDENDUM_COLUMNS } from './addendumDocument'
+import { buildAddendumDocDefinition, addendumPdfFileName, renderAddendumPdfBlob,
+    findUnrenderableText } from './addendumPdf'
+import { ADDENDUM_COLUMNS, ADDENDUM_TITLE } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
@@ -108,9 +109,21 @@ describe('buildAddendumDocDefinition', () => {
         expect(rows.every((r: any) => String(r[0].text).trim().length > 0)).toBe(true)
     })
 
+    // Asserted against the shared CONSTANT, not a copy of the literal. When this compared a
+    // hardcoded string, renaming the title made the PDF print it twice -- once as the
+    // heading, once as a fact row -- and this test stayed green, because it was asserting the
+    // absence of a string that no longer existed anywhere.
     it('does not repeat the title inside the facts table', () => {
         const labels = factsTable(buildAddendumDocDefinition(data())).body.map((r: any) => r[0].text)
-        expect(labels).not.toContain('FDA software support addendum')
+        expect(labels).not.toContain(ADDENDUM_TITLE)
+        expect((buildAddendumDocDefinition(data()).content as any[])[0].text).toBe(ADDENDUM_TITLE)
+    })
+
+    it('pads the empty-state colSpan row to the column count', () => {
+        const doc = buildAddendumDocDefinition(data({ components: [], totalComponents: 0, attestedComponents: 0, unassessedComponents: 0 }))
+        const row = dataTable(doc).body[1]
+        expect(row).toHaveLength(ADDENDUM_COLUMNS.length)
+        expect(row[0].colSpan).toBe(ADDENDUM_COLUMNS.length)
     })
 
     it('renders an explicit note for a release with no components', () => {
@@ -184,5 +197,71 @@ describe('renderAddendumPdfBlob', () => {
         await renderAddendumPdfBlob(data())
         expect(getBlob).toHaveBeenCalledTimes(1)
         expect(getBlob.mock.calls[0]).toHaveLength(0)
+    })
+})
+
+/**
+ * FONT COVERAGE.
+ *
+ * pdfmake bundles Roboto only and SILENTLY DROPS a character it cannot draw -- no error, no
+ * placeholder, no warning. A component named in Japanese produced an empty Component cell in
+ * a regulatory document, while the CSV for the same release showed the text. Blank is the one
+ * thing this document must never be ambiguous about, so the export refuses instead.
+ *
+ * Non-Latin samples are written as \u escapes: this repo is plain-ASCII by rule, and the CI
+ * invisible-character check runs before the build.
+ */
+describe('findUnrenderableText', () => {
+    it('passes a document that is entirely Latin', () => {
+        expect(findUnrenderableText(data())).toBeNull()
+    })
+
+    it.each([
+        ['accented Latin', '\u0047\u0072\u00fcnwald caf\u00e9'],
+        ['Vietnamese', 'Ti\u1ebfng Vi\u1ec7t'],
+        ['Cyrillic', '\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430'],
+        ['Greek', '\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac'],
+        ['em dash and curly quotes', '\u2014 \u201cq\u201d']
+    ])('passes %s, which Roboto draws', (_n, text) => {
+        expect(findUnrenderableText(data({ narrative: text }))).toBeNull()
+    })
+
+    it.each([
+        ['CJK', '\u652f\u63f4\u7d42\u4e86'],
+        ['Hangul', '\ud55c\uad6d\uc5b4'],
+        ['Arabic', '\u0627\u0644\u0639\u0631\u0628\u064a\u0629'],
+        ['Hebrew', '\u05e2\u05d1\u05e8\u05d9\u05ea'],
+        ['Thai', '\u0e44\u0e17\u0e22'],
+        ['Devanagari', '\u0939\u093f\u0928\u094d\u0926\u0940'],
+        ['an emoji', '\u26a0']
+    ])('refuses %s, which Roboto silently drops', (_n, text) => {
+        const msg = findUnrenderableText(data({ narrative: text }))
+        expect(msg).not.toBeNull()
+        expect(msg).toContain('CSV')
+    })
+
+    // Every cell is scanned, not just the narrative -- the first report of this was a
+    // component NAME, which lives in the table rather than the header block.
+    it('scans component cells, not only the header block', () => {
+        const msg = findUnrenderableText(data({
+            components: [comp({ name: '\u65e5\u672c\u8a9e\u30e9\u30a4\u30d6\u30e9\u30ea' })]
+        }))
+        expect(msg).not.toBeNull()
+    })
+
+    it('scans justification text', () => {
+        const msg = findUnrenderableText(data({
+            components: [comp({ levelOfSupport: null, justification: '\u4e2d\u6587' })]
+        }))
+        expect(msg).not.toBeNull()
+    })
+
+    // The message has to be actionable: an operator who cannot export the PDF needs to know
+    // which characters and what to do instead.
+    it('names the offending characters and points at the CSV', () => {
+        const msg = findUnrenderableText(data({ narrative: '\u652f' })) as string
+        expect(msg).toContain('\u652f')
+        expect(msg).toMatch(/CSV/)
+        expect(msg).toMatch(/silently dropped|blank/)
     })
 })

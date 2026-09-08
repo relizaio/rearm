@@ -40,7 +40,8 @@ describe('the FDA addendum export is wired into the export modal', () => {
         ['renderAddendumCsv', '@/utils/addendumCsv'],
         ['addendumFileName', '@/utils/addendumCsv'],
         ['renderAddendumPdfBlob', '@/utils/addendumPdf'],
-        ['addendumPdfFileName', '@/utils/addendumPdf']
+        ['addendumPdfFileName', '@/utils/addendumPdf'],
+        ['findUnrenderableText', '@/utils/addendumPdf']
     ])('imports %s from %s', (symbol, module) => {
         expect(source).toMatch(new RegExp(
             `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${module.replace(/\//g, '\\/')}'`))
@@ -76,9 +77,12 @@ describe('the FDA addendum export is wired into the export modal', () => {
 
     // One handler, so the modal cannot end up with two spinners disagreeing about whether
     // an export is running.
-    it('routes both addendum types through the single export button', () => {
-        expect(source).toMatch(/if \(mediaType === 'FDA_ADDENDUM'\) return exportFdaAddendum\(false\)/)
-        expect(source).toMatch(/if \(mediaType === 'FDA_ADDENDUM_PDF'\) return exportFdaAddendum\(true\)/)
+    // The format travels as a VALUE, matching exportReleaseSbom beside it. A boolean here
+    // would be the same two-value test that isAddendumExport exists to avoid in the template.
+    it('routes both addendum types through the single export button, carrying the format', () => {
+        expect(source).toMatch(/return exportFdaAddendum\(mediaType\)/)
+        expect(source).toMatch(/async function exportFdaAddendum \(mediaType: string\)/)
+        expect(source).not.toMatch(/exportFdaAddendum\((true|false)\)/)
     })
 
     // The refusal must reach the operator. A silent failure here means they believe they
@@ -97,9 +101,24 @@ describe('the FDA addendum export is wired into the export modal', () => {
     // The BOM-shaping controls do not apply to the addendum, so they are HIDDEN rather than
     // left enabled and silently ignored -- an operator who ticked "Top Level Dependencies
     // Only" and got a full-scope document would have no way to tell.
-    it('hides the BOM-shaping controls for EITHER addendum encoding', () => {
+    // FOUR, not three. The artifact-coverage-type filter was left ungated when its three
+    // siblings were gated, so it stayed visible and toggleable while exportFdaAddendum
+    // ignored it entirely -- the exact "dropped on the floor" failure the gate exists for.
+    it('hides all four BOM-shaping controls for EITHER addendum encoding', () => {
         const gates = source.match(/v-if="!isAddendumExport"/g) || []
-        expect(gates.length).toBeGreaterThanOrEqual(3)
+        expect(gates.length).toBe(4)
+    })
+
+    // The refusal must come BEFORE any rendering, and must not download anything.
+    it('refuses unrenderable text before building the PDF', () => {
+        const body = handlerBody()
+        expect(body.indexOf('findUnrenderableText')).toBeLessThan(body.indexOf('renderAddendumPdfBlob'))
+        expect(body.indexOf('if (unrenderable)')).toBeLessThan(body.indexOf('new Blob'))
+    })
+
+    // The stuck-spinner class this feature has already hit once, in pdfmake's callback API.
+    it('always clears the export spinner in a finally', () => {
+        expect(handlerBody()).toMatch(/finally \{[\s\S]*?bomExportPending\.value = false/)
     })
 
     it('appends, clicks, removes, then revokes the object URL', () => {

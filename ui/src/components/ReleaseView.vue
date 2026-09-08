@@ -193,7 +193,7 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
                     </n-form-item>
-                    <n-form-item>
+                    <n-form-item v-if="!isAddendumExport">
                         <div style="width: 100%;">
                             <div style="display: inline-flex; align-items: center;">
                                 <span style="display: inline-flex; align-items: center;">
@@ -1751,7 +1751,7 @@ import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import { collectAddendumData } from '@/utils/addendumData'
 import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
-import { renderAddendumPdfBlob, addendumPdfFileName } from '@/utils/addendumPdf'
+import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
@@ -5134,7 +5134,7 @@ async function uploadNewBomVersion (art: any) {
  * no support attestation, which is the one number a reviewer is looking for. The collector
  * returns no data at all on any refusal, so there is nothing here to accidentally save.
  */
-async function exportFdaAddendum (asPdf: boolean) {
+async function exportFdaAddendum (mediaType: string) {
     try {
         bomExportPending.value = true
         const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
@@ -5156,6 +5156,16 @@ async function exportFdaAddendum (asPdf: boolean) {
         // The collection is identical for both encodings -- only the rendering differs -- so
         // the branch is here rather than at the top. That keeps ONE refusal path: a partial
         // document must be impossible in both formats, not in whichever one was written first.
+        const asPdf = mediaType === 'FDA_ADDENDUM_PDF'
+        // Refused BEFORE rendering, in the same voice as every other addendum refusal.
+        // pdfmake ships Roboto only and silently DROPS a character it cannot draw, so a
+        // component named in Japanese would leave a blank cell in a document meant to be
+        // complete -- while the CSV for the same release shows the text.
+        const unrenderable = asPdf ? findUnrenderableText(result.data) : null
+        if (unrenderable) {
+            Swal.fire('Addendum not generated', unrenderable, 'error')
+            return
+        }
         const blob = asPdf
             ? await renderAddendumPdfBlob(result.data)
             : new Blob([renderAddendumCsv(result.data)], { type: 'text/csv;charset=utf-8' })
@@ -5188,8 +5198,7 @@ async function exportFdaAddendum (asPdf: boolean) {
 async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
     // Routed here rather than from the template so the button keeps one handler and the
     // modal cannot end up with two spinners disagreeing about whether an export is running.
-    if (mediaType === 'FDA_ADDENDUM') return exportFdaAddendum(false)
-    if (mediaType === 'FDA_ADDENDUM_PDF') return exportFdaAddendum(true)
+    if (mediaType === 'FDA_ADDENDUM' || mediaType === 'FDA_ADDENDUM_PDF') return exportFdaAddendum(mediaType)
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null

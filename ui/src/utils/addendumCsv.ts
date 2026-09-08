@@ -6,7 +6,8 @@
 
 import { csvDocument } from './csv'
 import type { AddendumData } from './addendumData'
-import { ADDENDUM_COLUMNS, addendumRow, addendumHeaderRows, displayOrder } from './addendumDocument'
+import { ADDENDUM_COLUMNS, addendumRow, addendumHeaderRows, displayOrder,
+    addendumFileStem } from './addendumDocument'
 
 /**
  * Header rows padded to the table's width.
@@ -33,6 +34,5 @@ export function renderAddendumCsv (d: AddendumData): string {
 
 /** Stable, sortable, and identifies the release without needing the file to be opened. */
 export function addendumFileName (d: AddendumData): string {
-    const slug = (d.releaseVersion || d.releaseUuid).replace(/[^A-Za-z0-9._-]+/g, '-')
-    return `fda-support-addendum-${slug}.csv`
+    return `${addendumFileStem(d)}.csv`
 }

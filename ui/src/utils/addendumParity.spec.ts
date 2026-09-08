@@ -5,7 +5,7 @@ vi.mock('pdfmake/build/vfs_fonts', () => ({ default: { vfs: {} } }))
 
 import { renderAddendumCsv } from './addendumCsv'
 import { buildAddendumDocDefinition } from './addendumPdf'
-import { ADDENDUM_COLUMNS } from './addendumDocument'
+import { ADDENDUM_COLUMNS, ADDENDUM_TITLE } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 /**
@@ -118,15 +118,33 @@ describe('CSV and PDF are the same document in two encodings', () => {
         expect(pdfDataRows).toEqual(csvDataRows.map(r => r.map(deneutralise)))
     })
 
-    it('agree on the header block facts', () => {
+    it('agree on the header block facts, in both directions', () => {
         const factsTable = (doc.content as any[]).filter(c => c && c.table)[0].table
         const pdfFacts = new Map<string, string>(
             factsTable.body.map((r: any) => [String(r[0].text), String(r[1].text)]))
-        for (const row of csvRows.slice(0, csvHeaderIdx)) {
-            const label = row[0]
-            if (!label || label === 'FDA software support addendum') continue
-            expect(pdfFacts.get(label), `header fact "${label}"`).toBe(row[1])
+        const csvFacts = csvRows.slice(0, csvHeaderIdx)
+            .filter(r => r[0] && r[0] !== ADDENDUM_TITLE && r.some(c => c.length))
+        for (const row of csvFacts) {
+            expect(pdfFacts.get(row[0]), `header fact "${row[0]}"`).toBe(row[1])
         }
+        // BOTH directions: a fact the PDF invents, or one it drops, is a divergence too.
+        expect([...pdfFacts.keys()].sort()).toEqual(csvFacts.map(r => r[0]).sort())
+        // The PDF renders a header row as exactly two cells, so a future three-element row
+        // would be silently truncated. Fail here instead.
+        expect(csvFacts.every(r => r.filter(c => c.length).length <= 2)).toBe(true)
+    })
+
+    // Deliberate, and previously unasserted: the CSV emits no data rows for an empty release
+    // while the PDF emits an explanatory note row, so the counts differ BY DESIGN.
+    it('handle a release with no components in their own documented ways', () => {
+        const empty = { ...DATA, components: [], totalComponents: 0, attestedComponents: 0,
+            unassessedComponents: 0 }
+        const csv = parseCsv(renderAddendumCsv(empty))
+        const hdr = csv.findIndex(r => r[0] === ADDENDUM_COLUMNS[0])
+        expect(csv.slice(hdr + 1).filter(r => r.some(c => c.length))).toHaveLength(0)
+        const t = (buildAddendumDocDefinition(empty).content as any[]).filter(c => c && c.table)[1].table
+        expect(t.body).toHaveLength(2)
+        expect(JSON.stringify(t.body[1])).toContain('no SBOM components')
     })
 
     // Encoding differences are allowed and expected -- the CSV quotes, the PDF does not --
@@ -138,6 +156,13 @@ describe('CSV and PDF are the same document in two encodings', () => {
         expect(csvRow.join(' ')).toContain('said "yes", then\nleft')
     })
 
+    /**
+     * KNOWN SECOND DIVERGENCE, recorded so it is a decision rather than a surprise: a TAB
+     * inside operator prose is preserved by the CSV (quoted) and collapsed to a single space
+     * by the PDF, because that is what a PDF text run does with whitespace. The fixture below
+     * deliberately contains no tabs, so the "only differing cell" claim holds for it; a tab
+     * would add a second, and this note is where a future reader finds out why.
+     */
     // The CSV neutralises a leading = against spreadsheet evaluation; the PDF has no such
     // risk. Asserted so the difference is a decision on record rather than a surprise, and
     // so the CELL TEXT is otherwise identical.
@@ -152,8 +177,11 @@ describe('CSV and PDF are the same document in two encodings', () => {
         // searching rather than by a fixed index: displayOrder sorts alphabetically, so the
         // formula row is not where it was declared.
         const formulaIdx = csvDataRows.findIndex(r => r[0].endsWith(':formula'))
+        // Guarded: an unguarded index turned a row-count divergence into a TypeError rather
+        // than a readable assertion failure, which is the harder bug to diagnose.
+        expect(pdfDataRows).toHaveLength(csvDataRows.length)
         const differing = csvDataRows.flatMap((r, i) =>
-            r.map((c, j) => (c === pdfDataRows[i][j] ? null : `${i}:${j}`)).filter(Boolean))
+            r.map((c, j) => (c === (pdfDataRows[i] || [])[j] ? null : `${i}:${j}`)).filter(Boolean))
         expect(differing).toEqual([`${formulaIdx}:5`])
     })
 })
