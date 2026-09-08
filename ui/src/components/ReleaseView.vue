@@ -85,7 +85,7 @@
                          addendum always walks the whole release scope, so an operator who
                          ticked "Top Level Dependencies Only" and got a full-scope document
                          would have no way to tell the control had been dropped on the floor. -->
-                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
+                    <n-form-item v-if="!isAddendumExport">
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
                                 Select SBOM configuration for export
@@ -123,9 +123,10 @@
                                  below do not apply to it. A checkbox would imply it rides
                                  along with whichever format was picked. -->
                             <n-radio-button value="FDA_ADDENDUM">FDA support addendum (CSV)</n-radio-button>
+                            <n-radio-button value="FDA_ADDENDUM_PDF">FDA support addendum (PDF)</n-radio-button>
                         </n-radio-group>
                     </n-form-item>
-                    <n-alert v-if="selectedSbomMediaType === 'FDA_ADDENDUM'" type="default"
+                    <n-alert v-if="isAddendumExport" type="default"
                         :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
                         Every component in this release with its level of support, the end-of-support
                         date where one is attested and the justification where none is, plus the
@@ -157,7 +158,7 @@
                             />
                         </n-radio-group>
                     </n-form-item>
-                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
+                    <n-form-item v-if="!isAddendumExport">
                         <span style="display: inline-flex; align-items: center;">
                             Top Level Dependencies Only:
                             <n-tooltip trigger="hover">
@@ -171,7 +172,7 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
-                    <n-form-item v-if="selectedSbomMediaType !== 'FDA_ADDENDUM'">
+                    <n-form-item v-if="!isAddendumExport">
                         <span style="display: inline-flex; align-items: center;">
                             Ignore Optional Dependencies:
                             <n-tooltip trigger="hover">
@@ -1750,6 +1751,7 @@ import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import { collectAddendumData } from '@/utils/addendumData'
 import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
+import { renderAddendumPdfBlob, addendumPdfFileName } from '@/utils/addendumPdf'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
@@ -2825,6 +2827,15 @@ watch(() => props.uuidprop, (newUuid) => {
 
 // Media type for SBOM export
 const selectedSbomMediaType = ref('JSON')
+/**
+ * Both addendum encodings, as one condition.
+ *
+ * The addendum is a different DOCUMENT that happens to share this modal, so the BOM-shaping
+ * options do not apply to either encoding of it. Asking the question once means adding a
+ * third encoding later cannot leave one control wired to the old two-value test.
+ */
+const isAddendumExport: ComputedRef<boolean> = computed((): boolean =>
+    selectedSbomMediaType.value === 'FDA_ADDENDUM' || selectedSbomMediaType.value === 'FDA_ADDENDUM_PDF')
 
 //getAggregatedChangelog
 const showExportSBOMModal: Ref<boolean> = ref(false)
@@ -5123,7 +5134,7 @@ async function uploadNewBomVersion (art: any) {
  * no support attestation, which is the one number a reviewer is looking for. The collector
  * returns no data at all on any refusal, so there is nothing here to accidentally save.
  */
-async function exportFdaAddendum () {
+async function exportFdaAddendum (asPdf: boolean) {
     try {
         bomExportPending.value = true
         const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
@@ -5142,10 +5153,15 @@ async function exportFdaAddendum () {
             Swal.fire('Addendum not generated', result.error, 'error')
             return
         }
-        const blob = new Blob([renderAddendumCsv(result.data)], { type: 'text/csv;charset=utf-8' })
+        // The collection is identical for both encodings -- only the rendering differs -- so
+        // the branch is here rather than at the top. That keeps ONE refusal path: a partial
+        // document must be impossible in both formats, not in whichever one was written first.
+        const blob = asPdf
+            ? await renderAddendumPdfBlob(result.data)
+            : new Blob([renderAddendumCsv(result.data)], { type: 'text/csv;charset=utf-8' })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
-        link.download = addendumFileName(result.data)
+        link.download = asPdf ? addendumPdfFileName(result.data) : addendumFileName(result.data)
         // append -> click -> remove -> revoke, following utils/bovExport.ts rather than the
         // older exports in this file: revoking the URL of a DETACHED anchor races the
         // browser's own fetch of it in some engines, and a silently empty download is a
@@ -5155,7 +5171,8 @@ async function exportFdaAddendum () {
         document.body.removeChild(link)
         window.URL.revokeObjectURL(link.href)
         notify('success', 'Addendum exported',
-            `${result.data.totalComponents} components, ${result.data.unassessedComponents} with no attestation.`)
+            `${asPdf ? 'PDF' : 'CSV'}: ${result.data.totalComponents} components,`
+            + ` ${result.data.unassessedComponents} with no attestation.`)
     } catch (err: any) {
         // extractGraphQLErrorMessage, not the parseGraphQLError(err.message) its neighbours
         // use: this catch only fires on throws collectAddendumData did NOT convert into a
@@ -5171,7 +5188,8 @@ async function exportFdaAddendum () {
 async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
     // Routed here rather than from the template so the button keeps one handler and the
     // modal cannot end up with two spinners disagreeing about whether an export is running.
-    if (mediaType === 'FDA_ADDENDUM') return exportFdaAddendum()
+    if (mediaType === 'FDA_ADDENDUM') return exportFdaAddendum(false)
+    if (mediaType === 'FDA_ADDENDUM_PDF') return exportFdaAddendum(true)
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
