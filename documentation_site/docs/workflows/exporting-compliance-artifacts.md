@@ -33,6 +33,90 @@ Exports the merged SBOM for the release. Options:
 
 Click **Export** to download the file.
 
+## Support Attestations in Exports
+
+Releases can carry per-component **support attestations** -- the manufacturer's statement of
+how long a component is supported, and at what level. Where an attestation exists, ReARM can
+weave it into the SBOM it serves, so a reviewer reads the support position out of the artifact
+itself rather than out of the UI.
+
+This affects the **merged SBOM export**, the **single-artifact CycloneDX download** and the
+**SPDX-augmented download**. It is controlled by one organization setting, and it is **off by
+default**.
+
+### Turning it on
+
+**Organization Settings -> Carry support attestations in BOM exports.** While it is off, exports
+carry no support facts at all, whatever the coverage gauge on the release page says. The gauge
+states the setting beside the coverage figure for exactly this reason: full attestation coverage
+and an export that carries none of it are not a contradiction, they are the default.
+
+### What a consumer sees
+
+Two layers, both emitted together and both governed by that single setting.
+
+**Component properties**, on each attested component:
+
+| Property | Meaning |
+|---|---|
+| `reliza:support:levelOfSupport` | The attested level. Never emitted without `reliza:support:assessedAt` beside it |
+| `reliza:support:assessedAt` | When the assessment was made (not when the row was written) |
+| `reliza:support:status` | Derived from the milestone dates and the current date |
+| `reliza:support:justification` | The stated basis for the claim |
+| `reliza:support:party` | Whether the manufacturer is a first or third party to the component |
+| `reliza:support:source:<milestone>` | Where each milestone date came from |
+| `cdx:lifecycle:milestone:endOfSupport` (and `endOfLife`, `endOfGuaranteedSupport`) | Standard CycloneDX milestone dates |
+
+**A `declarations` block** at the document level, in CycloneDX's own attestation vocabulary:
+
+- `claims[]` -- what was attested about which component. A claim targets a component's
+  `bom-ref`; where a component arrived without one, ReARM assigns a namespaced
+  `reliza:bomref:` identifier so the claim has something to point at, and removes it again on
+  any export that does not carry the claim.
+- `evidence[]` -- the attested value, the assessment instant, and the person who recorded it.
+  Milestone dates appear here too, each with its own assessment instant.
+- `assessors[]` -- the assessing organization and whether the assessment is third-party.
+- `attestations[]` -- the join between an assessor and the claims it made, so a reader can tell
+  who asserted what.
+
+This requires CycloneDX 1.6; a BOM served at an earlier spec version carries the properties only.
+
+The two layers describe the same facts under the same names **and the same values**, so a
+consumer can reconcile them: `reliza:support:party` reads `FIRST_PARTY`/`THIRD_PARTY` in both.
+The CycloneDX party role (`manufacturer`/`supplier`) appears only where it belongs, on the
+assessor.
+
+### The disclosure marker
+
+Every JSON BOM ReARM serves carries `reliza:support:disclosure` on `metadata`, with one of two
+values. **Read it before drawing a conclusion from an absent property:**
+
+| Value | Meaning |
+|---|---|
+| `derived-non-attested-current-state` | Support facts were injected. A component with no support property has no attestation on file |
+| `provenance-stripped-no-disclosure` | **Nothing was asserted.** The document says nothing about support -- including about components that DO have an end-of-support date recorded |
+
+Reading the second as the first is how a reviewer concludes a device has no out-of-support parts
+when it does. The values are deliberately distinct so that absence and silence cannot be confused.
+
+Support facts are **derived current state, not a frozen attestation**: they are computed when the
+document is served, so the same release exported on two dates can report different
+`reliza:support:status` values from unchanged underlying dates.
+
+### Uploaded BOMs cannot forge these
+
+The `reliza:support:*` and `reliza:device:*` property namespaces and the `declarations` block are
+**server-owned**. On every egress above -- and on the raw artifact download, and whether or not
+the setting is on -- ReARM strips any of them found in an uploaded BOM before serving it. Their
+presence in a document ReARM served therefore means ReARM put them there.
+
+The strip is deliberately not tied to the setting: it is a security control, while injection is a
+content choice. An organization that has never turned injection on is still protected from an
+uploaded BOM carrying a forged attestation under its name.
+
+The CSV and Excel media types of the SBOM export do not carry component properties at all, so no
+support facts appear in them.
+
 ## VDR Export
 
 Exports vulnerability disclosure data as a [CycloneDX 1.6 VDR](https://cyclonedx.org/capabilities/vdr/).
