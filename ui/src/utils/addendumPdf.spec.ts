@@ -24,7 +24,7 @@ function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
 
 function data (over: Partial<AddendumData> = {}): AddendumData {
     return {
-        releaseUuid: 'r-1', releaseVersion: '1.4.5', componentName: 'Pump',
+        releaseUuid: 'r-1', releaseVersion: '1.4.5', componentName: 'Pump', componentType: 'PRODUCT',
         deviceEos: '2030-06-30', deviceEol: '2033-01-01',
         narrative: 'org words', narrativeIsPerRelease: false, orgName: 'Acme',
         patchesMayCeaseStatement: null, riskTransferProcessRef: null, riskIncreasesNotice: null,

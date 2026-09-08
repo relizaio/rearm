@@ -59,11 +59,13 @@ describe('the FDA addendum export is wired into the export modal', () => {
         expect(source).not.toMatch(/n-switch[^>]*addendum/i)
     })
 
-    // Declared, not just referenced: the template uses it in four places, and an undefined
-    // identifier in <script setup> is a runtime error this build does not catch.
-    it('declares isAddendumExport, which the template gates four controls on', () => {
+    // Declared, not just referenced: an undefined identifier in <script setup> is a runtime
+    // error this build does not catch. It now gates the addendum's explanatory alert, and
+    // feeds isFdaDocumentExport, which gates the shaping controls for ALL three documents.
+    it('declares isAddendumExport and uses it for the addendum-specific alert', () => {
         expect(source).toMatch(/const isAddendumExport\b/)
-        expect((source.match(/isAddendumExport/g) || []).length).toBeGreaterThanOrEqual(5)
+        expect(source).toMatch(/<n-alert v-if="isAddendumExport"/)
+        expect(source).toMatch(/isAddendumExport\.value \|\|/)
     })
 
     // One collection, one refusal path, branching only at the render step -- a partial
@@ -104,8 +106,10 @@ describe('the FDA addendum export is wired into the export modal', () => {
     // FOUR, not three. The artifact-coverage-type filter was left ungated when its three
     // siblings were gated, so it stayed visible and toggleable while exportFdaAddendum
     // ignored it entirely -- the exact "dropped on the floor" failure the gate exists for.
-    it('hides all four BOM-shaping controls for EITHER addendum encoding', () => {
-        const gates = source.match(/v-if="!isAddendumExport"/g) || []
+    // The predicate widened to isFdaDocumentExport when the statement arrived; the count is
+    // what this test is really protecting.
+    it('hides all four BOM-shaping controls for every FDA document', () => {
+        const gates = source.match(/v-if="!isFdaDocumentExport"/g) || []
         expect(gates.length).toBe(4)
     })
 
