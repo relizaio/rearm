@@ -12,6 +12,7 @@
 import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
 import type { AddendumData } from './addendumData'
+import { fontCoverageRefusal } from './pdfFontCoverage'
 import { ADDENDUM_COLUMNS, ADDENDUM_TITLE, addendumRow, addendumHeaderRows, displayOrder,
     addendumFileStem } from './addendumDocument'
 
@@ -40,58 +41,16 @@ function cell (value: unknown): string {
 }
 
 /**
- * The codepoint ranges the bundled Roboto can actually draw.
+ * The characters in THIS document that the PDF font cannot draw, or null if there are none.
  *
- * pdfmake ships ROBOTO ONLY. A character it has no glyph for is not flagged, substituted or
- * warned about -- it is silently DROPPED, so a component named in Japanese produces an EMPTY
- * cell in a regulatory document while the CSV for the same release shows the text. Blank is
- * the one thing this document must never be ambiguous about.
- *
- * Determined by RENDERING and extracting, not by reading a spec: Latin (including Extended-A,
- * Turkish and Vietnamese), Greek, Cyrillic, punctuation and currency draw; Latin Extended-B,
- * arrows, emoji, Hebrew, Arabic, Hangul, Thai, Devanagari and CJK do not.
- *
- * DELIBERATELY CONSERVATIVE. It is a whitelist, so an unlisted script is refused rather than
- * rendered blank, and it will refuse some characters Roboto could in fact draw. That trade is
- * the point: a false refusal is visible, explained and recoverable via the CSV, while a false
- * render is an invisible hole in a document someone files.
- */
-const RENDERABLE = [
-    [0x09, 0x0a], [0x0d, 0x0d],
-    [0x20, 0x17f],      // Basic Latin, Latin-1 Supplement, Latin Extended-A
-    [0x370, 0x3ff],     // Greek
-    [0x400, 0x4ff],     // Cyrillic
-    [0x1e00, 0x1eff],   // Latin Extended Additional (Vietnamese)
-    [0x2010, 0x201f],   // dashes and quotation marks
-    [0x2020, 0x2027], [0x2030, 0x203a],
-    [0x20a0, 0x20bf],   // currency
-    [0x2122, 0x2122]    // trade mark
-]
-
-function isRenderable (code: number): boolean {
-    return RENDERABLE.some(([lo, hi]) => code >= lo && code <= hi)
-}
-
-/**
- * The characters in this document that the PDF font cannot draw, or null if there are none.
- *
- * Returned rather than thrown so the caller refuses in the same voice as every other addendum
- * refusal -- no document at all, with a reason, instead of one that quietly omits words the
- * manufacturer wrote.
+ * Thin wrapper over the shared coverage check: it knows which strings this document prints,
+ * and nothing about fonts.
  */
 export function findUnrenderableText (d: AddendumData): string | null {
-    const offenders = new Set<string>()
-    const scan = (v: unknown) => {
-        const t = cell(v)
-        for (const ch of t) if (!isRenderable(ch.codePointAt(0) as number)) offenders.add(ch)
-    }
-    for (const row of addendumHeaderRows(d)) row.forEach(scan)
-    for (const c of d.components) addendumRow(c).forEach(scan)
-    if (!offenders.size) return null
-    const sample = [...offenders].slice(0, 12).join(' ')
-    return 'This release contains characters the PDF font cannot draw (' + sample + ').'
-        + ' They would be silently dropped, leaving blank cells in a document that is meant to'
-        + ' be complete. Export the CSV instead -- it carries every character.'
+    const texts: Array<string | null | undefined> = []
+    for (const row of addendumHeaderRows(d)) row.forEach(v => texts.push(cell(v)))
+    for (const c of d.components) addendumRow(c).forEach(v => texts.push(cell(v)))
+    return fontCoverageRefusal(texts, 'support addendum')
 }
 
 /**

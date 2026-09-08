@@ -44,6 +44,7 @@ const COMPONENTS: AddendumComponent[] = [
 
 const DATA: AddendumData = {
     releaseUuid: 'r-parity', releaseVersion: '9000.1.0', componentName: 'Infusion Pump 9000',
+    componentType: 'PRODUCT',
     deviceEos: '2030-06-30', deviceEol: null,
     narrative: 'Assessed per DHF-PROC-9001, "rev D", including a comma.',
     narrativeIsPerRelease: true, orgName: 'Acme, Inc.',

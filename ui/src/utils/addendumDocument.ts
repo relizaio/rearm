@@ -25,6 +25,20 @@ import { isLiveAttestation } from './addendumData'
  */
 export const ADDENDUM_TITLE = 'FDA software support addendum'
 
+/**
+ * How the three org-authored labeling statements are named, wherever a document names them.
+ *
+ * Shared because BOTH documents name them and they must agree: the addendum labels them as
+ * header rows, and the statement names them when it BLOCKS on a missing one. An operator told
+ * "Risk-transfer process reference is missing" has to find that same wording in the settings
+ * form and in the addendum, or the message sends them looking for something else.
+ */
+export const PROSE_SLOT_LABELS = {
+    patchesMayCease: 'Patches may cease at end of support',
+    riskTransferRef: 'Risk-transfer process reference',
+    riskIncreases: 'Risk increases over time'
+} as const
+
 export const ADDENDUM_COLUMNS = [
     'Component', 'Version', 'PURL', 'Level of support', 'End of support',
     'Justification', 'Attestation state', 'Last assessed'
@@ -125,9 +139,9 @@ export function addendumHeaderRows (d: AddendumData): unknown[][] {
         rows.push(['Justification scope', d.narrativeIsPerRelease ? 'this release' : 'organization default'])
         rows.push([])
     }
-    if (d.patchesMayCeaseStatement) rows.push(['Patches may cease at end of support', d.patchesMayCeaseStatement])
-    if (d.riskTransferProcessRef) rows.push(['Risk-transfer process reference', d.riskTransferProcessRef])
-    if (d.riskIncreasesNotice) rows.push(['Risk increases over time', d.riskIncreasesNotice])
+    if (d.patchesMayCeaseStatement) rows.push([PROSE_SLOT_LABELS.patchesMayCease, d.patchesMayCeaseStatement])
+    if (d.riskTransferProcessRef) rows.push([PROSE_SLOT_LABELS.riskTransferRef, d.riskTransferProcessRef])
+    if (d.riskIncreasesNotice) rows.push([PROSE_SLOT_LABELS.riskIncreases, d.riskIncreasesNotice])
     if (d.patchesMayCeaseStatement || d.riskTransferProcessRef || d.riskIncreasesNotice) rows.push([])
     return rows
 }
@@ -161,7 +175,22 @@ export function displayOrder (components: AddendumComponent[]): AddendumComponen
  * into a failed export rather than an awkwardly named file.
  */
 export function addendumFileStem (d: AddendumData): string {
+    return `fda-support-addendum-${releaseSlug(d)}`
+}
+
+/**
+ * The release's identity as a filename-safe slug, shared by EVERY document.
+ *
+ * Split out of addendumFileStem when the Device Support Statement arrived with its own
+ * character-for-character copy of this rule -- the same duplication the previous PR removed
+ * from between the CSV and the PDF, reappearing the moment a third document was added,
+ * because the stem baked in a prefix only two of the three wanted.
+ *
+ * Falls back through version, then uuid, then a fixed word. The last step matters: an earlier
+ * copy threw a TypeError when both were absent, turning a nameless release into a failed
+ * export rather than an awkwardly named file.
+ */
+export function releaseSlug (d: AddendumData): string {
     const raw = d.releaseVersion || d.releaseUuid || 'release'
-    const slug = String(raw).replace(/[^A-Za-z0-9._-]+/g, '-')
-    return `fda-support-addendum-${slug || 'release'}`
+    return String(raw).replace(/[^A-Za-z0-9._-]+/g, '-') || 'release'
 }

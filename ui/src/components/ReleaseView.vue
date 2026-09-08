@@ -85,7 +85,7 @@
                          addendum always walks the whole release scope, so an operator who
                          ticked "Top Level Dependencies Only" and got a full-scope document
                          would have no way to tell the control had been dropped on the floor. -->
-                    <n-form-item v-if="!isAddendumExport">
+                    <n-form-item v-if="!isFdaDocumentExport">
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
                                 Select SBOM configuration for export
@@ -124,8 +124,25 @@
                                  along with whichever format was picked. -->
                             <n-radio-button value="FDA_ADDENDUM">FDA support addendum (CSV)</n-radio-button>
                             <n-radio-button value="FDA_ADDENDUM_PDF">FDA support addendum (PDF)</n-radio-button>
+                            <!-- A different DOCUMENT for a different reader: FDA L1591-1592
+                                 says the audience may include patients or caregivers with
+                                 limited technical knowledge, so it carries no component
+                                 inventory and no counts. PRODUCT releases only. -->
+                            <n-radio-button value="DEVICE_STATEMENT">Device support statement (PDF)</n-radio-button>
                         </n-radio-group>
                     </n-form-item>
+                    <n-alert v-if="selectedSbomMediaType === 'DEVICE_STATEMENT'" type="default"
+                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
+                        A plain-language statement for patients, caregivers and biomedical
+                        engineers: the device's support dates, and the manufacturer's own
+                        labeling text. Generated for PRODUCT releases only, and only once all
+                        three organization statements have been authored.
+                        <span v-if="!isProductReleaseForStatement" style="display:block; margin-top:6px;">
+                            <strong>This is a component release</strong>, so the statement
+                            cannot be generated here &mdash; open the product release that
+                            ships it.
+                        </span>
+                    </n-alert>
                     <n-alert v-if="isAddendumExport" type="default"
                         :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
                         Every component in this release with its level of support, the end-of-support
@@ -158,7 +175,7 @@
                             />
                         </n-radio-group>
                     </n-form-item>
-                    <n-form-item v-if="!isAddendumExport">
+                    <n-form-item v-if="!isFdaDocumentExport">
                         <span style="display: inline-flex; align-items: center;">
                             Top Level Dependencies Only:
                             <n-tooltip trigger="hover">
@@ -172,7 +189,7 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
-                    <n-form-item v-if="!isAddendumExport">
+                    <n-form-item v-if="!isFdaDocumentExport">
                         <span style="display: inline-flex; align-items: center;">
                             Ignore Optional Dependencies:
                             <n-tooltip trigger="hover">
@@ -193,7 +210,7 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
                     </n-form-item>
-                    <n-form-item v-if="!isAddendumExport">
+                    <n-form-item v-if="!isFdaDocumentExport">
                         <div style="width: 100%;">
                             <div style="display: inline-flex; align-items: center;">
                                 <span style="display: inline-flex; align-items: center;">
@@ -1752,6 +1769,8 @@ import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import { collectAddendumData } from '@/utils/addendumData'
 import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
+import { renderDeviceSupportStatementBlob, deviceSupportStatementFileName,
+    statementBlockReason } from '@/utils/deviceSupportStatement'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
@@ -2836,6 +2855,20 @@ const selectedSbomMediaType = ref('JSON')
  */
 const isAddendumExport: ComputedRef<boolean> = computed((): boolean =>
     selectedSbomMediaType.value === 'FDA_ADDENDUM' || selectedSbomMediaType.value === 'FDA_ADDENDUM_PDF')
+
+/**
+ * Whether the release on screen can carry a device support statement.
+ *
+ * Read from the release already in hand, so the modal says so BEFORE an export attempt walks
+ * the whole component list only to refuse. The renderer still refuses independently -- this
+ * is a courtesy, not the guard.
+ */
+const isProductReleaseForStatement: ComputedRef<boolean> = computed((): boolean =>
+    updatedRelease.value?.componentDetails?.type === 'PRODUCT')
+
+/** Every FDA document, for the controls that apply to none of them. */
+const isFdaDocumentExport: ComputedRef<boolean> = computed((): boolean =>
+    isAddendumExport.value || selectedSbomMediaType.value === 'DEVICE_STATEMENT')
 
 //getAggregatedChangelog
 const showExportSBOMModal: Ref<boolean> = ref(false)
@@ -5122,6 +5155,54 @@ async function uploadNewBomVersion (art: any) {
 }
 
 /**
+ * The Device Support Statement (FDA labeling VI.A), for a patient, caregiver or biomed reader.
+ *
+ * Same collector as the addendum, so the two documents cannot disagree about the device's
+ * dates -- but a different reader, so it carries no inventory, no purls and no counts.
+ *
+ * BLOCKED rather than degraded when it cannot be generated honestly. A component release is
+ * not a device; an unauthored prose slot would leave an empty section, and on a patient-facing
+ * document a silent gap is itself the misleading thing. The block names what is missing and
+ * where to fix it.
+ */
+async function exportDeviceSupportStatement () {
+    try {
+        bomExportPending.value = true
+        const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
+        if (!orgUuid) {
+            Swal.fire('Statement not generated',
+                'This release did not carry an organization, so the required text cannot be'
+                + ' resolved. Reload the page and try again.', 'error')
+            return
+        }
+        const result = await collectAddendumData(graphqlClient as any, updatedRelease.value.uuid, orgUuid)
+        if (!result.ok) {
+            Swal.fire('Statement not generated', result.error, 'error')
+            return
+        }
+        // Every refusal in one place, checked BEFORE anything is built.
+        const blocked = statementBlockReason(result.data)
+        if (blocked) {
+            Swal.fire('Statement not generated', blocked, 'warning')
+            return
+        }
+        const blob = await renderDeviceSupportStatementBlob(result.data)
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = deviceSupportStatementFileName(result.data)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(link.href)
+        notify('success', 'Statement exported', 'Device support statement downloaded.')
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')
+    } finally {
+        bomExportPending.value = false
+    }
+}
+
+/**
  * The FDA support addendum (FDA-Readiness-1 7g): a DIFFERENT DOCUMENT that shares the
  * export modal.
  *
@@ -5199,6 +5280,7 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
     // Routed here rather than from the template so the button keeps one handler and the
     // modal cannot end up with two spinners disagreeing about whether an export is running.
     if (mediaType === 'FDA_ADDENDUM' || mediaType === 'FDA_ADDENDUM_PDF') return exportFdaAddendum(mediaType)
+    if (mediaType === 'DEVICE_STATEMENT') return exportDeviceSupportStatement()
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null

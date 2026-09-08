@@ -133,6 +133,9 @@ describe('collectAddendumData', () => {
         expect(res.data.deviceEol).toBe('2033-01-01')
         expect(res.data.narrative).toBe('org words')
         expect(res.data.narrativeIsPerRelease).toBe(false)
+        // Fetched by the query and previously discarded. The Device Support Statement is one
+        // document per PRODUCT release and must refuse on a component release.
+        expect(res.data.componentType).toBe('PRODUCT')
         expect(res.data.unassessedComponents).toBe(0)
     })
 

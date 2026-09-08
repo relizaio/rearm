@@ -140,6 +140,15 @@ export interface AddendumData {
     releaseVersion: string | null
     componentName: string | null
     /**
+     * PRODUCT or COMPONENT.
+     *
+     * Already fetched by the release query and previously discarded. Kept because the Device
+     * Support Statement is defined as ONE DOCUMENT PER PRODUCT RELEASE and must refuse on a
+     * component release -- and a renderer that had to be told its own release's type by the
+     * call site would be a second source of truth for something this collector already holds.
+     */
+    componentType: string | null
+    /**
      * The two device facts, SEPARATE. End of support and end of sale answer different
      * questions -- when patching stops, and when selling stops -- and a single "support
      * window" cell forces a reader to guess which one a lone date is.
@@ -354,6 +363,7 @@ export async function collectAddendumData (
                 releaseUuid,
                 releaseVersion: blankToNull(release.version),
                 componentName: blankToNull(release.componentDetails?.name),
+                componentType: blankToNull(release.componentDetails?.type),
                 deviceEos: blankToNull(release.eos),
                 deviceEol: blankToNull(release.eol),
                 narrative: resolved.narrative,
