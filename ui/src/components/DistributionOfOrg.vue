@@ -73,6 +73,9 @@
                 <n-form-item label="Phone"><n-input v-model:value="clientForm.contact.phone" /></n-form-item>
                 <n-form-item label="Email"><n-input v-model:value="clientForm.contact.email" /></n-form-item>
                 <n-form-item label="Notes"><n-input v-model:value="clientForm.notes" type="textarea" /></n-form-item>
+                <n-form-item v-if="!clientForm.uuid" :show-label="false">
+                    <n-checkbox v-model:checked="createDefaultSite" data-testid="create-default-site">Create a default site named "Default" with this client's address details</n-checkbox>
+                </n-form-item>
             </n-form>
             <template #action><n-button type="primary" @click="saveClient">Save</n-button></template>
         </n-modal>
@@ -184,7 +187,7 @@ export default { name: 'DistributionOfOrg' }
 import { ref, Ref, computed, ComputedRef, reactive, h, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NTabPane, NTabs, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType } from 'naive-ui'
+import { NTabPane, NTabs, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType, NCheckbox } from 'naive-ui'
 import { CirclePlus, InfoCircle, Edit as EditIcon, Archive as ArchiveIcon } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
@@ -301,6 +304,8 @@ async function onShipReleaseChange (releaseUuid: string) {
 
 const emptyContact = () => ({ address: '', phone: '', email: '' })
 const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contact: emptyContact(), notes: '' })
+// New clients get a "Default" site out of the box (address / phone / email copied from the client) unless unticked.
+const createDefaultSite = ref(true)
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
 const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null, devices: [] })
 // Shipments carry the same two-axis classification as components: nature (HARDWARE /
@@ -578,14 +583,22 @@ const deviceRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => 
 function openClientModal (c?: any) {
     clientForm.uuid = c?.uuid || ''; clientForm.name = c?.name || ''; clientForm.domain = c?.domain || 'GENERIC'
     clientForm.contact = c?.contact ? { ...c.contact } : emptyContact(); clientForm.notes = c?.notes || ''
+    createDefaultSite.value = true
     showClientModal.value = true
 }
 async function saveClient () {
     if (!clientForm.name) { notify('warning', 'Missing', 'Client name is required'); return }
     const input: any = { org: orguuid.value, name: clientForm.name, domain: clientForm.domain, notes: clientForm.notes, contact: clientForm.contact }
-    if (clientForm.uuid) input.uuid = clientForm.uuid
-    await graphqlClient.mutate({ mutation: gql`mutation upsertClient($input: ClientInput!) { upsertClient(input: $input) { uuid } }`, variables: { input } })
-    showClientModal.value = false; notify('success', 'Saved', `Client ${clientForm.name} saved`); await loadClients()
+    const creating = !clientForm.uuid
+    if (!creating) input.uuid = clientForm.uuid
+    const resp: any = await graphqlClient.mutate({ mutation: gql`mutation upsertClient($input: ClientInput!) { upsertClient(input: $input) { uuid } }`, variables: { input } })
+    let withSite = false
+    if (creating && createDefaultSite.value && resp?.data?.upsertClient?.uuid) {
+        const siteInput = { org: orguuid.value, client: resp.data.upsertClient.uuid, name: 'Default', contact: { ...clientForm.contact } }
+        await graphqlClient.mutate({ mutation: gql`mutation upsertSite($input: SiteInput!) { upsertSite(input: $input) { uuid } }`, variables: { input: siteInput } })
+        withSite = true
+    }
+    showClientModal.value = false; notify('success', 'Saved', `Client ${clientForm.name} saved${withSite ? ' with a Default site' : ''}`); await loadClients()
 }
 async function deleteClient (c: any) {
     await graphqlClient.mutate({ mutation: gql`mutation deleteClient($uuid: ID!) { deleteClient(uuid: $uuid) }`, variables: { uuid: c.uuid } })
