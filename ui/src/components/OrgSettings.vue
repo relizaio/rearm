@@ -1245,6 +1245,7 @@ import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
+import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
@@ -3574,7 +3575,7 @@ async function loadOrgSettings() {
         : []
     // ENABLED is the only truthy value; anything else -- DISABLED, null, unset, or a state
     // this build does not know -- reads as off, which matches the server's own default rule.
-    supportInjectionEnabled.value = s?.supportInjection === 'ENABLED'
+    supportInjectionEnabled.value = supportInjectionFromSettings(s)
     supportInjectionBaseline.value = supportInjectionEnabled.value
     const seeded = proseBaselineFrom(s)
     for (const f of FDA_PROSE_FIELDS) {
@@ -3652,7 +3653,25 @@ async function saveOrgSettings() {
 
         const result = (resp.data as any)?.updateOrganizationSettings
         if (result) {
-            store.commit('UPDATE_ORGANIZATION', result)
+            // GRAFT THE ACCEPTED supportInjection BACK ON before committing.
+            //
+            // The mutation deliberately does not select this field (see the comment below:
+            // selecting it makes the whole document invalid on a CE backend that lacks it).
+            // But UPDATE_ORGANIZATION REPLACES the stored organization, so committing the
+            // raw response dropped supportInjection out of the store entirely. Re-entering
+            // this page then hydrated the toggle from the store, read undefined, and rendered
+            // OFF while the backend held ENABLED -- and because the mutation only sends the
+            // field when it differs from that (now wrong) baseline, DISABLED could not be
+            // sent at all without a hard reload. An operator could turn the disclosure on and
+            // be told by this screen that it was off.
+            //
+            // Grafting rather than re-fetching: this is the same claim the baseline
+            // assignment below already makes, that a mutation which did not throw accepted
+            // what it was sent. A fetchMyOrganizations round trip would assert no more than
+            // that and could fail on its own, leaving the store stale after a committed save.
+            // Only when the field is supported -- on a CE mirror it must stay absent.
+            store.commit('UPDATE_ORGANIZATION', organizationToCommit(
+                result, supportInjectionSupported.value, supportInjectionEnabled.value))
             // BEFORE anything that can throw. The mutation has COMMITTED by this point, so
             // the baseline it implies is now the truth, and it is already in hand -- the
             // mutation selects all four fields. Refreshing it via the re-read below instead
