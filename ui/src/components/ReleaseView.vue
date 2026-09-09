@@ -828,21 +828,20 @@
                         </n-form-item>
                     </n-card>
 
-                    <n-alert v-for="e in attestForm.errors()" :key="e" type="error"
-                        :show-icon="false" style="margin-top: 10px; font-size: 12px;">
-                        {{ e }}
-                    </n-alert>
                 </div>
                 <template #footer>
                     <!-- WHY SAVE IS DISABLED, AT THE BUTTON.
-                         errors() has always produced these sentences; nothing rendered them
-                         near the control they gate, so an operator met a dead Save with no
-                         explanation. In the walkthrough two gates were unmet at once -- the
-                         mandatory re-assert reason, which sits far enough up the form to be
-                         below the fold, and the unacknowledged "does the recorded basis still
-                         hold?" prompt -- and filling only the first left Save just as dead.
-                         Board t20260909-061338-23148. A requirement stated only where the
-                         operator is not looking is not stated. -->
+                         MOVED here from the end of the modal BODY, not added: errors() has
+                         always been rendered, as n-alerts after the last card. The body
+                         scrolls and the footer does not, so on a form this long they sat
+                         below the fold -- an operator met a dead Save with the explanation
+                         off screen. In the walkthrough two gates were unmet at once (the
+                         mandatory re-assert reason, and the unacknowledged "does the recorded
+                         basis still hold?" prompt), so filling only the first left Save just
+                         as dead with no visible reason. Board t20260909-061338-23148.
+                         A requirement stated only where the operator is not looking is not
+                         stated -- but stating it TWICE is its own confusion, so there is one
+                         renderer and it is this one. -->
                     <div v-if="!attestLoading && !attestSaving && attestForm.errors().length"
                         style="margin-bottom: 8px; font-size: 12px; color: #d03050;
                                text-align: left; max-width: 560px;">

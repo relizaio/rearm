@@ -5,8 +5,7 @@ vi.mock('pdfmake/build/vfs_fonts', () => ({ default: { vfs: {} } }))
 
 import { buildDeviceSupportStatementDefinition, statementBlockReason, missingProseSlots,
     componentsEndingBeforeDevice, deviceSupportStatementFileName, STATEMENT_TITLE,
-    NOT_DECLARED, REQUIRED_PROSE_SLOTS, renderDeviceSupportStatementBlob,
-    buildDeviceSupportStatementDefinition } from './deviceSupportStatement'
+    NOT_DECLARED, REQUIRED_PROSE_SLOTS, renderDeviceSupportStatementBlob } from './deviceSupportStatement'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
@@ -87,13 +86,29 @@ describe('statementBlockReason', () => {
     })
 
     // Reused from the addendum: pdfmake ships Roboto only and silently drops what it cannot
-    // draw. Written as an escape because this repo is plain-ASCII by rule.
+    // draw. Written as an escape because this repo is plain-ASCII by rule. Checked on a slot
+    // the document ACTUALLY PRINTS.
     it('refuses text the PDF font cannot draw', () => {
         const msg = statementBlockReason(data({
-            components: [comp({ name: '\u65e5\u672c\u8a9e', endOfSupportDate: '2029-01-01' })]
+            riskIncreasesNotice: 'Risk increases \u65e5\u672c\u8a9e'
         })) as string
         expect(msg).not.toBeNull()
         expect(msg).toContain('cannot draw')
+    })
+
+    /**
+     * ...and NOT on a component name, which this document no longer prints.
+     *
+     * The name was in the font whitelist while the ends-sooner section listed components. Once
+     * that section became one fixed sentence, leaving it there turned an unrenderable glyph in
+     * a component name into a HARD REFUSAL of the whole patient-facing statement over text that
+     * cannot appear in it. Caught in review, not by this suite -- which had the opposite
+     * assertion locked in.
+     */
+    it('does not refuse over a component name it will never print', () => {
+        expect(statementBlockReason(data({
+            components: [comp({ name: '\u65e5\u672c\u8a9e', endOfSupportDate: '2029-01-01' })]
+        }))).toBeNull()
     })
 
     it('checks the font AFTER scope and slots, so the most fundamental problem is reported', () => {

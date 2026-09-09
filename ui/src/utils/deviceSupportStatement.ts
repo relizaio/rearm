@@ -87,8 +87,10 @@ export function statementBlockReason (d: AddendumData): string | null {
 /**
  * Components whose ATTESTED end of support falls BEFORE the device's.
  *
- * The only component information this document carries, and only as recorded facts -- a name
- * and a date. Nothing derived: no risk verdict, no ranking, no count of everything else.
+ * Used ONLY to decide whether the ends-sooner section appears. Its names and dates are no
+ * longer printed: the section states the fact in one sentence and carries no component text,
+ * no dates and no count (see the header). So this is a presence test, and the values it
+ * returns must not be rendered or fed to the font-coverage check without revisiting that.
  *
  * A component with no LIVE attestation is not listed. That is not the same as saying it
  * outlives the device -- it means nobody has recorded a date, and asserting anything about it
@@ -133,8 +135,12 @@ function statementStrings (d: AddendumData): Array<string | null | undefined> {
         // states is "every string the document prints", and the next field added to the
         // footer would otherwise escape the whitelist silently.
         d.deviceEos, d.deviceEol, d.releaseUuid, d.generatedAt,
-        d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice,
-        ...componentsEndingBeforeDevice(d).flatMap(c => [c.name, c.date])
+        d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice
+        // NO component names or dates. They were listed here when the ends-sooner section
+        // printed them; it now prints one fixed sentence and no component text at all. Left in
+        // place, this made an unrenderable glyph in a component NAME a HARD REFUSAL of the
+        // whole patient-facing statement, over a string that can no longer appear in it --
+        // a check that had stopped describing the document it guards.
     ]
 }
 

@@ -37,8 +37,17 @@ const mutationResponse = {
     }
 }
 
-function freshStore () {
-    return { organizations: [{ uuid: ORG, name: 'Claude2', settings: { supportInjection: 'DISABLED' } }] }
+function freshStore (supportInjection: string | undefined = 'DISABLED') {
+    return {
+        organizations: [{
+            uuid: ORG,
+            name: 'Claude2',
+            // Fields the mutation does NOT select. They must survive a settings save.
+            type: 'ORGANIZATION',
+            approvalRoles: [{ id: 'QA', displayView: 'QA sign-off' }],
+            settings: { supportInjection, sidPurlMode: 'DISABLED' }
+        }]
+    }
 }
 const orgFromStore = (state: any) => state.organizations.find((o: any) => o.uuid === ORG)
 
@@ -47,18 +56,42 @@ describe('the support-injection toggle survives a save and a re-render', () => {
         const state = freshStore()
 
         // The operator flips the switch on and saves.
-        updateOrganization(state, organizationToCommit(mutationResponse, true, true))
+        updateOrganization(state, organizationToCommit(mutationResponse, true, true,
+            orgFromStore(state)))
 
         // They navigate away and back: the page hydrates from the store, not from the form.
         expect(supportInjectionFromSettings(orgFromStore(state).settings)).toBe(true)
     })
 
+    /**
+     * Seeded ENABLED on purpose. With the store seeded DISABLED this assertion passed even with
+     * the commit neutered, because the expected answer was already the starting value -- it was
+     * vacuous, and the revert probe on the other cases hid that by going red anyway. Starting
+     * from ENABLED means only a commit that actually wrote DISABLED can satisfy it.
+     */
     it('reads OFF again after saving DISABLED', () => {
-        const state = freshStore()
-        updateOrganization(state, organizationToCommit(mutationResponse, true, true))
-        updateOrganization(state, organizationToCommit(mutationResponse, true, false))
+        const state = freshStore('ENABLED')
+        updateOrganization(state, organizationToCommit(mutationResponse, true, false,
+            orgFromStore(state)))
 
         expect(supportInjectionFromSettings(orgFromStore(state).settings)).toBe(false)
+    })
+
+    /**
+     * The general form of the same defect. updateOrganizationSettings returns a PARTIAL
+     * organization and UPDATE_ORGANIZATION replaces what it is given, so every unselected field
+     * was being deleted from the store on each save: `type` downgraded the org to DEFAULT for
+     * the invite-user form, and `approvalRoles` emptied the Approval Roles table until reload.
+     */
+    it('keeps fields the mutation did not select', () => {
+        const state = freshStore()
+        updateOrganization(state, organizationToCommit(mutationResponse, true, true,
+            orgFromStore(state)))
+
+        const org = orgFromStore(state)
+        expect(org.type).toBe('ORGANIZATION')
+        expect(org.approvalRoles).toEqual([{ id: 'QA', displayView: 'QA sign-off' }])
+        expect(org.settings.sidPurlMode).toBe('DISABLED')
     })
 
     /**
@@ -70,7 +103,8 @@ describe('the support-injection toggle survives a save and a re-render', () => {
      */
     it('leaves a DISABLED save sendable after an ENABLED one', () => {
         const state = freshStore()
-        updateOrganization(state, organizationToCommit(mutationResponse, true, true))
+        updateOrganization(state, organizationToCommit(mutationResponse, true, true,
+            orgFromStore(state)))
 
         const hydratedBaseline = supportInjectionFromSettings(orgFromStore(state).settings)
         const operatorWantsOff = false
@@ -82,13 +116,17 @@ describe('the support-injection toggle survives a save and a re-render', () => {
      * nobody made, and the toggle is hidden on that build anyway.
      */
     it('adds nothing on a backend that does not support the field', () => {
-        const committed = organizationToCommit(mutationResponse, false, true)
+        // Built here rather than via freshStore(): a JS default parameter fires on `undefined`,
+        // so freshStore(undefined) handed back the DISABLED default and the assertion passed
+        // for the wrong reason. A CE org has no such key at all, so that is what is passed.
+        const stored = { uuid: ORG, name: 'Claude2', type: 'ORGANIZATION', settings: {} }
+        const committed = organizationToCommit(mutationResponse, false, true, stored)
         expect(committed.settings.supportInjection).toBeUndefined()
-        expect(committed).toBe(mutationResponse)
+        expect(committed.type).toBe('ORGANIZATION')
     })
 
     it('preserves the prose slots the mutation did return', () => {
-        const committed = organizationToCommit(mutationResponse, true, true)
+        const committed = organizationToCommit(mutationResponse, true, true, null)
         expect(committed.settings.fdaRiskTransferProcessRef).toBe('DHF-SEED-2 rev B')
         expect(committed.settings.fdaPatchesMayCeaseStatement).toBe('patches statement seed')
     })

@@ -3680,8 +3680,13 @@ async function saveOrgSettings() {
             // what it was sent. A fetchMyOrganizations round trip would assert no more than
             // that and could fail on its own, leaving the store stale after a committed save.
             // Only when the field is supported -- on a CE mirror it must stay absent.
+            // The stored organization is passed in so the commit MERGES rather than replaces:
+            // the mutation returns a partial org, and UPDATE_ORGANIZATION overwrites whatever
+            // it is given. Without this, every field the mutation does not select -- type,
+            // approvalRoles -- was wiped from the store on every settings save.
             store.commit('UPDATE_ORGANIZATION', organizationToCommit(
-                result, supportInjectionSupported.value, supportInjectionEnabled.value))
+                result, supportInjectionSupported.value, supportInjectionEnabled.value,
+                myorg.value))
             // BEFORE anything that can throw. The mutation has COMMITTED by this point, so
             // the baseline it implies is now the truth, and it is already in hand -- the
             // mutation selects all four fields. Refreshing it via the re-read below instead
