@@ -994,36 +994,46 @@
                             </div>
                         </n-form-item>
 
-                        <!-- The export toggle sits WITH the FDA text because it is the same
-                             decision: what a generated document or export says about support.
-                             Default OFF (D3), so this is the control a manufacturer preparing
-                             a submission must deliberately turn on. -->
-                        <!-- Hidden entirely on a backend that does not declare the field --
-                             a CE mirror before the deferred sync. Offering a switch whose
-                             write the server would reject is worse than not offering it. -->
-                        <n-form-item v-if="supportInjectionSupported"
-                            label="Carry support attestations in BOM exports">
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-switch v-model:value="supportInjectionEnabled"
-                                    :disabled="savingOrgSettings" />
-                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
-                                    Off by default. When on, BOM exports carry this
-                                    organization's support attestations &mdash; the artifact
-                                    download, the SPDX-augmented download and the release SBOM
-                                    export. The raw artifact download never carries them.
-                                    <strong>Forged support properties are always removed,
-                                    whatever this is set to</strong>; this controls only
-                                    whether our own attestations are added.
-                                </span>
-                            </div>
-                        </n-form-item>
-
                         <n-form-item label="Risk increases over time (labeling)">
                             <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
                                     :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
                                 type="textarea" :rows="3" style="max-width: 760px;"
                                 placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
                         </n-form-item>
+
+                        <!-- ITS OWN SECTION, AFTER all three labeling slots.
+                             It previously sat between slot 2 and slot 3, which read as a
+                             fourth piece of labeling text and broke the three apart -- an
+                             operator working down the FDA labeling statements met a switch
+                             about export behaviour in the middle of them. The three slots are
+                             prose that ships INSIDE documents; this decides whether a
+                             document carries attestations at all. Related, not the same kind
+                             of thing, and the ordering now says so. Reported by an operator
+                             running the walkthrough, board t20260909-061338-23148. -->
+                        <!-- Hidden entirely on a backend that does not declare the field --
+                             a CE mirror before the deferred sync. Offering a switch whose
+                             write the server would reject is worse than not offering it. -->
+                        <div v-if="supportInjectionSupported" style="margin-top: 18px;">
+                            <h4 style="margin-bottom: 2px;">Support disclosure export</h4>
+                            <!-- The switch is ADJACENT to the words it controls, not in a
+                                 form-item label column that pushed it to the far right with
+                                 760px of whitespace between the two. A control that far from
+                                 its label is one an operator has to aim at. -->
+                            <n-space align="center" :size="10" style="margin: 8px 0 4px;">
+                                <n-switch v-model:value="supportInjectionEnabled"
+                                    :disabled="savingOrgSettings" />
+                                <span>Carry support attestations in BOM exports</span>
+                            </n-space>
+                            <span class="text-muted" style="display: block; max-width: 760px;">
+                                Off by default. When on, BOM exports carry this
+                                organization's support attestations &mdash; the artifact
+                                download, the SPDX-augmented download and the release SBOM
+                                export. The raw artifact download never carries them.
+                                <strong>Forged support properties are always removed,
+                                whatever this is set to</strong>; this controls only
+                                whether our own attestations are added.
+                            </span>
+                        </div>
 
                         <n-divider style="margin: 22px 0 10px;" />
 
