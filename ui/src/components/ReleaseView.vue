@@ -834,6 +834,21 @@
                     </n-alert>
                 </div>
                 <template #footer>
+                    <!-- WHY SAVE IS DISABLED, AT THE BUTTON.
+                         errors() has always produced these sentences; nothing rendered them
+                         near the control they gate, so an operator met a dead Save with no
+                         explanation. In the walkthrough two gates were unmet at once -- the
+                         mandatory re-assert reason, which sits far enough up the form to be
+                         below the fold, and the unacknowledged "does the recorded basis still
+                         hold?" prompt -- and filling only the first left Save just as dead.
+                         Board t20260909-061338-23148. A requirement stated only where the
+                         operator is not looking is not stated. -->
+                    <div v-if="!attestLoading && !attestSaving && attestForm.errors().length"
+                        style="margin-bottom: 8px; font-size: 12px; color: #d03050;
+                               text-align: left; max-width: 560px;">
+                        <div v-for="e in attestForm.errors()" :key="e"
+                            style="margin-bottom: 2px;">{{ e }}</div>
+                    </div>
                     <n-space justify="end">
                         <n-button size="small" @click="cancelAttest">Cancel</n-button>
                         <n-button size="small" type="primary"
@@ -1806,7 +1821,8 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, supportTag } from '@/utils/supportStatusTag'
+import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, isWithdrawnAttestation, supportTag,
+    WITHDRAWN_TAG } from '@/utils/supportStatusTag'
 import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -4138,9 +4154,14 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
                 return h('div', [h('span', { style: 'color: #999;' }, '\u2014'),
                     unattestedRisk ? h('div', { style: 'margin-top: 3px;' }, [unattestedRisk]) : null])
             }
-            const tag = supportTag(c.supportStatus)
+            // A withdrawn attestation is neither a live status nor an unassessed component.
+            // Its dates stay on the row -- withdrawal supersedes, it does not erase -- so the
+            // EOS suffix is suppressed with the status: printing "EOS 2025-12-31" beside
+            // "Withdrawn" would put the retracted date back on screen as if it still stood.
+            const withdrawn = isWithdrawnAttestation(c.attestationState)
+            const tag = withdrawn ? WITHDRAWN_TAG : supportTag(c.supportStatus)
             const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
-            if (c.endOfSupportDate) {
+            if (c.endOfSupportDate && !withdrawn) {
                 els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
             }
             // The device check is a second, independent verdict -- see DEVICE_RISK_LABEL. The
