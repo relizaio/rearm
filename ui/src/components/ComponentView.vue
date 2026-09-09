@@ -1034,11 +1034,17 @@
                                             v-model:value="cloneBrProps.name"
                                             required
                                             :placeholder="'Enter cloned ' + words.branchFirstUpper + ' name'" />
-                                            <label>Version Pin of new {{ words.branchFirstUpper }} (Defaults to Version Schema: {{ componentData.featureBranchVersioniong }} )"</label>
-                                        <n-input
+                                        <label>Version schema of new {{ words.branchFirstUpper }} (defaults to the {{ words.branchFirstUpper.toLowerCase() }} schema of {{ componentData.name }}: {{ componentData.featureBranchVersioning || 'not set' }})</label>
+                                        <n-select
                                             v-model:value="cloneBrProps.schema"
-                                            required
-                                            placeholder="Enter Version Pin" />
+                                            tag
+                                            filterable
+                                            :placeholder="'Select version schema for ' + words.branchFirstUpper"
+                                            :options="constants.BranchVersionTypes" />
+                                        <n-input
+                                            v-if="cloneBrProps.schema === 'custom_version'"
+                                            v-model:value="customCloneVersionSchema"
+                                            placeholder="Custom Version Schema" />
                                         <label>Type of new {{ words.branchFirstUpper }}</label>
                                         <n-select
                                             placeholder="Please choose type"
@@ -2224,24 +2230,35 @@ const defaultCloneBrProps = {
 }
 
 const cloneBrProps: Ref<any> = ref(commonFunctions.deepCopy(defaultCloneBrProps))
+const customCloneVersionSchema = ref('')
 
 const cloneBranchReset = function () {
     cloneBrProps.value.name = ''
     cloneBrProps.value.type = ''
     cloneBrProps.value.schema = componentData.value.featureBranchVersioning
+    customCloneVersionSchema.value = ''
 }
 
 const cloneBranchSubmit = async function () {
-    let brProps = {
+    if (!cloneBrProps.value.name) { notify('warning', 'Missing', `Name of the new ${words.value.branchFirstUpper} is required`); return }
+    const versionSchema = cloneBrProps.value.schema === 'custom_version' ? customCloneVersionSchema.value : cloneBrProps.value.schema
+    const brProps = {
         name: cloneBrProps.value.name,
         branchUuid: cloneBrProps.value.originalBranch.uuid,
-        versionSchema: cloneBrProps.value.schema,
-        branchType: cloneBrProps.value.type
+        versionSchema,
+        branchType: cloneBrProps.value.type || null
     }
-    const response: any = store.dispatch('cloneBranch', brProps)
-    selectBranch(response.uuid)
-    cloneBranchReset()
-    showCloneBranchModal.value = false
+    try {
+        const response: any = await store.dispatch('cloneBranch', brProps)
+        await store.dispatch('fetchBranches', { componentId: componentUuid, forceRefresh: true })
+        latestRefreshToken.value++
+        cloneBranchReset()
+        showCloneBranchModal.value = false
+        notify('success', 'Cloned', `${words.value.branchFirstUpper} ${response.name} created`)
+        selectBranch(response.uuid)
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+    }
 }
 
 const onCreateBranchSubmit = async function() {
@@ -2947,14 +2964,23 @@ async function archiveBranchFromList (row: any) {
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
+// Action cells sit on a row whose click / double-click selects or opens the
+// branch. The whole cell swallows both events so a click near the icon can't
+// switch the selection.
+const actionCell = (children: any) => h('div', {
+    style: 'display: flex; justify-content: center; align-items: center; min-height: 28px;',
+    onClick: (e: Event) => e.stopPropagation(),
+    onDblclick: (e: Event) => e.stopPropagation(),
+}, children)
+
 function archiveActionCell (row: any) {
     if (!isWritable.value || row.type === 'BASE') return null
-    return h(NIcon, {
+    return actionCell(h(NIcon, {
         title: 'Archive ' + words.value.branchFirstUpper,
         class: 'icons clickable',
         size: 22,
         onClick: (e: Event) => { e.stopPropagation(); archiveBranchFromList(row) },
-    }, () => h(Trash))
+    }, () => h(Trash)))
 }
 
 const branchFields: any[] = [
@@ -3020,16 +3046,16 @@ const cloneBranchColumn = {
     key: 'manage',
     width: 50,
     render: (row: any) => {
-        return h(
+        return actionCell(h(
             NIcon,
             {
                 title: 'Clone ' + words.value.branchFirstUpper,
                 class: 'icons clickable',
                 size: 25,
-                onClick: () => { cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; showCloneBranchModal.value = true }
+                onClick: (e: Event) => { e.stopPropagation(); cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; customCloneVersionSchema.value = ''; showCloneBranchModal.value = true }
             },
             () => h(Copy)
-        )
+        ))
     }
 }
 const branchColumns = computed(() => (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields)
