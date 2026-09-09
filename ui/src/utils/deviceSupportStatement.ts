@@ -9,6 +9,16 @@
 // The unassessed count is excluded deliberately, not by omission. "412 components not
 // assessed" conveys no risk information to a hospital biomed reader and edges toward
 // misleading under 502(a)(1). It belongs in the addendum, which a reviewer reads.
+//
+// A DELIBERATE DEVIATION FROM PLAN SECTION 7f, KEPT. The plan describes this document as
+// carrying the device dates and the manufacturer's labeling text and nothing else; the
+// "Software components whose support ends sooner" section below is not in it. It stays
+// because a reader told only the device's end-of-support date would reasonably conclude that
+// every part of the device is supported until then, which is false whenever a component's
+// window closes earlier -- and that is precisely the gap section 524B exists to close. What
+// the plan's constraint correctly rules out is the DETAIL, so the section states the fact in
+// one sentence and carries no component names, no dates and no count. An operator walkthrough
+// found it listing all ten components, which was a component inventory by another name.
 
 import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
@@ -198,18 +208,23 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
 
     if (early.length) {
         content.push({ text: 'Software components whose support ends sooner', style: 'h2' })
+        // ONE SENTENCE, NO LIST AND NO COUNT.
+        //
+        // This section used to name every component and its date. On the walkthrough device
+        // that was all ten of them, which is a component inventory by another name -- the one
+        // thing this document is not supposed to carry, because its audience may include
+        // patients and caregivers. A count is no better: "10 of 10" invites a reader with no
+        // way to weigh it to conclude the device is in worse shape than a "3 of 40" device
+        // that happens to be more exposed. The addendum is where per-component detail belongs,
+        // and it is a different document for a different reader.
+        //
+        // The fact still has to be stated -- a reader is entitled to know the device window is
+        // not the whole story -- so what remains is the statement itself, unquantified.
         content.push({
-            text: 'The manufacturer has recorded an earlier end-of-support date for the'
-                + ' following software in this device:',
-            style: 'body'
-        })
-        content.push({
-            style: 'facts',
-            table: {
-                widths: [230, '*'],
-                body: early.map(c => [{ text: c.name }, { text: `support ends ${c.date}` }])
-            },
-            layout: 'noBorders',
+            text: 'Some software in this device has an earlier end-of-support date than the'
+                + ' device itself. Ask the manufacturer for the support addendum if you need'
+                + ' the details for a specific component.',
+            style: 'body',
             margin: [0, 0, 0, 14]
         })
     }
