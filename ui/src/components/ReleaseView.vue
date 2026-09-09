@@ -247,7 +247,7 @@
                     </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
-                            :disabled="bomExportPending"
+                            :disabled="bomExportPending || statementBlockedHere"
                             @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
                             <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
@@ -2881,6 +2881,23 @@ const isProductReleaseForStatement: ComputedRef<boolean> = computed((): boolean 
 /** Every FDA document, for the controls that apply to none of them. */
 const isFdaDocumentExport: ComputedRef<boolean> = computed((): boolean =>
     isAddendumExport.value || selectedSbomMediaType.value === 'DEVICE_STATEMENT')
+
+/**
+ * The Device Support Statement cannot be produced from this release, and we already SAY so in
+ * the panel above the button.
+ *
+ * Leaving Export enabled under that text invited the operator to click it and then answered
+ * with a modal repeating what the panel had just told them. A refusal that is knowable before
+ * the click belongs on the control, not in a dialog after it. Reported from the operator
+ * walkthrough, board t20260909-061338-23148 step 6d.
+ *
+ * ONLY the PRODUCT gate, deliberately. The other refusals inside
+ * exportDeviceSupportStatement -- an unresolvable org, a failed collect, an unauthored prose
+ * slot -- are not knowable until the data is fetched, so those keep their modal. Disabling the
+ * button for a reason we have not checked yet would be a worse lie than the redundant dialog.
+ */
+const statementBlockedHere: ComputedRef<boolean> = computed((): boolean =>
+    selectedSbomMediaType.value === 'DEVICE_STATEMENT' && !isProductReleaseForStatement.value)
 
 //getAggregatedChangelog
 const showExportSBOMModal: Ref<boolean> = ref(false)
