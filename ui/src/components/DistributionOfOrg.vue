@@ -154,7 +154,12 @@
                         <template v-if="effectiveWindowLabel">
                             In force: {{ effectiveWindowLabel }}.
                         </template>
-                        <template v-else>
+                        <!-- Only claimed when we have actually READ a shipment. On create
+                             there is no shipment to resolve through yet, and the old markup
+                             fell through to "No window is declared for this device model" --
+                             a false statement about the product, made at exactly the moment
+                             it would talk someone into a batch override they do not need. -->
+                        <template v-else-if="editingShipment">
                             No window is declared for this device model.
                         </template>
                         Leave both blank to inherit from the product component; fill them to

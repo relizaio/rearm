@@ -36,7 +36,10 @@ describe('the device window panel is wired into the component page', () => {
 
     /** Only a device declares one; the server rejects the write otherwise. */
     it('hides itself on a component that is not a device', () => {
-        expect(source).toMatch(/deviceClass !== 'NONE'/)
+        // The gate reads deviceClassBaseline -- the class the SERVER last confirmed -- not
+        // componentData, which initLoad() rehydrates from the store cache and which therefore
+        // still held the old class right after a successful save.
+        expect(source).toMatch(/deviceClassBaseline\.value !== 'NONE'/)
     })
 
     it('loads the window after the component data exists', () => {
@@ -53,9 +56,19 @@ describe('the device window panel is wired into the component page', () => {
     it('reads the window through its own document, not the mutation response', () => {
         const queries = readFileSync(
             fileURLToPath(new URL('../utils/graphqlQueries.ts', import.meta.url)), 'utf8')
+        // COMMENTS STRIPPED before the check. The claim is about the SELECTION SET -- what
+        // the server is asked for -- and a `#` comment explaining why the field is absent is
+        // the most natural place for the word to appear. Matching against comment prose made
+        // this fail on a change that documented the rule it enforces, which is the same
+        // mistake SupportEnumsSchemaEnumSyncTest made reading docstrings as enum values.
         const fragment = queries.slice(queries.indexOf('const COMPONENT_FULL_DATA'),
             queries.indexOf('const COMPONENT_MUTATE'))
+            .split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
         expect(fragment).not.toMatch(/deviceSupportWindow/)
+        // deviceClass, by contrast, MUST be there: CE declares it, and the panel's gate reads
+        // it off componentData. It was absent, so isDeviceComponent was false for every
+        // component and the panel never rendered for anyone.
+        expect(fragment).toMatch(/^\s*deviceClass\s*$/m)
         expect(source).toMatch(/loadComponentDeviceWindow\(/)
     })
 
@@ -64,7 +77,10 @@ describe('the device window panel is wired into the component page', () => {
         expect(source).toMatch(/deviceWindowMutationInput\(componentUuid,/)
         // name is String! on UpdateComponentInput -- a partial without it is rejected at
         // coercion, so the panel must pass one.
-        expect(source).toMatch(/componentData\.value\?\.name \|\| updatedComponent\.name/)
+        // .value on BOTH: updatedComponent is a Ref, and `updatedComponent.name` in
+        // <script setup> is undefined rather than the name -- the template unwraps Refs, the
+        // script does not. The fallback silently sent name: undefined, which fails coercion.
+        expect(source).toMatch(/componentData\.value\?\.name \|\| updatedComponent\.value\?\.name/)
     })
 })
 
@@ -172,5 +188,98 @@ describe('the shipment device-window override', () => {
     /** SaaS-only surface, so the document is simply never issued by a CE build. */
     it('asks for the window in the shipments query', () => {
         expect(distribution).toMatch(/effectiveDeviceSupportWindow \{ eos eol source \}/)
+    })
+})
+
+/**
+ * The four defects Layer 1 found on this branch, each pinned by the property that was
+ * violated rather than by the text that fixed it.
+ *
+ * All four passed every existing gate: the UI has no vue-tsc, `src/utils/` is unlinted, and
+ * a green build plus a green suite cannot see an unregistered component, an unselected
+ * GraphQL field or a query that is never issued. They shipped a panel that could not render,
+ * a read that always returned early, and a CE protection that was documented but absent.
+ */
+describe('the D7 UI surfaces can actually render and read', () => {
+    it('ComponentView imports NDatePicker, which its pickers need to exist', () => {
+        // naive-ui is NOT globally registered in main.ts -- every component is imported per
+        // file. ReleaseView.vue imports NDatePicker for exactly this reason. Without it the
+        // two <n-date-picker> elements resolve to nothing and the panel has no date inputs.
+        const imports = source.slice(source.indexOf("from 'naive-ui'") - 900,
+            source.indexOf("from 'naive-ui'"))
+        expect(imports).toMatch(/\bNDatePicker\b/)
+        expect(source).toMatch(/<n-date-picker/)
+    })
+
+    it('ComponentView can set the device class, not only read it', () => {
+        // Before this, deviceClass could only be set at CREATE time, so the window panel --
+        // which correctly renders only for a device -- was unreachable for every component
+        // that already existed, and D7's "declare it on the product component" had no path.
+        expect(source).toMatch(/saveDeviceClass/)
+        expect(source).toMatch(/DEVICE_CLASS_OPTIONS/)
+        // Re-read after the write: NONE retracts the window server-side, and leaving stale
+        // dates in the form would show a section 524B commitment the server no longer holds.
+        const fn = source.slice(source.indexOf('async function saveDeviceClass'))
+            .slice(0, 1400)
+        expect(fn).toMatch(/loadDeviceWindow\(\)/)
+    })
+
+    it('the release page reads the component uuid from a field its query selects', () => {
+        const release = readFileSync(
+            fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
+        // SINGLE_RELEASE_PRODUCT_GQL -- the query used for PRODUCT releases, which is the
+        // only surface this panel renders on -- does not select the flat `component` field.
+        // Reading it there returned undefined, so the inherited window said "not declared"
+        // regardless of what was declared.
+        const fn = release.slice(release.indexOf('async function loadInheritedDeviceWindow'))
+            .slice(0, 900)
+        expect(fn).toMatch(/componentDetails\?\.uuid/)
+        const queries = readFileSync(
+            fileURLToPath(new URL('../utils/graphqlQueries.ts', import.meta.url)), 'utf8')
+        const product = queries.slice(queries.indexOf('const SINGLE_RELEASE_PRODUCT_GQL'))
+            .slice(0, 6000)
+        expect(product).toMatch(/componentDetails/)
+    })
+
+    it('the addendum collector falls back to CORE instead of issuing FULL alone', () => {
+        const addendum = readFileSync(
+            fileURLToPath(new URL('../utils/addendumData.ts', import.meta.url)), 'utf8')
+        const fn = addendum.slice(addendum.indexOf('export async function collectAddendumData'))
+            .slice(0, 2000)
+        // Issuing FULL directly made ADDENDUM_RELEASE_QUERY_CORE dead outside its own spec,
+        // so the CE protection the split exists for was documented but not present: on CE the
+        // addendum would not generate at all, because the missing subfield invalidates the
+        // WHOLE document rather than returning null.
+        expect(fn).toMatch(/loadWithSchemaDriftFallback/)
+        expect(fn).toMatch(/ADDENDUM_RELEASE_QUERY_CORE/)
+    })
+
+    it('the statement font check covers the user-entered provenance strings', () => {
+        const stmt = readFileSync(
+            fileURLToPath(new URL('../utils/deviceSupportStatement.ts', import.meta.url)), 'utf8')
+        const fn = stmt.slice(stmt.indexOf('function statementStrings')).slice(0, 1600)
+        // A site name and a lot code are the only strings in the document a HUMAN types, and
+        // therefore the likeliest to carry a glyph the embedded font cannot draw. Omitting
+        // them let one through the refusal and into a patient-facing PDF as a blank box.
+        for (const f of ['siteName', 'shipDate', 'batchIdentifier']) expect(fn).toMatch(f)
+    })
+
+    it('the panels are siblings of coreSettingsActions, not children of it', () => {
+        // coreSettingsActions has v-if="hasCoreSettingsChanges && isWritable" -- it is the
+        // UNSAVED-CHANGES action bar. Nested inside it, the device window panel appeared only
+        // after you had edited some other core setting and vanished the moment you saved, so
+        // on a freshly opened component -- every reader following the walkthrough -- it did
+        // not exist at all. This is the defect that made the whole D7 write path unreachable,
+        // and neither the build, the suite nor a GraphQL-driven probe could see it.
+        const bar = source.indexOf('class="coreSettingsActions"')
+        const panel = source.indexOf('THE DEVICE SUPPORT WINDOW LIVES HERE NOW')
+        expect(bar).toBeGreaterThan(-1)
+        expect(panel).toBeGreaterThan(bar)
+        // Everything between the action bar and the panel, with the panel OUTSIDE: the bar's
+        // own div must have closed first. Count div depth across the gap.
+        const gap = source.slice(bar, panel)
+        const opens = (gap.match(/<div\b/g) || []).length
+        const closes = (gap.match(/<\/div>/g) || []).length
+        expect(closes).toBeGreaterThanOrEqual(opens)
     })
 })

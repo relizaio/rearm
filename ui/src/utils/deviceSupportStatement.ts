@@ -135,7 +135,16 @@ function statementStrings (d: AddendumData): Array<string | null | undefined> {
         // states is "every string the document prints", and the next field added to the
         // footer would otherwise escape the whitelist silently.
         d.deviceEos, d.deviceEol, d.releaseUuid, d.generatedAt,
-        d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice
+        d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice,
+        // The SHIPMENT provenance line's three fields. These are USER-ENTERED -- a site name,
+        // a lot code -- which makes them the likeliest strings in the whole document to carry
+        // a glyph the embedded font cannot draw, and the only ones here that are not
+        // server-generated. Omitting them let an unrenderable site name through the refusal
+        // and into a patient-facing PDF as a blank or a tofu box.
+        ...(d.deviceWindowSource && d.deviceWindowSource.level === 'SHIPMENT'
+            ? [d.deviceWindowSource.siteName, d.deviceWindowSource.shipDate,
+                d.deviceWindowSource.batchIdentifier]
+            : [d.deviceWindowSource?.productName])
         // NO component names or dates. They were listed here when the ends-sooner section
         // printed them; it now prints one fixed sentence and no component text at all. Left in
         // place, this made an unrenderable glyph in a component NAME a HARD REFUSAL of the

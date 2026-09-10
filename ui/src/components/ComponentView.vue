@@ -504,8 +504,17 @@
                                                     Reset Changes
                                                 </n-button>
                                             </n-space>
+                                        </div>
 
-                                            <!-- THE DEVICE SUPPORT WINDOW LIVES HERE NOW (D7).
+                                        <!-- SIBLING of coreSettingsActions, never a child. It
+                                             was nested INSIDE that div, whose v-if is
+                                             "hasCoreSettingsChanges && isWritable" -- the
+                                             unsaved-changes action bar. So the panel appeared
+                                             only after you had already edited some OTHER core
+                                             setting, and vanished the moment you saved. On a
+                                             freshly opened component, which is every reader
+                                             following the walkthrough, it did not exist.
+                                             THE DEVICE SUPPORT WINDOW LIVES HERE NOW (D7).
                                                  It was on the product RELEASE until 2026-09-10,
                                                  which meant one physical device could be described
                                                  by a dozen different end-of-support dates depending
@@ -517,6 +526,34 @@
                                                  the field -- a CE mirror before the deferred sync.
                                                  Offering an editor whose save the server would
                                                  reject is worse than not offering it. -->
+                                            <!-- The device class itself, editable. Until this
+                                                 existed, deviceClass could ONLY be set at
+                                                 creation (CreateComponent.vue), so the window
+                                                 panel below -- which correctly renders only for
+                                                 a device -- was unreachable for every component
+                                                 that already existed. D7 puts the section 524B
+                                                 commitment on the product component, so the
+                                                 component has to be able to become a device. -->
+                                            <div v-if="deviceWindowSupported" style="margin-top: 22px;">
+                                                <h4>Device class</h4>
+                                                <n-space align="end" style="margin-bottom: 8px;">
+                                                    <n-select v-model:value="deviceClassEdit"
+                                                        :options="DEVICE_CLASS_OPTIONS" style="width: 240px;"
+                                                        :disabled="!isWritable || savingDeviceClass" />
+                                                    <n-button v-if="isWritable" size="small" type="primary"
+                                                        :disabled="deviceClassEdit === deviceClassBaseline"
+                                                        :loading="savingDeviceClass"
+                                                        @click="saveDeviceClass">Save device class</n-button>
+                                                </n-space>
+                                                <div class="text-muted" style="font-size: 12px; max-width: 720px;">
+                                                    Setting this to anything but <strong>NONE</strong> makes the
+                                                    component a device and reveals its support window below.
+                                                    Setting it back to NONE <strong>retracts any declared
+                                                    window</strong>: the window lives in the medical profile
+                                                    that NONE removes.
+                                                </div>
+                                            </div>
+
                                             <div v-if="deviceWindowSupported && isDeviceComponent"
                                                 style="margin-top: 22px;">
                                                 <h4>Device support window</h4>
@@ -557,7 +594,6 @@
                                                     {{ deviceWindowError }}
                                                 </n-alert>
                                             </div>
-                                        </div>
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS'">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Actions</h4>
@@ -1157,7 +1193,7 @@ import { ComputedRef, ref, Ref, computed, h, onMounted, reactive, watch } from '
 import type { Component } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
+import { NAlert, NDatePicker, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
@@ -1194,6 +1230,8 @@ const originalComponent: Ref<any> = ref({})
 onMounted(async () => {
     await initLoad()
     // After initLoad, so componentData (and therefore isDeviceComponent) is populated.
+    deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
+    deviceClassBaseline.value = deviceClassEdit.value
     await loadDeviceWindow()
     // Initialize component settings modal from URL query parameter after data is loaded
     if (route.query.componentSettingsView === 'true') {
@@ -1340,10 +1378,59 @@ const deviceWindowSupported: Ref<boolean> = ref(false)
 const savingDeviceWindow: Ref<boolean> = ref(false)
 const deviceWindowError: Ref<string | null> = ref(null)
 
-/** Only a device declares one; the server rejects the write otherwise. */
+const DEVICE_CLASS_OPTIONS = [
+    { label: 'NONE -- not a device', value: 'NONE' },
+    { label: 'MEDICAL_UNTRACKED', value: 'MEDICAL_UNTRACKED' },
+    { label: 'MEDICAL_TRACKED', value: 'MEDICAL_TRACKED' }
+]
+const deviceClassEdit: Ref<string> = ref('NONE')
+const deviceClassBaseline: Ref<string> = ref('NONE')
+const savingDeviceClass: Ref<boolean> = ref(false)
+
+/**
+ * Only a device declares one; the server rejects the write otherwise.
+ *
+ * Reads deviceClassBaseline -- the class the SERVER last confirmed -- rather than
+ * componentData. initLoad() rehydrates from the store cache and only refetches when the entry
+ * is missing or lacks versionType, so componentData still held the old class right after a
+ * successful save, and the window panel did not appear until a full page reload. baseline is
+ * seeded from componentData on mount and advanced only after the write returns, so it is
+ * never ahead of the server.
+ */
 const isDeviceComponent: ComputedRef<boolean> = computed((): boolean =>
-    !!componentData.value && componentData.value.deviceClass
-        && componentData.value.deviceClass !== 'NONE')
+    !!deviceClassBaseline.value && deviceClassBaseline.value !== 'NONE')
+
+
+/**
+ * Writes the device class, then RE-READS the window rather than assuming it survived.
+ *
+ * Going back to NONE retracts the window server-side, because the window lives inside the
+ * medical profile that NONE removes. Keeping a stale window in the form after that would show
+ * the user dates the server no longer holds -- on a section 524B commitment, the worst
+ * possible thing to be wrong about.
+ */
+async function saveDeviceClass (): Promise<void> {
+    if (!componentUuid || deviceClassEdit.value === deviceClassBaseline.value) return
+    savingDeviceClass.value = true
+    deviceWindowError.value = null
+    try {
+        await graphqlClient.mutate({
+            mutation: graphqlQueries.ComponentMutate,
+            variables: { component: { uuid: componentUuid,
+                name: componentData.value?.name || updatedComponent.value?.name,
+                deviceClass: deviceClassEdit.value } },
+            fetchPolicy: 'no-cache'
+        })
+        await initLoad()
+        deviceClassBaseline.value = deviceClassEdit.value
+        await loadDeviceWindow()
+    } catch (e: any) {
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
+        deviceClassEdit.value = deviceClassBaseline.value
+    } finally {
+        savingDeviceClass.value = false
+    }
+}
 
 const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
     deviceWindow.eos !== deviceWindowBaseline.eos || deviceWindow.eol !== deviceWindowBaseline.eol)
@@ -1368,7 +1455,7 @@ async function saveDeviceWindow (): Promise<void> {
     // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
     // rejected at variable coercion before the resolver runs.
     const input = deviceWindowMutationInput(componentUuid,
-        componentData.value?.name || updatedComponent.name, deviceWindow, deviceWindowBaseline)
+        componentData.value?.name || updatedComponent.value?.name, deviceWindow, deviceWindowBaseline)
     if (!input) return
     savingDeviceWindow.value = true
     deviceWindowError.value = null

@@ -2001,7 +2001,14 @@ async function loadAcollections() {
 const inheritedDeviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
 
 async function loadInheritedDeviceWindow () {
-    const componentUuid = (updatedRelease.value as any)?.component
+    // componentDetails.uuid FIRST, and it is the only one that works on the surface this
+    // panel renders on: SINGLE_RELEASE_PRODUCT_GQL -- the query used for PRODUCT releases,
+    // which is where a device window is shown -- does not select the flat `component` field
+    // at all. Reading it there returned undefined and this function returned early every
+    // time, so the read-only window said "not declared" no matter what was declared. The
+    // flat field is kept as a fallback because SINGLE_RELEASE_GQL does select it.
+    const componentUuid = (updatedRelease.value as any)?.componentDetails?.uuid
+        || (updatedRelease.value as any)?.component
     if (!componentUuid) return
     try {
         const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid, isSchemaDriftError)

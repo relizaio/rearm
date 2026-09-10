@@ -10,6 +10,7 @@
 // them. `deviceEos` is a date string or null, never "not declared".
 
 import gql from 'graphql-tag'
+import { loadWithSchemaDriftFallback } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
 // PAGE SIZE only. That reuse is uncontroversial: it is one server, one resolver, and the
 // same round-trip economics. The CEILING below is deliberately NOT borrowed -- see it.
@@ -322,8 +323,19 @@ export async function collectAddendumData (
     orgUuid: string
 ): Promise<AddendumResult> {
     try {
+        // FULL, falling back to CORE on a drift error -- not FULL alone. CE declares
+        // Component.medicalProfile WITHOUT deviceSupportWindow inside it, so asking for the
+        // subfield makes the WHOLE document invalid there rather than merely null: the
+        // addendum would fail to generate at all on a CE build, which is precisely what the
+        // CORE/FULL split exists to prevent. Issuing FULL directly made CORE dead code
+        // outside its own spec, so the protection was documented but not present.
         const [releaseResp, orgResp, coverageResp] = await Promise.all([
-            client.query({ query: ADDENDUM_RELEASE_QUERY, variables: { releaseUuid, orgUuid }, fetchPolicy: 'network-only' }),
+            loadWithSchemaDriftFallback(client, {
+                fullQuery: ADDENDUM_RELEASE_QUERY_FULL,
+                coreQuery: ADDENDUM_RELEASE_QUERY_CORE,
+                variables: { releaseUuid, orgUuid },
+                extractPath: (d: any) => d
+            }).then(r => ({ data: r.data })),
             client.query({ query: ADDENDUM_ORG_QUERY, variables: {}, fetchPolicy: 'network-only' }),
             loadReleaseSupportCoverage(client, orgUuid, releaseUuid)
         ])
