@@ -10,6 +10,7 @@
 // them. `deviceEos` is a date string or null, never "not declared".
 
 import gql from 'graphql-tag'
+import { loadWithSchemaDriftFallback } from './graphqlDriftFallback'
 import type { DriftFallbackClient } from './graphqlDriftFallback'
 // PAGE SIZE only. That reuse is uncontroversial: it is one server, one resolver, and the
 // same round-trip economics. The CEILING below is deliberately NOT borrowed -- see it.
@@ -57,17 +58,45 @@ export const ADDENDUM_PAGE_QUERY = gql`
         }
     }`
 
-export const ADDENDUM_RELEASE_QUERY = gql`
-    query getAddendumRelease($releaseUuid: ID!, $orgUuid: ID) {
-        release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
+/**
+ * The addendum's release query, in two shapes (decision D7).
+ *
+ * The device support window is declared on the PRODUCT COMPONENT now, not on the release, so
+ * FULL reaches through `componentDetails` to read it. `release.eos`/`eol` are still selected
+ * and still returned -- they are release lifecycle for TEA/CLE -- but they are NO LONGER the
+ * source of `deviceEos`/`deviceEol`.
+ *
+ * **Split because CE cannot answer FULL.** CE's schema declares `Component.medicalProfile` but
+ * NOT `deviceSupportWindow` inside it, so adding the subfield to a `medicalProfile` selection
+ * makes the WHOLE DOCUMENT invalid there -- not just that field null. A CE build issuing FULL
+ * gets a validation error and renders nothing, which is the #339 defect exactly. CORE is what
+ * every backend can answer; on it the device window is simply not available and the addendum
+ * reports "not declared", which is honest rather than wrong.
+ */
+const ADDENDUM_RELEASE_CORE_SELECTION = `
             uuid
             version
             eos
             eol
             fdaAssessmentNarrative
-            componentDetails { name type }
+            componentDetails { uuid name type }`
+
+const addendumReleaseDocument = (selection: string) => `
+    query getAddendumRelease($releaseUuid: ID!, $orgUuid: ID) {
+        release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {${selection}
         }
     }`
+
+export const ADDENDUM_RELEASE_QUERY_CORE = gql`${addendumReleaseDocument(ADDENDUM_RELEASE_CORE_SELECTION)}`
+
+export const ADDENDUM_RELEASE_QUERY_FULL = gql`${addendumReleaseDocument(
+    ADDENDUM_RELEASE_CORE_SELECTION + `
+            componentDetails {
+                medicalProfile { deviceSupportWindow { eos eol } }
+            }`)}`
+
+/** Back-compat alias: the FULL shape is what a Pro build wants. */
+export const ADDENDUM_RELEASE_QUERY = ADDENDUM_RELEASE_QUERY_FULL
 
 /**
  * The ORGANIZATIONS LIST, filtered client-side -- not organization(orgUuid:).
@@ -135,6 +164,36 @@ export interface AddendumComponent {
     assessedAt: string | null
 }
 
+/**
+ * Where a device support window was declared, in the terms a lay reader can act on.
+ *
+ * The SHIPMENT case names the batch by things a person can match against a delivery note --
+ * site and ship date, plus the batch identifier when one was recorded -- rather than by the
+ * word "override" or a uuid. "Override" is our vocabulary, not theirs.
+ */
+export type DeviceWindowProvenance =
+    | { level: 'COMPONENT', productName: string | null }
+    | { level: 'SHIPMENT', siteName: string | null, shipDate: string | null, batchIdentifier: string | null }
+
+/** The statement's provenance line, or null when no window is declared. */
+export function deviceWindowProvenanceLine (
+    p: DeviceWindowProvenance | null | undefined
+): string | null {
+    // Optional on AddendumData, so undefined reaches here from any fixture or caller that
+    // predates D7. Same answer as null: no window declared, so no provenance to state.
+    if (!p) return null
+    if (p.level === 'COMPONENT') {
+        return p.productName
+            ? `These dates are declared on ${p.productName} and apply to every unit of it.`
+            : 'These dates are declared on the product and apply to every unit of it.'
+    }
+    const where = p.siteName ? ` delivered to ${p.siteName}` : ''
+    const when = p.shipDate ? ` on ${p.shipDate}` : ''
+    const batch = p.batchIdentifier ? ` (batch ${p.batchIdentifier})` : ''
+    return `These dates apply to the units${where}${when}${batch}, and may differ from other`
+        + ' deliveries of the same device.'
+}
+
 export interface AddendumData {
     releaseUuid: string
     releaseVersion: string | null
@@ -155,6 +214,14 @@ export interface AddendumData {
      */
     deviceEos: string | null
     deviceEol: string | null
+    /**
+     * WHERE the device window was declared, for the statement's one-line provenance (D7).
+     *
+     * A reader comparing two statements for the same device model needs to know why the dates
+     * differ, and "a different batch declared its own" is the answer. Null when no window is
+     * declared at all -- there is no provenance for a fact that does not exist.
+     */
+    deviceWindowSource?: DeviceWindowProvenance | null
     /** Resolved through resolveNarrative: release override else org default, else null. */
     narrative: string | null
     /** True when the narrative came from the release rather than the org. */
@@ -256,8 +323,19 @@ export async function collectAddendumData (
     orgUuid: string
 ): Promise<AddendumResult> {
     try {
+        // FULL, falling back to CORE on a drift error -- not FULL alone. CE declares
+        // Component.medicalProfile WITHOUT deviceSupportWindow inside it, so asking for the
+        // subfield makes the WHOLE document invalid there rather than merely null: the
+        // addendum would fail to generate at all on a CE build, which is precisely what the
+        // CORE/FULL split exists to prevent. Issuing FULL directly made CORE dead code
+        // outside its own spec, so the protection was documented but not present.
         const [releaseResp, orgResp, coverageResp] = await Promise.all([
-            client.query({ query: ADDENDUM_RELEASE_QUERY, variables: { releaseUuid, orgUuid }, fetchPolicy: 'network-only' }),
+            loadWithSchemaDriftFallback(client, {
+                fullQuery: ADDENDUM_RELEASE_QUERY_FULL,
+                coreQuery: ADDENDUM_RELEASE_QUERY_CORE,
+                variables: { releaseUuid, orgUuid },
+                extractPath: (d: any) => d
+            }).then(r => ({ data: r.data })),
             client.query({ query: ADDENDUM_ORG_QUERY, variables: {}, fetchPolicy: 'network-only' }),
             loadReleaseSupportCoverage(client, orgUuid, releaseUuid)
         ])
@@ -357,6 +435,9 @@ export async function collectAddendumData (
 
         const settings = org?.settings || null
         const resolved = resolveNarrative(release, settings)
+        // Absent on a CORE response (a CE backend cannot answer for it), which correctly
+        // reports the window as "not declared" rather than inventing one.
+        const deviceWindow = release.componentDetails?.medicalProfile?.deviceSupportWindow ?? null
         return {
             ok: true,
             data: {
@@ -364,8 +445,17 @@ export async function collectAddendumData (
                 releaseVersion: blankToNull(release.version),
                 componentName: blankToNull(release.componentDetails?.name),
                 componentType: blankToNull(release.componentDetails?.type),
-                deviceEos: blankToNull(release.eos),
-                deviceEol: blankToNull(release.eol),
+                // D7: the DEVICE window comes from the product component, never from the
+                // release. release.eos/eol are release lifecycle for TEA/CLE -- reading them
+                // here is what made one physical device describable by a dozen different
+                // end-of-support dates depending on which firmware it happened to run.
+                deviceEos: blankToNull(deviceWindow?.eos),
+                deviceEol: blankToNull(deviceWindow?.eol),
+                // Generated from a release, so the window is the product component's. A
+                // shipment-generated statement supplies the SHIPMENT shape instead.
+                deviceWindowSource: (deviceWindow?.eos || deviceWindow?.eol)
+                    ? { level: 'COMPONENT', productName: blankToNull(release.componentDetails?.name) }
+                    : null,
                 narrative: resolved.narrative,
                 narrativeIsPerRelease: resolved.perRelease,
                 orgName: blankToNull(org?.name),

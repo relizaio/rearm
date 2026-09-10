@@ -505,6 +505,95 @@
                                                 </n-button>
                                             </n-space>
                                         </div>
+
+                                        <!-- SIBLING of coreSettingsActions, never a child. It
+                                             was nested INSIDE that div, whose v-if is
+                                             "hasCoreSettingsChanges && isWritable" -- the
+                                             unsaved-changes action bar. So the panel appeared
+                                             only after you had already edited some OTHER core
+                                             setting, and vanished the moment you saved. On a
+                                             freshly opened component, which is every reader
+                                             following the walkthrough, it did not exist.
+                                             THE DEVICE SUPPORT WINDOW LIVES HERE NOW (D7).
+                                                 It was on the product RELEASE until 2026-09-10,
+                                                 which meant one physical device could be described
+                                                 by a dozen different end-of-support dates depending
+                                                 on which firmware it happened to be running. A
+                                                 support commitment that changes with every build is
+                                                 not a commitment.
+
+                                                 Hidden entirely when the backend cannot answer for
+                                                 the field -- a CE mirror before the deferred sync.
+                                                 Offering an editor whose save the server would
+                                                 reject is worse than not offering it. -->
+                                        <!-- The device class itself, editable. Until this
+                                             existed, deviceClass could ONLY be set at
+                                             creation (CreateComponent.vue), so the window
+                                             panel below -- which correctly renders only for
+                                             a device -- was unreachable for every component
+                                             that already existed. D7 puts the section 524B
+                                             commitment on the product component, so the
+                                             component has to be able to become a device. -->
+                                        <div v-if="deviceWindowSupported" style="margin-top: 22px;">
+                                            <h4>Device class</h4>
+                                            <n-space align="end" style="margin-bottom: 8px;">
+                                                <n-select v-model:value="deviceClassEdit"
+                                                    :options="DEVICE_CLASS_OPTIONS" style="width: 240px;"
+                                                    :disabled="!isWritable || savingDeviceClass" />
+                                                <n-button v-if="isWritable" size="small" type="primary"
+                                                    :disabled="deviceClassEdit === deviceClassBaseline"
+                                                    :loading="savingDeviceClass"
+                                                    @click="saveDeviceClass">Save device class</n-button>
+                                            </n-space>
+                                            <div class="text-muted" style="font-size: 12px; max-width: 720px;">
+                                                Setting this to anything but <strong>NONE</strong> makes the
+                                                component a device and reveals its support window below.
+                                                Setting it back to NONE <strong>retracts any declared
+                                                window</strong>: the window lives in the medical profile
+                                                that NONE removes.
+                                            </div>
+                                        </div>
+
+                                        <div v-if="deviceWindowSupported && isDeviceComponent"
+                                            style="margin-top: 22px;">
+                                            <h4>Device support window</h4>
+                                            <n-alert type="default" :show-icon="false"
+                                                style="font-size: 12px; margin: 8px 0 10px; max-width: 720px;">
+                                                Shown separately and never merged: end of support and
+                                                end of sale are different facts, and a reader of the
+                                                Device Support Statement is entitled to both. Blank
+                                                means <strong>not declared</strong>, which is a fact in
+                                                its own right &mdash; not an unknown to fill in.
+                                                <span style="display:block; margin-top:6px;">
+                                                    This is the DEVICE's window, inherited by every
+                                                    release of this product. A release's own end-of-support
+                                                    date is release lifecycle and is set on the release.
+                                                </span>
+                                            </n-alert>
+                                            <n-space align="end" style="margin-bottom: 8px;">
+                                                <div>
+                                                    <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
+                                                    <n-date-picker v-model:formatted-value="deviceWindow.eos"
+                                                        value-format="yyyy-MM-dd" type="date" clearable
+                                                        @update:formatted-value="deviceWindowError = null"
+                                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                                </div>
+                                                <div>
+                                                    <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
+                                                    <n-date-picker v-model:formatted-value="deviceWindow.eol"
+                                                        value-format="yyyy-MM-dd" type="date" clearable
+                                                        @update:formatted-value="deviceWindowError = null"
+                                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                                </div>
+                                                <n-button v-if="isWritable" size="small" type="primary"
+                                                    :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
+                                                    @click="saveDeviceWindow">Save window</n-button>
+                                            </n-space>
+                                            <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
+                                                style="font-size: 12px; max-width: 720px;">
+                                                {{ deviceWindowError }}
+                                            </n-alert>
+                                            </div>
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS'">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Actions</h4>
@@ -1100,11 +1189,11 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ComputedRef, ref, Ref, computed, h, onMounted, watch } from 'vue'
+import { ComputedRef, ref, Ref, computed, h, onMounted, reactive, watch } from 'vue'
 import type { Component } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
+import { NAlert, NDatePicker, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
@@ -1131,12 +1220,19 @@ import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerVal
 import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import graphqlQueries from '../utils/graphqlQueries'
+import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
+import type { DeviceWindowState } from '@/utils/deviceSupportWindowInput'
+import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 
 const updatedComponent: Ref<any> = ref({})
 const originalComponent: Ref<any> = ref({})
 
 onMounted(async () => {
     await initLoad()
+    // After initLoad, so componentData (and therefore isDeviceComponent) is populated.
+    deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
+    deviceClassBaseline.value = deviceClassEdit.value
+    await loadDeviceWindow()
     // Initialize component settings modal from URL query parameter after data is loaded
     if (route.query.componentSettingsView === 'true') {
         await openComponentSettings()
@@ -1270,6 +1366,121 @@ const componentData: ComputedRef<any> = computed((): any => {
 })
 
 const isComponent : Ref<boolean> = ref(true)
+
+// ---- Device support window (D7) ---------------------------------------------------------
+// Declared on the PRODUCT COMPONENT, inherited by every release, optionally overridden per
+// shipment. Read through its own document rather than COMPONENT_FULL_DATA: that fragment is
+// the updateComponent MUTATION RESPONSE, and CE declares medicalProfile without this subfield,
+// so folding it in would invalidate the whole mutation and break EVERY component save there.
+const deviceWindow = reactive<DeviceWindowState>({ eos: null, eol: null })
+const deviceWindowBaseline = reactive<DeviceWindowState>({ eos: null, eol: null })
+const deviceWindowSupported: Ref<boolean> = ref(false)
+const savingDeviceWindow: Ref<boolean> = ref(false)
+const deviceWindowError: Ref<string | null> = ref(null)
+
+const DEVICE_CLASS_OPTIONS = [
+    { label: 'NONE -- not a device', value: 'NONE' },
+    { label: 'MEDICAL_UNTRACKED', value: 'MEDICAL_UNTRACKED' },
+    { label: 'MEDICAL_TRACKED', value: 'MEDICAL_TRACKED' }
+]
+const deviceClassEdit: Ref<string> = ref('NONE')
+const deviceClassBaseline: Ref<string> = ref('NONE')
+const savingDeviceClass: Ref<boolean> = ref(false)
+
+/**
+ * Only a device declares one; the server rejects the write otherwise.
+ *
+ * Reads deviceClassBaseline -- the class the SERVER last confirmed -- rather than
+ * componentData. initLoad() rehydrates from the store cache and only refetches when the entry
+ * is missing or lacks versionType, so componentData still held the old class right after a
+ * successful save, and the window panel did not appear until a full page reload. baseline is
+ * seeded from componentData on mount and advanced only after the write returns, so it is
+ * never ahead of the server.
+ */
+const isDeviceComponent: ComputedRef<boolean> = computed((): boolean =>
+    !!deviceClassBaseline.value && deviceClassBaseline.value !== 'NONE')
+
+
+/**
+ * Writes the device class, then RE-READS the window rather than assuming it survived.
+ *
+ * Going back to NONE retracts the window server-side, because the window lives inside the
+ * medical profile that NONE removes. Keeping a stale window in the form after that would show
+ * the user dates the server no longer holds -- on a section 524B commitment, the worst
+ * possible thing to be wrong about.
+ */
+async function saveDeviceClass (): Promise<void> {
+    if (!componentUuid || deviceClassEdit.value === deviceClassBaseline.value) return
+    savingDeviceClass.value = true
+    deviceWindowError.value = null
+    try {
+        await graphqlClient.mutate({
+            mutation: graphqlQueries.ComponentMutate,
+            variables: { component: { uuid: componentUuid,
+                name: componentData.value?.name || updatedComponent.value?.name,
+                deviceClass: deviceClassEdit.value } },
+            fetchPolicy: 'no-cache'
+        })
+        await initLoad()
+        deviceClassBaseline.value = deviceClassEdit.value
+        await loadDeviceWindow()
+    } catch (e: any) {
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
+        deviceClassEdit.value = deviceClassBaseline.value
+    } finally {
+        savingDeviceClass.value = false
+    }
+}
+
+const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
+    deviceWindow.eos !== deviceWindowBaseline.eos || deviceWindow.eol !== deviceWindowBaseline.eol)
+
+async function loadDeviceWindow (): Promise<void> {
+    if (!componentUuid) return
+    try {
+        const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid)
+        deviceWindowSupported.value = r.supported
+        deviceWindow.eos = r.window.eos
+        deviceWindow.eol = r.window.eol
+        deviceWindowBaseline.eos = r.window.eos
+        deviceWindowBaseline.eol = r.window.eol
+    } catch (e: any) {
+        // A real failure hides the panel rather than showing an empty editable one: an operator
+        // must never be able to "declare" a window against a backend we could not read.
+        deviceWindowSupported.value = false
+    }
+}
+
+async function saveDeviceWindow (): Promise<void> {
+    // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
+    // rejected at variable coercion before the resolver runs.
+    const input = deviceWindowMutationInput(componentUuid,
+        componentData.value?.name || updatedComponent.value?.name, deviceWindow, deviceWindowBaseline)
+    if (!input) return
+    savingDeviceWindow.value = true
+    deviceWindowError.value = null
+    try {
+        await graphqlClient.mutate({
+            mutation: graphqlQueries.ComponentMutate,
+            variables: { component: input },
+            fetchPolicy: 'no-cache'
+        })
+        // Advance the baseline from what was SENT and accepted -- the mutation deliberately does
+        // not select the window back, for the CE reason above.
+        deviceWindowBaseline.eos = deviceWindow.eos
+        deviceWindowBaseline.eol = deviceWindow.eol
+        notify('success', 'Saved', 'Device support window updated.')
+    } catch (e: any) {
+        // extractGraphQLErrorMessage, not parseGraphQLError: the latter only strips three
+        // known BOM prefixes off e.message and never unwraps graphQLErrors[], so under
+        // Apollo's CombinedGraphQLErrors the SERVER's text -- "End of support cannot be after
+        // end of life", the device-class refusal the walkthrough quotes -- never reaches the
+        // panel. saveDeviceClass 40 lines up already uses the right one.
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
+    } finally {
+        savingDeviceWindow.value = false
+    }
+}
 
 const myUser = store.getters.myuser
 const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)

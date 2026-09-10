@@ -1016,6 +1016,11 @@ const COMPONENT_FULL_DATA = `
     org
     resourceGroup
     type
+    # Read by ComponentView to decide whether the device support window panel applies (D7).
+    # CE declares Component.deviceClass too, so this needs no CORE/FULL split -- unlike
+    # medicalProfile.deviceSupportWindow, which CE does not declare and which therefore has
+    # its own drift-guarded document in utils/componentDeviceWindow.ts.
+    deviceClass
     kind
     versionSchema
     marketingVersionSchema

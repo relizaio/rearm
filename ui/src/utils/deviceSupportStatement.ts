@@ -23,7 +23,7 @@
 import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
 import type { AddendumComponent, AddendumData } from './addendumData'
-import { isLiveAttestation } from './addendumData'
+import { isLiveAttestation, deviceWindowProvenanceLine } from './addendumData'
 import { releaseSlug, PROSE_SLOT_LABELS } from './addendumDocument'
 import { fontCoverageRefusal } from './pdfFontCoverage'
 
@@ -135,7 +135,16 @@ function statementStrings (d: AddendumData): Array<string | null | undefined> {
         // states is "every string the document prints", and the next field added to the
         // footer would otherwise escape the whitelist silently.
         d.deviceEos, d.deviceEol, d.releaseUuid, d.generatedAt,
-        d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice
+        d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice,
+        // The SHIPMENT provenance line's three fields. These are USER-ENTERED -- a site name,
+        // a lot code -- which makes them the likeliest strings in the whole document to carry
+        // a glyph the embedded font cannot draw, and the only ones here that are not
+        // server-generated. Omitting them let an unrenderable site name through the refusal
+        // and into a patient-facing PDF as a blank or a tofu box.
+        ...(d.deviceWindowSource && d.deviceWindowSource.level === 'SHIPMENT'
+            ? [d.deviceWindowSource.siteName, d.deviceWindowSource.shipDate,
+                d.deviceWindowSource.batchIdentifier]
+            : [d.deviceWindowSource?.productName])
         // NO component names or dates. They were listed here when the ends-sooner section
         // printed them; it now prints one fixed sentence and no component text at all. Left in
         // place, this made an unrenderable glyph in a component NAME a HARD REFUSAL of the
@@ -211,6 +220,21 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
             margin: [0, 0, 0, 14]
         }
     ]
+
+    // WHERE THE DATES COME FROM, in one plain line, immediately under them (D7).
+    //
+    // A reader comparing two statements for the same device model needs to know why the dates
+    // differ, and "a different batch declared its own" is the answer. The shipment case names
+    // the batch by things a person can match against a delivery note -- site, ship date, batch
+    // identifier -- never by the word "override" or a uuid: "override" is our vocabulary, not
+    // theirs, and a uuid is not something anyone can check.
+    //
+    // Omitted entirely when no window is declared: there is no provenance for a fact that does
+    // not exist, and a line explaining the origin of two blanks would be noise.
+    const provenance = deviceWindowProvenanceLine(d.deviceWindowSource)
+    if (provenance) {
+        content.push({ text: provenance, style: 'body', margin: [0, 0, 0, 14] })
+    }
 
     if (early.length) {
         content.push({ text: 'Software components whose support ends sooner', style: 'h2' })

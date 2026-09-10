@@ -140,6 +140,42 @@
                         :placeholder="siteDeviceOptions.length ? 'Pick devices from hardware or SaMD shipments at this site, or leave empty' : 'No devices at this site yet — leave empty'" />
                 </n-form-item>
                 <n-form-item v-if="!isSoftwareShipment" label="Quantity *"><n-input-number v-model:value="shipForm.quantity" :min="1" /></n-form-item>
+
+                <!-- THE BATCH'S DEVICE SUPPORT WINDOW OVERRIDE (D7).
+                     Hardware and SaMD only: plain software is not a device and has no section
+                     524B commitment to override, so the block never renders there.
+                     Support commonly runs from SALE OR SHIPMENT ("seven years from date of
+                     sale"), which is a fact about a batch -- and the ship date it anchors to is
+                     the field directly above. -->
+                <template v-if="!isSoftwareShipment">
+                    <n-divider style="margin: 14px 0 8px;" />
+                    <div style="font-size: 13px; margin-bottom: 4px;"><strong>Device support window</strong></div>
+                    <div class="subtle" style="font-size: 12px; margin-bottom: 8px;">
+                        <template v-if="effectiveWindowLabel">
+                            In force: {{ effectiveWindowLabel }}.
+                        </template>
+                        <!-- Only claimed when we have actually READ a shipment. On create
+                             there is no shipment to resolve through yet, and the old markup
+                             fell through to "No window is declared for this device model" --
+                             a false statement about the product, made at exactly the moment
+                             it would talk someone into a batch override they do not need. -->
+                        <template v-else-if="editingShipment">
+                            No window is declared for this device model.
+                        </template>
+                        Leave both blank to inherit from the product component; fill them to
+                        override for this batch only.
+                    </div>
+                    <n-form-item label="Batch end of support">
+                        <n-date-picker style="width: 100%;" type="date" clearable
+                            v-model:formatted-value="shipForm.deviceWindowEos" value-format="yyyy-MM-dd"
+                            placeholder="inherit from the product component" />
+                    </n-form-item>
+                    <n-form-item label="Batch end of life / end of sale">
+                        <n-date-picker style="width: 100%;" type="date" clearable
+                            v-model:formatted-value="shipForm.deviceWindowEol" value-format="yyyy-MM-dd"
+                            placeholder="inherit from the product component" />
+                    </n-form-item>
+                </template>
                 <n-form-item v-if="!isSoftwareShipment" label="Batch identifiers">
                     <n-dynamic-input v-model:value="shipForm.identifiers" :on-create="onCreateBatchId">
                         <template #create-button-default>Add identifier</template>
@@ -193,6 +229,8 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { termsFor, DISTRIBUTION_DOMAIN_OPTIONS } from '@/utils/distributionTerms'
+import { applyShipmentWindowToInput,
+    effectiveWindowLabel as buildEffectiveWindowLabel } from '@/utils/componentDeviceWindow'
 
 const route = useRoute()
 const router = useRouter()
@@ -307,7 +345,18 @@ const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contac
 // New clients get a "Default" site out of the box (address / phone / email copied from the client) unless unticked.
 const createDefaultSite = ref(true)
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
-const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null, devices: [] })
+const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null, devices: [],
+    // D7 batch override. Baselines so an unchanged window sends nothing -- the server stamps
+    // provenance on every write, and a no-op resend would re-attribute a claim nobody touched.
+    deviceWindowEos: null, deviceWindowEol: null,
+    deviceWindowBaselineEos: null, deviceWindowBaselineEol: null })
+
+/** The shipment row currently open in the modal, for the in-force line. */
+const editingShipment: Ref<any> = ref(null)
+
+/** The window in force for the shipment being edited, named with where it was declared. */
+const effectiveWindowLabel: ComputedRef<string> = computed((): string =>
+    buildEffectiveWindowLabel((editingShipment.value as any)?.effectiveDeviceSupportWindow))
 // Shipments carry the same two-axis classification as components: nature (HARDWARE /
 // SOFTWARE, hardware if any constituent component is hardware) and deviceClass. HARDWARE =
 // physical batch; SOFTWARE + MEDICAL_* = SaMD, shipped and tracked per unit like hardware;
@@ -390,7 +439,11 @@ const onCreateUnitId = () => ({ idType: 'SERIAL', idValue: '' })
 // ---- GraphQL ----
 const CLIENT_FIELDS = 'uuid org name domain contact { address phone email } notes'
 const SITE_FIELDS = 'uuid org client name contact { address phone email } notes'
+// D7: the batch's own override plus the window that actually applies, with the level it was
+// declared at. No CORE/FULL split -- the Distribution module is SaaS-only, so this document is
+// never issued by a CE build at all, which is a stronger guarantee than a fallback.
 const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes nature deviceClass devices identifiers { idType idValue } choiceResolutions { choiceRef selectedRefs }'
+    + ' deviceSupportWindow { eos eol } effectiveDeviceSupportWindow { eos eol source }'
 const DEVICE_FIELDS = 'uuid org shippedProduct site versionDrift notes identifiers { idType idValue } plan { expectedRelease } actual { reportedRelease reportedAt source } tracking { receivedDate patientId disposition dispositionDate }'
 
 async function loadClients () {
@@ -635,6 +688,11 @@ async function openShipModal (existing?: any) {
     shipChoices.value = []; Object.keys(shipChoiceSelections).forEach(k => delete shipChoiceSelections[k])
     resolvedIdentity.value = null
     editingShipmentUuid.value = existing?.uuid || ''
+    editingShipment.value = existing || null
+    shipForm.deviceWindowEos = null
+    shipForm.deviceWindowEol = null
+    shipForm.deviceWindowBaselineEos = null
+    shipForm.deviceWindowBaselineEol = null
     if (existing) {
         shipForm.featureSet = existing.featureSet
         shipForm.release = existing.release
@@ -645,6 +703,12 @@ async function openShipModal (existing?: any) {
         shipForm.manufactureDate = existing.manufactureDate || null
         shipForm.expiryDate = existing.expiryDate || null
         shipForm.devices = [...(existing.devices || [])]
+        // The batch's OWN override, not the effective window: seeding from the effective one
+        // would turn an inherited value into an override the moment anything else was saved.
+        shipForm.deviceWindowEos = existing.deviceSupportWindow?.eos || null
+        shipForm.deviceWindowEol = existing.deviceSupportWindow?.eol || null
+        shipForm.deviceWindowBaselineEos = shipForm.deviceWindowEos
+        shipForm.deviceWindowBaselineEol = shipForm.deviceWindowEol
         shipReleases.value = await loadReleasesForBranch(existing.featureSet)
         await Promise.all([loadShipChoices(existing.release), resolveIdentity()])
         for (const cr of (existing.choiceResolutions || [])) {
@@ -679,6 +743,15 @@ async function shipProduct () {
     if (shipForm.shipDate) input.shipDate = shipForm.shipDate
     if (shipForm.manufactureDate && !isSoftwareShipment.value) input.manufactureDate = shipForm.manufactureDate
     if (shipForm.expiryDate) input.expiryDate = shipForm.expiryDate
+    // D7, same three rules as the component panel: unchanged sends nothing, blank-both after
+    // something was declared sends the CLEAR FLAG, and an empty window object is never sent --
+    // the server does not read it as a retraction, so it would leave the old override silently
+    // in force while the form showed it gone.
+    if (!isSoftwareShipment.value) {
+        applyShipmentWindowToInput(input,
+            { eos: shipForm.deviceWindowEos, eol: shipForm.deviceWindowEol },
+            { eos: shipForm.deviceWindowBaselineEos, eol: shipForm.deviceWindowBaselineEol })
+    }
     try {
         if (editingShipmentUuid.value) {
             await graphqlClient.mutate({
