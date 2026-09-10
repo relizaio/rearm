@@ -1637,7 +1637,8 @@ const apiKeySecretsCell = (row: any) => {
         ]
         if (isOrgAdmin.value) {
             kids.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => regenerateApiKeySecret(row, sec.slot) }, { default: () => 'Regenerate' }))
-            kids.push(h(NButton, { size: 'tiny', type: sec.active ? 'warning' : 'primary', onClick: () => setApiKeySecretActive(row, sec.slot, !sec.active) }, { default: () => sec.active ? 'Retire' : 'Enable' }))
+            kids.push(h(NButton, { size: 'tiny', type: sec.active ? 'warning' : 'primary', style: 'margin-right: 4px;', onClick: () => setApiKeySecretActive(row, sec.slot, !sec.active) }, { default: () => sec.active ? 'Retire' : 'Enable' }))
+            kids.push(h(NButton, { size: 'tiny', type: 'error', onClick: () => deleteApiKeySecret(row, sec.slot) }, { default: () => 'Delete' }))
         }
         return h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin: 2px 0;' }, kids)
     })
@@ -1654,10 +1655,32 @@ async function showMintedSecret (forUser: any, title: string) {
     await Swal.fire({ title, customClass: { popup: 'swal-wide' }, html: commonFunctions.getGeneratedApiKeyHTML(forUser), icon: 'success' })
 }
 async function addApiKeySecret (row: any) {
-    if (!(await confirmThen('Add a second secret?', 'Both secrets work until you retire or regenerate one. Move your clients to the new secret, then retire the old one.', 'Add secret'))) return
+    const first = !(row.secrets || []).length
+    if (!first && !(await confirmThen('Add a second secret?', 'Both secrets work until you retire or regenerate one. Move your clients to the new secret, then retire the old one.', 'Add secret'))) return
+    await mintSecret(row.uuid, first ? 'Secret generated' : 'Secret added')
+}
+async function mintSecret (apiKeyUuid: string, title: string) {
     try {
-        const resp: any = await graphqlClient.mutate({ mutation: gql`mutation addApiKeySecret($apiKeyUuid: ID!) { addApiKeySecret(apiKeyUuid: $apiKeyUuid) { id apiKey authorizationHeader } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'no-cache' })
-        await showMintedSecret(resp.data.addApiKeySecret, 'Secret added'); loadProgrammaticAccessKeys(false)
+        const resp: any = await graphqlClient.mutate({ mutation: gql`mutation addApiKeySecret($apiKeyUuid: ID!) { addApiKeySecret(apiKeyUuid: $apiKeyUuid) { id apiKey authorizationHeader } }`, variables: { apiKeyUuid }, fetchPolicy: 'no-cache' })
+        await showMintedSecret(resp.data.addApiKeySecret, title); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+/** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
+async function createOrgKey (apiType: string, notes: string | null, label: string) {
+    let created: any
+    try {
+        const resp: any = await graphqlClient.mutate({ mutation: gql`mutation createOrgApiKey($orgUuid: ID!, $apiType: ApiTypeEnum!, $notes: String) { createOrgApiKey(orgUuid: $orgUuid, apiType: $apiType, notes: $notes) { uuid } }`, variables: { orgUuid: orgResolved.value, apiType, notes }, fetchPolicy: 'no-cache' })
+        created = resp.data.createOrgApiKey
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
+    loadProgrammaticAccessKeys(false)
+    const r = await Swal.fire({ title: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
+    if (r.value) await mintSecret(created.uuid, 'Secret generated')
+}
+async function deleteApiKeySecret (row: any, slot: number) {
+    if (!(await confirmThen(`Delete secret #${slot}?`, 'This cannot be undone. The secret and every access token exchanged with it stop working; the slot becomes free for a new secret.', 'Delete'))) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation deleteApiKeySecret($apiKeyUuid: ID!, $slot: Int!) { deleteApiKeySecret(apiKeyUuid: $apiKeyUuid, slot: $slot) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot }, fetchPolicy: 'no-cache' })
+        notify('success', 'Deleted', `Secret #${slot} deleted`); loadProgrammaticAccessKeys(false)
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 async function regenerateApiKeySecret (row: any, slot: number) {
@@ -3766,35 +3789,14 @@ async function editUser(email: string) {
 async function genFreeFormApiKey() {
     const swalResult = await Swal.fire({
         title: 'Are you sure?',
-        text: 'A new Free Form API Key will be generated.',
+        text: 'A new Free Form API Key id will be created. Its first secret is generated as a separate step.',
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonText: 'Yes, generate it!',
+        confirmButtonText: 'Yes, create it!',
         cancelButtonText: 'No, cancel it'
     })
     if (swalResult.value) {
-        const keyResp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setOrgApiKey($orgUuid: ID!) {
-                    setOrgApiKey(orgUuid: $orgUuid, apiType: FREEFORM) {
-                        id
-                        apiKey
-                        authorizationHeader
-                    }
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
-        loadProgrammaticAccessKeys(false)
-        Swal.fire({
-            title: 'Generated!',
-            customClass: { popup: 'swal-wide' },
-            html: newKeyMessage,
-            icon: 'success'
-        })
+        await createOrgKey('FREEFORM', null, 'Free Form API Key')
     }
 }
 
@@ -3993,26 +3995,7 @@ async function genApiKey() {
             genUserRegistryToken('PUBLIC', setKeyPayload.notes)
             return
         }
-        const keyResp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setOrgApiKey($orgUuid: ID!, $apiType: ApiTypeEnum!, $notes: String) {
-                    setOrgApiKey(orgUuid: $orgUuid, apiType: $apiType, notes: $notes) {
-                        id
-                        apiKey
-                        authorizationHeader
-                    }
-                }`,
-            variables: setKeyPayload,
-            fetchPolicy: 'no-cache'
-        })
-        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
-        loadProgrammaticAccessKeys(false)
-        Swal.fire({
-            title: 'Generated!',
-            customClass: {popup: 'swal-wide'},
-            html: newKeyMessage,
-            icon: 'success'
-        })
+        await createOrgKey(setKeyPayload.apiType, setKeyPayload.notes || null, 'API Key')
     }
     
 }
