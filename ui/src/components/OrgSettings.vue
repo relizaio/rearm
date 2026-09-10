@@ -624,7 +624,7 @@
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Programmatic Access</h5>
-                    <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1900"
+                    <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2400"
                         class="table-hover">
                     </n-data-table>
                     <!-- n-icon v-if="isOrgAdmin" class="clickable" @click="genApiKey"
@@ -662,7 +662,7 @@
             <n-tab-pane name="freeFormKeys" tab="Free Form Keys" v-if="isOrgAdmin">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Free Form Keys</h5>
-                    <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1900"
+                    <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2400"
                         class="table-hover">
                     </n-data-table>
                     <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
@@ -1687,10 +1687,12 @@ const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, rend
 const programmaticAccessFields: Ref<any> = ref([
     {
         key: 'uuid',
+        width: 300,
         title: 'Internal ID'
     },
     {
         key: 'apiId',
+        width: 60,
         title: 'API ID',
         render: (row: any) => {
             let keyId = row.type + "__" + row.object
@@ -1713,18 +1715,22 @@ const programmaticAccessFields: Ref<any> = ref([
     },
     {
         key: 'createdDate',
+        width: 180,
         title: 'Created'
     },
     {
         key: 'accessDate',
+        width: 180,
         title: 'Last Accessed'
     },
     {
         key: 'updatedByName',
+        width: 150,
         title: 'Updated By'
     },
     {
         key: 'object',
+        width: 220,
         title: 'Object',
         render: (row: any) => {
             let el = h('div')
@@ -1748,10 +1754,12 @@ const programmaticAccessFields: Ref<any> = ref([
     },
     {
         key: 'type',
+        width: 110,
         title: 'Type'
     },
     {
         key: 'resolvedApprovals',
+        width: 160,
         title: 'Approvals',
         render: (row: any) => {
             let el = h('div')
@@ -1768,6 +1776,7 @@ const programmaticAccessFields: Ref<any> = ref([
     apiKeySecretsColumn,
     {
         key: 'notes',
+        width: 180,
         title: 'Notes'
     },
     {
@@ -1811,10 +1820,12 @@ const programmaticAccessFields: Ref<any> = ref([
 const freeFormKeyFields: Ref<any> = ref([
     {
         key: 'uuid',
+        width: 300,
         title: 'Internal ID'
     },
     {
         key: 'apiId',
+        width: 60,
         title: 'API ID',
         render: (row: any) => {
             let keyId = row.type + "__" + row.object
@@ -1836,24 +1847,29 @@ const freeFormKeyFields: Ref<any> = ref([
     },
     {
         key: 'createdDate',
+        width: 180,
         title: 'Created'
     },
     {
         key: 'accessDate',
+        width: 180,
         title: 'Last Accessed'
     },
     {
         key: 'updatedByName',
+        width: 150,
         title: 'Updated By'
     },
     apiKeyStatusColumn,
     apiKeySecretsColumn,
     {
         key: 'notes',
+        width: 180,
         title: 'Notes'
     },
     {
         key: 'boundAgents',
+        width: 200,
         title: 'Bound Agent(s)',
         render: (row: any) => {
             const agents = row.boundAgents || []
