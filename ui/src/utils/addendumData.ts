@@ -57,17 +57,45 @@ export const ADDENDUM_PAGE_QUERY = gql`
         }
     }`
 
-export const ADDENDUM_RELEASE_QUERY = gql`
-    query getAddendumRelease($releaseUuid: ID!, $orgUuid: ID) {
-        release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
+/**
+ * The addendum's release query, in two shapes (decision D7).
+ *
+ * The device support window is declared on the PRODUCT COMPONENT now, not on the release, so
+ * FULL reaches through `componentDetails` to read it. `release.eos`/`eol` are still selected
+ * and still returned -- they are release lifecycle for TEA/CLE -- but they are NO LONGER the
+ * source of `deviceEos`/`deviceEol`.
+ *
+ * **Split because CE cannot answer FULL.** CE's schema declares `Component.medicalProfile` but
+ * NOT `deviceSupportWindow` inside it, so adding the subfield to a `medicalProfile` selection
+ * makes the WHOLE DOCUMENT invalid there -- not just that field null. A CE build issuing FULL
+ * gets a validation error and renders nothing, which is the #339 defect exactly. CORE is what
+ * every backend can answer; on it the device window is simply not available and the addendum
+ * reports "not declared", which is honest rather than wrong.
+ */
+const ADDENDUM_RELEASE_CORE_SELECTION = `
             uuid
             version
             eos
             eol
             fdaAssessmentNarrative
-            componentDetails { name type }
+            componentDetails { uuid name type }`
+
+const addendumReleaseDocument = (selection: string) => `
+    query getAddendumRelease($releaseUuid: ID!, $orgUuid: ID) {
+        release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {${selection}
         }
     }`
+
+export const ADDENDUM_RELEASE_QUERY_CORE = gql`${addendumReleaseDocument(ADDENDUM_RELEASE_CORE_SELECTION)}`
+
+export const ADDENDUM_RELEASE_QUERY_FULL = gql`${addendumReleaseDocument(
+    ADDENDUM_RELEASE_CORE_SELECTION + `
+            componentDetails {
+                medicalProfile { deviceSupportWindow { eos eol } }
+            }`)}`
+
+/** Back-compat alias: the FULL shape is what a Pro build wants. */
+export const ADDENDUM_RELEASE_QUERY = ADDENDUM_RELEASE_QUERY_FULL
 
 /**
  * The ORGANIZATIONS LIST, filtered client-side -- not organization(orgUuid:).
@@ -357,6 +385,9 @@ export async function collectAddendumData (
 
         const settings = org?.settings || null
         const resolved = resolveNarrative(release, settings)
+        // Absent on a CORE response (a CE backend cannot answer for it), which correctly
+        // reports the window as "not declared" rather than inventing one.
+        const deviceWindow = release.componentDetails?.medicalProfile?.deviceSupportWindow ?? null
         return {
             ok: true,
             data: {
@@ -364,8 +395,12 @@ export async function collectAddendumData (
                 releaseVersion: blankToNull(release.version),
                 componentName: blankToNull(release.componentDetails?.name),
                 componentType: blankToNull(release.componentDetails?.type),
-                deviceEos: blankToNull(release.eos),
-                deviceEol: blankToNull(release.eol),
+                // D7: the DEVICE window comes from the product component, never from the
+                // release. release.eos/eol are release lifecycle for TEA/CLE -- reading them
+                // here is what made one physical device describable by a dozen different
+                // end-of-support dates depending on which firmware it happened to run.
+                deviceEos: blankToNull(deviceWindow?.eos),
+                deviceEol: blankToNull(deviceWindow?.eol),
                 narrative: resolved.narrative,
                 narrativeIsPerRelease: resolved.perRelease,
                 orgName: blankToNull(org?.name),

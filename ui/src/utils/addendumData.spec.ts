@@ -115,8 +115,13 @@ function fakeClient (opts: {
     }
 }
 
+// D7: the device window is declared on the PRODUCT COMPONENT. The release's own eos/eol are
+// deliberately set to DIFFERENT dates here so that any code reading them instead would produce
+// visibly wrong output rather than an accidentally-passing test.
 const okRelease = { uuid: 'r1', version: '1.4.5', eos: '2030-06-30', eol: '2033-01-01',
-    fdaAssessmentNarrative: null, componentDetails: { name: 'Pump', type: 'PRODUCT' } }
+    fdaAssessmentNarrative: null,
+    componentDetails: { uuid: 'c1', name: 'Pump', type: 'PRODUCT',
+        medicalProfile: { deviceSupportWindow: { eos: '2031-01-31', eol: '2034-12-31' } } } }
 const okOrg = { uuid: 'o1', name: 'Acme', settings: { fdaAssessmentNarrative: 'org words' } }
 
 describe('collectAddendumData', () => {
@@ -129,8 +134,11 @@ describe('collectAddendumData', () => {
         expect(res.ok).toBe(true)
         if (!res.ok) return
         expect(res.data.components).toHaveLength(2)
-        expect(res.data.deviceEos).toBe('2030-06-30')
-        expect(res.data.deviceEol).toBe('2033-01-01')
+        // The PRODUCT COMPONENT's window, not the release's eos/eol (D7). The fixture gives
+        // the release different dates on purpose: if this ever reads them again, these two
+        // assertions fail with the release's values rather than passing by coincidence.
+        expect(res.data.deviceEos).toBe('2031-01-31')
+        expect(res.data.deviceEol).toBe('2034-12-31')
         expect(res.data.narrative).toBe('org words')
         expect(res.data.narrativeIsPerRelease).toBe(false)
         // Fetched by the query and previously discarded. The Device Support Statement is one
@@ -243,7 +251,8 @@ describe('collectAddendumData', () => {
     // PDF-READY: the next PR consumes this unchanged, so nothing here may be CSV-shaped.
     it('returns raw facts, never rendered text', async () => {
         const client = fakeClient({
-            release: { ...okRelease, eos: null, eol: null }, org: okOrg,
+            release: { ...okRelease,
+                componentDetails: { ...okRelease.componentDetails, medicalProfile: null } }, org: okOrg,
             coverage: { total: 0, attested: 0 },
             pages: [{ items: [], totalCount: 0, endCursor: null, hasMore: false }]
         })
@@ -427,5 +436,43 @@ describe('collectAddendumData', () => {
         if (!res.ok) return
         expect(res.data.components[0].levelOfSupportEnum).toBe('ACTIVELY_MAINTAINED')
         expect(res.data.components[0].levelOfSupport).toBe('actively maintained')
+    })
+})
+
+
+describe('the device window source (D7)', () => {
+    /**
+     * A release carrying its own eos/eol whose component declares NO window must report the
+     * device window as not declared. Without this the move off the release would be cosmetic:
+     * every document would keep rendering the release's lifecycle dates as a device support
+     * commitment, and nothing would notice.
+     */
+    it('never falls back to the release lifecycle dates', async () => {
+        const client = fakeClient({
+            release: { ...okRelease, eos: '2030-06-30', eol: '2033-01-01',
+                componentDetails: { ...okRelease.componentDetails, medicalProfile: null } },
+            org: okOrg, coverage: { total: 0, attested: 0 },
+            pages: [{ items: [], totalCount: 0, endCursor: null, hasMore: false }]
+        })
+        const res: any = await collectAddendumData(client as any, 'r1', 'o1')
+        expect(res.ok).toBe(true)
+        expect(res.data.deviceEos).toBeNull()
+        expect(res.data.deviceEol).toBeNull()
+    })
+
+    /**
+     * A CORE response -- what a CE backend can answer -- carries no medicalProfile at all.
+     * "Not declared" is the honest reading; inventing a window from the release would not be.
+     */
+    it('reports not-declared on a response that could not carry the window', async () => {
+        const client = fakeClient({
+            release: { uuid: 'r1', version: '1.4.5', eos: '2030-06-30', eol: '2033-01-01',
+                fdaAssessmentNarrative: null,
+                componentDetails: { uuid: 'c1', name: 'Pump', type: 'PRODUCT' } },
+            org: okOrg, coverage: { total: 0, attested: 0 },
+            pages: [{ items: [], totalCount: 0, endCursor: null, hasMore: false }]
+        })
+        const res: any = await collectAddendumData(client as any, 'r1', 'o1')
+        expect(res.data.deviceEos).toBeNull()
     })
 })
