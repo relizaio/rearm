@@ -624,7 +624,7 @@
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Programmatic Access</h5>
-                    <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys"
+                    <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1900"
                         class="table-hover">
                     </n-data-table>
                     <!-- n-icon v-if="isOrgAdmin" class="clickable" @click="genApiKey"
@@ -662,7 +662,7 @@
             <n-tab-pane name="freeFormKeys" tab="Free Form Keys" v-if="isOrgAdmin">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Free Form Keys</h5>
-                    <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys"
+                    <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1900"
                         class="table-hover">
                     </n-data-table>
                     <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
@@ -1627,7 +1627,9 @@ const apiKeyStatusCell = (row: any) => {
 const apiKeySecretsCell = (row: any) => {
     const secrets: any[] = row.secrets || []
     const lines = secrets.map((sec: any) => {
-        const meta = `created ${sec.createdDate ? sec.createdDate.slice(0, 10) : 'n/a'} · last used ${sec.lastUsedDate ? sec.lastUsedDate.slice(0, 10) : 'never'}`
+        // a legacy slot 1 predates per-secret dates: fall back to the key's own creation date
+        const created = sec.createdDate || (sec.slot === 1 ? row.createdDate : null)
+        const meta = `created ${created ? String(created).slice(0, 10) : 'n/a'} · last used ${sec.lastUsedDate ? String(sec.lastUsedDate).slice(0, 10) : 'never'}`
         const kids: any[] = [
             h('strong', { style: 'margin-right: 4px;' }, `#${sec.slot}`),
             h(NTag, { size: 'tiny', type: sec.active ? 'success' : 'default', style: 'margin-right: 6px;' }, { default: () => sec.active ? 'active' : 'retired' }),
@@ -1679,8 +1681,8 @@ async function setApiKeyStatus (row: any, status: string) {
         notify('success', status === 'INACTIVE' ? 'Deactivated' : 'Activated', `Key ${status.toLowerCase()}`); loadProgrammaticAccessKeys(false)
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
-const apiKeyStatusColumn = { key: 'status', title: 'Status', render: apiKeyStatusCell }
-const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', render: apiKeySecretsCell }
+const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyStatusCell }
+const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeySecretsCell }
 
 const programmaticAccessFields: Ref<any> = ref([
     {
