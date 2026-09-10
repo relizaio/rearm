@@ -30,6 +30,30 @@ export const UNRECOGNISED_TAG: { type: SupportTagType, label: string } =
     { type: 'error', label: 'Unrecognised status' }
 
 /**
+ * A retracted attestation. NOT the same pixels as UNKNOWN, and the difference is the point.
+ *
+ * UNKNOWN means "nobody has assessed this". WITHDRAWN means "somebody assessed it and then
+ * took the claim back" -- the row and its history are still on record. Rendering the second
+ * as the first would erase a diligence record from the screen an auditor reads.
+ */
+export const WITHDRAWN_TAG: { type: SupportTagType, label: string } =
+    { type: 'default', label: 'Withdrawn' }
+
+/**
+ * True when this component's attestation has been retracted.
+ *
+ * The server derives supportStatus UNKNOWN for such a row (SbomComponentDataFetcher), so
+ * without this the list showed "Unknown" -- accurate about the support state, silent about the
+ * fact that a claim once existed. Before that fix it was worse: the retracted milestone dates
+ * were still derived from, so the row rendered a live "End of support" for a claim the
+ * manufacturer had taken back. Found by an operator running the walkthrough, board
+ * t20260909-061338-23148.
+ */
+export function isWithdrawnAttestation (attestationState: unknown): boolean {
+    return attestationState === 'WITHDRAWN'
+}
+
+/**
  * The tag for a support status, or a loud marker when the server sent something this build
  * does not know.
  *

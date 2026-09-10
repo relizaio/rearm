@@ -32,7 +32,8 @@ const COMPONENT_CORE_SELECTION = `
                 isRoot
                 supportStatus
                 supportSource
-                endOfSupportDate`
+                endOfSupportDate
+                attestationState`
 
 /**
  * CORE plus the Pro-only device verdict, by APPENDING rather than by text-substituting into

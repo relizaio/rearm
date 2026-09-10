@@ -86,13 +86,29 @@ describe('statementBlockReason', () => {
     })
 
     // Reused from the addendum: pdfmake ships Roboto only and silently drops what it cannot
-    // draw. Written as an escape because this repo is plain-ASCII by rule.
+    // draw. Written as an escape because this repo is plain-ASCII by rule. Checked on a slot
+    // the document ACTUALLY PRINTS.
     it('refuses text the PDF font cannot draw', () => {
         const msg = statementBlockReason(data({
-            components: [comp({ name: '\u65e5\u672c\u8a9e', endOfSupportDate: '2029-01-01' })]
+            riskIncreasesNotice: 'Risk increases \u65e5\u672c\u8a9e'
         })) as string
         expect(msg).not.toBeNull()
         expect(msg).toContain('cannot draw')
+    })
+
+    /**
+     * ...and NOT on a component name, which this document no longer prints.
+     *
+     * The name was in the font whitelist while the ends-sooner section listed components. Once
+     * that section became one fixed sentence, leaving it there turned an unrenderable glyph in
+     * a component name into a HARD REFUSAL of the whole patient-facing statement over text that
+     * cannot appear in it. Caught in review, not by this suite -- which had the opposite
+     * assertion locked in.
+     */
+    it('does not refuse over a component name it will never print', () => {
+        expect(statementBlockReason(data({
+            components: [comp({ name: '\u65e5\u672c\u8a9e', endOfSupportDate: '2029-01-01' })]
+        }))).toBeNull()
     })
 
     it('checks the font AFTER scope and slots, so the most fundamental problem is reported', () => {
@@ -351,5 +367,71 @@ describe('renderDeviceSupportStatementBlob', () => {
     it('refuses to render for a component release', async () => {
         await expect(renderDeviceSupportStatementBlob(data({ componentType: 'COMPONENT' })))
             .rejects.toThrow(/product release/)
+    })
+})
+
+
+/**
+ * The "ends sooner" section states the FACT and carries no detail.
+ *
+ * It used to name every component and its date. On the walkthrough device that was all ten,
+ * which is a component inventory by another name -- the one thing this document must not be,
+ * because its audience may include patients and caregivers (FDA L1591-1592). A count is no
+ * better: "10 of 10" invites a reader with no way to weigh it to conclude the device is in
+ * worse shape than a "3 of 40" device that is in fact more exposed.
+ *
+ * The section is a deliberate deviation from plan section 7f and is KEPT: a reader told only
+ * the device end-of-support date would reasonably conclude every part is supported until then.
+ */
+describe('the ends-sooner section is a statement, not an inventory', () => {
+    const flatten = (n: any): string =>
+        typeof n === 'string' ? n
+            : Array.isArray(n) ? n.map(flatten).join(' ')
+                : n && typeof n === 'object' ? Object.values(n).map(flatten).join(' ') : ''
+
+    it('says the fact when a component ends sooner', () => {
+        const text = flatten(buildDeviceSupportStatementDefinition(data()))
+        expect(text).toMatch(/Software components whose support ends sooner/)
+        expect(text).toMatch(/Some software in this device has an earlier end-of-support date/)
+    })
+
+    /**
+     * Bounded at the NEXT heading. An unbounded slice runs to the end of the document and
+     * picks up the later sections' own text and pdfmake's style colours, which made the
+     * count assertion below fail on "#444444" -- a test that looked like it had caught
+     * something and had not.
+     */
+    const endsSoonerSection = (d: any): string => {
+        const text = flatten(buildDeviceSupportStatementDefinition(d))
+        const start = text.indexOf('Software components whose support ends sooner')
+        if (start < 0) return ''
+        // Skip the heading's OWN style marker first. flatten() emits { text, style: 'h2' } as
+        // "<heading text> h2", so searching for the next "h2" from here found the heading's
+        // own and returned an EMPTY section -- against which "contains no component name" and
+        // "contains no count" both passed vacuously. The revert probe caught that: restoring
+        // the per-component table failed only one of the three assertions.
+        const rest = text.slice(start + 'Software components whose support ends sooner'.length)
+            .replace(/^\s*h2\s*/, '')
+        const next = rest.indexOf('h2')
+        return next < 0 ? rest : rest.slice(0, next)
+    }
+
+    it('names no component and prints no date in that section', () => {
+        const section = endsSoonerSection(data())
+        expect(section).not.toMatch(/log4j-core/)
+        expect(section).not.toMatch(/2029-01-01/)
+        expect(section).not.toMatch(/support ends \d{4}-/)
+    })
+
+    it('prints no count of affected components', () => {
+        // No bare integers in the sentence: a count is the thing a lay reader cannot weigh.
+        // "10 of 10" reads worse than "3 of 40" to someone with no way to compare them.
+        expect(endsSoonerSection(data())).not.toMatch(/\b\d+\b/)
+    })
+
+    it('omits the section entirely when nothing ends sooner', () => {
+        const text = flatten(buildDeviceSupportStatementDefinition(
+            data({ components: [comp({ endOfSupportDate: null })] })))
+        expect(text).not.toMatch(/Software components whose support ends sooner/)
     })
 })

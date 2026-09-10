@@ -72,3 +72,33 @@ describe('the device support statement is wired into the export modal', () => {
         expect(body.indexOf('link.click()')).toBeLessThan(body.indexOf('revokeObjectURL'))
     })
 })
+
+/**
+ * The Export button is DISABLED under the product gate, not enabled into a modal.
+ *
+ * The panel already tells the operator the statement cannot be generated on a component
+ * release. Leaving Export clickable there answered the click with a dialog repeating that
+ * sentence -- found by an operator running the walkthrough (board t20260909-061338-23148,
+ * step 6d), not by any test, because every unit here passed: the gate text rendered, the
+ * refusal fired, the modal said the right thing.
+ */
+describe('the statement Export button respects the product gate', () => {
+    it('disables Export when the panel is already refusing', () => {
+        expect(source).toMatch(/:disabled="bomExportPending \|\| statementBlockedHere"/)
+    })
+
+    it('derives that only from the statement type and the product gate', () => {
+        expect(source).toMatch(
+            /statementBlockedHere[\s\S]{0,200}selectedSbomMediaType\.value === 'DEVICE_STATEMENT'/)
+        expect(source).toMatch(
+            /statementBlockedHere[\s\S]{0,240}!isProductReleaseForStatement\.value/)
+    })
+
+    /**
+     * The refusals that need data keep their modal. Disabling the button for a reason we have
+     * not checked yet would be a worse lie than the redundant dialog this replaced.
+     */
+    it('leaves the data-dependent refusals as modals', () => {
+        expect(source).toMatch(/Swal\.fire\('Statement not generated', blocked, 'warning'\)/)
+    })
+})

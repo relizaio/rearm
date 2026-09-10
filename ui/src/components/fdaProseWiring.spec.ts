@@ -142,8 +142,23 @@ describe('the export injection toggle is wired into OrgSettings', () => {
 
     // Only ENABLED is on. DISABLED, null, unset, or a value this build does not know all read
     // as off -- which is the server's own default rule (D3).
-    it('treats only ENABLED as on when seeding', () => {
-        expect(orgSettings).toMatch(/supportInjection === 'ENABLED'/)
+    //
+    // The rule itself moved to utils/orgSettingsCommit.ts when the store round trip had to
+    // become testable, so this asserts the component DELEGATES to it rather than re-scanning
+    // for the literal. Scanning here for `supportInjection === 'ENABLED'` would now pass on a
+    // component that had quietly reimplemented the comparison inline and drifted from the
+    // version the unit tests actually cover.
+    it('seeds the toggle through the shared rule', () => {
+        expect(orgSettings).toMatch(/supportInjectionEnabled\.value = supportInjectionFromSettings\(/)
+        expect(orgSettings).toMatch(/from '@\/utils\/orgSettingsCommit'/)
+    })
+
+    // The store commit must carry the accepted value, or the next hydration reads the gap as
+    // OFF while the backend holds ENABLED. Behaviour is covered in orgSettingsCommit.spec.ts;
+    // this pins that the component actually routes its commit through it.
+    it('commits the organization through organizationToCommit', () => {
+        expect(orgSettings).toMatch(
+            /store\.commit\('UPDATE_ORGANIZATION', organizationToCommit\(/)
     })
 
     // Same rule the prose baseline follows: from the mutation response, before anything that

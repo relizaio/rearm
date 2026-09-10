@@ -247,7 +247,7 @@
                     </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
-                            :disabled="bomExportPending"
+                            :disabled="bomExportPending || statementBlockedHere"
                             @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
                             <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
@@ -828,12 +828,26 @@
                         </n-form-item>
                     </n-card>
 
-                    <n-alert v-for="e in attestForm.errors()" :key="e" type="error"
-                        :show-icon="false" style="margin-top: 10px; font-size: 12px;">
-                        {{ e }}
-                    </n-alert>
                 </div>
                 <template #footer>
+                    <!-- WHY SAVE IS DISABLED, AT THE BUTTON.
+                         MOVED here from the end of the modal BODY, not added: errors() has
+                         always been rendered, as n-alerts after the last card. The body
+                         scrolls and the footer does not, so on a form this long they sat
+                         below the fold -- an operator met a dead Save with the explanation
+                         off screen. In the walkthrough two gates were unmet at once (the
+                         mandatory re-assert reason, and the unacknowledged "does the recorded
+                         basis still hold?" prompt), so filling only the first left Save just
+                         as dead with no visible reason. Board t20260909-061338-23148.
+                         A requirement stated only where the operator is not looking is not
+                         stated -- but stating it TWICE is its own confusion, so there is one
+                         renderer and it is this one. -->
+                    <div v-if="!attestLoading && !attestSaving && attestForm.errors().length"
+                        style="margin-bottom: 8px; font-size: 12px; color: #d03050;
+                               text-align: left; max-width: 560px;">
+                        <div v-for="e in attestForm.errors()" :key="e"
+                            style="margin-bottom: 2px;">{{ e }}</div>
+                    </div>
                     <n-space justify="end">
                         <n-button size="small" @click="cancelAttest">Cancel</n-button>
                         <n-button size="small" type="primary"
@@ -1806,7 +1820,8 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, supportTag } from '@/utils/supportStatusTag'
+import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, isWithdrawnAttestation, supportTag,
+    WITHDRAWN_TAG } from '@/utils/supportStatusTag'
 import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -2881,6 +2896,23 @@ const isProductReleaseForStatement: ComputedRef<boolean> = computed((): boolean 
 /** Every FDA document, for the controls that apply to none of them. */
 const isFdaDocumentExport: ComputedRef<boolean> = computed((): boolean =>
     isAddendumExport.value || selectedSbomMediaType.value === 'DEVICE_STATEMENT')
+
+/**
+ * The Device Support Statement cannot be produced from this release, and we already SAY so in
+ * the panel above the button.
+ *
+ * Leaving Export enabled under that text invited the operator to click it and then answered
+ * with a modal repeating what the panel had just told them. A refusal that is knowable before
+ * the click belongs on the control, not in a dialog after it. Reported from the operator
+ * walkthrough, board t20260909-061338-23148 step 6d.
+ *
+ * ONLY the PRODUCT gate, deliberately. The other refusals inside
+ * exportDeviceSupportStatement -- an unresolvable org, a failed collect, an unauthored prose
+ * slot -- are not knowable until the data is fetched, so those keep their modal. Disabling the
+ * button for a reason we have not checked yet would be a worse lie than the redundant dialog.
+ */
+const statementBlockedHere: ComputedRef<boolean> = computed((): boolean =>
+    selectedSbomMediaType.value === 'DEVICE_STATEMENT' && !isProductReleaseForStatement.value)
 
 //getAggregatedChangelog
 const showExportSBOMModal: Ref<boolean> = ref(false)
@@ -4121,9 +4153,14 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
                 return h('div', [h('span', { style: 'color: #999;' }, '\u2014'),
                     unattestedRisk ? h('div', { style: 'margin-top: 3px;' }, [unattestedRisk]) : null])
             }
-            const tag = supportTag(c.supportStatus)
+            // A withdrawn attestation is neither a live status nor an unassessed component.
+            // Its dates stay on the row -- withdrawal supersedes, it does not erase -- so the
+            // EOS suffix is suppressed with the status: printing "EOS 2025-12-31" beside
+            // "Withdrawn" would put the retracted date back on screen as if it still stood.
+            const withdrawn = isWithdrawnAttestation(c.attestationState)
+            const tag = withdrawn ? WITHDRAWN_TAG : supportTag(c.supportStatus)
             const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
-            if (c.endOfSupportDate) {
+            if (c.endOfSupportDate && !withdrawn) {
                 els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
             }
             // The device check is a second, independent verdict -- see DEVICE_RISK_LABEL. The
