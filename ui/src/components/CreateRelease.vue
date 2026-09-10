@@ -45,6 +45,8 @@
                         v-if="releaseCandidates && releaseCandidates.length"
                         v-model="release.uuid"
                         v-on:update:value="value => checkIfCreateNewRelease(value)"
+                        filterable
+                        placeholder="Select or type to filter by version"
                         :options="releaseCandidates" />
                 <div v-if="!isReleasesLoading && releaseCandidates && releaseCandidates.length === 0" style="color: #999; font-style: italic;">
                     No releases discovered.

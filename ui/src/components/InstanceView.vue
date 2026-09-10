@@ -394,6 +394,24 @@
                             @approvalsChanged="fetchInstance" @closeRelease="showReleaseViewModal=false"/>
         </n-modal>
         <n-modal
+            v-model:show="showEditConfigurationModal"
+            preset="dialog"
+            :show-icon="false"
+            style="width: 90%;"
+            title="Edit Extra Configuration"
+        >
+            <n-form-item :label="'Extra Configuration for ' + (focusedProduct?.featureSetDetails?.name || featureSetLabel) + ' (e.g. Helm values file, optional)'">
+                <n-input
+                            type="textarea"
+                            rows="4"
+                            data-testid="product-config-input"
+                            v-model:value="updatedProductConfiguration"
+                            placeholder="Enter extra configuration" />
+            </n-form-item>
+            <n-button type="success" data-testid="product-config-save" @click="saveConfiguration()">Submit</n-button>
+            <n-button type="warning" @click="updatedProductConfiguration = focusedProduct.configuration || ''">Reset</n-button>
+        </n-modal>
+        <n-modal
             v-model:show="showEditPropertyModal"
             preset="dialog"
             :show-icon="false"
@@ -616,6 +634,7 @@ const planChangeTypeOptions = [
     { label: 'Any', key: 'ANY' },
     { label: 'Product Release', key: 'PRODUCT_RELEASE' },
     { label: 'Target Release', key: 'TARGET_RELEASE' },
+    { label: 'Configuration', key: 'CONFIGURATION' },
     { label: 'Property', key: 'PROPERTY' },
     { label: 'Environment', key: 'ENVIRONMENT' }
 ]
@@ -1355,14 +1374,19 @@ const targetReleaseSet = async function (rlz: any) {
     showSelectTargetReleaseModal.value = false
 }
 
-const updateConfiguration = async function (e: any, prl: any) {
-    const updatedProduct = updatedInstance.value.productPlans.find((product: any) => 
+const showEditConfigurationModal = ref(false)
+const updatedProductConfiguration = ref('')
+const saveConfiguration = async function () {
+    const prl = focusedProduct.value
+    const updatedProduct = updatedInstance.value.productPlans.find((product: any) =>
         product.featureSet === prl.featureSet && product.namespace === prl.namespace
     )
-    if (updatedProduct.configuration !== e.target.innerText) {
-        updatedProduct.configuration = e.target.innerText
-        await save() 
+    const newValue = updatedProductConfiguration.value.trim()
+    if (updatedProduct && (updatedProduct.configuration || '') !== newValue) {
+        updatedProduct.configuration = newValue
+        await save()
     }
+    showEditConfigurationModal.value = false
 }
 
 const clearAgentData = async function () {
@@ -1681,16 +1705,24 @@ matchedProductFields.push({
     key: 'config',
     title: 'Config',
     render: (row: any) => {
-        if(isWritable){
-            return h('span', {
-                contenteditable: true,
-                onblur: (e: Event) => {
-                    updateConfiguration(e, row)
+        // Extra configuration (e.g. Helm values file) stays editable after
+        // deployment: every save lands as a plan revision, which the Plan
+        // History tab classifies as a Configuration change.
+        const els: any[] = [h('span', { 'data-testid': 'product-config-value' }, row.configuration || '')]
+        if (isWritable) {
+            els.push(h(NIcon, {
+                title: 'Edit Extra Configuration',
+                class: 'icons clickable',
+                size: 16,
+                'data-testid': 'product-config-edit',
+                onClick: () => {
+                    focusedProduct.value = row
+                    updatedProductConfiguration.value = row.configuration || ''
+                    showEditConfigurationModal.value = true
                 }
-            }, {default: () => row.configuration})
-        }else{
-            return h('span', row.configuration)
+            }, { default: () => h(Edit24Regular) }))
         }
+        return els
     }
 })
 if(props.instanceType === InstanceType.STANDALONE_INSTANCE){
