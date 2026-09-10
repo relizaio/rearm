@@ -164,10 +164,22 @@ describe('the shipment device-window override', () => {
         expect(distribution).toMatch(/v-model:formatted-value="shipForm\.deviceWindowEol"/)
     })
 
-    /** The in-force line has to name WHERE the window came from, or an operator cannot tell
-     *  an inherited value from one this batch already overrode. */
-    it('names the level the effective window came from', () => {
-        expect(distribution).toMatch(/w\.source === 'SHIPMENT' \? 'this batch' : 'the product component'/)
+    /**
+     * WIRING only. What the label SAYS is behaviour, and is tested as behaviour in
+     * utils/shipmentDeviceWindow.spec.ts -- this used to pin the literal ternary, which meant
+     * renaming the local `w` failed the spec with the behaviour unchanged, and a genuinely
+     * wrong string would have passed as long as the shape matched.
+     */
+    it('renders the in-force line through the shared label builder', () => {
+        expect(distribution).toMatch(/buildEffectiveWindowLabel\(/)
+        expect(distribution).toMatch(/from '@\/utils\/componentDeviceWindow'/)
+    })
+
+    it('builds the shipment mutation through the shared rule, not a second copy of it', () => {
+        // The clear-vs-empty rule is identical to the component panel's. Two copies in two
+        // files are two chances to disagree about what "retract" means on a 524B commitment.
+        expect(distribution).toMatch(/applyShipmentWindowToInput\(/)
+        expect(distribution).not.toMatch(/input\.clearDeviceSupportWindow = true/)
     })
 
     /**
@@ -180,9 +192,11 @@ describe('the shipment device-window override', () => {
 
     /** Blank-both after something was declared is a retraction and must send the flag. */
     it('sends the clear flag rather than an empty window object', () => {
-        const save = distribution.slice(distribution.indexOf('D7, same three rules as the component panel'))
-        expect(save.slice(0, 1200)).toMatch(/input\.clearDeviceSupportWindow = true/)
-        expect(save.slice(0, 1200)).not.toMatch(/deviceSupportWindow = \{ eos: null, eol: null \}/)
+        // The RULE moved to utils/componentDeviceWindow.ts and is tested as behaviour in
+        // utils/shipmentDeviceWindow.spec.ts. What stays here is the wiring claim: this file
+        // delegates rather than keeping a second copy of a rule about what "retract" means.
+        expect(distribution).toMatch(/applyShipmentWindowToInput\(/)
+        expect(distribution).not.toMatch(/input\.clearDeviceSupportWindow = true/)
     })
 
     /** SaaS-only surface, so the document is simply never issued by a CE build. */

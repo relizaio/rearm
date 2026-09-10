@@ -474,10 +474,30 @@ describe('the device window provenance line', () => {
 
     /** "Override" is our vocabulary, not a patient's; a uuid is not something anyone can check. */
     it('never uses the word override or prints an identifier a reader cannot match', () => {
-        const text = render({ deviceWindowSource: {
-            level: 'SHIPMENT', siteName: 'St Elsewhere ICU', shipDate: '2026-04-02', batchIdentifier: 'LOT-77' } })
-        expect(text.toLowerCase()).not.toMatch(/override/)
-        expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
+        // A REAL uuid in the fixture. With 'r-1' this assertion was green for the wrong
+        // reason: the page footer prints d.releaseUuid and always has, so a document-wide
+        // "no uuid" claim is false by design and only passed because the fixture had nothing
+        // uuid-shaped in it. Scoped to the provenance LINE, which is the claim
+        // buildDeviceSupportStatementDefinition's provenance block actually makes -- and the
+        // scope d7-window-probe.mjs already uses against the real PDF.
+        const text = render({
+            releaseUuid: '277c971c-687d-46eb-bded-74a55149a978',
+            deviceWindowSource: {
+                level: 'SHIPMENT', siteName: 'St Elsewhere ICU', shipDate: '2026-04-02',
+                batchIdentifier: 'LOT-77' }
+        })
+        // The CONTENT carries no uuid, and the FOOTER deliberately does -- they are different
+        // claims, and `flat()` only walks content, so the old document-wide assertion was
+        // never testing the footer at all. Both stated here so neither can quietly change.
+        expect(text).not.toMatch(/277c971c/)
+        const footerText = (buildDeviceSupportStatementDefinition(
+            data({ releaseUuid: '277c971c-687d-46eb-bded-74a55149a978' })).footer as any)(1, 1)
+            .columns.map((c: any) => c.text).join(' | ')
+        expect(footerText).toMatch(/277c971c/)
+        const line = text.split('\n').find(l => /delivered to/.test(l)) || ''
+        expect(line).not.toBe('')
+        expect(line.toLowerCase()).not.toMatch(/override/)
+        expect(line).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
     })
 
     /** No provenance for a fact that does not exist. */

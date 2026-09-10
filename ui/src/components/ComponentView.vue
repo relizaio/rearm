@@ -526,73 +526,73 @@
                                                  the field -- a CE mirror before the deferred sync.
                                                  Offering an editor whose save the server would
                                                  reject is worse than not offering it. -->
-                                            <!-- The device class itself, editable. Until this
-                                                 existed, deviceClass could ONLY be set at
-                                                 creation (CreateComponent.vue), so the window
-                                                 panel below -- which correctly renders only for
-                                                 a device -- was unreachable for every component
-                                                 that already existed. D7 puts the section 524B
-                                                 commitment on the product component, so the
-                                                 component has to be able to become a device. -->
-                                            <div v-if="deviceWindowSupported" style="margin-top: 22px;">
-                                                <h4>Device class</h4>
-                                                <n-space align="end" style="margin-bottom: 8px;">
-                                                    <n-select v-model:value="deviceClassEdit"
-                                                        :options="DEVICE_CLASS_OPTIONS" style="width: 240px;"
-                                                        :disabled="!isWritable || savingDeviceClass" />
-                                                    <n-button v-if="isWritable" size="small" type="primary"
-                                                        :disabled="deviceClassEdit === deviceClassBaseline"
-                                                        :loading="savingDeviceClass"
-                                                        @click="saveDeviceClass">Save device class</n-button>
-                                                </n-space>
-                                                <div class="text-muted" style="font-size: 12px; max-width: 720px;">
-                                                    Setting this to anything but <strong>NONE</strong> makes the
-                                                    component a device and reveals its support window below.
-                                                    Setting it back to NONE <strong>retracts any declared
-                                                    window</strong>: the window lives in the medical profile
-                                                    that NONE removes.
-                                                </div>
+                                        <!-- The device class itself, editable. Until this
+                                             existed, deviceClass could ONLY be set at
+                                             creation (CreateComponent.vue), so the window
+                                             panel below -- which correctly renders only for
+                                             a device -- was unreachable for every component
+                                             that already existed. D7 puts the section 524B
+                                             commitment on the product component, so the
+                                             component has to be able to become a device. -->
+                                        <div v-if="deviceWindowSupported" style="margin-top: 22px;">
+                                            <h4>Device class</h4>
+                                            <n-space align="end" style="margin-bottom: 8px;">
+                                                <n-select v-model:value="deviceClassEdit"
+                                                    :options="DEVICE_CLASS_OPTIONS" style="width: 240px;"
+                                                    :disabled="!isWritable || savingDeviceClass" />
+                                                <n-button v-if="isWritable" size="small" type="primary"
+                                                    :disabled="deviceClassEdit === deviceClassBaseline"
+                                                    :loading="savingDeviceClass"
+                                                    @click="saveDeviceClass">Save device class</n-button>
+                                            </n-space>
+                                            <div class="text-muted" style="font-size: 12px; max-width: 720px;">
+                                                Setting this to anything but <strong>NONE</strong> makes the
+                                                component a device and reveals its support window below.
+                                                Setting it back to NONE <strong>retracts any declared
+                                                window</strong>: the window lives in the medical profile
+                                                that NONE removes.
                                             </div>
+                                        </div>
 
-                                            <div v-if="deviceWindowSupported && isDeviceComponent"
-                                                style="margin-top: 22px;">
-                                                <h4>Device support window</h4>
-                                                <n-alert type="default" :show-icon="false"
-                                                    style="font-size: 12px; margin: 8px 0 10px; max-width: 720px;">
-                                                    Shown separately and never merged: end of support and
-                                                    end of sale are different facts, and a reader of the
-                                                    Device Support Statement is entitled to both. Blank
-                                                    means <strong>not declared</strong>, which is a fact in
-                                                    its own right &mdash; not an unknown to fill in.
-                                                    <span style="display:block; margin-top:6px;">
-                                                        This is the DEVICE's window, inherited by every
-                                                        release of this product. A release's own end-of-support
-                                                        date is release lifecycle and is set on the release.
-                                                    </span>
-                                                </n-alert>
-                                                <n-space align="end" style="margin-bottom: 8px;">
-                                                    <div>
-                                                        <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
-                                                        <n-date-picker v-model:formatted-value="deviceWindow.eos"
-                                                            value-format="yyyy-MM-dd" type="date" clearable
-                                                            @update:formatted-value="deviceWindowError = null"
-                                                            :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
-                                                    </div>
-                                                    <div>
-                                                        <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
-                                                        <n-date-picker v-model:formatted-value="deviceWindow.eol"
-                                                            value-format="yyyy-MM-dd" type="date" clearable
-                                                            @update:formatted-value="deviceWindowError = null"
-                                                            :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
-                                                    </div>
-                                                    <n-button v-if="isWritable" size="small" type="primary"
-                                                        :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
-                                                        @click="saveDeviceWindow">Save window</n-button>
-                                                </n-space>
-                                                <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
-                                                    style="font-size: 12px; max-width: 720px;">
-                                                    {{ deviceWindowError }}
-                                                </n-alert>
+                                        <div v-if="deviceWindowSupported && isDeviceComponent"
+                                            style="margin-top: 22px;">
+                                            <h4>Device support window</h4>
+                                            <n-alert type="default" :show-icon="false"
+                                                style="font-size: 12px; margin: 8px 0 10px; max-width: 720px;">
+                                                Shown separately and never merged: end of support and
+                                                end of sale are different facts, and a reader of the
+                                                Device Support Statement is entitled to both. Blank
+                                                means <strong>not declared</strong>, which is a fact in
+                                                its own right &mdash; not an unknown to fill in.
+                                                <span style="display:block; margin-top:6px;">
+                                                    This is the DEVICE's window, inherited by every
+                                                    release of this product. A release's own end-of-support
+                                                    date is release lifecycle and is set on the release.
+                                                </span>
+                                            </n-alert>
+                                            <n-space align="end" style="margin-bottom: 8px;">
+                                                <div>
+                                                    <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
+                                                    <n-date-picker v-model:formatted-value="deviceWindow.eos"
+                                                        value-format="yyyy-MM-dd" type="date" clearable
+                                                        @update:formatted-value="deviceWindowError = null"
+                                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                                </div>
+                                                <div>
+                                                    <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
+                                                    <n-date-picker v-model:formatted-value="deviceWindow.eol"
+                                                        value-format="yyyy-MM-dd" type="date" clearable
+                                                        @update:formatted-value="deviceWindowError = null"
+                                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                                </div>
+                                                <n-button v-if="isWritable" size="small" type="primary"
+                                                    :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
+                                                    @click="saveDeviceWindow">Save window</n-button>
+                                            </n-space>
+                                            <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
+                                                style="font-size: 12px; max-width: 720px;">
+                                                {{ deviceWindowError }}
+                                            </n-alert>
                                             </div>
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS'">
@@ -1438,7 +1438,7 @@ const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
 async function loadDeviceWindow (): Promise<void> {
     if (!componentUuid) return
     try {
-        const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid, isSchemaDriftError)
+        const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid)
         deviceWindowSupported.value = r.supported
         deviceWindow.eos = r.window.eos
         deviceWindow.eol = r.window.eol
@@ -1471,7 +1471,12 @@ async function saveDeviceWindow (): Promise<void> {
         deviceWindowBaseline.eol = deviceWindow.eol
         notify('success', 'Saved', 'Device support window updated.')
     } catch (e: any) {
-        deviceWindowError.value = commonFunctions.parseGraphQLError(e.message)
+        // extractGraphQLErrorMessage, not parseGraphQLError: the latter only strips three
+        // known BOM prefixes off e.message and never unwraps graphQLErrors[], so under
+        // Apollo's CombinedGraphQLErrors the SERVER's text -- "End of support cannot be after
+        // end of life", the device-class refusal the walkthrough quotes -- never reaches the
+        // panel. saveDeviceClass 40 lines up already uses the right one.
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
     } finally {
         savingDeviceWindow.value = false
     }

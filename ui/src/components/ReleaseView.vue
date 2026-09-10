@@ -1973,25 +1973,6 @@ async function loadAcollections() {
  * an ugly one.
  */
 /**
- * The device support window, edited independently of the release body.
- *
- * NARROW PARTIAL, not the whole release: the save sends { uuid, eos, eol, clearEos,
- * clearEol } and nothing else. That matters beyond tidiness -- updateRelease treats a null
- * list as "no change" (Utils.diffUuidLists), so omitting artifacts and commits leaves them
- * attached, whereas posting a whole stale release object could detach them.
- *
- * It also sidesteps the DRAFT gate in save(), correctly. That gate protects a release's
- * CONTENTS once assembled; a support window is the opposite kind of fact -- declared after
- * assembly and revised as the device ages.
- *
- * There IS a server-side lifecycle gate -- the resolver calls the 2-arg updateRelease
- * overload, which is UpdateReleaseStrength.DRAFT_ONLY. It does not fire here only because
- * ReleaseDto.isAssemblyRequested trips on parentReleases / sourceCodeEntry / commits /
- * inbound / outboundDeliverables, none of which this narrow payload sends. That is the
- * load-bearing reason to keep the payload narrow: WIDENING IT ARMS THE GATE and an
- * assembled release stops accepting window edits.
- */
-/**
  * The DEVICE window, inherited read-only from the product component (D7).
  *
  * Separate state from `deviceWindow` below, which is this RELEASE's own lifecycle dates. They
@@ -2011,7 +1992,7 @@ async function loadInheritedDeviceWindow () {
         || (updatedRelease.value as any)?.component
     if (!componentUuid) return
     try {
-        const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid, isSchemaDriftError)
+        const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid)
         inheritedDeviceWindow.eos = r.window.eos
         inheritedDeviceWindow.eol = r.window.eol
     } catch (e: any) {
@@ -2021,6 +2002,25 @@ async function loadInheritedDeviceWindow () {
     }
 }
 
+/**
+ * The device support window, edited independently of the release body.
+ *
+ * NARROW PARTIAL, not the whole release: the save sends { uuid, eos, eol, clearEos,
+ * clearEol } and nothing else. That matters beyond tidiness -- updateRelease treats a null
+ * list as "no change" (Utils.diffUuidLists), so omitting artifacts and commits leaves them
+ * attached, whereas posting a whole stale release object could detach them.
+ *
+ * It also sidesteps the DRAFT gate in save(), correctly. That gate protects a release's
+ * CONTENTS once assembled; a support window is the opposite kind of fact -- declared after
+ * assembly and revised as the device ages.
+ *
+ * There IS a server-side lifecycle gate -- the resolver calls the 2-arg updateRelease
+ * overload, which is UpdateReleaseStrength.DRAFT_ONLY. It does not fire here only because
+ * ReleaseDto.isAssemblyRequested trips on parentReleases / sourceCodeEntry / commits /
+ * inbound / outboundDeliverables, none of which this narrow payload sends. That is the
+ * load-bearing reason to keep the payload narrow: WIDENING IT ARMS THE GATE and an
+ * assembled release stops accepting window edits.
+ */
 const deviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
 const deviceWindowBaseline = reactive({ eos: null as string | null, eol: null as string | null })
 const savingDeviceWindow: Ref<boolean> = ref(false)

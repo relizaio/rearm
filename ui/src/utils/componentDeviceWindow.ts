@@ -1,5 +1,11 @@
 import gql from 'graphql-tag'
 import type { DeviceWindowState } from './deviceSupportWindowInput'
+// DriftFallbackClient and isSchemaDriftError imported rather than restated: an inline
+// structural client type and an injected predicate are a seam this module does not need --
+// both call sites passed the same function, so it bought nothing but a fake predicate in the
+// spec. Every neighbour that reads a drift-guarded document (notificationInboxQuery.ts,
+// changelogQueries.ts, useBulkAttest.ts) imports these directly.
+import { isSchemaDriftError, type DriftFallbackClient } from './graphqlDriftFallback'
 
 /**
  * The device support window on a PRODUCT COMPONENT (decision D7).
@@ -43,9 +49,8 @@ export const NOT_DECLARED: ComponentWindowResult = {
  * second is a statement about the device.
  */
 export async function loadComponentDeviceWindow (
-    client: { query: (opts: any) => Promise<any> },
-    componentUuid: string,
-    isDriftError: (e: any) => boolean
+    client: DriftFallbackClient,
+    componentUuid: string
 ): Promise<ComponentWindowResult> {
     try {
         const resp = await client.query({
@@ -61,7 +66,7 @@ export async function loadComponentDeviceWindow (
             assessedAt: w?.assessedAt ?? null
         }
     } catch (e: any) {
-        if (isDriftError(e)) {
+        if (isSchemaDriftError(e)) {
             return { ...NOT_DECLARED, supported: false }
         }
         throw e
@@ -78,8 +83,7 @@ export async function loadComponentDeviceWindow (
  *
  * Returns null when nothing changed, so an unrelated save cannot rewrite the window and stamp
  * fresh provenance on a claim nobody touched.
- */
-/**
+ *
  * @param componentName REQUIRED. `UpdateComponentInput.name` is `String!`, so even the
  *   narrowest partial must carry it or graphql-java rejects the whole mutation at variable
  *   coercion, BEFORE the resolver is reached -- the save then fails every time, for a reason
@@ -106,4 +110,53 @@ export function deviceWindowMutationInput (
         name: componentName,
         deviceSupportWindow: { eos: edited.eos || null, eol: edited.eol || null }
     }
+}
+
+/**
+ * The same three rules as `deviceWindowMutationInput`, for the SHIPMENT override.
+ *
+ * Extracted rather than left inline in `DistributionOfOrg.vue` because it IS the same rule --
+ * unchanged sends nothing, blank-both-after-something sends the clear flag, and an empty
+ * window object is never sent because the server does not read one as a retraction. Two copies
+ * of that in two files is two chances for them to disagree about what "retract" means, on a
+ * section 524B commitment. The inline copy was covered only by a spec that regex-matched the
+ * `.vue` source, which cannot tell whether the rule is right -- only whether the text moved.
+ *
+ * Mutates `input` and returns it, matching how the surrounding shipment builder is written.
+ */
+export function applyShipmentWindowToInput (
+    input: Record<string, unknown>,
+    edited: DeviceWindowState,
+    baseline: DeviceWindowState
+): Record<string, unknown> {
+    const changed = edited.eos !== baseline.eos || edited.eol !== baseline.eol
+    if (!changed) return input
+    const hasSomething = !!edited.eos || !!edited.eol
+    const hadSomething = !!baseline.eos || !!baseline.eol
+    if (hasSomething) {
+        input.deviceSupportWindow = { eos: edited.eos || null, eol: edited.eol || null }
+    } else if (hadSomething) {
+        input.clearDeviceSupportWindow = true
+    }
+    return input
+}
+
+/**
+ * The window in force for a shipment, named by WHERE it was declared rather than by whether
+ * it is an override.
+ *
+ * "this batch" / "the product component" is the whole point: two shipments of the same device
+ * model can legitimately carry different dates, and a reader with no way to tell why would
+ * reasonably conclude one of them is wrong. Returns '' when nothing is declared, which the
+ * caller must distinguish from "we have not loaded a shipment yet" -- on a NEW shipment there
+ * is nothing to resolve through, and saying "no window is declared for this device model"
+ * there is a false claim about the product made exactly when it would invite a needless
+ * override.
+ */
+export function effectiveWindowLabel (
+    w: { eos?: string | null, eol?: string | null, source?: string | null } | null | undefined
+): string {
+    if (!w || (!w.eos && !w.eol)) return ''
+    const where = w.source === 'SHIPMENT' ? 'this batch' : 'the product component'
+    return `EOS ${w.eos || 'not declared'}, EOL ${w.eol || 'not declared'} (from ${where})`
 }

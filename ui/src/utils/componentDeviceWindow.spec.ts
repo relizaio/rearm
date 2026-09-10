@@ -3,7 +3,15 @@ import { loadComponentDeviceWindow, deviceWindowMutationInput,
     COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
 import { print } from 'graphql'
 
-const drift = (e: any) => e?.driftLike === true
+// A REAL drift error, shaped the way graphql-java actually returns one, rather than a fake
+// predicate the module was handed. isSchemaDriftError is imported by the module now, so this
+// spec exercises the same classification the running app does -- a fake predicate would have
+// gone on passing even if the real one stopped recognising a validation error.
+const driftError = () => Object.assign(new Error('Validation error'), {
+    graphQLErrors: [{ message: "Validation error (FieldUndefined@[component/medicalProfile/"
+        + "deviceSupportWindow]) : Field 'deviceSupportWindow' in type 'MedicalProfile' is"
+        + " undefined", extensions: { classification: 'ValidationError' } }]
+})
 
 function client (result: any, throws?: any) {
     return { query: async () => { if (throws) throw throws; return result } }
@@ -14,7 +22,7 @@ describe('reading the declared window', () => {
         const r = await loadComponentDeviceWindow(client({
             data: { component: { uuid: 'c1', medicalProfile: {
                 deviceSupportWindow: { eos: '2031-01-31', eol: null, assertedBy: 'u1', assessedAt: 'i' } } } }
-        }), 'c1', drift)
+        }), 'c1')
         expect(r.supported).toBe(true)
         expect(r.window).toEqual({ eos: '2031-01-31', eol: null })
         expect(r.assertedBy).toBe('u1')
@@ -22,7 +30,7 @@ describe('reading the declared window', () => {
 
     it('reports not-declared when the component declares nothing', async () => {
         const r = await loadComponentDeviceWindow(client({
-            data: { component: { uuid: 'c1', medicalProfile: null } } }), 'c1', drift)
+            data: { component: { uuid: 'c1', medicalProfile: null } } }), 'c1')
         expect(r.supported).toBe(true)
         expect(r.window).toEqual({ eos: null, eol: null })
     })
@@ -34,14 +42,14 @@ describe('reading the declared window', () => {
      * editable, always-empty panel in front of a CE operator whose saves would all fail.
      */
     it('reports unsupported, not not-declared, on a schema-drift error', async () => {
-        const r = await loadComponentDeviceWindow(client(null, { driftLike: true }), 'c1', drift)
+        const r = await loadComponentDeviceWindow(client(null, driftError()), 'c1')
         expect(r.supported).toBe(false)
         expect(r.window).toEqual({ eos: null, eol: null })
     })
 
     /** A real failure must not be swallowed as "unsupported" -- that would hide an outage. */
     it('rethrows a non-drift error', async () => {
-        await expect(loadComponentDeviceWindow(client(null, new Error('boom')), 'c1', drift))
+        await expect(loadComponentDeviceWindow(client(null, new Error('boom')), 'c1'))
             .rejects.toThrow('boom')
     })
 })

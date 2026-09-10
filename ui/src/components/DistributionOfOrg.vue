@@ -229,6 +229,8 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { termsFor, DISTRIBUTION_DOMAIN_OPTIONS } from '@/utils/distributionTerms'
+import { applyShipmentWindowToInput,
+    effectiveWindowLabel as buildEffectiveWindowLabel } from '@/utils/componentDeviceWindow'
 
 const route = useRoute()
 const router = useRouter()
@@ -353,12 +355,8 @@ const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null,
 const editingShipment: Ref<any> = ref(null)
 
 /** The window in force for the shipment being edited, named with where it was declared. */
-const effectiveWindowLabel: ComputedRef<string> = computed((): string => {
-    const w = (editingShipment.value as any)?.effectiveDeviceSupportWindow
-    if (!w || (!w.eos && !w.eol)) return ''
-    const where = w.source === 'SHIPMENT' ? 'this batch' : 'the product component'
-    return `EOS ${w.eos || 'not declared'}, EOL ${w.eol || 'not declared'} (from ${where})`
-})
+const effectiveWindowLabel: ComputedRef<string> = computed((): string =>
+    buildEffectiveWindowLabel((editingShipment.value as any)?.effectiveDeviceSupportWindow))
 // Shipments carry the same two-axis classification as components: nature (HARDWARE /
 // SOFTWARE, hardware if any constituent component is hardware) and deviceClass. HARDWARE =
 // physical batch; SOFTWARE + MEDICAL_* = SaMD, shipped and tracked per unit like hardware;
@@ -711,7 +709,6 @@ async function openShipModal (existing?: any) {
         shipForm.deviceWindowEol = existing.deviceSupportWindow?.eol || null
         shipForm.deviceWindowBaselineEos = shipForm.deviceWindowEos
         shipForm.deviceWindowBaselineEol = shipForm.deviceWindowEol
-        editingShipment.value = existing
         shipReleases.value = await loadReleasesForBranch(existing.featureSet)
         await Promise.all([loadShipChoices(existing.release), resolveIdentity()])
         for (const cr of (existing.choiceResolutions || [])) {
@@ -751,18 +748,9 @@ async function shipProduct () {
     // the server does not read it as a retraction, so it would leave the old override silently
     // in force while the form showed it gone.
     if (!isSoftwareShipment.value) {
-        const changed = shipForm.deviceWindowEos !== shipForm.deviceWindowBaselineEos
-            || shipForm.deviceWindowEol !== shipForm.deviceWindowBaselineEol
-        if (changed) {
-            const hasSomething = !!shipForm.deviceWindowEos || !!shipForm.deviceWindowEol
-            const hadSomething = !!shipForm.deviceWindowBaselineEos || !!shipForm.deviceWindowBaselineEol
-            if (hasSomething) {
-                input.deviceSupportWindow = {
-                    eos: shipForm.deviceWindowEos || null, eol: shipForm.deviceWindowEol || null }
-            } else if (hadSomething) {
-                input.clearDeviceSupportWindow = true
-            }
-        }
+        applyShipmentWindowToInput(input,
+            { eos: shipForm.deviceWindowEos, eol: shipForm.deviceWindowEol },
+            { eos: shipForm.deviceWindowBaselineEos, eol: shipForm.deviceWindowBaselineEol })
     }
     try {
         if (editingShipmentUuid.value) {
