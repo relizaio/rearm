@@ -1065,11 +1065,14 @@
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
             <n-tabs style="padding-left:0.2%;" type="segment" @update:value="handleTabSwitch" animated>
                 <n-tab-pane name="components" tab="Components">
-                    <!-- The DEVICE support window. PRODUCT releases only: it is the device's
-                         horizon, and every component verdict (deviceSupportRisk) is measured
-                         against it. Deliberately editable after assembly -- a window is
-                         declared years after a device ships and revised as it ages, so a
-                         DRAFT-only gate would mean no shipped device could ever have one. -->
+                    <!-- TWO DIFFERENT FACTS, SIDE BY SIDE AND NEVER MERGED (D7).
+                         The DEVICE window is declared on the product component and inherited by
+                         every release of it -- a device model ships many firmware versions over
+                         its life, and a support commitment that changes with each build is not a
+                         commitment. The RELEASE's own eos/eol are release lifecycle, consumed by
+                         TEA and CLE; they predate this feature and are not a labeling claim.
+                         They were edited through one control until 2026-09-10, which is exactly
+                         the conflation this separation removes. -->
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Device support window</h3>
                         <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
@@ -1078,16 +1081,47 @@
                             is entitled to both. Blank means <strong>not declared</strong>,
                             which is a fact in its own right &mdash; not an unknown to fill in.
                         </n-alert>
-                        <n-space align="end" style="margin-bottom: 8px;">
+                        <n-space align="center" style="margin-bottom: 6px;">
                             <div>
                                 <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
+                                <div>{{ inheritedDeviceWindow.eos || 'not declared' }}</div>
+                            </div>
+                            <div style="margin-left: 24px;">
+                                <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
+                                <div>{{ inheritedDeviceWindow.eol || 'not declared' }}</div>
+                            </div>
+                        </n-space>
+                        <div class="text-muted" style="font-size: 12px; max-width: 720px;">
+                            Read-only here. Declared on
+                            <router-link v-if="updatedRelease.component"
+                                :to="{ name: 'ComponentView', params: { uuid: updatedRelease.component } }">
+                                {{ updatedRelease.componentDetails.name }}</router-link>
+                            <span v-else>{{ updatedRelease.componentDetails.name }}</span>
+                            and inherited by every release of it; a batch may override it on the
+                            shipment.
+                        </div>
+                    </div>
+
+                    <!-- The RELEASE's own lifecycle dates. Editable, and deliberately NOT
+                         labelled as a device window: these feed TEA and CLE. -->
+                    <div class="container">
+                        <h3>Release lifecycle dates</h3>
+                        <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                            When this <strong>version</strong> stops being supported and sold.
+                            Consumed by TEA and CLE. <strong>This is not the device's support
+                            window</strong> &mdash; that is declared on the product component and
+                            is what FDA section 524B labeling refers to.
+                        </n-alert>
+                        <n-space align="end" style="margin-bottom: 8px;">
+                            <div>
+                                <div class="text-muted" style="font-size: 12px;">Release end of support</div>
                                 <n-date-picker v-model:formatted-value="deviceWindow.eos"
                                     value-format="yyyy-MM-dd" type="date" clearable
                                     @update:formatted-value="deviceWindowError = null"
                                     :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
                             </div>
                             <div>
-                                <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
+                                <div class="text-muted" style="font-size: 12px;">Release end of life / end of sale</div>
                                 <n-date-picker v-model:formatted-value="deviceWindow.eol"
                                     value-format="yyyy-MM-dd" type="date" clearable
                                     @update:formatted-value="deviceWindowError = null"
@@ -1095,7 +1129,7 @@
                             </div>
                             <n-button v-if="isWritable" size="small" type="primary"
                                 :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
-                                @click="saveDeviceWindow">Save window</n-button>
+                                @click="saveDeviceWindow">Save dates</n-button>
                         </n-space>
                         <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
                             style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
@@ -1801,6 +1835,8 @@ import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/rele
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
+import { loadComponentDeviceWindow } from '@/utils/componentDeviceWindow'
+import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
@@ -1943,6 +1979,29 @@ async function loadAcollections() {
  * load-bearing reason to keep the payload narrow: WIDENING IT ARMS THE GATE and an
  * assembled release stops accepting window edits.
  */
+/**
+ * The DEVICE window, inherited read-only from the product component (D7).
+ *
+ * Separate state from `deviceWindow` below, which is this RELEASE's own lifecycle dates. They
+ * were one control until 2026-09-10 and are two different facts: the device's commitment is a
+ * labeling claim about the hardware, the release's dates are TEA/CLE metadata about a version.
+ */
+const inheritedDeviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
+
+async function loadInheritedDeviceWindow () {
+    const componentUuid = (updatedRelease.value as any)?.component
+    if (!componentUuid) return
+    try {
+        const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid, isSchemaDriftError)
+        inheritedDeviceWindow.eos = r.window.eos
+        inheritedDeviceWindow.eol = r.window.eol
+    } catch (e: any) {
+        // Left as "not declared". A read-only line that cannot be loaded must not claim dates.
+        inheritedDeviceWindow.eos = null
+        inheritedDeviceWindow.eol = null
+    }
+}
+
 const deviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
 const deviceWindowBaseline = reactive({ eos: null as string | null, eol: null as string | null })
 const savingDeviceWindow: Ref<boolean> = ref(false)
@@ -1964,6 +2023,8 @@ function seedDeviceWindow () {
     deviceWindowBaseline.eos = deviceWindow.eos
     deviceWindowBaseline.eol = deviceWindow.eol
     deviceWindowError.value = null
+    // The inherited device window comes from the product component, not from this release.
+    void loadInheritedDeviceWindow()
 }
 
 /**

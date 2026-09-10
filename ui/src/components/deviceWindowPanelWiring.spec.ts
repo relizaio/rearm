@@ -64,3 +64,44 @@ describe('the device window panel is wired into the component page', () => {
         expect(source).toMatch(/deviceWindowMutationInput\(componentUuid, deviceWindow, deviceWindowBaseline\)/)
     })
 })
+
+const releaseView = readFileSync(
+    fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
+
+/**
+ * The release page shows TWO DIFFERENT FACTS and never merges them (D7).
+ *
+ * Until 2026-09-10 one control edited `release.eos/eol` under the heading "Device support
+ * window", which is the conflation the whole ruling removes: the device's commitment is a
+ * labeling claim about hardware, the release's dates are TEA/CLE metadata about a version.
+ */
+describe('the release page separates the device window from release lifecycle', () => {
+    it('renders the inherited device window read-only', () => {
+        expect(releaseView).toMatch(/\{\{ inheritedDeviceWindow\.eos \|\| 'not declared' \}\}/)
+        expect(releaseView).toMatch(/\{\{ inheritedDeviceWindow\.eol \|\| 'not declared' \}\}/)
+    })
+
+    /** No editor on the inherited value -- it is not this page's to change. */
+    it('does not bind the inherited window to an input', () => {
+        expect(releaseView).not.toMatch(/v-model[^\n]*inheritedDeviceWindow/)
+    })
+
+    /** A reader must be able to reach the place it IS editable. */
+    it('links to the product component that declares it', () => {
+        const section = releaseView.slice(releaseView.indexOf('<h3>Device support window</h3>'))
+        expect(section.slice(0, 2000)).toMatch(/router-link/)
+        expect(section.slice(0, 2000)).toMatch(/name: 'ComponentView'/)
+    })
+
+    /** The release's own dates stay editable, under a heading that does not claim otherwise. */
+    it('keeps the release lifecycle dates editable and separately labelled', () => {
+        expect(releaseView).toMatch(/<h3>Release lifecycle dates<\/h3>/)
+        expect(releaseView).toMatch(/v-model:formatted-value="deviceWindow\.eos"/)
+        expect(releaseView).toMatch(/This is not the device's support/)
+    })
+
+    /** Loaded from the component, not from the release's own fields. */
+    it('sources the inherited window from the product component', () => {
+        expect(releaseView).toMatch(/loadComponentDeviceWindow\(graphqlClient as any, componentUuid/)
+    })
+})
