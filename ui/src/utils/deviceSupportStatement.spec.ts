@@ -435,3 +435,55 @@ describe('the ends-sooner section is a statement, not an inventory', () => {
         expect(text).not.toMatch(/Software components whose support ends sooner/)
     })
 })
+
+/**
+ * WHERE THE DATES CAME FROM, in one line under them (D7).
+ *
+ * A reader comparing two statements for the same device model needs to know why the dates
+ * differ, and "a different batch declared its own" is the answer. The line names the batch by
+ * things a person can match against a delivery note -- site, ship date, batch identifier --
+ * never by the word "override" or a uuid.
+ */
+describe('the device window provenance line', () => {
+    const flat = (n: any): string =>
+        typeof n === 'string' ? n
+            : Array.isArray(n) ? n.map(flat).join(' ')
+                : n && typeof n === 'object' ? Object.values(n).map(flat).join(' ') : ''
+    const render = (over: any) => flat(buildDeviceSupportStatementDefinition(data(over)))
+
+    it('names the product when the window is the model default', () => {
+        const text = render({ deviceWindowSource: { level: 'COMPONENT', productName: 'Infusion Pump 9000' } })
+        expect(text).toMatch(/declared on Infusion Pump 9000 and apply to every unit of it/)
+    })
+
+    it('names the site, ship date and batch when it came from a shipment', () => {
+        const text = render({ deviceWindowSource: {
+            level: 'SHIPMENT', siteName: 'St Elsewhere ICU', shipDate: '2026-04-02', batchIdentifier: 'LOT-77' } })
+        expect(text).toMatch(/delivered to St Elsewhere ICU/)
+        expect(text).toMatch(/on 2026-04-02/)
+        expect(text).toMatch(/\(batch LOT-77\)/)
+        expect(text).toMatch(/may differ from other deliveries of the same device/)
+    })
+
+    it('omits the batch identifier when none was recorded', () => {
+        const text = render({ deviceWindowSource: {
+            level: 'SHIPMENT', siteName: 'St Elsewhere ICU', shipDate: '2026-04-02', batchIdentifier: null } })
+        expect(text).toMatch(/delivered to St Elsewhere ICU/)
+        expect(text).not.toMatch(/batch/)
+    })
+
+    /** "Override" is our vocabulary, not a patient's; a uuid is not something anyone can check. */
+    it('never uses the word override or prints an identifier a reader cannot match', () => {
+        const text = render({ deviceWindowSource: {
+            level: 'SHIPMENT', siteName: 'St Elsewhere ICU', shipDate: '2026-04-02', batchIdentifier: 'LOT-77' } })
+        expect(text.toLowerCase()).not.toMatch(/override/)
+        expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
+    })
+
+    /** No provenance for a fact that does not exist. */
+    it('prints no line at all when no window is declared', () => {
+        const text = render({ deviceWindowSource: null })
+        expect(text).not.toMatch(/apply to every unit of it/)
+        expect(text).not.toMatch(/may differ from other deliveries/)
+    })
+})

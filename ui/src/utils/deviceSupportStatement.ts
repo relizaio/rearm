@@ -23,7 +23,7 @@
 import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
 import type { AddendumComponent, AddendumData } from './addendumData'
-import { isLiveAttestation } from './addendumData'
+import { isLiveAttestation, deviceWindowProvenanceLine } from './addendumData'
 import { releaseSlug, PROSE_SLOT_LABELS } from './addendumDocument'
 import { fontCoverageRefusal } from './pdfFontCoverage'
 
@@ -211,6 +211,21 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
             margin: [0, 0, 0, 14]
         }
     ]
+
+    // WHERE THE DATES COME FROM, in one plain line, immediately under them (D7).
+    //
+    // A reader comparing two statements for the same device model needs to know why the dates
+    // differ, and "a different batch declared its own" is the answer. The shipment case names
+    // the batch by things a person can match against a delivery note -- site, ship date, batch
+    // identifier -- never by the word "override" or a uuid: "override" is our vocabulary, not
+    // theirs, and a uuid is not something anyone can check.
+    //
+    // Omitted entirely when no window is declared: there is no provenance for a fact that does
+    // not exist, and a line explaining the origin of two blanks would be noise.
+    const provenance = deviceWindowProvenanceLine(d.deviceWindowSource)
+    if (provenance) {
+        content.push({ text: provenance, style: 'body', margin: [0, 0, 0, 14] })
+    }
 
     if (early.length) {
         content.push({ text: 'Software components whose support ends sooner', style: 'h2' })

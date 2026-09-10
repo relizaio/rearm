@@ -163,6 +163,32 @@ export interface AddendumComponent {
     assessedAt: string | null
 }
 
+/**
+ * Where a device support window was declared, in the terms a lay reader can act on.
+ *
+ * The SHIPMENT case names the batch by things a person can match against a delivery note --
+ * site and ship date, plus the batch identifier when one was recorded -- rather than by the
+ * word "override" or a uuid. "Override" is our vocabulary, not theirs.
+ */
+export type DeviceWindowProvenance =
+    | { level: 'COMPONENT', productName: string | null }
+    | { level: 'SHIPMENT', siteName: string | null, shipDate: string | null, batchIdentifier: string | null }
+
+/** The statement's provenance line, or null when no window is declared. */
+export function deviceWindowProvenanceLine (p: DeviceWindowProvenance | null): string | null {
+    if (!p) return null
+    if (p.level === 'COMPONENT') {
+        return p.productName
+            ? `These dates are declared on ${p.productName} and apply to every unit of it.`
+            : 'These dates are declared on the product and apply to every unit of it.'
+    }
+    const where = p.siteName ? ` delivered to ${p.siteName}` : ''
+    const when = p.shipDate ? ` on ${p.shipDate}` : ''
+    const batch = p.batchIdentifier ? ` (batch ${p.batchIdentifier})` : ''
+    return `These dates apply to the units${where}${when}${batch}, and may differ from other`
+        + ' deliveries of the same device.'
+}
+
 export interface AddendumData {
     releaseUuid: string
     releaseVersion: string | null
@@ -183,6 +209,14 @@ export interface AddendumData {
      */
     deviceEos: string | null
     deviceEol: string | null
+    /**
+     * WHERE the device window was declared, for the statement's one-line provenance (D7).
+     *
+     * A reader comparing two statements for the same device model needs to know why the dates
+     * differ, and "a different batch declared its own" is the answer. Null when no window is
+     * declared at all -- there is no provenance for a fact that does not exist.
+     */
+    deviceWindowSource: DeviceWindowProvenance | null
     /** Resolved through resolveNarrative: release override else org default, else null. */
     narrative: string | null
     /** True when the narrative came from the release rather than the org. */
@@ -401,6 +435,11 @@ export async function collectAddendumData (
                 // end-of-support dates depending on which firmware it happened to run.
                 deviceEos: blankToNull(deviceWindow?.eos),
                 deviceEol: blankToNull(deviceWindow?.eol),
+                // Generated from a release, so the window is the product component's. A
+                // shipment-generated statement supplies the SHIPMENT shape instead.
+                deviceWindowSource: (deviceWindow?.eos || deviceWindow?.eol)
+                    ? { level: 'COMPONENT', productName: blankToNull(release.componentDetails?.name) }
+                    : null,
                 narrative: resolved.narrative,
                 narrativeIsPerRelease: resolved.perRelease,
                 orgName: blankToNull(org?.name),
