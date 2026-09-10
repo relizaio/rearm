@@ -1108,9 +1108,15 @@
                         <h3>Release lifecycle dates</h3>
                         <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
                             When this <strong>version</strong> stops being supported and sold.
-                            Consumed by TEA and CLE. <strong>This is not the device's support
-                            window</strong> &mdash; that is declared on the product component and
-                            is what FDA section 524B labeling refers to.
+                            Each date becomes a CLE lifecycle event for this release &mdash;
+                            <code>END_OF_SUPPORT</code> and <code>END_OF_LIFE</code> &mdash;
+                            served through the TEA endpoint and the CLE export, so a downstream
+                            consumer tracking your versions learns when this one lapses.
+                            <span style="display:block; margin-top:6px;">
+                                Separate from the <strong>device support window</strong> above,
+                                which is the section 524B commitment about the hardware. A device
+                                outlives many versions, so the two dates differ on purpose.
+                            </span>
                         </n-alert>
                         <n-space align="end" style="margin-bottom: 8px;">
                             <div>

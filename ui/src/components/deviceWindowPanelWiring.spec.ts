@@ -97,11 +97,67 @@ describe('the release page separates the device window from release lifecycle', 
     it('keeps the release lifecycle dates editable and separately labelled', () => {
         expect(releaseView).toMatch(/<h3>Release lifecycle dates<\/h3>/)
         expect(releaseView).toMatch(/v-model:formatted-value="deviceWindow\.eos"/)
-        expect(releaseView).toMatch(/This is not the device's support/)
+        // The copy says what these dates are FOR, not merely what they are not: "not the
+        // device commitment" alone reads as "ignore these".
+        expect(releaseView).toMatch(/END_OF_SUPPORT/)
+        expect(releaseView).toMatch(/CLE lifecycle event for this release/)
+        expect(releaseView).toMatch(/Separate from the <strong>device support window<\/strong>/)
     })
 
     /** Loaded from the component, not from the release's own fields. */
     it('sources the inherited window from the product component', () => {
         expect(releaseView).toMatch(/loadComponentDeviceWindow\(graphqlClient as any, componentUuid/)
+    })
+})
+
+const distribution = readFileSync(
+    fileURLToPath(new URL('./DistributionOfOrg.vue', import.meta.url)), 'utf8')
+
+/**
+ * The batch override (D7): Hardware and SaMD only, never plain software.
+ *
+ * Support commonly runs from sale or shipment ("seven years from date of sale"), which is a
+ * fact about a BATCH -- and the ship date it anchors to is on this same form. Plain software
+ * is not a device and has no section 524B commitment to override.
+ */
+describe('the shipment device-window override', () => {
+    it('never renders for a plain-software shipment', () => {
+        const block = distribution.slice(distribution.indexOf("THE BATCH'S DEVICE SUPPORT WINDOW OVERRIDE"))
+        // The gate is the <template> immediately after the comment block.
+        expect(block.slice(0, 900)).toMatch(/<template v-if="!isSoftwareShipment">/)
+        // ...and the fields themselves live inside it, not outside.
+        expect(block.indexOf('<template v-if="!isSoftwareShipment">'))
+            .toBeLessThan(block.indexOf('shipForm.deviceWindowEos'))
+    })
+
+    it('binds both override dates', () => {
+        expect(distribution).toMatch(/v-model:formatted-value="shipForm\.deviceWindowEos"/)
+        expect(distribution).toMatch(/v-model:formatted-value="shipForm\.deviceWindowEol"/)
+    })
+
+    /** The in-force line has to name WHERE the window came from, or an operator cannot tell
+     *  an inherited value from one this batch already overrode. */
+    it('names the level the effective window came from', () => {
+        expect(distribution).toMatch(/w\.source === 'SHIPMENT' \? 'this batch' : 'the product component'/)
+    })
+
+    /**
+     * Seeded from the batch's OWN window, never the effective one: seeding from the effective
+     * value would turn an inherited window into an override the moment anything else was saved.
+     */
+    it('seeds the editor from the batch override, not the effective window', () => {
+        expect(distribution).toMatch(/shipForm\.deviceWindowEos = existing\.deviceSupportWindow\?\.eos/)
+    })
+
+    /** Blank-both after something was declared is a retraction and must send the flag. */
+    it('sends the clear flag rather than an empty window object', () => {
+        const save = distribution.slice(distribution.indexOf('D7, same three rules as the component panel'))
+        expect(save.slice(0, 1200)).toMatch(/input\.clearDeviceSupportWindow = true/)
+        expect(save.slice(0, 1200)).not.toMatch(/deviceSupportWindow = \{ eos: null, eol: null \}/)
+    })
+
+    /** SaaS-only surface, so the document is simply never issued by a CE build. */
+    it('asks for the window in the shipments query', () => {
+        expect(distribution).toMatch(/effectiveDeviceSupportWindow \{ eos eol source \}/)
     })
 })
