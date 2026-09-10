@@ -20,9 +20,11 @@ export const productNav = [
 ];
 
 export const useCaseNav = [
+  { label: 'SBOM Aggregation', href: '/use-cases/sbom-aggregation/' },
+  { label: 'VEX Exploitability eXchange', href: '/use-cases/vex-exploitability-exchange/' },
   { label: 'Medical Devices', href: '/use-cases/medical-devices/' },
   { label: 'Field Digital Twin', href: '/use-cases/field-digital-twin/' },
-  { label: 'Deployment Governance', href: '/use-cases/deployment-governance/' },
+  { label: 'Deployment Governance, DevOps, BYOC', href: '/use-cases/deployment-governance/' },
   { label: 'EU CRA Compliance', href: '/use-cases/eu-cra/' },
 ];
 
@@ -32,9 +34,12 @@ export const pageHrefs: Record<string, string> = {
   'Findings Aggregation': '/product/findings-aggregation/',
   'Release Policies': '/product/release-policies/',
   'AI Governance': '/product/ai-governance/',
+  'SBOM Aggregation': '/use-cases/sbom-aggregation/',
+  'VEX Exploitability eXchange': '/use-cases/vex-exploitability-exchange/',
   'Medical Devices': '/use-cases/medical-devices/',
   'Field Digital Twin': '/use-cases/field-digital-twin/',
   'Deployment Governance': '/use-cases/deployment-governance/',
+  'Deployment Governance, DevOps, BYOC': '/use-cases/deployment-governance/',
   'EU CRA': '/use-cases/eu-cra/',
   'EU CRA Compliance': '/use-cases/eu-cra/',
   Pricing: '/pricing/',

@@ -26,6 +26,13 @@ RUN apk add postgresql postgresql-contrib
 # FROM relizaio/maven-postgresql AS build-stage
 ARG VERSION=not_versioned
 ARG TARGETARCH
+# Test phase control. SKIP_TESTS=true|false forces it; the default "auto" runs the
+# tests when GIT_BRANCH is main or master, or when no branch is given (local builds),
+# and skips them (Maven -DskipTests, tests still compile) for every other branch, so
+# PR and feature builds do not pay for the suite while main stays fully tested.
+# GIT_BRANCH is already passed by rearm-docker-action; SKIP_TESTS needs no workflow change.
+ARG SKIP_TESTS=auto
+ARG GIT_BRANCH=git_branch_undefined
 RUN mkdir /run/postgresql && chown postgres:postgres /run/postgresql/ && su - postgres -c "mkdir /var/lib/postgresql/data && chmod 0700 /var/lib/postgresql/data && initdb -D /var/lib/postgresql/data && echo \"port = 5440\" > /var/lib/postgresql/data/postgresql.conf && sed -i \"s#/run/postgresql#/tmp#g\" /var/lib/postgresql/data/postgresql.conf" && su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && su - postgres -c "psql -p 5440 -c \"alter role postgres with encrypted password 'relizaPass'\"" && su - postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
 RUN mkdir /workdir
 WORKDIR /workdir
@@ -38,7 +45,9 @@ COPY ./ .
 RUN VERSION_SAFE="$(echo $VERSION | tr '/' '-')" && \
     sed -i "s,Version_Managed_By_CI_AND_Reliza,$VERSION_SAFE," pom.xml
 
-RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage && cp target/*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --launcher --destination extracted
+RUN SKIP="$SKIP_TESTS" && if [ "$SKIP" = "auto" ]; then case "$GIT_BRANCH" in main|master|git_branch_undefined) SKIP=false ;; *) SKIP=true ;; esac; fi && \
+    echo "SKIP_TESTS=$SKIP_TESTS GIT_BRANCH=$GIT_BRANCH -> skipTests=$SKIP" && \
+    su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage -DskipTests=$SKIP && cp target/*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --launcher --destination extracted
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b  AS artifact-stage
 ENV JAVA_HOME=/opt/java/openjdk
