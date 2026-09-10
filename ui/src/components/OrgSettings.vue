@@ -1147,7 +1147,7 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -1611,6 +1611,77 @@ const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
 })
 const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
+
+// ---- API key status and secrets (kill switch + AWS-style two-secret rotation) ----
+// status: INACTIVE refuses every secret and every token of the key id. Secrets: up to two per
+// id; regenerate replaces one in place (its tokens die), retire keeps it on file but refused.
+const apiKeyStatusCell = (row: any) => {
+    const inactive = row.status === 'INACTIVE'
+    const children: any[] = [h(NTag, { size: 'small', type: inactive ? 'error' : 'success', style: 'margin-right: 6px;' }, { default: () => inactive ? 'INACTIVE' : 'ACTIVE' })]
+    if (isOrgAdmin.value) {
+        children.push(h(NButton, { size: 'tiny', type: inactive ? 'primary' : 'warning', onClick: () => setApiKeyStatus(row, inactive ? 'ACTIVE' : 'INACTIVE') },
+            { default: () => inactive ? 'Activate' : 'Deactivate' }))
+    }
+    return h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, children)
+}
+const apiKeySecretsCell = (row: any) => {
+    const secrets: any[] = row.secrets || []
+    const lines = secrets.map((sec: any) => {
+        const meta = `created ${sec.createdDate ? sec.createdDate.slice(0, 10) : 'n/a'} · last used ${sec.lastUsedDate ? sec.lastUsedDate.slice(0, 10) : 'never'}`
+        const kids: any[] = [
+            h('strong', { style: 'margin-right: 4px;' }, `#${sec.slot}`),
+            h(NTag, { size: 'tiny', type: sec.active ? 'success' : 'default', style: 'margin-right: 6px;' }, { default: () => sec.active ? 'active' : 'retired' }),
+            h('span', { class: 'subtle', style: 'margin-right: 6px;' }, meta)
+        ]
+        if (isOrgAdmin.value) {
+            kids.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => regenerateApiKeySecret(row, sec.slot) }, { default: () => 'Regenerate' }))
+            kids.push(h(NButton, { size: 'tiny', type: sec.active ? 'warning' : 'primary', onClick: () => setApiKeySecretActive(row, sec.slot, !sec.active) }, { default: () => sec.active ? 'Retire' : 'Enable' }))
+        }
+        return h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin: 2px 0;' }, kids)
+    })
+    if (isOrgAdmin.value && secrets.length < 2) {
+        lines.push(h(NButton, { size: 'tiny', dashed: true, style: 'margin-top: 2px;', onClick: () => addApiKeySecret(row) }, { default: () => secrets.length ? 'Add second secret (rotation)' : 'Add secret' }))
+    }
+    return h('div', lines)
+}
+async function confirmThen (title: string, text: string, confirmButtonText: string): Promise<boolean> {
+    const r = await Swal.fire({ title, text, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel' })
+    return !!r.value
+}
+async function showMintedSecret (forUser: any, title: string) {
+    await Swal.fire({ title, customClass: { popup: 'swal-wide' }, html: commonFunctions.getGeneratedApiKeyHTML(forUser), icon: 'success' })
+}
+async function addApiKeySecret (row: any) {
+    if (!(await confirmThen('Add a second secret?', 'Both secrets work until you retire or regenerate one. Move your clients to the new secret, then retire the old one.', 'Add secret'))) return
+    try {
+        const resp: any = await graphqlClient.mutate({ mutation: gql`mutation addApiKeySecret($apiKeyUuid: ID!) { addApiKeySecret(apiKeyUuid: $apiKeyUuid) { id apiKey authorizationHeader } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'no-cache' })
+        await showMintedSecret(resp.data.addApiKeySecret, 'Secret added'); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function regenerateApiKeySecret (row: any, slot: number) {
+    if (!(await confirmThen(`Regenerate secret #${slot}?`, 'The current secret in this slot stops working immediately, and so do access tokens exchanged with it. The other secret is unaffected.', 'Regenerate'))) return
+    try {
+        const resp: any = await graphqlClient.mutate({ mutation: gql`mutation regenerateApiKeySecret($apiKeyUuid: ID!, $slot: Int!) { regenerateApiKeySecret(apiKeyUuid: $apiKeyUuid, slot: $slot) { id apiKey authorizationHeader } }`, variables: { apiKeyUuid: row.uuid, slot }, fetchPolicy: 'no-cache' })
+        await showMintedSecret(resp.data.regenerateApiKeySecret, `Secret #${slot} regenerated`); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function setApiKeySecretActive (row: any, slot: number, active: boolean) {
+    if (!active && !(await confirmThen(`Retire secret #${slot}?`, 'It stays on file and can be enabled again, but it is refused until then, and so are access tokens exchanged with it.', 'Retire'))) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation setApiKeySecretActive($apiKeyUuid: ID!, $slot: Int!, $active: Boolean!) { setApiKeySecretActive(apiKeyUuid: $apiKeyUuid, slot: $slot, active: $active) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot, active }, fetchPolicy: 'no-cache' })
+        notify('success', active ? 'Enabled' : 'Retired', `Secret #${slot} ${active ? 'enabled' : 'retired'}`); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function setApiKeyStatus (row: any, status: string) {
+    if (status === 'INACTIVE' && !(await confirmThen('Deactivate this key?', 'Every secret and every access token of this key id is refused until you activate it again. Nothing is deleted.', 'Deactivate'))) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation setApiKeyStatus($apiKeyUuid: ID!, $status: ApiKeyStatus!) { setApiKeyStatus(apiKeyUuid: $apiKeyUuid, status: $status) { uuid status } }`, variables: { apiKeyUuid: row.uuid, status }, fetchPolicy: 'no-cache' })
+        notify('success', status === 'INACTIVE' ? 'Deactivated' : 'Activated', `Key ${status.toLowerCase()}`); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const apiKeyStatusColumn = { key: 'status', title: 'Status', render: apiKeyStatusCell }
+const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', render: apiKeySecretsCell }
+
 const programmaticAccessFields: Ref<any> = ref([
     {
         key: 'uuid',
@@ -1691,6 +1762,8 @@ const programmaticAccessFields: Ref<any> = ref([
             return el
         }
     },
+    apiKeyStatusColumn,
+    apiKeySecretsColumn,
     {
         key: 'notes',
         title: 'Notes'
@@ -1771,6 +1844,8 @@ const freeFormKeyFields: Ref<any> = ref([
         key: 'updatedByName',
         title: 'Updated By'
     },
+    apiKeyStatusColumn,
+    apiKeySecretsColumn,
     {
         key: 'notes',
         title: 'Notes'
@@ -4350,6 +4425,8 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     accessDate
                                     createdDate
                                     notes
+                                    status
+                                    secrets { slot active createdDate lastUsedDate }
                                     boundAgents {
                                         uuid
                                         name
