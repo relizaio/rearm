@@ -175,7 +175,11 @@ export type DeviceWindowProvenance =
     | { level: 'SHIPMENT', siteName: string | null, shipDate: string | null, batchIdentifier: string | null }
 
 /** The statement's provenance line, or null when no window is declared. */
-export function deviceWindowProvenanceLine (p: DeviceWindowProvenance | null): string | null {
+export function deviceWindowProvenanceLine (
+    p: DeviceWindowProvenance | null | undefined
+): string | null {
+    // Optional on AddendumData, so undefined reaches here from any fixture or caller that
+    // predates D7. Same answer as null: no window declared, so no provenance to state.
     if (!p) return null
     if (p.level === 'COMPONENT') {
         return p.productName
@@ -216,7 +220,7 @@ export interface AddendumData {
      * differ, and "a different batch declared its own" is the answer. Null when no window is
      * declared at all -- there is no provenance for a fact that does not exist.
      */
-    deviceWindowSource: DeviceWindowProvenance | null
+    deviceWindowSource?: DeviceWindowProvenance | null
     /** Resolved through resolveNarrative: release override else org default, else null. */
     narrative: string | null
     /** True when the narrative came from the release rather than the org. */

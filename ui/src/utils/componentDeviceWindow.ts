@@ -79,8 +79,16 @@ export async function loadComponentDeviceWindow (
  * Returns null when nothing changed, so an unrelated save cannot rewrite the window and stamp
  * fresh provenance on a claim nobody touched.
  */
+/**
+ * @param componentName REQUIRED. `UpdateComponentInput.name` is `String!`, so even the
+ *   narrowest partial must carry it or graphql-java rejects the whole mutation at variable
+ *   coercion, BEFORE the resolver is reached -- the save then fails every time, for a reason
+ *   no server-side log explains. `deviceSupportWindowInput.ts` documents the identical trap
+ *   for `org` on `ReleaseInput`; this module missed it despite being modelled on that one.
+ */
 export function deviceWindowMutationInput (
     componentUuid: string,
+    componentName: string,
     edited: DeviceWindowState,
     baseline: DeviceWindowState
 ): Record<string, unknown> | null {
@@ -90,11 +98,12 @@ export function deviceWindowMutationInput (
     const hasSomething = !!edited.eos || !!edited.eol
     if (!hasSomething) {
         return hadSomething
-            ? { uuid: componentUuid, clearDeviceSupportWindow: true }
+            ? { uuid: componentUuid, name: componentName, clearDeviceSupportWindow: true }
             : null
     }
     return {
         uuid: componentUuid,
+        name: componentName,
         deviceSupportWindow: { eos: edited.eos || null, eol: edited.eol || null }
     }
 }

@@ -1093,10 +1093,16 @@
                         </n-space>
                         <div class="text-muted" style="font-size: 12px; max-width: 720px;">
                             Read-only here. Declared on
-                            <router-link v-if="updatedRelease.component"
-                                :to="{ name: 'ComponentView', params: { uuid: updatedRelease.component } }">
+                            <!-- ProductsOfOrg, not a 'ComponentView' route: ComponentView.vue is a
+                                 CHILD of the products/components page and has no route of its own.
+                                 The same link is built this way 180 lines above. A device window is
+                                 only ever on a PRODUCT, so this is the products surface. -->
+                            <router-link v-if="updatedRelease.componentDetails"
+                                :to="{ name: 'ProductsOfOrg', params: {
+                                    orguuid: updatedRelease.orgDetails?.uuid || updatedRelease.org,
+                                    compuuid: updatedRelease.componentDetails.uuid } }">
                                 {{ updatedRelease.componentDetails.name }}</router-link>
-                            <span v-else>{{ updatedRelease.componentDetails.name }}</span>
+                            <span v-else>the product component</span>
                             and inherited by every release of it; a batch may override it on the
                             shipment.
                         </div>

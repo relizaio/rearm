@@ -50,8 +50,8 @@ describe('writing the window', () => {
     const none = { eos: null, eol: null }
 
     it('sends the dates when they change', () => {
-        expect(deviceWindowMutationInput('c1', { eos: '2031-01-31', eol: null }, none))
-            .toEqual({ uuid: 'c1', deviceSupportWindow: { eos: '2031-01-31', eol: null } })
+        expect(deviceWindowMutationInput('c1', 'Pump', { eos: '2031-01-31', eol: null }, none))
+            .toEqual({ uuid: 'c1', name: 'Pump', deviceSupportWindow: { eos: '2031-01-31', eol: null } })
     })
 
     /**
@@ -60,13 +60,13 @@ describe('writing the window', () => {
      * silently in force while the screen showed it gone.
      */
     it('sends the clear flag when both dates are emptied', () => {
-        expect(deviceWindowMutationInput('c1', none, { eos: '2031-01-31', eol: null }))
-            .toEqual({ uuid: 'c1', clearDeviceSupportWindow: true })
+        expect(deviceWindowMutationInput('c1', 'Pump', none, { eos: '2031-01-31', eol: null }))
+            .toEqual({ uuid: 'c1', name: 'Pump', clearDeviceSupportWindow: true })
     })
 
     /** Nothing declared and nothing entered is not a retraction of anything. */
     it('sends nothing when there was nothing to clear', () => {
-        expect(deviceWindowMutationInput('c1', none, none)).toBeNull()
+        expect(deviceWindowMutationInput('c1', 'Pump', none, none)).toBeNull()
     })
 
     /**
@@ -75,7 +75,27 @@ describe('writing the window', () => {
      */
     it('sends nothing when the dates are unchanged', () => {
         const w = { eos: '2031-01-31', eol: '2033-06-30' }
-        expect(deviceWindowMutationInput('c1', { ...w }, { ...w })).toBeNull()
+        expect(deviceWindowMutationInput('c1', 'Pump', { ...w }, { ...w })).toBeNull()
+    })
+})
+
+/**
+ * UpdateComponentInput.name is String!, so a {uuid, window} partial is rejected at variable
+ * COERCION -- before the resolver, with no server-side log explaining it. The panel's Save then
+ * fails every single time. Layer 2 caught this; nothing here did, because every assertion
+ * checked the fields I remembered to send rather than the ones the schema demands.
+ */
+describe('the mutation input satisfies the required fields', () => {
+    const none = { eos: null, eol: null }
+
+    it('always carries name on a set', () => {
+        expect(deviceWindowMutationInput('c1', 'Pump', { eos: '2031-01-31', eol: null }, none))
+            .toHaveProperty('name', 'Pump')
+    })
+
+    it('always carries name on a clear', () => {
+        expect(deviceWindowMutationInput('c1', 'Pump', none, { eos: '2031-01-31', eol: null }))
+            .toHaveProperty('name', 'Pump')
     })
 })
 

@@ -61,7 +61,10 @@ describe('the device window panel is wired into the component page', () => {
 
     /** The write goes through the shared builder, which owns the clear-vs-empty rule. */
     it('builds its mutation input through deviceWindowMutationInput', () => {
-        expect(source).toMatch(/deviceWindowMutationInput\(componentUuid, deviceWindow, deviceWindowBaseline\)/)
+        expect(source).toMatch(/deviceWindowMutationInput\(componentUuid,/)
+        // name is String! on UpdateComponentInput -- a partial without it is rejected at
+        // coercion, so the panel must pass one.
+        expect(source).toMatch(/componentData\.value\?\.name \|\| updatedComponent\.name/)
     })
 })
 
@@ -87,10 +90,20 @@ describe('the release page separates the device window from release lifecycle', 
     })
 
     /** A reader must be able to reach the place it IS editable. */
-    it('links to the product component that declares it', () => {
+    /**
+     * A link to a route that does not exist is worse than no link: it renders, it is clickable,
+     * and it goes nowhere. The first version of this test asserted `name: 'ComponentView'` --
+     * which is the options-API COMPONENT name, not a route -- so it was green on a dead link.
+     * It now pins a route name that router.ts actually declares.
+     */
+    it('links to the product component through a route that exists', () => {
         const section = releaseView.slice(releaseView.indexOf('<h3>Device support window</h3>'))
-        expect(section.slice(0, 2000)).toMatch(/router-link/)
-        expect(section.slice(0, 2000)).toMatch(/name: 'ComponentView'/)
+        expect(section.slice(0, 2500)).toMatch(/router-link/)
+        expect(section.slice(0, 2500)).toMatch(/name: 'ProductsOfOrg'/)
+
+        const router = readFileSync(
+            fileURLToPath(new URL('../router.ts', import.meta.url)), 'utf8')
+        expect(router).toMatch(/name: 'ProductsOfOrg'/)
     })
 
     /** The release's own dates stay editable, under a heading that does not claim otherwise. */

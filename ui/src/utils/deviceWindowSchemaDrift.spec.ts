@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { buildSchema, validate, type GraphQLSchema } from 'graphql'
+import { buildSchema, validate, parse, type GraphQLSchema } from 'graphql'
 import { ADDENDUM_RELEASE_QUERY_CORE, ADDENDUM_RELEASE_QUERY_FULL } from './addendumData'
 import { COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
 
@@ -57,10 +57,11 @@ describe('the addendum release query', () => {
         expect(errs.join(' ')).toMatch(/deviceSupportWindow/)
     })
 
-    it('both validate against the Pro schema', () => {
-        if (!proSchema) return
-        expect(errorsAgainst(proSchema, ADDENDUM_RELEASE_QUERY_CORE)).toEqual([])
-        expect(errorsAgainst(proSchema, ADDENDUM_RELEASE_QUERY_FULL)).toEqual([])
+    // it.runIf, not an early return: a silent green when rearm-core is absent is how a drift
+    // spec stops covering anything without anyone noticing. Skipped is reported; green is not.
+    it.runIf(proSchema)('both validate against the Pro schema', () => {
+        expect(errorsAgainst(proSchema as GraphQLSchema, ADDENDUM_RELEASE_QUERY_CORE)).toEqual([])
+        expect(errorsAgainst(proSchema as GraphQLSchema, ADDENDUM_RELEASE_QUERY_FULL)).toEqual([])
     })
 })
 
@@ -79,9 +80,28 @@ describe('the component device-window query (the panel and the release read-only
         expect(errs.join(' ')).toMatch(/deviceSupportWindow/)
     })
 
-    it('validates against the Pro schema', () => {
-        if (!proSchema) return
-        expect(errorsAgainst(proSchema, COMPONENT_DEVICE_WINDOW_QUERY)).toEqual([])
+    it.runIf(proSchema)('validates against the Pro schema', () => {
+        expect(errorsAgainst(proSchema as GraphQLSchema, COMPONENT_DEVICE_WINDOW_QUERY)).toEqual([])
+    })
+})
+
+/**
+ * The shipments document is built by string interpolation, so `npm run validate:graphql` skips
+ * it ("dynamic/non-operation skipped") and no other spec covers it. The repo's own convention
+ * for that case -- validate-graphql.mjs says so in as many words -- is a vitest drift spec.
+ *
+ * Distribution is SaaS-only, so there is no CE half to check. What needs pinning is that the
+ * fields it asks for EXIST on Pro: nothing else would tell us if they moved.
+ */
+describe('the shipments query (SaaS-only, interpolated, skipped by validate-graphql)', () => {
+    it.runIf(proSchema)('asks only for fields Pro declares on ShippedProduct', () => {
+        const source = readFileSync(
+            fileURLToPath(new URL('../components/DistributionOfOrg.vue', import.meta.url)), 'utf8')
+        const m = source.match(/const SHIP_FIELDS = '([^']+)'\s*\n\s*\+ '([^']+)'/)
+        expect(m, 'SHIP_FIELDS changed shape -- update this spec rather than deleting it').toBeTruthy()
+        const doc = parse(`query shippedProductsOfSite($siteUuid: ID!) {
+            shippedProductsOfSite(siteUuid: $siteUuid) { ${(m as RegExpMatchArray)[1]}${(m as RegExpMatchArray)[2]} } }`)
+        expect(errorsAgainst(proSchema as GraphQLSchema, doc)).toEqual([])
     })
 })
 

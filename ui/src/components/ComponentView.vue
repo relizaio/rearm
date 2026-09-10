@@ -1365,7 +1365,10 @@ async function loadDeviceWindow (): Promise<void> {
 }
 
 async function saveDeviceWindow (): Promise<void> {
-    const input = deviceWindowMutationInput(componentUuid, deviceWindow, deviceWindowBaseline)
+    // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
+    // rejected at variable coercion before the resolver runs.
+    const input = deviceWindowMutationInput(componentUuid,
+        componentData.value?.name || updatedComponent.name, deviceWindow, deviceWindowBaseline)
     if (!input) return
     savingDeviceWindow.value = true
     deviceWindowError.value = null
