@@ -13,12 +13,17 @@ import {
  * this query -- so the panel that renders it must be able to HIDE, not just degrade. The
  * document is still split CORE/FULL the way every other Pro-leading read is: CORE selects the
  * verdict and the ids, FULL adds the evidence (which release was judged, the window in force,
- * the soonest component EOS, how many components drive the verdict). When CE gains the query
- * it will gain the CORE shape first; the panel then renders rows with the evidence columns
- * blank instead of blanking outright.
+ * the soonest component EOS, how many components drive the verdict) and the labels (the
+ * unit's identifiers, the site and client names) plus the fleet-wide at-risk count. When CE
+ * gains the query it will gain the CORE shape first; the panel then renders rows with the
+ * evidence and label columns blank instead of blanking outright.
  *
  * <p>Enrichment fields are read behind a presence guard by the caller, same rule as
  * notificationInboxQuery.ts: on a CORE-served page they are absent, not null.
+ *
+ * <p>Rows arrive at-risk-first (flagged, then not assessed, then OK; unit id as tie-break)
+ * from the server, across the WHOLE filtered fleet, not just the page: the panel renders
+ * them in the order served and must not re-sort.
  */
 export const FLEET_RISK_CORE_ROW_FIELDS: string[] = ['device', 'shippedProduct', 'site', 'release', 'risk']
 
@@ -26,21 +31,28 @@ export const FLEET_RISK_CORE_ROW_FIELDS: string[] = ['device', 'shippedProduct',
 // query (the level a window was declared at lives on the unit, not the row), and a label
 // that attributes a null source to "the product component" is a false provenance claim.
 export const FLEET_RISK_ENRICHMENT_ROW_FIELDS: string[] = [
-    'releaseSource', 'window { eos eol }', 'earliestComponentEos', 'componentsDrivingRisk'
+    'releaseSource', 'window { eos eol }', 'earliestComponentEos', 'componentsDrivingRisk',
+    'identifiers { idType idValue }', 'siteName', 'clientName'
 ]
 
-function buildFleetRiskQuery (rowFields: string[]): DocumentNode {
+/** Page-level fields. CORE has the population size only; FULL adds the fleet-wide at-risk count. */
+export const FLEET_RISK_CORE_PAGE_FIELDS: string[] = ['total']
+export const FLEET_RISK_ENRICHMENT_PAGE_FIELDS: string[] = ['atRiskTotal']
+
+function buildFleetRiskQuery (pageFields: string[], rowFields: string[]): DocumentNode {
     return gql`
         query devicesAtSupportRisk($orgUuid: ID!, $clientUuid: ID, $siteUuid: ID, $page: Int, $size: Int) {
             devicesAtSupportRisk(orgUuid: $orgUuid, clientUuid: $clientUuid, siteUuid: $siteUuid, page: $page, size: $size) {
-                total
+                ${pageFields.join(' ')}
                 rows { ${rowFields.join(' ')} }
             }
         }`
 }
 
-export const FLEET_RISK_QUERY_CORE: DocumentNode = buildFleetRiskQuery(FLEET_RISK_CORE_ROW_FIELDS)
-export const FLEET_RISK_QUERY_FULL: DocumentNode = buildFleetRiskQuery([...FLEET_RISK_CORE_ROW_FIELDS, ...FLEET_RISK_ENRICHMENT_ROW_FIELDS])
+export const FLEET_RISK_QUERY_CORE: DocumentNode = buildFleetRiskQuery(FLEET_RISK_CORE_PAGE_FIELDS, FLEET_RISK_CORE_ROW_FIELDS)
+export const FLEET_RISK_QUERY_FULL: DocumentNode = buildFleetRiskQuery(
+    [...FLEET_RISK_CORE_PAGE_FIELDS, ...FLEET_RISK_ENRICHMENT_PAGE_FIELDS],
+    [...FLEET_RISK_CORE_ROW_FIELDS, ...FLEET_RISK_ENRICHMENT_ROW_FIELDS])
 
 /** The server's page size cap; asking for more is silently clamped, so do not pretend otherwise. */
 export const FLEET_RISK_MAX_PAGE_SIZE = 200
@@ -77,6 +89,16 @@ export interface FleetRiskRow {
     window?: { eos?: string | null, eol?: string | null } | null
     earliestComponentEos?: string | null
     componentsDrivingRisk?: number | null
+    // Labels (FULL only): the unit's own identifiers, and the names of the site / client the
+    // unit is placed at. Name fields are null when the unit has none OR when it is archived.
+    identifiers?: FleetRiskIdentifier[] | null
+    siteName?: string | null
+    clientName?: string | null
+}
+
+export interface FleetRiskIdentifier {
+    idType: string
+    idValue: string
 }
 
 export interface FleetRiskFilter {
@@ -96,9 +118,15 @@ export interface FleetRiskResult {
     rows: FleetRiskRow[]
     /** The whole in-field fleet matching the filter, not this page. */
     total: number
+    /**
+     * Flagged units across the whole filtered fleet, not this page. Null when unknown: a
+     * CORE-served page, or a server that omitted it. Never 0 by default -- an unknown count
+     * rendered as "0 at risk" is the panel asserting a fleet fact it was not told.
+     */
+    atRiskTotal: number | null
 }
 
-export const FLEET_RISK_UNSUPPORTED: FleetRiskResult = { supported: false, degraded: false, rows: [], total: 0 }
+export const FLEET_RISK_UNSUPPORTED: FleetRiskResult = { supported: false, degraded: false, rows: [], total: 0, atRiskTotal: null }
 
 /**
  * Load one page, tolerating a backend that trails the schema.
@@ -133,7 +161,8 @@ export async function loadDevicesAtSupportRisk (
             supported: true,
             degraded,
             rows: (data?.rows ?? []).filter(Boolean),
-            total: typeof data?.total === 'number' ? data.total : 0
+            total: typeof data?.total === 'number' ? data.total : 0,
+            atRiskTotal: !degraded && typeof data?.atRiskTotal === 'number' ? data.atRiskTotal : null
         }
     } catch (e: any) {
         if (isSchemaDriftError(e)) return FLEET_RISK_UNSUPPORTED
@@ -203,15 +232,22 @@ export function summarizeFleetRiskPage (rows: FleetRiskRow[]): FleetRiskPageSumm
 }
 
 /**
- * The one-line headline above the table. Says how many units are in scope and, when the
- * page is the whole population, the exact verdict counts; otherwise it names the counts as
- * page counts so a partial view never reads as a fleet total. "In scope", not "evaluated":
- * the server evaluates only the page it returns, sorted by unit, not by verdict.
+ * The one-line headline above the table: "K at risk of M in-field units", where K is the
+ * server's count over the WHOLE filtered fleet (it evaluates every unit in scope on each
+ * request and serves them at-risk-first, so K is a fleet fact, not a page fact).
+ *
+ * When K is unknown -- a CORE-served page -- falls back to page counts: says how many units
+ * are in scope and, when the page is the whole population, the exact verdict counts;
+ * otherwise names the counts as page counts so a partial view never reads as a fleet total.
  */
-export function fleetRiskHeadline (total: number, rows: FleetRiskRow[]): string {
+export function fleetRiskHeadline (total: number, rows: FleetRiskRow[], atRiskTotal: number | null = null): string {
     if (total === 0) return 'No in-field units to evaluate'
     const s = summarizeFleetRiskPage(rows)
     const units = `${total} in-field unit${total === 1 ? '' : 's'} in scope`
+    if (typeof atRiskTotal === 'number') {
+        return `${atRiskTotal} at risk of ${units}`
+            + (s.unrecognised ? `; ${s.unrecognised} unrecognised on this page` : '')
+    }
     const verdicts = `${s.atRisk} at risk, ${s.unknown} not assessed, ${s.ok} OK`
         + (s.unrecognised ? `, ${s.unrecognised} unrecognised` : '')
     return rows.length >= total
