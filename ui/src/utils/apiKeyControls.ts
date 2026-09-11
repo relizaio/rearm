@@ -18,7 +18,11 @@ export interface ApiKeyControlOptions {
     canManage: (row: any) => boolean
     /** whether the viewer may mint (add / regenerate), which reveals cleartext: on a held free-form key only the holder; defaults to canManage */
     canMint?: (row: any) => boolean
+    /** whether the viewer acts as an org admin: only admins may re-activate a key an admin disabled; defaults to false */
+    isAdmin?: () => boolean
 }
+function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s: any) => s.active && !isExpired(s)) }
+function deniedReason (row: any): string { const m = /Denied(?::\s*(.*))?$/.exec(row.notes || ''); return m ? (m[1] || '') : '' }
 
 function fmtDate (d: any): string { return d ? new Date(d).toLocaleString('en-CA', { hour12: false }).slice(0, 16) : '' }
 function isExpired (sec: any): boolean { return !!sec.expiresDate && new Date(sec.expiresDate).getTime() <= Date.now() }
@@ -56,6 +60,7 @@ export async function showMintedSecret (forUser: any, title: string) {
 export function createApiKeyControls (opts: ApiKeyControlOptions) {
     const { notify, reload, canManage } = opts
     const canMint = opts.canMint || canManage
+    const isAdmin = opts.isAdmin || (() => false)
     const fail = (e: any) => notify('error', 'Error', commonFunctions.parseGraphQLError(e.message))
 
     async function mintSecret (apiKeyUuid: string, title: string, expiresDate: string | null = null) {
@@ -87,15 +92,19 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
             notify('success', 'Saved', a.clear ? `Secret #${slot} no longer expires` : `Secret #${slot} expires ${fmtDate(a.expiresDate)}`); await reload()
         } catch (e: any) { fail(e) }
     }
+    function lastActiveWarning (row: any, slot: number): string {
+        const usable = usableSecrets(row)
+        return usable.length === 1 && usable[0].slot === slot ? 'This is the last active secret: the key will authenticate nothing until a new secret is added. ' : ''
+    }
     async function setApiKeySecretActive (row: any, slot: number, active: boolean) {
-        if (!active && !(await confirmThen(`Retire secret #${slot}?`, 'It stays on file and can be enabled again, but it is refused until then, and so are access tokens exchanged with it.', 'Retire'))) return
+        if (!active && !(await confirmThen(`Retire secret #${slot}?`, lastActiveWarning(row, slot) + 'It stays on file and can be enabled again, but it is refused until then, and so are access tokens exchanged with it.', 'Retire'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation setApiKeySecretActive($apiKeyUuid: ID!, $slot: Int!, $active: Boolean!) { setApiKeySecretActive(apiKeyUuid: $apiKeyUuid, slot: $slot, active: $active) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot, active }, fetchPolicy: 'no-cache' })
             notify('success', active ? 'Enabled' : 'Retired', `Secret #${slot} ${active ? 'enabled' : 'retired'}`); await reload()
         } catch (e: any) { fail(e) }
     }
     async function deleteApiKeySecret (row: any, slot: number) {
-        if (!(await confirmThen(`Delete secret #${slot}?`, 'This cannot be undone. The secret and every access token exchanged with it stop working; the slot becomes free for a new secret.', 'Delete'))) return
+        if (!(await confirmThen(`Delete secret #${slot}?`, lastActiveWarning(row, slot) + 'This cannot be undone. The secret and every access token exchanged with it stop working; the slot becomes free for a new secret.', 'Delete'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation deleteApiKeySecret($apiKeyUuid: ID!, $slot: Int!) { deleteApiKeySecret(apiKeyUuid: $apiKeyUuid, slot: $slot) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot }, fetchPolicy: 'no-cache' })
             notify('success', 'Deleted', `Secret #${slot} deleted`); await reload()
@@ -118,13 +127,20 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
 
     const statusCell = (row: any) => {
         if (row.status === 'REQUESTED' || row.status === 'DENIED') {
-            return h(NTag, { size: 'small', type: row.status === 'REQUESTED' ? 'warning' : 'error' }, { default: () => row.status })
+            const kids: any[] = [h(NTag, { size: 'small', type: row.status === 'REQUESTED' ? 'warning' : 'error', style: 'margin-right: 6px;' }, { default: () => row.status })]
+            if (row.status === 'DENIED') kids.push(h('span', { class: 'subtle' }, deniedReason(row) ? `reason: ${deniedReason(row)}` : 'no reason given'))
+            return h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, kids)
         }
         const inactive = row.status === 'INACTIVE'
         const children: any[] = [h(NTag, { size: 'small', type: inactive ? 'error' : 'success', style: 'margin-right: 6px;' }, { default: () => inactive ? 'INACTIVE' : 'ACTIVE' })]
         if (canManage(row)) {
-            children.push(h(NButton, { size: 'tiny', type: inactive ? 'primary' : 'warning', onClick: () => setApiKeyStatus(row, inactive ? 'ACTIVE' : 'INACTIVE') },
-                { default: () => inactive ? 'Activate' : 'Deactivate' }))
+            if (inactive && row.adminDisabled && !isAdmin()) {
+                // an admin's kill switch is authoritative: the owner or holder cannot undo it
+                children.push(h(NTag, { size: 'tiny', type: 'warning' }, { default: () => 'disabled by an admin' }))
+            } else {
+                children.push(h(NButton, { size: 'tiny', type: inactive ? 'primary' : 'warning', onClick: () => setApiKeyStatus(row, inactive ? 'ACTIVE' : 'INACTIVE') },
+                    { default: () => inactive ? 'Activate' : 'Deactivate' }))
+            }
         }
         return h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, children)
     }
@@ -155,6 +171,8 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
         })
         if (row.holder && !mint && manage) {
             lines.push(h('span', { class: 'subtle' }, 'held key: only the holder mints its secrets'))
+        } else if (row.type === 'USER' && !mint && manage) {
+            lines.push(h('span', { class: 'subtle' }, 'personal key: only its owner mints its secrets'))
         }
         if (mint && secrets.length < 2) {
             lines.push(h(NButton, { size: 'tiny', dashed: true, style: 'margin-top: 2px;', onClick: () => addApiKeySecret(row) }, { default: () => secrets.length ? 'Add second secret (rotation)' : 'Add secret' }))
