@@ -9,14 +9,21 @@
             <n-data-table :columns="fleetDriftColumns" :data="fleetDrift" size="small" :row-props="driftRowProps" :pagination="fleetDrift.length > 5 ? { pageSize: 5 } : false" />
         </div>
         <!-- D7 fleet question, read-only: which in-field units outlive their software.
-             Hidden entirely on a backend whose schema lacks the query (CE before the sync);
-             follows the client / site selected below. -->
-        <div v-if="fleetRisk.supported" class="fleetRiskPanel" data-testid="fleet-risk-panel">
+             Hidden entirely on a backend whose schema lacks the query (CE before the sync),
+             and not shown at all until the first answer is in, so an empty frame never reads
+             as "no risk"; follows the client / site selected below. -->
+        <div v-if="fleetRiskLoaded && fleetRisk.supported" class="fleetRiskPanel" data-testid="fleet-risk-panel">
             <n-space align="center" size="small" style="margin-bottom: 6px;">
                 <n-tag :type="fleetRiskPageSummary.atRisk > 0 ? 'error' : 'default'" size="small">SUPPORT RISK</n-tag>
                 <strong data-testid="fleet-risk-headline">{{ fleetRiskHeadlineText }}</strong>
                 <span class="subtle">{{ fleetRiskScopeLabel }}</span>
             </n-space>
+            <n-alert v-if="fleetRiskError" type="error" :show-icon="false" size="small" style="margin-bottom: 6px;" data-testid="fleet-risk-error-alert">
+                <n-space align="center" size="small">
+                    <span>Could not load the fleet support risk view: {{ fleetRiskError }}. The rows below are the last answer, not the current one.</span>
+                    <n-button size="tiny" @click="loadFleetRisk(fleetRiskPage)">Retry</n-button>
+                </n-space>
+            </n-alert>
             <n-alert v-if="fleetRisk.degraded" type="warning" :show-icon="false" size="small" style="margin-bottom: 6px;" data-testid="fleet-risk-degraded-alert">
                 This backend serves the verdict per unit but not the evidence behind it (release judged, window in force, component end-of-support). Those columns are blank, not empty.
             </n-alert>
@@ -248,8 +255,9 @@ import { termsFor, DISTRIBUTION_DOMAIN_OPTIONS } from '@/utils/distributionTerms
 import { applyShipmentWindowToInput,
     effectiveWindowLabel as buildEffectiveWindowLabel } from '@/utils/componentDeviceWindow'
 import { loadDevicesAtSupportRisk, fleetRiskTag, fleetRiskHeadline, summarizeFleetRiskPage,
-    FLEET_RISK_DEFAULT_PAGE_SIZE, FLEET_RISK_UNSUPPORTED, type FleetRiskResult, type FleetRiskRow } from '@/utils/fleetSupportRisk'
-import { DEVICE_RISK_DETAIL, isDeviceRiskFlagged } from '@/utils/supportStatusTag'
+    releaseSourceTag, fleetWindowLabel, FLEET_RISK_DETAIL, FLEET_RISK_DEFAULT_PAGE_SIZE,
+    type FleetRiskResult, type FleetRiskRow } from '@/utils/fleetSupportRisk'
+import { isDeviceRiskFlagged } from '@/utils/supportStatusTag'
 
 const route = useRoute()
 const router = useRouter()
@@ -689,12 +697,14 @@ async function saveSite () {
     if (siteForm.uuid) input.uuid = siteForm.uuid
     await graphqlClient.mutate({ mutation: gql`mutation upsertSite($input: SiteInput!) { upsertSite(input: $input) { uuid } }`, variables: { input } })
     showSiteModal.value = false; notify('success', 'Saved', `Site ${siteForm.name} saved`); await loadSites(selectedClientUuid.value)
+    siteInfoLoaded.value = false
 }
 async function deleteSite (s: any) {
     await graphqlClient.mutate({ mutation: gql`mutation deleteSite($uuid: ID!) { deleteSite(uuid: $uuid) }`, variables: { uuid: s.uuid } })
     notify('info', 'Archived', `Site ${s.name} archived`)
     if (selectedSiteUuid.value === s.uuid) router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value, clientuuid: selectedClientUuid.value } })
     await loadSites(selectedClientUuid.value)
+    siteInfoLoaded.value = false
 }
 
 // ---- shipment ----
@@ -836,14 +846,16 @@ const fleetDriftColumns = [
 const driftRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => router.push({ name: 'DeviceView', params: { deviceuuid: r.device.uuid } }) })
 
 // ---- fleet support risk (D7, read-only, paged, follows the client / site selection) ----
-// Starts as "supported" so the first load decides: a panel that defaults to hidden and is
-// then shown on success flashes; one that defaults to shown and hides on an unsupported
-// backend shows an empty frame for one round-trip. Neither is great; the second is honest
-// about what is being asked, and the loading spinner covers it.
+// Three facts the template needs kept apart: has ANY answer arrived (`fleetRiskLoaded`, gates
+// the whole panel so an empty frame never reads as "no risk"), does the backend have the
+// query at all (`fleetRisk.supported`, hides it for good on CE), and did the LAST request
+// fail for some other reason (`fleetRiskError`, shown over the previous rows with a retry --
+// a 403 or a timeout is not a reason to make the panel disappear).
 const fleetRisk: Ref<FleetRiskResult> = ref({ supported: true, degraded: false, rows: [], total: 0 })
+const fleetRiskLoaded = ref(false)
 const fleetRiskLoading = ref(false)
+const fleetRiskError: Ref<string> = ref('')
 const fleetRiskPage = ref(1)  // one-based for n-data-table; the server is zero-based
-const fleetRiskFullRejected = ref(false)
 const fleetRiskPageSummary = computed(() => summarizeFleetRiskPage(fleetRisk.value.rows))
 const fleetRiskHeadlineText = computed(() => fleetRiskHeadline(fleetRisk.value.total, fleetRisk.value.rows))
 const fleetRiskScopeLabel = computed(() => selectedSite.value
@@ -856,15 +868,18 @@ const fleetRiskPagination = computed(() => ({
 }))
 // Site names for the rows come from the org-wide site list (rows carry ids only); device
 // identifiers come from the per-site device list, one read per DISTINCT site on the page.
+// The site list is read once and invalidated when this page saves or archives a site.
 const siteInfoMap: Ref<Record<string, { name: string, client: string }>> = ref({})
+const siteInfoLoaded = ref(false)
 const siteDevicesMap: Ref<Record<string, Record<string, any>>> = ref({})
 async function resolveSiteInfos () {
-    if (Object.keys(siteInfoMap.value).length) return
+    if (siteInfoLoaded.value) return
     try {
         const resp: any = await graphqlClient.query({ query: gql`query sitesOfOrg($o: ID!) { sitesOfOrg(orgUuid: $o) { uuid name client } }`, variables: { o: orguuid.value }, fetchPolicy: 'no-cache' })
         const m: Record<string, { name: string, client: string }> = {}
         for (const s of resp.data.sitesOfOrg || []) m[s.uuid] = { name: s.name, client: s.client }
         siteInfoMap.value = m
+        siteInfoLoaded.value = true
     } catch (e) { /* names stay as short uuids */ }
 }
 async function resolveSiteDevices (siteUuids: string[]) {
@@ -884,8 +899,13 @@ const fleetRiskClientName = (r: FleetRiskRow) => {
     const c = r.site ? siteInfoMap.value[r.site]?.client : null
     return (c && clients.value.find(x => x.uuid === c)?.name) || (c ? shortUuid(c) : '')
 }
+// Every load takes a ticket; only the newest ticket may write. A client switch while a
+// slow org-wide page is in flight would otherwise land the org-wide rows under the client's
+// scope label -- a wrong roster with a confident heading.
+let fleetRiskTicket = 0
 // `page` is one-based (from n-data-table); the server counts from zero.
 async function loadFleetRisk (page: number = 1) {
+    const ticket = ++fleetRiskTicket
     fleetRiskLoading.value = true
     try {
         const result = await loadDevicesAtSupportRisk(graphqlClient, {
@@ -894,10 +914,11 @@ async function loadFleetRisk (page: number = 1) {
             siteUuid: selectedSiteUuid.value || null,
             page: Math.max(0, page - 1),
             size: FLEET_RISK_DEFAULT_PAGE_SIZE
-        }, { skipFull: fleetRiskFullRejected.value })
-        if (result.supported && result.degraded) fleetRiskFullRejected.value = true
+        }, { skipFull: fleetRisk.value.degraded })  // once FULL is rejected, stop asking
+        if (ticket !== fleetRiskTicket) return
         fleetRisk.value = result
         fleetRiskPage.value = page
+        fleetRiskError.value = ''
         if (result.supported && result.rows.length) {
             await Promise.all([
                 resolveSiteInfos(),
@@ -906,32 +927,39 @@ async function loadFleetRisk (page: number = 1) {
             ])
         }
     } catch (e: any) {
-        // Not schema drift (that is `supported: false`): a real failure the operator must see.
-        fleetRisk.value = FLEET_RISK_UNSUPPORTED
-        notify('error', 'Fleet support risk', e?.message || 'Could not load the fleet support risk view')
+        if (ticket !== fleetRiskTicket) return
+        // Not schema drift (that is `supported: false`): a real failure the operator must
+        // see, over the rows that were there, with a way to ask again.
+        fleetRiskError.value = e?.message || 'unknown error'
+        notify('error', 'Failed', `Could not load the fleet support risk view: ${fleetRiskError.value}`)
     } finally {
-        fleetRiskLoading.value = false
+        if (ticket === fleetRiskTicket) {
+            fleetRiskLoading.value = false
+            fleetRiskLoaded.value = true
+        }
     }
 }
-const fleetRiskColumns = computed(() => [
+const blankCell = () => h('span', { class: 'subtle' }, '\u2014')
+const fleetRiskColumns = [
     { key: 'unit', title: 'Unit', minWidth: 220, render: (r: FleetRiskRow) => fleetRiskUnitLabel(r) },
-    { key: 'client', title: 'Client', minWidth: 110, render: (r: FleetRiskRow) => fleetRiskClientName(r) || h('span', { class: 'subtle' }, '—') },
-    { key: 'site', title: 'Site', minWidth: 110, render: (r: FleetRiskRow) => fleetRiskSiteName(r) || h('span', { class: 'subtle' }, '—') },
+    { key: 'client', title: 'Client', minWidth: 110, render: (r: FleetRiskRow) => fleetRiskClientName(r) || blankCell() },
+    { key: 'site', title: 'Site', minWidth: 110, render: (r: FleetRiskRow) => fleetRiskSiteName(r) || blankCell() },
     {
         key: 'release', title: 'Release judged',
         render: (r: FleetRiskRow) => {
             if (!r.release) return h('span', { class: 'subtle' }, 'none')
             const label = releaseLabel(r.release) || shortUuid(r.release)
             // Presence-guarded: absent on a CORE-served page, and a plan is not ground truth.
-            const source = 'releaseSource' in r && r.releaseSource
-                ? h(NTag, { size: 'tiny', type: r.releaseSource === 'REPORTED' ? 'success' : 'default', style: 'margin-left: 6px;' }, { default: () => r.releaseSource === 'REPORTED' ? 'reported' : 'expected' })
+            const st = 'releaseSource' in r ? releaseSourceTag(r.releaseSource) : null
+            const source = st
+                ? h(NTag, { size: 'tiny', type: st.type, style: 'margin-left: 6px;' }, { default: () => st.label })
                 : null
             return h('span', [label, source])
         }
     },
     {
         key: 'window', title: 'Device window',
-        render: (r: FleetRiskRow) => ('window' in r ? buildEffectiveWindowLabel(r.window) : '') || h('span', { class: 'subtle' }, '—')
+        render: (r: FleetRiskRow) => ('window' in r ? fleetWindowLabel(r.window) : '') || blankCell()
     },
     {
         key: 'risk', title: 'Risk',
@@ -940,15 +968,16 @@ const fleetRiskColumns = computed(() => [
             const tag = h(NTag, { size: 'small', type: t.type }, { default: () => t.label })
             if (!isDeviceRiskFlagged(r.risk)) return tag
             return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
-                trigger: () => tag, default: () => DEVICE_RISK_DETAIL[r.risk]
+                trigger: () => tag, default: () => FLEET_RISK_DETAIL[r.risk]
             })
         }
     },
-    { key: 'eos', title: 'Earliest component EOS', render: (r: FleetRiskRow) => ('earliestComponentEos' in r && r.earliestComponentEos) || h('span', { class: 'subtle' }, '—') },
-    { key: 'driving', title: 'Components driving risk', render: (r: FleetRiskRow) => ('componentsDrivingRisk' in r && typeof r.componentsDrivingRisk === 'number') ? String(r.componentsDrivingRisk) : h('span', { class: 'subtle' }, '—') }
-])
+    { key: 'eos', title: 'Earliest component EOS', render: (r: FleetRiskRow) => ('earliestComponentEos' in r && r.earliestComponentEos) || blankCell() },
+    { key: 'driving', title: 'Components driving risk', render: (r: FleetRiskRow) => ('componentsDrivingRisk' in r && typeof r.componentsDrivingRisk === 'number') ? String(r.componentsDrivingRisk) : blankCell() }
+]
 const fleetRiskRowProps = (r: FleetRiskRow) => ({ style: 'cursor: pointer;', onClick: () => router.push({ name: 'DeviceView', params: { deviceuuid: r.device } }) })
-// The selection is the filter: a client or site change re-asks from page 1.
+// The selection is the filter: a client or site change re-asks from page 1. Only a backend
+// without the query stops the asking; a failed load is retried on the next selection.
 watch([selectedClientUuid, selectedSiteUuid], () => { if (fleetRisk.value.supported) loadFleetRisk(1) })
 
 onMounted(async () => {

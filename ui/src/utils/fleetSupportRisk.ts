@@ -1,7 +1,10 @@
 import gql from 'graphql-tag'
 import type { DocumentNode } from 'graphql'
 import { isSchemaDriftError, loadWithSchemaDriftFallback, type DriftFallbackClient } from './graphqlDriftFallback'
-import { DEVICE_RISK_LABEL, isDeviceRiskFlagged, type SupportTagType } from './supportStatusTag'
+import {
+    DEVICE_RISK_LABEL, UNRECOGNISED_TAG, isDeviceRiskFlagged,
+    type FlaggedDeviceRisk, type SupportTagType
+} from './supportStatusTag'
 
 /**
  * THE FLEET QUESTION (D7), read-only: which in-field units outlive their software.
@@ -17,10 +20,13 @@ import { DEVICE_RISK_LABEL, isDeviceRiskFlagged, type SupportTagType } from './s
  * <p>Enrichment fields are read behind a presence guard by the caller, same rule as
  * notificationInboxQuery.ts: on a CORE-served page they are absent, not null.
  */
-export const FLEET_RISK_CORE_ROW_FIELDS = ['device', 'shippedProduct', 'site', 'release', 'risk']
+export const FLEET_RISK_CORE_ROW_FIELDS: string[] = ['device', 'shippedProduct', 'site', 'release', 'risk']
 
-export const FLEET_RISK_ENRICHMENT_ROW_FIELDS = [
-    'releaseSource', 'window { eos eol source }', 'earliestComponentEos', 'componentsDrivingRisk'
+// `window` deliberately selects no `source`: Pro's resolver serialises it as null for this
+// query (the level a window was declared at lives on the unit, not the row), and a label
+// that attributes a null source to "the product component" is a false provenance claim.
+export const FLEET_RISK_ENRICHMENT_ROW_FIELDS: string[] = [
+    'releaseSource', 'window { eos eol }', 'earliestComponentEos', 'componentsDrivingRisk'
 ]
 
 function buildFleetRiskQuery (rowFields: string[]): DocumentNode {
@@ -33,15 +39,32 @@ function buildFleetRiskQuery (rowFields: string[]): DocumentNode {
         }`
 }
 
-export const FLEET_RISK_QUERY_CORE = buildFleetRiskQuery(FLEET_RISK_CORE_ROW_FIELDS)
-export const FLEET_RISK_QUERY_FULL = buildFleetRiskQuery([...FLEET_RISK_CORE_ROW_FIELDS, ...FLEET_RISK_ENRICHMENT_ROW_FIELDS])
+export const FLEET_RISK_QUERY_CORE: DocumentNode = buildFleetRiskQuery(FLEET_RISK_CORE_ROW_FIELDS)
+export const FLEET_RISK_QUERY_FULL: DocumentNode = buildFleetRiskQuery([...FLEET_RISK_CORE_ROW_FIELDS, ...FLEET_RISK_ENRICHMENT_ROW_FIELDS])
 
 /** The server's page size cap; asking for more is silently clamped, so do not pretend otherwise. */
 export const FLEET_RISK_MAX_PAGE_SIZE = 200
 export const FLEET_RISK_DEFAULT_PAGE_SIZE = 20
 
-export type DeviceSupportRisk = 'OK' | 'EOS_BEFORE_DEVICE' | 'UNKNOWN'
+// Derived from the flagged set, not re-listed: supportStatusTag.ts owns which verdicts flag.
+export type DeviceSupportRisk = FlaggedDeviceRisk | 'OK' | 'UNKNOWN'
 export type EvaluatedRelease = 'REPORTED' | 'EXPECTED'
+
+/**
+ * Which release the verdict was computed against, as a tag. Keyed on the union so the
+ * comparison never happens on a string literal in an un-type-checked .vue render.
+ */
+export const RELEASE_SOURCE_TAG: Record<EvaluatedRelease, { type: SupportTagType, label: string }> = {
+    REPORTED: { type: 'success', label: 'reported' },
+    EXPECTED: { type: 'default', label: 'expected' }
+}
+export function releaseSourceTag (source: unknown): { type: SupportTagType, label: string } | null {
+    if (typeof source === 'string' && Object.prototype.hasOwnProperty.call(RELEASE_SOURCE_TAG, source)) {
+        return RELEASE_SOURCE_TAG[source as EvaluatedRelease]
+    }
+    if (source != null) console.error('unrecognised EvaluatedRelease from the server:', source)
+    return null
+}
 
 export interface FleetRiskRow {
     device: string
@@ -51,7 +74,7 @@ export interface FleetRiskRow {
     risk: DeviceSupportRisk
     // Enrichment (FULL only): absent on a CORE-served page.
     releaseSource?: EvaluatedRelease | null
-    window?: { eos?: string | null, eol?: string | null, source?: string | null } | null
+    window?: { eos?: string | null, eol?: string | null } | null
     earliestComponentEos?: string | null
     componentsDrivingRisk?: number | null
 }
@@ -123,40 +146,74 @@ export async function loadDevicesAtSupportRisk (
  * roster shows EVERY verdict: an operator scanning a page of units needs OK and "not assessed"
  * to be visibly different, because a unit with no window declared is not a safe unit -- it is
  * one nobody has looked at.
+ *
+ * A verdict this build does not know is NOT "not assessed" either -- same rule as supportTag:
+ * the server stated something, and rendering it as the absence of a statement is the UI
+ * asserting a disclosure fact. Loud tag, console error, the other rows still render.
  */
 export function fleetRiskTag (risk: unknown): { type: SupportTagType, label: string } {
     if (isDeviceRiskFlagged(risk)) return { type: 'error', label: DEVICE_RISK_LABEL[risk] }
     if (risk === 'OK') return { type: 'success', label: 'OK' }
-    return { type: 'warning', label: 'Not assessed' }
+    if (risk === 'UNKNOWN') return { type: 'warning', label: 'Not assessed' }
+    console.error('unrecognised DeviceSupportRisk from the server:', risk,
+        '- rendering it as "Not assessed" would assert nobody looked.')
+    return UNRECOGNISED_TAG
+}
+
+/**
+ * Why a UNIT is flagged. DEVICE_RISK_DETAIL is written for the per-component badge ("this
+ * component stops receiving support..."); on a roster row there is no single component in
+ * view, so the sentence has to speak of the release the unit runs. Keyed on the same union
+ * so a second flagged verdict cannot ship without roster wording.
+ */
+export const FLEET_RISK_DETAIL: Record<FlaggedDeviceRisk, string> = {
+    EOS_BEFORE_DEVICE: 'At least one attested component in the release this unit runs stops'
+        + ' receiving support before the unit\'s declared support window ends. "Components'
+        + ' driving risk" counts them; "Earliest component EOS" is the date that decided it.'
+}
+
+/**
+ * The window that applied to a unit, WITHOUT a provenance clause: this query does not say
+ * where the window came from, and effectiveWindowLabel would attribute it to the product
+ * component by default. See FLEET_RISK_ENRICHMENT_ROW_FIELDS.
+ */
+export function fleetWindowLabel (w: { eos?: string | null, eol?: string | null } | null | undefined): string {
+    if (!w || (!w.eos && !w.eol)) return ''
+    return `EOS ${w.eos || 'not declared'}, EOL ${w.eol || 'not declared'}`
 }
 
 export interface FleetRiskPageSummary {
     atRisk: number
     unknown: number
     ok: number
+    /** Verdicts this build does not know; never folded into `unknown` (see fleetRiskTag). */
+    unrecognised: number
 }
 
 /** Counts over the rows in hand -- one PAGE, which the caller must label as such. */
 export function summarizeFleetRiskPage (rows: FleetRiskRow[]): FleetRiskPageSummary {
-    const s: FleetRiskPageSummary = { atRisk: 0, unknown: 0, ok: 0 }
+    const s: FleetRiskPageSummary = { atRisk: 0, unknown: 0, ok: 0, unrecognised: 0 }
     for (const r of rows) {
         if (isDeviceRiskFlagged(r.risk)) s.atRisk++
         else if (r.risk === 'OK') s.ok++
-        else s.unknown++
+        else if (r.risk === 'UNKNOWN') s.unknown++
+        else s.unrecognised++
     }
     return s
 }
 
 /**
- * The one-line headline above the table. Says how many units were evaluated in total and,
- * when the page is the whole population, the exact at-risk count; otherwise it names the
- * count as a page count so a partial view never reads as a fleet total.
+ * The one-line headline above the table. Says how many units are in scope and, when the
+ * page is the whole population, the exact verdict counts; otherwise it names the counts as
+ * page counts so a partial view never reads as a fleet total. "In scope", not "evaluated":
+ * the server evaluates only the page it returns, sorted by unit, not by verdict.
  */
 export function fleetRiskHeadline (total: number, rows: FleetRiskRow[]): string {
     if (total === 0) return 'No in-field units to evaluate'
     const s = summarizeFleetRiskPage(rows)
-    const units = `${total} in-field unit${total === 1 ? '' : 's'} evaluated`
+    const units = `${total} in-field unit${total === 1 ? '' : 's'} in scope`
     const verdicts = `${s.atRisk} at risk, ${s.unknown} not assessed, ${s.ok} OK`
+        + (s.unrecognised ? `, ${s.unrecognised} unrecognised` : '')
     return rows.length >= total
         ? `${units}: ${verdicts}`
         : `${units}; this page: ${verdicts}`

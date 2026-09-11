@@ -1,12 +1,14 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { buildSchema, validate, print, type GraphQLSchema } from 'graphql'
 import {
     FLEET_RISK_QUERY_CORE, FLEET_RISK_QUERY_FULL, FLEET_RISK_ENRICHMENT_ROW_FIELDS,
     FLEET_RISK_CORE_ROW_FIELDS, FLEET_RISK_UNSUPPORTED, loadDevicesAtSupportRisk,
-    fleetRiskTag, summarizeFleetRiskPage, fleetRiskHeadline, type FleetRiskRow
+    fleetRiskTag, releaseSourceTag, fleetWindowLabel, summarizeFleetRiskPage, fleetRiskHeadline,
+    type FleetRiskRow
 } from './fleetSupportRisk'
+import { UNRECOGNISED_TAG } from './supportStatusTag'
 
 /**
  * The fleet-risk documents against BOTH schemas (D7).
@@ -58,6 +60,9 @@ describe('the devicesAtSupportRisk documents', () => {
         // The verdict is CORE: a page without it is not a fleet-risk page.
         expect(FLEET_RISK_CORE_ROW_FIELDS).toContain('risk')
         expect(FLEET_RISK_CORE_ROW_FIELDS).toContain('device')
+        // The backend serialises window.source as null for this query; selecting it would
+        // only feed a false "(from the product component)" clause. Pinned so nobody adds it.
+        expect(full).not.toMatch(/\bsource\b/)
     })
 
     // it.runIf, not an early return: a silent green when rearm-core is absent is how a drift
@@ -142,13 +147,50 @@ describe('fleet-risk presentation helpers', () => {
     it('gives every verdict a visibly different tag, and never renders UNKNOWN as OK', () => {
         expect(fleetRiskTag('EOS_BEFORE_DEVICE')).toEqual({ type: 'error', label: 'EOS before device' })
         expect(fleetRiskTag('OK')).toEqual({ type: 'success', label: 'OK' })
-        expect(fleetRiskTag('UNKNOWN').type).not.toBe('success')
-        expect(fleetRiskTag(undefined).type).not.toBe('success')
+        expect(fleetRiskTag('UNKNOWN')).toEqual({ type: 'warning', label: 'Not assessed' })
     })
 
-    it('counts a page by verdict', () => {
-        const s = summarizeFleetRiskPage([row(), row({ risk: 'EOS_BEFORE_DEVICE' }), row({ risk: 'UNKNOWN' }), row({ risk: 'EOS_BEFORE_DEVICE' })])
-        expect(s).toEqual({ atRisk: 2, unknown: 1, ok: 1 })
+    /**
+     * A verdict this build does not know is a statement the server made; "Not assessed"
+     * would say nobody looked. Same rule as supportTag: loud tag, console error.
+     */
+    it('renders an unrecognised verdict as unrecognised, not as "not assessed"', () => {
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            for (const v of ['EOL_BEFORE_DEVICE', '', undefined, null, 42]) {
+                expect(fleetRiskTag(v)).toEqual(UNRECOGNISED_TAG)
+                expect(fleetRiskTag(v).label).not.toBe('Not assessed')
+            }
+            expect(err).toHaveBeenCalled()
+        } finally { err.mockRestore() }
+    })
+
+    it('tags the release source off the enum, and rejects what it does not know', () => {
+        expect(releaseSourceTag('REPORTED')).toEqual({ type: 'success', label: 'reported' })
+        expect(releaseSourceTag('EXPECTED')).toEqual({ type: 'default', label: 'expected' })
+        expect(releaseSourceTag(undefined)).toBeNull()
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            expect(releaseSourceTag('PLANNED')).toBeNull()
+            expect(err).toHaveBeenCalledOnce()
+        } finally { err.mockRestore() }
+    })
+
+    it('labels the window without saying where it came from', () => {
+        expect(fleetWindowLabel({ eos: '2031-01-31', eol: '2033-06-30' })).toBe('EOS 2031-01-31, EOL 2033-06-30')
+        expect(fleetWindowLabel({ eos: '2031-01-31', eol: null })).toBe('EOS 2031-01-31, EOL not declared')
+        expect(fleetWindowLabel({ eos: null, eol: null })).toBe('')
+        expect(fleetWindowLabel(null)).toBe('')
+        expect(fleetWindowLabel(undefined)).toBe('')
+        expect(fleetWindowLabel({ eos: '2031-01-31', eol: '2033-06-30' })).not.toMatch(/from the/)
+    })
+
+    it('counts a page by verdict, keeping unrecognised verdicts out of "not assessed"', () => {
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            const s = summarizeFleetRiskPage([row(), row({ risk: 'EOS_BEFORE_DEVICE' }), row({ risk: 'UNKNOWN' }), row({ risk: 'EOS_BEFORE_DEVICE' }), row({ risk: 'WHAT' as any })])
+            expect(s).toEqual({ atRisk: 2, unknown: 1, ok: 1, unrecognised: 1 })
+        } finally { err.mockRestore() }
     })
 
     /**
@@ -158,9 +200,20 @@ describe('fleet-risk presentation helpers', () => {
     it('labels counts as page counts unless the page is the whole population', () => {
         expect(fleetRiskHeadline(0, [])).toBe('No in-field units to evaluate')
         expect(fleetRiskHeadline(2, [row(), row({ risk: 'EOS_BEFORE_DEVICE' })]))
-            .toBe('2 in-field units evaluated: 1 at risk, 0 not assessed, 1 OK')
+            .toBe('2 in-field units in scope: 1 at risk, 0 not assessed, 1 OK')
         expect(fleetRiskHeadline(57, [row()]))
-            .toBe('57 in-field units evaluated; this page: 0 at risk, 0 not assessed, 1 OK')
-        expect(fleetRiskHeadline(1, [row()])).toMatch(/^1 in-field unit evaluated:/)
+            .toBe('57 in-field units in scope; this page: 0 at risk, 0 not assessed, 1 OK')
+        expect(fleetRiskHeadline(1, [row()])).toMatch(/^1 in-field unit in scope:/)
+        // "in scope", never "evaluated": the server evaluates only the page it returns
+        expect(fleetRiskHeadline(57, [row()])).not.toMatch(/evaluated/)
+    })
+
+    it('names unrecognised verdicts in the headline only when there are any', () => {
+        expect(fleetRiskHeadline(1, [row()])).not.toMatch(/unrecognised/)
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            expect(fleetRiskHeadline(1, [row({ risk: 'WHAT' as any })]))
+                .toBe('1 in-field unit in scope: 0 at risk, 0 not assessed, 0 OK, 1 unrecognised')
+        } finally { err.mockRestore() }
     })
 })
