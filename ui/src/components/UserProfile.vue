@@ -102,7 +102,11 @@
                     <n-form-item>
                         <n-button type="primary" :disabled="!newKeyOrg" @click="createMyKey">Create key</n-button>
                     </n-form-item>
+                    <n-form-item>
+                        <n-button :disabled="!newKeyOrg" @click="requestFreeformKey">Request a free-form key</n-button>
+                    </n-form-item>
                 </n-space>
+                <p class="subtle">Need more than your own permissions allow, or a key that outlives your membership? Request a free-form key: admins approve it with the permissions they choose, and you alone generate and see its secrets.</p>
                 <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2200" class="table-hover"></n-data-table>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
             </div>
@@ -396,8 +400,8 @@ watch(orgOptions, (opts) => {
 async function loadMyKeys () {
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes status
-                secrets { slot active createdDate lastUsedDate }
+            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes status holder
+                secrets { slot active createdDate lastUsedDate expiresDate }
                 permissions { permissions { org scope object type meta approvals functions } } } }`,
             fetchPolicy: 'network-only'
         })
@@ -408,7 +412,7 @@ async function loadMyKeys () {
         }))
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
-const apiKeyControls = createApiKeyControls({ notify, reload: loadMyKeys, canManage: () => true })
+const apiKeyControls = createApiKeyControls({ notify, reload: loadMyKeys, canManage: () => true, canMint: (row: any) => row.status === 'ACTIVE' || row.status === 'INACTIVE' })
 
 async function createMyKey () {
     if (!newKeyOrg.value) return
@@ -425,12 +429,30 @@ async function createMyKey () {
     const r = await Swal.fire({ title: 'Key created', text: 'The key id exists but has no secret and no permissions yet. Generate its first secret now? Set its permissions from the Manage column; until then the key is refused everywhere.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
     if (r.value) await apiKeyControls.mintSecret(created.uuid, 'Secret generated')
 }
+async function requestFreeformKey () {
+    if (!newKeyOrg.value) return
+    const r = await Swal.fire({ title: 'Request a free-form key', input: 'textarea', inputLabel: 'Purpose (what the key is for; admins see this)', inputPlaceholder: 'e.g. CI pipeline for repo X needs release write on component Y', inputValue: newKeyNotes.value, showCancelButton: true, confirmButtonText: 'Send request', inputValidator: (v: string) => v ? null : 'Please describe the purpose' })
+    if (!r.isConfirmed) return
+    let created: any
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation: gql`mutation requestFreeformApiKey($orgUuid: ID!, $notes: String) { requestFreeformApiKey(orgUuid: $orgUuid, notes: $notes) { uuid } }`,
+            variables: { orgUuid: newKeyOrg.value, notes: r.value }, fetchPolicy: 'no-cache'
+        })
+        created = resp.data.requestFreeformApiKey
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
+    newKeyNotes.value = ''
+    await loadMyKeys()
+    const p = await Swal.fire({ title: 'Request sent', text: 'Admins of the organization will review it. Propose the permissions you need now? You can edit them until the request is decided.', icon: 'success', showCancelButton: true, confirmButtonText: 'Propose permissions', cancelButtonText: 'Later' })
+    if (p.value) { const row = myKeys.value.find((k: any) => k.uuid === created.uuid); if (row) editMyKey(row) }
+}
 function editMyKey (row: any) {
     selectedEditKey.value = commonFunctions.deepCopy(row)
     showKeyEditModal.value = true
 }
 const myKeyFields: ComputedRef<any> = computed((): any => [
     { key: 'orgName', width: 200, title: 'Organization' },
+    { key: 'kind', width: 130, title: 'Kind', render: (row: any) => row.type === 'USER' ? 'Personal' : 'Free-form (held)' },
     { key: 'apiId', width: 420, title: 'API ID', render: (row: any) => h('code', { style: 'word-break: break-all; font-size: 12px;' }, apiKeyIdOf(row)) },
     { key: 'createdDisplay', width: 170, title: 'Created' },
     { key: 'accessDisplay', width: 170, title: 'Last Accessed' },
@@ -446,10 +468,15 @@ const myKeyFields: ComputedRef<any> = computed((): any => [
     { key: 'notes', width: 180, title: 'Notes' },
     {
         key: 'controls', title: 'Manage',
-        render: (row: any) => h('div', [
-            h(NIcon, { title: 'Set Permissions For Key', class: 'icons clickable', size: 25, onClick: () => editMyKey(row) }, { default: () => h(EditIcon) }),
-            h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, 'this key') }, { default: () => h(Trash) })
-        ])
+        render: (row: any) => {
+            const els: any[] = []
+            // personal keys: the owner shapes the ceiling; held free-form keys: only while the request is pending
+            if (row.type === 'USER' || row.status === 'REQUESTED') {
+                els.push(h(NIcon, { title: row.type === 'USER' ? 'Set Permissions For Key' : 'Propose Permissions', class: 'icons clickable', size: 25, onClick: () => editMyKey(row) }, { default: () => h(EditIcon) }))
+            }
+            els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, row.status === 'REQUESTED' ? 'this request' : 'this key') }, { default: () => h(Trash) }))
+            return h('div', els)
+        }
     }
 ])
 </script>
