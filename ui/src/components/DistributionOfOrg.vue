@@ -248,7 +248,8 @@ import { ref, Ref, computed, ComputedRef, reactive, h, onMounted, watch } from '
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NTabPane, NTabs, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType, NCheckbox, NAlert } from 'naive-ui'
-import { CirclePlus, InfoCircle, Edit as EditIcon, Archive as ArchiveIcon } from '@vicons/tabler'
+import { CirclePlus, InfoCircle, Edit as EditIcon, Archive as ArchiveIcon,
+    FileCertificate as StatementIcon, Loader as PendingIcon } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -259,6 +260,8 @@ import { loadDevicesAtSupportRisk, fleetRiskTag, fleetRiskHeadline, summarizeFle
     releaseSourceTag, fleetWindowLabel, FLEET_RISK_DETAIL, FLEET_RISK_DEFAULT_PAGE_SIZE,
     type FleetRiskResult, type FleetRiskRow } from '@/utils/fleetSupportRisk'
 import { isDeviceRiskFlagged } from '@/utils/supportStatusTag'
+import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
+import { NO_WINDOW_IN_FORCE } from '@/utils/addendumData'
 
 const route = useRoute()
 const router = useRouter()
@@ -545,26 +548,80 @@ const siteColumns = [
     { key: 'name', title: 'Name' },
     ...(isWritable ? [{ key: 'actions', title: '', width: 70, render: (r: any) => rowActions(r, openSiteModal, deleteSite, `Archive site ${r.name} with its shipments and devices?`) }] : [])
 ]
+/**
+ * The Device Support Statement for one delivery (plan 7h).
+ *
+ * GATED ON THE WINDOW IN FORCE, not on the shipment's classification. Every delivery of a
+ * device model -- hardware batch, SaMD, or plain software applied to units at a site -- has
+ * dates in force for the units it reached, which is what the statement states. What it must
+ * NOT be offered for is a delivery with no window at all: the collector refuses that, and a
+ * control that is clickable only to answer with a dialog is the pattern the release view
+ * already had to walk back (board t20260909-061338-23148 step 6d).
+ */
+const statementColumn = {
+    key: 'statement', title: '',
+    render: (r: any) => {
+        const w = r.effectiveDeviceSupportWindow
+        const has = !!(w && (w.eos || w.eol))
+        const pending = statementExportPending.value === r.uuid
+        const icon = h(NIcon, {
+            size: 16,
+            'data-testid': 'shipment-statement-action',
+            'data-window-in-force': String(has),
+            'data-pending': String(pending),
+            style: `vertical-align: middle; ${pending ? 'cursor: progress; color: #909399;'
+                : (has ? 'cursor: pointer;' : 'color: #c8ccd0;')}`,
+            onClick: (e: Event) => { e.stopPropagation(); if (has) exportShipmentStatement(r) }
+        }, { default: () => h(pending ? PendingIcon : StatementIcon) })
+        return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+            trigger: () => icon,
+            default: () => pending
+                ? 'Assembling the statement. It walks the whole component list, so it can take'
+                    + ' a moment on a large release.'
+                : has
+                    ? 'Device support statement for this delivery. States the dates in force for'
+                        + ' these units, and names the delivery they apply to.'
+                    // The refusal the generator would give, said before the click instead of
+                    // after it. One sentence, one constant: two that must agree, in two
+                    // files, is how they stop agreeing.
+                    : NO_WINDOW_IN_FORCE
+        })
+    }
+}
+// Offered only where SOME delivery in the table has a window in force. An organization that
+// declares none would otherwise carry a permanently inert icon whose tooltip gives device-
+// model instructions it has no use for; once one delivery has a window, the inert icon on
+// its neighbours is the useful signal it was written to be.
+const anyWindowInForce = (rows: any[]) => rows.some((r: any) =>
+    r.effectiveDeviceSupportWindow?.eos || r.effectiveDeviceSupportWindow?.eol)
+const editShipmentColumn = {
+    key: 'edit', title: '',
+    render: (r: any) => h(NIcon, {
+        size: 16, style: 'cursor: pointer; vertical-align: middle;', title: 'Edit shipment',
+        onClick: (e: Event) => { e.stopPropagation(); openShipModal(r) }
+    }, { default: () => h(EditIcon) })
+}
+const releaseShipmentColumn = {
+    key: 'release', title: 'Release',
+    render: (r: any) => {
+        const i = releaseInfoMap.value[r.release]
+        if (!i) return shortUuid(r.release)
+        const link = (text: string, to: any) => h('a', {
+            class: 'shipLink',
+            onClick: (e: Event) => { e.stopPropagation(); router.push(to) }
+        }, text)
+        return h('span', [
+            link(i.productName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid } }),
+            ' — ',
+            link(i.fsName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid, branchuuid: i.fsUuid } }),
+            ' — ',
+            link(i.version, { name: 'ReleaseView', params: { uuid: r.release } })
+        ])
+    }
+}
 const shipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
-    {
-        key: 'release', title: 'Release',
-        render: (r: any) => {
-            const i = releaseInfoMap.value[r.release]
-            if (!i) return shortUuid(r.release)
-            const link = (text: string, to: any) => h('a', {
-                class: 'shipLink',
-                onClick: (e: Event) => { e.stopPropagation(); router.push(to) }
-            }, text)
-            return h('span', [
-                link(i.productName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid } }),
-                ' — ',
-                link(i.fsName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid, branchuuid: i.fsUuid } }),
-                ' — ',
-                link(i.version, { name: 'ReleaseView', params: { uuid: r.release } })
-            ])
-        }
-    },
+    releaseShipmentColumn,
     { key: 'quantity', title: 'Qty' },
     {
         key: 'info', title: '',
@@ -584,17 +641,62 @@ const shipmentColumns = computed(() => [
             })
         }
     },
-    ...(isWritable ? [{
-        key: 'edit', title: '',
-        render: (r: any) => h(NIcon, {
-            size: 16, style: 'cursor: pointer; vertical-align: middle;', title: 'Edit shipment',
-            onClick: (e: Event) => { e.stopPropagation(); openShipModal(r) }
-        }, { default: () => h(EditIcon) })
-    }] : [])
+    ...(anyWindowInForce([...hardwareShipments.value, ...samdShipments.value]) ? [statementColumn] : []),
+    ...(isWritable ? [editShipmentColumn] : [])
 ])
+
+/**
+ * The Device Support Statement for ONE DELIVERY (plan 7h).
+ *
+ * Same document and the same refusals as the release view's Export modal -- one helper
+ * serves both -- but the dates and the provenance line come from this shipment: the units in
+ * a delivery that overrode the model window do not run under the model's dates, and a
+ * statement that named the batch while printing the model's dates would contradict itself
+ * about which units it describes. ShipmentStatementContext carries the two together so a
+ * caller cannot supply one without the other.
+ */
+// The shipment whose statement is being assembled, so the row that was clicked is the row
+// that shows it. A bare boolean would spin every row at once.
+const statementExportPending: Ref<string> = ref('')
+async function exportShipmentStatement (r: any) {
+    if (statementExportPending.value) return
+    statementExportPending.value = r.uuid
+    try {
+        const w = r.effectiveDeviceSupportWindow
+        const outcome = await generateDeviceSupportStatement(graphqlClient as any, {
+            releaseUuid: r.release,
+            orgUuid: orguuid.value,
+            shipment: {
+                // From the ROW, not the page selection: the context exists so one delivery's
+                // provenance cannot be paired with another's window, and reading the site off
+                // a page-level computed leaves that true only by accident of scope.
+                siteName: sites.value.find((x: any) => x.uuid === r.site)?.name
+                    || selectedSite.value?.name || null,
+                shipDate: r.shipDate || null,
+                // The batch as a reader can match it against a delivery note: the identifiers
+                // recorded on the shipment, joined the same way this page shows them.
+                batchIdentifier: summarizeIds(r.identifiers) || null,
+                eos: w?.eos || null,
+                eol: w?.eol || null,
+                // The provenance line follows the DATES: an inherited window is the model's
+                // statement about every unit, not this delivery's about its own.
+                windowSource: w?.source || null
+            }
+        })
+        if (!outcome.ok) {
+            notify(outcome.kind === 'BLOCKED' ? 'warning' : 'error', 'Statement not generated', outcome.message)
+            return
+        }
+        notify('success', 'Statement exported', `Device support statement downloaded (${outcome.fileName}).`)
+    } catch (e: any) {
+        notify('error', 'Statement not generated', e?.message || 'unknown error')
+    } finally {
+        statementExportPending.value = ''
+    }
+}
 const softwareShipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
-    (shipmentColumns.value as any[])[1],
+    releaseShipmentColumn,
     { key: 'expiryDate', title: 'Expires', render: (r: any) => r.expiryDate || h('span', { class: 'subtle' }, '—') },
     {
         key: 'devices', title: 'Devices',
@@ -617,7 +719,8 @@ const softwareShipmentColumns = computed(() => [
             }) : ''
         }
     },
-    ...(isWritable ? [(shipmentColumns.value as any[])[(shipmentColumns.value as any[]).length - 1]] : [])
+    ...(anyWindowInForce(softwareShipments.value) ? [statementColumn] : []),
+    ...(isWritable ? [editShipmentColumn] : [])
 ])
 const deviceColumns = computed(() => [
     { key: 'ids', title: 'Unit ids', render: (r: any) => summarizeIds(r.identifiers) || h('span', { class: 'subtle' }, '—') },

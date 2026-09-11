@@ -171,6 +171,15 @@ export interface AddendumComponent {
  * site and ship date, plus the batch identifier when one was recorded -- rather than by the
  * word "override" or a uuid. "Override" is our vocabulary, not theirs.
  */
+/**
+ * The refusal when a delivery has no window in force. Exported because the caller gates the
+ * action on the same fact and must say the same thing when it slips through -- a row whose
+ * window was retracted in another session since the page loaded.
+ */
+export const NO_WINDOW_IN_FORCE = 'This delivery has no device support window in force, so a'
+    + ' statement generated for it would have no dates to state. Declare the window on the'
+    + ' device model, or record an override on the shipment.'
+
 export type DeviceWindowProvenance =
     | { level: 'COMPONENT', productName: string | null }
     | { level: 'SHIPMENT', siteName: string | null, shipDate: string | null, batchIdentifier: string | null }
@@ -193,6 +202,44 @@ export function deviceWindowProvenanceLine (
     return `These dates apply to the units${where}${when}${batch}, and may differ from other`
         + ' deliveries of the same device.'
 }
+
+/**
+ * The shipment a statement is being generated FOR, when it is generated from a shipment
+ * rather than from the release (plan 7h).
+ *
+ * PROVENANCE AND DATES IN ONE OBJECT, deliberately. A caller that could pass the batch
+ * without its window would produce a statement that names a batch and then prints the dates
+ * that batch overrode -- the one failure mode this shape exists to make unrepresentable.
+ * `eos`/`eol` are the shipment's EFFECTIVE window (the override where there is one, the
+ * model default where there is not), which is what the units in that delivery actually run
+ * under -- and `windowSource` says which of those two it was, because the provenance LINE
+ * must follow the dates. A delivery that inherited the model window is not batch-specific,
+ * and saying "these dates apply to the units delivered to X, and may differ from other
+ * deliveries" over inherited dates asserts a batch-specificity that does not exist -- while
+ * the release-generated statement for the same device says the opposite.
+ */
+export interface ShipmentStatementContext {
+    siteName: string | null
+    shipDate: string | null
+    /**
+     * The batch identifiers as recorded on the shipment, joined for a reader.
+     *
+     * A joined string, in a module whose header forbids joining -- deliberately, and this is
+     * the one place it is right: the field it feeds, DeviceWindowProvenance.batchIdentifier,
+     * is already a single reader-facing string (see 7f), and re-deriving it downstream would
+     * make the document's own provenance line the second source of truth for it. What the
+     * header forbids is formatting facts COLLECTED FROM THE SERVER; this is a caller's
+     * statement about its own row.
+     */
+    batchIdentifier: string | null
+    eos: string | null
+    eol: string | null
+    /** Where the effective window was declared, from the server's resolver. */
+    windowSource: DeviceWindowLevel | null
+}
+
+/** The levels a device window can be declared at, as the server's resolver reports them. */
+export type DeviceWindowLevel = 'COMPONENT' | 'SHIPMENT'
 
 export interface AddendumData {
     releaseUuid: string
@@ -320,8 +367,20 @@ export function isLiveAttestation (c: AddendumComponent): boolean {
 export async function collectAddendumData (
     client: DriftFallbackClient,
     releaseUuid: string,
-    orgUuid: string
+    orgUuid: string,
+    shipment?: ShipmentStatementContext | null
 ): Promise<AddendumResult> {
+    // Generated from a SHIPMENT: the dates AND the provenance come from the delivery, or
+    // neither does. A delivery with no effective window refuses BEFORE the walk rather than
+    // falling through to the model default, which would print the model's dates under a line
+    // naming a batch -- a statement that contradicts itself about which units it covers. The
+    // caller offers the action only where a window resolved; this is the guard, not a
+    // courtesy, and nothing about it needs the server.
+    if (shipment && !shipment.eos && !shipment.eol) {
+        return { ok: false, error: NO_WINDOW_IN_FORCE }
+    }
+    const shipmentEos = shipment ? blankToNull(shipment.eos) : null
+    const shipmentEol = shipment ? blankToNull(shipment.eol) : null
     try {
         // FULL, falling back to CORE on a drift error -- not FULL alone. CE declares
         // Component.medicalProfile WITHOUT deviceSupportWindow inside it, so asking for the
@@ -449,13 +508,24 @@ export async function collectAddendumData (
                 // release. release.eos/eol are release lifecycle for TEA/CLE -- reading them
                 // here is what made one physical device describable by a dozen different
                 // end-of-support dates depending on which firmware it happened to run.
-                deviceEos: blankToNull(deviceWindow?.eos),
-                deviceEol: blankToNull(deviceWindow?.eol),
-                // Generated from a release, so the window is the product component's. A
-                // shipment-generated statement supplies the SHIPMENT shape instead.
-                deviceWindowSource: (deviceWindow?.eos || deviceWindow?.eol)
-                    ? { level: 'COMPONENT', productName: blankToNull(release.componentDetails?.name) }
-                    : null,
+                deviceEos: shipment ? shipmentEos : blankToNull(deviceWindow?.eos),
+                deviceEol: shipment ? shipmentEol : blankToNull(deviceWindow?.eol),
+                // Generated from a release, so the window is the product component's -- unless
+                // a shipment was named, in which case both the dates above and this line come
+                // from that delivery. They move together or not at all.
+                // The provenance follows the DATES, not the entry point. A delivery that
+                // inherited the model window gets the model's line -- the same sentence the
+                // release-generated statement carries, because it is the same fact.
+                deviceWindowSource: (shipment && shipment.windowSource === 'SHIPMENT')
+                    ? {
+                        level: 'SHIPMENT',
+                        siteName: blankToNull(shipment.siteName),
+                        shipDate: blankToNull(shipment.shipDate),
+                        batchIdentifier: blankToNull(shipment.batchIdentifier)
+                    }
+                    : (shipment || deviceWindow?.eos || deviceWindow?.eol)
+                        ? { level: 'COMPONENT', productName: blankToNull(release.componentDetails?.name) }
+                        : null,
                 narrative: resolved.narrative,
                 narrativeIsPerRelease: resolved.perRelease,
                 orgName: blankToNull(org?.name),

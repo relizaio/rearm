@@ -1841,8 +1841,7 @@ import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import { collectAddendumData } from '@/utils/addendumData'
 import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
-import { renderDeviceSupportStatementBlob, deviceSupportStatementFileName,
-    statementBlockReason } from '@/utils/deviceSupportStatement'
+import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
@@ -5304,25 +5303,17 @@ async function exportDeviceSupportStatement () {
                 + ' resolved. Reload the page and try again.', 'error')
             return
         }
-        const result = await collectAddendumData(graphqlClient as any, updatedRelease.value.uuid, orgUuid)
-        if (!result.ok) {
-            Swal.fire('Statement not generated', result.error, 'error')
+        // Collect, refuse, render, download -- all four in the shared helper, which the
+        // shipment entry point on the Distribution page calls too (plan 7h). A FAILED
+        // outcome is "something went wrong"; a BLOCKED one is "this document must not exist
+        // yet", and the two have always been shown differently here.
+        const outcome = await generateDeviceSupportStatement(graphqlClient as any, {
+            releaseUuid: updatedRelease.value.uuid, orgUuid
+        })
+        if (!outcome.ok) {
+            Swal.fire('Statement not generated', outcome.message, outcome.kind === 'BLOCKED' ? 'warning' : 'error')
             return
         }
-        // Every refusal in one place, checked BEFORE anything is built.
-        const blocked = statementBlockReason(result.data)
-        if (blocked) {
-            Swal.fire('Statement not generated', blocked, 'warning')
-            return
-        }
-        const blob = await renderDeviceSupportStatementBlob(result.data)
-        const link = document.createElement('a')
-        link.href = window.URL.createObjectURL(blob)
-        link.download = deviceSupportStatementFileName(result.data)
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(link.href)
         notify('success', 'Statement exported', 'Device support statement downloaded.')
     } catch (err: any) {
         Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')

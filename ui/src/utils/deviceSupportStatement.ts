@@ -291,8 +291,23 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
     }
 }
 
+/**
+ * The file name. A SHIPMENT-generated statement names the delivery too: two batches of the
+ * same release carry DIFFERENT dates, and two downloads called
+ * `device-support-statement-1.4.2.pdf` in the same folder is one of them silently replacing
+ * the other -- in a folder of regulatory documents.
+ *
+ * Derived from the data rather than passed in, so the name cannot disagree with the
+ * provenance line inside the document.
+ */
 export function deviceSupportStatementFileName (d: AddendumData): string {
-    return `device-support-statement-${releaseSlug(d)}.pdf`
+    const p = d.deviceWindowSource
+    const delivery = p && p.level === 'SHIPMENT'
+        ? [p.shipDate, p.batchIdentifier].filter(Boolean).join('-')
+        : ''
+    const slug = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+    return `device-support-statement-${releaseSlug(d)}`
+        + (delivery ? `-${slug(delivery)}` : '') + '.pdf'
 }
 
 export async function renderDeviceSupportStatementBlob (d: AddendumData): Promise<Blob> {

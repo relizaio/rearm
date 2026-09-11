@@ -3,6 +3,9 @@ import { resolveNarrative, toAddendumComponent, isLiveAttestation, collectAddend
     ADDENDUM_PAGE_QUERY, ADDENDUM_RELEASE_QUERY, ADDENDUM_ORG_QUERY,
     ADDENDUM_MAX_COMPONENTS } from './addendumData'
 import { BULK_WALK_LIMIT } from './useBulkAttest'
+// The shipment cases below assert on the RENDERED statement: the failure they guard is the
+// dates and the provenance line disagreeing, which only the document shows.
+import { buildDeviceSupportStatementDefinition } from './deviceSupportStatement'
 
 describe('resolveNarrative', () => {
     // The seam every document reads through. Reading either stored field directly is the
@@ -439,6 +442,96 @@ describe('collectAddendumData', () => {
     })
 })
 
+
+/**
+ * A statement generated from a SHIPMENT (plan 7h).
+ *
+ * The assertions land on the RENDERED document, not on the collected facts, because the
+ * failure this guards is the two disagreeing: a provenance line naming a batch over the
+ * dates that batch overrode. Collected data alone cannot show that.
+ */
+describe('a statement generated from a shipment', () => {
+    const flat = (n: any): string =>
+        typeof n === 'string' ? n
+            : Array.isArray(n) ? n.map(flat).join(' ')
+                : n && typeof n === 'object' ? Object.values(n).map(flat).join(' ') : ''
+    const shipment = {
+        siteName: 'St Elsewhere ICU', shipDate: '2026-04-02', batchIdentifier: 'LOT:77, SERIAL:A9',
+        eos: '2029-03-31', eol: '2030-09-30', windowSource: 'SHIPMENT' as const
+    }
+    const collectForShipment = async (over: any = {}) => {
+        const client = fakeClient({
+            release: okRelease, org: okOrg, coverage: { total: 0, attested: 0 },
+            pages: [{ items: [], totalCount: 0, endCursor: null, hasMore: false }]
+        })
+        return await collectAddendumData(client as any, 'r1', 'o1', { ...shipment, ...over }) as any
+    }
+
+    it('prints the batch-overridden dates in the PDF, not the model default', async () => {
+        const res = await collectForShipment()
+        expect(res.ok).toBe(true)
+        // The fixture's model window is 2031-01-31 / 2034-12-31 -- deliberately different, so
+        // a collector that kept reading the model would produce visibly wrong output.
+        expect(res.data.deviceEos).toBe('2029-03-31')
+        expect(res.data.deviceEol).toBe('2030-09-30')
+        const text = flat(buildDeviceSupportStatementDefinition(res.data))
+        expect(text).toMatch(/2029-03-31/)
+        expect(text).toMatch(/2030-09-30/)
+        expect(text).not.toMatch(/2031-01-31/)
+        expect(text).not.toMatch(/2034-12-31/)
+    })
+
+    it('names the delivery the dates came from, in the same document', async () => {
+        const text = flat(buildDeviceSupportStatementDefinition((await collectForShipment()).data))
+        expect(text).toMatch(/delivered to St Elsewhere ICU/)
+        expect(text).toMatch(/on 2026-04-02/)
+        // The batch identifiers as recorded, so a reader can match them to a delivery note.
+        expect(text).toMatch(/\(batch LOT:77, SERIAL:A9\)/)
+        expect(text).toMatch(/may differ from other deliveries of the same device/)
+        expect(text).not.toMatch(/apply to every unit of it/)
+    })
+
+    /**
+     * The refusal that keeps the two from drifting apart. Falling through to the model
+     * default here would print the model's dates under a line naming a batch -- a statement
+     * that contradicts itself about which units it covers.
+     */
+    it('refuses a delivery with no effective window instead of falling back to the model', async () => {
+        const res = await collectForShipment({ eos: null, eol: null })
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/no device support window in force/)
+    })
+
+    /**
+     * A delivery that INHERITED the model window is not batch-specific. Saying "these dates
+     * apply to the units delivered to X, and may differ from other deliveries" over inherited
+     * dates asserts a scope that does not exist -- and the release-generated statement for the
+     * same device says the opposite, so two patient-facing documents would contradict each
+     * other. The provenance follows the dates, not the entry point.
+     */
+    it('says the MODEL line when the delivery inherited the model window', async () => {
+        const res = await collectForShipment({
+            windowSource: 'COMPONENT', eos: '2031-01-31', eol: '2034-12-31'
+        })
+        expect(res.ok).toBe(true)
+        expect(res.data.deviceWindowSource).toEqual({ level: 'COMPONENT', productName: 'Pump' })
+        const text = flat(buildDeviceSupportStatementDefinition(res.data))
+        expect(text).toMatch(/declared on Pump and apply to every unit of it/)
+        expect(text).not.toMatch(/delivered to St Elsewhere ICU/)
+        expect(text).not.toMatch(/may differ from other deliveries/)
+        expect(text).toMatch(/2031-01-31/)
+    })
+
+    it('still generates from the release when no shipment is named', async () => {
+        const client = fakeClient({
+            release: okRelease, org: okOrg, coverage: { total: 0, attested: 0 },
+            pages: [{ items: [], totalCount: 0, endCursor: null, hasMore: false }]
+        })
+        const res: any = await collectAddendumData(client as any, 'r1', 'o1')
+        expect(res.data.deviceEos).toBe('2031-01-31')
+        expect(res.data.deviceWindowSource).toEqual({ level: 'COMPONENT', productName: 'Pump' })
+    })
+})
 
 describe('the device window source (D7)', () => {
     /**
