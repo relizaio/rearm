@@ -624,9 +624,16 @@
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
                 <n-tabs type="segment" v-model:value="programmaticSubTab" size="medium" animated style="margin-bottom: 16px;">
                     <n-tab-pane name="freeFormKeys" tab="Free Form Keys">
+                        <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
+                            <h5>Key Requests</h5>
+                            <p class="subtle">Free-form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
+                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1800"
+                                class="table-hover">
+                            </n-data-table>
+                        </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2400"
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2600"
                                 class="table-hover">
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
@@ -1119,7 +1126,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1582,7 +1589,7 @@ const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
 
 // ---- API key status and secrets (kill switch + AWS-style two-secret rotation): shared controls ----
-const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value })
+const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder })
 const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyControls.statusCell }
 const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeyControls.secretsCell }
 /** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
@@ -1773,6 +1780,15 @@ const freeFormKeyFields: Ref<any> = ref([
         width: 150,
         title: 'Updated By'
     },
+    {
+        key: 'holderName', width: 200, title: 'Holder',
+        render: (row: any) => {
+            if (!row.holder) return h('span', { class: 'text-muted' }, '—')
+            const kids: any[] = [h('span', row.holderName)]
+            if (row.holderLeft) kids.push(h(NTag, { size: 'tiny', type: 'warning', style: 'margin-left: 6px;' }, { default: () => 'reassign' }))
+            return h('div', kids)
+        }
+    },
     apiKeyStatusColumn,
     apiKeySecretsColumn,
     {
@@ -1818,6 +1834,7 @@ const freeFormKeyFields: Ref<any> = ref([
                         }, { default: () => h(EditIcon) }
                     )
                 )
+                els.push(h(NIcon, { title: 'Holder (who mints the secrets)', class: 'icons clickable', size: 25, onClick: () => reassignHolder(row) }, { default: () => h(UserIcon) }))
                 els.push(h(
                     NIcon,
                     {
@@ -4215,7 +4232,8 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     createdDate
                                     notes
                                     status
-                                    secrets { slot active createdDate lastUsedDate }
+                                    holder
+                                    secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {
                                         uuid
                                         name
@@ -4791,8 +4809,61 @@ const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
     // updatedByName is also already resolved at load time. The
     // computed exists only so the table re-renders if the underlying
     // ref mutates (post-edit reload).
-    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM')
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && k.status !== 'REQUESTED' && k.status !== 'DENIED').map(withHolder)
 })
+function withHolder (k: any) {
+    if (!k.holder) return Object.assign({}, k, { holderName: '', holderLeft: false })
+    const u = users.value.find((x: any) => x.uuid === k.holder)
+    return Object.assign({}, k, { holderName: u ? (u.name || u.email) : 'left the organization', holderLeft: !u })
+}
+const computedKeyRequests: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder)
+})
+async function resolveKeyRequest (row: any, approve: boolean) {
+    let reason: string | null = null
+    if (approve) {
+        const r = await Swal.fire({ title: 'Approve this request?', text: 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
+        if (!r.value) return
+    } else {
+        const r = await Swal.fire({ title: 'Deny this request?', input: 'text', inputPlaceholder: 'Reason (shown to the requester)', showCancelButton: true, confirmButtonText: 'Deny' })
+        if (!r.isConfirmed) return
+        reason = r.value || null
+    }
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation resolveApiKeyRequest($apiKeyUuid: ID!, $approve: Boolean!, $reason: String) { resolveApiKeyRequest(apiKeyUuid: $apiKeyUuid, approve: $approve, reason: $reason) { uuid status } }`, variables: { apiKeyUuid: row.uuid, approve, reason }, fetchPolicy: 'no-cache' })
+        notify('success', approve ? 'Approved' : 'Denied', approve ? 'The requester can now generate secrets for this key' : 'Request denied'); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function reassignHolder (row: any) {
+    const options: Record<string, string> = { '': '(no holder: admins mint the secrets)' }
+    for (const u of users.value) options[u.uuid] = u.name ? `${u.name} (${u.email})` : u.email
+    const r = await Swal.fire({ title: 'Holder of this key', text: 'The holder is the only one who can generate or regenerate its secrets.', input: 'select', inputOptions: options, inputValue: row.holder || '', showCancelButton: true, confirmButtonText: 'Save' })
+    if (!r.isConfirmed) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation setApiKeyHolder($apiKeyUuid: ID!, $holder: ID) { setApiKeyHolder(apiKeyUuid: $apiKeyUuid, holder: $holder) { uuid holder } }`, variables: { apiKeyUuid: row.uuid, holder: r.value || null }, fetchPolicy: 'no-cache' })
+        notify('success', 'Saved', 'Holder updated'); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const keyRequestFields: Ref<any> = ref([
+    { key: 'uuid', width: 300, title: 'Internal ID' },
+    { key: 'holderName', width: 200, title: 'Requested By' },
+    { key: 'createdDate', width: 180, title: 'Requested' },
+    { key: 'status', width: 120, title: 'Status', render: apiKeyControls.statusCell },
+    { key: 'proposed', width: 150, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
+    { key: 'notes', width: 260, title: 'Purpose / Notes' },
+    {
+        key: 'controls', title: 'Manage',
+        render: (row: any) => {
+            const els: any[] = [h(NIcon, { title: 'Review / Edit Permissions', class: 'icons clickable', size: 25, onClick: () => editRbacKey(row) }, { default: () => h(EditIcon) })]
+            if (row.status === 'REQUESTED') {
+                els.push(h(NButton, { size: 'tiny', type: 'primary', style: 'margin: 0 4px;', onClick: () => resolveKeyRequest(row, true) }, { default: () => 'Approve' }))
+                els.push(h(NButton, { size: 'tiny', type: 'warning', style: 'margin-right: 4px;', onClick: () => resolveKeyRequest(row, false) }, { default: () => 'Deny' }))
+            }
+            els.push(h(NIcon, { title: 'Delete', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
+            return h('div', { style: 'display: flex; align-items: center;' }, els)
+        }
+    }
+])
 const computedUserKeys: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'USER').map((k: any) => {
         const owner = users.value.find((u: any) => u.uuid === k.object)
