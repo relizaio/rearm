@@ -12,6 +12,11 @@
                 These permissions are a ceiling. Every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.
                 Nothing is allowed until at least one permission is set.
             </p>
+            <n-alert v-if="apiKey?.type === 'USER' && ownerOrgType" :type="ceilingExceedsOwner ? 'warning' : 'info'" style="margin-bottom: 12px;">
+                Owner's own organization-wide permission right now: <strong>{{ ownerOrgType }}</strong>
+                <span v-if="ownerOrgType !== 'ADMIN'"> (plus {{ ownerScopedCount }} object-level grant{{ ownerScopedCount === 1 ? '' : 's' }})</span>.
+                <span v-if="ceilingExceedsOwner"> The organization-wide level chosen below is higher than that; it will have no effect until the owner is granted it.</span>
+            </n-alert>
             <n-tabs v-model:value="editTab" type="segment" animated>
                 <n-tab-pane name="permissions" tab="Permissions">
                     <n-spin :show="loading">
@@ -51,7 +56,7 @@
  * components, products and instances itself, so it can be used from org settings and from the
  * user's own keys on the profile page. Saves through setPermissionsOnFreeformApiKey / setNotesOnApiKey.
  */
-import { NModal, NTabs, NTabPane, NSpace, NButton, NInput, NSpin } from 'naive-ui'
+import { NModal, NTabs, NTabPane, NSpace, NButton, NInput, NSpin, NAlert } from 'naive-ui'
 import { ref, computed, watch } from 'vue'
 import { useStore } from 'vuex'
 import gql from 'graphql-tag'
@@ -76,6 +81,26 @@ const perspectives = ref<any[]>([])
 const scoped = ref<{ orgPermission: any, scopedPermissions: any[] }>({ orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] })
 
 const approvalRoles = computed(() => store.getters.orgById(props.orgUuid)?.approvalRoles || [])
+// USER keys: the owner's effective permissions in this org (groups included), so the ceiling can be read against them
+const ownerPerms = ref<any[]>([])
+const PERM_ORDER = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
+const ownerOrgType = computed(() => { const p = ownerPerms.value.find((x: any) => x.scope === 'ORGANIZATION' && x.object === props.orgUuid); return p ? p.type : (ownerPerms.value.length ? 'NONE' : '') })
+const ownerScopedCount = computed(() => ownerPerms.value.filter((x: any) => x.scope !== 'ORGANIZATION').length)
+const ceilingExceedsOwner = computed(() => {
+    const t = scoped.value.orgPermission?.type || 'NONE'
+    return !!ownerOrgType.value && PERM_ORDER.indexOf(t) > PERM_ORDER.indexOf(ownerOrgType.value)
+})
+async function loadOwnerPermissions () {
+    ownerPerms.value = []
+    if (props.apiKey?.type !== 'USER' || !props.apiKey?.object) return
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query combinedUserOrgPermissions($orgUuid: ID!, $userUuid: ID!) { combinedUserOrgPermissions(orgUuid: $orgUuid, userUuid: $userUuid) { permissions { org scope object type functions } } }`,
+            variables: { orgUuid: props.orgUuid, userUuid: props.apiKey.object }, fetchPolicy: 'no-cache'
+        })
+        ownerPerms.value = (resp.data.combinedUserOrgPermissions?.permissions || []).filter((x: any) => x.org === props.orgUuid)
+    } catch (e: any) { console.error('owner permissions unavailable', e) }
+}
 const orgComponents = computed(() => store.getters.componentsOfOrg(props.orgUuid) || [])
 const orgProducts = computed(() => store.getters.productsOfOrg(props.orgUuid) || [])
 const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])
@@ -121,7 +146,7 @@ async function load () {
     if (!props.apiKey || !props.orgUuid) return
     loading.value = true
     try {
-        const loads: Promise<any>[] = [loadPerspectives(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
+        const loads: Promise<any>[] = [loadPerspectives(), loadOwnerPermissions(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
         if (store.getters.myuser?.installationType !== 'OSS') loads.push(store.dispatch('fetchInstances', props.orgUuid))
         await Promise.all(loads)
         const scopedPerms: any[] = []

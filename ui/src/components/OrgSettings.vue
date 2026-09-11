@@ -1589,7 +1589,7 @@ const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
 
 // ---- API key status and secrets (kill switch + AWS-style two-secret rotation): shared controls ----
-const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder })
+const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value })
 const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyControls.statusCell }
 const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeyControls.secretsCell }
 /** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
@@ -4233,6 +4233,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     notes
                                     status
                                     holder
+                                    adminDisabled
                                     secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {
                                         uuid
