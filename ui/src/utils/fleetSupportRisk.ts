@@ -96,8 +96,29 @@ export interface FleetRiskRow {
     clientName?: string | null
 }
 
+/**
+ * The wire enum `IdentifierType`, mirrored as a union for the same reason as
+ * `DeviceSupportRisk` above: a `.vue` render comparing `idType` to the DISPLAY spelling
+ * ('UDI-DI', as the shipment form labels it) instead of the wire spelling ('UDI_DI') is a
+ * silent no-match with no compiler and no linter to catch it. Pinned against both schemas
+ * by fleetSupportRiskSchemaDrift.spec.ts, so a new identifier type cannot land unmirrored.
+ */
+export type IdentifierType =
+    | 'PURL' | 'CPE' | 'TEI' | 'COMPLIANCE_DOCUMENT'
+    | 'UDI' | 'UDI_DI' | 'UDI_PI' | 'SERIAL' | 'LOT'
+    | 'SWID' | 'SWHID' | 'OMNIBORID' | 'GTIN' | 'GMN' | 'MPN'
+    | 'PART_NUMBER' | 'MODEL_NUMBER' | 'SKU' | 'ASSET_TAG'
+    | 'FCC_ID' | 'IMEI' | 'MAC_ADDRESS'
+export const IDENTIFIER_TYPES: IdentifierType[] = [
+    'PURL', 'CPE', 'TEI', 'COMPLIANCE_DOCUMENT',
+    'UDI', 'UDI_DI', 'UDI_PI', 'SERIAL', 'LOT',
+    'SWID', 'SWHID', 'OMNIBORID', 'GTIN', 'GMN', 'MPN',
+    'PART_NUMBER', 'MODEL_NUMBER', 'SKU', 'ASSET_TAG',
+    'FCC_ID', 'IMEI', 'MAC_ADDRESS'
+]
+
 export interface FleetRiskIdentifier {
-    idType: string
+    idType: IdentifierType
     idValue: string
 }
 
@@ -245,8 +266,16 @@ export function fleetRiskHeadline (total: number, rows: FleetRiskRow[], atRiskTo
     const s = summarizeFleetRiskPage(rows)
     const units = `${total} in-field unit${total === 1 ? '' : 's'} in scope`
     if (typeof atRiskTotal === 'number') {
+        // "0 at risk" is not "clean": a unit with no declared window is one nobody has
+        // looked at (see fleetRiskTag). The server does not count those fleet-wide, so they
+        // are named as the page fact they are -- and the page is at-risk-first, so a page
+        // carrying unassessed units is a page that has run out of flagged ones.
+        const caveats = [
+            s.unknown ? `${s.unknown} not assessed` : '',
+            s.unrecognised ? `${s.unrecognised} unrecognised` : ''
+        ].filter(Boolean)
         return `${atRiskTotal} at risk of ${units}`
-            + (s.unrecognised ? `; ${s.unrecognised} unrecognised on this page` : '')
+            + (caveats.length ? `; ${caveats.join(', ')} on this page` : '')
     }
     const verdicts = `${s.atRisk} at risk, ${s.unknown} not assessed, ${s.ok} OK`
         + (s.unrecognised ? `, ${s.unrecognised} unrecognised` : '')

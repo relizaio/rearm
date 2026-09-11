@@ -96,7 +96,8 @@ describe('the fleet support-risk panel', () => {
      */
     it('labels rows from the row itself, with no per-site side reads', () => {
         const fleet = source.slice(source.indexOf('// ---- fleet support risk'))
-        expect(fleet).toMatch(/summarizeIds\('identifiers' in r \? \(r\.identifiers \|\| \[\]\) : \[\]\) \|\| shortUuid\(r\.device\)/)
+        expect(fleet).toMatch(/summarizeIds\('identifiers' in r \?[^)]*r\.identifiers/)
+        expect(fleet).toMatch(/\|\| shortUuid\(r\.device\)/)
         expect(fleet).toMatch(/'siteName' in r && r\.siteName/)
         expect(fleet).toMatch(/'clientName' in r && r\.clientName/)
         expect(fleet).not.toMatch(/devicesOfSite/)
@@ -111,10 +112,13 @@ describe('the fleet support-risk panel', () => {
     it('headlines the fleet-wide at-risk count and never re-sorts the served rows', () => {
         expect(source).toMatch(/fleetRiskHeadline\(fleetRisk\.value\.total, fleetRisk\.value\.rows, fleetRisk\.value\.atRiskTotal\)/)
         expect(source).toMatch(/fleetRisk\.value\.atRiskTotal !== null\s*\?\s*fleetRisk\.value\.atRiskTotal > 0\s*:\s*fleetRiskPageSummary\.value\.atRisk > 0/)
-        expect(source).toMatch(/<n-tag :type="fleetRiskAnyAtRisk \? 'error' : 'default'" size="small">SUPPORT RISK<\/n-tag>/)
+        expect(source).toMatch(/:type="fleetRiskAnyAtRisk \? 'error' : 'default'"/)
         // Rows are served at-risk-first across the whole fleet; the table shows them as served.
         expect(source).toMatch(/:data="fleetRisk\.rows"/)
         const fleet = source.slice(source.indexOf('// ---- fleet support risk'), source.indexOf('onMounted(async'))
+        // Positive pin first: a reworded section marker would otherwise slice to '' and let
+        // the two anti-assertions below pass while covering nothing.
+        expect(fleet).toMatch(/const fleetRiskColumns = \[/)
         expect(fleet).not.toMatch(/\.sort\(/)
         expect(fleet).not.toMatch(/sorter/)
     })

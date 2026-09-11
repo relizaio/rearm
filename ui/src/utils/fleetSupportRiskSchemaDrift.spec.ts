@@ -5,7 +5,7 @@ import { buildSchema, validate, print, type GraphQLSchema } from 'graphql'
 import {
     FLEET_RISK_QUERY_CORE, FLEET_RISK_QUERY_FULL, FLEET_RISK_ENRICHMENT_ROW_FIELDS,
     FLEET_RISK_CORE_ROW_FIELDS, FLEET_RISK_CORE_PAGE_FIELDS, FLEET_RISK_ENRICHMENT_PAGE_FIELDS,
-    FLEET_RISK_UNSUPPORTED, loadDevicesAtSupportRisk,
+    FLEET_RISK_UNSUPPORTED, IDENTIFIER_TYPES, loadDevicesAtSupportRisk,
     fleetRiskTag, releaseSourceTag, fleetWindowLabel, summarizeFleetRiskPage, fleetRiskHeadline,
     type FleetRiskRow
 } from './fleetSupportRisk'
@@ -75,6 +75,20 @@ describe('the devicesAtSupportRisk documents', () => {
         // The backend serialises window.source as null for this query; selecting it would
         // only feed a false "(from the product component)" clause. Pinned so nobody adds it.
         expect(full).not.toMatch(/\bsource\b/)
+    })
+
+    /**
+     * The mirrored IdentifierType union is the whole wire enum, not a device-facing subset:
+     * a roster row can carry any identifier the unit was given. Pinned against the schema so
+     * a new type cannot land in the backend and leave the union quietly short.
+     */
+    it.runIf(proSchema)('mirrors every IdentifierType the schema declares', () => {
+        for (const text of [readFileSync(CE_SCHEMA_PATH, 'utf8'), readFileSync(PRO_SCHEMA_PATH, 'utf8')]) {
+            const body = text.slice(text.indexOf('enum IdentifierType {'))
+            const declared = body.slice(0, body.indexOf('}')).split('\n').slice(1)
+                .map(l => l.replace(/#.*/, '').trim()).filter(Boolean)
+            expect([...declared].sort()).toEqual([...IDENTIFIER_TYPES].sort())
+        }
     })
 
     // it.runIf, not an early return: a silent green when rearm-core is absent is how a drift
@@ -241,6 +255,23 @@ describe('fleet-risk presentation helpers', () => {
         try {
             expect(fleetRiskHeadline(2, [row({ risk: 'WHAT' as any })], 1))
                 .toBe('1 at risk of 2 in-field units in scope; 1 unrecognised on this page')
+        } finally { err.mockRestore() }
+    })
+
+    /**
+     * "0 at risk" must not read as "clean fleet": a unit with no declared window is one
+     * nobody has looked at. The server counts only the flagged ones fleet-wide, so the
+     * unassessed are named as the page fact they are -- never dropped.
+     */
+    it('still names the unassessed units, as a page fact, under the fleet-wide count', () => {
+        expect(fleetRiskHeadline(57, [row({ risk: 'UNKNOWN' }), row({ risk: 'UNKNOWN' }), row()], 0))
+            .toBe('0 at risk of 57 in-field units in scope; 2 not assessed on this page')
+        // a page of nothing but assessed, OK units says nothing extra
+        expect(fleetRiskHeadline(57, [row(), row()], 0)).toBe('0 at risk of 57 in-field units in scope')
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            expect(fleetRiskHeadline(9, [row({ risk: 'UNKNOWN' }), row({ risk: 'WHAT' as any })], 2))
+                .toBe('2 at risk of 9 in-field units in scope; 1 not assessed, 1 unrecognised on this page')
         } finally { err.mockRestore() }
     })
 
