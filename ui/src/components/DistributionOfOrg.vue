@@ -249,7 +249,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NTabPane, NTabs, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType, NCheckbox, NAlert } from 'naive-ui'
 import { CirclePlus, InfoCircle, Edit as EditIcon, Archive as ArchiveIcon,
-    FileCertificate as StatementIcon } from '@vicons/tabler'
+    FileCertificate as StatementIcon, Loader as PendingIcon } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -261,6 +261,7 @@ import { loadDevicesAtSupportRisk, fleetRiskTag, fleetRiskHeadline, summarizeFle
     type FleetRiskResult, type FleetRiskRow } from '@/utils/fleetSupportRisk'
 import { isDeviceRiskFlagged } from '@/utils/supportStatusTag'
 import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
+import { NO_WINDOW_IN_FORCE } from '@/utils/addendumData'
 
 const route = useRoute()
 const router = useRouter()
@@ -562,24 +563,37 @@ const statementColumn = {
     render: (r: any) => {
         const w = r.effectiveDeviceSupportWindow
         const has = !!(w && (w.eos || w.eol))
+        const pending = statementExportPending.value === r.uuid
         const icon = h(NIcon, {
             size: 16,
             'data-testid': 'shipment-statement-action',
             'data-window-in-force': String(has),
-            style: `vertical-align: middle; ${has ? 'cursor: pointer;' : 'color: #c8ccd0;'}`,
+            'data-pending': String(pending),
+            style: `vertical-align: middle; ${pending ? 'cursor: progress; color: #909399;'
+                : (has ? 'cursor: pointer;' : 'color: #c8ccd0;')}`,
             onClick: (e: Event) => { e.stopPropagation(); if (has) exportShipmentStatement(r) }
-        }, { default: () => h(StatementIcon) })
+        }, { default: () => h(pending ? PendingIcon : StatementIcon) })
         return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
             trigger: () => icon,
-            default: () => has
-                ? 'Device support statement for this delivery. States the dates in force for'
-                    + ' these units, and names the delivery they apply to.'
-                : 'No device support window is in force for this delivery, so a statement for'
-                    + ' it would have no dates to state. Declare the window on the device'
-                    + ' model, or record an override on this shipment.'
+            default: () => pending
+                ? 'Assembling the statement. It walks the whole component list, so it can take'
+                    + ' a moment on a large release.'
+                : has
+                    ? 'Device support statement for this delivery. States the dates in force for'
+                        + ' these units, and names the delivery they apply to.'
+                    // The refusal the generator would give, said before the click instead of
+                    // after it. One sentence, one constant: two that must agree, in two
+                    // files, is how they stop agreeing.
+                    : NO_WINDOW_IN_FORCE
         })
     }
 }
+// Offered only where SOME delivery in the table has a window in force. An organization that
+// declares none would otherwise carry a permanently inert icon whose tooltip gives device-
+// model instructions it has no use for; once one delivery has a window, the inert icon on
+// its neighbours is the useful signal it was written to be.
+const anyWindowInForce = (rows: any[]) => rows.some((r: any) =>
+    r.effectiveDeviceSupportWindow?.eos || r.effectiveDeviceSupportWindow?.eol)
 const editShipmentColumn = {
     key: 'edit', title: '',
     render: (r: any) => h(NIcon, {
@@ -587,26 +601,27 @@ const editShipmentColumn = {
         onClick: (e: Event) => { e.stopPropagation(); openShipModal(r) }
     }, { default: () => h(EditIcon) })
 }
+const releaseShipmentColumn = {
+    key: 'release', title: 'Release',
+    render: (r: any) => {
+        const i = releaseInfoMap.value[r.release]
+        if (!i) return shortUuid(r.release)
+        const link = (text: string, to: any) => h('a', {
+            class: 'shipLink',
+            onClick: (e: Event) => { e.stopPropagation(); router.push(to) }
+        }, text)
+        return h('span', [
+            link(i.productName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid } }),
+            ' — ',
+            link(i.fsName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid, branchuuid: i.fsUuid } }),
+            ' — ',
+            link(i.version, { name: 'ReleaseView', params: { uuid: r.release } })
+        ])
+    }
+}
 const shipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
-    {
-        key: 'release', title: 'Release',
-        render: (r: any) => {
-            const i = releaseInfoMap.value[r.release]
-            if (!i) return shortUuid(r.release)
-            const link = (text: string, to: any) => h('a', {
-                class: 'shipLink',
-                onClick: (e: Event) => { e.stopPropagation(); router.push(to) }
-            }, text)
-            return h('span', [
-                link(i.productName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid } }),
-                ' — ',
-                link(i.fsName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid, branchuuid: i.fsUuid } }),
-                ' — ',
-                link(i.version, { name: 'ReleaseView', params: { uuid: r.release } })
-            ])
-        }
-    },
+    releaseShipmentColumn,
     { key: 'quantity', title: 'Qty' },
     {
         key: 'info', title: '',
@@ -626,7 +641,7 @@ const shipmentColumns = computed(() => [
             })
         }
     },
-    statementColumn,
+    ...(anyWindowInForce([...hardwareShipments.value, ...samdShipments.value]) ? [statementColumn] : []),
     ...(isWritable ? [editShipmentColumn] : [])
 ])
 
@@ -640,23 +655,32 @@ const shipmentColumns = computed(() => [
  * about which units it describes. ShipmentStatementContext carries the two together so a
  * caller cannot supply one without the other.
  */
-const statementExportPending = ref(false)
+// The shipment whose statement is being assembled, so the row that was clicked is the row
+// that shows it. A bare boolean would spin every row at once.
+const statementExportPending: Ref<string> = ref('')
 async function exportShipmentStatement (r: any) {
     if (statementExportPending.value) return
-    statementExportPending.value = true
+    statementExportPending.value = r.uuid
     try {
         const w = r.effectiveDeviceSupportWindow
         const outcome = await generateDeviceSupportStatement(graphqlClient as any, {
             releaseUuid: r.release,
             orgUuid: orguuid.value,
             shipment: {
-                siteName: selectedSite.value?.name || null,
+                // From the ROW, not the page selection: the context exists so one delivery's
+                // provenance cannot be paired with another's window, and reading the site off
+                // a page-level computed leaves that true only by accident of scope.
+                siteName: sites.value.find((x: any) => x.uuid === r.site)?.name
+                    || selectedSite.value?.name || null,
                 shipDate: r.shipDate || null,
                 // The batch as a reader can match it against a delivery note: the identifiers
                 // recorded on the shipment, joined the same way this page shows them.
                 batchIdentifier: summarizeIds(r.identifiers) || null,
                 eos: w?.eos || null,
-                eol: w?.eol || null
+                eol: w?.eol || null,
+                // The provenance line follows the DATES: an inherited window is the model's
+                // statement about every unit, not this delivery's about its own.
+                windowSource: w?.source || null
             }
         })
         if (!outcome.ok) {
@@ -667,12 +691,12 @@ async function exportShipmentStatement (r: any) {
     } catch (e: any) {
         notify('error', 'Statement not generated', e?.message || 'unknown error')
     } finally {
-        statementExportPending.value = false
+        statementExportPending.value = ''
     }
 }
 const softwareShipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
-    (shipmentColumns.value as any[])[1],
+    releaseShipmentColumn,
     { key: 'expiryDate', title: 'Expires', render: (r: any) => r.expiryDate || h('span', { class: 'subtle' }, '—') },
     {
         key: 'devices', title: 'Devices',
@@ -695,7 +719,7 @@ const softwareShipmentColumns = computed(() => [
             }) : ''
         }
     },
-    statementColumn,
+    ...(anyWindowInForce(softwareShipments.value) ? [statementColumn] : []),
     ...(isWritable ? [editShipmentColumn] : [])
 ])
 const deviceColumns = computed(() => [

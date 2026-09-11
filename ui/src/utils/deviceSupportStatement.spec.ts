@@ -316,6 +316,29 @@ describe('deviceSupportStatementFileName', () => {
         expect(deviceSupportStatementFileName(data({ releaseVersion: null, releaseUuid: null as any })))
             .toBe('device-support-statement-release.pdf')
     })
+
+    /**
+     * Two batches of the same release carry DIFFERENT dates. Two downloads called
+     * `device-support-statement-1.4.2.pdf` in one folder is one of them silently replacing
+     * the other -- in a folder of regulatory documents.
+     */
+    it('names the delivery too, when the dates are a delivery\'s', () => {
+        const name = deviceSupportStatementFileName(data({
+            deviceWindowSource: { level: 'SHIPMENT', siteName: 'St Elsewhere ICU',
+                shipDate: '2026-04-02', batchIdentifier: 'LOT:77' }
+        }))
+        expect(name).toBe('device-support-statement-9000.1.0-2026-04-02-LOT-77.pdf')
+        expect(name).not.toBe(deviceSupportStatementFileName(data()))
+    })
+
+    it('stays a usable file name when the batch carries punctuation', () => {
+        const name = deviceSupportStatementFileName(data({
+            deviceWindowSource: { level: 'SHIPMENT', siteName: null, shipDate: null,
+                batchIdentifier: 'LOT:77 / SERIAL:A9' }
+        }))
+        expect(name).toBe('device-support-statement-9000.1.0-LOT-77-SERIAL-A9.pdf')
+        expect(name).not.toMatch(/[/:\\ ]/)
+    })
 })
 
 describe('what the statement must never carry', () => {

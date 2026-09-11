@@ -457,7 +457,7 @@ describe('a statement generated from a shipment', () => {
                 : n && typeof n === 'object' ? Object.values(n).map(flat).join(' ') : ''
     const shipment = {
         siteName: 'St Elsewhere ICU', shipDate: '2026-04-02', batchIdentifier: 'LOT:77, SERIAL:A9',
-        eos: '2029-03-31', eol: '2030-09-30'
+        eos: '2029-03-31', eol: '2030-09-30', windowSource: 'SHIPMENT' as const
     }
     const collectForShipment = async (over: any = {}) => {
         const client = fakeClient({
@@ -500,6 +500,26 @@ describe('a statement generated from a shipment', () => {
         const res = await collectForShipment({ eos: null, eol: null })
         expect(res.ok).toBe(false)
         expect(res.error).toMatch(/no device support window in force/)
+    })
+
+    /**
+     * A delivery that INHERITED the model window is not batch-specific. Saying "these dates
+     * apply to the units delivered to X, and may differ from other deliveries" over inherited
+     * dates asserts a scope that does not exist -- and the release-generated statement for the
+     * same device says the opposite, so two patient-facing documents would contradict each
+     * other. The provenance follows the dates, not the entry point.
+     */
+    it('says the MODEL line when the delivery inherited the model window', async () => {
+        const res = await collectForShipment({
+            windowSource: 'COMPONENT', eos: '2031-01-31', eol: '2034-12-31'
+        })
+        expect(res.ok).toBe(true)
+        expect(res.data.deviceWindowSource).toEqual({ level: 'COMPONENT', productName: 'Pump' })
+        const text = flat(buildDeviceSupportStatementDefinition(res.data))
+        expect(text).toMatch(/declared on Pump and apply to every unit of it/)
+        expect(text).not.toMatch(/delivered to St Elsewhere ICU/)
+        expect(text).not.toMatch(/may differ from other deliveries/)
+        expect(text).toMatch(/2031-01-31/)
     })
 
     it('still generates from the release when no shipment is named', async () => {

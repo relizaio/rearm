@@ -162,7 +162,12 @@ describe('a statement can be generated from a shipment', () => {
         expect(shipmentExport).toMatch(/const w = r\.effectiveDeviceSupportWindow/)
         // named by what a reader can match against a delivery note, not by uuid
         expect(shipmentExport).toMatch(/batchIdentifier: summarizeIds\(r\.identifiers\)/)
-        expect(shipmentExport).not.toMatch(/r\.uuid/)
+        // The provenance LINE follows the dates: an inherited window is the model's statement
+        // about every unit, and saying "may differ from other deliveries" over it asserts a
+        // batch-specificity that does not exist.
+        expect(shipmentExport).toMatch(/windowSource: w\?\.source \|\| null/)
+        // named by what a reader can match against a delivery note, never by uuid
+        expect(shipmentExport).not.toMatch(/batchIdentifier: [^\n]*uuid/)
     })
 
     it('offers the action only where a window is in force', () => {
@@ -170,7 +175,9 @@ describe('a statement can be generated from a shipment', () => {
         expect(col).toMatch(/const has = !!\(w && \(w\.eos \|\| w\.eol\)\)/)
         expect(col).toMatch(/if \(has\) exportShipmentStatement\(r\)/)
         // and says why, rather than answering the click with a dialog
-        expect(col).toMatch(/No device support window is in force for this delivery/)
+        // One sentence for the tooltip and for the generator's refusal, from one constant.
+        expect(col).toMatch(/: NO_WINDOW_IN_FORCE/)
+        expect(dist).toMatch(/import \{ NO_WINDOW_IN_FORCE \} from '@\/utils\/addendumData'/)
         // The gate is readable from outside, so the live probe asserts the same fact the
         // unit tests do rather than inferring it from a cursor style.
         expect(col).toMatch(/'data-testid': 'shipment-statement-action'/)
@@ -178,7 +185,7 @@ describe('a statement can be generated from a shipment', () => {
     })
 
     it('reads the effective window from the shipment query', () => {
-        expect(dist).toMatch(/effectiveDeviceSupportWindow \{ eos eol source \}/)
+        expect(dist).toMatch(/effectiveDeviceSupportWindow\s*\{[^}]*\bsource\b/)
     })
 
     /**
@@ -192,9 +199,35 @@ describe('a statement can be generated from a shipment', () => {
         for (const table of ['const shipmentColumns', 'const softwareShipmentColumns']) {
             const cols = dist.slice(dist.indexOf(table))
             expect(cols.slice(0, cols.indexOf('\n])')), `${table} must carry the statement action`)
-                .toMatch(/\n    statementColumn,/)
+                .toMatch(/^\s*\.\.\.\(anyWindowInForce\([^)]*\) \? \[statementColumn\] : \[\]\),$/m)
         }
-        expect(dist).not.toMatch(/shipmentColumns\.value as any\[\]\)\[\(shipmentColumns/)
+        // and no positional borrow of ANY column between the two tables: the same trap one
+        // insertion away, which is how the edit icon nearly became the statement action.
+        expect(dist).not.toMatch(/\(shipmentColumns\.value as any\[\]\)\[/)
+        expect(dist).toMatch(/const releaseShipmentColumn = \{/)
+    })
+
+    /**
+     * An organization that declares no windows at all would otherwise carry a permanently
+     * inert icon whose tooltip gives device-model instructions it has no use for. Once one
+     * delivery has a window, the inert icon on its neighbours is the signal it was written
+     * to be -- so the column appears per table, not per row.
+     */
+    it('does not appear at all until some delivery in the table has a window', () => {
+        expect(dist).toMatch(/const anyWindowInForce = \(rows: any\[\]\) => rows\.some/)
+        expect(dist).toMatch(/r\.effectiveDeviceSupportWindow\?\.eos \|\| r\.effectiveDeviceSupportWindow\?\.eol/)
+    })
+
+    /**
+     * The row that was clicked is the row that shows the work. A bare boolean would spin
+     * every row at once, and no indicator at all made a multi-query walk look like a dead
+     * control (the release view disables its button for the same reason).
+     */
+    it('shows the assembling state on the row it was asked from', () => {
+        expect(dist).toMatch(/const statementExportPending: Ref<string> = ref\(''\)/)
+        expect(dist).toMatch(/const pending = statementExportPending\.value === r\.uuid/)
+        expect(dist).toMatch(/statementExportPending\.value = r\.uuid/)
+        expect(dist).toMatch(/h\(pending \? PendingIcon : StatementIcon\)/)
     })
 
     it('reports a refusal as a refusal and a failure as a failure', () => {
