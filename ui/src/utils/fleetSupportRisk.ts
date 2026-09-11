@@ -21,6 +21,13 @@ import {
  * <p>Enrichment fields are read behind a presence guard by the caller, same rule as
  * notificationInboxQuery.ts: on a CORE-served page they are absent, not null.
  *
+ * <p>The labels and the at-risk count joined the SAME FULL document rather than a third
+ * tier: a Pro backend that has the query but not those fields (mid-roll, UI ahead of
+ * backend) therefore degrades all the way to CORE and blanks the evidence columns it could
+ * have served, until the page is reloaded against the rolled backend. A third document
+ * would buy that window a partial answer at the cost of an extra round trip on every
+ * fallback, for a state that lasts one deploy.
+ *
  * <p>Rows arrive at-risk-first (flagged, then not assessed, then OK; unit id as tie-break)
  * from the server, across the WHOLE filtered fleet, not just the page: the panel renders
  * them in the order served and must not re-sort.

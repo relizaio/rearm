@@ -25,7 +25,7 @@
                 </n-space>
             </n-alert>
             <n-alert v-if="fleetRisk.degraded" type="warning" :show-icon="false" size="small" style="margin-bottom: 6px;" data-testid="fleet-risk-degraded-alert">
-                This backend serves the verdict per unit but not the evidence behind it (release judged, window in force, component end-of-support) nor the unit labels (identifiers, site and client names) or the fleet-wide at-risk count. Those columns are blank, not empty; units are named by id and the headline counts this page only.
+                This backend serves the verdict per unit but not the evidence behind it (release judged, window in force, component end-of-support) nor the unit labels (identifiers, site and client names) or the fleet-wide at-risk count. Those columns are blank, not empty; units are named by id, and the headline counts the rows in hand rather than the fleet.
             </n-alert>
             <!-- Served at-risk-first across the whole fleet; rendered in that order, never re-sorted. -->
             <n-data-table remote :columns="fleetRiskColumns" :data="fleetRisk.rows" :loading="fleetRiskLoading" size="small"
@@ -874,6 +874,9 @@ const fleetRiskPagination = computed(() => ({
 // FULL page with a null name is a unit at an archived site, shown by id so it is not lost.
 const fleetRiskUnitLabel = (r: FleetRiskRow) => summarizeIds('identifiers' in r ? (r.identifiers || []) : []) || shortUuid(r.device)
 const fleetRiskSiteName = (r: FleetRiskRow) => ('siteName' in r && r.siteName) || (r.site ? shortUuid(r.site) : '')
+// No id fallback, unlike the site: the row carries no client uuid, so a unit whose CLIENT was
+// archived reads the same as a site with no client at all. The panel will not invent a
+// distinction it was not given; closing it needs `client: ID` on the row, backend-side.
 const fleetRiskClientName = (r: FleetRiskRow) => ('clientName' in r && r.clientName) || ''
 // Every load takes a ticket; only the newest ticket may write. A client switch while a
 // slow org-wide page is in flight would otherwise land the org-wide rows under the client's
