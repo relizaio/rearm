@@ -14,7 +14,7 @@
              as "no risk"; follows the client / site selected below. -->
         <div v-if="fleetRiskLoaded && fleetRisk.supported" class="fleetRiskPanel" data-testid="fleet-risk-panel">
             <n-space align="center" size="small" style="margin-bottom: 6px;">
-                <n-tag :type="fleetRiskPageSummary.atRisk > 0 ? 'error' : 'default'" size="small">SUPPORT RISK</n-tag>
+                <n-tag :type="fleetRiskAnyAtRisk ? 'error' : 'default'" size="small">SUPPORT RISK</n-tag>
                 <strong data-testid="fleet-risk-headline">{{ fleetRiskHeadlineText }}</strong>
                 <span class="subtle">{{ fleetRiskScopeLabel }}</span>
             </n-space>
@@ -25,8 +25,9 @@
                 </n-space>
             </n-alert>
             <n-alert v-if="fleetRisk.degraded" type="warning" :show-icon="false" size="small" style="margin-bottom: 6px;" data-testid="fleet-risk-degraded-alert">
-                This backend serves the verdict per unit but not the evidence behind it (release judged, window in force, component end-of-support). Those columns are blank, not empty.
+                This backend serves the verdict per unit but not the evidence behind it (release judged, window in force, component end-of-support) nor the unit labels (identifiers, site and client names) or the fleet-wide at-risk count. Those columns are blank, not empty; units are named by id, and the headline counts the rows in hand rather than the fleet.
             </n-alert>
+            <!-- Served at-risk-first across the whole fleet; rendered in that order, never re-sorted. -->
             <n-data-table remote :columns="fleetRiskColumns" :data="fleetRisk.rows" :loading="fleetRiskLoading" size="small"
                 :row-props="fleetRiskRowProps" :row-key="(r: any) => r.device"
                 :pagination="fleetRiskPagination" @update:page="loadFleetRisk" />
@@ -697,14 +698,12 @@ async function saveSite () {
     if (siteForm.uuid) input.uuid = siteForm.uuid
     await graphqlClient.mutate({ mutation: gql`mutation upsertSite($input: SiteInput!) { upsertSite(input: $input) { uuid } }`, variables: { input } })
     showSiteModal.value = false; notify('success', 'Saved', `Site ${siteForm.name} saved`); await loadSites(selectedClientUuid.value)
-    siteInfoLoaded.value = false
 }
 async function deleteSite (s: any) {
     await graphqlClient.mutate({ mutation: gql`mutation deleteSite($uuid: ID!) { deleteSite(uuid: $uuid) }`, variables: { uuid: s.uuid } })
     notify('info', 'Archived', `Site ${s.name} archived`)
     if (selectedSiteUuid.value === s.uuid) router.push({ name: 'DistributionOfOrg', params: { orguuid: orguuid.value, clientuuid: selectedClientUuid.value } })
     await loadSites(selectedClientUuid.value)
-    siteInfoLoaded.value = false
 }
 
 // ---- shipment ----
@@ -851,13 +850,17 @@ const driftRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => r
 // query at all (`fleetRisk.supported`, hides it for good on CE), and did the LAST request
 // fail for some other reason (`fleetRiskError`, shown over the previous rows with a retry --
 // a 403 or a timeout is not a reason to make the panel disappear).
-const fleetRisk: Ref<FleetRiskResult> = ref({ supported: true, degraded: false, rows: [], total: 0 })
+const fleetRisk: Ref<FleetRiskResult> = ref({ supported: true, degraded: false, rows: [], total: 0, atRiskTotal: null })
 const fleetRiskLoaded = ref(false)
 const fleetRiskLoading = ref(false)
 const fleetRiskError: Ref<string> = ref('')
 const fleetRiskPage = ref(1)  // one-based for n-data-table; the server is zero-based
 const fleetRiskPageSummary = computed(() => summarizeFleetRiskPage(fleetRisk.value.rows))
-const fleetRiskHeadlineText = computed(() => fleetRiskHeadline(fleetRisk.value.total, fleetRisk.value.rows))
+const fleetRiskHeadlineText = computed(() => fleetRiskHeadline(fleetRisk.value.total, fleetRisk.value.rows, fleetRisk.value.atRiskTotal))
+// The fleet-wide count when the server gave one; the page's when it did not (CORE).
+const fleetRiskAnyAtRisk = computed(() => fleetRisk.value.atRiskTotal !== null
+    ? fleetRisk.value.atRiskTotal > 0
+    : fleetRiskPageSummary.value.atRisk > 0)
 const fleetRiskScopeLabel = computed(() => selectedSite.value
     ? `at site ${selectedSite.value.name}`
     : (selectedClient.value ? `for client ${selectedClient.value.name}` : 'org-wide'))
@@ -866,39 +869,15 @@ const fleetRiskPagination = computed(() => ({
     pageSize: FLEET_RISK_DEFAULT_PAGE_SIZE,
     itemCount: fleetRisk.value.total
 }))
-// Site names for the rows come from the org-wide site list (rows carry ids only); device
-// identifiers come from the per-site device list, one read per DISTINCT site on the page.
-// The site list is read once and invalidated when this page saves or archives a site.
-const siteInfoMap: Ref<Record<string, { name: string, client: string }>> = ref({})
-const siteInfoLoaded = ref(false)
-const siteDevicesMap: Ref<Record<string, Record<string, any>>> = ref({})
-async function resolveSiteInfos () {
-    if (siteInfoLoaded.value) return
-    try {
-        const resp: any = await graphqlClient.query({ query: gql`query sitesOfOrg($o: ID!) { sitesOfOrg(orgUuid: $o) { uuid name client } }`, variables: { o: orguuid.value }, fetchPolicy: 'no-cache' })
-        const m: Record<string, { name: string, client: string }> = {}
-        for (const s of resp.data.sitesOfOrg || []) m[s.uuid] = { name: s.name, client: s.client }
-        siteInfoMap.value = m
-        siteInfoLoaded.value = true
-    } catch (e) { /* names stay as short uuids */ }
-}
-async function resolveSiteDevices (siteUuids: string[]) {
-    const missing = [...new Set(siteUuids)].filter(u => u && !siteDevicesMap.value[u])
-    await Promise.all(missing.map(async (u) => {
-        try {
-            const resp: any = await graphqlClient.query({ query: gql`query devicesOfSite($s: ID!, $o: ID!) { devicesOfSite(siteUuid: $s, orgUuid: $o) { uuid identifiers { idType idValue } } }`, variables: { s: u, o: orguuid.value }, fetchPolicy: 'no-cache' })
-            const m: Record<string, any> = {}
-            for (const d of resp.data.devicesOfSite || []) m[d.uuid] = d
-            siteDevicesMap.value[u] = m
-        } catch (e) { /* identifiers stay as short uuids */ }
-    }))
-}
-const fleetRiskUnitLabel = (r: FleetRiskRow) => summarizeIds(r.site ? siteDevicesMap.value[r.site]?.[r.device]?.identifiers : null) || shortUuid(r.device)
-const fleetRiskSiteName = (r: FleetRiskRow) => (r.site && siteInfoMap.value[r.site]?.name) || (r.site ? shortUuid(r.site) : '')
-const fleetRiskClientName = (r: FleetRiskRow) => {
-    const c = r.site ? siteInfoMap.value[r.site]?.client : null
-    return (c && clients.value.find(x => x.uuid === c)?.name) || (c ? shortUuid(c) : '')
-}
+// Unit identifiers and the site / client names ride on the row (FULL). Behind a presence
+// guard like the evidence fields: a CORE-served page names the unit by its short id, and a
+// FULL page with a null name is a unit at an archived site, shown by id so it is not lost.
+const fleetRiskUnitLabel = (r: FleetRiskRow) => summarizeIds('identifiers' in r ? (r.identifiers || []) : []) || shortUuid(r.device)
+const fleetRiskSiteName = (r: FleetRiskRow) => ('siteName' in r && r.siteName) || (r.site ? shortUuid(r.site) : '')
+// No id fallback, unlike the site: the row carries no client uuid, so a unit whose CLIENT was
+// archived reads the same as a site with no client at all. The panel will not invent a
+// distinction it was not given; closing it needs `client: ID` on the row, backend-side.
+const fleetRiskClientName = (r: FleetRiskRow) => ('clientName' in r && r.clientName) || ''
 // Every load takes a ticket; only the newest ticket may write. A client switch while a
 // slow org-wide page is in flight would otherwise land the org-wide rows under the client's
 // scope label -- a wrong roster with a confident heading.
@@ -920,11 +899,7 @@ async function loadFleetRisk (page: number = 1) {
         fleetRiskPage.value = page
         fleetRiskError.value = ''
         if (result.supported && result.rows.length) {
-            await Promise.all([
-                resolveSiteInfos(),
-                resolveSiteDevices(result.rows.map(r => r.site || '')),
-                resolveReleaseInfos(result.rows.map(r => r.release || ''))
-            ])
+            await resolveReleaseInfos(result.rows.map(r => r.release || ''))
         }
     } catch (e: any) {
         if (ticket !== fleetRiskTicket) return

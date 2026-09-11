@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url'
 import { buildSchema, validate, print, type GraphQLSchema } from 'graphql'
 import {
     FLEET_RISK_QUERY_CORE, FLEET_RISK_QUERY_FULL, FLEET_RISK_ENRICHMENT_ROW_FIELDS,
-    FLEET_RISK_CORE_ROW_FIELDS, FLEET_RISK_UNSUPPORTED, loadDevicesAtSupportRisk,
+    FLEET_RISK_CORE_ROW_FIELDS, FLEET_RISK_CORE_PAGE_FIELDS, FLEET_RISK_ENRICHMENT_PAGE_FIELDS,
+    FLEET_RISK_UNSUPPORTED, IDENTIFIER_TYPES, loadDevicesAtSupportRisk,
     fleetRiskTag, releaseSourceTag, fleetWindowLabel, summarizeFleetRiskPage, fleetRiskHeadline,
     type FleetRiskRow
 } from './fleetSupportRisk'
@@ -57,12 +58,37 @@ describe('the devicesAtSupportRisk documents', () => {
         for (const f of FLEET_RISK_CORE_ROW_FIELDS) {
             expect(core).toMatch(new RegExp(`\\b${f}\\b`))
         }
+        // Same split at page level: the fleet-wide at-risk count is FULL-only (#524), the
+        // population size is CORE. And the #524 labels ride with the evidence, not the verdict.
+        for (const f of FLEET_RISK_ENRICHMENT_PAGE_FIELDS) {
+            expect(full).toMatch(new RegExp(`\\b${f}\\b`))
+            expect(core).not.toMatch(new RegExp(`\\b${f}\\b`))
+        }
+        for (const f of FLEET_RISK_CORE_PAGE_FIELDS) expect(core).toMatch(new RegExp(`\\b${f}\\b`))
+        expect(FLEET_RISK_ENRICHMENT_PAGE_FIELDS).toContain('atRiskTotal')
+        expect(FLEET_RISK_ENRICHMENT_ROW_FIELDS).toContain('identifiers { idType idValue }')
+        expect(FLEET_RISK_ENRICHMENT_ROW_FIELDS).toContain('siteName')
+        expect(FLEET_RISK_ENRICHMENT_ROW_FIELDS).toContain('clientName')
         // The verdict is CORE: a page without it is not a fleet-risk page.
         expect(FLEET_RISK_CORE_ROW_FIELDS).toContain('risk')
         expect(FLEET_RISK_CORE_ROW_FIELDS).toContain('device')
         // The backend serialises window.source as null for this query; selecting it would
         // only feed a false "(from the product component)" clause. Pinned so nobody adds it.
         expect(full).not.toMatch(/\bsource\b/)
+    })
+
+    /**
+     * The mirrored IdentifierType union is the whole wire enum, not a device-facing subset:
+     * a roster row can carry any identifier the unit was given. Pinned against the schema so
+     * a new type cannot land in the backend and leave the union quietly short.
+     */
+    it.runIf(proSchema)('mirrors every IdentifierType the schema declares', () => {
+        for (const text of [readFileSync(CE_SCHEMA_PATH, 'utf8'), readFileSync(PRO_SCHEMA_PATH, 'utf8')]) {
+            const body = text.slice(text.indexOf('enum IdentifierType {'))
+            const declared = body.slice(0, body.indexOf('}')).split('\n').slice(1)
+                .map(l => l.replace(/#.*/, '').trim()).filter(Boolean)
+            expect([...declared].sort()).toEqual([...IDENTIFIER_TYPES].sort())
+        }
     })
 
     // it.runIf, not an early return: a silent green when rearm-core is absent is how a drift
@@ -97,20 +123,40 @@ const row = (over: Partial<FleetRiskRow> = {}): FleetRiskRow => ({
 })
 
 describe('loadDevicesAtSupportRisk', () => {
-    it('serves FULL when the backend accepts it', async () => {
-        const c = scriptedClient(() => ({ total: 1, rows: [row({ componentsDrivingRisk: 2 })] }), () => { throw new Error('unreachable') })
+    it('serves FULL when the backend accepts it, with the fleet-wide at-risk count and labels', async () => {
+        const full = row({ componentsDrivingRisk: 2, identifiers: [{ idType: 'SERIAL', idValue: 'SN-1' }], siteName: 'Ward 3', clientName: 'Mercy' })
+        const c = scriptedClient(() => ({ total: 1, atRiskTotal: 1, rows: [full] }), () => { throw new Error('unreachable') })
         const r = await loadDevicesAtSupportRisk(c, { orgUuid: 'o' })
-        expect(r).toMatchObject({ supported: true, degraded: false, total: 1 })
+        expect(r).toMatchObject({ supported: true, degraded: false, total: 1, atRiskTotal: 1 })
         expect(r.rows[0].componentsDrivingRisk).toBe(2)
+        expect(r.rows[0]).toMatchObject({ identifiers: [{ idType: 'SERIAL', idValue: 'SN-1' }], siteName: 'Ward 3', clientName: 'Mercy' })
         expect(c.calls).toEqual(['FULL'])
+    })
+
+    /**
+     * A FULL server that omits the count (or serves it as null) leaves it UNKNOWN. Coercing
+     * to 0 would put "0 at risk" over a fleet the panel was never told about.
+     */
+    it('keeps atRiskTotal null when the server did not state it', async () => {
+        const c = scriptedClient(() => ({ total: 3, rows: [row()] }), () => { throw new Error('unreachable') })
+        expect((await loadDevicesAtSupportRisk(c, { orgUuid: 'o' })).atRiskTotal).toBeNull()
+        const nulled = scriptedClient(() => ({ total: 3, atRiskTotal: null, rows: [row()] }), () => { throw new Error('unreachable') })
+        expect((await loadDevicesAtSupportRisk(nulled, { orgUuid: 'o' })).atRiskTotal).toBeNull()
     })
 
     it('degrades to CORE when only an enrichment field is rejected', async () => {
         const c = scriptedClient(() => { throw validationError() }, () => ({ total: 1, rows: [row()] }))
         const r = await loadDevicesAtSupportRisk(c, { orgUuid: 'o' })
-        expect(r).toMatchObject({ supported: true, degraded: true, total: 1 })
+        expect(r).toMatchObject({ supported: true, degraded: true, total: 1, atRiskTotal: null })
         expect('componentsDrivingRisk' in r.rows[0]).toBe(false)
+        expect('identifiers' in r.rows[0]).toBe(false)
         expect(c.calls).toEqual(['FULL', 'CORE'])
+    })
+
+    /** CORE never selects atRiskTotal; a server that echoes one anyway is not believed on a degraded page. */
+    it('ignores an atRiskTotal on a degraded page', async () => {
+        const c = scriptedClient(() => { throw validationError() }, () => ({ total: 1, atRiskTotal: 1, rows: [row()] }))
+        expect((await loadDevicesAtSupportRisk(c, { orgUuid: 'o' })).atRiskTotal).toBeNull()
     })
 
     it('reports unsupported, not empty, when CORE is rejected too', async () => {
@@ -194,11 +240,49 @@ describe('fleet-risk presentation helpers', () => {
     })
 
     /**
-     * A partial page must never read as a fleet total: the server sorts by unit, not by
-     * verdict, so "0 at risk" on page 1 says nothing about page 2.
+     * With the server's fleet-wide count (#524) the headline is "K at risk of M" -- K counts
+     * the whole filtered fleet, whatever page is showing, so the page's own verdicts are not
+     * repeated as if they were news. Unrecognised verdicts still get named, as a page fact.
      */
-    it('labels counts as page counts unless the page is the whole population', () => {
+    it('says "K at risk of M" from the fleet-wide count when the server gave one', () => {
+        expect(fleetRiskHeadline(57, [row()], 3)).toBe('3 at risk of 57 in-field units in scope')
+        expect(fleetRiskHeadline(1, [row({ risk: 'EOS_BEFORE_DEVICE' })], 1)).toBe('1 at risk of 1 in-field unit in scope')
+        expect(fleetRiskHeadline(57, [row()], 0)).toBe('0 at risk of 57 in-field units in scope')
+        expect(fleetRiskHeadline(0, [], 0)).toBe('No in-field units to evaluate')
+        // the fleet count wins over what this page happens to show
+        expect(fleetRiskHeadline(57, [row({ risk: 'EOS_BEFORE_DEVICE' })], 0)).toMatch(/^0 at risk of 57/)
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            expect(fleetRiskHeadline(2, [row({ risk: 'WHAT' as any })], 1))
+                .toBe('1 at risk of 2 in-field units in scope; 1 unrecognised on this page')
+        } finally { err.mockRestore() }
+    })
+
+    /**
+     * "0 at risk" must not read as "clean fleet": a unit with no declared window is one
+     * nobody has looked at. The server counts only the flagged ones fleet-wide, so the
+     * unassessed are named as the page fact they are -- never dropped.
+     */
+    it('still names the unassessed units, as a page fact, under the fleet-wide count', () => {
+        expect(fleetRiskHeadline(57, [row({ risk: 'UNKNOWN' }), row({ risk: 'UNKNOWN' }), row()], 0))
+            .toBe('0 at risk of 57 in-field units in scope; 2 not assessed on this page')
+        // a page of nothing but assessed, OK units says nothing extra
+        expect(fleetRiskHeadline(57, [row(), row()], 0)).toBe('0 at risk of 57 in-field units in scope')
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            expect(fleetRiskHeadline(9, [row({ risk: 'UNKNOWN' }), row({ risk: 'WHAT' as any })], 2))
+                .toBe('2 at risk of 9 in-field units in scope; 1 not assessed, 1 unrecognised on this page')
+        } finally { err.mockRestore() }
+    })
+
+    /**
+     * Without the fleet-wide count (a CORE-served page) a partial page must never read as a
+     * fleet total, so the counts are named as page counts. (Pre-#524 servers also sorted by
+     * unit, not verdict, so "0 at risk" on page 1 said nothing about page 2.)
+     */
+    it('falls back to page counts, labelled as such, when the fleet-wide count is unknown', () => {
         expect(fleetRiskHeadline(0, [])).toBe('No in-field units to evaluate')
+        expect(fleetRiskHeadline(57, [row()], null)).toMatch(/this page:/)
         expect(fleetRiskHeadline(2, [row(), row({ risk: 'EOS_BEFORE_DEVICE' })]))
             .toBe('2 in-field units in scope: 1 at risk, 0 not assessed, 1 OK')
         expect(fleetRiskHeadline(57, [row()]))
