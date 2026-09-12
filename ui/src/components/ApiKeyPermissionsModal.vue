@@ -197,14 +197,24 @@ async function sendRequest () {
     }
 }
 
+/**
+ * Load what the editor offers to pick from. Each list is best effort: a member without
+ * instance visibility, for example, still gets components and products, and a failure here
+ * must not surface as an unhandled rejection from the watch that calls load().
+ */
+async function loadOrgObjects () {
+    const loads: Promise<any>[] = [loadPerspectives(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
+    if (store.getters.myuser?.installationType !== 'OSS') loads.push(store.dispatch('fetchInstances', props.orgUuid))
+    const results = await Promise.allSettled(loads)
+    for (const r of results) if (r.status === 'rejected') console.warn('permissions editor: an org object list is unavailable to this user', r.reason?.message || r.reason)
+}
+
 async function load () {
     if (!props.orgUuid) return
     if (isRequest.value) {
         loading.value = true
         try {
-            const loads: Promise<any>[] = [loadPerspectives(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
-            if (store.getters.myuser?.installationType !== 'OSS') loads.push(store.dispatch('fetchInstances', props.orgUuid))
-            await Promise.all(loads)
+            await loadOrgObjects()
             scoped.value = { orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] }
             notes.value = ''
         } finally { loading.value = false }
@@ -213,9 +223,7 @@ async function load () {
     if (!props.apiKey) return
     loading.value = true
     try {
-        const loads: Promise<any>[] = [loadPerspectives(), loadOwnerPermissions(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
-        if (store.getters.myuser?.installationType !== 'OSS') loads.push(store.dispatch('fetchInstances', props.orgUuid))
-        await Promise.all(loads)
+        await Promise.all([loadOrgObjects(), loadOwnerPermissions()])
         const scopedPerms: any[] = []
         let orgPerm = { type: 'NONE', functions: [] as string[], approvals: [] as string[] }
         for (const up of (props.apiKey.permissions?.permissions || [])) {
