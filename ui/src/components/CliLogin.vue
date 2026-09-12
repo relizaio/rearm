@@ -98,7 +98,8 @@ onMounted(async () => {
     let stored: string | null = null
     try { stored = window.localStorage.getItem('relizaOrgUuid') } catch { stored = null }
     newKeyOrg.value = orgOptions.value.find((o: any) => o.value === stored)?.value || orgOptions.value[0]?.value || null
-    const code = (route.query.code as string) || ''
+    // the parameter is user_code: a URL carrying code= collides with the OIDC redirect through Keycloak
+    const code = (route.query.user_code as string) || ''
     if (code) { codeInput.value = code; await lookup() }
 })
 
