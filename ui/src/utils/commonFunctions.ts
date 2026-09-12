@@ -27,6 +27,8 @@ function translateFunctionName(fn: string): string {
         case 'VERSION_FEATURESET': return 'Version Feature Set'
         case 'AGENT': return 'AI Agent'
         case 'DISTRIBUTION': return 'Distribution'
+        case 'CONFIGURATION_READ': return 'Configuration Read'
+        case 'CONFIGURATION_WRITE': return 'Configuration Write'
         default: return fn
     }
 }
@@ -58,6 +60,10 @@ const PERMISSION_FUNCTION_DESCRIPTIONS: Record<string, string> = {
         'Carve-out: a key with this function (even Read Only) can also enrol its own SSH/GPG public signing key via "rearm agent enrollkey" - needed so an agent can sign its first commit without operator intervention. The backend enforces that the key being enrolled targets the calling key\'s own agent identity; cross-agent enrolment is rejected.',
     DISTRIBUTION:
         'Access the Distribution module - clients, sites, shipments, devices, and device events. Organization admins have this implicitly.',
+    CONFIGURATION_READ:
+        'Export declarative configuration (components, products, branches, feature sets) as spec files through the programmatic API. Organization admins have this implicitly.',
+    CONFIGURATION_WRITE:
+        'Apply declarative configuration spec files through the programmatic API - what a GitOps pipeline or the Terraform provider needs. Implies Configuration Read. Requires Read & Write permission to take effect.',
 }
 
 function translateFunctionDescription(fn: string): string | null {
