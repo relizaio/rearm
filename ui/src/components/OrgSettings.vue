@@ -687,6 +687,11 @@
                     </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
+                    <template #header>CLI sessions on key {{ keySessionsKey?.uuid }}</template>
+                    <p class="subtle">Active <code>rearm login</code> sessions acting as this key. Revoking signs that CLI out at once.</p>
+                    <n-data-table :columns="keySessionFields" :data="keySessions" class="table-hover"></n-data-table>
+                </n-modal>
             </n-tab-pane>
 
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
@@ -1126,7 +1131,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1243,6 +1248,38 @@ function editRbacKey(row: any) {
     selectedEditKey.value = commonFunctions.deepCopy(row)
     showKeyEditModal.value = true
 }
+// ---- CLI sessions riding a key (admin view) ----
+const showKeySessionsModal = ref(false)
+const keySessionsKey = ref<any>(null)
+const keySessions: Ref<any[]> = ref([])
+async function showKeySessions (row: any) {
+    keySessionsKey.value = row
+    try {
+        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom createdDate expiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
+        keySessions.value = (resp.data.cliSessionsOfKey || []).map((s: any) => { const u = users.value.find((x: any) => x.uuid === s.user); return Object.assign({}, s, {
+            userName: u ? (u.name || u.email) : (s.user || ''),
+            createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
+            lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '' }) })
+        showKeySessionsModal.value = true
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function revokeKeySession (row: any) {
+    const r = await Swal.fire({ title: 'Sign this CLI out?', text: `The session${row.requestedFrom ? ' on ' + row.requestedFrom : ''} stops working at once.`, icon: 'warning', showCancelButton: true, confirmButtonText: 'Revoke' })
+    if (!r.value) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation revokeCliSession($uuid: ID!) { revokeCliSession(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
+        notify('success', 'Revoked', 'CLI session revoked'); await showKeySessions(keySessionsKey.value); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const keySessionFields: Ref<any> = ref([
+    { key: 'userName', width: 220, title: 'User' },
+    { key: 'requestedFrom', width: 200, title: 'CLI host' },
+    { key: 'createdDisplay', width: 170, title: 'Signed in' },
+    { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
+    { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeKeySession(row) }, { default: () => 'Revoke' }) }
+])
 
 const showUserGroupPermissionsModal = ref(false)
 
@@ -1779,6 +1816,7 @@ const freeFormKeyFields: Ref<any> = ref([
                     )
                 )
                 els.push(h(NIcon, { title: 'Holder (who mints the secrets)', class: 'icons clickable', size: 25, onClick: () => reassignHolder(row) }, { default: () => h(UserIcon) }))
+                els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
                 els.push(h(
                     NIcon,
                     {
@@ -1815,6 +1853,7 @@ const userKeyFields: Ref<any> = ref([
             const els: any[] = []
             if (isOrgAdmin.value) {
                 els.push(h(NIcon, { title: 'Set Permission Ceiling For Key', class: 'icons clickable', size: 25, onClick: () => editRbacKey(row) }, { default: () => h(EditIcon) }))
+                els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
                 els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
             }
             return h('div', els)
