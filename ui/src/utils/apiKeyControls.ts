@@ -15,9 +15,9 @@ import commonFunctions from '@/utils/commonFunctions'
 export interface ApiKeyControlOptions {
     notify: (type: 'success' | 'error' | 'warning' | 'info', title: string, content: string) => void
     reload: () => void | Promise<void>
-    /** whether the current viewer may operate the controls (org admin, owner of a USER key, holder of a free-form key) */
+    /** whether the current viewer may operate the controls (org admin, owner of a USER key, holder of a Free Form key) */
     canManage: (row: any) => boolean
-    /** whether the viewer may mint (add / regenerate), which reveals cleartext: on a held free-form key only the holder; defaults to canManage */
+    /** whether the viewer may mint (add / regenerate), which reveals cleartext: on a held Free Form key only the holder; defaults to canManage */
     canMint?: (row: any) => boolean
     /** whether the viewer acts as an org admin: only admins may re-activate a key an admin disabled; defaults to false */
     isAdmin?: () => boolean

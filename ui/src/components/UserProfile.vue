@@ -103,13 +103,13 @@
                         <n-button type="primary" :disabled="!newKeyOrg" @click="createMyKey">Create key</n-button>
                     </n-form-item>
                     <n-form-item v-if="!isAdminOfSelectedOrg">
-                        <n-button :disabled="!newKeyOrg" @click="requestFreeformKey">Request a free-form key</n-button>
+                        <n-button :disabled="!newKeyOrg" @click="requestFreeformKey">Request a Free Form key</n-button>
                     </n-form-item>
                 </n-space>
-                <p v-if="!isAdminOfSelectedOrg" class="subtle">Need more than your own permissions allow, or a key that outlives your membership? Request a free-form key: admins approve it with the permissions they choose, and you alone generate and see its secrets.</p>
+                <p v-if="!isAdminOfSelectedOrg" class="subtle">Need more than your own permissions allow, or a key that outlives your membership? Request a Free Form key: admins approve it with the permissions they choose, and you alone generate and see its secrets.</p>
                 <ApiKeyPermissionsModal v-model:show="showRequestModal" mode="request" :api-key="null" :org-uuid="newKeyOrg || ''" :notify="notify" @saved="loadMyKeys" />
                 <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2200" class="table-hover"></n-data-table>
-                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
+                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
             </div>
         </n-tab-pane>
         </n-tabs>
@@ -122,7 +122,7 @@ import { NIcon, NCheckbox, NInput, NModal, NDataTable, NForm, NFormItem, NInputG
 import { ComputedRef, h, ref, Ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { Edit as EditIcon, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
+import { Edit as EditIcon, Eye as EyeIcon, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
 import Swal from 'sweetalert2'
 import { OnChange } from 'naive-ui/es/upload/src/interface'
@@ -392,7 +392,7 @@ const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
 const orgOptions = computed(() => (organizations.value || []).map((o: any) => ({ label: o.name, value: o.uuid })))
 const showRequestModal = ref(false)
-// an org admin creates free-form keys directly in org settings; a request would only go to themselves
+// an org admin creates Free Form keys directly in org settings; a request would only go to themselves
 const isAdminOfSelectedOrg = computed(() => {
     const perms = myUser.value?.permissions?.permissions || []
     return !!newKeyOrg.value && perms.some((p: any) => p.org === newKeyOrg.value && p.object === newKeyOrg.value && p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
@@ -440,12 +440,14 @@ function requestFreeformKey () {
     if (!newKeyOrg.value) return
     showRequestModal.value = true
 }
-function editMyKey (row: any) {
+const editModalMode = ref<'edit' | 'view'>('edit')
+function editMyKey (row: any, mode: 'edit' | 'view' = 'edit') {
+    editModalMode.value = mode
     selectedEditKey.value = commonFunctions.deepCopy(row)
     showKeyEditModal.value = true
 }
 const myKeyFields: ComputedRef<any> = computed((): any => [
-    { key: 'kind', width: 150, title: 'Type', render: (row: any) => row.type === 'USER' ? 'Personal' : 'Free-form (held)' },
+    { key: 'kind', width: 150, title: 'Type', render: (row: any) => row.type === 'USER' ? 'Personal' : 'Free Form (held)' },
     apiKeyIdsColumn(),
     { key: 'orgName', width: 200, title: 'Organization' },
     { key: 'createdDisplay', width: 170, title: 'Created' },
@@ -464,9 +466,12 @@ const myKeyFields: ComputedRef<any> = computed((): any => [
         key: 'controls', title: 'Manage',
         render: (row: any) => {
             const els: any[] = []
-            // personal keys: the owner shapes the ceiling; held free-form keys: only while the request is pending
+            // personal keys: the owner shapes the ceiling; held Free Form keys: only while the request is pending
             if (row.type === 'USER' || row.status === 'REQUESTED') {
                 els.push(h(NIcon, { title: row.type === 'USER' ? 'Set Permissions For Key' : 'Propose Permissions', class: 'icons clickable', size: 25, onClick: () => editMyKey(row) }, { default: () => h(EditIcon) }))
+            } else {
+                // a held Free Form key: the admins own its permissions, the holder can see them
+                els.push(h(NIcon, { title: 'View Permissions', class: 'icons clickable', size: 25, onClick: () => editMyKey(row, 'view') }, { default: () => h(EyeIcon) }))
             }
             els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, row.status === 'REQUESTED' ? 'this request' : 'this key') }, { default: () => h(Trash) }))
             return h('div', els)

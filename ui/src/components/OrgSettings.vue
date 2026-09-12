@@ -626,7 +626,7 @@
                     <n-tab-pane name="freeFormKeys" tab="Free Form Keys">
                         <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
                             <h5>Key Requests</h5>
-                            <p class="subtle">Free-form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
+                            <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
                             <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1800"
                                 class="table-hover">
                             </n-data-table>
