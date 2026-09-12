@@ -6,8 +6,31 @@
         :show="show"
         @update:show="(v: boolean) => { if (!v) emit('update:show', false) }"
     >
-        <template #header>Edit key {{ apiKey?.uuid }}</template>
+        <template #header>{{ isRequest ? 'Request a free-form key' : 'Edit key ' + apiKey?.uuid }}</template>
         <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
+            <div v-if="isRequest">
+                <n-form-item label="Purpose / notes (admins see this)">
+                    <n-input v-model:value="notes" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="e.g. CI pipeline for repo X needs release write on component Y" />
+                </n-form-item>
+                <n-spin :show="loading">
+                    <ScopedPermissions
+                        v-model="scoped"
+                        :org-uuid="orgUuid"
+                        :approval-roles="approvalRoles"
+                        :perspectives="perspectives"
+                        :products="orgProducts"
+                        :components="orgComponents"
+                        :instances="orgInstances"
+                        :clusters="orgClusters"
+                        :show-sbom-probing="true"
+                    />
+                </n-spin>
+                <n-space style="margin-top: 20px;">
+                    <n-button type="primary" :disabled="loading || !notes.trim()" @click="sendRequest">Send request</n-button>
+                    <n-button @click="emit('update:show', false)">Cancel</n-button>
+                </n-space>
+            </div>
+            <template v-else>
             <p v-if="apiKey?.type === 'USER'" class="subtle" style="margin-top: 0;">
                 These permissions are a ceiling. Every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.
                 Nothing is allowed until at least one permission is set.
@@ -46,6 +69,7 @@
                     </n-space>
                 </n-tab-pane>
             </n-tabs>
+            </template>
         </div>
     </n-modal>
 </template>
@@ -56,7 +80,7 @@
  * components, products and instances itself, so it can be used from org settings and from the
  * user's own keys on the profile page. Saves through setPermissionsOnFreeformApiKey / setNotesOnApiKey.
  */
-import { NModal, NTabs, NTabPane, NSpace, NButton, NInput, NSpin, NAlert } from 'naive-ui'
+import { NModal, NTabs, NTabPane, NSpace, NButton, NInput, NSpin, NAlert, NFormItem } from 'naive-ui'
 import { ref, computed, watch } from 'vue'
 import { useStore } from 'vuex'
 import gql from 'graphql-tag'
@@ -67,10 +91,14 @@ import ScopedPermissions from './ScopedPermissions.vue'
 
 const props = defineProps<{
     show: boolean
+    /** the key being edited; null in request mode */
     apiKey: any
     orgUuid: string
     notify: (type: 'success' | 'error' | 'warning' | 'info', title: string, content: string) => void
+    /** 'edit' (default) edits an existing key; 'request' asks admins for a new free-form key with purpose and proposed permissions on one screen */
+    mode?: 'edit' | 'request'
 }>()
+const isRequest = computed(() => props.mode === 'request')
 const emit = defineEmits(['update:show', 'saved'])
 const store = useStore()
 
@@ -142,8 +170,47 @@ async function resolveScopedObjectName (scope: string, objectId: string): Promis
     try { const fetched = await store.dispatch('fetchComponent', objectId); return fetched?.name || objectId } catch { return objectId }
 }
 
+function permissionsPayload (): { orgPermType: string, permissions: any[] } {
+    const permissions: any[] = []
+    const orgPermType = scoped.value.orgPermission.type
+    if (orgPermType && orgPermType !== 'NONE') {
+        permissions.push({ org: props.orgUuid, scope: 'ORGANIZATION', type: orgPermType, object: props.orgUuid, functions: scoped.value.orgPermission.functions || [], approvals: scoped.value.orgPermission.approvals || [] })
+    }
+    for (const sp of (scoped.value.scopedPermissions || [])) {
+        if (sp.type && sp.type !== 'NONE') permissions.push({ org: props.orgUuid, scope: sp.scope, type: sp.type, object: sp.objectId, functions: sp.functions || [], approvals: sp.approvals || [] })
+    }
+    return { orgPermType: orgPermType || 'NONE', permissions }
+}
+
+async function sendRequest () {
+    const { orgPermType, permissions } = permissionsPayload()
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`mutation requestFreeformApiKey($orgUuid: ID!, $notes: String, $permissionType: PermissionType, $permissions: [PermissionInput]) {
+                requestFreeformApiKey(orgUuid: $orgUuid, notes: $notes, permissionType: $permissionType, permissions: $permissions) { uuid status } }`,
+            variables: { orgUuid: props.orgUuid, notes: notes.value, permissionType: orgPermType, permissions }, fetchPolicy: 'no-cache'
+        })
+        props.notify('success', 'Request sent', 'Admins of the organization will review it; you can edit the proposed permissions until it is decided')
+        emit('saved'); emit('update:show', false)
+    } catch (error: any) {
+        props.notify('error', 'Error', `Failed to send the request: ${commonFunctions.parseGraphQLError(error.message)}`)
+    }
+}
+
 async function load () {
-    if (!props.apiKey || !props.orgUuid) return
+    if (!props.orgUuid) return
+    if (isRequest.value) {
+        loading.value = true
+        try {
+            const loads: Promise<any>[] = [loadPerspectives(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
+            if (store.getters.myuser?.installationType !== 'OSS') loads.push(store.dispatch('fetchInstances', props.orgUuid))
+            await Promise.all(loads)
+            scoped.value = { orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] }
+            notes.value = ''
+        } finally { loading.value = false }
+        return
+    }
+    if (!props.apiKey) return
     loading.value = true
     try {
         const loads: Promise<any>[] = [loadPerspectives(), loadOwnerPermissions(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
@@ -166,14 +233,7 @@ async function load () {
 watch(() => props.show, (v) => { if (v) load() })
 
 async function savePermissions () {
-    const permissions: any[] = []
-    const orgPermType = scoped.value.orgPermission.type
-    if (orgPermType && orgPermType !== 'NONE') {
-        permissions.push({ org: props.orgUuid, scope: 'ORGANIZATION', type: orgPermType, object: props.orgUuid, functions: scoped.value.orgPermission.functions || [], approvals: scoped.value.orgPermission.approvals || [] })
-    }
-    for (const sp of (scoped.value.scopedPermissions || [])) {
-        if (sp.type && sp.type !== 'NONE') permissions.push({ org: props.orgUuid, scope: sp.scope, type: sp.type, object: sp.objectId, functions: sp.functions || [], approvals: sp.approvals || [] })
-    }
+    const { orgPermType, permissions } = permissionsPayload()
     try {
         const resp: any = await graphqlClient.mutate({
             mutation: gql`mutation setPermissionsOnFreeformApiKey($apiKeyUuid: ID!, $permissionType: PermissionType, $permissions: [PermissionInput]) {

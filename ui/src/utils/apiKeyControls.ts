@@ -1,5 +1,6 @@
 import { h } from 'vue'
-import { NButton, NTag } from 'naive-ui'
+import { NButton, NTag, NTooltip, NIcon } from 'naive-ui'
+import { Info20Regular } from '@vicons/fluent'
 import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
@@ -161,13 +162,18 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
                 h(NTag, { size: 'tiny', type: expired ? 'error' : (sec.active ? 'success' : 'default'), style: 'margin-right: 6px;' }, { default: () => expired ? 'expired' : (sec.active ? 'active' : 'retired') }),
                 h('span', { class: 'subtle', style: 'margin-right: 6px;' }, meta)
             ]
-            if (mint) kids.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => regenerateApiKeySecret(row, sec.slot) }, { default: () => 'Regenerate' }))
+            // actions on their own line under the secret, so the column stays narrow
+            const actions: any[] = []
+            if (mint) actions.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => regenerateApiKeySecret(row, sec.slot) }, { default: () => 'Regenerate' }))
             if (manage) {
-                kids.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => setApiKeySecretExpiry(row, sec.slot) }, { default: () => 'Expiry' }))
-                kids.push(h(NButton, { size: 'tiny', type: sec.active ? 'warning' : 'primary', style: 'margin-right: 4px;', onClick: () => setApiKeySecretActive(row, sec.slot, !sec.active) }, { default: () => sec.active ? 'Retire' : 'Enable' }))
-                kids.push(h(NButton, { size: 'tiny', type: 'error', onClick: () => deleteApiKeySecret(row, sec.slot) }, { default: () => 'Delete' }))
+                actions.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => setApiKeySecretExpiry(row, sec.slot) }, { default: () => 'Expiry' }))
+                actions.push(h(NButton, { size: 'tiny', type: sec.active ? 'warning' : 'primary', style: 'margin-right: 4px;', onClick: () => setApiKeySecretActive(row, sec.slot, !sec.active) }, { default: () => sec.active ? 'Retire' : 'Enable' }))
+                actions.push(h(NButton, { size: 'tiny', type: 'error', onClick: () => deleteApiKeySecret(row, sec.slot) }, { default: () => 'Delete' }))
             }
-            return h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin: 2px 0;' }, kids)
+            return h('div', { style: 'margin: 2px 0 6px 0;' }, [
+                h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, kids),
+                actions.length ? h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin-top: 3px;' }, actions) : null
+            ])
         })
         if (row.holder && !mint && manage) {
             lines.push(h('span', { class: 'subtle' }, 'held key: only the holder mints its secrets'))
@@ -182,6 +188,23 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
 
     return { statusCell, secretsCell, mintSecret, addApiKeySecret, regenerateApiKeySecret, setApiKeySecretExpiry, setApiKeySecretActive, deleteApiKeySecret, setApiKeyStatus, deleteApiKey, askExpiry }
 }
+
+/** One narrow "IDs" column: a tooltip carrying both the internal uuid and the API id clients present. */
+export function apiKeyIdsColumn (): any {
+    return {
+        key: 'ids', width: 60, title: 'IDs',
+        render: (row: any) => h(NTooltip, { trigger: 'hover' }, {
+            trigger: () => h(NIcon, { class: 'icons', size: 22 }, { default: () => h(Info20Regular) }),
+            default: () => h('div', { style: 'font-size: 12px;' }, [
+                h('div', [h('strong', 'Internal ID: '), h('code', row.uuid)]),
+                h('div', { style: 'margin-top: 4px;' }, [h('strong', 'API ID: '), h('code', { style: 'word-break: break-all;' }, apiKeyIdOf(row))])
+            ])
+        })
+    }
+}
+
+/** Left-most column of every key table. */
+export const apiKeyTypeColumn = { key: 'type', width: 130, title: 'Type' }
 
 /** The id string a client presents for this key (Basic user name / client_id). */
 export function apiKeyIdOf (row: any): string {
