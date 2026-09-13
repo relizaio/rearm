@@ -39,16 +39,20 @@ import { buildSchema, parse, validate } from 'graphql'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const UI_ROOT = join(HERE, '..')
 const SRC = join(UI_ROOT, 'src')
-const PRO_SCHEMA = join(UI_ROOT, '../../rearm-core/backend/src/main/resources/schema/schema.graphqls')
-const CE_SCHEMA = join(UI_ROOT, '../backend/src/main/resources/schema/schema.graphqls')
+// Since the schema split, the shared types live in schema.graphqls and the root fields in
+// user.graphqls (browser) and programmatic.graphqls (API keys); a schema is the three together.
+const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
+const PRO_SCHEMA = join(UI_ROOT, '../../rearm-core/backend/src/main/resources/schema')
+const CE_SCHEMA = join(UI_ROOT, '../backend/src/main/resources/schema')
 
-function loadSchema (path, label) {
-    if (!existsSync(path)) {
-        console.warn(`[validate-graphql] ${label} schema not found at ${path} -- skipping ${label} checks`)
+function loadSchema (dir, label) {
+    const present = SCHEMA_FILES.map(f => join(dir, f)).filter(existsSync)
+    if (!present.length || !existsSync(join(dir, 'schema.graphqls'))) {
+        console.warn(`[validate-graphql] ${label} schema not found at ${dir} -- skipping ${label} checks`)
         return null
     }
     try {
-        return buildSchema(readFileSync(path, 'utf8'))
+        return buildSchema(present.map(f => readFileSync(f, 'utf8')).join('\n'))
     } catch (e) {
         console.warn(`[validate-graphql] ${label} schema failed to build: ${e.message.split('\n')[0]} -- skipping ${label} checks`)
         return null
