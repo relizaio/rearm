@@ -85,7 +85,7 @@
                                     <n-select v-model:value="form.grant.orgPermission" :options="orgPermissionOptions" />
                                     <p class="subtle" style="margin: 4px 0 0 0; font-size: 12px;">
                                         Read access to everything else in the organization: releases of other components, products, anything the repository does not own.
-                                        Leave it at NONE for an ordinary build: the repository level above already covers the components built from this repository.
+                                        Leave it at NONE for an ordinary build: the level for the calling repository already covers the components built from it.
                                     </p>
                                 </div>
                             </n-form-item-gi>
