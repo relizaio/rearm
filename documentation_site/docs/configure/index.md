@@ -22,3 +22,10 @@ sidebarDepth: 2
 ```
 rearm login -u YOUR_REARM_URI -i YOUR_PERSONAL_API_ID -k YOUR_PERSONAL_API_KEY
 ```
+
+::: tip Preview: sign in from your browser instead
+The CLI can also sign in through your browser, with no key to copy onto the machine — run
+`rearm login -u YOUR_REARM_URI` with no key flags. This is **preview** functionality that has not
+shipped in a released version yet. See [Programmatic Access](./programmatic-access) for that flow,
+for exchanging a key for a short-lived access token, and for rotating key secrets.
+:::

@@ -32,6 +32,7 @@ function sidebar() {
         ]},
         {text: 'Configure', link: '/configure/', items: [
           {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'},
+          {text: 'Programmatic Access', link: '/configure/programmatic-access'},
           {text: 'Component Ownership', link: '/configure/component-ownership'},
           {text: 'Notifications', link: '/configure/notifications'},
           {text: 'Approval Queues', link: '/configure/approval-queues'}
