@@ -626,14 +626,14 @@
                     <n-tab-pane name="freeFormKeys" tab="Free Form Keys">
                         <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
                             <h5>Key Requests</h5>
-                            <p class="subtle">Free-form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
+                            <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
                             <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1800"
                                 class="table-hover">
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2600"
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2300"
                                 class="table-hover">
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
@@ -644,7 +644,7 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>User Keys</h5>
                             <p class="subtle">Personal keys that members create for themselves on their profile page. The permissions on a key are a ceiling: every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.</p>
-                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="2400"
+                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="2200"
                                 class="table-hover">
                             </n-data-table>
                         </div>
@@ -653,7 +653,7 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Scoped Keys</h5>
                             <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
-                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2400"
+                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2200"
                                 class="table-hover">
                             </n-data-table>
                             <n-modal
@@ -1148,7 +1148,7 @@ import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
-import { createApiKeyControls, apiKeyIdOf } from '../utils/apiKeyControls'
+import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
@@ -1605,34 +1605,8 @@ async function createOrgKey (apiType: string, notes: string | null, label: strin
 }
 
 const programmaticAccessFields: Ref<any> = ref([
-    {
-        key: 'uuid',
-        width: 300,
-        title: 'Internal ID'
-    },
-    {
-        key: 'apiId',
-        width: 60,
-        title: 'API ID',
-        render: (row: any) => {
-            let keyId = row.type + "__" + row.object
-            if (row.keyOrder) keyId += "__ord__" + row.keyOrder
-            const els: any[] = [
-                h(NTooltip, {
-                        trigger: 'hover'
-                    }, {trigger: () => h(NIcon,
-                            {
-                                // title: keyId,
-                                class: 'icons',
-                                size: 25,
-                            }, { default: () => h(Info20Regular) }),
-                            default: () =>  keyId
-                        }
-                )
-            ]
-            return h('div', els)
-        }
-    },
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
     {
         key: 'createdDate',
         width: 180,
@@ -1671,11 +1645,6 @@ const programmaticAccessFields: Ref<any> = ref([
             }
             return el
         }
-    },
-    {
-        key: 'type',
-        width: 110,
-        title: 'Type'
     },
     {
         key: 'resolvedApprovals',
@@ -1738,33 +1707,8 @@ const programmaticAccessFields: Ref<any> = ref([
     }
 ])
 const freeFormKeyFields: Ref<any> = ref([
-    {
-        key: 'uuid',
-        width: 300,
-        title: 'Internal ID'
-    },
-    {
-        key: 'apiId',
-        width: 60,
-        title: 'API ID',
-        render: (row: any) => {
-            let keyId = row.type + "__" + row.object
-            if (row.keyOrder) keyId += "__ord__" + row.keyOrder
-            const els: any[] = [
-                h(NTooltip, {
-                        trigger: 'hover'
-                    }, {trigger: () => h(NIcon,
-                            {
-                                class: 'icons',
-                                size: 25,
-                            }, { default: () => h(Info20Regular) }),
-                            default: () => keyId
-                        }
-                )
-            ]
-            return h('div', els)
-        }
-    },
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
     {
         key: 'createdDate',
         width: 180,
@@ -1850,11 +1794,8 @@ const freeFormKeyFields: Ref<any> = ref([
     }
 ])
 const userKeyFields: Ref<any> = ref([
-    { key: 'uuid', width: 300, title: 'Internal ID' },
-    {
-        key: 'apiId', width: 60, title: 'API ID',
-        render: (row: any) => h(NTooltip, { trigger: 'hover' }, { trigger: () => h(NIcon, { class: 'icons', size: 25 }, { default: () => h(Info20Regular) }), default: () => apiKeyIdOf(row) })
-    },
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
     { key: 'ownerName', width: 200, title: 'Owner' },
     { key: 'createdDate', width: 180, title: 'Created' },
     { key: 'accessDate', width: 180, title: 'Last Accessed' },
@@ -4323,7 +4264,8 @@ function formatValuesForApiKeys (apiKeyEntry: any) {
     updEntry['createdDate'] = (new Date(apiKeyEntry['createdDate'])).toLocaleString('en-CA')
     updEntry['accessDate'] = apiKeyEntry['accessDate']? (new Date(apiKeyEntry['accessDate'])).toLocaleString('en-CA') : 'Never'
     if (apiKeyEntry['lastUpdatedBy'] && users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])) {
-        updEntry['updatedByName'] = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])['name']
+        const updater = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])
+        updEntry['updatedByName'] = updater['name'] || updater['email'] || ''
     } else {
         updEntry['updatedByName'] = ''
     }
@@ -4846,7 +4788,8 @@ async function reassignHolder (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const keyRequestFields: Ref<any> = ref([
-    { key: 'uuid', width: 300, title: 'Internal ID' },
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
     { key: 'holderName', width: 200, title: 'Requested By' },
     { key: 'createdDate', width: 180, title: 'Requested' },
     { key: 'status', width: 120, title: 'Status', render: apiKeyControls.statusCell },
