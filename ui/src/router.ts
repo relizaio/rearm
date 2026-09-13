@@ -15,6 +15,11 @@ const routes : any[] = [
         component: UserProfile
     },
     {
+        path: '/cli-login',
+        name: 'cliLogin',
+        component: () => import('@/components/CliLogin.vue')
+    },
+    {
         path: '/sysSettings',
         name: 'systemSettings',
         component: () => import('@/components/SystemSettings.vue')

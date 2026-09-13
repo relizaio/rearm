@@ -109,6 +109,9 @@
                 <p v-if="!isAdminOfSelectedOrg" class="subtle">Need more than your own permissions allow, or a key that outlives your membership? Request a Free Form key: admins approve it with the permissions they choose, and you alone generate and see its secrets.</p>
                 <ApiKeyPermissionsModal v-model:show="showRequestModal" mode="request" :api-key="null" :org-uuid="newKeyOrg || ''" :notify="notify" @saved="loadMyKeys" />
                 <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2200" class="table-hover"></n-data-table>
+                <h4 class="mt-4">CLI sessions</h4>
+                <p class="subtle">Where <code>rearm login</code> signed in with one of your keys. Revoking a session signs that CLI out at once; a key created for the session is deleted with it.</p>
+                <n-data-table :columns="cliSessionFields" :data="cliSessions" class="table-hover"></n-data-table>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
             </div>
         </n-tab-pane>
@@ -151,7 +154,8 @@ onMounted(async () => {
         notify('success', 'Success', 'Email address verified successfully!', 8000)
     }
     await initLoad()
-    loadMyKeys()
+    await loadMyKeys()
+    loadCliSessions()
 })
 
 const apiKey = ref('')
@@ -440,6 +444,37 @@ function requestFreeformKey () {
     if (!newKeyOrg.value) return
     showRequestModal.value = true
 }
+// ---- CLI browser-login sessions ----
+const cliSessions: Ref<any[]> = ref([])
+async function loadCliSessions () {
+    try {
+        const resp: any = await graphqlClient.query({ query: gql`query myCliSessions { myCliSessions { uuid status apiKey org requestedFrom createdDate expiresDate lastUsedDate } }`, fetchPolicy: 'network-only' })
+        cliSessions.value = (resp.data.myCliSessions || []).map((s: any) => Object.assign({}, s, {
+            orgName: store.getters.orgById(s.org)?.name || s.org,
+            keyLabel: (myKeys.value.find((k: any) => k.uuid === s.apiKey) || {}).type === 'FREEFORM' ? 'Free Form (held)' : 'Personal',
+            createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
+            lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : ''
+        }))
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function revokeCliSession (row: any) {
+    const r = await Swal.fire({ title: 'Sign this CLI out?', text: `The session${row.requestedFrom ? ' on ' + row.requestedFrom : ''} stops working at once. A key created for it is deleted.`, icon: 'warning', showCancelButton: true, confirmButtonText: 'Revoke' })
+    if (!r.value) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation revokeCliSession($uuid: ID!) { revokeCliSession(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
+        notify('success', 'Revoked', 'CLI session revoked'); await loadMyKeys(); await loadCliSessions()
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const cliSessionFields: ComputedRef<any> = computed((): any => [
+    { key: 'requestedFrom', width: 220, title: 'CLI host' },
+    { key: 'keyLabel', width: 150, title: 'Acts as' },
+    { key: 'orgName', width: 200, title: 'Organization' },
+    { key: 'createdDisplay', width: 170, title: 'Signed in' },
+    { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
+    { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeCliSession(row) }, { default: () => 'Revoke' }) }
+])
 const editModalMode = ref<'edit' | 'view'>('edit')
 function editMyKey (row: any, mode: 'edit' | 'view' = 'edit') {
     editModalMode.value = mode
