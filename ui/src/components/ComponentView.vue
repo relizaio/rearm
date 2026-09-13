@@ -40,7 +40,7 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <n-gi span="3">
+            <n-gi :span="selectedTab === 'latest' ? 10 : 3">
                 <div class="componentTop">
                     <div class="componentSummary">
                         <h5 v-if="componentData">
@@ -1034,11 +1034,17 @@
                                             v-model:value="cloneBrProps.name"
                                             required
                                             :placeholder="'Enter cloned ' + words.branchFirstUpper + ' name'" />
-                                            <label>Version Pin of new {{ words.branchFirstUpper }} (Defaults to Version Schema: {{ componentData.featureBranchVersioniong }} )"</label>
-                                        <n-input
+                                        <label>Version schema of new {{ words.branchFirstUpper }} (defaults to the {{ words.branchFirstUpper.toLowerCase() }} schema of {{ componentData.name }}: {{ componentData.featureBranchVersioning || 'not set' }})</label>
+                                        <n-select
                                             v-model:value="cloneBrProps.schema"
-                                            required
-                                            placeholder="Enter Version Pin" />
+                                            tag
+                                            filterable
+                                            :placeholder="'Select version schema for ' + words.branchFirstUpper"
+                                            :options="constants.BranchVersionTypes" />
+                                        <n-input
+                                            v-if="cloneBrProps.schema === 'custom_version'"
+                                            v-model:value="customCloneVersionSchema"
+                                            placeholder="Custom Version Schema" />
                                         <label>Type of new {{ words.branchFirstUpper }}</label>
                                         <n-select
                                             placeholder="Please choose type"
@@ -1056,21 +1062,26 @@
                     </div>
                 </div>
                 <div class="componentDetails">
-                    <n-tabs v-if="componentData && componentData.type === 'COMPONENT'" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
-                        <n-tab-pane name="branches" tab="Branches">
-                            <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                    <n-tabs v-if="componentData" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
+                        <n-tab-pane name="latest" tab="Latest">
+                            <latest-releases-of-component
+                                :componentUuid="componentUuid"
+                                :orgUuid="String(route.params.orguuid)"
+                                :selectedBranchUuid="selectedBranchUuid"
+                                :featureSetLabel="words.branchFirstUpper"
+                                :refreshToken="latestRefreshToken"
+                                @selectBranch="selectBranchFromLatest" />
                         </n-tab-pane>
-                        <n-tab-pane name="pull-requests" tab="Pull Requests">
-                            <n-data-table :data="pullRequests" :columns="pullRequestFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                        <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
+                            <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
-                        <n-tab-pane name="tags" tab="Tags">
+                        <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">
                             <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
                     </n-tabs>
-                    <n-data-table v-else :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                 </div>
             </n-gi>
-            <n-gi span="7">
+            <n-gi v-if="selectedTab !== 'latest'" span="7">
                 <div v-if="marketingVersionEnabled" class="marketingReleases">
                     <mrkt-releases-of-component :component="updatedComponent.uuid" />
                 </div>
@@ -1098,6 +1109,7 @@ import commonFunctions from '../utils/commonFunctions'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
+import LatestReleasesOfComponent from './LatestReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import DeployedToWidget from './DeployedToWidget.vue'
 import { DashboardView } from '@/utils/dashboardView'
@@ -1447,7 +1459,9 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
-const selectedTab: Ref<string> = ref((route.query.tab as string) || 'branches')
+const selectedTab: Ref<string> = ref((route.query.tab as string) || 'latest')
+// Bumped after branch list changes so the Latest tab refetches.
+const latestRefreshToken = ref(0)
 const branchCollapseState: Ref<any> = ref({})
 const selectedPullRequest: Ref<string> = routePrnumber !== '' ? ref(branchRouteId + '-pr-' + routePrnumber) : ref('')
 branchCollapseState.value['branchCollapse' + branchRouteId] = true
@@ -1747,7 +1761,9 @@ const resourceGroupMap: ComputedRef<any> = computed((): any => {
 })
 
 const branches: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'PULL_REQUEST' && b.type !== 'TAG').map((b: any) => ({...b, key: b.uuid}))
+    // Pull-request branches (names starting with pull/ or pullrequest/, a legacy
+    // pipeline convention) stay in this list with a PR badge; tags have their own tab.
+    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'TAG').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
         // sort - TODO make sort configurable
         storeBranches.sort((a: any, b: any) => {
@@ -1779,19 +1795,6 @@ const mainBranch: ComputedRef<string> = computed((): any => {
         if (!mainBranch) mainBranch = branches.value[0].uuid
     }
     return mainBranch
-})
-
-const pullRequests: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'PULL_REQUEST').map((b: any) => ({...b, key: b.uuid}))
-    if (storeBranches && storeBranches.length) {
-        // Sort by creation date in descending order (newest first)
-        storeBranches.sort((a: any, b: any) => {
-            const dateA = a.createdDate ? new Date(a.createdDate).getTime() : 0
-            const dateB = b.createdDate ? new Date(b.createdDate).getTime() : 0
-            return dateB - dateA
-        })
-    }
-    return storeBranches
 })
 
 const tags: ComputedRef<any> = computed((): any => {
@@ -1847,15 +1850,39 @@ function selectBranch (uuid: string) {
     }
 }
 
+// A row in the Latest tab opens the branch in detail mode: the Latest tab
+// owns the full width, so the branch pane only exists under the Branches tab.
+function selectBranchFromLatest (uuid: string) {
+    selectedTab.value = 'branches'
+    selectedBranchUuid.value = uuid
+    router.push({
+        name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+        params: {
+            orguuid: route.params.orguuid,
+            compuuid: componentUuid,
+            branchuuid: uuid
+        },
+        query: { ...route.query, tab: 'branches' }
+    })
+}
+
 function handleTabChange (tabName: string) {
-    // Clear selected branch when switching tabs
-    selectedBranchUuid.value = ''
+    // Branches / Feature Sets: open the base branch right away so the pane
+    // is never empty on the first click. Other tabs start with no selection.
+    let preselect = ''
+    if (tabName === 'branches') {
+        const list = branches.value || []
+        const base = list.find((b: any) => b.type === 'BASE') || [...list].sort((a: any, b: any) => isMain(b) - isMain(a))[0]
+        preselect = base ? base.uuid : ''
+    }
+    selectedBranchUuid.value = preselect
 
     router.push({
         name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
         params: {
             orguuid: route.params.orguuid,
-            compuuid: componentUuid
+            compuuid: componentUuid,
+            ...(preselect ? { branchuuid: preselect } : {})
         },
         query: { ...route.query, tab: tabName }
     })
@@ -2203,24 +2230,35 @@ const defaultCloneBrProps = {
 }
 
 const cloneBrProps: Ref<any> = ref(commonFunctions.deepCopy(defaultCloneBrProps))
+const customCloneVersionSchema = ref('')
 
 const cloneBranchReset = function () {
     cloneBrProps.value.name = ''
     cloneBrProps.value.type = ''
     cloneBrProps.value.schema = componentData.value.featureBranchVersioning
+    customCloneVersionSchema.value = ''
 }
 
 const cloneBranchSubmit = async function () {
-    let brProps = {
+    if (!cloneBrProps.value.name) { notify('warning', 'Missing', `Name of the new ${words.value.branchFirstUpper} is required`); return }
+    const versionSchema = cloneBrProps.value.schema === 'custom_version' ? customCloneVersionSchema.value : cloneBrProps.value.schema
+    const brProps = {
         name: cloneBrProps.value.name,
         branchUuid: cloneBrProps.value.originalBranch.uuid,
-        versionSchema: cloneBrProps.value.schema,
-        branchType: cloneBrProps.value.type
+        versionSchema,
+        branchType: cloneBrProps.value.type || null
     }
-    const response: any = store.dispatch('cloneBranch', brProps)
-    selectBranch(response.uuid)
-    cloneBranchReset()
-    showCloneBranchModal.value = false
+    try {
+        const response: any = await store.dispatch('cloneBranch', brProps)
+        await store.dispatch('fetchBranches', { componentId: componentUuid, forceRefresh: true })
+        latestRefreshToken.value++
+        cloneBranchReset()
+        showCloneBranchModal.value = false
+        notify('success', 'Cloned', `${words.value.branchFirstUpper} ${response.name} created`)
+        selectBranch(response.uuid)
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+    }
 }
 
 const onCreateBranchSubmit = async function() {
@@ -2234,6 +2272,7 @@ const onCreateBranchSubmit = async function() {
             }
             const createBranchResp = await store.dispatch('createBranch', createBranchObject.value)
             await store.dispatch('fetchBranches', { componentId: componentUuid, forceRefresh: true })
+            latestRefreshToken.value++
             onCreateBranchReset()
             showAddBranchModal.value = false
             selectBranch(createBranchResp.uuid)
@@ -2925,14 +2964,23 @@ async function archiveBranchFromList (row: any) {
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
+// Action cells sit on a row whose click / double-click selects or opens the
+// branch. The whole cell swallows both events so a click near the icon can't
+// switch the selection.
+const actionCell = (children: any) => h('div', {
+    style: 'display: flex; justify-content: center; align-items: center; min-height: 28px;',
+    onClick: (e: Event) => e.stopPropagation(),
+    onDblclick: (e: Event) => e.stopPropagation(),
+}, children)
+
 function archiveActionCell (row: any) {
     if (!isWritable.value || row.type === 'BASE') return null
-    return h(NIcon, {
+    return actionCell(h(NIcon, {
         title: 'Archive ' + words.value.branchFirstUpper,
         class: 'icons clickable',
         size: 22,
         onClick: (e: Event) => { e.stopPropagation(); archiveBranchFromList(row) },
-    }, () => h(Trash))
+    }, () => h(Trash)))
 }
 
 const branchFields: any[] = [
@@ -2955,6 +3003,9 @@ const branchFields: any[] = [
         key: 'name',
         render: (row: any) => {
             const children: any[] = [h('span', row.name)]
+            if (row.type === 'PULL_REQUEST') {
+                children.push(h(NTag, { size: 'small', type: 'info', bordered: false, title: 'Pull request branch' }, () => 'PR'))
+            }
             if (row.type === 'BASE') {
                 children.push(h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NIcon, {
@@ -2987,47 +3038,30 @@ const branchFields: any[] = [
         render: archiveActionCell,
     },]
 
-if (!isComponent.value && isWritable){
-    branchFields.push({
-        title: '',
-        key: 'manage',
-        render: (row: any) => {
-            return h(
-                NIcon, 
-                {
-                    title: 'Clone ' + words.value.branchFirstUpper,
-                    class: 'icons clickable',
-                    size: 25,
-                    onClick: () => {cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; showCloneBranchModal.value = true}
-                }, 
-                () => h(Copy)
-            )
-        }
-    })
+// Clone lives on product feature sets for writers. isComponent / isWritable
+// only settle once the component loads, so the column is attached reactively
+// rather than pushed once at setup (which silently never ran for products).
+const cloneBranchColumn = {
+    title: '',
+    key: 'manage',
+    width: 50,
+    render: (row: any) => {
+        return actionCell(h(
+            NIcon,
+            {
+                title: 'Clone ' + words.value.branchFirstUpper,
+                class: 'icons clickable',
+                size: 25,
+                onClick: (e: Event) => { e.stopPropagation(); cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; customCloneVersionSchema.value = ''; showCloneBranchModal.value = true }
+            },
+            () => h(Copy)
+        ))
+    }
 }
+const branchColumns = computed(() => (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields)
 
 const branchTableRowKey = (row: any) => row.uuid
 
-// Pull Request fields - same as branch fields but with "Pull Request" header
-const pullRequestFields: any[] = [
-    {
-        title: 'Pull Request',
-        key: 'name'
-    },
-    {
-        title: 'Schema',
-        key: 'versionSchema',
-        render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
-    },
-    {
-        title: '',
-        key: 'archive',
-        width: 50,
-        render: archiveActionCell,
-    }
-]
-
-// Tag fields - same as branch fields but with "Tag" header
 const tagFields: any[] = [
     {
         title: 'Tag',
@@ -3610,6 +3644,7 @@ async function loadUserGroups() {
 async function initLoad() {
     const compUuid = route.params.compuuid.toString()
     await store.dispatch('fetchBranches', compUuid)
+    latestRefreshToken.value++
     let storeComponent = store.getters.componentById(compUuid)
     if (!storeComponent || !storeComponent.versionType) {
         storeComponent = await store.dispatch('fetchComponentFull', compUuid)

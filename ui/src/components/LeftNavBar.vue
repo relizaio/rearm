@@ -194,8 +194,8 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
             key: 'instances',
             icon: renderIcon(CloudServerOutlined)
         },
-        // Distribution module is SAAS-only for now.
-        ...(myuser.installationType === 'SAAS' ? [{
+        // Distribution module: every non-OSS installation.
+        ...(myuser.installationType !== 'OSS' ? [{
             label: () =>
                 h(
                     RouterLink,

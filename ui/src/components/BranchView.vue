@@ -377,6 +377,7 @@ import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
+import { renderVulnerabilityCells, renderViolationCells } from '@/utils/releaseScanCells'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 
@@ -422,14 +423,6 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 // of pretending those columns are pending.
 const dtrackConfigured: Ref<boolean> = ref(false)
 isDtrackConfiguredForOrg(orguuid).then((c) => { dtrackConfigured.value = c })
-
-function renderPendingBadge (status: { label: string, title: string, kind: string }) {
-    const bg = status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
-    return h('span', {
-        title: status.title,
-        style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`
-    }, status.label)
-}
 
 const branchUuid: Ref<string> = ref(props.branchUuidProp ? props.branchUuidProp.toString() : route.params.branchuuid ? route.params.branchuuid.toString() : '')
 
@@ -2012,38 +2005,12 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
     fields.push({
         key: 'vulnerabilities',
         title: 'Vulnerabilities',
-        render: (row: any) => {
-            const status = getReleaseScanStatus(row, dtrackConfigured.value)
-            if (status.kind !== 'ready') return [renderPendingBadge(status)]
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'CRITICAL', ['Vulnerability', 'Weakness'])}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'HIGH', ['Vulnerability', 'Weakness'])}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'MEDIUM', ['Vulnerability', 'Weakness'])}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'LOW', ['Vulnerability', 'Weakness'])}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'UNASSIGNED', ['Vulnerability', 'Weakness'])}, row.metrics.unassigned)
-                els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
-        }
+        render: (row: any) => renderVulnerabilityCells(row, getReleaseScanStatus(row, dtrackConfigured.value), viewDetailedVulnerabilitiesForRelease)
     })
     fields.push({
         key: 'violations',
         title: 'Violations',
-        render: (row: any) => {
-            const status = getReleaseScanStatus(row, dtrackConfigured.value)
-            if (status.kind !== 'ready') return [renderPendingBadge(status)]
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
-                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
-        }
+        render: (row: any) => renderViolationCells(row, getReleaseScanStatus(row, dtrackConfigured.value), viewDetailedVulnerabilitiesForRelease)
     })
 
     return fields

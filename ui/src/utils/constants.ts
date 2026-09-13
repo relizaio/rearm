@@ -180,7 +180,11 @@ const PERMISSION_FUNCTIONS: string[] = [
     'AGENT',
     // Gates the Distribution module surface (clients, sites, shipments,
     // devices, device events) for non-admin users and FREEFORM keys.
-    'DISTRIBUTION'
+    'DISTRIBUTION',
+    // Gate the declarative configuration surface (export / apply of spec
+    // files through the programmatic API). WRITE implies READ.
+    'CONFIGURATION_READ',
+    'CONFIGURATION_WRITE'
 ]
 // Functions that are grantable at the ESSENTIAL_READ permission type.
 // Most org-wide functions only make sense alongside READ_ONLY/READ_WRITE

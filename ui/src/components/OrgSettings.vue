@@ -622,98 +622,81 @@
             </n-tab-pane>
 
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
-                <div class="programmaticAccessBlock mt-4">
-                    <h5>Programmatic Access</h5>
-                    <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys"
-                        class="table-hover">
-                    </n-data-table>
-                    <!-- n-icon v-if="isOrgAdmin" class="clickable" @click="genApiKey"
-                        title="Create Api Key" size="24"><CirclePlus /></n-icon -->
-                    <n-modal
-                        preset="dialog"
-                        :show-icon="false"
-                        style="width: 90%;"
-                        v-model:show="showOrgSettingsProgPermissionsModal">
-                        <n-card size="huge"
-                            :title="'Set approval permissions for key: ' + selectedKey.uuid" :bordered="false" role="dialog"
-                            aria-modal="true">
-
-                            <n-form>
-                                <n-form-item label='Approval Permissions:'>
-                                    <n-checkbox-group id="modal-org-settings-programmatic-permissions-approval-checkboxes"
-                                        v-model:value="selectedKey.approvals">
-                                        <n-checkbox v-for="a in myorg.approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" ></n-checkbox>
-                                    </n-checkbox-group>
-                                </n-form-item>
-                                <n-form-item label='Notes:'>
-                                    <n-input
-                                        v-model:value="selectedKey.notes"
-                                        type="textarea"
-                                        placeholder="Notes"
-                                    />
-                                </n-form-item>
-                                <n-button @click="updateKeyPermissions" type="success">Submit</n-button>
-                            </n-form>
-                        </n-card>
-                    </n-modal>
-                </div>
-            </n-tab-pane>
-
-            <n-tab-pane name="freeFormKeys" tab="Free Form Keys" v-if="isOrgAdmin">
-                <div class="programmaticAccessBlock mt-4">
-                    <h5>Free Form Keys</h5>
-                    <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys"
-                        class="table-hover">
-                    </n-data-table>
-                    <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
-                        title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
-                    <n-modal
-                        preset="dialog"
-                        :show-icon="false"
-                        style="width: 90%;"
-                        :show="showFreeFormKeyPermissionsModal"
-                        @update:show="(v) => { if (!v) showFreeFormKeyPermissionsModal = false }"
-                        @after-enter="blurActiveElement"
-                    >
-                        <template #header>Edit key {{ selectedFreeFormKey.uuid }}</template>
-                        <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
-                            <n-tabs v-model:value="freeFormKeyEditTab" type="segment" animated>
-                                <n-tab-pane name="permissions" tab="Permissions">
-                                    <ScopedPermissions
-                                        v-model="freeFormKeyScopedPermissions"
-                                        :org-uuid="orgResolved"
-                                        :approval-roles="myorg.approvalRoles || []"
-                                        :perspectives="perspectives"
-                                        :products="orgProducts"
-                                        :components="orgComponents"
-                                        :instances="orgInstances"
-                                        :clusters="orgClusters"
-                                        :show-sbom-probing="true"
-                                    />
-                                    <n-space style="margin-top: 20px;">
-                                        <n-button type="success" @click="updateFreeFormKeyPermissions">Save Permissions</n-button>
-                                        <n-button @click="showFreeFormKeyPermissionsModal = false">Cancel</n-button>
-                                    </n-space>
-                                </n-tab-pane>
-                                <n-tab-pane name="notes" tab="Notes">
-                                    <p style="color: #555; margin-top: 0;">
-                                        Free-text notes for this key. Visible only to org admins on the Free Form Keys tab.
-                                    </p>
-                                    <n-input v-model:value="freeFormKeyNotes"
-                                        type="textarea"
-                                        :autosize="{ minRows: 4, maxRows: 16 }"
-                                        placeholder="What this key is used for, who owns it, expiry, etc." />
-                                    <n-space style="margin-top: 20px;">
-                                        <n-button type="success" @click="updateFreeFormKeyNotes">Save Notes</n-button>
-                                        <n-button @click="showFreeFormKeyPermissionsModal = false">Cancel</n-button>
-                                    </n-space>
-                                </n-tab-pane>
-                            </n-tabs>
+                <n-tabs type="segment" v-model:value="programmaticSubTab" size="medium" animated style="margin-bottom: 16px;">
+                    <n-tab-pane name="freeFormKeys" tab="Free Form Keys">
+                        <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
+                            <h5>Key Requests</h5>
+                            <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
+                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1800"
+                                class="table-hover">
+                            </n-data-table>
                         </div>
-                    </n-modal>
-                </div>
-            </n-tab-pane>
+                        <div class="programmaticAccessBlock mt-4">
+                            <h5>Free Form Keys</h5>
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2300"
+                                class="table-hover">
+                            </n-data-table>
+                            <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
+                                title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="userKeys" tab="User Keys">
+                        <div class="programmaticAccessBlock mt-4">
+                            <h5>User Keys</h5>
+                            <p class="subtle">Personal keys that members create for themselves on their profile page. The permissions on a key are a ceiling: every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.</p>
+                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="2200"
+                                class="table-hover">
+                            </n-data-table>
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="scopedKeys" tab="Scoped Keys">
+                        <div class="programmaticAccessBlock mt-4">
+                            <h5>Scoped Keys</h5>
+                            <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
+                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2200"
+                                class="table-hover">
+                            </n-data-table>
+                            <n-modal
+                                preset="dialog"
+                                :show-icon="false"
+                                style="width: 90%;"
+                                v-model:show="showOrgSettingsProgPermissionsModal">
+                                <n-card size="huge"
+                                    :title="'Set approval permissions for key: ' + selectedKey.uuid" :bordered="false" role="dialog"
+                                    aria-modal="true">
 
+                                    <n-form>
+                                        <n-form-item label='Approval Permissions:'>
+                                            <n-checkbox-group id="modal-org-settings-programmatic-permissions-approval-checkboxes"
+                                                v-model:value="selectedKey.approvals">
+                                                <n-checkbox v-for="a in myorg.approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" ></n-checkbox>
+                                            </n-checkbox-group>
+                                        </n-form-item>
+                                        <n-form-item label='Notes:'>
+                                            <n-input
+                                                v-model:value="selectedKey.notes"
+                                                type="textarea"
+                                                placeholder="Notes"
+                                            />
+                                        </n-form-item>
+                                        <n-button @click="updateKeyPermissions" type="success">Submit</n-button>
+                                    </n-form>
+                                </n-card>
+                            </n-modal>
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="federatedIdentities" tab="Federated Identities">
+                        <FederatedTrustRulesPanel ref="federatedPanel" :org-uuid="orgResolved" :notify="notify" :identities="computedFederatedIdentities"
+                            :free-form-keys="computedFreeFormKeys" :can-manage="isOrgAdmin" :api-key-controls="apiKeyControls" @changed="loadProgrammaticAccessKeys(false)" />
+                    </n-tab-pane>
+                </n-tabs>
+                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
+                    <template #header>CLI sessions on key {{ keySessionsKey?.uuid }}</template>
+                    <p class="subtle">Active <code>rearm login</code> sessions acting as this key. Revoking signs that CLI out at once.</p>
+                    <n-data-table :columns="keySessionFields" :data="keySessions" class="table-hover"></n-data-table>
+                </n-modal>
+            </n-tab-pane>
 
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
                 <div class="terminologyBlock mt-4">
@@ -1147,12 +1130,12 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1173,6 +1156,9 @@ import NotificationHistory from './NotificationHistory.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
+import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
+import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
@@ -1214,7 +1200,7 @@ async function loadTabSpecificData (tabName: string) {
             loadPerspectives(),
             store.dispatch('fetchComponents', orgResolved.value),
             store.dispatch('fetchProducts', orgResolved.value),
-            ...(myUser.value.installationType === 'SAAS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
+            ...(myUser.value.installationType !== 'OSS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
         ])
         loadInvitedUsers(true)
     } else if (tabName === "userGroups") {
@@ -1222,11 +1208,11 @@ async function loadTabSpecificData (tabName: string) {
         // type, so a PRODUCT/ANY rule would otherwise preview "matches 0".
         store.dispatch('fetchProducts', orgResolved.value)
         await loadUsers() // Load users for the user selection dropdown
-        if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
+        if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadUserGroups()
     } else if (tabName === "programmaticAccess") {
         await loadUsers()
-        if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
+        if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
     } else if (tabName === "freeFormKeys") {
         // Same as programmaticAccess — formatValuesForApiKeys() resolves
@@ -1236,7 +1222,7 @@ async function loadTabSpecificData (tabName: string) {
         // only formats when both lists are non-empty) and the column
         // ends up blank for FREEFORM rows.
         await loadUsers()
-        if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
+        if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
     } else if (tabName === "policies") {
         fetchApprovalEntries()
@@ -1260,14 +1246,46 @@ const showOrgSettingsProgPermissionsModal = ref(false)
 
 const showOrgSettingsUserPermissionsModal = ref(false)
 
-const showFreeFormKeyPermissionsModal = ref(false)
-const selectedFreeFormKey = ref<any>({})
-const freeFormKeyEditTab = ref<'permissions' | 'notes'>('permissions')
-const freeFormKeyNotes = ref<string>('')
-const freeFormKeyScopedPermissions = ref<any>({
-    orgPermission: { type: 'NONE', functions: [], approvals: [] },
-    scopedPermissions: []
-})
+const showKeyEditModal = ref(false)
+const selectedEditKey = ref<any>({})
+const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities'>('freeFormKeys')
+const federatedPanel = ref<any>(null)
+function editRbacKey(row: any) {
+    selectedEditKey.value = commonFunctions.deepCopy(row)
+    showKeyEditModal.value = true
+}
+// ---- CLI sessions riding a key (admin view) ----
+const showKeySessionsModal = ref(false)
+const keySessionsKey = ref<any>(null)
+const keySessions: Ref<any[]> = ref([])
+async function showKeySessions (row: any) {
+    keySessionsKey.value = row
+    try {
+        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom createdDate expiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
+        keySessions.value = (resp.data.cliSessionsOfKey || []).map((s: any) => { const u = users.value.find((x: any) => x.uuid === s.user); return Object.assign({}, s, {
+            userName: u ? (u.name || u.email) : (s.user || ''),
+            createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
+            lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '' }) })
+        showKeySessionsModal.value = true
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function revokeKeySession (row: any) {
+    const r = await Swal.fire({ title: 'Sign this CLI out?', text: `The session${row.requestedFrom ? ' on ' + row.requestedFrom : ''} stops working at once.`, icon: 'warning', showCancelButton: true, confirmButtonText: 'Revoke' })
+    if (!r.value) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation revokeCliSession($uuid: ID!) { revokeCliSession(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
+        notify('success', 'Revoked', 'CLI session revoked'); await showKeySessions(keySessionsKey.value); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const keySessionFields: Ref<any> = ref([
+    { key: 'userName', width: 220, title: 'User' },
+    { key: 'requestedFrom', width: 200, title: 'CLI host' },
+    { key: 'createdDisplay', width: 170, title: 'Signed in' },
+    { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
+    { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeKeySession(row) }, { default: () => 'Revoke' }) }
+])
 
 const showUserGroupPermissionsModal = ref(false)
 
@@ -1452,6 +1470,7 @@ function isTabAccessible (t: string): boolean {
 }
 const requestedTab = (route.query.tab as string) || defaultTab
 const currentTab = ref(isTabAccessible(requestedTab) ? requestedTab : defaultTab)
+if (currentTab.value === 'freeFormKeys') currentTab.value = 'programmaticAccess'
 // Default Policies sub-tab is approvalPoliciesInner (Approval Policies) — the
 // most common entry point. Approval Roles / Entries are configuration of
 // vocabulary used inside the policies.
@@ -1611,47 +1630,44 @@ const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
 })
 const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
+
+// ---- API key status and secrets (kill switch + AWS-style two-secret rotation): shared controls ----
+const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value })
+const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyControls.statusCell }
+const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeyControls.secretsCell }
+/** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
+async function createOrgKey (apiType: string, notes: string | null, label: string) {
+    let created: any
+    try {
+        const resp: any = await graphqlClient.mutate({ mutation: gql`mutation createOrgApiKey($orgUuid: ID!, $apiType: ApiTypeEnum!, $notes: String) { createOrgApiKey(orgUuid: $orgUuid, apiType: $apiType, notes: $notes) { uuid } }`, variables: { orgUuid: orgResolved.value, apiType, notes }, fetchPolicy: 'no-cache' })
+        created = resp.data.createOrgApiKey
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
+    loadProgrammaticAccessKeys(false)
+    const r = await Swal.fire({ title: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
+    if (r.value) await apiKeyControls.mintSecret(created.uuid, 'Secret generated')
+}
+
 const programmaticAccessFields: Ref<any> = ref([
-    {
-        key: 'uuid',
-        title: 'Internal ID'
-    },
-    {
-        key: 'apiId',
-        title: 'API ID',
-        render: (row: any) => {
-            let keyId = row.type + "__" + row.object
-            if (row.keyOrder) keyId += "__ord__" + row.keyOrder
-            const els: any[] = [
-                h(NTooltip, {
-                        trigger: 'hover'
-                    }, {trigger: () => h(NIcon,
-                            {
-                                // title: keyId,
-                                class: 'icons',
-                                size: 25,
-                            }, { default: () => h(Info20Regular) }),
-                            default: () =>  keyId
-                        }
-                )
-            ]
-            return h('div', els)
-        }
-    },
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
     {
         key: 'createdDate',
+        width: 180,
         title: 'Created'
     },
     {
         key: 'accessDate',
+        width: 180,
         title: 'Last Accessed'
     },
     {
         key: 'updatedByName',
+        width: 150,
         title: 'Updated By'
     },
     {
         key: 'object',
+        width: 220,
         title: 'Object',
         render: (row: any) => {
             let el = h('div')
@@ -1674,11 +1690,8 @@ const programmaticAccessFields: Ref<any> = ref([
         }
     },
     {
-        key: 'type',
-        title: 'Type'
-    },
-    {
         key: 'resolvedApprovals',
+        width: 160,
         title: 'Approvals',
         render: (row: any) => {
             let el = h('div')
@@ -1691,8 +1704,11 @@ const programmaticAccessFields: Ref<any> = ref([
             return el
         }
     },
+    apiKeyStatusColumn,
+    apiKeySecretsColumn,
     {
         key: 'notes',
+        width: 180,
         title: 'Notes'
     },
     {
@@ -1734,49 +1750,42 @@ const programmaticAccessFields: Ref<any> = ref([
     }
 ])
 const freeFormKeyFields: Ref<any> = ref([
-    {
-        key: 'uuid',
-        title: 'Internal ID'
-    },
-    {
-        key: 'apiId',
-        title: 'API ID',
-        render: (row: any) => {
-            let keyId = row.type + "__" + row.object
-            if (row.keyOrder) keyId += "__ord__" + row.keyOrder
-            const els: any[] = [
-                h(NTooltip, {
-                        trigger: 'hover'
-                    }, {trigger: () => h(NIcon,
-                            {
-                                class: 'icons',
-                                size: 25,
-                            }, { default: () => h(Info20Regular) }),
-                            default: () => keyId
-                        }
-                )
-            ]
-            return h('div', els)
-        }
-    },
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
     {
         key: 'createdDate',
+        width: 180,
         title: 'Created'
     },
     {
         key: 'accessDate',
+        width: 180,
         title: 'Last Accessed'
     },
     {
         key: 'updatedByName',
+        width: 150,
         title: 'Updated By'
     },
     {
+        key: 'holderName', width: 200, title: 'Holder',
+        render: (row: any) => {
+            if (!row.holder) return h('span', { class: 'text-muted' }, '—')
+            const kids: any[] = [h('span', row.holderName)]
+            if (row.holderLeft) kids.push(h(NTag, { size: 'tiny', type: 'warning', style: 'margin-left: 6px;' }, { default: () => 'reassign' }))
+            return h('div', kids)
+        }
+    },
+    apiKeyStatusColumn,
+    apiKeySecretsColumn,
+    {
         key: 'notes',
+        width: 180,
         title: 'Notes'
     },
     {
         key: 'boundAgents',
+        width: 200,
         title: 'Bound Agent(s)',
         render: (row: any) => {
             const agents = row.boundAgents || []
@@ -1808,10 +1817,12 @@ const freeFormKeyFields: Ref<any> = ref([
                             title: 'Set Permissions For Key',
                             class: 'icons clickable',
                             size: 25,
-                            onClick: () => editFreeFormKey(row)
+                            onClick: () => editRbacKey(row)
                         }, { default: () => h(EditIcon) }
                     )
                 )
+                els.push(h(NIcon, { title: 'Holder (who mints the secrets)', class: 'icons clickable', size: 25, onClick: () => reassignHolder(row) }, { default: () => h(UserIcon) }))
+                els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
                 els.push(h(
                     NIcon,
                     {
@@ -1821,6 +1832,35 @@ const freeFormKeyFields: Ref<any> = ref([
                         onClick: () => deleteKey(row.uuid)
                     }, { default: () => h(Trash) }
                 ))
+            }
+            return h('div', els)
+        }
+    }
+])
+const userKeyFields: Ref<any> = ref([
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
+    { key: 'ownerName', width: 200, title: 'Owner' },
+    { key: 'createdDate', width: 180, title: 'Created' },
+    { key: 'accessDate', width: 180, title: 'Last Accessed' },
+    apiKeyStatusColumn,
+    apiKeySecretsColumn,
+    {
+        key: 'ceiling', width: 160, title: 'Ceiling',
+        render: (row: any) => {
+            const n = (row.permissions?.permissions || []).length
+            return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none (key is inert)')
+        }
+    },
+    { key: 'notes', width: 180, title: 'Notes' },
+    {
+        key: 'controls', title: 'Manage',
+        render: (row: any) => {
+            const els: any[] = []
+            if (isOrgAdmin.value) {
+                els.push(h(NIcon, { title: 'Set Permission Ceiling For Key', class: 'icons clickable', size: 25, onClick: () => editRbacKey(row) }, { default: () => h(EditIcon) }))
+                els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
+                els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
             }
             return h('div', els)
         }
@@ -1926,12 +1966,12 @@ const allComponents = computed(() => [...orgComponents.value, ...orgProducts.val
 // Instance + cluster lists used by the ScopedPermissions component to
 // expose per-instance and per-cluster permission sections (replaces
 // the old UI's userInstancePermissionColumns / userClusterPermissionColumns
-// data tables). DevOps Read/Write grants are only honored on SAAS, so we
-// short-circuit the lists to empty on other installation types — that hides
-// the corresponding sections everywhere ScopedPermissions is rendered
+// data tables). Instances and clusters exist on every non-OSS installation;
+// on OSS we short-circuit the lists to empty, which hides the corresponding
+// sections everywhere ScopedPermissions is rendered
 // (users, user groups, programmatic access, free-form keys).
 const orgInstancesAndClusters = computed(() => {
-    if (myUser.value?.installationType !== 'SAAS') return []
+    if (myUser.value?.installationType === 'OSS') return []
     const all = (store.getters.instancesOfOrg(orgResolved.value) || [])
     return all.filter((x: any) => x.revision === -1 && (x.status === 'ACTIVE' || !x.status))
 })
@@ -3673,169 +3713,15 @@ async function editUser(email: string) {
 async function genFreeFormApiKey() {
     const swalResult = await Swal.fire({
         title: 'Are you sure?',
-        text: 'A new Free Form API Key will be generated.',
+        text: 'A new Free Form API Key id will be created. Its first secret is generated as a separate step.',
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonText: 'Yes, generate it!',
+        confirmButtonText: 'Yes, create it!',
         cancelButtonText: 'No, cancel it'
     })
     if (swalResult.value) {
-        const keyResp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setOrgApiKey($orgUuid: ID!) {
-                    setOrgApiKey(orgUuid: $orgUuid, apiType: FREEFORM) {
-                        id
-                        apiKey
-                        authorizationHeader
-                    }
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
-        loadProgrammaticAccessKeys(false)
-        Swal.fire({
-            title: 'Generated!',
-            customClass: { popup: 'swal-wide' },
-            html: newKeyMessage,
-            icon: 'success'
-        })
+        await createOrgKey('FREEFORM', null, 'Free Form API Key')
     }
-}
-
-async function editFreeFormKey(key: any) {
-    selectedFreeFormKey.value = commonFunctions.deepCopy(key)
-    await Promise.all([
-        loadPerspectives(),
-        store.dispatch('fetchComponents', orgResolved.value),
-        store.dispatch('fetchProducts', orgResolved.value)
-    ])
-    const scopedPerms: any[] = []
-    let orgPerm = { type: 'NONE', functions: [] as string[], approvals: [] as string[] }
-    for (const up of (selectedFreeFormKey.value.permissions?.permissions || [])) {
-        if (up.scope === 'ORGANIZATION' && up.org === orgResolved.value) {
-            orgPerm = { type: up.type, functions: up.functions || [], approvals: up.approvals || [] }
-        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT' || up.scope === 'INSTANCE') && up.org === orgResolved.value) {
-            const objectName = await resolveScopedObjectName(up.scope, up.object)
-            scopedPerms.push({
-                scope: up.scope,
-                objectId: up.object,
-                objectName,
-                type: up.type,
-                functions: up.functions || [],
-                approvals: up.approvals || []
-            })
-        }
-    }
-    freeFormKeyScopedPermissions.value = {
-        orgPermission: orgPerm,
-        scopedPermissions: scopedPerms
-    }
-    freeFormKeyNotes.value = key.notes || ''
-    freeFormKeyEditTab.value = 'permissions'
-    showFreeFormKeyPermissionsModal.value = true
-}
-
-async function updateFreeFormKeyPermissions() {
-    const permissions: any[] = []
-    const scopedData = freeFormKeyScopedPermissions.value
-    const orgPermType = scopedData.orgPermission.type
-    const orgApprovals = scopedData.orgPermission.approvals || []
-    const orgFunctions = scopedData.orgPermission.functions || []
-
-    if (orgPermType && orgPermType !== 'NONE') {
-        permissions.push({
-            org: orgResolved.value,
-            scope: 'ORGANIZATION',
-            type: orgPermType,
-            object: orgResolved.value,
-            functions: orgFunctions,
-            approvals: orgApprovals
-        })
-    }
-
-    if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
-        for (const sp of scopedData.scopedPermissions) {
-            if (sp.type && sp.type !== 'NONE') {
-                permissions.push({
-                    org: orgResolved.value,
-                    scope: sp.scope,
-                    type: sp.type,
-                    object: sp.objectId,
-                    functions: sp.functions || [],
-                    approvals: sp.approvals || []
-                })
-            }
-        }
-    }
-
-    let isSuccess = true
-    let errorOccurred = false
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setPermissionsOnFreeformApiKey($permissions: [PermissionInput]) {
-                    setPermissionsOnFreeformApiKey(apiKeyUuid: "${selectedFreeFormKey.value.uuid}",
-                        permissionType: ${orgPermType}, permissions: $permissions) {
-                        uuid
-                    }
-                }`,
-            variables: { permissions }
-        })
-        if (!resp.data.setPermissionsOnFreeformApiKey || !resp.data.setPermissionsOnFreeformApiKey.uuid) isSuccess = false
-    } catch (error: any) {
-        console.error(error)
-        isSuccess = false
-        errorOccurred = true
-        const errorMsg = commonFunctions.parseGraphQLError(error.message)
-        notify('error', 'Error', `Failed to save key permissions: ${errorMsg}`)
-    }
-
-    if (isSuccess) {
-        notify('success', 'Saved', 'Saved key permissions successfully!')
-        await loadProgrammaticAccessKeys(false)
-    } else if (!errorOccurred) {
-        notify('error', 'Error', 'Failed to save key permissions. Please retry or contact support.')
-    }
-
-    showFreeFormKeyPermissionsModal.value = false
-    selectedFreeFormKey.value = {}
-}
-
-async function updateFreeFormKeyNotes() {
-    if (!selectedFreeFormKey.value || !selectedFreeFormKey.value.uuid) {
-        notify('error', 'Error', 'No key selected.')
-        return
-    }
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setNotesOnApiKey($apiKeyUuid: ID!, $notes: String) {
-                    setNotesOnApiKey(apiKeyUuid: $apiKeyUuid, notes: $notes) {
-                        uuid notes
-                    }
-                }`,
-            variables: {
-                apiKeyUuid: selectedFreeFormKey.value.uuid,
-                notes: freeFormKeyNotes.value
-            }
-        })
-        if (!resp.data.setNotesOnApiKey || !resp.data.setNotesOnApiKey.uuid) {
-            notify('error', 'Error', 'Failed to save notes.')
-            return
-        }
-        notify('success', 'Saved', 'Saved key notes successfully!')
-        await loadProgrammaticAccessKeys(false)
-    } catch (error: any) {
-        console.error(error)
-        const errorMsg = commonFunctions.parseGraphQLError(error.message)
-        notify('error', 'Error', `Failed to save key notes: ${errorMsg}`)
-        return
-    }
-    showFreeFormKeyPermissionsModal.value = false
-    selectedFreeFormKey.value = {}
 }
 
 function extractOrgWidePermission(user: any) {
@@ -3900,26 +3786,7 @@ async function genApiKey() {
             genUserRegistryToken('PUBLIC', setKeyPayload.notes)
             return
         }
-        const keyResp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setOrgApiKey($orgUuid: ID!, $apiType: ApiTypeEnum!, $notes: String) {
-                    setOrgApiKey(orgUuid: $orgUuid, apiType: $apiType, notes: $notes) {
-                        id
-                        apiKey
-                        authorizationHeader
-                    }
-                }`,
-            variables: setKeyPayload,
-            fetchPolicy: 'no-cache'
-        })
-        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
-        loadProgrammaticAccessKeys(false)
-        Swal.fire({
-            title: 'Generated!',
-            customClass: {popup: 'swal-wide'},
-            html: newKeyMessage,
-            icon: 'success'
-        })
+        await createOrgKey(setKeyPayload.apiType, setKeyPayload.notes || null, 'API Key')
     }
     
 }
@@ -4350,6 +4217,11 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     accessDate
                                     createdDate
                                     notes
+                                    status
+                                    holder
+                                    adminDisabled
+                                    federation { provider issuer owner repository repositoryUri repositoryId ownerId pinnedDate lastRef lastRunId lastActor }
+                                    secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {
                                         uuid
                                         name
@@ -4438,7 +4310,8 @@ function formatValuesForApiKeys (apiKeyEntry: any) {
     updEntry['createdDate'] = (new Date(apiKeyEntry['createdDate'])).toLocaleString('en-CA')
     updEntry['accessDate'] = apiKeyEntry['accessDate']? (new Date(apiKeyEntry['accessDate'])).toLocaleString('en-CA') : 'Never'
     if (apiKeyEntry['lastUpdatedBy'] && users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])) {
-        updEntry['updatedByName'] = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])['name']
+        const updater = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])
+        updEntry['updatedByName'] = updater['name'] || updater['email'] || ''
     } else {
         updEntry['updatedByName'] = ''
     }
@@ -4890,7 +4763,8 @@ const jiraIntegrationData: ComputedRef<any> = computed((): any => {
     return false
 })
 const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
-    return programmaticAccessKeys.value.map((accesKey: any) => {
+    // scoped keys: everything that is not an RBAC key (FREEFORM, USER and FEDERATED have their own sub-tabs)
+    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED').map((accesKey: any) => {
         if (accesKey.type === 'ORGANIZATION_RW' || accesKey.type === 'ORGANIZATION') {
             accesKey.object_val = store.getters.orgById(accesKey.object).name
         } else if (accesKey.type === 'COMPONENT') {
@@ -4924,7 +4798,70 @@ const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
     // updatedByName is also already resolved at load time. The
     // computed exists only so the table re-renders if the underlying
     // ref mutates (post-edit reload).
-    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM')
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && k.status !== 'REQUESTED' && k.status !== 'DENIED').map(withHolder)
+})
+function withHolder (k: any) {
+    if (!k.holder) return Object.assign({}, k, { holderName: '', holderLeft: false })
+    const u = users.value.find((x: any) => x.uuid === k.holder)
+    return Object.assign({}, k, { holderName: u ? (u.name || u.email) : 'left the organization', holderLeft: !u })
+}
+const computedFederatedIdentities: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FEDERATED')
+})
+const computedKeyRequests: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder)
+})
+async function resolveKeyRequest (row: any, approve: boolean) {
+    let reason: string | null = null
+    if (approve) {
+        const r = await Swal.fire({ title: 'Approve this request?', text: 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
+        if (!r.value) return
+    } else {
+        const r = await Swal.fire({ title: 'Deny this request?', input: 'text', inputPlaceholder: 'Reason (shown to the requester)', showCancelButton: true, confirmButtonText: 'Deny' })
+        if (!r.isConfirmed) return
+        reason = r.value || null
+    }
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation resolveApiKeyRequest($apiKeyUuid: ID!, $approve: Boolean!, $reason: String) { resolveApiKeyRequest(apiKeyUuid: $apiKeyUuid, approve: $approve, reason: $reason) { uuid status } }`, variables: { apiKeyUuid: row.uuid, approve, reason }, fetchPolicy: 'no-cache' })
+        notify('success', approve ? 'Approved' : 'Denied', approve ? 'The requester can now generate secrets for this key' : 'Request denied'); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function reassignHolder (row: any) {
+    const options: Record<string, string> = { '': '(no holder: admins mint the secrets)' }
+    for (const u of users.value) options[u.uuid] = u.name ? `${u.name} (${u.email})` : u.email
+    const r = await Swal.fire({ title: 'Holder of this key', text: 'The holder is the only one who can generate or regenerate its secrets.', input: 'select', inputOptions: options, inputValue: row.holder || '', showCancelButton: true, confirmButtonText: 'Save' })
+    if (!r.isConfirmed) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation setApiKeyHolder($apiKeyUuid: ID!, $holder: ID) { setApiKeyHolder(apiKeyUuid: $apiKeyUuid, holder: $holder) { uuid holder } }`, variables: { apiKeyUuid: row.uuid, holder: r.value || null }, fetchPolicy: 'no-cache' })
+        notify('success', 'Saved', 'Holder updated'); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const keyRequestFields: Ref<any> = ref([
+    apiKeyTypeColumn,
+    apiKeyIdsColumn(),
+    { key: 'holderName', width: 200, title: 'Requested By' },
+    { key: 'createdDate', width: 180, title: 'Requested' },
+    { key: 'status', width: 120, title: 'Status', render: apiKeyControls.statusCell },
+    { key: 'proposed', width: 150, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
+    { key: 'notes', width: 260, title: 'Purpose / Notes' },
+    {
+        key: 'controls', title: 'Manage',
+        render: (row: any) => {
+            const els: any[] = [h(NIcon, { title: 'Review / Edit Permissions', class: 'icons clickable', size: 25, onClick: () => editRbacKey(row) }, { default: () => h(EditIcon) })]
+            if (row.status === 'REQUESTED') {
+                els.push(h(NButton, { size: 'tiny', type: 'primary', style: 'margin: 0 4px;', onClick: () => resolveKeyRequest(row, true) }, { default: () => 'Approve' }))
+                els.push(h(NButton, { size: 'tiny', type: 'warning', style: 'margin-right: 4px;', onClick: () => resolveKeyRequest(row, false) }, { default: () => 'Deny' }))
+            }
+            els.push(h(NIcon, { title: 'Delete', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
+            return h('div', { style: 'display: flex; align-items: center;' }, els)
+        }
+    }
+])
+const computedUserKeys: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'USER').map((k: any) => {
+        const owner = users.value.find((u: any) => u.uuid === k.object)
+        return Object.assign({}, k, { ownerName: owner ? (owner.name || owner.email) : 'Unknown user' })
+    })
 })
 const imageRegistry: ComputedRef<any> = computed((): any => {
     let content = '### OCI Container Images (Suitable for Docker and Helm):\n'

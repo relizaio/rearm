@@ -1,6 +1,8 @@
 <template>
     <div class="home">
         <h2>User Profile</h2>
+        <n-tabs type="segment" v-model:value="profileTab" size="medium" animated style="margin-bottom: 16px;">
+        <n-tab-pane name="profile" tab="Profile">
 
         <div v-if="myUser" class="nameBlock mt-4">
             <n-form-item path="username" label="Your Display Name:">
@@ -85,19 +87,52 @@
             <n-button @click="submitFile">Restore</n-button>
         </n-modal>
 
+        </n-tab-pane>
+        <n-tab-pane name="apiKeys" tab="API Keys">
+            <div class="mt-4">
+                <h4>Your API Keys</h4>
+                <p class="subtle">A personal key acts as you, within the permissions you set on it. Every call is also checked against your own permissions at that moment, and the lower of the two wins. A new key has no secret and no permissions until you add them.</p>
+                <n-space align="end" style="margin-bottom: 12px;">
+                    <n-form-item label="Organization">
+                        <n-select v-model:value="newKeyOrg" :options="orgOptions" style="min-width: 280px;" />
+                    </n-form-item>
+                    <n-form-item label="Notes">
+                        <n-input v-model:value="newKeyNotes" placeholder="What this key is for" style="min-width: 280px;" />
+                    </n-form-item>
+                    <n-form-item>
+                        <n-button type="primary" :disabled="!newKeyOrg" @click="createMyKey">Create key</n-button>
+                    </n-form-item>
+                    <n-form-item v-if="!isAdminOfSelectedOrg">
+                        <n-button :disabled="!newKeyOrg" @click="requestFreeformKey">Request a Free Form key</n-button>
+                    </n-form-item>
+                </n-space>
+                <p v-if="!isAdminOfSelectedOrg" class="subtle">Need more than your own permissions allow, or a key that outlives your membership? Request a Free Form key: admins approve it with the permissions they choose, and you alone generate and see its secrets.</p>
+                <ApiKeyPermissionsModal v-model:show="showRequestModal" mode="request" :api-key="null" :org-uuid="newKeyOrg || ''" :notify="notify" @saved="loadMyKeys" />
+                <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2200" class="table-hover"></n-data-table>
+                <h4 class="mt-4">CLI sessions</h4>
+                <p class="subtle">Where <code>rearm login</code> signed in with one of your keys. Revoking a session signs that CLI out at once; a key created for the session is deleted with it.</p>
+                <n-data-table :columns="cliSessionFields" :data="cliSessions" class="table-hover"></n-data-table>
+                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
+            </div>
+        </n-tab-pane>
+        </n-tabs>
     </div>
 </template>
 
 <script lang="ts" setup>
 // @ is an alias to /src
-import { NIcon, NCheckbox, NInput, NModal, NDataTable, NForm, NFormItem, NInputGroup, NButton, NotificationType, useNotification, NUpload } from 'naive-ui'
-import { ComputedRef, h, ref, Ref, computed, onMounted } from 'vue'
+import { NIcon, NCheckbox, NInput, NModal, NDataTable, NForm, NFormItem, NInputGroup, NButton, NotificationType, useNotification, NUpload, NTabs, NTabPane, NSpace, NSelect } from 'naive-ui'
+import { ComputedRef, h, ref, Ref, computed, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { Edit as EditIcon, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
+import { Edit as EditIcon, Eye as EyeIcon, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
 import Swal from 'sweetalert2'
 import { OnChange } from 'naive-ui/es/upload/src/interface'
+import gql from 'graphql-tag'
+import graphqlClient from '../utils/graphql'
+import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import { createApiKeyControls, apiKeyIdsColumn } from '../utils/apiKeyControls'
 
 
 const route = useRoute()
@@ -119,6 +154,8 @@ onMounted(async () => {
         notify('success', 'Success', 'Email address verified successfully!', 8000)
     }
     await initLoad()
+    await loadMyKeys()
+    loadCliSessions()
 })
 
 const apiKey = ref('')
@@ -349,6 +386,133 @@ function updateUserName() {
 // const myUser: Ref<any> = ref({})
 const organizations: ComputedRef<any> = computed((): any => store.getters.allOrganizations)
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
+
+// ---- personal (USER) API keys: created here, managed here; org admins also see them in org settings ----
+const profileTab = ref<'profile' | 'apiKeys'>('profile')
+const myKeys: Ref<any[]> = ref([])
+const newKeyOrg = ref<string | null>(null)
+const newKeyNotes = ref('')
+const showKeyEditModal = ref(false)
+const selectedEditKey = ref<any>({})
+const orgOptions = computed(() => (organizations.value || []).map((o: any) => ({ label: o.name, value: o.uuid })))
+const showRequestModal = ref(false)
+// an org admin creates Free Form keys directly in org settings; a request would only go to themselves
+const isAdminOfSelectedOrg = computed(() => {
+    const perms = myUser.value?.permissions?.permissions || []
+    return !!newKeyOrg.value && perms.some((p: any) => p.org === newKeyOrg.value && p.object === newKeyOrg.value && p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
+})
+watch(orgOptions, (opts) => {
+    if (newKeyOrg.value || !opts.length) return
+    let stored: string | null = null
+    try { stored = window.localStorage.getItem('relizaOrgUuid') } catch { stored = null }
+    newKeyOrg.value = opts.find((o: any) => o.value === stored)?.value || opts[0].value
+}, { immediate: true })
+
+async function loadMyKeys () {
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes status holder adminDisabled
+                secrets { slot active createdDate lastUsedDate expiresDate }
+                permissions { permissions { org scope object type meta approvals functions } } } }`,
+            fetchPolicy: 'network-only'
+        })
+        myKeys.value = (resp.data.myApiKeys || []).map((k: any) => Object.assign({}, k, {
+            orgName: store.getters.orgById(k.org)?.name || k.org,
+            createdDisplay: k.createdDate ? new Date(k.createdDate).toLocaleString('en-CA') : '',
+            accessDisplay: k.accessDate ? new Date(k.accessDate).toLocaleString('en-CA') : 'Never'
+        }))
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const apiKeyControls = createApiKeyControls({ notify, reload: loadMyKeys, canManage: () => true, canMint: (row: any) => row.status === 'ACTIVE' || row.status === 'INACTIVE' })
+
+async function createMyKey () {
+    if (!newKeyOrg.value) return
+    let created: any
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation: gql`mutation createUserApiKey($orgUuid: ID!, $notes: String) { createUserApiKey(orgUuid: $orgUuid, notes: $notes) { uuid } }`,
+            variables: { orgUuid: newKeyOrg.value, notes: newKeyNotes.value || null }, fetchPolicy: 'no-cache'
+        })
+        created = resp.data.createUserApiKey
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
+    newKeyNotes.value = ''
+    await loadMyKeys()
+    const r = await Swal.fire({ title: 'Key created', text: 'The key id exists but has no secret and no permissions yet. Generate its first secret now? Set its permissions from the Manage column; until then the key is refused everywhere.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
+    if (r.value) await apiKeyControls.mintSecret(created.uuid, 'Secret generated')
+}
+function requestFreeformKey () {
+    if (!newKeyOrg.value) return
+    showRequestModal.value = true
+}
+// ---- CLI browser-login sessions ----
+const cliSessions: Ref<any[]> = ref([])
+async function loadCliSessions () {
+    try {
+        const resp: any = await graphqlClient.query({ query: gql`query myCliSessions { myCliSessions { uuid status apiKey org requestedFrom createdDate expiresDate lastUsedDate } }`, fetchPolicy: 'network-only' })
+        cliSessions.value = (resp.data.myCliSessions || []).map((s: any) => Object.assign({}, s, {
+            orgName: store.getters.orgById(s.org)?.name || s.org,
+            keyLabel: (myKeys.value.find((k: any) => k.uuid === s.apiKey) || {}).type === 'FREEFORM' ? 'Free Form (held)' : 'Personal',
+            createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
+            lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : ''
+        }))
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function revokeCliSession (row: any) {
+    const r = await Swal.fire({ title: 'Sign this CLI out?', text: `The session${row.requestedFrom ? ' on ' + row.requestedFrom : ''} stops working at once. A key created for it is deleted.`, icon: 'warning', showCancelButton: true, confirmButtonText: 'Revoke' })
+    if (!r.value) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation revokeCliSession($uuid: ID!) { revokeCliSession(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
+        notify('success', 'Revoked', 'CLI session revoked'); await loadMyKeys(); await loadCliSessions()
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const cliSessionFields: ComputedRef<any> = computed((): any => [
+    { key: 'requestedFrom', width: 220, title: 'CLI host' },
+    { key: 'keyLabel', width: 150, title: 'Acts as' },
+    { key: 'orgName', width: 200, title: 'Organization' },
+    { key: 'createdDisplay', width: 170, title: 'Signed in' },
+    { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
+    { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeCliSession(row) }, { default: () => 'Revoke' }) }
+])
+const editModalMode = ref<'edit' | 'view'>('edit')
+function editMyKey (row: any, mode: 'edit' | 'view' = 'edit') {
+    editModalMode.value = mode
+    selectedEditKey.value = commonFunctions.deepCopy(row)
+    showKeyEditModal.value = true
+}
+const myKeyFields: ComputedRef<any> = computed((): any => [
+    { key: 'kind', width: 150, title: 'Type', render: (row: any) => row.type === 'USER' ? 'Personal' : 'Free Form (held)' },
+    apiKeyIdsColumn(),
+    { key: 'orgName', width: 200, title: 'Organization' },
+    { key: 'createdDisplay', width: 170, title: 'Created' },
+    { key: 'accessDisplay', width: 170, title: 'Last Accessed' },
+    { key: 'status', width: 170, title: 'Status', render: apiKeyControls.statusCell },
+    { key: 'secrets', width: 470, title: 'Secrets', render: apiKeyControls.secretsCell },
+    {
+        key: 'ceiling', width: 160, title: 'Permissions',
+        render: (row: any) => {
+            const n = (row.permissions?.permissions || []).length
+            return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none (key is inert)')
+        }
+    },
+    { key: 'notes', width: 180, title: 'Notes' },
+    {
+        key: 'controls', title: 'Manage',
+        render: (row: any) => {
+            const els: any[] = []
+            // personal keys: the owner shapes the ceiling; held Free Form keys: only while the request is pending
+            if (row.type === 'USER' || row.status === 'REQUESTED') {
+                els.push(h(NIcon, { title: row.type === 'USER' ? 'Set Permissions For Key' : 'Propose Permissions', class: 'icons clickable', size: 25, onClick: () => editMyKey(row) }, { default: () => h(EditIcon) }))
+            } else {
+                // a held Free Form key: the admins own its permissions, the holder can see them
+                els.push(h(NIcon, { title: 'View Permissions', class: 'icons clickable', size: 25, onClick: () => editMyKey(row, 'view') }, { default: () => h(EyeIcon) }))
+            }
+            els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, row.status === 'REQUESTED' ? 'this request' : 'this key') }, { default: () => h(Trash) }))
+            return h('div', els)
+        }
+    }
+])
 </script>
 
 <style lang="scss">
