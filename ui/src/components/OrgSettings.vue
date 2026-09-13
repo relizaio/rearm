@@ -685,8 +685,17 @@
                             </n-modal>
                         </div>
                     </n-tab-pane>
+                    <n-tab-pane name="federatedIdentities" tab="Federated Identities">
+                        <FederatedTrustRulesPanel ref="federatedPanel" :org-uuid="orgResolved" :notify="notify" :identities="computedFederatedIdentities"
+                            :free-form-keys="computedFreeFormKeys" :can-manage="isOrgAdmin" :api-key-controls="apiKeyControls" @changed="loadProgrammaticAccessKeys(false)" />
+                    </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
+                    <template #header>CLI sessions on key {{ keySessionsKey?.uuid }}</template>
+                    <p class="subtle">Active <code>rearm login</code> sessions acting as this key. Revoking signs that CLI out at once.</p>
+                    <n-data-table :columns="keySessionFields" :data="keySessions" class="table-hover"></n-data-table>
+                </n-modal>
             </n-tab-pane>
 
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
@@ -1126,7 +1135,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1148,6 +1157,7 @@ import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
@@ -1238,11 +1248,44 @@ const showOrgSettingsUserPermissionsModal = ref(false)
 
 const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
-const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys'>('freeFormKeys')
+const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities'>('freeFormKeys')
+const federatedPanel = ref<any>(null)
 function editRbacKey(row: any) {
     selectedEditKey.value = commonFunctions.deepCopy(row)
     showKeyEditModal.value = true
 }
+// ---- CLI sessions riding a key (admin view) ----
+const showKeySessionsModal = ref(false)
+const keySessionsKey = ref<any>(null)
+const keySessions: Ref<any[]> = ref([])
+async function showKeySessions (row: any) {
+    keySessionsKey.value = row
+    try {
+        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom createdDate expiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
+        keySessions.value = (resp.data.cliSessionsOfKey || []).map((s: any) => { const u = users.value.find((x: any) => x.uuid === s.user); return Object.assign({}, s, {
+            userName: u ? (u.name || u.email) : (s.user || ''),
+            createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
+            lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '' }) })
+        showKeySessionsModal.value = true
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+async function revokeKeySession (row: any) {
+    const r = await Swal.fire({ title: 'Sign this CLI out?', text: `The session${row.requestedFrom ? ' on ' + row.requestedFrom : ''} stops working at once.`, icon: 'warning', showCancelButton: true, confirmButtonText: 'Revoke' })
+    if (!r.value) return
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation revokeCliSession($uuid: ID!) { revokeCliSession(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
+        notify('success', 'Revoked', 'CLI session revoked'); await showKeySessions(keySessionsKey.value); loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const keySessionFields: Ref<any> = ref([
+    { key: 'userName', width: 220, title: 'User' },
+    { key: 'requestedFrom', width: 200, title: 'CLI host' },
+    { key: 'createdDisplay', width: 170, title: 'Signed in' },
+    { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
+    { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeKeySession(row) }, { default: () => 'Revoke' }) }
+])
 
 const showUserGroupPermissionsModal = ref(false)
 
@@ -1779,6 +1822,7 @@ const freeFormKeyFields: Ref<any> = ref([
                     )
                 )
                 els.push(h(NIcon, { title: 'Holder (who mints the secrets)', class: 'icons clickable', size: 25, onClick: () => reassignHolder(row) }, { default: () => h(UserIcon) }))
+                els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
                 els.push(h(
                     NIcon,
                     {
@@ -1815,6 +1859,7 @@ const userKeyFields: Ref<any> = ref([
             const els: any[] = []
             if (isOrgAdmin.value) {
                 els.push(h(NIcon, { title: 'Set Permission Ceiling For Key', class: 'icons clickable', size: 25, onClick: () => editRbacKey(row) }, { default: () => h(EditIcon) }))
+                els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
                 els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
             }
             return h('div', els)
@@ -4175,6 +4220,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     status
                                     holder
                                     adminDisabled
+                                    federation { provider issuer owner repository repositoryUri repositoryId ownerId pinnedDate lastRef lastRunId lastActor }
                                     secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {
                                         uuid
@@ -4717,8 +4763,8 @@ const jiraIntegrationData: ComputedRef<any> = computed((): any => {
     return false
 })
 const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
-    // scoped keys: everything that is not an RBAC key (FREEFORM and USER have their own sub-tabs)
-    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER').map((accesKey: any) => {
+    // scoped keys: everything that is not an RBAC key (FREEFORM, USER and FEDERATED have their own sub-tabs)
+    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED').map((accesKey: any) => {
         if (accesKey.type === 'ORGANIZATION_RW' || accesKey.type === 'ORGANIZATION') {
             accesKey.object_val = store.getters.orgById(accesKey.object).name
         } else if (accesKey.type === 'COMPONENT') {
@@ -4759,6 +4805,9 @@ function withHolder (k: any) {
     const u = users.value.find((x: any) => x.uuid === k.holder)
     return Object.assign({}, k, { holderName: u ? (u.name || u.email) : 'left the organization', holderLeft: !u })
 }
+const computedFederatedIdentities: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FEDERATED')
+})
 const computedKeyRequests: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder)
 })
