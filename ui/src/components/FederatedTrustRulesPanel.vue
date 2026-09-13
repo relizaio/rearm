@@ -17,7 +17,8 @@
             <h5>Federated Identities</h5>
             <p class="subtle">
                 One row per repository that has authenticated through a template rule. Nothing is stored on it: what it may do is computed from the rules on every call.
-                The repository id is pinned on first use, so a renamed or recreated repository is refused until the pin is reset. Deactivating a row refuses that repository alone.
+                The repository id is pinned on first use, so a renamed or recreated repository is refused until the pin is reset. Deactivating a row refuses that repository alone and holds
+                until an admin activates it again; deleting a row only forgets its history, the next run from that repository materialises it again as long as a rule trusts it.
             </p>
             <n-data-table :columns="identityFields" :data="identities" :scroll-x="1900" class="table-hover"></n-data-table>
         </div>
@@ -42,10 +43,10 @@
                         <n-form-item-gi label="Owner on the provider (GitHub organization or user), required" :span="1">
                             <n-input v-model:value="form.matcher.owner" placeholder="e.g. relizaio" />
                         </n-form-item-gi>
-                        <n-form-item-gi label="Repositories (globs over the name, or owner/name; empty = every repository of the owner)" :span="1">
+                        <n-form-item-gi label="Repositories (globs over the name, or owner/name; * spans separators; empty = every repository of the owner)" :span="1">
                             <n-dynamic-tags v-model:value="form.matcher.repositories" />
                         </n-form-item-gi>
-                        <n-form-item-gi label="Excluded repositories" :span="1">
+                        <n-form-item-gi label="Excluded repositories (write them as precisely as the inclusions: * spans separators)" :span="1">
                             <n-dynamic-tags v-model:value="form.matcher.excludeRepositories" />
                         </n-form-item-gi>
                         <n-form-item-gi label="Refs (main, release/*, refs/tags/v*; a bare pattern matches branches and tags)" :span="1">
