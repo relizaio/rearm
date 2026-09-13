@@ -685,6 +685,10 @@
                             </n-modal>
                         </div>
                     </n-tab-pane>
+                    <n-tab-pane name="federatedIdentities" tab="Federated Identities">
+                        <FederatedTrustRulesPanel ref="federatedPanel" :org-uuid="orgResolved" :notify="notify" :identities="computedFederatedIdentities"
+                            :free-form-keys="computedFreeFormKeys" :can-manage="isOrgAdmin" :api-key-controls="apiKeyControls" @changed="loadProgrammaticAccessKeys(false)" />
+                    </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
@@ -1153,6 +1157,7 @@ import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
@@ -1243,7 +1248,8 @@ const showOrgSettingsUserPermissionsModal = ref(false)
 
 const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
-const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys'>('freeFormKeys')
+const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities'>('freeFormKeys')
+const federatedPanel = ref<any>(null)
 function editRbacKey(row: any) {
     selectedEditKey.value = commonFunctions.deepCopy(row)
     showKeyEditModal.value = true
@@ -4214,6 +4220,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     status
                                     holder
                                     adminDisabled
+                                    federation { provider issuer owner repository repositoryUri repositoryId ownerId pinnedDate lastRef lastRunId lastActor }
                                     secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {
                                         uuid
@@ -4756,8 +4763,8 @@ const jiraIntegrationData: ComputedRef<any> = computed((): any => {
     return false
 })
 const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
-    // scoped keys: everything that is not an RBAC key (FREEFORM and USER have their own sub-tabs)
-    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER').map((accesKey: any) => {
+    // scoped keys: everything that is not an RBAC key (FREEFORM, USER and FEDERATED have their own sub-tabs)
+    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED').map((accesKey: any) => {
         if (accesKey.type === 'ORGANIZATION_RW' || accesKey.type === 'ORGANIZATION') {
             accesKey.object_val = store.getters.orgById(accesKey.object).name
         } else if (accesKey.type === 'COMPONENT') {
@@ -4798,6 +4805,9 @@ function withHolder (k: any) {
     const u = users.value.find((x: any) => x.uuid === k.holder)
     return Object.assign({}, k, { holderName: u ? (u.name || u.email) : 'left the organization', holderLeft: !u })
 }
+const computedFederatedIdentities: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FEDERATED')
+})
 const computedKeyRequests: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder)
 })
