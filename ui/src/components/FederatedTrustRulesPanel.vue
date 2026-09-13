@@ -80,8 +80,14 @@
                             <n-form-item-gi label="On the calling repository's components, branches and releases" :span="1">
                                 <n-select v-model:value="form.grant.vcsPermission" :options="vcsPermissionOptions" />
                             </n-form-item-gi>
-                            <n-form-item-gi label="Organization-wide (READ_ONLY lets names resolve and lists work)" :span="1">
-                                <n-select v-model:value="form.grant.orgPermission" :options="orgPermissionOptions" />
+                            <n-form-item-gi label="Organization-wide read (optional)" :span="1">
+                                <div style="width: 100%;">
+                                    <n-select v-model:value="form.grant.orgPermission" :options="orgPermissionOptions" />
+                                    <p class="subtle" style="margin: 4px 0 0 0; font-size: 12px;">
+                                        Read access to everything else in the organization: releases of other components, products, anything the repository does not own.
+                                        Leave it at NONE for an ordinary build: the level for the calling repository already covers the components built from it.
+                                    </p>
+                                </div>
                             </n-form-item-gi>
                             <n-form-item-gi label="Creation" :span="1">
                                 <n-checkbox v-model:checked="form.grant.createComponents" :disabled="form.grant.vcsPermission !== 'READ_WRITE'">
@@ -337,7 +343,7 @@ function emptyForm () {
     return {
         name: '', provider: 'GITHUB_ACTIONS', issuer: '', expiresAt: null as number | null,
         matcher: { owner: '', repositories: [] as string[], excludeRepositories: [] as string[], refs: [] as string[], environments: [] as string[], workflows: [] as string[], events: [] as string[], subjects: [] as string[] },
-        grant: { type: 'TEMPLATE', keyUuid: null as string | null, orgPermission: 'READ_ONLY', vcsPermission: 'READ_WRITE', createComponents: true, functions: [] as string[], permissions: [] as any[] }
+        grant: { type: 'TEMPLATE', keyUuid: null as string | null, orgPermission: 'NONE', vcsPermission: 'READ_WRITE', createComponents: true, functions: [] as string[], permissions: [] as any[] }
     }
 }
 const form = ref(emptyForm())
