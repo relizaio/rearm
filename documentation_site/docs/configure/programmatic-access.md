@@ -11,8 +11,8 @@ below may still change before release.
 :::
 
 ::: tip Available in both ReARM Community Edition and ReARM Pro
-Programmatic access — API keys, access tokens and CLI browser login — is part of the **shared
-ReARM codebase**. It behaves the same on **ReARM CE** and **ReARM Pro**; nothing on this page is
+Programmatic access — API keys, access tokens, CLI browser login and federated identity — is part
+of the **shared ReARM codebase**. It behaves the same on **ReARM CE** and **ReARM Pro**; nothing on this page is
 edition-specific.
 :::
 
@@ -27,11 +27,13 @@ works everywhere it used to. This page covers what is new alongside it:
   downtime, and deactivate a key as a kill switch.
 - **[CLI browser login](#signing-the-cli-in-from-your-browser)** — sign the CLI in from your
   browser, with no secret to copy or store.
+- **[GitHub Actions without a secret](#github-actions-without-a-secret)** — let a workflow
+  authenticate with the identity token GitHub issues to the job, so CI holds no key at all.
 
 ## Managing keys in the UI
 
 Keys for an organization live under **Organization Settings → Programmatic Access**, which is
-split into four tabs:
+split into five tabs:
 
 | Tab | What it holds |
 |---|---|
@@ -39,6 +41,7 @@ split into four tabs:
 | **Scoped Keys** | Keys tied to a specific object (for example a component), carrying that object's access. |
 | **User Keys** | Personal keys belonging to members of the organization. |
 | **Key Requests** | Requests from members for a Free Form key, for an admin to approve. |
+| **Federated Identities** | Trust rules that let CI authenticate with its own identity token instead of a stored secret, plus the per-repository identities those rules have created. See [GitHub Actions without a secret](#github-actions-without-a-secret). |
 
 Your own keys are also on your profile, under **Your API Keys**. From there you can
 **Create key** for yourself, or **Request a Free Form key** if you need one an administrator has
@@ -161,13 +164,102 @@ flow is what happens when you omit `--apikeyid`/`--apikey`; it is an addition, n
 - **The credentials file is local.** It is written to your home directory with owner-only
   permissions. Treat it like any other credential: on a shared or throwaway machine, run
   `rearm logout` when you are finished rather than leaving the session behind.
+- **You can see and revoke your sessions.** Your profile lists them under **CLI sessions**.
+  Revoking one signs that CLI out immediately, and a key that was created for the session is
+  deleted with it. An administrator can also see the sessions riding a particular key from that
+  key's row in *Organization Settings → Programmatic Access*.
 - The key a session was created for shows up among your **User Keys**, like any other personal
   key.
+
+## GitHub Actions without a secret
+
+A GitHub Actions job can authenticate with the **identity token GitHub issues to the job itself**.
+There is then no ReARM key and no secret stored in the repository at all — nothing to rotate and
+nothing to leak. An organization administrator sets the trust up once, and every repository it
+covers authenticates without further configuration.
+
+### Set up the trust rule
+
+In *Organization Settings → Programmatic Access → **Federated Identities***, add a **Trust Rule**.
+A rule has two halves: who is trusted, and what they may do.
+
+**Who is trusted.** The **Owner on the provider** — your GitHub organization or user — is required.
+Narrow it from there:
+
+| Field | Purpose |
+|---|---|
+| **Repositories** | Globs over the name or `owner/name`. Empty means every repository of the owner. |
+| **Excluded repositories** | Carved back out of the above. |
+| **Refs** | `main`, `release/*`, `refs/tags/v*`. A bare pattern matches both branches and tags. |
+| **Environments** | Restrict to a GitHub deployment environment. |
+| **Events** | Restrict to `push`, `release`, `workflow_dispatch` and so on. |
+| **Subject globs** | Advanced: match the raw `sub` claim, e.g. `repo:myorg/*:environment:prod`. |
+| **Expires** | Optional. After this time the rule stops matching. |
+
+::: warning `*` spans separators
+In repository and subject globs `*` matches across `/` and `:` too. That cuts both ways — write
+inclusions no broader than you mean, and check that an exclusion really covers what you think.
+:::
+
+**What it may do.** Either a scope that is evaluated per token, or one fixed key:
+
+- **Scope by repository** (the usual choice). An organization-wide level — `READ_ONLY` is typical,
+  so names resolve and lists work — plus a level on **the calling repository's own** components,
+  branches and releases, optionally the right to **create** components for that repository, and any
+  extra static permissions a repository cannot express by itself. Each job gets only what its own
+  repository maps to.
+- **Act as a Free Form key**. The job takes that key's permissions and attribution exactly.
+
+**GitHub Actions** is the only provider today. The **Issuer** field is only for GitHub Enterprise
+Server (`https://HOST/_services/token`) — leave it empty for github.com.
+
+### Use it in a workflow
+
+Grant the job `id-token: write` and let the CLI do the rest:
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+steps:
+  - run: rearm getversion --vcsuri "https://github.com/${{ github.repository }}" -b "${{ github.ref_name }}" -u https://rearm.example.com
+    env:
+      REARM_AUTH: github-oidc
+```
+
+The CLI requests the identity token with your ReARM URL as its audience, exchanges it at the token
+endpoint for the usual one-hour access token, and renews it on its own as needed. In a job that has
+`id-token: write` and no other credentials present, this mode is selected **automatically** —
+`REARM_AUTH: github-oidc` (or `--auth github-oidc`) simply makes the choice explicit. `--auth` also
+takes `key` and `session`.
+
+Pass `--org <organization uuid>` (or `REARM_ORG`) only when **several** organizations trust the
+same repository, which would otherwise be ambiguous.
+
+`rearm whoami --auth github-oidc` reports which key and repository the job is acting as. A refused
+exchange names the reason: no trust rule matches, several organizations match, or the repository
+was renamed since its identity was pinned.
+
+### Identities, pinning and revocation
+
+The first successful exchange for a repository records a **federated identity** under the same tab —
+one row per repository, holding no secret. Each row shows when it was **last used** and the
+**pinned ids** it is bound to, which together tell you which repositories are actually relying on
+the rule.
+
+- **To cut access off**, disable or delete the **trust rule**. Tokens minted through it stop working
+  at once. (Deleting an identity row does not revoke anything on its own — a job the rule still
+  matches simply re-creates it on its next run.)
+- **Pinning** protects against a repository being renamed or recreated to impersonate an earlier
+  one: the identity is bound to the provider's numeric owner and repository ids on first use, and a
+  mismatch is refused. When a rename is legitimate, an administrator **resets the pin** to accept
+  the new ids.
 
 ## Which method should I use?
 
 | Situation | Use |
 |---|---|
 | A person working from a laptop or a remote shell | **CLI browser login** — nothing to copy or store |
-| CI, an integration, or any unattended caller | **API key + access token** — exchange the secret for a bearer token |
+| A GitHub Actions workflow | **Federated identity** — `id-token: write` and a trust rule, no secret in the repository |
+| Other CI, an integration, or any unattended caller | **API key + access token** — exchange the secret for a bearer token |
 | An existing pipeline already using key id and secret | **No change required** — it keeps working as-is |
