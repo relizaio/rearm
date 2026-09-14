@@ -38,6 +38,10 @@
                             <n-form-item label="Notes"><n-input v-model:value="newKeyNotes" :placeholder="defaultNotes" style="min-width: 260px;" /></n-form-item>
                         </n-space>
                         <p class="subtle" style="margin: 0 0 8px 0;">Give the key what this session needs. Whatever you set is stored reduced to your own permissions in the organization, and every call is checked against them again; the key can never exceed you. It is deleted when the session ends.</p>
+                        <n-alert v-if="boundsError" type="warning" :show-icon="true" style="margin-bottom: 8px;">
+                            Your own permissions in this organization could not be read, so this form is not bounded here: {{ boundsError }}.
+                            Anything you set is still stored reduced to what you hold - the server applies the same limit.
+                        </n-alert>
                         <n-spin :show="loadingBounds">
                             <ScopedPermissions v-if="newKeyOrg"
                                 v-model="scoped"
@@ -127,12 +131,19 @@ const scoped = ref<{ orgPermission: any, scopedPermissions: any[] }>({ orgPermis
 const loadingBounds = ref(false)
 const perspectives = ref<any[]>([])
 const ownerPerms = ref<any[]>([])
+// null while unknown (the query failed): the form goes unbounded rather than silently offering nothing,
+// since the server clamps whatever is sent to the approver's own permissions anyway
+const boundsError = ref<string>('')
 const PERM_ORDER = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
 const me = computed(() => store.getters.myuser)
 const ownerOrgPerm = computed(() => ownerPerms.value.find((x: any) => x.scope === 'ORGANIZATION' && x.object === newKeyOrg.value))
-const ownerOrgType = computed(() => me.value?.isGlobalAdmin ? 'ADMIN' : (ownerOrgPerm.value?.type || 'NONE'))
+const ownerOrgType = computed<string | undefined>(() => {
+    if (me.value?.isGlobalAdmin) return 'ADMIN'
+    if (boundsError.value) return undefined
+    return ownerOrgPerm.value?.type || 'NONE'
+})
 const ownerFunctions = computed<string[] | undefined>(() => {
-    if (me.value?.isGlobalAdmin || ownerOrgType.value === 'ADMIN') return undefined
+    if (me.value?.isGlobalAdmin || ownerOrgType.value === 'ADMIN' || boundsError.value) return undefined
     const set = new Set<string>()
     for (const p of ownerPerms.value) for (const f of (p.functions || [])) set.add(f)
     return Array.from(set)
@@ -150,6 +161,8 @@ const orgClusters = computed(() => orgInstancesAndClusters.value.filter((x: any)
 async function loadBounds () {
     if (!newKeyOrg.value) return
     loadingBounds.value = true
+    boundsError.value = ''
+    ownerPerms.value = []
     scoped.value = { orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] }
     try {
         // every list is best effort: the queries already return only what this user may read
@@ -160,6 +173,7 @@ async function loadBounds () {
             graphqlClient.query({ query: gql`query combinedUserOrgPermissions($orgUuid: ID!, $userUuid: ID!) { combinedUserOrgPermissions(orgUuid: $orgUuid, userUuid: $userUuid) { permissions { org scope object type functions } } }`,
                 variables: { orgUuid: newKeyOrg.value, userUuid: me.value?.uuid }, fetchPolicy: 'no-cache' })
                 .then((r: any) => { ownerPerms.value = (r.data.combinedUserOrgPermissions?.permissions || []).filter((x: any) => x.org === newKeyOrg.value) })
+                .catch((e: any) => { boundsError.value = e?.message || 'the request was refused'; throw e })
         ]
         if (me.value?.installationType !== 'OSS') loads.push(store.dispatch('fetchInstances', newKeyOrg.value))
         const results = await Promise.allSettled(loads)
