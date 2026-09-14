@@ -57,8 +57,8 @@
             </div>
             <template v-else>
             <p v-if="apiKey?.type === 'USER'" class="subtle" style="margin-top: 0;">
-                These permissions are a ceiling. Every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.
-                Nothing is allowed until at least one permission is set.
+                These permissions are a ceiling. What you save is stored reduced to the owner's own permissions at this moment, and every call is checked
+                against them again, so the key can never exceed the owner. Nothing is allowed until at least one permission is set.
             </p>
             <n-alert v-if="apiKey?.type === 'USER' && ownerOrgType" :type="ceilingExceedsOwner ? 'warning' : 'info'" style="margin-bottom: 12px;">
                 Owner's own organization-wide permission right now: <strong>{{ ownerOrgType }}</strong>

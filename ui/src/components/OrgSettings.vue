@@ -1261,7 +1261,7 @@ const keySessions: Ref<any[]> = ref([])
 async function showKeySessions (row: any) {
     keySessionsKey.value = row
     try {
-        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom createdDate expiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
+        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } createdDate expiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
         keySessions.value = (resp.data.cliSessionsOfKey || []).map((s: any) => { const u = users.value.find((x: any) => x.uuid === s.user); return Object.assign({}, s, {
             userName: u ? (u.name || u.email) : (s.user || ''),
             createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
@@ -1280,7 +1280,10 @@ async function revokeKeySession (row: any) {
 }
 const keySessionFields: Ref<any> = ref([
     { key: 'userName', width: 220, title: 'User' },
-    { key: 'requestedFrom', width: 200, title: 'CLI host' },
+    { key: 'requestedFrom', width: 180, title: 'CLI host (reported)' },
+    { key: 'reportedOs', width: 150, title: 'System', render: (row: any) => h('span', { class: row.deviceInfo?.reportedOs ? '' : 'text-muted' }, row.deviceInfo?.reportedOs || 'unknown') },
+    { key: 'reportedTimeZone', width: 130, title: 'Time zone', render: (row: any) => h('span', { class: row.deviceInfo?.reportedTimeZone ? '' : 'text-muted' }, row.deviceInfo?.reportedTimeZone || 'unknown') },
+    { key: 'observedIp', width: 150, title: 'Address seen by server', render: (row: any) => h('code', { style: 'font-size: 12px;' }, row.deviceInfo?.observedIp || 'unknown') },
     { key: 'createdDisplay', width: 170, title: 'Signed in' },
     { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
     { key: 'expiresDisplay', width: 170, title: 'Expires' },

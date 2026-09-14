@@ -12,6 +12,7 @@
                     v-for="pt in permissionTypesWithAdmin"
                     :key="pt"
                     :value="pt"
+                    :disabled="!!maxOrgType && permissionTypesWithAdmin.indexOf(pt) > permissionTypesWithAdmin.indexOf(maxOrgType)"
                 >
                     <span v-if="pt === 'ESSENTIAL_READ'" style="display: inline-flex; align-items: center;">
                         {{ translatePermissionName(pt) }}
@@ -352,6 +353,10 @@ interface Props {
      */
     clusters?: any[]
     showSbomProbing?: boolean
+    /** highest organization-wide level offered; radios above it are disabled (a personal key is capped by its owner) */
+    maxOrgType?: string
+    /** when set, only these functions are offered anywhere in the editor (the owner's own functions) */
+    allowedFunctions?: string[]
     modelValue: {
         orgPermission: OrgPermission
         scopedPermissions: ScopedPermission[]
@@ -384,6 +389,7 @@ const orgPermission = ref<OrgPermission>({
 // most org-wide functions are paired with READ_ONLY / READ_WRITE.
 const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
     f !== 'RESOURCE' &&
+    (!props.allowedFunctions || props.allowedFunctions.includes(f)) &&
     (props.showSbomProbing || f !== 'SBOM_PROBING') &&
     (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE') &&
     (hasDevOps.value || (f !== 'DEVOPS_READ' && f !== 'DEVOPS_WRITE')) &&
@@ -394,6 +400,7 @@ const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
 // belong on cluster / instance scopes.
 const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f =>
     f !== 'RESOURCE' &&
+    (!props.allowedFunctions || props.allowedFunctions.includes(f)) &&
     f !== 'FINDING_ANALYSIS_WRITE' &&
     f !== 'DEVOPS_READ' &&
     f !== 'DEVOPS_WRITE' &&
