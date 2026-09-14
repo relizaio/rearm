@@ -448,7 +448,7 @@ function requestFreeformKey () {
 const cliSessions: Ref<any[]> = ref([])
 async function loadCliSessions () {
     try {
-        const resp: any = await graphqlClient.query({ query: gql`query myCliSessions { myCliSessions { uuid status apiKey org requestedFrom createdDate expiresDate lastUsedDate } }`, fetchPolicy: 'network-only' })
+        const resp: any = await graphqlClient.query({ query: gql`query myCliSessions { myCliSessions { uuid status apiKey org requestedFrom createdDate expiresDate lastUsedDate deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } } }`, fetchPolicy: 'network-only' })
         cliSessions.value = (resp.data.myCliSessions || []).map((s: any) => Object.assign({}, s, {
             orgName: store.getters.orgById(s.org)?.name || s.org,
             keyLabel: (myKeys.value.find((k: any) => k.uuid === s.apiKey) || {}).type === 'FREEFORM' ? 'Free Form (held)' : 'Personal',
@@ -467,7 +467,10 @@ async function revokeCliSession (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const cliSessionFields: ComputedRef<any> = computed((): any => [
-    { key: 'requestedFrom', width: 220, title: 'CLI host' },
+    { key: 'requestedFrom', width: 200, title: 'CLI host (reported)' },
+    { key: 'reportedOs', width: 150, title: 'System', render: (row: any) => h('span', { class: row.deviceInfo?.reportedOs ? '' : 'text-muted' }, row.deviceInfo?.reportedOs || 'unknown') },
+    { key: 'reportedTimeZone', width: 130, title: 'Time zone', render: (row: any) => h('span', { class: row.deviceInfo?.reportedTimeZone ? '' : 'text-muted' }, row.deviceInfo?.reportedTimeZone || 'unknown') },
+    { key: 'observedIp', width: 150, title: 'Address seen by server', render: (row: any) => h('code', { style: 'font-size: 12px;' }, row.deviceInfo?.observedIp || 'unknown') },
     { key: 'keyLabel', width: 150, title: 'Acts as' },
     { key: 'orgName', width: 200, title: 'Organization' },
     { key: 'createdDisplay', width: 170, title: 'Signed in' },
