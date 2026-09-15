@@ -2278,6 +2278,222 @@ const storeObject : any = {
             })
             return response.data.agent
         },
+        async fetchAgentBoardsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardsOfOrg($orgUuid: ID!) {
+                        agentBoardsOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            name
+                            description
+                            status
+                            sources
+                            coordinatorPrompt
+                            missingCapabilities
+                            events { kind message actor eventAt }
+                            lock { level reason lockedBy lockedAt }
+                            coordinatorSeat { session agent claimedAt }
+                            perAgentWipLimit
+                            priorityType
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardsOfOrg
+        },
+        async createAgentBoard (context: any, payload: { orgUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardCreate($orgUuid: ID!, $input: AgentBoardInput!) {
+                        agentBoardCreate(orgUuid: $orgUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardCreate
+        },
+        async updateAgentBoard (context: any, payload: { boardUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardUpdate($boardUuid: ID!, $input: AgentBoardInput!) {
+                        agentBoardUpdate(boardUuid: $boardUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardUpdate
+        },
+        async setAgentBoardOperatorLock (context: any, payload: { boardUuid: string, lock: boolean, reason?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardOperatorLock($boardUuid: ID!, $lock: Boolean!, $reason: String) {
+                        agentBoardOperatorLock(boardUuid: $boardUuid, lock: $lock, reason: $reason) {
+                            uuid
+                            lock { level reason }
+                        }
+                    }`,
+                variables: { boardUuid: payload.boardUuid, lock: payload.lock, reason: payload.reason ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardOperatorLock
+        },
+        async forceCloseAgentSession (context: any, sessionUuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentSessionForceClose($sessionUuid: ID!) {
+                        agentSessionForceClose(sessionUuid: $sessionUuid) { uuid status closedAt }
+                    }`,
+                variables: { sessionUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentSessionForceClose
+        },
+        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
+                        agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
+                            uuid
+                            externalRef
+                            title
+                            sourceUrl
+                            status
+                            role
+                            orderIndex
+                            dependsOn
+                            hold { level kind gateRole reason heldBy heldAt }
+                            requireHumanReview
+                            assignment { session agent role assignedAt promptVersion }
+                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy }
+                            returns { role agent session reason description returnedAt }
+                            parentTask
+                            childTasks
+                            sessions
+                            registeredBySession
+                            statusHistory { from to at trigger actor }
+                            prUrls
+                            createdDate
+                            completedAt
+                        }
+                    }`,
+                variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTasksOfBoard
+        },
+        async fetchAgentTaskRoleConfigsOfBoard (context: any, boardUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskRoleConfigsOfBoard($boardUuid: ID!) {
+                        agentTaskRoleConfigsOfBoard(boardUuid: $boardUuid) {
+                            uuid
+                            name
+                            prompt
+                            orderIndex
+                            wipLimit
+                            requireDistinctAgent
+                            active
+                            requiredCapabilities
+                            kind
+                            necessity
+                            humanGate
+                        }
+                    }`,
+                variables: { boardUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRoleConfigsOfBoard
+        },
+        async fetchAgentTaskRolePresetsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskRolePresetsOfOrg($orgUuid: ID!) {
+                        agentTaskRolePresetsOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            name
+                            prompt
+                            orderIndex
+                            wipLimit
+                            requireDistinctAgent
+                            active
+                            requiredCapabilities
+                            kind
+                            necessity
+                            humanGate
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRolePresetsOfOrg
+        },
+        async setAgentTaskRolePreset (context: any, payload: { orgUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRolePresetSet($orgUuid: ID!, $input: AgentTaskRoleConfigInput!) {
+                        agentTaskRolePresetSet(orgUuid: $orgUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRolePresetSet
+        },
+        async agentTaskHumanReview (context: any, payload: { taskUuid: string, approve: boolean, note?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskHumanReview($taskUuid: ID!, $approve: Boolean!, $note: String) {
+                        agentTaskHumanReview(taskUuid: $taskUuid, approve: $approve, note: $note) { uuid status }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, approve: payload.approve, note: payload.note ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskHumanReview
+        },
+        async agentTaskHumanSignOff (context: any, payload: { taskUuid: string, outcome: string, note?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskHumanSignOff($taskUuid: ID!, $outcome: AgentSignOffOutcome!, $note: String) {
+                        agentTaskHumanSignOff(taskUuid: $taskUuid, outcome: $outcome, note: $note) { uuid status }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, outcome: payload.outcome, note: payload.note ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskHumanSignOff
+        },
+        async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskOperatorHold($taskUuid: ID!, $hold: Boolean!, $reason: String) {
+                        agentTaskOperatorHold(taskUuid: $taskUuid, hold: $hold, reason: $reason) { uuid status }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, hold: payload.hold, reason: payload.reason ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskOperatorHold
+        },
+        async agentTaskRequireHumanReview (context: any, payload: { taskUuid: string, value: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRequireHumanReview($taskUuid: ID!, $value: Boolean!) {
+                        agentTaskRequireHumanReview(taskUuid: $taskUuid, value: $value) { uuid requireHumanReview }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRequireHumanReview
+        },
+        async setAgentTaskRoleConfig (context: any, payload: { boardUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRoleConfigSet($boardUuid: ID!, $input: AgentTaskRoleConfigInput!) {
+                        agentTaskRoleConfigSet(boardUuid: $boardUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRoleConfigSet
+        },
         async fetchSessionsOfOrg (context: any, payload: { orgUuid: string, statuses?: string[] }) {
             const response = await graphqlClient.query({
                 query: gql`

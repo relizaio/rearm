@@ -1671,6 +1671,7 @@ const USER_GQL_DATA = `
     githubId
     oauthId
     installationType
+    defaultDashboard
     permissions {
         permissions {
             org

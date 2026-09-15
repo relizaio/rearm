@@ -1,6 +1,16 @@
 <template>
     <div class="home">
-        <div class="dashboardBlock">
+        <div class="dashswitch">
+            <span class="dashswitch__label">Dashboard</span>
+            <n-radio-group :value="effectiveDashboard" size="small" @update:value="setHomeDashboard">
+                <n-radio-button value="app">Metrics</n-radio-button>
+                <n-radio-button value="boards">Task boards</n-radio-button>
+            </n-radio-group>
+        </div>
+        <div v-if="effectiveDashboard === 'boards'" class="boardshome">
+            <ai-agent-boards-panel v-if="myorg?.uuid" :org-uuid="myorg.uuid" />
+        </div>
+        <div v-else class="dashboardBlock">
             <!-- Dashboard views. Security is the page as it always was; DevOps
                  swaps the security widgets for the instance status roll-up. The
                  view is chosen from the header (View dropdown) and lives in the
@@ -586,6 +596,7 @@ import VulnerabilityModal from './VulnerabilityModal.vue'
 import MostRecentReleasesWidget from './MostRecentReleasesWidget.vue'
 import InstanceStatusWidget from './InstanceStatusWidget.vue'
 import { DashboardView } from '@/utils/dashboardView'
+import AiAgentBoardsPanel from './AiAgentBoardsPanel.vue'
 import { processMetricsData } from '@/utils/metrics'
 
 const store = useStore()
@@ -607,6 +618,20 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 // the store (browser memory over org default over security).
 const dashView: ComputedRef<DashboardView> = computed((): DashboardView => store.getters.myview)
 
+// Home dashboard selection: the user's browser-local choice wins;
+// otherwise the deployment default served on the user object
+// (relizaprops.default-dashboard); otherwise the classic dashboard.
+const HOME_DASHBOARD_LS = 'relizaHomeDashboard'
+const storedHomeDashboard = window.localStorage.getItem(HOME_DASHBOARD_LS)
+const homeDashboardChoice: Ref<string | null> = ref(
+    storedHomeDashboard === 'app' || storedHomeDashboard === 'boards' ? storedHomeDashboard : null)
+const effectiveDashboard: ComputedRef<string> = computed(() =>
+    homeDashboardChoice.value
+        ?? (store.getters.myuser?.defaultDashboard === 'BOARDS' ? 'boards' : 'app'))
+function setHomeDashboard (v: string) {
+    homeDashboardChoice.value = v
+    window.localStorage.setItem(HOME_DASHBOARD_LS, v)
+}
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
 const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
@@ -1167,7 +1192,7 @@ const releaseSearchResultRows = [
             const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
             return h(RouterLink, 
                 {to: {name: routeName,
-                params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid}},
+                    params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid}},
                 style: "text-decoration: none;"},
                 () => row.componentDetails.name )
         }
@@ -1185,9 +1210,9 @@ const releaseSearchResultRows = [
             const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
             return h(RouterLink, 
                 {to: {name: routeName,
-                params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid,
-                    branchuuid: row.branchDetails.uuid
-                }},
+                    params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid,
+                        branchuuid: row.branchDetails.uuid
+                    }},
                 style: "text-decoration: none;"},
                 () => row.branchDetails.name )
         }
@@ -1198,7 +1223,7 @@ const releaseSearchResultRows = [
         render(row: any) {
             return h(RouterLink, 
                 {to: {name: 'ReleaseView', params: {uuid: row.uuid}},
-                style: "text-decoration: none;"},
+                    style: "text-decoration: none;"},
                 () => row.version )
         }
     },
@@ -1308,11 +1333,11 @@ async function fetchMostVulnerableComponents () {
             }
 
             return {
-            id: `${x.componentuuid || x.uuid || idx}`,
-            uuid: x.componentuuid || x.uuid,
-            name: x.componentname || x.name || 'Unknown',
-            routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg',
-            metrics
+                id: `${x.componentuuid || x.uuid || idx}`,
+                uuid: x.componentuuid || x.uuid,
+                name: x.componentname || x.name || 'Unknown',
+                routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg',
+                metrics
             }
         })
     } catch (err: any) {
@@ -1445,18 +1470,18 @@ async function openVulnModalForComponent (item: any, severityFilter: string = ''
 function displayActiveComponentType () {
     let displayComp
     switch (activeComponentsInput.value.componentType) {
-        case 'BRANCH':
-            displayComp = 'Branches'
-            break
-        case 'FEATURE_SET':
-            displayComp = featureSetLabelPlural.value
-            break
-        case 'PRODUCT':
-            displayComp = 'Products'
-            break
-        default:
-            displayComp = 'Components'
-            break
+    case 'BRANCH':
+        displayComp = 'Branches'
+        break
+    case 'FEATURE_SET':
+        displayComp = featureSetLabelPlural.value
+        break
+    case 'PRODUCT':
+        displayComp = 'Products'
+        break
+    default:
+        displayComp = 'Components'
+        break
     }
     return displayComp
 }
@@ -1472,5 +1497,22 @@ function displayVulnerableComponentType () {
 
 .charts {
     display: grid;
+}
+.dashswitch {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 6px 12px 0 0;
+    &__label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #999;
+    }
+}
+.boardshome {
+    padding: 0 12px;
 }
 </style>
