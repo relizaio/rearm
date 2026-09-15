@@ -162,7 +162,34 @@ const IDENTIFIER_TYPES = [
     { label: 'PURL', value: 'PURL' },
     { label: 'TEI', value: 'TEI' },
     { label: 'CPE', value: 'CPE' },
+    { label: 'Compliance document', value: 'COMPLIANCE_DOCUMENT' },
     { label: 'Specification', value: 'SPECIFICATION' }
+]
+
+// TEA's well-known compliance documents. Offered as suggestions, not a closed set: the spec
+// says the value SHOULD be one of these, so an audit report outside the list stays typeable.
+// Values are the wire form TEA expects -- note FedRAMP, which is not the enum-name spelling.
+const COMPLIANCE_DOCUMENT_TYPES = [
+    { label: 'SOC 2 Type I', value: 'SOC_2_TYPE_I' },
+    { label: 'SOC 2 Type II', value: 'SOC_2_TYPE_II' },
+    { label: 'SOC 3', value: 'SOC_3' },
+    { label: 'ISO 27001', value: 'ISO_27001' },
+    { label: 'ISO 27017', value: 'ISO_27017' },
+    { label: 'ISO 27018', value: 'ISO_27018' },
+    { label: 'ISO 27701', value: 'ISO_27701' },
+    { label: 'ISO 42001', value: 'ISO_42001' },
+    { label: 'PCI DSS', value: 'PCI_DSS' },
+    { label: 'HIPAA', value: 'HIPAA' },
+    { label: 'FedRAMP', value: 'FedRAMP' },
+    { label: 'GDPR', value: 'GDPR' },
+    { label: 'CSA STAR', value: 'CSA_STAR' },
+    { label: 'NIST 800-53', value: 'NIST_800_53' },
+    { label: 'NIST 800-171', value: 'NIST_800_171' },
+    { label: 'CMMC', value: 'CMMC' },
+    { label: 'HITRUST', value: 'HITRUST' },
+    { label: 'TISAX', value: 'TISAX' },
+    { label: 'Cyber Essentials', value: 'CYBER_ESSENTIALS' },
+    { label: 'Cyber Essentials Plus', value: 'CYBER_ESSENTIALS_PLUS' }
 ]
 
 const SPECIFICATION_TYPES = [
@@ -295,5 +322,6 @@ export default {
     PermissionFunctions: PERMISSION_FUNCTIONS,
     EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS,
     IdentifierTypes: IDENTIFIER_TYPES,
-    SpecificationTypes: SPECIFICATION_TYPES
+    SpecificationTypes: SPECIFICATION_TYPES,
+    ComplianceDocumentTypes: COMPLIANCE_DOCUMENT_TYPES
 }

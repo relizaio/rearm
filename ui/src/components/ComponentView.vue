@@ -363,6 +363,11 @@
                                                         v-model:value="value.idValue"
                                                         :options="constants.SpecificationTypes"
                                                         placeholder="Choose the document this component carries" />
+                                                    <n-select v-else-if="value.idType === 'COMPLIANCE_DOCUMENT'" style="width: 260px;"
+                                                        v-model:value="value.idValue"
+                                                        :options="constants.ComplianceDocumentTypes"
+                                                        filterable tag
+                                                        placeholder="Choose or enter a compliance document" />
                                                     <n-input v-else type="text" minlength="100" v-model:value="value.idValue" />
                                                 </template>
                                             </n-dynamic-input>

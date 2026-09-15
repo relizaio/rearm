@@ -75,6 +75,11 @@
                             v-model:value="value.idValue"
                             :options="constants.SpecificationTypes"
                             placeholder="Choose the document this component carries" />
+                        <n-select v-else-if="value.idType === 'COMPLIANCE_DOCUMENT'" style="width: 260px;"
+                            v-model:value="value.idValue"
+                            :options="constants.ComplianceDocumentTypes"
+                            filterable tag
+                            placeholder="Choose or enter a compliance document" />
                         <n-input v-else type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
                     </template>
                 </n-dynamic-input>
@@ -205,6 +210,11 @@
                             v-model:value="value.idValue"
                             :options="constants.SpecificationTypes"
                             placeholder="Choose the document this component carries" />
+                        <n-select v-else-if="value.idType === 'COMPLIANCE_DOCUMENT'" style="width: 260px;"
+                            v-model:value="value.idValue"
+                            :options="constants.ComplianceDocumentTypes"
+                            filterable tag
+                            placeholder="Choose or enter a compliance document" />
                         <n-input v-else type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
                     </template>
                 </n-dynamic-input>
