@@ -2295,12 +2295,59 @@ const storeObject : any = {
                             coordinatorSeat { session agent claimedAt }
                             perAgentWipLimit
                             priorityType
+                            target
+                            targetDetails { uuid name type }
+                            defaultTaskLevel
+                            defaultInputResolution
                         }
                     }`,
                 variables: { orgUuid },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentBoardsOfOrg
+        },
+        async fetchAgentBoardSpec (context: any, boardUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardSpec($boardUuid: ID!) {
+                        agentBoardSpec(boardUuid: $boardUuid) {
+                            kind
+                            version
+                            name
+                            description
+                            target
+                            defaultTaskLevel
+                            defaultInputResolution
+                            priorityType
+                            perAgentWipLimit
+                            sources
+                            coordinatorPrompt
+                            roles {
+                                name
+                                prompt
+                                orderIndex
+                                wipLimit
+                                requireDistinctAgent
+                                active
+                                kind
+                                necessity
+                                humanGate
+                                requiredCapabilities
+                                requiredInputs {
+                                    kind
+                                    specification
+                                    scope
+                                    component
+                                    minLifecycle
+                                    resolution
+                                }
+                            }
+                        }
+                    }`,
+                variables: { boardUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardSpec
         },
         async createAgentBoard (context: any, payload: { orgUuid: string, input: any }) {
             const response = await graphqlClient.mutate({

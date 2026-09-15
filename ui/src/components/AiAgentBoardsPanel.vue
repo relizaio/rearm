@@ -12,6 +12,7 @@
                 />
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
+                <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
             </n-space>
@@ -188,6 +189,25 @@
         </n-modal>
 
         <!-- Role config modal -->
+        <n-modal :show="showSpec" preset="card" title="Board as a spec" style="max-width: 900px"
+                 @update:show="(v: boolean) => showSpec = v">
+            <p class="hintText">
+                The board as configuration — what it builds, how work is routed, and the prompts
+                that define each role. Tasks are deliberately absent: they are the work, not the
+                workflow.
+            </p>
+            <n-space size="small" style="margin-bottom: 8px;">
+                <n-radio-group v-model:value="specFormat" size="small">
+                    <n-radio-button value="yaml">YAML</n-radio-button>
+                    <n-radio-button value="json">JSON</n-radio-button>
+                </n-radio-group>
+                <n-button size="small" @click="copySpec" :disabled="!specText">Copy</n-button>
+            </n-space>
+            <n-spin :show="specLoading">
+                <pre class="specBlock">{{ specText }}</pre>
+            </n-spin>
+        </n-modal>
+
         <n-modal :show="showRoles" preset="card" title="Board roles" style="max-width: 1040px"
                  @update:show="(v: boolean) => showRoles = v">
             <p class="hint">
@@ -502,9 +522,10 @@
 
 <script lang="ts" setup>
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import type { ComputedRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
@@ -542,6 +563,90 @@ const selectedBoard = ref<string | null>(null)
 const tasks = ref<any[]>([])
 const roles = ref<any[]>([])
 const showRoles = ref(false)
+
+// --- the board as a spec -------------------------------------------------
+// Rendered from the server's own export rather than assembled here, so what the
+// page shows is the document a client would receive, not a lookalike.
+const showSpec = ref(false)
+const specLoading = ref(false)
+const specFormat = ref<'yaml' | 'json'>('yaml')
+const specRaw = ref<any>(null)
+
+function stripNulls (v: any): any {
+    if (Array.isArray(v)) return v.map(stripNulls).filter(x => x !== null && x !== undefined)
+    if (v && typeof v === 'object') {
+        const out: any = {}
+        Object.keys(v).filter(k => k !== '__typename').forEach(k => {
+            const c = stripNulls(v[k])
+            const empty = c === null || c === undefined || (Array.isArray(c) && !c.length)
+            if (!empty) out[k] = c
+        })
+        return out
+    }
+    return v
+}
+
+/** Minimal YAML for the shapes a spec contains: maps, lists and scalars. */
+function toYaml (v: any, indent = 0): string {
+    const pad = '  '.repeat(indent)
+    if (Array.isArray(v)) {
+        if (!v.length) return ''
+        return v.map(item => {
+            if (item && typeof item === 'object') {
+                const body = toYaml(item, indent + 1)
+                return `${pad}-\n${body}`
+            }
+            return `${pad}- ${scalar(item)}`
+        }).join('\n')
+    }
+    if (v && typeof v === 'object') {
+        return Object.keys(v).map(k => {
+            const c = v[k]
+            if (c && typeof c === 'object') {
+                const body = toYaml(c, indent + 1)
+                return body ? `${pad}${k}:\n${body}` : `${pad}${k}:`
+            }
+            return `${pad}${k}: ${scalar(c)}`
+        }).join('\n')
+    }
+    return `${pad}${scalar(v)}`
+}
+
+function scalar (v: any): string {
+    if (typeof v !== 'string') return String(v)
+    // prompts are multi-line and must not be mistaken for structure
+    if (v.includes('\n')) return '|\n' + v.split('\n').map(l => '  ' + l).join('\n')
+    return /[:#]|^\s|\s$/.test(v) ? JSON.stringify(v) : v
+}
+
+const specText: ComputedRef<string> = computed(() => {
+    if (!specRaw.value) return ''
+    const clean = stripNulls(specRaw.value)
+    return specFormat.value === 'json' ? JSON.stringify(clean, null, 2) : toYaml(clean)
+})
+
+async function openSpec () {
+    if (!currentBoard.value) return
+    showSpec.value = true
+    specLoading.value = true
+    try {
+        specRaw.value = await store.dispatch('fetchAgentBoardSpec', currentBoard.value.uuid)
+    } catch (e: any) {
+        notify('error', 'Could not read the board spec', e?.message ?? String(e))
+        showSpec.value = false
+    } finally {
+        specLoading.value = false
+    }
+}
+
+async function copySpec () {
+    try {
+        await navigator.clipboard.writeText(specText.value)
+        notify('success', 'Copied', 'The spec is on your clipboard')
+    } catch (e: any) {
+        notify('error', 'Could not copy', e?.message ?? String(e))
+    }
+}
 const editingBoard = ref<any>(null)
 const editingBoardIsNew = ref(false)
 const editingRole = ref<any>(null)
