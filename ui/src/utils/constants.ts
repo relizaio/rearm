@@ -154,6 +154,33 @@ const CONTENT_TYPES = [
 
 const PERMISSION_TYPES: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE']
 const PERMISSION_TYPES_WITH_ADMIN: string[] = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
+// Identifier types offered on a component, and the vocabulary behind SPECIFICATION.
+// A SPECIFICATION identifier says the component IS a document of a well-known kind -- the
+// design-stage counterpart of TEA's compliance documents -- so the value is picked from a
+// list rather than typed, and the backend refuses anything outside it.
+const IDENTIFIER_TYPES = [
+    { label: 'PURL', value: 'PURL' },
+    { label: 'TEI', value: 'TEI' },
+    { label: 'CPE', value: 'CPE' },
+    { label: 'Specification', value: 'SPECIFICATION' }
+]
+
+const SPECIFICATION_TYPES = [
+    { label: 'Concept of operations', value: 'CONOPS' },
+    { label: 'Use cases', value: 'USE_CASES' },
+    { label: 'Requirements', value: 'REQUIREMENTS' },
+    { label: 'Functions', value: 'FUNCTIONS' },
+    { label: 'Product breakdown', value: 'PRODUCT_BREAKDOWN' },
+    { label: 'Interfaces', value: 'INTERFACES' },
+    { label: 'Data model', value: 'DATA_MODEL' },
+    { label: 'Architecture', value: 'ARCHITECTURE' },
+    { label: 'Detailed design', value: 'DETAILED_DESIGN' },
+    { label: 'UX concept', value: 'UX_CONCEPT' },
+    { label: 'Test plan', value: 'TEST_PLAN' },
+    { label: 'Glossary', value: 'GLOSSARY' },
+    { label: 'Decision record (ADR)', value: 'DECISION_RECORD' }
+]
+
 const PERMISSION_FUNCTIONS: string[] = [
     'FINDING_ANALYSIS_READ',
     'FINDING_ANALYSIS_WRITE',
@@ -266,5 +293,7 @@ export default {
     PermissionTypes: PERMISSION_TYPES,
     PermissionTypesWithAdmin: PERMISSION_TYPES_WITH_ADMIN,
     PermissionFunctions: PERMISSION_FUNCTIONS,
-    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS
+    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS,
+    IdentifierTypes: IDENTIFIER_TYPES,
+    SpecificationTypes: SPECIFICATION_TYPES
 }

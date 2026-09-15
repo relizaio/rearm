@@ -69,8 +69,13 @@
                     </template>
                     <template #default="{ value }">
                         <n-select style="width: 200px;" v-model:value="value.idType"
-                            :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
-                        <n-input type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
+                            :options="constants.IdentifierTypes"
+                            @update:value="() => { value.idValue = '' }" />
+                        <n-select v-if="value.idType === 'SPECIFICATION'" style="width: 260px;"
+                            v-model:value="value.idValue"
+                            :options="constants.SpecificationTypes"
+                            placeholder="Choose the document this component carries" />
+                        <n-input v-else type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
                     </template>
                 </n-dynamic-input>
             </n-form-item>
@@ -194,8 +199,13 @@
                     </template>
                     <template #default="{ value }">
                         <n-select style="width: 200px;" v-model:value="value.idType"
-                            :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
-                        <n-input type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
+                            :options="constants.IdentifierTypes"
+                            @update:value="() => { value.idValue = '' }" />
+                        <n-select v-if="value.idType === 'SPECIFICATION'" style="width: 260px;"
+                            v-model:value="value.idValue"
+                            :options="constants.SpecificationTypes"
+                            placeholder="Choose the document this component carries" />
+                        <n-input v-else type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
                     </template>
                 </n-dynamic-input>
             </n-form-item>
