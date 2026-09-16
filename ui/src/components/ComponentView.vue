@@ -750,10 +750,13 @@
                                         </n-modal>
                                     </n-tab-pane>
                                     <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
+                                        <!-- Shown to everyone: what a release is held to is worth
+                                             knowing whether or not you may change it. Editing
+                                             needs the component ADMIN the backend asks for. -->
                                         <ActionGuards
                                             scope="COMPONENT"
                                             :uuid="componentUuid"
-                                            :is-writable="isWritable"
+                                            :is-writable="isAdmin"
                                             :component-word="words.component"/>
                                     </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">

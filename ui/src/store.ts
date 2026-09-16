@@ -1380,6 +1380,34 @@ const storeObject : any = {
             })
             return data.setOrgActionGuards.settings?.actionGuards || []
         },
+        async fetchPerspectiveActionGuards (context: any, payload: { orgUuid: string, perspectiveUuid: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query perspectiveActionGuards($org: ID!) {
+                        perspectives(org: $org) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { org: payload.orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            const found = (response.data.perspectives || []).find((p: any) => p.uuid === payload.perspectiveUuid)
+            return found?.actionGuards || []
+        },
+        async setPerspectiveActionGuards (context: any, payload: { perspectiveUuid: string, guards: any[] }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setPerspectiveActionGuards($uuid: ID!, $guards: [ActionGuardInput!]!) {
+                        setPerspectiveActionGuards(uuid: $uuid, guards: $guards) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { uuid: payload.perspectiveUuid, guards: payload.guards }
+            })
+            return data.setPerspectiveActionGuards.actionGuards || []
+        },
         async fetchComponentActionGuards (context: any, componentUuid: NonNullable<string>) {
             const response = await graphqlClient.query({
                 query: gql`

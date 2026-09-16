@@ -234,7 +234,7 @@
                 </n-popover>
             </div>
             <div
-                v-if="celText && !canParseCurrentCel"
+                v-if="celText && !canParseCurrentCel && !celOnly"
                 style="margin-top: 4px; font-size: 12px; color: #888;"
             >
                 Note: this expression cannot be converted to visual builder.

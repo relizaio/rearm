@@ -3184,7 +3184,11 @@ async function lifecycleChange(newLifecycle: string) {
         notify('success', 'Saved', 'Lifecycle updated.')
     } catch (error: any) {
         console.error(error)
-        notify('error', 'Error', 'Error updating release lifecycle.')
+        // The backend refuses a promotion that an action guard governs, and the message names the
+        // guard that stopped it -- which is the whole point of the refusal, so show it rather
+        // than a generic failure. Falls back to the generic wording when there is no message.
+        const message = commonFunctions.extractGraphQLErrorMessage(error)
+        notify('error', 'Error', message === 'Unknown error' ? 'Error updating release lifecycle.' : message)
         updatedRelease.value = deepCopyRelease(release.value)
     }
     approvalPending.value = false

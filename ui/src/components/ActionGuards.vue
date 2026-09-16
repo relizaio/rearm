@@ -1,7 +1,7 @@
 <template>
     <div class="action-guards">
         <div class="header">
-            <h4>{{ scope === 'ORG' ? 'Organization Action Guards' : 'Guards' }}</h4>
+            <h4>{{ headings.title }}</h4>
             <n-tooltip trigger="hover" style="max-width: 420px;">
                 <template #trigger>
                     <n-icon size="16" style="cursor: help;"><QuestionMark/></n-icon>
@@ -14,16 +14,11 @@
             </n-tooltip>
         </div>
 
-        <p class="text-muted intro">
-            <template v-if="scope === 'ORG'">
-                Each guard picks the components it governs by a regex over the component name. Leave
-                the pattern empty to govern every component in the organization.
-            </template>
-            <template v-else>
-                These guards govern this {{ componentWord }} only, on top of anything the
-                organization declares for it.
-            </template>
-        </p>
+        <p class="text-muted intro">{{ headings.intro }}</p>
+
+        <n-alert v-if="!isWritable" type="default" style="margin-bottom: 0.75rem; font-size: 13px;">
+            Read-only: writing guards needs admin rights here.
+        </n-alert>
 
         <div class="actions">
             <n-button v-if="isWritable" type="primary" @click="openAdd">
@@ -49,6 +44,10 @@
                 </n-form-item>
                 <n-form-item v-if="scope === 'ORG'" label="Component name regex">
                     <n-input v-model:value="draft.namePattern" placeholder="Leave empty for every component, e.g. product-.*"/>
+                    <template #feedback>
+                        Matched in full, not searched: <code>product</code> governs the component named
+                        exactly that, not <code>product-api</code>. Write <code>product.*</code> for a prefix.
+                    </template>
                 </n-form-item>
                 <n-form-item label="Mode" required>
                     <n-radio-group v-model:value="draft.mode">
@@ -90,20 +89,25 @@
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useStore } from 'vuex'
 import {
-    NButton, NDataTable, NForm, NFormItem, NIcon, NInput, NModal, NRadio, NRadioGroup, NSelect,
-    NSpace, NTooltip, useNotification
+    NAlert, NButton, NDataTable, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NRadio,
+    NRadioGroup, NSelect, NSpace, NTooltip, useNotification
 } from 'naive-ui'
 import { CirclePlus, QuestionMark, Edit as EditIcon, Trash } from '@vicons/tabler'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 
 const props = withDefaults(defineProps<{
-    scope: 'ORG' | 'COMPONENT'
+    scope: 'ORG' | 'COMPONENT' | 'PERSPECTIVE'
     uuid: string
+    // Admin on the object. The panel is shown either way -- knowing what a release is held to
+    // matters to everyone who ships one -- but editing needs the rights the backend asks for.
     isWritable: boolean
     // The org's own word for a component, so the copy matches the terminology
     // setting the rest of the page honours.
     componentWord?: string
-}>(), { componentWord: 'component' })
+    // Required for PERSPECTIVE scope: perspectives are read through their org's list, which is
+    // the only query that returns them.
+    orgUuid?: string
+}>(), { componentWord: 'component', orgUuid: '' })
 
 const store = useStore()
 const notification = useNotification()
@@ -117,6 +121,28 @@ const draft = reactive({
     cel: '',
     mode: 'BLOCK' as 'OFF' | 'WARN' | 'BLOCK',
     namePattern: ''
+})
+
+const headings = computed(() => {
+    if (props.scope === 'ORG') {
+        return {
+            title: 'Organization Action Guards',
+            intro: 'Each guard picks the components it governs by a regex over the component name.'
+                + ' Leave the pattern empty to govern every component in the organization.'
+        }
+    }
+    if (props.scope === 'PERSPECTIVE') {
+        return {
+            title: 'Guards',
+            intro: 'These guards govern every component of this perspective, on top of anything the'
+                + ' organization or the component itself declares.'
+        }
+    }
+    return {
+        title: 'Guards',
+        intro: `These guards govern this ${props.componentWord} only, on top of anything its`
+            + ' perspectives and its organization declare for it.'
+    }
 })
 
 const actionOptions = [
@@ -229,6 +255,23 @@ const remove = async (idx: number) => {
     await persist(next, 'Guard deleted.')
 }
 
+const dispatchFetch = () => {
+    if (props.scope === 'ORG') return store.dispatch('fetchOrgActionGuards', props.uuid)
+    if (props.scope === 'PERSPECTIVE') {
+        return store.dispatch('fetchPerspectiveActionGuards',
+            { orgUuid: props.orgUuid, perspectiveUuid: props.uuid })
+    }
+    return store.dispatch('fetchComponentActionGuards', props.uuid)
+}
+
+const dispatchSave = (payload: any[]) => {
+    if (props.scope === 'ORG') return store.dispatch('setOrgActionGuards', { orgUuid: props.uuid, guards: payload })
+    if (props.scope === 'PERSPECTIVE') {
+        return store.dispatch('setPerspectiveActionGuards', { perspectiveUuid: props.uuid, guards: payload })
+    }
+    return store.dispatch('setComponentActionGuards', { componentUuid: props.uuid, guards: payload })
+}
+
 const persist = async (next: any[], successMsg: string) => {
     const payload = next.map((g: any) => ({
         name: g.name,
@@ -238,9 +281,7 @@ const persist = async (next: any[], successMsg: string) => {
         namePattern: props.scope === 'ORG' ? (g.namePattern || null) : null
     }))
     try {
-        guards.value = props.scope === 'ORG'
-            ? await store.dispatch('setOrgActionGuards', { orgUuid: props.uuid, guards: payload })
-            : await store.dispatch('setComponentActionGuards', { componentUuid: props.uuid, guards: payload })
+        guards.value = await dispatchSave(payload)
         notification.success({ title: 'Saved', content: successMsg, duration: 3500 })
         return true
     } catch (e: any) {
@@ -278,17 +319,18 @@ const columns = computed(() => {
             props.isWritable ? [
                 h(NIcon, { size: 22, class: 'clickable', title: 'Edit', onClick: () => openEdit(idx) },
                     { default: () => h(EditIcon) }),
-                h(NIcon, { size: 22, class: 'clickable', style: 'color: #d03050;', title: 'Delete',
-                    onClick: () => remove(idx) }, { default: () => h(Trash) })
+                h(NPopconfirm, { onPositiveClick: () => remove(idx) }, {
+                    trigger: () => h(NIcon, { size: 22, class: 'clickable', style: 'color: #d03050;',
+                        title: 'Delete' }, { default: () => h(Trash) }),
+                    default: () => `Delete guard "${row.name}"? Releases this guard was withholding become promotable straight away.`
+                })
             ] : [])
     })
     return cols
 })
 
 onMounted(async () => {
-    guards.value = (props.scope === 'ORG'
-        ? await store.dispatch('fetchOrgActionGuards', props.uuid)
-        : await store.dispatch('fetchComponentActionGuards', props.uuid)) || []
+    guards.value = (await dispatchFetch()) || []
 })
 </script>
 
