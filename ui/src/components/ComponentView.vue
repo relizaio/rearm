@@ -749,6 +749,13 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
+                                    <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
+                                        <ActionGuards
+                                            scope="COMPONENT"
+                                            :uuid="componentUuid"
+                                            :is-writable="isWritable"
+                                            :component-word="words.component"/>
+                                    </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
                                             <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
@@ -1140,6 +1147,7 @@ import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerVal
 // picker behaves like the notification channel and team pickers.
 import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
+import ActionGuards from './ActionGuards.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 
 const updatedComponent: Ref<any> = ref({})

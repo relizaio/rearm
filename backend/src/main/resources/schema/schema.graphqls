@@ -616,6 +616,20 @@ type Mutation {
 	"""
 	setGlobalApprovalPolicyRules(orgUuid: ID!, rules: [GlobalApprovalPolicyRuleInput!]!): Organization
 	"""
+	Replace the organization's action-guard list. Each guard picks the components it governs by
+	name pattern; a blank pattern governs every component in the org. Admin on the org required.
+	SAAS-only -- the SAAS DataFetcher serves it.
+	"""
+	setOrgActionGuards(orgUuid: ID!, guards: [ActionGuardInput!]!): Organization
+	"""
+	Replace the guards written on one component. These accumulate with the guards its
+	perspectives and its organization declare -- a component can add to what it is held to,
+	never subtract from it. SAAS-only.
+	"""
+	setComponentActionGuards(componentUuid: ID!, guards: [ActionGuardInput!]!): Component
+	"""Replace the guards applying to every component of a perspective. SAAS-only."""
+	setPerspectiveActionGuards(uuid: ID!, guards: [ActionGuardInput!]!): Perspective
+	"""
 	Programmatic (API-key) upsert of a PullRequest. CI registers the PR
 	row independently of release creation so the registration survives
 	push/pull_request races and DO_BUILD=false short-circuits.
@@ -1873,6 +1887,12 @@ type Component {
 	sidPurlOverride: SidPurlOverride
 	"""Component-level decoded authority segments (null/empty = none stored)."""
 	sidAuthoritySegments: [String!]
+	"""
+	Guards written on this component. They accumulate with the guards its perspectives and its
+	organization declare for it -- every applicable guard is evaluated and any one can refuse.
+	SAAS-only; null in CE.
+	"""
+	actionGuards: [ActionGuard!]
 	"""Internal/external classification (D16). Null on legacy rows is treated as INTERNAL."""
 	isInternal: BelongsToOrganization
 	"""
@@ -2127,6 +2147,52 @@ type GlobalApprovalPolicyRule {
 	approvalPolicyDetails: ApprovalPolicy
 }
 
+"""
+One named rule withholding an action until its CEL expression holds.
+
+Guards accumulate rather than override: every guard that applies to an action is evaluated, any
+one of them can refuse, and the refusal names the guard that did it. A guard is the mirror of a
+release trigger -- same expression language, same release.* variables, plus action.* describing
+what is being attempted -- but where a trigger makes something happen, a guard only refuses.
+"""
+type ActionGuard {
+	"""Names the guard in refusals and in the note a WARN guard leaves behind."""
+	name: String
+	action: GuardedAction
+	"""CEL over release.* and action.*; the action proceeds only while this is true."""
+	cel: String
+	mode: GuardMode
+	"""
+	Java regex matched against the component name. Meaningful only on organization-wide guards;
+	guards written on a component leave it null.
+	"""
+	namePattern: String
+}
+
+input ActionGuardInput {
+	name: String!
+	action: GuardedAction!
+	cel: String!
+	mode: GuardMode!
+	namePattern: String
+}
+
+"""An action a guard can withhold. New actions bring their own action.* variables."""
+enum GuardedAction {
+	"""Moving a release forward through its lifecycle, however the move was requested."""
+	RELEASE_PROMOTION
+}
+
+"""What happens when a guard is not satisfied."""
+enum GuardMode {
+	"""Kept but not evaluated."""
+	OFF
+	"""The action proceeds; the failure is recorded against it."""
+	WARN
+	"""The action is refused, naming the guard."""
+	BLOCK
+}
+
 input GlobalApprovalPolicyRuleInput {
 	name: String!
 	namePattern: String!
@@ -2167,6 +2233,11 @@ type IgnoreViolation {
 }
 
 type Settings {
+	"""
+	Guards declared once for the organization, each picking the components it governs by name
+	pattern, the same way the org's approval-policy rules do. SAAS-only; null in CE.
+	"""
+	actionGuards: [ActionGuard!]
 	justificationMandatory: Boolean
 	branchSuffixMode: BranchSuffixMode
 	vexComplianceFramework: VexComplianceFramework
@@ -3629,6 +3700,8 @@ type Perspective {
 	name: String
 	createdDate: DateTime
 	type: PerspectiveType
+	"""Guards applying to every component of this perspective. SAAS-only; null in CE."""
+	actionGuards: [ActionGuard!]
 	"""
 	Perspective-level sid override (SaaS only, real perspectives only). Null/INHERIT
 	defers to the org. Only writeable when the org is in ENABLED_FLEXIBLE.

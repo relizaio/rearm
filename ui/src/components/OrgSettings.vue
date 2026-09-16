@@ -354,6 +354,9 @@
                     <n-tab-pane name="globalPolicyAssignment" tab="Global Policy Assignment" v-if="isOrgAdmin">
                         <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
                     </n-tab-pane>
+                    <n-tab-pane name="actionGuards" tab="Action Guards" v-if="isOrgAdmin">
+                        <ActionGuards scope="ORG" :uuid="orgResolved" :is-writable="isWritable"/>
+                    </n-tab-pane>
                     </n-tabs>
                 </div>
                 <n-modal
@@ -1161,6 +1164,7 @@ import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
+import ActionGuards from './ActionGuards.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'

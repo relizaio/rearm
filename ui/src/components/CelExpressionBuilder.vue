@@ -1,7 +1,7 @@
 <template>
     <div style="width: 100%;">
         <!-- Mode toggle -->
-        <n-radio-group v-model:value="mode" size="small" style="margin-bottom: 10px;" @update:value="switchMode">
+        <n-radio-group v-if="!celOnly" v-model:value="mode" size="small" style="margin-bottom: 10px;" @update:value="switchMode">
             <n-radio-button value="builder">Visual Builder</n-radio-button>
             <n-radio-button value="cel">CEL Expression</n-radio-button>
         </n-radio-group>
@@ -287,13 +287,27 @@ interface Props {
     // warning loop-back — the precondition would otherwise warn about
     // itself.
     suppressFirstScannedWarning?: boolean
+    // Variables and examples that exist only in the caller's context —
+    // action.* for an action guard, for instance. Appended to the shared
+    // lists in the help popover rather than replacing them, because the
+    // release.* activation is the same wherever CEL is written here.
+    extraVariableDocs?: VariableDoc[]
+    extraExampleDocs?: string[]
+    // Hide the visual builder. Set where the expressions the caller writes
+    // are about lists (dependencies, commits) that the builder has no
+    // conditions for — offering a builder that cannot represent them only
+    // produces a warning banner.
+    celOnly?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
     placeholder: '',
     error: '',
     preconditionCelExpression: null,
-    suppressFirstScannedWarning: false
+    suppressFirstScannedWarning: false,
+    extraVariableDocs: () => [],
+    extraExampleDocs: () => [],
+    celOnly: false
 })
 
 const emit = defineEmits<{
@@ -358,7 +372,7 @@ const compOpOptions = [
 
 interface VariableDoc { name: string; snippet: string; display: string; desc: string }
 
-const variableDocs: VariableDoc[] = [
+const baseVariableDocs: VariableDoc[] = [
     { name: 'release.lifecycle',             snippet: 'release.lifecycle',             display: 'release.lifecycle',             desc: 'string — e.g. "ASSEMBLED", "GENERAL_AVAILABILITY"' },
     { name: 'release.version',               snippet: 'release.version',               display: 'release.version',               desc: 'string — e.g. "1.2.3"' },
     { name: 'release.branchType',            snippet: 'release.branchType',            display: 'release.branchType',            desc: 'string — "RELEASE", "HOTFIX", "FEATURE"' },
@@ -376,6 +390,18 @@ const variableDocs: VariableDoc[] = [
     { name: 'release.anyDisapproved',        snippet: 'release.anyDisapproved',        display: 'release.anyDisapproved',        desc: 'bool — true if any approval entry is DISAPPROVED' },
     { name: 'approvals',                     snippet: 'approvals',                     display: 'approvals',                     desc: 'map&lt;string,string&gt; — top-level, keyed by approval entry UUID' },
     { name: 'release.component',             snippet: 'release.component',             display: 'release.component',             desc: 'string (UUID)' },
+    // ─── release.dependencies ────────────────────────────────────────────────
+    // One entry per parent release. Empty for a release with no dependencies,
+    // which makes .all() vacuously true -- a rule that must not pass on an
+    // empty list should say so with .exists().
+    { name: 'release.dependencies',              snippet: 'release.dependencies',                                            display: 'release.dependencies',              desc: 'list — one entry per parent release (what this release was built from). Empty when there are none.' },
+    { name: 'release.dependencies[].lifecycle',  snippet: 'release.dependencies.all(d, d.lifecycle == "READY_TO_SHIP")',     display: 'release.dependencies[].lifecycle',  desc: 'string — the dependency\'s lifecycle' },
+    { name: 'release.dependencies[].maturity',   snippet: 'release.dependencies.all(d, d.maturity >= 3)',                    display: 'release.dependencies[].maturity',   desc: 'int — ordering of that lifecycle: -1 cancelled/rejected, 0 pending, 1 draft, 2 assembled, 3 general availability and beyond. Answers "reached the bar", nothing else — an end-of-life dependency still scores 3.' },
+    { name: 'release.dependencies[].supported',  snippet: 'release.dependencies.all(d, d.supported)',                        display: 'release.dependencies[].supported',  desc: 'bool — still something to build on. False for end-of-support, end-of-life, cancelled and rejected. The question maturity cannot answer.' },
+    { name: 'release.dependencies[].specification', snippet: 'release.dependencies.exists(d, d.specification == "TEST_PLAN")', display: 'release.dependencies[].specification', desc: 'string — the SPECIFICATION identifier of the dependency\'s component (e.g. "SRS", "TEST_PLAN"); empty for ordinary code' },
+    { name: 'release.dependencies[].external',   snippet: 'release.dependencies.filter(d, !d.external)',                     display: 'release.dependencies[].external',   desc: 'bool — true for third-party dependencies, which are not yours to promote' },
+    { name: 'release.dependencies[].version',    snippet: 'release.dependencies.exists(d, d.version == "1.2.3")',            display: 'release.dependencies[].version',    desc: 'string' },
+    { name: 'release.dependencies[].componentName', snippet: 'release.dependencies.exists(d, d.componentName == "<name>")',  display: 'release.dependencies[].componentName', desc: 'string' },
     // ─── Agentic / signature scope ───────────────────────────────────────────
     // Both lists are empty when the release has no agentic provenance and / or
     // no SCEs; CEL macros like .exists / .all / .filter handle the empty case.
@@ -415,7 +441,7 @@ const variableDocs: VariableDoc[] = [
     { name: 'release.headCommit.attribution.state',     snippet: 'release.headCommit.attribution.state == "RESOLVED"',                                  display: 'release.headCommit.attribution.state',     desc: 'string — UNATTRIBUTED / RESOLVED / REJECTED' }
 ]
 
-const exampleDocs: string[] = [
+const baseExampleDocs: string[] = [
     'release.lifecycle == "ASSEMBLED"',
     'release.lifecycle == "GENERAL_AVAILABILITY" && release.criticalVulns == 0',
     'release.approvals["3fa85f64-5717-4562-b3fc-2c963f66afa6"] == "APPROVED"',
@@ -432,6 +458,9 @@ const exampleDocs: string[] = [
     'release.branchType == "BASE" && release.headCommit.signature.state == "VERIFIED" && release.headCommit.signature.signedByOwnerType == "COMMITTER" && release.headCommit.agent == ""'
 ]
 
+const variableDocs = computed<VariableDoc[]>(() => [...props.extraVariableDocs, ...baseVariableDocs])
+const exampleDocs = computed<string[]>(() => [...props.extraExampleDocs, ...baseExampleDocs])
+
 function insertSnippet(snippet: string) {
     const current = (celText.value || '').trim()
     const next = current ? `${current} && ${snippet}` : snippet
@@ -441,7 +470,7 @@ function insertSnippet(snippet: string) {
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-const mode = ref<'builder' | 'cel'>('builder')
+const mode = ref<'builder' | 'cel'>(props.celOnly ? 'cel' : 'builder')
 const builderState = reactive<BuilderState>({ topOperator: 'AND', groups: [] })
 const celText = ref('')
 const canParseCurrentCel = ref(true)
