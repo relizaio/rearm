@@ -1076,6 +1076,10 @@ const COMPONENT_FULL_DATA = `
             approvedEnvironment
             checkName
             scope
+            lockScope
+            lockUnlockLevel
+            lockAttestationRequirement
+            lockReason
         }
     }
     outputTriggers {
@@ -1096,6 +1100,10 @@ const COMPONENT_FULL_DATA = `
         approvedEnvironment
         checkName
         scope
+        lockScope
+        lockUnlockLevel
+        lockAttestationRequirement
+        lockReason
     }
     releaseInputTriggers {
         uuid
