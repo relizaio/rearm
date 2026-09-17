@@ -33,19 +33,24 @@ works everywhere it used to. This page covers what is new alongside it:
 ## Managing keys in the UI
 
 Keys for an organization live under **Organization Settings → Programmatic Access**, which is
-split into five tabs:
+split into four tabs:
 
 | Tab | What it holds |
 |---|---|
-| **Free Form Keys** | Organization keys whose permissions you compose yourself. Used by CI, integrations and agents. |
-| **Scoped Keys** | Keys tied to a specific object (for example a component), carrying that object's access. |
+| **Free Form Keys** | Organization keys whose permissions you compose yourself. Used by CI, integrations and agents. **Key Requests** — requests from members for a Free Form key, for an admin to approve — sit at the top of this tab. |
 | **User Keys** | Personal keys belonging to members of the organization. |
-| **Key Requests** | Requests from members for a Free Form key, for an admin to approve. |
+| **Scoped Keys** | Keys tied to a specific object (for example a component), carrying that object's access. |
 | **Federated Identities** | Trust rules that let CI authenticate with its own identity token instead of a stored secret, plus the per-repository identities those rules have created. See [GitHub Actions without a secret](#github-actions-without-a-secret). |
 
 Your own keys are also on your profile, under **Your API Keys**. From there you can
 **Create key** for yourself, or **Request a Free Form key** if you need one an administrator has
 to grant.
+
+::: tip A personal key never holds more than its owner
+Whatever is set on a personal key — by its owner or by an administrator — is stored **reduced to
+what the owner holds** in the organization at that moment, and every call is checked against the
+owner's permissions again. A personal key cannot be a way to act above the person it belongs to.
+:::
 
 ::: tip The secret is shown once
 Whenever a secret is generated, the plaintext value is displayed **only at that moment**. Copy it
@@ -94,6 +99,10 @@ Things worth knowing:
 - The key id and secret may also be sent as `client_id` and `client_secret` form parameters if
   HTTP Basic is awkward for your client.
 - The token carries exactly the key's permissions. It is not an elevation of any kind.
+- A programmatic call with **no credential at all** is answered `401` with a
+  `WWW-Authenticate: Bearer` challenge, as is a call with an invalid or expired token. Artifact and
+  signature downloads are served `Cache-Control: private, no-store`, so nothing access-controlled
+  lands in a shared cache.
 
 ## Rotating a secret without downtime
 
@@ -128,15 +137,27 @@ Open this link in your browser and approve the sign-in:
 Code: WDJB-MJHT
 ```
 
-Signed in to ReARM in that browser, you will see the request — which host it came from and when —
-and choose **what the CLI should act as**:
+Signed in to ReARM in that browser, you will see the request and choose **what the CLI should
+act as**:
 
-- a **personal key created for this session** (deleted again when you sign out),
-- one of your **existing personal keys**, or
-- a **Free Form key you hold**.
+- **Create a personal key for this session** — a key that exists only for this session and is
+  deleted again when you sign out. You set **what it may do** on the approval form: an
+  organization-wide level, functions, and per-object grants. Whatever you set is stored **reduced
+  to your own permissions** in the organization, and every call is checked against them again — the
+  session key can never exceed you.
+- **Use one of my keys** — one of your existing **personal keys**, or a **Free Form key you hold**.
+  The session's permissions are exactly that key's permissions.
 
-Approve it, and the CLI is signed in. The session's permissions are exactly that key's
-permissions — approving a login never grants more than the key already had.
+Either way, approving a login never grants more than you already have.
+
+Before approving, check the request is the one you started. The page shows two groups of details
+and labels them by how much to trust them:
+
+- **Reported by the CLI** — host name, operating system, time zone and client version. The CLI
+  sends these, so the requester controls them.
+- **Observed by the server** — the address the request actually came from.
+
+Approve it, and the CLI is signed in.
 
 Check what the CLI is currently acting as:
 
@@ -164,10 +185,11 @@ flow is what happens when you omit `--apikeyid`/`--apikey`; it is an addition, n
 - **The credentials file is local.** It is written to your home directory with owner-only
   permissions. Treat it like any other credential: on a shared or throwaway machine, run
   `rearm logout` when you are finished rather than leaving the session behind.
-- **You can see and revoke your sessions.** Your profile lists them under **CLI sessions**.
-  Revoking one signs that CLI out immediately, and a key that was created for the session is
-  deleted with it. An administrator can also see the sessions riding a particular key from that
-  key's row in *Organization Settings → Programmatic Access*.
+- **You can see and revoke your sessions.** Your profile lists them under **CLI sessions**, with
+  the device details each one reported and the address the server observed. Revoking one signs
+  that CLI out immediately, and a key that was created for the session is deleted with it. An
+  administrator can also see the sessions riding a particular key from that key's row in
+  *Organization Settings → Programmatic Access*.
 - The key a session was created for shows up among your **User Keys**, like any other personal
   key.
 
@@ -203,11 +225,14 @@ inclusions no broader than you mean, and check that an exclusion really covers w
 
 **What it may do.** Either a scope that is evaluated per token, or one fixed key:
 
-- **Scope by repository** (the usual choice). An organization-wide level — `READ_ONLY` is typical,
-  so names resolve and lists work — plus a level on **the calling repository's own** components,
-  branches and releases, optionally the right to **create** components for that repository, and any
-  extra static permissions a repository cannot express by itself. Each job gets only what its own
-  repository maps to.
+- **Scope by repository** (the usual choice). A level on **the calling repository's own**
+  components, branches and releases, optionally the right to **create** components for that
+  repository, and any extra static permissions a repository cannot express by itself. Each job gets
+  only what its own repository maps to. The **organization-wide read** level is optional and
+  defaults to **none** — leave it there for an ordinary build: `getversion`, `addrelease` and the
+  rest authorize against the component they resolve, which the repository level already covers.
+  An organization-wide level allows reads on *every* object of the organization, so grant it only
+  to a workflow that genuinely lists or reads beyond its own repository.
 - **Act as a Free Form key**. The job takes that key's permissions and attribution exactly.
 
 **GitHub Actions** is the only provider today. The **Issuer** field is only for GitHub Enterprise
