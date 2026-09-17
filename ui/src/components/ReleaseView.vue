@@ -1218,6 +1218,41 @@
                     <n-dynamic-input v-model:value="updatedRelease.identifiers" :on-create="onCreateIdentifier">
                         <template #create-button-default>
                             Add Identifier
+
+        <n-modal preset="dialog" :show-icon="false" style="width: 620px;" v-model:show="attestModalOpen"
+            title="Claim this commit">
+            <n-form label-placement="top" class="mt-3">
+                <p class="text-muted" v-if="attestSubject">
+                    {{ attestSubject.commit }} — nobody is accountable for it yet.
+                </p>
+                <n-form-item label="Statement" required>
+                    <n-radio-group v-model:value="attestDraft.verdict">
+                        <n-radio value="MINE">This is mine</n-radio>
+                        <n-radio value="NOT_MINE">This is not mine</n-radio>
+                    </n-radio-group>
+                    <template #feedback>
+                        Claiming a commit makes it accountable. It does not certify the content, does not
+                        change any release's lifecycle and is not a review — a rejected release stays
+                        rejected. Disowning one leaves it unaccounted for and puts any lock waiting on it
+                        in an administrator's hands.
+                    </template>
+                </n-form-item>
+                <n-form-item label="Note">
+                    <n-input v-model:value="attestDraft.note" type="textarea" :rows="2"
+                        placeholder="e.g. malformed trailer, corrected in the next commit"/>
+                    <template #feedback>
+                        Whether the claim means "fixed later" or "fine as it is" belongs here. There is no
+                        pointer to a correcting commit on purpose: the correction is proven by the next build
+                        running the same rule, not declared.
+                    </template>
+                </n-form-item>
+                <n-space>
+                    <n-button type="primary" @click="submitAttest">Record</n-button>
+                    <n-button @click="attestModalOpen = false">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
+
                         </template>
                         <template #default="{ value }">
                             <n-select style="width: 200px;" v-model:value="value.idType"
@@ -1281,7 +1316,7 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NRadio, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -5801,6 +5836,74 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
 ])
 
 /**
+ * Is anybody accountable for this commit, and can the reader do something about it.
+ *
+ * <p>Recognition is signed by an enrolled key, attributed to a live agent session, or claimed in
+ * an attestation -- the three ways somebody can be held to a commit. Unrecognized is the state
+ * locks and integrity rules are written about, so the badge offers the one action that resolves
+ * it rather than making the reader go and find it.
+ */
+function renderRecognitionBadge (row: any) {
+    const claim = row.attestation?.state
+    if (row.recognized) {
+        const how = claim === 'MINE' ? 'claimed' : 'recognized'
+        return h(NTooltip, { style: 'max-width: 360px;' }, {
+            trigger: () => h(NTag, { size: 'tiny', type: 'success', bordered: false }, { default: () => how }),
+            default: () => row.attestation?.detail
+                || 'Somebody can be held to this commit: an enrolled key signed it, an agent session owns it, or it has been claimed.',
+        })
+    }
+    const children: any[] = [
+        h(NTooltip, { style: 'max-width: 380px;' }, {
+            trigger: () => h(NTag, {
+                size: 'tiny',
+                type: claim === 'CONFLICT' || claim === 'NOT_MINE' ? 'error' : 'warning',
+                bordered: false
+            }, { default: () => claim === 'NOT_MINE' ? 'disowned' : claim === 'CONFLICT' ? 'contested' : 'unclaimed' }),
+            default: () => row.attestation?.detail
+                || 'Nobody is accountable for this commit: it is unsigned, unattributed and unclaimed.',
+        })
+    ]
+    if (isWritable.value && row.uuid) {
+        children.push(h(NButton, {
+            size: 'tiny', quaternary: true, style: 'margin-left: 4px;',
+            onClick: () => openAttest(row)
+        }, { default: () => 'claim' }))
+    }
+    return h('div', { style: 'display: flex; align-items: center;' }, children)
+}
+
+const attestModalOpen = ref(false)
+const attestSubject = ref<any>(null)
+const attestDraft = reactive({ verdict: 'MINE', note: '' })
+
+function openAttest (row: any) {
+    attestSubject.value = row
+    attestDraft.verdict = 'MINE'
+    attestDraft.note = ''
+    attestModalOpen.value = true
+}
+
+async function submitAttest () {
+    try {
+        await store.dispatch('attest', {
+            subjectType: 'SCE',
+            subjectUuid: attestSubject.value.uuid,
+            verdict: attestDraft.verdict,
+            note: attestDraft.note
+        })
+        notify('success', 'Recorded',
+            attestDraft.verdict === 'MINE'
+                ? 'The commit is now accountable. Any lock waiting only on it can be released.'
+                : 'Recorded as disowned. Locks waiting on it now need an admin.')
+        attestModalOpen.value = false
+        await fetchRelease()
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.extractGraphQLErrorMessage(error))
+    }
+}
+
+/**
  * Render the SourceCodeEntry.signature verdict as a small NTag with a
  * tooltip carrying the format / owner / fingerprint / verifiedAt details.
  * Mirrors the AiAgentSessionView Commits-tab badge so the two pages
@@ -5932,6 +6035,12 @@ const commitTableFields: DataTableColumns<any> = [
         render: (row: any) => renderSignatureBadge(row.signature),
     },
     {
+        key: 'recognized',
+        title: 'Accountable',
+        width: 150,
+        render: (row: any) => renderRecognitionBadge(row),
+    },
+    {
         key: 'commitMessage',
         title: 'Message'
     },
@@ -6031,6 +6140,12 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
         title: 'Signature',
         width: 130,
         render: (row: any) => renderSignatureBadge(row.signature),
+    },
+    {
+        key: 'recognized',
+        title: 'Accountable',
+        width: 150,
+        render: (row: any) => renderRecognitionBadge(row),
     },
     {
         key: 'commitMessage',

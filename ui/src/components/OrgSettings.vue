@@ -357,6 +357,9 @@
                     <n-tab-pane name="actionGuards" tab="Action Guards" v-if="isOrgAdmin">
                         <ActionGuards scope="ORG" :uuid="orgResolved" :is-writable="isWritable"/>
                     </n-tab-pane>
+                    <n-tab-pane name="integrity" tab="Build Integrity" v-if="isOrgAdmin">
+                        <IntegrityInbox :org-uuid="orgResolved"/>
+                    </n-tab-pane>
                     </n-tabs>
                 </div>
                 <n-modal
@@ -1180,6 +1183,7 @@ import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } f
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
+import IntegrityInbox from './IntegrityInbox.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'

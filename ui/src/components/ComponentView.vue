@@ -749,6 +749,15 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
+                                    <n-tab-pane name="locks" tab="Locks">
+                                        <!-- CE too: locks are the entity half of build integrity,
+                                             and a manual freeze is useful without any policy. -->
+                                        <ComponentLocks
+                                            :org-uuid="orguuid"
+                                            :component-uuid="componentUuid"
+                                            :is-writable="isAdmin"
+                                            :component-word="words.component"/>
+                                    </n-tab-pane>
                                     <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
                                         <!-- Shown to everyone: what a release is held to is worth
                                              knowing whether or not you may change it. Editing
@@ -1151,6 +1160,7 @@ import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerVal
 import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
+import ComponentLocks from './ComponentLocks.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 
 const updatedComponent: Ref<any> = ref({})
