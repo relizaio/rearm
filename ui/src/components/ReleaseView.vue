@@ -4788,7 +4788,9 @@ const releaseHistoryFields = computed(() => [
                     default: () => row.message,
                 })
                 : null
-            if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER') {
+            // GUARD rows record an automated promotion a guard withheld, and the message naming
+            // the guard is the whole point of the row — same treatment as the trigger rows.
+            if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER' || row.rus === 'GUARD') {
                 const txt = row.newValue || row.objectId
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
