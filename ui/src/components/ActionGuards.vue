@@ -16,6 +16,13 @@
 
         <p class="text-muted intro">{{ headings.intro }}</p>
 
+        <p class="text-muted intro">
+            A guard withholds an action until its condition holds. For release promotion that means
+            <strong>every forward lifecycle move up to Shipped</strong> is checked — Draft to Assembled,
+            Assembled to Ready to Ship, Ready to Ship to Shipped. Rejecting or cancelling a release, and
+            retiring one past Shipped, are never withheld.
+        </p>
+
         <n-alert v-if="!isWritable" type="default" style="margin-bottom: 0.75rem; font-size: 13px;">
             Read-only: writing guards needs admin rights here.
         </n-alert>
@@ -37,10 +44,18 @@
             :title="editorTitle">
             <n-form :model="draft" label-placement="top" class="mt-3">
                 <n-form-item label="Name" required>
-                    <n-input v-model:value="draft.name" placeholder="e.g. Inputs must be baselined"/>
+                    <n-input v-model:value="draft.name" placeholder="e.g. Inputs must be Ready to Ship"/>
                 </n-form-item>
                 <n-form-item label="Guarded action" required>
                     <n-select v-model:value="draft.action" :options="actionOptions"/>
+                    <template #feedback>
+                        <strong>Every</strong> forward lifecycle move up to Shipped is checked — Draft to
+                        Assembled, Assembled to Ready to Ship, Ready to Ship to Shipped — not just the
+                        last one. In Block mode any of those moves is refused while the condition is
+                        false. Moves into Rejected or Cancelled, and into the retirement lifecycles
+                        (End of Marketing and beyond), are never withheld. To govern one transition
+                        only, test <code>action.targetLifecycle</code> — see the samples below.
+                    </template>
                 </n-form-item>
                 <n-form-item v-if="scope === 'ORG'" label="Component name regex">
                     <n-input v-model:value="draft.namePattern" placeholder="Leave empty for every component, e.g. product-.*"/>
@@ -67,11 +82,39 @@
                     />
                 </n-form-item>
                 <div class="samples">
-                    <div class="samples-title">Start from a sample:</div>
+                    <div class="samples-title">
+                        <span>Start from a sample:</span>
+                        <n-tooltip trigger="hover" style="max-width: 460px;">
+                            <template #trigger>
+                                <n-icon size="14" style="cursor: help; margin-left: 6px; vertical-align: middle;"><QuestionMark/></n-icon>
+                            </template>
+                            <div><strong>maturity</strong> is a rank over the release lifecycle, so a rule can
+                            say "at least this far" without listing lifecycles by hand:</div>
+                            <div style="margin-top: 6px;">
+                                <div v-for="rank in maturityRanks" :key="rank.value">
+                                    {{ rank.value }} — {{ rank.lifecycles }}
+                                </div>
+                            </div>
+                            <div style="margin-top: 6px;">
+                                Everything from Shipped on shares the top rank: those lifecycles describe a
+                                market position, not more maturity, so a dependency at End of Life still
+                                counts as having shipped. Whether it is still usable is the separate
+                                <code>supported</code> flag.
+                            </div>
+                        </n-tooltip>
+                    </div>
                     <div v-for="s in samples" :key="s.cel" class="sample">
                         <n-button size="tiny" dashed @click="applySample(s)">Use</n-button>
                         <div>
-                            <div class="sample-label">{{ s.label }}</div>
+                            <div class="sample-label">
+                                {{ s.label }}
+                                <n-tooltip trigger="hover" style="max-width: 460px;">
+                                    <template #trigger>
+                                        <n-icon size="14" style="cursor: help; margin-left: 4px; vertical-align: middle;"><QuestionMark/></n-icon>
+                                    </template>
+                                    {{ s.help }}
+                                </n-tooltip>
+                            </div>
                             <code>{{ s.cel }}</code>
                         </div>
                     </div>
@@ -160,42 +203,79 @@ const guardVariableDocs = [
     }
 ]
 
+// Ranks shown in the help tooltip, using the lifecycle names the rest of the UI uses. Kept next
+// to the samples because every sample that says ">= n" is really saying "at least this lifecycle".
+const maturityRanks = [
+    { value: 4, lifecycles: 'Shipped, End of Marketing, End of Distribution, End of Support, End of Life' },
+    { value: 3, lifecycles: 'Ready to Ship' },
+    { value: 2, lifecycles: 'Assembled' },
+    { value: 1, lifecycles: 'Draft' },
+    { value: 0, lifecycles: 'Pending' },
+    { value: -1, lifecycles: 'Rejected, Cancelled' }
+]
+
 const samples = [
     {
-        label: 'Everything this release was built from is at least baselined',
-        cel: 'release.dependencies.all(d, d.maturity >= 3)'
+        label: 'Every dependency has reached Ready to Ship',
+        cel: 'release.dependencies.all(d, d.maturity >= 3)',
+        help: 'Refuses every forward move — including Draft to Assembled — while any dependency is'
+            + ' still at Pending, Draft or Assembled (or Rejected/Cancelled). A dependency that has'
+            + ' moved on to Shipped still satisfies it, because the rank asks for "at least Ready to'
+            + ' Ship". A release with no dependencies passes: all() over an empty list is true.'
     },
     {
         label: 'Documents held to a higher standard than code',
-        cel: 'release.dependencies.all(d, d.specification == "TEST_PLAN" ? d.maturity >= 3 : d.maturity >= 2)'
+        cel: 'release.dependencies.all(d, d.specification == "TEST_PLAN" ? d.maturity >= 3 : d.maturity >= 2)',
+        help: 'Dependencies whose component carries the TEST_PLAN specification identifier must have'
+            + ' reached Ready to Ship; everything else only has to be Assembled. The rule a single'
+            + ' setting cannot express.'
     },
     {
-        label: 'Govern general availability only; leave shipping alone',
-        cel: 'action.targetLifecycle != "GENERAL_AVAILABILITY" || release.dependencies.all(d, d.maturity >= 3)'
+        label: 'Only the move to Shipped is governed',
+        cel: 'action.targetLifecycle != "GENERAL_AVAILABILITY" || release.dependencies.all(d, d.maturity >= 3)',
+        help: 'Moves to Assembled and to Ready to Ship are allowed whatever the dependencies are'
+            + ' doing; the condition only applies when the promotion target is Shipped. This is how'
+            + ' you narrow a guard to one transition instead of all of them.'
     },
     {
-        label: 'Everything has shipped and nothing has been withdrawn underneath it',
-        cel: 'release.dependencies.all(d, d.maturity >= 4 && d.supported)'
+        label: 'Every dependency has Shipped and is still supported',
+        cel: 'release.dependencies.all(d, d.maturity >= 4 && d.supported)',
+        help: 'Rank 4 is Shipped or later. supported is false at End of Support, End of Life,'
+            + ' Rejected and Cancelled, so a dependency that shipped and was later withdrawn fails'
+            + ' this — which the rank alone cannot express, since End of Life still ranks 4.'
     },
     {
-        label: 'At least assembled, without listing lifecycles by hand',
-        cel: 'release.dependencies.all(d, d.maturity >= 2)'
+        label: 'Every dependency is at least Assembled',
+        cel: 'release.dependencies.all(d, d.maturity >= 2)',
+        help: 'Nothing still at Pending or Draft underneath this release. The loosest useful bar,'
+            + ' and a reasonable first rule to adopt in Warn mode.'
     },
     {
-        label: 'Only in-house dependencies are governed',
-        cel: 'release.dependencies.all(d, d.external || d.maturity >= 3)'
+        label: 'Third-party dependencies are exempt',
+        cel: 'release.dependencies.all(d, d.external || d.maturity >= 3)',
+        help: 'external is true for releases held against the external-components org. They are not'
+            + ' yours to promote, so holding your release to their lifecycle would be a rule nobody'
+            + ' in your organization can satisfy.'
     },
     {
-        label: 'A software requirements specification exists and is at least baselined',
-        cel: 'release.dependencies.exists(d, d.specification == "SRS" && d.maturity >= 3)'
+        label: 'A software requirements specification exists and has reached Ready to Ship',
+        cel: 'release.dependencies.exists(d, d.specification == "SRS" && d.maturity >= 3)',
+        help: 'exists(), not all(): this one demands that such a dependency is actually there, so a'
+            + ' release with no dependencies at all is refused rather than passing vacuously.'
     },
     {
-        label: 'A test plan is exactly baselined — not still in draft, not already superseded',
-        cel: 'release.dependencies.all(d, d.specification != "TEST_PLAN" || d.lifecycle == "READY_TO_SHIP")'
+        label: 'A test plan is at exactly Ready to Ship — not still in Draft, not already Shipped',
+        cel: 'release.dependencies.all(d, d.specification != "TEST_PLAN" || d.lifecycle == "READY_TO_SHIP")',
+        help: 'Lifecycle equality rather than a rank, for the case where one exact state is the rule.'
+            + ' A test plan that has moved on to Shipped fails this, which is the point — but it is'
+            + ' also why a rank is the better default for most rules.'
     },
     {
-        label: 'Nothing ships with an open critical or known-exploited finding',
-        cel: 'release.criticalVulns == 0 && release.kevCount == 0'
+        label: 'Nothing promotes with an open critical or known-exploited finding',
+        cel: 'release.criticalVulns == 0 && release.kevCount == 0',
+        help: 'About this release rather than its dependencies. Findings come from scans, so at'
+            + ' creation time — before anything has been scanned — the counts are 0 and this passes'
+            + ' vacuously; it bites on the promotions that follow.'
     }
 ]
 
@@ -300,7 +380,19 @@ const columns = computed(() => {
     const cols: any[] = [
         { title: 'Name', key: 'name' },
         { title: 'Action', key: 'action', width: 180, render: (row: any) => row.action === 'RELEASE_PROMOTION' ? 'Release promotion' : row.action },
-        { title: 'Mode', key: 'mode', width: 90, render: (row: any) => modeLabel(row.mode) }
+        {
+            title: 'Mode',
+            key: 'mode',
+            width: 90,
+            render: (row: any) => h(NTooltip, { trigger: 'hover', style: 'max-width: 380px;' }, {
+                trigger: () => h('span', { style: 'cursor: help; border-bottom: 1px dotted #aaa;' }, modeLabel(row.mode)),
+                default: () => row.mode === 'BLOCK'
+                    ? 'Refuses any forward lifecycle move up to Shipped while the condition is false, naming this guard.'
+                    : row.mode === 'WARN'
+                        ? 'Lets the move through and records the unsatisfied condition on the release.'
+                        : 'Kept but not evaluated.'
+            })
+        }
     ]
     if (props.scope === 'ORG') {
         cols.push({
