@@ -24,18 +24,32 @@
         </n-alert>
 
         <div class="actions">
-            <n-button v-if="isWritable" type="primary" @click="lockModalOpen = true">
-                <template #icon><n-icon><Lock/></n-icon></template>
-                Lock this {{ componentWord }}
-            </n-button>
+            <n-space>
+                <n-button v-if="isWritable" type="primary" @click="openLock('COMPONENT')">
+                    <template #icon><n-icon><Lock/></n-icon></template>
+                    Lock this {{ componentWord }}
+                </n-button>
+                <n-button v-if="isWritable && branchOptions.length" @click="openLock('BRANCH')">
+                    <template #icon><n-icon><Lock/></n-icon></template>
+                    Lock one branch
+                </n-button>
+            </n-space>
         </div>
 
         <n-data-table :columns="columns" :data="locks" :pagination="false" :bordered="false"/>
 
         <!-- Raise -->
         <n-modal preset="dialog" :show-icon="false" style="width: 640px;" v-model:show="lockModalOpen"
-            :title="'Lock this ' + componentWord">
+            :title="draft.scope === 'BRANCH' ? 'Lock one branch' : 'Lock this ' + componentWord">
             <n-form :model="draft" label-placement="top" class="mt-3">
+                <n-form-item v-if="draft.scope === 'BRANCH'" label="Branch" required>
+                    <n-select v-model:value="draft.branch" :options="branchOptions"
+                        placeholder="Which branch to lock"/>
+                    <template #feedback>
+                        A branch lock stops that branch's builds and leaves the rest of the
+                        {{ componentWord }} working.
+                    </template>
+                </n-form-item>
                 <n-form-item label="Reason" required>
                     <n-input v-model:value="draft.reason" placeholder="e.g. incident 4021, no builds until it is closed"/>
                     <template #feedback>Shown verbatim in every refusal, so write it for whoever hits it.</template>
@@ -59,7 +73,9 @@
                     </template>
                 </n-form-item>
                 <n-space>
-                    <n-button type="primary" :disabled="!draft.reason" @click="raise">Lock</n-button>
+                    <n-button type="primary"
+                        :disabled="!draft.reason || (draft.scope === 'BRANCH' && !draft.branch)"
+                        @click="raise">Lock</n-button>
                     <n-button @click="lockModalOpen = false">Cancel</n-button>
                 </n-space>
             </n-form>
@@ -102,7 +118,7 @@ import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useStore } from 'vuex'
 import {
     NAlert, NButton, NCheckbox, NDataTable, NForm, NFormItem, NIcon, NInput, NModal, NRadio,
-    NRadioGroup, NSpace, NTag, NTooltip, useNotification
+    NRadioGroup, NSelect, NSpace, NTag, NTooltip, useNotification
 } from 'naive-ui'
 import { QuestionMark, Lock, LockOpen } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
@@ -122,7 +138,9 @@ const lockModalOpen = ref(false)
 const releaseModalOpen = ref(false)
 const releasing = ref<any>(null)
 
-const draft = reactive({ reason: '', unlockLevel: 'ADMIN', attestationRequirement: 'NONE' })
+const draft = reactive({ scope: 'COMPONENT', branch: '', reason: '', unlockLevel: 'ADMIN',
+    attestationRequirement: 'NONE' })
+const branchOptions = ref<{ label: string, value: string }[]>([])
 const releaseDraft = reactive({ reason: '', override: false })
 
 const levelLabel = (l: string) => l === 'ADMIN' ? 'Admin' : l === 'HUMAN' ? 'Human' : 'Agent'
@@ -138,14 +156,30 @@ const load = async () => {
     locks.value = (all || []).filter((l: any) => l.component === props.componentUuid)
 }
 
+const openLock = (scope: 'COMPONENT' | 'BRANCH') => {
+    draft.scope = scope
+    draft.branch = ''
+    draft.reason = ''
+    lockModalOpen.value = true
+}
+
 const raise = async () => {
     try {
-        await store.dispatch('lockComponent', {
-            componentUuid: props.componentUuid,
-            reason: draft.reason,
-            unlockLevel: draft.unlockLevel,
-            attestationRequirement: draft.attestationRequirement
-        })
+        if (draft.scope === 'BRANCH') {
+            await store.dispatch('lockBranch', {
+                branchUuid: draft.branch,
+                reason: draft.reason,
+                unlockLevel: draft.unlockLevel,
+                attestationRequirement: draft.attestationRequirement
+            })
+        } else {
+            await store.dispatch('lockComponent', {
+                componentUuid: props.componentUuid,
+                reason: draft.reason,
+                unlockLevel: draft.unlockLevel,
+                attestationRequirement: draft.attestationRequirement
+            })
+        }
         notification.success({ title: 'Locked', content: 'No builds until it is released.', duration: 3500 })
         lockModalOpen.value = false
         draft.reason = ''
@@ -235,7 +269,11 @@ const columns = computed(() => [
     }
 ])
 
-onMounted(load)
+onMounted(async () => {
+    await load()
+    const branches = await store.dispatch('fetchBranches', props.componentUuid)
+    branchOptions.value = (branches || []).map((b: any) => ({ label: b.name, value: b.uuid }))
+})
 </script>
 
 <style scoped lang="scss">

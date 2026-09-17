@@ -12,7 +12,11 @@
             </n-tooltip>
         </div>
 
-        <n-alert v-if="!loading && !anything" type="success" style="font-size: 13px;">
+        <n-alert v-if="loadError" type="error" style="font-size: 13px; margin-bottom: 0.75rem;">
+            Could not read the integrity state: {{ loadError }}
+        </n-alert>
+
+        <n-alert v-if="!loading && !loadError && !anything" type="success" style="font-size: 13px;">
             Nothing is locked and every commit behind a lock is accounted for.
         </n-alert>
 
@@ -46,6 +50,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { NAlert, NDataTable, NIcon, NTag, NTooltip } from 'naive-ui'
+import commonFunctions from '@/utils/commonFunctions'
 import { QuestionMark } from '@vicons/tabler'
 
 const props = defineProps<{ orgUuid: string }>()
@@ -127,9 +132,15 @@ const commitColumns = computed(() => [
     }
 ])
 
+const loadError = ref('')
+
 onMounted(async () => {
     try {
         inbox.value = await store.dispatch('fetchIntegrityInbox', props.orgUuid)
+    } catch (e: any) {
+        // A backend without these fields yet (a CE mirror mid-sync) answers with a GraphQL
+        // error; saying so is better than an empty panel that looks like good news.
+        loadError.value = commonFunctions.extractGraphQLErrorMessage(e)
     } finally {
         loading.value = false
     }

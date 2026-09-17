@@ -357,7 +357,8 @@
                     <n-tab-pane name="actionGuards" tab="Action Guards" v-if="isOrgAdmin">
                         <ActionGuards scope="ORG" :uuid="orgResolved" :is-writable="isWritable"/>
                     </n-tab-pane>
-                    <n-tab-pane name="integrity" tab="Build Integrity" v-if="isOrgAdmin">
+                    <n-tab-pane name="integrity" tab="Build Integrity"
+                        v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
                         <IntegrityInbox :org-uuid="orgResolved"/>
                     </n-tab-pane>
                     </n-tabs>

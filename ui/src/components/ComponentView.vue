@@ -749,9 +749,11 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
-                                    <n-tab-pane name="locks" tab="Locks">
-                                        <!-- CE too: locks are the entity half of build integrity,
-                                             and a manual freeze is useful without any policy. -->
+                                    <n-tab-pane name="locks" tab="Locks" v-if="myUser.installationType !== 'OSS'">
+                                        <!-- Gated like the other Pro panels for now: locks are CE
+                                             in the backend design, but the CE schema has none of
+                                             these fields until the sync lands, so offering the tab
+                                             there would open onto a GraphQL error. -->
                                         <ComponentLocks
                                             :org-uuid="orguuid"
                                             :component-uuid="componentUuid"

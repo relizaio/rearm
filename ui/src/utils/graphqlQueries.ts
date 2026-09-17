@@ -53,6 +53,13 @@ const MULTI_RELEASE_GQL_DATA = `
             keyFingerprint
             verifiedAt
         }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            detail
+        }
     }
     branch
     branchDetails {
@@ -799,6 +806,13 @@ const singleReleaseDataNoParent = `
             keyFingerprint
             verifiedAt
         }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            detail
+        }
     }
     pullRequests {
         uuid
@@ -920,6 +934,13 @@ const singleReleaseDataNoParent = `
                 signedByOwnerUuid
                 keyFingerprint
                 verifiedAt
+            }
+            recognized
+            attestation {
+                state
+                actorType
+                actor
+                detail
             }
         }
     }

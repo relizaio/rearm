@@ -1219,40 +1219,6 @@
                         <template #create-button-default>
                             Add Identifier
 
-        <n-modal preset="dialog" :show-icon="false" style="width: 620px;" v-model:show="attestModalOpen"
-            title="Claim this commit">
-            <n-form label-placement="top" class="mt-3">
-                <p class="text-muted" v-if="attestSubject">
-                    {{ attestSubject.commit }} — nobody is accountable for it yet.
-                </p>
-                <n-form-item label="Statement" required>
-                    <n-radio-group v-model:value="attestDraft.verdict">
-                        <n-radio value="MINE">This is mine</n-radio>
-                        <n-radio value="NOT_MINE">This is not mine</n-radio>
-                    </n-radio-group>
-                    <template #feedback>
-                        Claiming a commit makes it accountable. It does not certify the content, does not
-                        change any release's lifecycle and is not a review — a rejected release stays
-                        rejected. Disowning one leaves it unaccounted for and puts any lock waiting on it
-                        in an administrator's hands.
-                    </template>
-                </n-form-item>
-                <n-form-item label="Note">
-                    <n-input v-model:value="attestDraft.note" type="textarea" :rows="2"
-                        placeholder="e.g. malformed trailer, corrected in the next commit"/>
-                    <template #feedback>
-                        Whether the claim means "fixed later" or "fine as it is" belongs here. There is no
-                        pointer to a correcting commit on purpose: the correction is proven by the next build
-                        running the same rule, not declared.
-                    </template>
-                </n-form-item>
-                <n-space>
-                    <n-button type="primary" @click="submitAttest">Record</n-button>
-                    <n-button @click="attestModalOpen = false">Cancel</n-button>
-                </n-space>
-            </n-form>
-        </n-modal>
-
                         </template>
                         <template #default="{ value }">
                             <n-select style="width: 200px;" v-model:value="value.idType"
@@ -1287,7 +1253,43 @@
         </n-modal>
             </div>
     </div>
-
+        <n-modal
+            v-model:show="attestModalOpen"
+            title="Claim this commit"
+            preset="dialog"
+            style="width: 620px;"
+            :show-icon="false">
+            <n-form label-placement="top">
+                <p class="text-muted" v-if="attestSubject">
+                    {{ attestSubject.commit }} — nobody is accountable for it yet.
+                </p>
+                <n-form-item label="Statement" required>
+                    <n-radio-group v-model:value="attestDraft.verdict">
+                        <n-radio value="MINE">This is mine</n-radio>
+                        <n-radio value="NOT_MINE">This is not mine</n-radio>
+                    </n-radio-group>
+                    <template #feedback>
+                        Claiming a commit makes it accountable. It does not certify the content, does not
+                        change any release's lifecycle and is not a review — a rejected release stays
+                        rejected. Disowning one leaves it unaccounted for and puts any lock waiting on it
+                        in an administrator's hands.
+                    </template>
+                </n-form-item>
+                <n-form-item label="Note">
+                    <n-input v-model:value="attestDraft.note" type="textarea" :rows="2"
+                        placeholder="e.g. malformed trailer, corrected in the next commit"/>
+                    <template #feedback>
+                        Whether the claim means "fixed later" or "fine as it is" belongs here. There is no
+                        pointer to a correcting commit on purpose: the correction is proven by the next
+                        build running the same rule, not declared.
+                    </template>
+                </n-form-item>
+                <n-space>
+                    <n-button type="primary" @click="submitAttest">Record</n-button>
+                    <n-button @click="attestModalOpen = false">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
 </template>
     
 <script lang="ts">
@@ -1318,7 +1320,7 @@ import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NRadio, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
-import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
