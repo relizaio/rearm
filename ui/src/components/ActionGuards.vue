@@ -78,7 +78,7 @@
                         :cel-only="true"
                         :extra-variable-docs="guardVariableDocs"
                         :extra-example-docs="guardExampleDocs"
-                        placeholder="The action proceeds only while this is true, e.g. release.dependencies.all(d, d.lifecycle == &quot;READY_TO_SHIP&quot;)"
+                        placeholder="The action proceeds only while this is true, e.g. release.dependencies.all(d, d.maturity >= 3)"
                     />
                 </n-form-item>
                 <div class="samples">
@@ -465,6 +465,13 @@ onMounted(async () => {
     color: #666;
 }
 .mt-3 { margin-top: 0.75rem; }
+// The explanations under the action and pattern fields are a couple of lines each; without this
+// they butt straight up against the next label.
+:deep(.n-form-item-feedback-wrapper) {
+    min-height: auto;
+    padding: 2px 0 10px 0;
+    line-height: 1.4;
+}
 .clickable {
     cursor: pointer;
 }
