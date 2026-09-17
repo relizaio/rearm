@@ -61,17 +61,10 @@
                         <n-radio value="AGENT">Agent — any recognized principal, including an agent through the API</n-radio>
                     </n-radio-group>
                 </n-form-item>
-                <n-form-item label="What must be true first" required>
-                    <n-radio-group v-model:value="draft.attestationRequirement">
-                        <n-radio value="NONE">Nothing — whoever holds the level above just releases it</n-radio>
-                        <n-radio value="ANY">Every cause claimed by anyone</n-radio>
-                        <n-radio value="HUMAN">Every cause claimed by a person</n-radio>
-                    </n-radio-group>
-                    <template #feedback>
-                        A lock raised by hand has no causes, so a requirement other than "nothing"
-                        has nothing to wait for. It matters on locks a rule raised.
-                    </template>
-                </n-form-item>
+                <!-- No attestation requirement here: a lock raised by hand has no causes, so a
+                     requirement would have nothing to wait for and would be met the moment it was
+                     checked. The backend refuses anything but NONE on a manual lock. Requirements
+                     are worth setting on the rule that raises a lock, where the causes are. -->
                 <n-space>
                     <n-button type="primary"
                         :disabled="!draft.reason || (draft.scope === 'BRANCH' && !draft.branch)"
@@ -138,8 +131,10 @@ const lockModalOpen = ref(false)
 const releaseModalOpen = ref(false)
 const releasing = ref<any>(null)
 
-const draft = reactive({ scope: 'COMPONENT', branch: '', reason: '', unlockLevel: 'ADMIN',
-    attestationRequirement: 'NONE' })
+// No attestationRequirement in the draft: manual locks are NONE by construction (see the form),
+// and the backend refuses anything else. It is still shown in the table, where policy-raised
+// locks have one that means something.
+const draft = reactive({ scope: 'COMPONENT', branch: '', reason: '', unlockLevel: 'ADMIN' })
 const branchOptions = ref<{ label: string, value: string }[]>([])
 const releaseDraft = reactive({ reason: '', override: false })
 
@@ -170,14 +165,14 @@ const raise = async () => {
                 branchUuid: draft.branch,
                 reason: draft.reason,
                 unlockLevel: draft.unlockLevel,
-                attestationRequirement: draft.attestationRequirement
+                attestationRequirement: 'NONE'
             })
         } else {
             await store.dispatch('lockComponent', {
                 componentUuid: props.componentUuid,
                 reason: draft.reason,
                 unlockLevel: draft.unlockLevel,
-                attestationRequirement: draft.attestationRequirement
+                attestationRequirement: 'NONE'
             })
         }
         notification.success({ title: 'Locked', content: 'No builds until it is released.', duration: 3500 })
