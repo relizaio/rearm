@@ -8,39 +8,6 @@
                         <template #icon><n-icon><Lock/></n-icon></template>
                         locked
                     </n-tag>
-        <n-modal
-            v-model:show="releaseLockModalOpen"
-            title="Release lock"
-            preset="dialog"
-            style="width: 620px;"
-            :show-icon="false">
-            <n-form label-placement="top">
-                <p class="text-muted" v-if="activeLock">{{ activeLock.reason }}</p>
-                <n-alert v-if="activeLock && activeLock.droppedCauses > 0" type="warning"
-                    style="margin-bottom: 0.75rem; font-size: 13px;">
-                    This lock had more causes than it keeps ({{ activeLock.droppedCauses }} dropped), so it
-                    will not release itself however many are claimed. If those commits are still
-                    unaccounted for, the rule will lock this {{ words.branch }} again on the next build.
-                </n-alert>
-                <n-form-item label="Reason" required>
-                    <n-input v-model:value="releaseLockDraft.reason" placeholder="e.g. commits claimed"/>
-                </n-form-item>
-                <n-form-item>
-                    <n-checkbox v-model:checked="releaseLockDraft.override">
-                        Override — release without the requirement being met
-                    </n-checkbox>
-                    <template #feedback>
-                        Recorded on the attestation that releases the lock, so an override is never
-                        silent.
-                    </template>
-                </n-form-item>
-                <n-space>
-                    <n-button type="primary" :disabled="!releaseLockDraft.reason"
-                        @click="releaseBranchLock">Release</n-button>
-                    <n-button @click="releaseLockModalOpen = false">Cancel</n-button>
-                </n-space>
-            </n-form>
-        </n-modal>
                 </template>
                 <div>{{ activeLock.reason }}</div>
                 <div style="margin-top: 6px;">
@@ -77,6 +44,39 @@
                 </n-icon>
             </div>
         </div>
+        <n-modal
+            v-model:show="releaseLockModalOpen"
+            title="Release lock"
+            preset="dialog"
+            style="width: 620px;"
+            :show-icon="false">
+            <n-form label-placement="top">
+                <p class="text-muted" v-if="activeLock">{{ activeLock.reason }}</p>
+                <n-alert v-if="activeLock && activeLock.droppedCauses > 0" type="warning"
+                    style="margin-bottom: 0.75rem; font-size: 13px;">
+                    This lock had more causes than it keeps ({{ activeLock.droppedCauses }} dropped), so it
+                    will not release itself however many are claimed. If those commits are still
+                    unaccounted for, the rule will lock this {{ words.branch }} again on the next build.
+                </n-alert>
+                <n-form-item label="Reason" required>
+                    <n-input v-model:value="releaseLockDraft.reason" placeholder="e.g. commits claimed"/>
+                </n-form-item>
+                <n-form-item>
+                    <n-checkbox v-model:checked="releaseLockDraft.override">
+                        Override — release without the requirement being met
+                    </n-checkbox>
+                    <template #feedback>
+                        Recorded on the attestation that releases the lock, so an override is never
+                        silent.
+                    </template>
+                </n-form-item>
+                <n-space>
+                    <n-button type="primary" :disabled="!releaseLockDraft.reason"
+                        @click="releaseBranchLock">Release</n-button>
+                    <n-button @click="releaseLockModalOpen = false">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
         <n-modal
             v-model:show="showCreateReleaseModal"
             title="Add New Release"
