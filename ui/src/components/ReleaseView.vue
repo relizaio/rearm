@@ -3184,7 +3184,11 @@ async function lifecycleChange(newLifecycle: string) {
         notify('success', 'Saved', 'Lifecycle updated.')
     } catch (error: any) {
         console.error(error)
-        notify('error', 'Error', 'Error updating release lifecycle.')
+        // The backend refuses a promotion that an action guard governs, and the message names the
+        // guard that stopped it -- which is the whole point of the refusal, so show it rather
+        // than a generic failure. Falls back to the generic wording when there is no message.
+        const message = commonFunctions.extractGraphQLErrorMessage(error)
+        notify('error', 'Error', message === 'Unknown error' ? 'Error updating release lifecycle.' : message)
         updatedRelease.value = deepCopyRelease(release.value)
     }
     approvalPending.value = false
@@ -4784,7 +4788,9 @@ const releaseHistoryFields = computed(() => [
                     default: () => row.message,
                 })
                 : null
-            if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER') {
+            // GUARD rows record an automated promotion a guard withheld, and the message naming
+            // the guard is the whole point of the row — same treatment as the trigger rows.
+            if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER' || row.rus === 'GUARD') {
                 const txt = row.newValue || row.objectId
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }

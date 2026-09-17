@@ -1345,6 +1345,96 @@ const storeObject : any = {
             const found = orgs.find((o: any) => o.uuid === orgUuid)
             return found?.globalApprovalPolicyRules || []
         },
+        // Action guards -- read per scope, written wholesale per scope. The three
+        // mutations replace the whole list for their scope, because a guard list is a
+        // policy document and a partial write is how two editors lose one version.
+        async fetchOrgActionGuards (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query orgActionGuards {
+                        organizations {
+                            uuid
+                            settings {
+                                actionGuards { name action cel mode namePattern }
+                            }
+                        }
+                    }`,
+                fetchPolicy: 'no-cache'
+            })
+            const orgs = response.data.organizations || []
+            const found = orgs.find((o: any) => o.uuid === orgUuid)
+            return found?.settings?.actionGuards || []
+        },
+        async setOrgActionGuards (context: any, payload: { orgUuid: string, guards: any[] }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setOrgActionGuards($orgUuid: ID!, $guards: [ActionGuardInput!]!) {
+                        setOrgActionGuards(orgUuid: $orgUuid, guards: $guards) {
+                            uuid
+                            settings {
+                                actionGuards { name action cel mode namePattern }
+                            }
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, guards: payload.guards }
+            })
+            return data.setOrgActionGuards.settings?.actionGuards || []
+        },
+        async fetchPerspectiveActionGuards (context: any, payload: { orgUuid: string, perspectiveUuid: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query perspectiveActionGuards($org: ID!) {
+                        perspectives(org: $org) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { org: payload.orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            const found = (response.data.perspectives || []).find((p: any) => p.uuid === payload.perspectiveUuid)
+            return found?.actionGuards || []
+        },
+        async setPerspectiveActionGuards (context: any, payload: { perspectiveUuid: string, guards: any[] }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setPerspectiveActionGuards($uuid: ID!, $guards: [ActionGuardInput!]!) {
+                        setPerspectiveActionGuards(uuid: $uuid, guards: $guards) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { uuid: payload.perspectiveUuid, guards: payload.guards }
+            })
+            return data.setPerspectiveActionGuards.actionGuards || []
+        },
+        async fetchComponentActionGuards (context: any, componentUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query componentActionGuards($componentUuid: ID!) {
+                        component(componentUuid: $componentUuid) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { componentUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.component?.actionGuards || []
+        },
+        async setComponentActionGuards (context: any, payload: { componentUuid: string, guards: any[] }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setComponentActionGuards($componentUuid: ID!, $guards: [ActionGuardInput!]!) {
+                        setComponentActionGuards(componentUuid: $componentUuid, guards: $guards) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { componentUuid: payload.componentUuid, guards: payload.guards }
+            })
+            return data.setComponentActionGuards.actionGuards || []
+        },
         async fetchOrgTeamAssignmentRules (context: any, orgUuid: string) {
             // organizations (plural, no args) is the resolver the org-settings
             // surfaces use -- the single-org organization(orgUuid:) query returns

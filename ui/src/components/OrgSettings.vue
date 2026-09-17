@@ -354,6 +354,9 @@
                     <n-tab-pane name="globalPolicyAssignment" tab="Global Policy Assignment" v-if="isOrgAdmin">
                         <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
                     </n-tab-pane>
+                    <n-tab-pane name="actionGuards" tab="Action Guards" v-if="isOrgAdmin">
+                        <ActionGuards scope="ORG" :uuid="orgResolved" :is-writable="isWritable"/>
+                    </n-tab-pane>
                     </n-tabs>
                 </div>
                 <n-modal
@@ -752,6 +755,21 @@
                     <n-modal
                         preset="dialog"
                         :show-icon="false"
+                        v-model:show="showPerspectiveGuardsModal"
+                        style="width: 900px;">
+                        <n-card size="huge" :bordered="false" role="dialog" aria-modal="true"
+                            :title="'Action Guards of Perspective: ' + selectedPerspectiveName">
+                            <ActionGuards
+                                v-if="showPerspectiveGuardsModal"
+                                scope="PERSPECTIVE"
+                                :uuid="selectedPerspectiveUuid"
+                                :org-uuid="orgResolved"
+                                :is-writable="isOrgAdmin"/>
+                        </n-card>
+                    </n-modal>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
                         v-model:show="showPerspectiveComponentsModal"
                         style="width: 900px;">
                         <n-card size="huge" :bordered="false"
@@ -1135,7 +1153,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1161,6 +1179,7 @@ import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
+import ActionGuards from './ActionGuards.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
@@ -2058,6 +2077,7 @@ const newPerspective: Ref<any> = ref({
     name: ''
 })
 const showPerspectiveComponentsModal = ref(false)
+const showPerspectiveGuardsModal: Ref<boolean> = ref(false)
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
 const selectedPerspectiveType: Ref<string> = ref('')
@@ -2204,6 +2224,23 @@ const perspectiveFields = [
                     () => h(Eye)
                 )
             ]
+
+            // Guards are readable on every real perspective; product-derived ones are not
+            // editable at all, so they carry none.
+            if (row.type !== 'PRODUCT') {
+                actions.push(
+                    h(
+                        NIcon,
+                        {
+                            title: 'Action Guards',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => showPerspectiveGuardsModalFn(row.uuid, row.name)
+                        },
+                        () => h(ShieldIcon)
+                    )
+                )
+            }
             
             // Add edit and delete icons only for admin users AND if not PRODUCT type
             if (isOrgAdmin.value && row.type !== 'PRODUCT') {
@@ -2308,6 +2345,12 @@ function resetCreatePerspective() {
         name: ''
     }
     showCreatePerspectiveModal.value = false
+}
+
+function showPerspectiveGuardsModalFn(perspectiveUuid: string, perspectiveName: string) {
+    selectedPerspectiveUuid.value = perspectiveUuid
+    selectedPerspectiveName.value = perspectiveName
+    showPerspectiveGuardsModal.value = true
 }
 
 async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspectiveName: string, perspectiveType: string = 'PERSPECTIVE') {
