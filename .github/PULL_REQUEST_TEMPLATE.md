@@ -30,6 +30,7 @@
 - Any security implications? (auth, permissions, data exposure)
 
 ## Checklist
+- [ ] I have read and agree to the [Licensing of contributions](../CONTRIBUTING.md#licensing-of-contributions) terms: my contribution is licensed under the repository's license, and I additionally grant Reliza the right to relicense it (including for ReARM Pro)
 - [ ] Title follows conventional commits (feat, fix, chore, docs, refactor, build, ci)
 - [ ] Description clearly explains the change and context
 - [ ] Tests added/updated or rationale provided
