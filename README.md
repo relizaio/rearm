@@ -132,6 +132,8 @@ This part will be continued (TODO).
 
 ReARM Community Edition is licensed under the [GNU AGPL v3](./LICENSE).
 
+Contributions are accepted under the repository's license plus a grant that lets Reliza relicense them, including for ReARM Pro — see [Licensing of contributions](./CONTRIBUTING.md#licensing-of-contributions) before opening a pull request.
+
 The [`deploy`](./deploy) directory is an exception: everything in it - the Docker Compose stacks and the Helm charts - is licensed under the [MIT License](./deploy/LICENSE), so you can adapt and redistribute your deployment configuration without AGPL obligations. See [`deploy/README.md`](./deploy/README.md) for details.
 
 Third-party components redistributed in this repository keep their own licenses. In particular, the upstream [Dependency-Track Helm chart](https://github.com/DependencyTrack/helm-charts) vendored under `deploy/helm/dtrack5-helm/charts/` is Apache-2.0, with a copy of that license included alongside it.
