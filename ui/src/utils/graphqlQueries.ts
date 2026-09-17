@@ -1151,6 +1151,20 @@ const COMPONENT_FULL_DATA = `
 const BRANCH_GQL_DATA = `
     uuid
     name
+    locks {
+        uuid
+        status
+        reason
+        origin
+        effectiveLevel
+        attestationRequirement
+        droppedCauses
+        causes {
+            subjectType
+            subjectUuid
+            detail
+        }
+    }
     component
     componentDetails {
         uuid
