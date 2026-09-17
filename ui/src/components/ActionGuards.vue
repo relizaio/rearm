@@ -162,20 +162,20 @@ const guardVariableDocs = [
 
 const samples = [
     {
-        label: 'Everything this release was built from has been baselined',
-        cel: 'release.dependencies.all(d, d.lifecycle == "READY_TO_SHIP")'
+        label: 'Everything this release was built from is at least baselined',
+        cel: 'release.dependencies.all(d, d.maturity >= 3)'
     },
     {
         label: 'Documents held to a higher standard than code',
-        cel: 'release.dependencies.all(d, d.specification == "TEST_PLAN" ? d.lifecycle == "READY_TO_SHIP" : d.lifecycle != "DRAFT")'
+        cel: 'release.dependencies.all(d, d.specification == "TEST_PLAN" ? d.maturity >= 3 : d.maturity >= 2)'
     },
     {
         label: 'Govern general availability only; leave shipping alone',
-        cel: 'action.targetLifecycle != "GENERAL_AVAILABILITY" || release.dependencies.all(d, d.lifecycle == "READY_TO_SHIP")'
+        cel: 'action.targetLifecycle != "GENERAL_AVAILABILITY" || release.dependencies.all(d, d.maturity >= 3)'
     },
     {
-        label: 'Nothing withdrawn underneath a release that is about to ship',
-        cel: 'release.dependencies.all(d, d.maturity >= 3 && d.supported)'
+        label: 'Everything has shipped and nothing has been withdrawn underneath it',
+        cel: 'release.dependencies.all(d, d.maturity >= 4 && d.supported)'
     },
     {
         label: 'At least assembled, without listing lifecycles by hand',
@@ -186,8 +186,12 @@ const samples = [
         cel: 'release.dependencies.all(d, d.external || d.maturity >= 3)'
     },
     {
-        label: 'A software requirements specification exists and is baselined',
-        cel: 'release.dependencies.exists(d, d.specification == "SRS" && d.lifecycle == "READY_TO_SHIP")'
+        label: 'A software requirements specification exists and is at least baselined',
+        cel: 'release.dependencies.exists(d, d.specification == "SRS" && d.maturity >= 3)'
+    },
+    {
+        label: 'A test plan is exactly baselined — not still in draft, not already superseded',
+        cel: 'release.dependencies.all(d, d.specification != "TEST_PLAN" || d.lifecycle == "READY_TO_SHIP")'
     },
     {
         label: 'Nothing ships with an open critical or known-exploited finding',
