@@ -21,6 +21,6 @@ Note that affected versions have already been removed from npm.
 
 To check if you are affected, if you are using ReARM, search for "@nx" and "nx" by SBOM components to check whether any of these are present in your supply chain.
 
-Also, check https://github.com/[GithubSlug]?tab=repositories&q=s1ngularity-repository (replace [GithubSlug] with your user or organization name) to see if a malicious repository was published to your GitHub account.
+Also, check `https://github.com/[GithubSlug]?tab=repositories&q=s1ngularity-repository` (replace [GithubSlug] with your user or organization name) to see if a malicious repository was published to your GitHub account.
 
 Then refer to the [advisory](https://github.com/nrwl/nx/security/advisories/GHSA-cxm3-wv7p-598c) for more details about required steps and mitigations.
