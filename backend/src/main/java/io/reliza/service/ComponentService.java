@@ -3,7 +3,9 @@
 */
 package io.reliza.service;
 
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -25,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.CommonVariables.SidPurlMode;
 import io.reliza.common.CommonVariables.SidPurlOverride;
 import io.reliza.common.CommonVariables.StatusEnum;
@@ -39,6 +42,9 @@ import io.reliza.model.ResourceGroupData;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
+import io.reliza.model.ComponentLock;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.DeclarativeProvenance;
 import io.reliza.model.ComponentData.DefaultBranchName;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.OrganizationData;
@@ -55,9 +61,15 @@ import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.repositories.ComponentRepository;
 import lombok.NonNull;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 
 @Service
 public class ComponentService {
+
+	@PersistenceContext
+	private EntityManager entityManager;
 	
 	@Autowired
     private AuditService auditService;
@@ -159,6 +171,73 @@ public class ComponentService {
 		return components;
 	}
 	
+	/**
+	 * Resolve a component or product of the org by name for programmatic callers
+	 * that identify it by name rather than uuid (CLI --component / --product).
+	 * Matching is case-insensitive on the trimmed name over the org's active
+	 * components and products; exactly one hit is required.
+	 *
+	 * @throws RelizaException when the name matches nothing or more than one
+	 */
+	public UUID resolveUniqueComponentUuidByName(UUID orgUuid, String name) throws RelizaException {
+		List<ComponentData> candidates = listComponentDataByOrganization(orgUuid, ComponentType.COMPONENT, ComponentType.PRODUCT);
+		return pickUniqueByName(candidates, name).getUuid();
+	}
+
+	/**
+	 * Pure selection behind {@link #resolveUniqueComponentUuidByName}: exactly one
+	 * non-archived candidate whose name equals {@code name} ignoring case and
+	 * surrounding whitespace.
+	 */
+	static ComponentData pickUniqueByName(Collection<ComponentData> candidates, String name) throws RelizaException {
+		if (StringUtils.isBlank(name)) throw new RelizaException("Component name must not be empty");
+		String wanted = name.trim();
+		List<ComponentData> hits = candidates.stream()
+				.filter(c -> c.getStatus() != StatusEnum.ARCHIVED)
+				.filter(c -> null != c.getName() && c.getName().trim().equalsIgnoreCase(wanted))
+				.collect(Collectors.toList());
+		if (hits.isEmpty()) {
+			throw new RelizaException("No active component or product named '" + wanted + "' in this organization");
+		}
+		if (hits.size() > 1) {
+			throw new RelizaException("Component name '" + wanted + "' is ambiguous: " + hits.size()
+					+ " active components or products carry it (" + hits.stream().map(c -> c.getUuid().toString()).collect(Collectors.joining(", "))
+					+ "); use the uuid");
+		}
+		return hits.get(0);
+	}
+
+	/**
+	 * Programmatic component reference: a uuid, or -- for organization-scoped
+	 * keys (ORGANIZATION, ORGANIZATION_RW, FREEFORM) -- the unique name of an
+	 * active component or product in the org (see {@link #pickUniqueByName}).
+	 * Component-scoped keys already identify their component; a name is not
+	 * accepted for them. Delegates the uuid case to
+	 * {@link Utils#resolveProgrammaticComponentId} so the key / component
+	 * mismatch rules are unchanged.
+	 */
+	public UUID resolveComponentReference(String reference, CommonVariables.AuthHeaderParse ahp, UUID orgUuid) throws RelizaException {
+		if (StringUtils.isNotEmpty(reference) && !isUuidReference(reference)) {
+			if (null == ahp || ApiTypeEnum.COMPONENT == ahp.getType()) {
+				throw new RelizaException("A component name cannot be used with a component-scoped API key; pass the uuid or omit it");
+			}
+			if (null == orgUuid) {
+				throw new RelizaException("Component name lookup requires an organization-scoped API key");
+			}
+			return resolveUniqueComponentUuidByName(orgUuid, reference);
+		}
+		return Utils.resolveProgrammaticComponentId(reference, ahp);
+	}
+
+	static boolean isUuidReference(String reference) {
+		try {
+			UUID.fromString(reference.trim());
+			return true;
+		} catch (IllegalArgumentException e) {
+			return false;
+		}
+	}
+
 	public List<ComponentData> listComponentDataByOrganization(UUID orgUuid, ComponentType... pts) {
 		List<ComponentData> globalListOfComponentData = new LinkedList<>();
 		for (ComponentType pt: pts) {
@@ -381,6 +460,15 @@ public class ComponentService {
 		return saveComponent(p, ComponentData, wu);
 	}
 	
+	/** Record the last declarative apply on a component (no other field changes). */
+	@Transactional
+	public void stampDeclarativeProvenance(UUID componentUuid, DeclarativeProvenance provenance, WhoUpdated wu) throws RelizaException {
+		Component c = getComponentService.getComponent(componentUuid).orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
+		ComponentData cd = ComponentData.dataFromRecord(c);
+		cd.setDeclarative(provenance);
+		saveComponent(c, Utils.dataToRecord(cd), wu);
+	}
+
 	@Transactional
 	public Component updateComponent (ComponentDto cdto, WhoUpdated wu) throws RelizaException {
 		Component comp = null;
@@ -470,10 +558,35 @@ public class ComponentService {
 			if (null != cdto.getStatus()) {
 				cd.setStatus(cdto.getStatus());
 			}
-			if (null != cdto.getIdentifiers()) cd.setIdentifiers(cdto.getIdentifiers());
+			if (null != cdto.getIdentifiers()) {
+				RearmIdentifier.validateVocabulary(cdto.getIdentifiers());
+				cd.setIdentifiers(cdto.getIdentifiers());
+			}
 			if (null != cdto.getNature()) cd.setNature(cdto.getNature());
-			if (null != cdto.getDeviceClass()) cd.setDeviceClass(cdto.getDeviceClass());
-			if (null != cdto.getMedicalProfile()) cd.setMedicalProfile(cdto.getMedicalProfile());
+			if (null != cdto.getActionGuards()) cd.setActionGuards(cdto.getActionGuards());
+			if (null != cdto.getDeviceClass()) {
+				// Setting deviceClass to NONE retracts the device window with it. Left behind,
+				// the window stays RESOLVABLE -- the resolver reads the profile, not the class
+				// -- so a component that is no longer a device would keep stamping a device
+				// commitment onto its releases' exports. Recorded as a REMOVED event rather
+				// than deleted quietly: withdrawing a regulatory claim is itself a fact.
+				retractWindowOnDeviceClassNone(cd, cdto.getDeviceClass(), wu);
+				cd.setDeviceClass(cdto.getDeviceClass());
+			}
+			if (null != cdto.getMedicalProfile()) {
+				// CARRY THE WINDOW ACROSS THE PROFILE REPLACEMENT. MedicalProfileInput has no
+				// deviceSupportWindow field, so this assignment replaces the whole profile with
+				// one that cannot carry it: without this, toggling udiBearing would silently
+				// retract a declared regulatory commitment. Exactly the failure
+				// ShippedProductService.update guards against on the batch side.
+				ComponentData.DeviceSupportWindow carried = (null == cd.getMedicalProfile())
+						? null : cd.getMedicalProfile().getDeviceSupportWindow();
+				cd.setMedicalProfile(cdto.getMedicalProfile());
+				if (null != carried && null == cd.getMedicalProfile().getDeviceSupportWindow()) {
+					cd.getMedicalProfile().setDeviceSupportWindow(carried);
+				}
+			}
+			applyDeviceSupportWindowPatch(cd, cdto, wu);
 			if (null != cdto.getBranchSuffixMode()) {
 				// INHERIT clears the override (defers to org setting) — store as null for a cleaner record
 				cd.setBranchSuffixMode(cdto.getBranchSuffixMode() == io.reliza.common.CommonVariables.BranchSuffixMode.INHERIT
@@ -560,6 +673,118 @@ public class ComponentService {
 		});
 	}
 	
+	/**
+	 * Apply the device support window patch (D7), with the clear flag idiom eos/eol already
+	 * use on releases: OMITTED leaves the stored value alone, {@code clearDeviceSupportWindow}
+	 * removes it, and an EMPTY OBJECT IS NOT A CLEAR.
+	 *
+	 * <p>That last rule is the one worth stating. An empty window is a serialization accident
+	 * waiting to happen -- a UI that binds two date pickers and posts whatever they hold sends
+	 * {@code {}} the moment both are blank, and if that meant "clear" then opening the form and
+	 * saving anything else would silently retract a regulatory commitment. Clearing has to be
+	 * asked for.
+	 *
+	 * @throws RelizaException when the window is not valid for this component
+	 */
+	static void applyDeviceSupportWindowPatch (ComponentData cd, ComponentDto cdto, WhoUpdated wu)
+			throws RelizaException {
+		if (Boolean.TRUE.equals(cdto.getClearDeviceSupportWindow())) {
+			if (null != cd.getMedicalProfile()
+					&& null != cd.getMedicalProfile().getDeviceSupportWindow()) {
+				recordWindowEvent(cd, cd.getMedicalProfile().getDeviceSupportWindow(), null, wu);
+				cd.getMedicalProfile().setDeviceSupportWindow(null);
+			}
+			return;
+		}
+		ComponentData.DeviceSupportWindow patch = cdto.getDeviceSupportWindow();
+		if (null == patch) return;
+
+		// Only meaningful on a device. Rejected rather than stored-and-ignored: a support
+		// window recorded against a component that is not a device would be read back by the
+		// resolver, reach a generated document, and describe a device that does not exist.
+		if (null == cd.getDeviceClass() || ComponentData.DeviceClass.NONE == cd.getDeviceClass()) {
+			throw new RelizaException("A device support window can only be declared on a"
+					+ " component with a device class. Set deviceClass first, or clear the"
+					+ " window.");
+		}
+		// A PATCH, MERGED OVER WHAT IS STORED -- not a replacement. eos and eol are
+		// independently optional on the input, so posting {eos} alone used to store {eos, null}
+		// and silently retract a declared end of sale: a regulatory commitment withdrawn by
+		// omission, which is precisely what clearDeviceSupportWindow exists to make explicit.
+		// Same rule the batch override follows in ShippedProductService.update.
+		ComponentData.DeviceSupportWindow stored = null == cd.getMedicalProfile()
+				? null : cd.getMedicalProfile().getDeviceSupportWindow();
+		if (null != stored) {
+			if (null == patch.getEos()) patch.setEos(stored.getEos());
+			if (null == patch.getEol()) patch.setEol(stored.getEol());
+		}
+		// Checked AFTER the merge, so a patch that moves one date past the stored other is
+		// rejected instead of being stored as an inconsistent pair.
+		if (null != patch.getEos() && null != patch.getEol()
+				&& patch.getEos().isAfter(patch.getEol())) {
+			throw new RelizaException("End of support (" + patch.getEos() + ") cannot be after"
+					+ " end of life / end of sale (" + patch.getEol() + ").");
+		}
+		// PROVENANCE IS SERVER-SET, always. The input type deliberately omits assertedBy and
+		// source, because a caller that could attribute a regulatory claim to someone else is a
+		// caller that can forge one. assessedAt stays caller-supplied so earlier work can be
+		// recorded honestly -- the same split the component attestations use -- and defaults to
+		// the time of the write, which is what the schema promises.
+		patch.setAssertedBy(null == wu ? null : wu.getLastUpdatedBy());
+		patch.setSource(null == wu || null == wu.getCreatedType()
+				? ProgrammaticType.MANUAL : wu.getCreatedType());
+		if (null == patch.getAssessedAt() || patch.getAssessedAt().isBlank()) {
+			patch.setAssessedAt(DateTimeFormatter.ISO_INSTANT.format(
+					ZonedDateTime.now(ZoneOffset.UTC).toInstant()));
+		}
+		if (null == cd.getMedicalProfile()) cd.setMedicalProfile(new ComponentData.MedicalProfile());
+		ComponentData.DeviceSupportWindow previous = stored;
+		recordWindowEvent(cd, previous, patch, wu);
+		cd.getMedicalProfile().setDeviceSupportWindow(patch);
+	}
+
+	/**
+	 * Retract the device window when a component stops being a device.
+	 *
+	 * <p>Left behind, the window stays RESOLVABLE: {@code DeviceLifecycleResolver} reads the
+	 * medical profile, not the device class, so a component that is no longer a device would
+	 * keep stamping a device commitment onto its releases' exports. Recorded as a REMOVED event
+	 * rather than deleted quietly -- withdrawing a regulatory claim is itself a fact.
+	 *
+	 * <p>Package-private for the same reason {@code applyDeviceSupportWindowPatch} is: the rule
+	 * is worth a test of its own, and burying it inline in updateComponent would leave it
+	 * covered only by whatever happened to exercise that method.
+	 */
+	static void retractWindowOnDeviceClassNone (ComponentData cd, ComponentData.DeviceClass incoming,
+			WhoUpdated wu) {
+		if (ComponentData.DeviceClass.NONE != incoming) return;
+		if (null == cd.getMedicalProfile() || null == cd.getMedicalProfile().getDeviceSupportWindow()) return;
+		recordWindowEvent(cd, cd.getMedicalProfile().getDeviceSupportWindow(), null, wu);
+		cd.getMedicalProfile().setDeviceSupportWindow(null);
+	}
+
+	/** One update event per window change, so the commitment's history is on the record. */
+	private static void recordWindowEvent (ComponentData cd, ComponentData.DeviceSupportWindow before,
+			ComponentData.DeviceSupportWindow after, WhoUpdated wu) {
+		String oldValue = describeWindow(before);
+		String newValue = describeWindow(after);
+		if (java.util.Objects.equals(oldValue, newValue)) return;
+		ComponentData.ComponentUpdateAction action = (null == before)
+				? ComponentData.ComponentUpdateAction.ADDED
+				: (null == after ? ComponentData.ComponentUpdateAction.REMOVED
+						: ComponentData.ComponentUpdateAction.CHANGED);
+		cd.addUpdateEvent(new ComponentData.ComponentUpdateEvent(
+				ComponentData.ComponentUpdateScope.DEVICE_SUPPORT_WINDOW,
+				action, oldValue, newValue, ZonedDateTime.now(ZoneOffset.UTC), wu));
+	}
+
+	/** The window as one comparable line. "not declared" is a value, not an absence. */
+	private static String describeWindow (ComponentData.DeviceSupportWindow w) {
+		if (null == w) return null;
+		return "eos=" + (null == w.getEos() ? "null" : w.getEos())
+				+ ", eol=" + (null == w.getEol() ? "null" : w.getEol());
+	}
+
 	@Transactional
 	public Component updateComponentResourceGroup (@NonNull UUID ComponentId, @NonNull UUID appId, WhoUpdated wu) throws RelizaException {
 		Component proj = null;
@@ -592,6 +817,44 @@ public class ComponentService {
 		return saveComponent(p, Utils.dataToRecord(pd), wu);
 	}
 	
+	/**
+	 * The component's data read under a row write lock, for a caller about to modify a JSONB list
+	 * on it.
+	 *
+	 * <p>The lock belongs before the read the decision is made from, not before the write. Two
+	 * concurrent lock releases that each read the list unlocked would both see the lock active,
+	 * both write a LOCK_RELEASE attestation, and only then serialize on the overwrite -- a race
+	 * with an audit trail claiming it happened twice. Callers hold the lock across the whole
+	 * read-check-write because it is their transaction.
+	 */
+	@Transactional
+	public ComponentData getComponentDataWriteLocked(UUID componentUuid) throws RelizaException {
+		Component c = repository.findByIdWriteLocked(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
+		// The lock statement locks the row; it does not refresh an instance the session already
+		// holds. A caller that scanned this row before taking the lock -- which is exactly what
+		// looking a lock up by uuid does -- would otherwise get the pre-lock copy handed back and
+		// decide from it, which is the race the lock was taken to close. Same idiom as
+		// OssReleaseService.addApprovals.
+		entityManager.refresh(c);
+		return ComponentData.dataFromRecord(c);
+	}
+	
+	/**
+	 * Replace the component's lock list. Persistence only: which locks may be raised or released,
+	 * and by whom, is {@code ComponentLockService}'s business -- this keeps the row round-trip in
+	 * the one place that owns component rows.
+	 */
+	@Transactional
+	public ComponentData setLocks(UUID componentUuid, List<ComponentLock> locks, WhoUpdated wu)
+			throws RelizaException {
+		Component c = repository.findByIdWriteLocked(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
+		ComponentData cd = ComponentData.dataFromRecord(c);
+		cd.setLocks(locks == null ? new LinkedList<>() : locks);
+		return ComponentData.dataFromRecord(saveComponent(c, Utils.dataToRecord(cd), wu));
+	}
+
 	@Transactional
 	private Component saveComponent (Component p, Map<String,Object> recordData, WhoUpdated wu) throws RelizaException {
 		// let's add some validation here
@@ -838,12 +1101,12 @@ public class ComponentService {
 		String vcsUri = Utils.normalizeVcsUri((String) inputMap.get("vcsUri"));
 		String repoPath = (String) inputMap.get("repoPath");
 
-		UUID componentId = Utils.resolveProgrammaticComponentId((String) inputMap.get(CommonVariables.COMPONENT_FIELD), ahp);
+		UUID componentId = resolveComponentReference((String) inputMap.get(CommonVariables.COMPONENT_FIELD), ahp, orgUuid);
 
 		if (null == componentId &&
 			!(ApiTypeEnum.ORGANIZATION_RW == ahp.getType()
 				|| ApiTypeEnum.ORGANIZATION == ahp.getType()
-				|| ApiTypeEnum.FREEFORM == ahp.getType())) {
+				|| ahp.isRbacKey())) {
 			throw new RelizaException("Wrong Key Type");
 		}
 

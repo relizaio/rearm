@@ -64,6 +64,11 @@ spring:
       # minimum-idle; the pool only bursts to max under load and trims
       # back when idle (ZGC reclaims the burst heap).
       minimum-idle: ${DB_POOL_MIN:5}
+      # idle-timeout MUST stay strictly below max-lifetime: Hikari disables idle
+      # eviction outright when it is greater or equal, logging "idleTimeout is
+      # close to or more than maxLifetime, disabling it", and the pool then never
+      # trims back to minimum-idle.
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:300000}
       # keepalive-time: probe idle pooled connections so infra/LB/Postgres
       # idle-kill can't silently leave a dead connection in the pool -
       # this is the direct fix for the observed staleness.
@@ -138,10 +143,18 @@ relizaprops:
   rebom:
     url: ${RELIZAPROP_REBOM_URI:http://[::1]:4000/}
   encryption:
-    password: ${RELIZAPROP_PASS:pleasechange}
-    salt: ${RELIZAPROP_SALT:aaaaaaaa}
-    oldpassword: ${RELIZAPROP_PASS_OLD:pleasechange}
-    oldsalt: ${RELIZAPROP_SALT_OLD:aaaaaaaa}
+    # The values THIS repository ships. They are public, so an installation left on them derives
+    # the same encryption and token-signing keys as every other installation left on them -- which
+    # is what ApiTokenService's startup error and the per-installation token pepper are about.
+    # Declared once, here, and referenced below: the application must be able to recognise its own
+    # default without a copy of the literal living in Java, where it would go stale and where each
+    # edition would end up shipping the other's. These are CE's values and differ from Pro's.
+    shippedDefault: pleasechange
+    shippedDefaultSalt: aaaaaaaa
+    password: ${RELIZAPROP_PASS:${relizaprops.encryption.shippedDefault}}
+    salt: ${RELIZAPROP_SALT:${relizaprops.encryption.shippedDefaultSalt}}
+    oldpassword: ${RELIZAPROP_PASS_OLD:${relizaprops.encryption.shippedDefault}}
+    oldsalt: ${RELIZAPROP_SALT_OLD:${relizaprops.encryption.shippedDefaultSalt}}
   rejectPendingReleasesRate: ${RELIZAPROP_REJECT_PENDING_RELEASES_RATE:PT15M} #ISO 8601
   # Cadence of the change-driven "today" analytics refresh (findings-over-time
   # chart write side). Worst-case chart staleness after a metrics change; the

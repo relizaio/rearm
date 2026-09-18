@@ -330,9 +330,9 @@ public class NotificationInboxFormatter {
         return joined;
     }
 
-    /** Instance items reuse {@link ComponentType}: PRODUCT reads as "Bundle", COMPONENT as "Project". */
+    /** Instance items reuse {@link ComponentType}: PRODUCT reads as "Product", COMPONENT as "Component". */
     private static String componentTypeLabel(ComponentType type) {
-        return type == ComponentType.PRODUCT ? "Bundle" : "Project";
+        return type == ComponentType.PRODUCT ? "Product" : "Component";
     }
 
     /** Comma-joined approval entry names (capped at 10); null when none are usable. */

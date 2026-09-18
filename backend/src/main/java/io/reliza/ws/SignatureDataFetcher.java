@@ -303,7 +303,7 @@ public class SignatureDataFetcher {
 		var ahp = authCtx.ahp();
 		UUID orgUuid = authCtx.orgUuid();
 		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
-		if (ahp.getType() != ApiTypeEnum.FREEFORM) {
+		if (!ahp.isRbacKey()) {
 			throw new AccessDeniedException("Only FREEFORM API keys are supported for agent operations");
 		}
 		if (orgUuid == null) throw new AccessDeniedException("Could not resolve org for key");

@@ -52,6 +52,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     AuthorizationService authorizationService;
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitingFilter.class);
+    static final int DEVICE_CODE_STARTS_PER_MINUTE = 10;
 
     private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
             .maximumSize(50_000)
@@ -62,6 +63,21 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain filterChain)
             throws ServletException, IOException {
         String key = resolveKey(request);
+        if (DeviceAuthorizationController.DEVICE_CODE_PATH.equals(request.getRequestURI()) && "POST".equalsIgnoreCase(request.getMethod())) {
+            // an unauthenticated write that stores a row: a person starts a login a few times an hour, so a much smaller bucket than the general one
+            Bucket starts = buckets.get("device-code|" + key, k -> Bucket.builder()
+                    .addLimit(limit -> limit.capacity(DEVICE_CODE_STARTS_PER_MINUTE).refillGreedy(DEVICE_CODE_STARTS_PER_MINUTE, Duration.ofMinutes(1))).build());
+            ConsumptionProbe p = starts.tryConsumeAndReturnRemaining(1);
+            if (!p.isConsumed()) {
+                long seconds = (long) Math.ceil(p.getNanosToWaitForRefill() / 1_000_000_000.0);
+                response.setHeader("Retry-After", String.valueOf(Math.max(1, seconds)));
+                response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+                response.setContentType("application/json");
+                response.getWriter().write("{\"error\":\"Rate limit exceeded\"}");
+                log.warn("SECURITY: CLI login starts rate-limited for {} (more than {} a minute)", key, DEVICE_CODE_STARTS_PER_MINUTE);
+                return;
+            }
+        }
         Bucket bucket = buckets.get(key, k ->
                 Bucket.builder()
                         .addLimit(limit -> limit

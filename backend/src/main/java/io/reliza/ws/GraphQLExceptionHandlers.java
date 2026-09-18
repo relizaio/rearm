@@ -16,6 +16,9 @@ import graphql.ErrorClassification;
 import graphql.GraphqlErrorBuilder;
 import graphql.GraphQLError;
 
+import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
+
+import io.reliza.exceptions.ActionRefusedException;
 import io.reliza.exceptions.RelizaException;
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.PersistenceException;
@@ -40,8 +43,33 @@ public class GraphQLExceptionHandlers {
     }
 
     @GraphQlExceptionHandler
+    public GraphQLError handleActionRefused(ActionRefusedException ex) {
+        // A policy the org configured said no. Same treatment as RelizaException: the message
+        // names the guard that refused and is the whole point of the refusal.
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    @GraphQlExceptionHandler
     public GraphQLError handleAccessDenied(AccessDeniedException ex) {
+        // The client only ever sees "Not authorized"; keep the real reason
+        // (org mismatch, key missing permissions, secret not distributed,
+        // sealed cert missing, ...) in the server log so it can be diagnosed.
+        log.error("Access denied: {}", ex.getMessage(), ex);
         return safeError("Not authorized");
+    }
+
+    @GraphQlExceptionHandler
+    public GraphQLError handleNotFound(DgsEntityNotFoundException ex) {
+        // Lookup misses ("Instance not found", "Wrong deliverable") are
+        // business outcomes, not server faults: surface the message with a
+        // NOT_FOUND classification instead of a logged 500.
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("NOT_FOUND"))
+                .build();
     }
 
     @GraphQlExceptionHandler

@@ -56,12 +56,19 @@ class ModelAssertionStateSchemaSyncTest {
 
 	private static Set<String> parseSchemaEnumValues() {
 		String schema;
-		try (InputStream in = ModelAssertionStateSchemaSyncTest.class.getResourceAsStream(SCHEMA_PATH)) {
-			assertNotNull(in, "GraphQL schema not found on classpath at " + SCHEMA_PATH);
-			schema = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-		} catch (Exception e) {
-			throw new IllegalStateException("Failed to read " + SCHEMA_PATH, e);
+		// The SDL is three files -- shared, user-facing and programmatic. Which one a type sits
+		// in says who consumes it and has nothing to do with this enum, so read them all.
+		StringBuilder sb = new StringBuilder();
+		for (String resource : new String[] {"/schema/schema.graphqls", "/schema/user.graphqls",
+				"/schema/programmatic.graphqls"}) {
+			try (InputStream in = ModelAssertionStateSchemaSyncTest.class.getResourceAsStream(resource)) {
+				if (in == null) throw new IllegalStateException(resource + " not on test classpath");
+				sb.append(new String(in.readAllBytes(), StandardCharsets.UTF_8)).append('\n');
+			} catch (java.io.IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
+		schema = sb.toString();
 
 		Matcher block = ENUM_BLOCK.matcher(schema);
 		assertTrue(block.find(), "enum ModelAssertionState not found in " + SCHEMA_PATH);

@@ -302,6 +302,63 @@
     </resources>
     <pluginManagement><!-- lock down plugins versions to avoid using Maven defaults (may be moved to parent pom) -->
       <plugins>
+        <!-- Tests must not run the background @Scheduled v3 backfill drain: it would race the
+             saveReleaseMetrics writes in @SpringBootTest classes and deadlock. Disable the SCHEDULE
+             globally in tests via a JVM system property (higher precedence than application.yaml);
+             direct drainV3Backfill(...) calls (FindingChangeV3DrainTest) are unaffected. -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+                <systemPropertyVariables>
+                    <relizaprops.findingChangeV3BackfillDrainEnabled>false</relizaprops.findingChangeV3BackfillDrainEnabled>
+                    <!-- Same reason: the PT5S notification fan-out tick would otherwise race
+                         @SpringBootTest classes that call drainBatch directly (without the
+                         advisory lock), producing stale-version flakes. Direct calls unaffected. -->
+                    <relizaprops.notificationOutboxDrainEnabled>false</relizaprops.notificationOutboxDrainEnabled>
+                    <!-- Same reason again: the PT1M auto-integrate retry drain claims queued
+                         releases and clears their markers, which races @SpringBootTest classes
+                         that assert on claim/marker state. Direct calls unaffected. -->
+                    <relizaprops.autoIntegrateDrainEnabled>false</relizaprops.autoIntegrateDrainEnabled>
+                    <!-- Every test class that mints an org (TestInitializer.obtainOrganization)
+                         would otherwise fetch the public CISA KEV feed and write ~1,700
+                         kev_assertions rows for it, because a new org seeds its own KEV mirror
+                         immediately. Three months of local runs left 6,069 orgs holding 10.4M rows:
+                         11 GB, the largest table in the test database by an order of magnitude,
+                         with enough background churn to starve the connection pool capped below.
+                         The integration is still created and still enabled; only the seed is
+                         skipped. KevCatalogSyncServiceTest drives the sync directly and is
+                         unaffected; SaasOrganizationKevSeedTest turns it back on to cover it. -->
+                    <relizaprops.kevSeedOnOrgCreateEnabled>false</relizaprops.kevSeedOnOrgCreateEnabled>
+                    <!-- The other half of the same problem. The daily KEV tick starts PT2M after a
+                         context spins and mirrors the catalog into EVERY org holding an enabled KEV
+                         integration, which is every org any test ever created. Two minutes was
+                         chosen to stay out of context startup, but @SpringBootTest contexts are
+                         cached for the whole run, so on any suite longer than that it fires: a full
+                         run added ~300k kev_assertions rows with the seed above already disabled.
+                         Pushed past any plausible run length rather than disabled, so the wiring
+                         still has to be valid. -->
+                    <relizaprops.kevSyncInitialDelay>PT24H</relizaprops.kevSyncInitialDelay>
+                    <!-- Connection budget. Every bean-override test class (@MockitoBean /
+                         @MockitoSpyBean) forks its OWN Spring context, and the TestContext cache
+                         keeps each alive for the whole run, so the cost is multiplicative:
+                         contexts x pool must stay under Postgres max_connections (100). The
+                         production defaults (max 20, min-idle 5) blew that: a measured peak of
+                         99, and CI failing with "sorry, too many clients already" while building
+                         a context for an unrelated later class. Both terms are capped here. max 8
+                         bounds the burst; min-idle 2 bounds the resident floor that every cached
+                         context holds for the rest of the run. 8 is chosen against the most
+                         demanding single test: the 6-way integration race in
+                         AutoIntegrateProductsTest holds 6 connections (five blocked on the
+                         feature-set lock, each pinning its own) plus the winner's nested
+                         REQUIRES_NEW version mint, so 7 concurrently. Raising that test's
+                         concurrency means raising this. -->
+                    <spring.datasource.hikari.maximum-pool-size>8</spring.datasource.hikari.maximum-pool-size>
+                    <spring.datasource.hikari.minimum-idle>2</spring.datasource.hikari.minimum-idle>
+                </systemPropertyVariables>
+            </configuration>
+        </plugin>
+
         <plugin>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-maven-plugin</artifactId>

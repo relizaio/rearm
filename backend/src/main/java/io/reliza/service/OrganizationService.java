@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -51,6 +52,8 @@ import io.reliza.common.Utils;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.MetricsAudit;
 import io.reliza.model.Organization;
+import io.reliza.model.FdaProse;
+import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
 import io.reliza.model.UserData;
@@ -162,6 +165,25 @@ public class OrganizationService {
 				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
 		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
 		od.setGlobalApprovalPolicyRules(validatedRules == null ? new java.util.LinkedList<>() : validatedRules);
+		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
+		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
+	/**
+	 * Replace the org's action-guard list. Persistence-only, same division as the
+	 * approval-policy rules above: validation (regex, CEL, name uniqueness) lives in the SAAS
+	 * layer because guards are a Pro feature, while the data field round-trip stays here.
+	 */
+	@Transactional
+	public OrganizationData setActionGuards(UUID orgUuid, List<io.reliza.model.ActionGuard> validatedGuards,
+			WhoUpdated wu) throws RelizaException {
+		Organization org = getOrganizationService.getOrganization(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		OrganizationData.Settings settings = od.getSettings() == null
+				? new OrganizationData.Settings() : od.getSettings();
+		settings.setActionGuards(validatedGuards == null ? new java.util.LinkedList<>() : validatedGuards);
+		od.setSettings(settings);
 		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
 		return OrganizationData.orgDataFromDbRecord(saved);
 	}
@@ -693,6 +715,24 @@ public class OrganizationService {
 				settings.setVexComplianceFramework(settingsPatch.getVexComplianceFramework());
 			}
 
+			if (settingsPatch.getDeclarativePrune() != null) {
+				settings.setDeclarativePrune(settingsPatch.getDeclarativePrune());
+			}
+			// PATCH, same as every field above and same as the attestation write: omitted
+			// leaves the stored value alone, supplied-blank clears it to null.
+			applyProse(settingsPatch.getFdaAssessmentNarrative(), settings::setFdaAssessmentNarrative,
+					"fdaAssessmentNarrative");
+			applyProse(settingsPatch.getFdaPatchesMayCeaseStatement(), settings::setFdaPatchesMayCeaseStatement,
+					"fdaPatchesMayCeaseStatement");
+			applyProse(settingsPatch.getFdaRiskTransferProcessRef(), settings::setFdaRiskTransferProcessRef,
+					"fdaRiskTransferProcessRef");
+			applyProse(settingsPatch.getFdaRiskIncreasesNotice(), settings::setFdaRiskIncreasesNotice,
+					"fdaRiskIncreasesNotice");
+
+			if (settingsPatch.getDefaultView() != null) {
+				settings.setDefaultView(settingsPatch.getDefaultView());
+			}
+
 			Integer retentionDays = settingsPatch.getNotificationRetentionDays();
 			if (retentionDays != null) {
 				if (retentionDays < OrganizationData.Settings.NOTIFICATION_RETENTION_DAYS_MIN
@@ -704,7 +744,36 @@ public class OrganizationService {
 				settings.setNotificationRetentionDays(retentionDays);
 			}
 
+			// PATCH-shaped like the prose slots: null leaves the stored value alone, a supplied
+			// value sets it. There is no "clear" -- the enum's two members already express
+			// both states, and null on the wire means "not part of this patch".
+			//
+			// Logged explicitly, old -> new. Org changes are audited by snapshotting the whole
+			// prior row (saveOrganization -> createAndSaveAuditRecord), so the history IS
+			// recoverable -- but recovering it means diffing two JSONB blobs, and this is a
+			// content control on what leaves the system. Someone asking "when did exports
+			// start carrying attestations, and who turned them on" should find one line.
+			if (null != settingsPatch.getSupportInjection()) {
+				SupportInjectionSetting was = settings.getSupportInjectionOrDefault();
+				SupportInjectionSetting now = settingsPatch.getSupportInjection();
+				// Written UNCONDITIONALLY once supplied, matching branchSuffixMode,
+				// vexComplianceFramework and applySidPurlPatch above. An earlier revision
+				// guarded the write on was != now, which meant an operator explicitly sending
+				// DISABLED to an org that had never set the field got no write AND no log
+				// line -- because null already reads as DISABLED. Harmless for behaviour,
+				// but it silently declined to record a deliberate action.
+				settings.setSupportInjection(now);
+				// Logged only on a real transition, and only the ACTOR'S UUID: WhoUpdated is a
+				// Lombok @Data, so logging it whole renders lastUpdatedIp into the log. The
+				// one actor-logging precedent in this tree logs the uuid alone.
+				if (was != now) {
+					log.info("SUPPORT_INJECTION changed for org {}: {} -> {} by user {}",
+							orgUuid, was, now, wu.getLastUpdatedBy());
+				}
+			}
+
 			applySidPurlPatch(settings, settingsPatch);
+
 
 			od.setSettings(settings);
 			
@@ -722,6 +791,36 @@ public class OrganizationService {
 			log.error("Exception when updating organization settings", e);
 			throw new RelizaException("Could not update organization settings");
 		}
+	}
+
+	/**
+	 * One prose field of the FDA document set, under this codebase's existing PATCH
+	 * contract: OMITTED (null) leaves the stored value alone, SUPPLIED-BLANK is a
+	 * deliberate CLEAR, and anything else is trimmed and stored.
+	 *
+	 * <p>Same BLANK-VS-OMITTED rule as the attestation write
+	 * ({@code SbomComponentService.applySupport}, via {@code blankToNull}); this one also
+	 * strips, which that one does not. Deliberately not a second idiom for the same thing --
+	 * an earlier revision here refused blanks and reserved clearing for a future
+	 * {@code clearFdaProse} list, which is one contract too many for one codebase.
+	 *
+	 * <p>Blank normalises to NULL rather than to an empty string, so storage never holds
+	 * whitespace that a later reader would have to re-check. That keeps the document
+	 * generator's "required slot is missing" test a null test.
+	 *
+	 * <p>Refusing a blank was also worse for the operator: someone who empties a wrong
+	 * risk-transfer reference and saves would be told nothing while the stale value
+	 * survived -- and the generator would later ship it into a patient-facing document.
+	 * That is precisely the fabrication the empty-slot block exists to prevent.
+	 */
+	private static void applyProse(String value, Consumer<String> setter,
+			String fieldName) throws RelizaException {
+		if (null == value) return;
+		// Bound and blank-to-null live in FdaProse, which the per-release narrative override
+		// shares. The OMITTED check stays here because it is what decides whether the setter
+		// runs at all -- FdaProse returns null both for "omitted" and for "cleared", and only
+		// this caller knows those must behave differently.
+		setter.accept(FdaProse.normalize(value, fieldName));
 	}
 
 	/**

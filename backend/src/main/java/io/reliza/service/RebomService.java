@@ -125,6 +125,7 @@ public class RebomService {
         BOM_CONVERSION_ERROR,
         BOM_MERGE_ERROR,
         OCI_STORAGE_ERROR,
+        BOM_VERSION_CONFLICT,
         INTERNAL_ERROR,
         UNKNOWN
     }
@@ -165,6 +166,13 @@ public class RebomService {
                         throw new RelizaException("BOM merge failed: " + message);
                     case OCI_STORAGE_ERROR:
                         throw new RelizaException("OCI storage error: " + message);
+                    case BOM_VERSION_CONFLICT:
+                        // Verbatim. rebom's message already names the serial number, both
+                        // versions and what to do about it, and this is a message a person
+                        // reads at the CLI -- a prefix here would only push the useful half
+                        // further along the line. Same rule the artifact update path states
+                        // in ArtifactService.validateCycloneDxUpdate.
+                        throw new RelizaException(message);
                     case INTERNAL_ERROR:
                     case UNKNOWN:
                     default:
@@ -218,7 +226,26 @@ public class RebomService {
                 return gqlResp;
             });
     }   
-    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, BomFormat bomFormat, UUID org, String existingSerialNumber){
+    /**
+     * Rebom's refusals have to arrive as refusals.
+     *
+     * <p>{@code executeGraphQLQuery} maps a GraphQL error to a RelizaException and then wraps it
+     * in a RuntimeException to cross the reactive boundary, which is fine until the wrapper is
+     * what reaches DGS: a RuntimeException is reported to the caller as "Internal server error"
+     * and the message is dropped. For a version conflict that message is the entire answer --
+     * which serial number, which versions, what to do -- so it is unwrapped back into the checked
+     * exception the GraphQL layer knows how to surface.
+     */
+    private static RelizaException unwrapRebomRefusal(RuntimeException e) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof RelizaException re) return re;
+            cause = cause.getCause();
+        }
+        return null;
+    }
+
+    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, BomFormat bomFormat, UUID org, String existingSerialNumber) throws RelizaException {
         String mutation = """
             mutation addBom ($bomInput: BomInput!) {
                 addBom(bomInput: $bomInput) {
@@ -232,7 +259,14 @@ public class RebomService {
         Map<String, Object> variables = new HashMap<>();
         BomInput bomInput = new BomInput(bomJson, rebomOptions, bomFormat, org, existingSerialNumber);
         variables.put("bomInput", bomInput);
-        Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
+        Map<String, Object> response;
+        try {
+            response = executeGraphQLQuery(mutation, variables).block();
+        } catch (RuntimeException e) {
+            RelizaException refusal = unwrapRebomRefusal(e);
+            if (null != refusal) throw refusal;
+            throw e;
+        }
         // Jackson 3: ObjectMapper is immutable and ObjectReader no longer
         // takes a tree node directly. Round-trip through a JSON string so
         // the per-call FAIL_ON_UNKNOWN_PROPERTIES toggle still applies.

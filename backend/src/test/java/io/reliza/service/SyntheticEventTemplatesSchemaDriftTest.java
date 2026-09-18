@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -35,8 +36,15 @@ import io.reliza.service.SyntheticEventTemplates.Template;
  */
 class SyntheticEventTemplatesSchemaDriftTest {
 
-    private static final Path SCHEMA_PATH = Paths.get(
-            "src/main/resources/schema/schema.graphqls");
+    /**
+     * The SDL is three files; this enum is the user surface's, so it lives in user.graphqls. All
+     * three are read rather than the one it happens to be in today -- which file a type sits in
+     * is a question about who consumes it, not about this enum.
+     */
+    private static final List<Path> SCHEMA_PATHS = List.of(
+            Paths.get("src/main/resources/schema/schema.graphqls"),
+            Paths.get("src/main/resources/schema/user.graphqls"),
+            Paths.get("src/main/resources/schema/programmatic.graphqls"));
 
     @Test
     void schemaEnumMatchesJavaEnumExactly() throws Exception {
@@ -64,13 +72,15 @@ class SyntheticEventTemplatesSchemaDriftTest {
     }
 
     private static Set<String> parseSchemaEnumValues() throws Exception {
-        String schema = Files.readString(SCHEMA_PATH);
+        StringBuilder all = new StringBuilder();
+        for (Path p : SCHEMA_PATHS) all.append(Files.readString(p)).append('\n');
+        String schema = all.toString();
         Matcher block = Pattern.compile(
                 "enum\\s+SyntheticEventTemplateEnum\\s*\\{([^}]*)\\}",
                 Pattern.DOTALL).matcher(schema);
         if (!block.find()) {
             throw new AssertionError(
-                    "Could not find 'enum SyntheticEventTemplateEnum' block in " + SCHEMA_PATH);
+                    "Could not find 'enum SyntheticEventTemplateEnum' block in " + SCHEMA_PATHS);
         }
         String body = block.group(1);
         Set<String> values = new LinkedHashSet<>();

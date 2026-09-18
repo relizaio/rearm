@@ -1,7 +1,7 @@
 ---
-rearm_cli_min: 26.05.21
-rearm_cli_recommended: 26.05.21
-last_updated: 2026-06-07
+rearm_cli_min: 26.09.1
+rearm_cli_recommended: 26.09.1
+last_updated: 2026-09-08
 ---
 
 # ReARM agent orientation
@@ -73,52 +73,94 @@ there.
 | Variable          | What it is                                                                 |
 | ----------------- | -------------------------------------------------------------------------- |
 | `REARM_URL`       | Base URL of the ReARM instance, no trailing slash.                         |
-| `REARM_API_ID`    | A FREEFORM key id of the form `FREEFORM__<orgUuid>__ord__<keyOrder>`.      |
-| `REARM_API_KEY`   | The corresponding secret. Only ever shown when the key was minted.         |
+| `REARM_API_ID`    | A FREEFORM key id (`FREEFORM__<orgUuid>__ord__<keyOrder>`), or a personal USER key id (`USER__<userUuid>__ord__<keyOrder>`) its owner created on their profile page. |
+| `REARM_API_KEY`   | One of the key's secrets. Shown once when minted; a key id can hold two secrets so the operator can rotate without downtime. |
 
 The key must have `PermissionFunction.AGENT` at `ORGANIZATION` scope.
 Other permission shapes won't authorize session operations and you'll
 see `Not authorized` on every call. Report to the operator if that
-happens — you can't fix it from your side.
+happens — you can't fix it from your side. A personal (USER) key is
+additionally capped by its owner: every call must also pass on the
+owner's own permissions at that moment, and what you do is attributed
+to the owner.
 
-### 1.2 Install the CLI — `26.05.21` exactly
+**How the CLI authenticates.** Nothing to configure: the CLI exchanges
+the key for a one-hour access token at `/api/programmatic/token` and
+sends it as a bearer to `/api/programmatic/graphql`; on a server that
+predates that endpoint it falls back to the classic one on its own.
+Access tokens die the moment the secret they came from is retired or
+regenerated, or the key is deactivated, so a sudden `invalid_token` or
+`Not authorized` on calls that worked a minute ago means the operator
+changed the key — report it, don't retry in a loop.
+
+### 1.2 Install the CLI — `26.09.1` exactly
 
 The CLI is the only sanctioned programmatic surface (raw HTTP is
-WAF-blocked in many deployments). Use **`26.05.21`** — older versions
+WAF-blocked in many deployments). Use **`26.09.1`** — older versions
 lack the `rearm agent session ...` / `rearm agent enrollkey`
-subcommands and the release vulnerability/violation output this doc
-relies on.
+subcommands, the release vulnerability/violation output, and the
+feature-set release targeting (`listfeaturesets` release fields,
+`switchfeatureset --release` / `--follow`, §10) this doc relies on.
+
+The source of truth for a release is its GitHub release page,
+<https://github.com/relizaio/rearm-cli/releases/tag/26.09.1>, which
+links the per-platform zips and the `sha256sums.txt` on the download
+CDN (`https://cdn.rearmhq.com/rearm-download/26.09.1/`). Pick the
+asset for your platform:
+
+| OS      | Arch            | Asset                              |
+|---------|-----------------|------------------------------------|
+| Linux   | x86_64 / amd64  | `rearm-26.09.1-linux-amd64.zip`    |
+| Linux   | aarch64 / arm64 | `rearm-26.09.1-linux-arm64.zip`    |
+| Linux   | arm (32-bit)    | `rearm-26.09.1-linux-arm.zip`      |
+| Linux   | i386            | `rearm-26.09.1-linux-386.zip`      |
+| macOS   | Apple silicon   | `rearm-26.09.1-darwin-arm64.zip`   |
+| macOS   | Intel           | `rearm-26.09.1-darwin-amd64.zip`   |
+| Windows | x86_64          | `rearm-26.09.1-windows-amd64.zip`  |
+| Windows | i386            | `rearm-26.09.1-windows-386.zip`    |
+| FreeBSD | amd64 / i386 / arm | `rearm-26.09.1-freebsd-{amd64,386,arm}.zip` |
+| OpenBSD | amd64 / i386    | `rearm-26.09.1-openbsd-{amd64,386}.zip` |
+| Solaris | amd64           | `rearm-26.09.1-solaris-amd64.zip`  |
 
 ```bash
-# Pick the right asset for your platform (see Linux x86_64 below)
-VERSION=26.05.21
-ASSET=rearm-${VERSION}-linux-amd64.zip
-curl -fsSL -O https://d7ge14utcyki8.cloudfront.net/rearm-download/${VERSION}/${ASSET}
+VERSION=26.09.1
+# Linux / macOS: derive the asset name from uname; on Windows pick it from the table.
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')          # linux | darwin | freebsd | openbsd
+ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; i?86) ARCH=386;; armv*) ARCH=arm;; esac
+ASSET=rearm-${VERSION}-${OS}-${ARCH}.zip
+curl -fsSL -O https://cdn.rearmhq.com/rearm-download/${VERSION}/${ASSET}
 
 # Verify the SHA-256 of the downloaded zip BEFORE unpacking.
 # Hashes are for the install zip, NOT the binary inside.
-sha256sum "${ASSET}"
-# Compare against the line for your platform in the table below.
+sha256sum "${ASSET}"     # macOS: shasum -a 256 "${ASSET}"
+# Compare against the line for your asset in the table below.
 ```
 
-Hashes for `26.05.21` (verbatim from
-`https://d7ge14utcyki8.cloudfront.net/rearm-download/26.05.21/sha256sums.txt`):
+Hashes for `26.09.1` (verbatim from the `sha256sums.txt` linked on the
+GitHub release, `https://cdn.rearmhq.com/rearm-download/26.09.1/sha256sums.txt`):
 
 ```
-37e768d68f270f3efa6c01560d0a107931223512a7ef06f88ac1dad81d324acc  rearm-26.05.21-darwin-amd64.zip
-92f8835bb088878fe91467ea0081ef9442f2ca6af0bc201a6fb16f13009b83a8  rearm-26.05.21-darwin-arm64.zip
-b2d2d4ab71b2272aa38a74a65543024657150e001d844a3df7d42f56d6dfa680  rearm-26.05.21-freebsd-386.zip
-72db75b2be6680ea9b0fbd010d0861f0024b2f5f6f4978436498bf14fd494e30  rearm-26.05.21-freebsd-amd64.zip
-4d3430863de8e7401ce23d2ec3444fd997417518d6088b6a305c215925e183a5  rearm-26.05.21-freebsd-arm.zip
-0211fddbcfe183554236cd55f401f281abfbb0c17fcb9a9248fb0ec114b87ae1  rearm-26.05.21-linux-386.zip
-6fffb0f89b13f7e755d603e994124e928b390ae86ed125a987ab4c60b6d4990e  rearm-26.05.21-linux-amd64.zip
-ddbe645432914f811d034e42228d435de4cd86a147b26e495234a736da408bab  rearm-26.05.21-linux-arm.zip
-f31e3751ef0d811201e14e34f76899cc310b708ae294b5a23aadad0abdf7d730  rearm-26.05.21-linux-arm64.zip
-d2705757906454501a24bae36d171761160ee62310be3580b8eb184c00c2045f  rearm-26.05.21-openbsd-386.zip
-7adbb86bf9dae69e07b25820d74d011525609386513479f320e3d2d4d26f34a1  rearm-26.05.21-openbsd-amd64.zip
-f2bda6093e1e2c9685ec345a2da9a5d25fc15627ab52315f332ffc0585cfdd7b  rearm-26.05.21-solaris-amd64.zip
-985b41c5414092a6f3fc33a0e645c5b10ca1f8f68e79f3e3a0fabaf3841f9fba  rearm-26.05.21-windows-386.zip
-ea05e3b7a73e9122a959a8c8902b30aed038aa5e5a19915a8cb221f4c7a1ea49  rearm-26.05.21-windows-amd64.zip
+6bc307fcf01bdccf900a6cc90716f29d004b83250ac8c70b3b1386d9ab46353b  rearm-26.09.1-darwin-amd64.zip
+296c41599d739ccba6d5ea595f5a6c7a3e91a6f3b93f0c5519673c87bc1712fa  rearm-26.09.1-darwin-arm64.zip
+3b9b1a77533c1a8260950d353a4b4d923156f0b9f250acb10da2659d2a1f6132  rearm-26.09.1-freebsd-386.zip
+46b06ef8035658f7d123fc0eb5ba4d5cf14e5f0f86deba130b0623a3d4d171b6  rearm-26.09.1-freebsd-amd64.zip
+23b8e1f971ea362643f8508c6f1aefaca36f92ab80125684bfd0b860e4cd38b7  rearm-26.09.1-freebsd-arm.zip
+445b084eeb3c704624a085026fd3eb9965546cae23adba67d97fbddb94c200ac  rearm-26.09.1-linux-386.zip
+9b44da897b80f9546bb005a2c1ca6a31bfda641c2b6cc86c21b129015df0446a  rearm-26.09.1-linux-amd64.zip
+6624650d6c0fe5fae04b6fe4cc943071b3c1577c2e6ee9a0c056337230b422d1  rearm-26.09.1-linux-arm.zip
+98dfbae123247634efcf9a62ec9f98c258c87d01e777094dfc013190a138cde1  rearm-26.09.1-linux-arm64.zip
+ed3387b8e00334143cc2b23451d92d7101cbcc05b10a9d2f04385ad2b9f90912  rearm-26.09.1-openbsd-386.zip
+88ec3e19074bf8cfb84fe194f2345a3cb21c60f8c0050154733768cc06bf4f16  rearm-26.09.1-openbsd-amd64.zip
+b3870c2143718aa3f295d75fa23a0df6a581bf0b4371ad6742b04fa1fd10bba6  rearm-26.09.1-solaris-amd64.zip
+258b153f59a3f1fd2f266ea21beeaa88f8cd60a9c19a60249b153266a63502aa  rearm-26.09.1-windows-386.zip
+f78f03bacec640f9349beca7acf0c3dd7699daa91f23ba7b0c4d661e69eeebf8  rearm-26.09.1-windows-amd64.zip
+```
+
+Container alternative (same release, pinned by digest, from the GitHub
+release page):
+
+```
+registry.relizahub.com/library/rearm-cli:26.09.1@sha256:1bac1b77ddcc9aba6f32c0ca81c72c33d04b1e6c039693abefe2e1bb3a00c298
 ```
 
 If the hash doesn't match, **stop**. Don't run an unverified binary.
@@ -903,10 +945,32 @@ rearm devops listfeaturesets \
   --namespace "<k8s namespace, typically 'rearm'>"
 ```
 
-Returns the product UUID and the current + available feature-set
-UUIDs. **Record the current `currentFeatureSet.uuid`** before doing
-anything else — that's the rollback target if the operator needs to
-revert.
+Returns, per product on the plan: the product UUID, the current
+feature set, the plan entry's `integrateType` (`FOLLOW` or
+`TARGET`), the release the plan currently aims at (`targetRelease`),
+the release the instance actually reports as running
+(`deployedRelease`, null until agent data has matched), and every
+available feature set with its deployable releases
+(`availableFeatureSets[].releases[]`: `uuid`, `version`,
+`lifecycle`, `approvedForInstanceEnvironment`). **Record the current
+`currentFeatureSet.uuid` and `targetRelease`** before doing anything
+else — that's the rollback target if the operator needs to revert.
+
+This is also how you answer "what version is deployed on this
+instance": `deployedRelease.version` per product, no product read
+access needed. The release fields need **rearm-cli 26.09.1 or
+newer** (the version pinned in §1.2); older CLIs still work but only
+show feature-set names.
+
+**Names are resolved here, by you.** Every write command takes
+UUIDs only. When the operator says "switch to feature set X" or
+"deploy version Y", find X under `availableFeatureSets[].name` and Y
+under that feature set's `releases[].version` in this response and
+use the matching `uuid`. Match exactly; if nothing matches, or more
+than one entry could be meant (a typo, a partial name, two similar
+feature sets), stop and ask the operator which one — do not pick the
+closest candidate and do not pass the name through to the CLI hoping
+it resolves.
 
 ### 10.2 Versioning — `versionfeatureset`
 
@@ -940,10 +1004,45 @@ rearm devops switchfeatureset \
   --namespace "<k8s namespace>"
 ```
 
-Re-run `listfeaturesets` to confirm `currentFeatureSet.uuid`
-matches. If after 10 min the pod image tag hasn't changed, the
-reconcile is wedged — surface to the operator with the timestamp of
-the switch and the instance URI.
+Without further flags the plan entry keeps its integrate type and
+follows the newest release of the new feature set that is approved
+for the instance environment; you do not choose the version.
+
+To deploy a **specific release** of the feature set, pass one of the
+candidates `listfeaturesets` returned under
+`availableFeatureSets[].releases[]` as `--release` (uuid or exact
+version). The plan entry becomes `TARGET`, pinned to that release,
+and stays there until changed. To go back to following the newest
+approved release, pass `--follow`. The two flags are mutually
+exclusive; both need **rearm-cli 26.09.1 or newer**, the version
+pinned in §1.2. If you are stuck on an older CLI, report that to the
+operator rather than guessing when the task needs a specific version.
+
+```bash
+# pin a release of the new feature set
+rearm devops switchfeatureset \
+  --instanceuri "<sandbox base URL>" \
+  --product "<product-uuid>" \
+  --featureset "<feature-set uuid>" \
+  --release "<version or uuid from listfeaturesets>" \
+  --namespace "<k8s namespace>"
+
+# return to following the newest approved release
+rearm devops switchfeatureset ... --featureset "<feature-set uuid>" --follow
+```
+
+A release that is not `ASSEMBLED` or later (DRAFT, PENDING,
+REJECTED, CANCELLED) cannot be pinned; the server rejects it with the
+list of valid candidates to consult. `approvedForInstanceEnvironment
+= false` is allowed for a pin but means the release has not passed
+the environment's approval gate — mention that to the operator
+rather than pinning silently.
+
+Re-run `listfeaturesets` to confirm `currentFeatureSet.uuid` (and
+`targetRelease.version` when you pinned one) match. If after 10 min
+the pod image tag hasn't changed, the reconcile is wedged — surface
+to the operator with the timestamp of the switch and the instance
+URI.
 
 ### 10.4 Pre-flight checklist
 
@@ -956,6 +1055,7 @@ all of these. If you can't tick all six, stop and ask:
 - [ ] You've recorded the previous `currentFeatureSet.uuid` so rollback is one command away.
 - [ ] You understand the change rolls a running pod within minutes — there is no preview mode.
 - [ ] You are on **ReARM Pro** — `listfeaturesets` succeeded at all (not a CE backend).
+- [ ] If the task names a specific version: it appears under `availableFeatureSets[].releases[]` for the target feature set, and your CLI is 26.09.1 or newer (`--release` / `--follow`).
 
 ---
 

@@ -1,0 +1,1014 @@
+# ---------------------------------------------------------------------------
+# Programmatic (API key) root fields
+#
+# The ReARM GraphQL schema is split by caller:
+#   schema.graphqls        shared types, inputs, enums, scalars
+#   user.graphqls          root fields for signed-in users (JWT); the Query and
+#                          Mutation base types are declared here
+#   programmatic.graphqls  root fields for API keys (extend Query / Mutation)
+#
+# /api/programmatic/graphql (no version segment: the programmatic schema evolves
+# additively, with deprecations) accepts only the fields declared in
+# programmatic.graphqls and needs no CSRF token or session. /graphql keeps
+# serving every field for backward compatibility.
+# ---------------------------------------------------------------------------
+
+extend type Query {
+	"""Export the Catalog slice of the key's org as a spec (CONFIGURATION_READ); optionally only the named components."""
+	exportCatalogProgrammatic(components: [String!]): CatalogSpec
+	"""Export the Branches slice of one component / product as a spec (CONFIGURATION_READ)."""
+	exportBranchesProgrammatic(component: String!): BranchesSpec
+	release(releaseUuid: ID!, orgUuid: ID): Release
+	
+	# Programmatic
+	getSbomProbingResult(runId: String!): SbomProbingResult
+	getReleaseByHashProgrammatic(hash: String!, componentId: ID): String
+	"""
+	Exact-version lookup. Returns the release's OBOM (CycloneDX 1.6: the release
+	plus every dependency release unwound, with deliverables) as a JSON string,
+	or "{}" when the version does not exist on the component / product.
+	Lifecycle and approvals are not consulted: the named version is returned as is.
+	componentId is the component / product uuid, or -- with an organization-scoped
+	key -- its name: matched case-insensitively against the org's active components
+	and products, exactly one hit required (unknown or ambiguous names error).
+	"""
+	getReleaseByReleaseVersionProgrammatic(version: String!, componentId: ID!): String
+	getLatestReleaseProgrammaticCdx(release: GetLatestReleaseInput!): String
+	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): Release
+	getInstanceRevisionCycloneDxExportProg(instanceUuid: ID, instanceUri: String, revision: Int!, namespace: String, stateType: InstanceStateType): String
+	isInstanceHasSealedSecretCert(instanceUuid: ID, instanceUri: String): Boolean
+	getInstancePropSecrets(instanceUuid: ID, instanceUri: String, namespace: String!, revision: Int!, properties: [String], secrets: [String], product: ID, productSpecificProps: Boolean): PropSecrets
+	deliverableDownloadSecrets(instanceUuid: ID, instanceUri: String, deliverableDigest: String!, namespace: String, releaseNs: String): ComponentAuthentication
+	# Per-product feature-set inventory of an instance plan, scoped to a
+	# namespace. FREEFORM-only; requires DEVOPS_READ on the instance (or
+	# its parent cluster). namespace is required for STANDALONE_INSTANCE
+	# and CLUSTER instances; for CLUSTER_INSTANCE it is pinned to the
+	# instance's own namespace and any value passed is ignored. Pass
+	# either instanceUuid or instanceUri (looked up against the FREEFORM
+	# key's org) to identify the instance.
+	listInstanceProductFeatureSets(instanceUuid: ID, instanceUri: String, namespace: String): [InstanceProductFeatureSets!]!
+	"""
+	Programmatic poll endpoint for an agent's session -- returns
+	actionable events (lifecycle changes on attributed releases,
+	approval flips, new session policy verdicts) strictly after the
+	supplied cursor. Auth: FREEFORM key bound to the session's owning
+	agent identity. Designed for closed-loop "disapproval → agent
+	fix" flows; see {@code /api/agents/orientation.md} for the
+	canonical polling cadence.
+	"""
+	agentSessionInboxProgrammatic(inboxRequest: AgentSessionInboxInput!): [AgentSessionInboxEvent!]!
+	"""
+	FREEFORM-auth read of a single session by uuid. Returns null when
+	the session does not exist or is owned by a different org than the
+	calling key. The JWT-authenticated {@code session} query is the
+	operator/UI path; this is the agent's path for fetching its own
+	full session state (policy verdicts, releases, PRs) after an inbox
+	event.
+	"""
+	sessionProgrammatic(sessionUuid: ID!): Session
+	"""
+	FREEFORM-auth read of a single release by uuid, scoped to the
+	calling agent's session. The caller must pass either {@code
+	sessionUuid} (the row uuid returned by {@code sessionInitializeProgrammatic})
+	or {@code clientSessionId} (the agent-chosen id). Authorization
+	chain: (a) calling key carries {@code PermissionFunction.AGENT}
+	at {@code ORGANIZATION} scope; (b) the session's owning agent
+	belongs to the calling key's identity; (c) the requested release
+	is attributed to that session (its commits trace through to this
+	release). Any failure throws {@code AccessDeniedException} and
+	is logged SECURITY-level. Used by agents after a LIFECYCLE_CHANGE
+	/ APPROVAL inbox event to pull updateEvents + approvalEvents on
+	the release.
+	"""
+	agenticReleaseProgrammatic(releaseUuid: ID!, sessionUuid: ID, clientSessionId: String): Release
+}
+
+extend type Mutation {
+	"""
+	Declarative apply of the Catalog slice (API key, write access on the org). Idempotent, keyed by
+	component name. dryRun computes the change set without writing.
+	"""
+	applyCatalogProgrammatic(spec: CatalogSpecInput!, dryRun: Boolean, source: DeclarativeSourceInput): DeclarativeApplyResult
+	"""
+	Declarative apply of the Branches slice for one component / product (API key, write access on the
+	org). Idempotent, keyed by branch name. Branches absent from the spec follow Settings.declarativePrune.
+	"""
+	applyBranchesProgrammatic(spec: BranchesSpecInput!, dryRun: Boolean, source: DeclarativeSourceInput): DeclarativeApplyResult
+	"""
+	Programmatic (API-key) upsert of a PullRequest. CI registers the PR
+	row independently of release creation so the registration survives
+	push/pull_request races and DO_BUILD=false short-circuits.
+	Idempotent on (targetVcsRepository, identity) -- safe to call
+	multiple times per CI run (e.g. once per component in a monorepo).
+	When `commit` is supplied and an SCE already exists for
+	(targetVcs, commit), the head is advanced to that SCE in the same
+	call; otherwise the PR row is registered without a head and the
+	subsequent addReleaseProgrammatic call (which carries the same PR
+	input) will advance the head once the SCE is persisted.
+	Resolves the target VCS by `vcsUri`+`repoPath` (FREEFORM or
+	ORGANIZATION_RW key) or by `component` UUID (COMPONENT,
+	FREEFORM, or ORGANIZATION_RW key). Accepts COMPONENT, FREEFORM,
+	or ORGANIZATION_RW API keys; other ORGANIZATION_* types are
+	rejected.
+	"""
+	upsertPullRequestProgrammatic(input: PullRequestUpsertProgrammaticInput!): PullRequest
+	getNewVersionProgrammatic(newVersionInput: GetNewVersionInput!): Version
+	"""
+	Claim or disown a commit as the key's agent. The commit is named the way getversion and
+	addrelease name a component -- a component uuid, or vcsUri plus repoPath -- plus the sha,
+	which the server resolves through that component's repository. A sha ReARM has never seen is
+	refused rather than recorded: a commit that does not exist cannot be a lock cause.
+
+	The session is required rather than inferred from the key: an attestation says who stood
+	behind a claim, and a key is not a who. An agent already opens a session before it works, so
+	it has one to name.
+
+	This is the mutation a refusal points at. An agent that made a mistake claims it, and if
+	that was the last thing a lock was waiting on and the lock is allowed to release itself, the
+	next build goes through with no human in the loop.
+	"""
+	attestProgrammatic(componentRef: ComponentRefInput!, commit: String!,
+		verdict: AttestationVerdict!, note: String, session: ID!): Attestation
+	"""
+	Release a lock whose level is AGENT and whose requirement is met. Anything stricter, or any
+	lock that has escalated, refuses and says so.
+
+	The session is required and must belong to the calling key's agent: the LOCK_RELEASE
+	attestation this writes is the durable record of who released the lock.
+	"""
+	releaseLockProgrammatic(lockUuid: ID!, reason: String!, session: ID!): Lock
+	addReleaseProgrammatic(release: ReleaseInputProg!): Release
+	"""
+	Batch counterpart to addReleaseProgrammatic. Creates every supplied
+	release in a single all-or-nothing transaction -- if any entry fails,
+	none are persisted. Auto-integration of products is deferred until all
+	releases are created, then fired once per affected feature set (deduped
+	across the whole batch) instead of once per release. Use this when a CI
+	run builds several component releases at once and you want a single
+	product auto-integrate rather than one per component version.
+	"""
+	addReleasesProgrammatic(releases: [ReleaseInputProg!]!): [Release]
+	addOutboundDeliverablesProgrammatic(deliverables: AddODeliverableInput!): Release
+	createComponentProgrammatic(component: CreateComponentInput!): Component
+	"""
+	Programmatic counterpart to createComponentInPerspective. Requires a FREEFORM API key
+	with WRITE permission on the supplied perspective (or a broader scope that covers it).
+	Only real perspectives (PerspectiveType.PERSPECTIVE) are accepted -- product-derived
+	perspectives are rejected.
+	"""
+	createComponentInPerspectiveProgrammatic(component: CreateComponentInput!, perspectiveUuid: ID!): Component
+	addArtifactProgrammatic(artifactInput: AddArtifactInput): Release
+	approveReleaseProgrammatic(releaseApprovals: ReleaseApprovalProgrammaticInput!): Release
+	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
+	probeSbomProgrammatic(sbom: String!, componentUuid: ID, branchUuid: ID): SbomProbingRun
+	releasecompletionfinalizerProgrammatic(release: ID!): Boolean
+	instData(instance: InstanceDataInput!): Object
+	# Report deployment failures from ReARM CD. Batched, idempotent per
+	# (namespace, deploymentName, fingerprint): a failure repeating on every
+	# reconcile updates one row's lastSeen/occurrenceCount rather than inserting.
+	instanceDeploymentEventsProgrammatic(events: [InstanceDeploymentEventInput!]!): Object
+	setInstanceSealedSecretCert(sealedCert: String!): Boolean
+	# Switch a deployed product on the instance plan from its current
+	# feature set to a different one (the new feature set must belong to
+	# the same product). FREEFORM-only; requires DEVOPS_WRITE on the
+	# instance (or its parent cluster). namespace is required for
+	# STANDALONE_INSTANCE and CLUSTER instances (the (product, namespace)
+	# pair uniquely identifies a deployment on the plan); for
+	# CLUSTER_INSTANCE it is pinned to the instance's own namespace and
+	# any value passed is ignored. Pass either instanceUuid or
+	# instanceUri (looked up against the FREEFORM key's org) to identify
+	# the instance.
+	"""
+	Switch a product deployment on the instance plan to another feature set of the same product.
+	release: optional release uuid or version on the new feature set; pins the deployment to it
+	(the plan entry becomes TARGET). follow: optional, true returns the entry to FOLLOW. Without
+	either, the integrate type is kept and the previous target release is cleared.
+	"""
+	switchInstanceProductFeatureSet(instanceUuid: ID, instanceUri: String, productUuid: ID!, featureSetUuid: ID!, namespace: String, release: String, follow: Boolean): Instance
+
+	# Spin up a new feature set on a PRODUCT with selected dependency-
+	# branch overrides applied on top of the BASE feature set's dep
+	# config. The new feature set is named after the override branch
+	# (the first one when multiple are supplied), gets autoIntegrate=
+	# ENABLED, and triggers an auto-integrate run before the call
+	# returns. FREEFORM-only; requires VERSION_FEATURESET on the
+	# product (READ-or-stronger key type passes -- the function itself
+	# is the gate).
+	versionFeatureSet(productUuid: ID!, overrides: [VersionFeatureSetOverride!]!): Branch
+
+	# Open a session for a ROOT agent on the calling FREEFORM key. v1
+	# requires agentName + agentModel on the input -- multi-root-per-key
+	# means we cannot infer which agent the caller is acting as without
+	# an explicit name, and the model identity is the primary
+	# monitoring grouping so we ask for it up-front.
+	#
+	# Idempotent on (org, agent, clientSessionId): calling with the
+	# same client session id while an OPEN session exists returns
+	# that session (typical agent crash-recovery shape).
+	sessionInitializeProgrammatic(sessionInit: SessionInitializeInput!): Session
+
+	# Heartbeat -- bumps lastActivityAt. No-op on a CLOSED session.
+	sessionTouchProgrammatic(sessionUuid: ID!): Session
+
+	# Close the session. Terminal -- a closed session cannot be
+	# re-opened. Idempotent on already-closed sessions.
+	sessionCloseProgrammatic(sessionUuid: ID!): Session
+
+	# Upload one or more artifacts and bind them to the session in a
+	# single round-trip. Artifacts created via this path are owned by
+	# the session (belongsTo=AGENT_SESSION) -- they don't dangle off
+	# any release or component. This is the only way to add artifacts
+	# to a session; attaching a pre-existing release / sce artifact
+	# uuid is intentionally not exposed (artifacts that originate
+	# elsewhere don't belong on a session).
+	#
+	# Multipart-encoded: each ArtifactInput.file is a separate part of
+	# the multipart body per the Apollo upload spec.
+	sessionAddArtifactProgrammatic(addArtifact: SessionAddArtifactInput!): Session
+
+	# Refine title / branch / clientSessionId mid-session.
+	sessionUpdateMetaProgrammatic(updateMeta: SessionUpdateMetaInput!): Session
+
+	# Register a SUB agent under an existing parent agent (ROOT or SUB).
+	# The new sub's rootAgent is resolved to the parent's owning root,
+	# its model ontology defaults to the parent's, and its uuid is
+	# appended to the parent's subAgents list. Inherits parent's API
+	# keys for v1.
+	spawnSubAgentProgrammatic(spawnSubAgent: SpawnSubAgentInput!): Agent
+
+	# Attach (or replace) a CycloneDX ML-BOM model card on an existing
+	# ontology row. The card is stored opaquely -- ReARM does not
+	# validate its structure beyond JSON parsing.
+	setModelOntologyModelCardProgrammatic(input: SetModelCardInput!): ModelOntology
+	reportDeviceState(report: DeviceStateReportInput!): Device
+
+	# FREEFORM-auth'd self-enrollment for an AI agent. The calling key
+	# must have PermissionFunction.AGENT at ORGANIZATION scope and the
+	# signing-key input's {@code ownerType} must be {@code AGENT} with
+	# {@code ownerUuid} = the root agent resolved from the key. The
+	# operator-driven {@code enrollSigningKey} is the equivalent for
+	# COMMITTER + AGENT owners with a JWT -- this variant lets an agent
+	# bootstrap its own signing key on first run without needing the
+	# operator to do it ahead of time.
+	enrollSigningKeyProgrammatic(signingKey: AgentSigningKeyInput!): SigningKey
+}
+
+"""
+How a programmatic caller names a component: by uuid, or by the VCS coordinates CI already has.
+The same block getversion and addrelease accept, resolved by the same code, so a CI job that can
+call one can call the others without learning a second convention.
+"""
+input ComponentRefInput {
+	component: ID
+	vcsUri: String
+	repoPath: String
+}
+
+
+input AddArtifactInput {
+	release: ID
+	component: ID
+	version: String
+	releaseArtifacts: [ArtifactInput]
+	deliverableArtifacts: [DeliverableArtifactInput]
+	sceArtifacts: [SceArtifactInput]
+}
+
+input AddODeliverableInput {
+	release: ID
+	component: ID
+	variant: ID
+	version: String
+	deliverables: [DeliverableInput]
+}
+
+enum AgentInboxEventKind {
+	"""A release's lifecycle moved (e.g. ASSEMBLED → REJECTED, PENDING → ASSEMBLED)."""
+	LIFECYCLE_CHANGE
+	"""An approval entry on a release flipped (APPROVED / DISAPPROVED / withdrawn)."""
+	APPROVAL
+	"""A new PolicyEvent landed on the session itself (post-init artifact-attach / commit-attribution re-eval)."""
+	POLICY_VERDICT
+}
+
+enum AgentInboxSource {
+	"""A human user performed the action (approval, manual lifecycle change)."""
+	HUMAN
+	"""An automated component-level output trigger fired (CEL gate matched)."""
+	POLICY_GATE
+	"""Lifecycle progressed by the system without an explicit trigger (e.g. initial release-created PENDING)."""
+	RELEASE_AUTO
+}
+
+"""
+One actionable event the agent owning a session needs to react to --
+typically a release minted from the session's commits changing
+lifecycle (REJECTED by a CEL gate, ASSEMBLED, etc.) or carrying a
+new approval (DISAPPROVED with reviewer comment is the canonical
+"agent fix loop" trigger). Polled by the agent via
+{@code agentSessionInboxProgrammatic} with a cursor it stores
+client-side.
+"""
+type AgentSessionInboxEvent {
+	"""
+	Opaque, monotone cursor token. Pass back as the {@code since}
+	field on the next poll to fetch strictly newer events. Stable --
+	the same event always returns the same cursor.
+	"""
+	cursor: String!
+	occurredAt: DateTime!
+	kind: AgentInboxEventKind!
+	"""
+	Release this event is about, when {@code kind} is release-side
+	(LIFECYCLE_CHANGE / APPROVAL). Null on session-side events
+	(POLICY_VERDICT).
+	"""
+	release: Release
+	"""Previous value, when meaningful (e.g. prior lifecycle)."""
+	oldValue: String
+	"""New value (e.g. new lifecycle, "DISAPPROVED")."""
+	newValue: String
+	"""
+	Free-form human-readable reason for the event:
+	  - LIFECYCLE_CHANGE: the matching ReleaseUpdateEvent.message
+	    (e.g. "Triggered by 'Reject when any commit is not VERIFIED'
+	    (CEL: …)") -- what *caused* the lifecycle change.
+	  - APPROVAL: the reviewer's free-text comment when
+	    DISAPPROVED; null on APPROVED unless a comment was left.
+	  - POLICY_VERDICT: the failing policy's failure message.
+	"""
+	reason: String
+	source: AgentInboxSource!
+	"""
+	User uuid that authored the change, when {@code source = HUMAN}.
+	Null for automated / policy-driven events.
+	"""
+	actorUuid: ID
+	"""Approval role id ({@code ApprovalEntry.roleId} snapshot), when {@code kind = APPROVAL}."""
+	actorRoleId: String
+}
+
+input AgentSessionInboxInput {
+	sessionUuid: ID!
+	"""
+	Opaque cursor from a prior poll. Null = "from session start".
+	Server returns events strictly after this cursor.
+	"""
+	since: String
+	"""Optional filter; null = all kinds."""
+	kinds: [AgentInboxEventKind!]
+	"""Default 50; capped at 200."""
+	limit: Int
+}
+
+"""
+Programmatic (FREEFORM-auth'd) variant of SigningKeyInput with no {@code org}
+field: the org is always the one the calling key resolves to, so accepting a
+client-supplied org is redundant and a footgun (a mismatched value previously
+surfaced as an opaque "Not authorized"). Used only by
+{@code enrollSigningKeyProgrammatic}.
+"""
+input AgentSigningKeyInput {
+	format: SignatureFormat!
+	ownerType: SigningKeyOwnerType!
+	ownerUuid: ID!
+	"""SHA256:... for SSH; long key id for GPG. Derived from pubKey when omitted."""
+	fingerprint: String
+	"""Optional override; defaults to the agent's identity where applicable."""
+	identity: String
+	"""Single-line SSH or ASCII-armoured GPG block."""
+	pubKey: String!
+}
+
+type BranchSpecEntry {
+	name: String!
+	type: BranchType
+	versionSchema: String
+	marketingVersionSchema: String
+	vcsBranch: String
+	autoIntegrate: AutoIntegrateState
+	findingAnalyticsParticipation: FindingAnalyticsParticipation
+	dependencies: [DependencySpec!]
+	dependencyPatterns: [DependencyPattern!]
+	provenance: DeclarativeProvenance
+}
+
+input BranchSpecInput {
+	name: String!
+	type: BranchType
+	versionSchema: String
+	marketingVersionSchema: String
+	vcsBranch: String
+	autoIntegrate: AutoIntegrateState
+	findingAnalyticsParticipation: FindingAnalyticsParticipation
+	dependencies: [DependencySpecInput!]
+	dependencyPatterns: [DependencyPatternSpecInput!]
+}
+
+type BranchesSpec {
+	kind: DeclarativeKind!
+	version: Int!
+	component: String!
+	authoritative: Boolean!
+	branches: [BranchSpecEntry!]!
+}
+
+"""Branches slice: branches of a component, or feature sets of a product. The file is authoritative for that component."""
+input BranchesSpecInput {
+	"""Must be BRANCHES; the file's kind is validated against the operation."""
+	kind: DeclarativeKind!
+	version: Int!
+	"""Component or product name."""
+	component: String!
+	"""
+	When true (the default for files) the spec claims every non-base branch of the component and
+	Settings.declarativePrune decides what happens to branches it does not list. Single-branch
+	callers such as the Terraform provider pass false.
+	"""
+	authoritative: Boolean
+	branches: [BranchSpecInput!]!
+}
+
+type CatalogComponent {
+	name: String!
+	type: ComponentType!
+	kind: ComponentKind
+	versionSchema: String
+	marketingVersionSchema: String
+	versionType: VersionType
+	featureBranchVersioning: String
+	vcsUri: String
+	vcsType: String
+	repoPath: String
+	nature: ComponentNature
+	deviceClass: DeviceClass
+	branchSuffixMode: BranchSuffixMode
+	identifiers: [Identifier!]
+	provenance: DeclarativeProvenance
+}
+
+input CatalogComponentInput {
+	name: String!
+	type: ComponentType!
+	kind: ComponentKind
+	versionSchema: String
+	marketingVersionSchema: String
+	versionType: VersionType
+	featureBranchVersioning: String
+	"""Base branch name on create only (main by default)."""
+	defaultBranch: String
+	"""VCS repository by URI; created in the org when missing."""
+	vcsUri: String
+	vcsType: String
+	repoPath: String
+	nature: ComponentNature
+	deviceClass: DeviceClass
+	branchSuffixMode: BranchSuffixMode
+	identifiers: [IdentifierInput!]
+}
+
+type CatalogSpec {
+	kind: DeclarativeKind!
+	version: Int!
+	authoritative: Boolean!
+	components: [CatalogComponent!]!
+}
+
+"""Catalog slice: components and products of an organization (no branches, no releases)."""
+input CatalogSpecInput {
+	"""Must be CATALOG; the file's kind is validated against the operation."""
+	kind: DeclarativeKind!
+	version: Int!
+	"""
+	When true the file claims every active component / product of the org: with
+	Settings.declarativePrune = ARCHIVE, components not listed are archived. Partial
+	files (per team) leave this false.
+	"""
+	authoritative: Boolean
+	components: [CatalogComponentInput!]!
+}
+
+input ConditionGroupOnGetLatestReleaseInput {
+	matchOperator: MatchOperator
+	conditions: [ConditionOnGetLatestReleaseInput]
+}
+
+input ConditionOnGetLatestReleaseInput {
+	approvalEntry: String
+	approvalState: ApprovalState
+}
+
+enum DeclarativeAction {
+	CREATE
+	UPDATE
+	UNCHANGED
+	ARCHIVE
+	ERROR
+}
+
+type DeclarativeApplyResult {
+	kind: DeclarativeKind!
+	dryRun: Boolean!
+	specHash: String!
+	changes: [DeclarativeChange!]!
+	created: Int!
+	updated: Int!
+	unchanged: Int!
+	archived: Int!
+	errors: Int!
+}
+
+type DeclarativeChange {
+	"""Slice the entry belongs to: CATALOG entries are components, BRANCHES entries are branches."""
+	kind: DeclarativeKind!
+	name: String!
+	action: DeclarativeAction!
+	"""Fields that differ (UPDATE) or would be set (CREATE)."""
+	fields: [String!]
+	message: String
+}
+
+"""Ownership slice a declarative spec describes. One kind per file; the apply / export operations are per kind."""
+enum DeclarativeKind {
+	CATALOG
+	BRANCHES
+}
+
+type DeclarativeProvenance {
+	"""SHA-256 of the canonical JSON of the spec that last touched this row."""
+	specHash: String
+	appliedAt: DateTime
+	source: DeclarativeSource
+}
+
+type DeclarativeSource {
+	repo: String
+	path: String
+	commit: String
+}
+
+"""Where an applied spec came from, recorded on every row the apply touched."""
+input DeclarativeSourceInput {
+	repo: String
+	path: String
+	commit: String
+}
+
+input DeliverableArtifactInput {
+	deliverable: ID!
+	variant: ID
+	artifacts: [ArtifactInput]!
+}
+
+input DependencyPatternSpecInput {
+	pattern: String!
+	targetBranchName: String
+	defaultStatus: Status
+	fallbackToBase: FallbackToBase
+}
+
+type DependencySpec {
+	component: String!
+	branch: String
+	release: String
+	status: Status
+	isFollowVersion: Boolean
+}
+
+input DependencySpecInput {
+	"""Component name."""
+	component: String!
+	"""Branch name of that component; omitted = follow its base branch semantics as today."""
+	branch: String
+	"""Pin to a release by version."""
+	release: String
+	status: Status
+	isFollowVersion: Boolean
+}
+
+"""
+A feature set the caller could switch a deployment to, with the releases it could target.
+"""
+type FeatureSetOption {
+	uuid: ID!
+	name: String!
+	"""
+	Newest first, ASSEMBLED or later lifecycles only, capped server-side. Any of these is a valid
+	value for switchInstanceProductFeatureSet.release.
+	"""
+	releases: [FeatureSetReleaseRef!]!
+}
+
+type FeatureSetReleaseRef {
+	uuid: ID!
+	version: String!
+	lifecycle: String
+	createdDate: DateTime
+	"""
+	True when the release carries an approval for the instance plan's environment (or the plan has
+	no environment, in which case FOLLOW takes the newest release regardless).
+	"""
+	approvedForInstanceEnvironment: Boolean!
+}
+
+input GetLatestReleaseInput {
+	"""
+	Component / product uuid, or -- with an organization-scoped key -- its name:
+	matched case-insensitively against the org's active components and products,
+	exactly one hit required (unknown or ambiguous names error).
+	"""
+	component: ID
+	product: ID
+	branch: String
+	tags: [TagRecordInput]
+	lifecycle: ReleaseLifecycleEnum
+	conditions: ConditionGroupOnGetLatestReleaseInput
+	vcsUri: String
+	repoPath: String
+	upToVersion: String
+	"""
+	Only consider releases whose approvedEnvironments contains this built-in
+	environment (DEV, BUILD, TEST, SIT, UAT, PAT, STAGING, PRODUCTION; case-insensitive).
+	Orthogonal to lifecycle and conditions: they are applied on top when set.
+	Environment approvals are granted by an ADD_APPROVED_ENVIRONMENT trigger or an
+	admin override; a later policy disapproval does not revoke them (only an admin
+	override removes), so combine with approval-entry conditions when the current
+	approval state matters. Like conditions, this scans the newest 300 releases
+	of the branch.
+	"""
+	approvedEnvironment: String
+}
+
+input GetNewVersionInput {
+	component: ID
+	branch: String!
+	modifier: String
+	action: String
+	metadata: String
+	versionSchema: String
+	lifecycle: ReleaseLifecycleEnum
+	onlyVersion: Boolean
+	sourceCodeEntry: SourceCodeEntryInput
+	commits: [SourceCodeEntryInput]
+	vcsUri: String
+	repoPath: String
+	vcsDisplayName: String
+	createComponentIfMissing: Boolean
+	createComponentName: String
+	createComponentVersionSchema: String
+	createComponentFeatureBranchVersionSchema: String
+	"""
+	Optional perspective UUID. When supplied with createComponentIfMissing
+	and the component does not yet exist, the new component is created and
+	assigned to this perspective; authorization with a FREEFORM key requires
+	WRITE on the perspective. Ignored when the component already exists.
+	"""
+	perspective: ID
+	"""
+	Optional PR metadata bundled with the call. When supplied on
+	addReleaseProgrammatic, a first-class PullRequest entity is upserted
+	by (targetVcsRepository, identity) and its head is advanced to the
+	release's SCE. The PR aggregator picks up the release on subsequent
+	VALIDATE_PR firings. Ignored on calls that do not create a release.
+	"""
+	pullRequest: PullRequestInfoInput
+	"""
+	Opt-in dedup override for the commit-keyed gate on
+	(component, branch, commit). When a version_assignment already
+	exists for the supplied commit on this branch:
+	  - rebuild = false (default) → mutation fails with an error so the
+	    duplicate CI run can fail fast instead of minting a second
+	    release on the same head.
+	  - rebuild = true → return the existing version assignment so the
+	    caller intentionally reuses the same version (e.g. a re-issue
+	    of an artifact for the same commit).
+	No effect when no commit is supplied (manual mints, marketing
+	versions, commit-less callers).
+	"""
+	rebuild: Boolean
+}
+
+input InstanceDataInput {
+	uuid: ID
+	namespace: String
+	senderId: String
+	timeSent: String
+	images: [Object]
+	type: String
+	labels: Object
+	annotations: Object
+}
+
+# One deployment failure reported by ReARM CD. Batched: a reconcile sends every
+# failure it hit in a single call. `fingerprint` is the agent-computed dedup key
+# -- same underlying fault must yield the same value across reconciles, or a
+# persistent failure will accumulate rows instead of a counter. Omit it and the
+# server derives one from (deploymentName, phase, failureClass).
+input InstanceDeploymentEventInput {
+	instance: ID
+	namespace: String
+	senderId: String
+	deploymentName: String!
+	featureSet: ID
+	product: ID
+	targetRelease: ID
+	phase: DeploymentPhase
+	failureClass: DeploymentFailureClass
+	message: String
+	detail: String
+	attemptedAt: DateTime
+	fingerprint: String
+}
+
+type InstanceProductFeatureSets {
+	namespace: String
+	product: NamedRef!
+	currentFeatureSet: NamedRef
+	"""
+	Integrate type of the plan entry: FOLLOW (latest release approved for the instance environment),
+	TARGET (pinned release), INTEGRATE, NONE or UNINSTALL.
+	"""
+	integrateType: IntegrateType
+	"""
+	Release the plan currently aims at: the FOLLOW-resolved release or the pinned TARGET release.
+	Null when nothing is selected yet (TARGET without a release, or no approved release).
+	"""
+	targetRelease: FeatureSetReleaseRef
+	"""
+	Release the instance actually reports as running for this product (matched from agent data).
+	Null when nothing has matched yet.
+	"""
+	deployedRelease: FeatureSetReleaseRef
+	availableFeatureSets: [FeatureSetOption!]!
+}
+
+type KeyValue {
+	key: String
+	value: String
+	lastUpdated: Int
+}
+
+enum MatchOperator {
+	OR
+	AND
+}
+
+type NamedRef {
+	uuid: ID!
+	name: String!
+}
+
+type PropSecrets {
+	properties: [KeyValue]
+	secrets: [KeyValue]
+}
+
+"""
+PR metadata supplied by CI alongside an addReleaseProgrammatic call.
+The caller (rearm-actions or any CI integration) populates these fields
+from the SCM event context. Identity is opaque string ((targetVcs,
+identity) is the uniqueness boundary) -- supports GitHub PR numbers as
+strings, GitLab MR iids, and Gerrit change-IDs uniformly.
+"""
+input PullRequestInfoInput {
+	"""
+	SCM-side PR / MR / change-list identity (e.g. GitHub PR number "42",
+	GitLab MR iid "42", Gerrit change-id). Required.
+	"""
+	identity: String!
+	"""
+	"OPEN", "CLOSED", or "MERGED". Case-insensitive -- converted to
+	PullRequestState server-side.
+	"""
+	state: String!
+	title: String
+	sourceBranchName: String
+	targetBranchName: String
+	"""
+	Link back to the PR in the upstream SCM (e.g., GitHub PR URL).
+	"""
+	endpoint: String
+}
+
+input PullRequestUpsertProgrammaticInput {
+	identity: String!
+	state: String!
+	title: String
+	sourceBranchName: String
+	targetBranchName: String
+	endpoint: String
+	"""
+	Target VCS resolution. With a COMPONENT API key the component is
+	implicit (the key identifies it) -- `component` / `vcsUri` are not
+	needed. With an ORGANIZATION_RW or FREEFORM key, supply either
+	`component` (UUID of the target component, whose VCS is used) or
+	the (`vcsUri`, `repoPath`) pair plus optionally `vcsDisplayName`.
+	When both are present, `component` wins and vcsUri/repoPath are
+	ignored.
+	"""
+	component: ID
+	vcsUri: String
+	repoPath: String
+	vcsDisplayName: String
+	"""
+	When supplied, the backend looks up the SCE for (targetVcs, commit)
+	and advances the PR head to it if found. If no SCE exists yet for
+	that commit, the PR row is registered without a head -- the
+	subsequent addReleaseProgrammatic call carrying the same PR input
+	will advance the head once the SCE is persisted.
+	"""
+	commit: String
+}
+
+input ReleaseApprovalProgrammaticInput {
+	approvals: [ReleaseApprovalInput]
+	release: ID
+	component: ID
+	version: String
+}
+
+input ReleaseInputProg {
+	version: String!
+	lifecycle: ReleaseLifecycleEnum
+	component: ID
+	branch: String
+	sourceCodeEntry: SourceCodeEntryInput
+	artifacts: [ArtifactInput]
+	inboundDeliverables: [DeliverableInput]
+	outboundDeliverables: [DeliverableInput]
+	endpoint: String
+	commits: [SourceCodeEntryInput]
+	"""
+	DEPRECATED -- silently dropped by addReleaseProgrammatic. The resolver
+	only consumes source-code-entry artifacts from `sourceCodeEntry.artifacts`
+	(or each `commits[i].artifacts` for multi-commit inputs). Nest the
+	artifacts there instead. The server logs a WARN whenever this field
+	is supplied so we can track remaining callers before removing it.
+	"""
+	sceArts: [ArtifactInput] @deprecated(reason: "Nest SCE artifacts under sourceCodeEntry.artifacts (or commits[i].artifacts); this top-level field is ignored by addReleaseProgrammatic.")
+	identifiers: [IdentifierInput]
+	gudidRecord: GudidRecordInput
+	gudidStatus: GudidStatus
+	"""
+	Release lifecycle date: the CLE END_OF_SUPPORT projection (TeaTransformerService).
+	NOT the device support window -- that is declared on the device model at
+	ComponentData.medicalProfile.deviceSupportWindow and resolved by DeviceLifecycleResolver.
+	"""
+	eos: String
+	"""
+	Release lifecycle date: the CLE END_OF_LIFE projection (TeaTransformerService).
+	NOT the device support window -- that is declared on the device model at
+	ComponentData.medicalProfile.deviceSupportWindow and resolved by DeviceLifecycleResolver.
+	"""
+	eol: String
+	vcsUri: String
+	repoPath: String
+	vcsDisplayName: String
+	createComponentIfMissing: Boolean
+	createComponentName: String
+	createComponentVersionSchema: String
+	createComponentFeatureBranchVersionSchema: String
+	"""
+	Optional perspective UUID. When supplied together with createComponentIfMissing=true and
+	the component does not yet exist, the new component is created and assigned to this
+	perspective. Required scope on the API key is WRITE on the perspective (FREEFORM keys)
+	or any broader scope that covers it. Ignored when the component already exists.
+	"""
+	perspective: ID
+	rebuildRelease: Boolean
+	"""
+	Optional PR metadata bundled with the call. When supplied on
+	addReleaseProgrammatic, a first-class PullRequest entity is upserted
+	by (targetVcsRepository, identity) and its head is advanced to the
+	release's SCE. The PR aggregator picks up the release on subsequent
+	VALIDATE_PR firings. Ignored on calls that do not create a release.
+	"""
+	pullRequest: PullRequestInfoInput
+}
+
+type SbomProbingResult {
+	status: SbomProbingStatus!
+	metrics: DependencyTrackMetrics
+}
+
+type SbomProbingRun {
+	runId: String!
+	status: SbomProbingStatus!
+}
+
+enum SbomProbingStatus {
+	PENDING
+	ENRICHING
+	DONE
+	FAILED
+}
+
+input SceArtifactInput {
+	sce: ID!
+	artifacts: [ArtifactInput]!
+}
+
+"""
+Upload one or more artifacts and bind them to an agent session.
+Each {@code ArtifactInput.file} is a separate multipart part on the
+HTTP body per the Apollo upload spec. The resulting artifact rows
+carry {@code belongsTo=AGENT_SESSION} and live only on the session --
+they do not appear on any release or component.
+"""
+input SessionAddArtifactInput {
+	sessionUuid: ID!
+	artifacts: [ArtifactInput!]!
+}
+
+input SessionInitializeInput {
+	"""
+	Display name the agent reports for itself ("Claude Code", "Cursor
+	Agent"). Required -- used as the (org, lower(name)) lookup key.
+	"""
+	agentName: String!
+	"""
+	Model name the agent reports running ("claude-sonnet",
+	"composer-1"). Required -- used as the (org, lower(name), version)
+	lookup key on the ModelOntology row.
+	"""
+	agentModel: String!
+	"""Model version (e.g. "4.5"). Defaults to "unknown" if omitted."""
+	agentModelVersion: String
+	"""Publisher / vendor (e.g. "Anthropic"). Display-only; stored on the ModelOntology row."""
+	agentVendor: String
+	agentIconKind: String
+	agentColor: String
+
+	"""
+	Optional client-side session id. Defaults server-side to the row
+	uuid when omitted. **Unique forever within (org, agent)**: an id
+	previously used by ANY session (OPEN, CLOSED, or BLOCKED) cannot
+	be re-used; sessionInitializeProgrammatic errors with
+	clientSessionId-conflict. Agents that retry after a BLOCKED /
+	CLOSED predecessor must mint a fresh id.
+	"""
+	clientSessionId: String
+
+	title: String
+
+	"""
+	Optional pointer to a prior session this one continues from.
+	Set when an agent retries after a BLOCKED or CLOSED predecessor
+	so the audit trail threads the related attempts. Null on first-
+	time sessions.
+	"""
+	parentSession: ID
+}
+
+input SessionUpdateMetaInput {
+	uuid: ID!
+	title: String
+	clientSessionId: String
+}
+
+"""
+Attach (or replace) a CycloneDX ML-BOM model card on an ontology
+row. The card is the {@code component} object of a CycloneDX
+machine-learning model -- see the
+[CycloneDX ML-BOM guide](https://github.com/CycloneDX/guides/tree/main/ML-BOM/en)
+for the expected shape.
+"""
+input SetModelCardInput {
+	modelOntologyUuid: ID!
+	modelCard: Object!
+}
+
+"""
+Register a SUB agent under an existing parent. The parent may be
+ROOT or SUB; the new sub's rootAgent is resolved to the parent's
+owning root and its model ontology inherits from the parent unless
+overridden.
+"""
+input SpawnSubAgentInput {
+	parentUuid: ID!
+	name: String!
+	"""Optional model-ontology override. Defaults to the parent's model."""
+	modelUuid: ID
+	iconKind: String
+	color: String
+}
+
+input SynchronizeBranchInput {
+	component: String
+	liveBranches: [String]
+	vcsUri: String
+	repoPath: String
+}
+
+# Single dependency-branch override for the versionFeatureSet
+# mutation. The component to override is identified by either its
+# UUID (componentUuid) OR by (vcsUri, repoPath) -- the latter resolves
+# through the same component-by-VCS lookup used elsewhere in the
+# CLI / programmatic flows. branch is the name of the branch on the
+# resolved component to which the dependency should be re-pointed.
+input VersionFeatureSetOverride {
+	componentUuid: ID
+	vcsUri: String
+	repoPath: String
+	branch: String!
+}

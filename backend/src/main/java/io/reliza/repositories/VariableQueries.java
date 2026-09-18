@@ -31,13 +31,18 @@ class VariableQueries {
 	 
 	 /** API Key **/
  
-	protected static final String FIND_API_KEY_BY_UUID = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR "
+	protected static final String FIND_API_KEY_BY_UUID = "SELECT * from rearm.api_keys ak WHERE ((ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) OR "
 			+ "(ak.object_type = 'REGISTRY_ORG' OR ak.object_type = 'REGISTRY_USER')) AND ak.uuid = :uuid";
 
-	protected static final String FIND_API_KEY_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE ak.api_key IS NOT NULL and "
+	protected static final String FIND_API_KEY_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and ak.org = :org";
 
-	// Mint-side variant: includes revoked / tombstoned rows (api_key IS NULL).
+	// Liveness rule used above: a key is live when it still carries a legacy
+	// column hash, or when its record_data status says so (ACTIVE / INACTIVE).
+	// Legacy tombstones have a NULL column and no status key; rows deleted by
+	// deleteApiKey carry status REVOKED. A key created without a secret yet
+	// has a NULL column but status ACTIVE, so it stays visible.
+	// Mint-side variant: includes revoked / tombstoned rows.
 	// Used only by setObjectApiKey so it can UPDATE a tombstone in place rather
 	// than INSERT and collide on the (object_uuid, object_type, org, key_order)
 	// unique index. Every other read path keeps the NULL filter so revoked
@@ -45,16 +50,19 @@ class VariableQueries {
 	protected static final String FIND_API_KEY_INCLUDING_REVOKED_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and ak.org = :org";
 
-	protected static final String FIND_API_KEY_ORG_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE ak.api_key IS NOT NULL and "
+	protected static final String FIND_API_KEY_ORG_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and (:keyOrder IS NULL OR ak.key_order = :keyOrder)";
 	
 	protected static final String FIND_REGISTRY_API_KEY = "SELECT * from rearm.api_keys ak WHERE "
 			+ "ak.object_uuid = :objUuid and ak.object_type = :type and ak.org = :orgUuid";
 
-	protected static final String FIND_USER_API_KEY_BY_USER_ID_AND_ORG = "SELECT * from rearm.api_keys ak WHERE ak.api_key IS NOT NULL and "
+	protected static final String FIND_USER_API_KEY_BY_USER_ID_AND_ORG = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :userUuid and ak.object_type = 'USER' and ak.org = :orgUuid";
 	
-	protected static final String FIND_API_KEYS_BY_ORGANIZATION = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR "
+	protected static final String FIND_USER_API_KEYS_BY_USER = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
+			+ "((ak.object_uuid = :userUuid and ak.object_type = 'USER') or ak.record_data->>'holder' = cast(:userUuid as varchar))";
+	
+	protected static final String FIND_API_KEYS_BY_ORGANIZATION = "SELECT * from rearm.api_keys ak WHERE ((ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) OR "
 			+ "((ak.object_type = 'REGISTRY_ORG' OR ak.object_type = 'REGISTRY_USER') AND "
 			+ "cast (ak.record_data->>'registryRobotId' as integer) > -1)) and ak.org = :orgUuid";
 	 
@@ -156,6 +164,13 @@ class VariableQueries {
 	protected static final String FIND_SYSTEM_INFO = "select * from rearm.system_info s where s.id = 1";
 	
 	protected static final String MAKE_USER_GLOBAL_ADMIN = "update rearm.users set record_data = jsonb_set(record_data, '{isGlobalAdmin}', 'true') where uuid = :userId";
+
+	// Write-once, and atomic because it is one statement: whichever pod gets there first sets the
+	// pepper and everyone else reads that value back. Two pods generating different peppers and
+	// last-write-winning would leave tokens signed by one rejected by the other.
+	protected static final String SET_API_TOKEN_PEPPER_IF_ABSENT =
+			"update rearm.system_info set data = jsonb_set(data, '{apiTokenPepper}', to_jsonb(cast(:pepper as text)))"
+			+ " where id = 1 and coalesce(data->>'apiTokenPepper', '') = ''";
 	
 	/*
 	 * Resource Groups
@@ -586,10 +601,15 @@ class VariableQueries {
 			  AND r.record_data->>'lifecycle' IS NOT NULL
 			""";
 	
+	// A deliverable can legitimately sit in the base variant of several releases (same digest
+	// rebuilt or re-tagged on different branches, a release and its proxy, ...). Return every
+	// candidate newest first and let the caller pick; the previous scalar `uuid = (subquery)`
+	// form made Postgres reject the whole lookup on the second candidate.
 	protected static final String FIND_RELEASES_BY_DELIVERABLE_AND_ORG = """
-			select * from rearm.releases where uuid = (select cast (record_data->>'release' as UUID) from rearm.variants
+			select * from rearm.releases where uuid in (select cast (record_data->>'release' as UUID) from rearm.variants
 			WHERE record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(:deliverableUuidAsString))
 			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000'))
+			order by created_date desc
 			""";
 	
 	protected static final String FIND_RELEASES_BY_ARTIFACT_AND_ORG = """
@@ -1421,7 +1441,7 @@ class VariableQueries {
 			SELECT * FROM rearm.teams
 				WHERE record_data->>'org' = :orgUuidAsString
 			""";
-	
+
 	protected static final String FIND_USER_GROUPS_BY_USER_AND_ORGANIZATION = """
 			SELECT * FROM rearm.user_groups
 				WHERE record_data->>'org' = :orgUuidAsString
@@ -1568,6 +1588,51 @@ class VariableQueries {
 	/*
 	 * Mitigation Attestations
 	 */
+	/**
+	 * The commit ids of a branch's last N releases and nothing else.
+	 *
+	 * <p>Projected on purpose. A release row carries the metrics JSONB, so selecting whole rows
+	 * for a history window is N fat reads to answer a question about a handful of uuids -- the
+	 * projection is the difference between this being cheap and being felt.
+	 */
+	protected static final String FIND_BRANCH_HISTORY_COMMIT_IDS = """
+			SELECT r.record_data->>'sourceCodeEntry' AS sce,
+			       r.record_data->'commits' AS commits
+				FROM rearm.releases r
+				WHERE r.record_data->>'branch' = :branch
+				ORDER BY r.created_date DESC
+				LIMIT :horizon
+			""";
+
+	protected static final String FIND_INTEGRITY_ATTESTATIONS_BY_SUBJECT = """
+			SELECT * FROM rearm.attestations
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'subjectType' = :subjectType
+				AND record_data->>'subjectUuid' = :subjectUuidAsString
+				ORDER BY created_date DESC
+			""";
+
+	/**
+	 * Every attestation of a set of subjects in one round trip. Recognition needs this per
+	 * commit of a release, and asking per commit would be one query per commit on a path that
+	 * already runs on every metrics change.
+	 */
+	protected static final String FIND_INTEGRITY_ATTESTATIONS_BY_SUBJECTS = """
+			SELECT * FROM rearm.attestations
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'subjectType' = :subjectType
+				AND record_data->>'subjectUuid' = ANY(:subjectUuidsAsString)
+				ORDER BY created_date DESC
+			""";
+
+	protected static final String FIND_INTEGRITY_ATTESTATIONS_BY_ORG_AND_TYPE = """
+			SELECT * FROM rearm.attestations
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'type' = :type
+				AND record_data->>'status' = :status
+				ORDER BY created_date DESC
+			""";
+
 	protected static final String FIND_ATTESTATION_BY_ORG_AND_STATUS = """
 			SELECT * FROM rearm.mitigation_attestations
 				WHERE record_data->>'org' = :orgUuidAsString
