@@ -1261,8 +1261,8 @@
             :show-icon="false">
             <n-form label-placement="top">
                 <p class="text-muted" v-if="attestSubject">
-                    {{ attestSubject.commit }}<span v-if="!attestSubject.recognized"> — nobody is
-                    accountable for it yet</span>.
+                    {{ attestSubject.commit }}<span v-if="!attestSubject.recognized && !attestClaims.length">
+                    — nobody is accountable for it yet</span>.
                 </p>
                 <!-- Where everybody stands, and the way out of a contested commit: whoever should
                      not have claimed it withdraws their statement. The log keeps the withdrawal;
