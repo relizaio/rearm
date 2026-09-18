@@ -38,7 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-06-03T01:14:38.691100265Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
 @Tag(name = "CLE", description = "the CLE API")
 public interface ProductApi {
@@ -108,8 +108,10 @@ public interface ProductApi {
      * Get releases of the product
      *
      * @param uuid UUID of TEA Product in the TEA server (required)
-     * @param pageOffset Pagination offset (optional, default to 0)
-     * @param pageSize Pagination offset (optional, default to 100)
+     * @param pageSize The maximum number of results to return. (optional, default to 25)
+     * @param pageToken An opaque token used to retrieve the next page of results.  This should be copied exactly from the &#x60;nextPageToken&#x60; field of a previous response.  (optional)
+     * @param sortField The field by which to sort the results. (optional, default to createdDate)
+     * @param sortOrder The direction of the sort. (optional, default to asc)
      * @return A paginated response containing TEA Product Releases (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
@@ -139,13 +141,15 @@ public interface ProductApi {
     )
     default ResponseEntity<TeaPaginatedProductReleaseResponse> getReleasesByProductId(
         @Parameter(name = "uuid", description = "UUID of TEA Product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
-        @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
-        @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize
+        @Min(value = 1L) @Max(value = 100L) @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+        @Parameter(name = "pageToken", description = "An opaque token used to retrieve the next page of results.  This should be copied exactly from the `nextPageToken` field of a previous response. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+        @Parameter(name = "sortField", description = "The field by which to sort the results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "createdDate") String sortField,
+        @Parameter(name = "sortOrder", description = "The direction of the sort.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"product\" : \"\", \"components\" : [ { \"release\" : \"\", \"uuid\" : \"\" }, { \"release\" : \"\", \"uuid\" : \"\" } ], \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true }, { \"product\" : \"\", \"components\" : [ { \"release\" : \"\", \"uuid\" : \"\" }, { \"release\" : \"\", \"uuid\" : \"\" } ], \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
+                    String exampleString = "{ \"nextPageToken\" : \"nextPageToken\", \"hasNext\" : false, \"results\" : [ { \"product\" : \"\", \"components\" : [ { \"release\" : \"\", \"uuid\" : \"\" }, { \"release\" : \"\", \"uuid\" : \"\" } ], \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true }, { \"product\" : \"\", \"components\" : [ { \"release\" : \"\", \"uuid\" : \"\" }, { \"release\" : \"\", \"uuid\" : \"\" } ], \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

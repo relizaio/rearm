@@ -35,7 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-06-03T01:14:38.691100265Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
 @Tag(name = "TEA Product", description = "the TEA Product API")
 public interface ProductsApi {
@@ -49,10 +49,12 @@ public interface ProductsApi {
      * GET /products
      * Returns a list of TEA products. Note that multiple products may match.
      *
-     * @param pageOffset Pagination offset (optional, default to 0)
-     * @param pageSize Pagination offset (optional, default to 100)
      * @param idType Type of identifier specified in the &#x60;idValue&#x60; parameter (optional)
      * @param idValue If present, only the objects with the given identifier value will be returned. (optional)
+     * @param pageSize The maximum number of results to return. (optional, default to 25)
+     * @param pageToken An opaque token used to retrieve the next page of results.  This should be copied exactly from the &#x60;nextPageToken&#x60; field of a previous response.  (optional)
+     * @param sortField The field by which to sort the results. (optional, default to name)
+     * @param sortOrder The direction of the sort. (optional, default to asc)
      * @return A paginated response containing TEA Products (status code 200)
      *         or Request was Invalid (status code 400)
      */
@@ -77,15 +79,17 @@ public interface ProductsApi {
         produces = { "application/json" }
     )
     default ResponseEntity<TeaPaginatedProductResponse> queryTeaProducts(
-        @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
-        @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
         @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,
-        @Parameter(name = "idValue", description = "If present, only the objects with the given identifier value will be returned.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idValue", required = false) @Nullable String idValue
+        @Parameter(name = "idValue", description = "If present, only the objects with the given identifier value will be returned.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idValue", required = false) @Nullable String idValue,
+        @Min(value = 1L) @Max(value = 100L) @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+        @Parameter(name = "pageToken", description = "An opaque token used to retrieve the next page of results.  This should be copied exactly from the `nextPageToken` field of a previous response. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+        @Parameter(name = "sortField", description = "The field by which to sort the results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "name") String sortField,
+        @Parameter(name = "sortOrder", description = "The direction of the sort.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"\" }, { \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"\" } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
+                    String exampleString = "{ \"nextPageToken\" : \"nextPageToken\", \"hasNext\" : false, \"results\" : [ { \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"\" }, { \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
