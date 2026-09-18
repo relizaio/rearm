@@ -58,7 +58,18 @@ const MULTI_RELEASE_GQL_DATA = `
             state
             actorType
             actor
+            actorName
+            claimedAt
             detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
         }
     }
     branch
@@ -793,7 +804,18 @@ const singleReleaseDataNoParent = `
             state
             actorType
             actor
+            actorName
+            claimedAt
             detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
         }
     }
     commitsDetails {
@@ -818,7 +840,18 @@ const singleReleaseDataNoParent = `
             state
             actorType
             actor
+            actorName
+            claimedAt
             detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
         }
     }
     pullRequests {
@@ -947,7 +980,18 @@ const singleReleaseDataNoParent = `
                 state
                 actorType
                 actor
+                actorName
+                claimedAt
                 detail
+                claims {
+                    uuid
+                    verdict
+                    actorType
+                    actor
+                    actorName
+                    note
+                    createdDate
+                }
             }
         }
     }

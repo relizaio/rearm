@@ -5562,6 +5562,17 @@ function openCreateActionFromRule (branch: 'true' | 'false') {
 }
 
 function addGlobalOutputEvent () {
+    // The four lock fields are only meaningful on a LOCK action, and the draft carries defaults
+    // for them the whole time a form is open. Sending them regardless would persist a scope, a
+    // level and a requirement on every rejection and notification -- noise in the stored JSONB
+    // that reads like configuration. The backend drops them too; this keeps the payload honest.
+    if (globalOutputEvent.value.type !== 'LOCK') {
+        globalOutputEvent.value.lockScope = undefined as any
+        globalOutputEvent.value.lockUnlockLevel = undefined as any
+        globalOutputEvent.value.lockAttestationRequirement = undefined as any
+        globalOutputEvent.value.lockReason = undefined as any
+    }
+
     const eventToPush = commonFunctions.deepCopy(globalOutputEvent.value)
     if (eventToPush.type === 'VDR_SNAPSHOT_ARTIFACT') {
         if (globalSnapshotMode.value === 'NONE') {

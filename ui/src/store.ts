@@ -1515,6 +1515,18 @@ const storeObject : any = {
             })
             return data.attest
         },
+        async revokeAttestation (context: any, payload: { uuid: string, reason: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation revokeAttestation($uuid: ID!, $reason: String!) {
+                        revokeAttestation(uuid: $uuid, reason: $reason) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.revokeAttestation
+        },
         async fetchComponentActionGuards (context: any, componentUuid: NonNullable<string>) {
             const response = await graphqlClient.query({
                 query: gql`
