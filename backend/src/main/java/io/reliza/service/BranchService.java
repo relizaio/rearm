@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
@@ -65,6 +66,23 @@ public class BranchService {
 	
 	public Optional<Branch> getBranch (UUID uuid) {
 		return repository.findById(uuid);
+	}
+
+	/**
+	 * Row-locks a branch for the remainder of the caller's transaction, so callers that
+	 * read-then-write a branch-scoped invariant can serialize against each other.
+	 *
+	 * <p>{@code MANDATORY} rather than the usual {@code REQUIRED}: a lock taken in a
+	 * transaction of its own is released the moment that transaction ends, so the caller would
+	 * hold nothing while believing it did. Calling this outside a transaction is a programming
+	 * error, not a silently weaker guarantee.
+	 *
+	 * @param branchUuid branch to lock
+	 * @return the locked branch, or empty if no such branch exists
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Optional<Branch> getBranchWriteLocked (UUID branchUuid) {
+		return repository.findByIdWriteLocked(branchUuid);
 	}
 	
 	/**

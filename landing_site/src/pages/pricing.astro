@@ -1,6 +1,6 @@
 ---
 // Full functional port of the current site's pricing: regional pricing with
-// timezone detection + localStorage persistence, write-user selectors with
+// timezone detection + localStorage persistence, user selectors with
 // live price calculation, real tier features with tooltips. Styled per the
 // 2026 design (clipped buttons, POPULAR badge, square corners).
 import Base from '../layouts/Base.astro';
@@ -99,10 +99,10 @@ const tooltipFor = (b: string) =>
         <h3>ReARM Pro - Starter</h3>
         <div class="price"><span class="amount" id="starter-price">$195</span><span class="unit">Per Month</span></div>
         <div class="selector">
-          <label for="starter-users">Number of write users (1-14):</label>
+          <label for="starter-users">1-14 users:</label>
           <div class="selector-row">
             <input type="number" id="starter-users" min="1" max="14" value="1" />
-            <input type="range" id="starter-range" min="1" max="14" value="1" aria-label="Starter write users" />
+            <input type="range" id="starter-range" min="1" max="14" value="1" aria-label="Starter users" />
           </div>
         </div>
         <ul>
@@ -113,7 +113,7 @@ const tooltipFor = (b: string) =>
             </li>
           ))}
         </ul>
-        <a class="btn btn--navy" href="mailto:sales@reliza.io">Contact Sales</a>
+        <a class="btn btn--navy" href="https://calendly.com/pavel-reliza/30min" target="_blank" rel="noopener">Book Demo</a>
       </div>
 
       <!-- Standard -->
@@ -122,10 +122,10 @@ const tooltipFor = (b: string) =>
         <h3>ReARM Pro - Standard</h3>
         <div class="price"><span class="amount" id="standard-price">$1,350</span><span class="unit">Per Month</span></div>
         <div class="selector">
-          <label for="standard-users">Number of write users (15-39):</label>
+          <label for="standard-users">15-39 users:</label>
           <div class="selector-row">
             <input type="number" id="standard-users" min="15" max="39" value="15" />
-            <input type="range" id="standard-range" min="15" max="39" value="15" aria-label="Standard write users" />
+            <input type="range" id="standard-range" min="15" max="39" value="15" aria-label="Standard users" />
           </div>
         </div>
         <ul>
@@ -136,14 +136,14 @@ const tooltipFor = (b: string) =>
             </li>
           ))}
         </ul>
-        <a class="btn btn--orange" href="mailto:sales@reliza.io">Contact Sales</a>
+        <a class="btn btn--orange" href="https://calendly.com/pavel-reliza/30min" target="_blank" rel="noopener">Book Demo</a>
       </div>
 
       <!-- Enterprise -->
       <div class="tier">
         <h3>ReARM Pro - Enterprise</h3>
-        <div class="price"><span class="amount" id="enterprise-price">$75</span><span class="unit">per write user per month</span></div>
-        <div class="selector"><span class="selector-note">40+ write users</span></div>
+        <div class="price"><span class="amount" id="enterprise-price">$75</span><span class="unit">per user per month</span></div>
+        <div class="selector"><span class="selector-note">40+ users</span></div>
         <ul>
           {enterpriseBullets.map((b) => (
             <li>
@@ -152,14 +152,14 @@ const tooltipFor = (b: string) =>
             </li>
           ))}
         </ul>
-        <a class="btn btn--navy" href="mailto:sales@reliza.io">Contact Sales</a>
+        <a class="btn btn--navy" href="https://calendly.com/pavel-reliza/30min" target="_blank" rel="noopener">Book Demo</a>
       </div>
     </div>
 
     <div class="container">
       <p class="tiers-note">
-        Each paid seat is one write user. Read-only users are included at no extra cost (1 per 3 write
-        users on Starter; 1 per 2 on Standard and Enterprise). Details in the <a href="/pricing-faq/">Pricing FAQ</a>.
+        Each paid seat is one user. On Standard and Enterprise, one additional read-only user is included
+        at no extra cost for every 2 users. Details in the <a href="/pricing-faq/">Pricing FAQ</a>.
       </p>
     </div>
   </section>

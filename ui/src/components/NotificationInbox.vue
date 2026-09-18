@@ -1135,7 +1135,17 @@ const approvalsColumns = computed(() => [
                 : approvalLink(
                     `/${row.componentType === 'PRODUCT' ? 'productsOfOrg' : 'componentsOfOrg'}/${orgUuid.value}/${row.componentUuid}`,
                     row.componentName || row.componentUuid)
-            return h('span', { 'data-testid': 'approval-pending-row' }, inner)
+            // A product and a component may legitimately share a name (the
+            // repair identity is name+vcs over components only), and their
+            // releases can even share version strings — two visually
+            // identical rows. Tag products so same-named rows are tellable
+            // apart. Absent componentType (CE drift fallback) shows no tag.
+            const children: any[] = [inner]
+            if (row.componentType === 'PRODUCT') {
+                children.push(h(NTag, { size: 'tiny', style: 'margin-left: 6px' },
+                    { default: () => 'Product' }))
+            }
+            return h('span', { 'data-testid': 'approval-pending-row' }, children)
         },
     },
     {

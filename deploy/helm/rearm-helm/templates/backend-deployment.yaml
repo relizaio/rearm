@@ -58,6 +58,8 @@ spec:
               value: {{ .Values.projectHost }}
             - name: MAX_UPLOAD_SIZE
               value: {{ .Values.max_upload_size_in_MB }}MB
+            - name: SBOM_RECONCILE_DRAIN_BATCH
+              value: {{ .Values.sbom_reconcile_drain_batch | quote }}
               # aws account below is used for secret storage if enabled
             - name: RELIZAPROP_INSTALLATION_SECRET
               valueFrom:

@@ -3,6 +3,7 @@
 */
 package io.reliza.repositories;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -62,13 +63,21 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 	List<ApiKey> listKeysByOrg(UUID orgUuid);
 
 	/**
-	 * Atomic bump of {@code last_access_date} called from the audit-write
-	 * path. Direct SQL UPDATE rather than load-modify-save so the hot path
-	 * doesn't pay for a row materialise + Hibernate dirty-tracking flush on
-	 * every authenticated request.
+	 * Guarded bump of {@code last_access_date}, called from the scheduled
+	 * flush of the in-memory touch accumulator — NOT from the request path.
+	 * A per-request UPDATE of this row serialized every concurrent request
+	 * using the same key on one row lock; under production load the queue
+	 * outlived the global 120s query timeout ("canceling statement due to
+	 * user request ... while rechecking updated tuple ... api_keys").
+	 *
+	 * The WHERE guard keeps the timestamp monotonic across replicas (each
+	 * flushes its own accumulator, so out-of-order writes are possible) and
+	 * lets a concurrent waiter's EvalPlanQual recheck skip the write
+	 * entirely instead of re-updating the row.
 	 */
 	@Transactional
 	@Modifying
-	@Query(value = "UPDATE rearm.api_keys SET last_access_date = now() WHERE uuid = :uuid", nativeQuery = true)
-	void touchLastAccessDate(@Param("uuid") UUID uuid);
+	@Query(value = "UPDATE rearm.api_keys SET last_access_date = :ts WHERE uuid = :uuid "
+			+ "AND (last_access_date IS NULL OR last_access_date < :ts)", nativeQuery = true)
+	void touchLastAccessDateIfNewer(@Param("uuid") UUID uuid, @Param("ts") ZonedDateTime ts);
 }

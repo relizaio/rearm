@@ -53,6 +53,11 @@ public class SystemInfoData extends RelizaDataParent{
 	private EmailSendType emailSendType = EmailSendType.UNSET;
 	private UUID defaultOrg;
 	private ZonedDateTime lastDtrackSync;
+	// Everything created before this instant has been verified by the
+	// unmapped-BOM sweep (mapped, or found and handed to the heal path).
+	// NB: a canonical-map REBUILD (truncate + re-enqueue) that relies on the
+	// sweep rather than flow_control re-enqueue must null this first.
+	private ZonedDateTime unmappedBomSweepWatermark;
 	private AzureCreds azureCredentials;
 	// vulncheckKevToken (instance-global) removed in V54 KEV per-org refactor;
 	// per-org VulnCheck tokens now live on VULNCHECK_KEV Integration rows.

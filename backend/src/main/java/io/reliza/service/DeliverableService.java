@@ -7,6 +7,9 @@ import java.time.ZonedDateTime;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,6 +19,10 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import io.reliza.model.dto.CarryForwardArm;
+import io.reliza.model.dto.CarryForwardPairing;
+import io.reliza.model.dto.CarryForwardTally;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CdxType;
@@ -25,6 +32,7 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
+import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.tea.TeaChecksumType;
@@ -69,6 +77,9 @@ public class DeliverableService {
 
 	@Autowired 
 	private ArtifactService artifactService;
+
+	@Autowired
+	private SharedArtifactService sharedArtifactService;
 	
 	@Autowired 
 	private GetDeliverableService getDeliverableService;
@@ -316,5 +327,185 @@ public class DeliverableService {
 		
 		log.info("Deliverable migration completed. Migrated " + migratedCount + " deliverables from digests to digestRecords.");
 	}
+
+
+	/**
+	 * Carry each replaced BOM's findings onto its successor across a CI rebuild.
+	 *
+	 * <p>{@code addReleaseProgrammatic(rebuildRelease: true)} does not replace artifacts one by one:
+	 * it CLEARS the variant's outbound deliverables and builds a fresh set, so there is no
+	 * old-to-new artifact mapping to follow and it has to be inferred. Without that inference the
+	 * new BOMs are unscanned, the release merge has nothing to merge, and the release reports zero
+	 * findings until the scans land -- writing a phantom RESOLVED-then-APPEARED cycle into the
+	 * timeline on the way back. See {@code ai-agents/findings-carry-forward-design.md}.
+	 *
+	 * <p>Pairing is by deliverable {@code displayIdentifier}, corroborated by the purl coordinate.
+	 * Measured on production: displayIdentifier is populated on 3332/3332 deliverables, is UNIQUE
+	 * within a release (zero collisions), and 240 distinct names cover 3332 deliverables -- 13.9x
+	 * reuse, i.e. it is a stable lineage name rather than a per-build value. Purls are present on
+	 * 2961/3332 (89%), so where BOTH sides carry one they must agree; a name match with conflicting
+	 * purls is treated as no match, because attributing one component's vulnerabilities to another
+	 * is worse than the bug being fixed.
+	 *
+	 * <p>Anything unpaired is simply left alone and collapses exactly as it does today. The failure
+	 * mode has to stay "unchanged from today", never "newly wrong".
+	 *
+	 *
+	 * <p><b>REQUIRES_NEW, and its callers defer it to afterCommit.</b> Both halves are load-bearing
+	 * and neither works alone. Without REQUIRES_NEW a throw in here marks the CALLER's transaction
+	 * rollback-only, so the caller's catch swallows the exception but not the flag and the whole
+	 * rebuild dies at commit with UnexpectedRollbackException -- the exact opposite of the
+	 * best-effort behaviour the callers claim. Without the afterCommit deferral, REQUIRES_NEW runs
+	 * on a SEPARATE connection that cannot see the caller's uncommitted rows, so the freshly created
+	 * replacement artifacts are invisible, every lookup comes back empty and the seam silently
+	 * carries nothing while logging that it ran. Deferring until after the caller commits gives both:
+	 * the rows are visible, and a failure cannot reach a transaction that no longer exists.
+	 * @return the tally, so the decline counters are part of the CONTRACT rather than only reaching a
+	 *   log line. They are how we learn in production that the heuristic is underperforming; a
+	 *   counter that exists solely inside a log statement cannot be asserted, and an unasserted
+	 *   diagnostic is one refactor away from silently reporting zero forever.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public CarryForwardTally carryFindingsAcrossRebuild(Collection<UUID> priorDeliverables,
+			Collection<UUID> newDeliverables, WhoUpdated wu, UUID releaseUuid) {
+		return sharedArtifactService.executeCarryForward(
+				pairByDisplayIdentifier(priorDeliverables, newDeliverables),
+				CarryForwardArm.DELIVERABLE, releaseUuid, wu);
+	}
+
+	/**
+	 * Pair deliverables across a rebuild by displayIdentifier, corroborated by purl coordinate.
+	 *
+	 * <p>Pure: it decides WHAT to seed and hands the decision to the shared tail, which does the
+	 * seeding, the outcome classification and the single log line. Deliverables need corroboration
+	 * that the flat-artifact arms do not, because two different components can legitimately sit under
+	 * one release and a name alone is not identity.
+	 *
+	 * <p><b>Ambiguity declines on BOTH sides.</b> A name appearing more than once among the priors OR
+	 * among the successors is refused outright rather than resolved last-wins. A multi-arch build
+	 * emits several deliverables under one displayIdentifier differing only by an arch qualifier, and
+	 * {@code purlCoordinateBase} strips version AND qualifiers, so the purl check below would agree
+	 * and one image's vulnerabilities would be seeded onto another's BOM. Mispairing is the worst
+	 * outcome this seam can produce -- it attributes one component's findings to a different
+	 * component, silently, and the resulting phantom events are written to an append-only event
+	 * store with no purge. Declining costs only the carry-forward.
+	 */
+	CarryForwardPairing pairByDisplayIdentifier(Collection<UUID> priorDeliverables,
+			Collection<UUID> newDeliverables) {
+		if (null == priorDeliverables || priorDeliverables.isEmpty()
+				|| null == newDeliverables || newDeliverables.isEmpty()) {
+			return CarryForwardPairing.NOTHING;
+		}
+		Map<String, DeliverableData> priorByName = new LinkedHashMap<>();
+		Set<String> ambiguousNames = new LinkedHashSet<>();
+		for (UUID du : priorDeliverables) {
+			getDeliverableService.getDeliverableData(du)
+					.filter(dd -> StringUtils.isNotEmpty(dd.getDisplayIdentifier()))
+					.ifPresent(dd -> {
+						if (null != priorByName.put(dd.getDisplayIdentifier(), dd)) {
+							ambiguousNames.add(dd.getDisplayIdentifier());
+						}
+					});
+		}
+		Map<String, Integer> successorNameCounts = new LinkedHashMap<>();
+		for (UUID du : newDeliverables) {
+			getDeliverableService.getDeliverableData(du)
+					.filter(dd -> StringUtils.isNotEmpty(dd.getDisplayIdentifier()))
+					.ifPresent(dd -> successorNameCounts.merge(dd.getDisplayIdentifier(), 1, Integer::sum));
+		}
+		successorNameCounts.forEach((name, count) -> {
+			if (count > 1) ambiguousNames.add(name);
+		});
+		ambiguousNames.forEach(priorByName::remove);
+
+		List<CarryForwardPairing.BomPair> paired = new ArrayList<>();
+		int unchanged = 0;
+		int unpaired = 0;
+		int purlConflicts = 0;
+		int ambiguousBoms = 0;
+		int noBom = 0;
+		for (UUID du : newDeliverables) {
+			Optional<DeliverableData> odd = getDeliverableService.getDeliverableData(du);
+			if (odd.isEmpty()) {
+				// The row vanished between snapshot and here. Counted rather than skipped silently,
+				// so seeded plus the declines always reconcile against candidates.
+				unpaired++;
+				continue;
+			}
+			DeliverableData successor = odd.get();
+			DeliverableData predecessor = priorByName.get(successor.getDisplayIdentifier());
+			if (null == predecessor) {
+				// No counterpart, or its name was ambiguous and refused above.
+				//
+				// DELIBERATE CHANGE from the pre-refactor arm, which returned silently the moment the
+				// prior map came back empty. That silence is wrong: an all-ambiguous prior set (the
+				// multi-arch shape) means NOTHING gets seeded, so every rebuild of that component
+				// really does collapse its releases to zero findings until their scans land, and the
+				// counters are how that becomes visible at all.
+				//
+				// It surfaces as INFO here, not as an alert. There is no ERROR gate on this seam -- see
+				// executeCarryForward -- because an unpairable component would raise one on every
+				// single build with no action that clears it. The per-release signal an operator acts
+				// on is [METRICS-LOSS-PROVENANCE], which prints firstScanned=null:findings=0 for a
+				// failed pairing against findings=N for a seeded one, with the release uuid attached.
+				unpaired++;
+				continue;
+			}
+			String predPurl = purlCoordinateOf(predecessor);
+			String succPurl = purlCoordinateOf(successor);
+			if (null != predPurl && null != succPurl && !predPurl.equals(succPurl)) {
+				// Same name, demonstrably different component. Decline rather than guess.
+				purlConflicts++;
+				continue;
+			}
+			List<UUID> predBoms = artifactService.bomsAmong(
+					null != predecessor.getArtifacts() ? predecessor.getArtifacts() : List.of());
+			List<UUID> succBoms = artifactService.bomsAmong(
+					null != successor.getArtifacts() ? successor.getArtifacts() : List.of());
+			if (predBoms.isEmpty() || succBoms.isEmpty()) {
+				// Carries no SBOM. An ordinary shape with nothing to carry -- deliberately NOT counted
+				// as ambiguous, because doing so put routine traffic into the counters an operator reads,
+				// making healthy builds look like pairing failures.
+				noBom++;
+				continue;
+			}
+			if (predBoms.size() > 1 || succBoms.size() > 1) {
+				// Several BOMs, no tiebreaker: artifact-level displayIdentifier would be the natural
+				// one but production carries it on 0 of 5891 BOMs. A real decline.
+				ambiguousBoms++;
+				continue;
+			}
+			if (predBoms.get(0).equals(succBoms.get(0))) {
+				// Not a decline and not a candidate: nothing was SWAPPED, so no carry-forward was ever
+				// possible here. Counting it in the denominator broke the reconciliation invariant this
+				// method asserts -- a rebuild that reused every BOM digest reported "0 of 3 seeded"
+				// with every decline counter at zero, indistinguishable from a total pairing failure.
+				// Excluding it also keeps the no-op silent, which is what the flat arm already does by
+				// returning candidates=0 for the identical case.
+				unchanged++;
+				// Same artifact row on both sides: prepareListofDeliverables re-used it (same digest),
+				// or CI supplied the existing uuid. Nothing was swapped, and seeding a row from ITSELF
+				// would duplicate its whole previousVersions list on every rebuild.
+				continue;
+			}
+			paired.add(new CarryForwardPairing.BomPair(predBoms.get(0), succBoms.get(0)));
+		}
+		// Both `unchanged` and `noBom` leave the denominator. Neither was ever a candidate: nothing
+		// was swapped in one case and there is no SBOM to carry in the other. Subtracting only
+		// `unchanged` left an attestation-only deliverable emitting "0 of 1 seeded" on every CI build
+		// -- the exact noise the flat arm removed by returning candidates=0 for the identical shape,
+		// and the eighth time on this change a fix landed on one arm of a symmetric pair.
+		return new CarryForwardPairing(paired, newDeliverables.size() - unchanged - noBom, unpaired,
+				purlConflicts, ambiguousBoms, noBom);
+	}
+
+	/** The deliverable's preferred purl reduced to its version-agnostic coordinate, or null. */
+	private static String purlCoordinateOf(DeliverableData dd) {
+		return SidPurlUtils.pickPreferredPurl(dd.getIdentifiers())
+				.map(RearmIdentifier::getIdValue)
+				.map(Utils::purlCoordinateBase)
+				.orElse(null);
+	}
+
 
 }

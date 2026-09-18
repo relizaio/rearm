@@ -84,9 +84,9 @@ public class NotificationLabelProvider {
     /**
      * Past-tense verb phrase for a release lifecycle transition, used as
      * the core of a {@code RELEASE_LIFECYCLE_CHANGED} title ("Release
-     * &lt;verb&gt;"). The producer only emits the four legacy-notified
-     * transitions, but this covers every constant so the switch stays
-     * exhaustive — any other value renders a generic "moved to &lt;x&gt;".
+     * &lt;verb&gt;"). Every constant is covered so the switch stays exhaustive;
+     * any value without a specific verb renders a generic "moved to &lt;x&gt;".
+     * Every value is reachable: the producer emits on any transition.
      */
     public String humanizeLifecycleVerb(ReleaseLifecycle lifecycle) {
         if (lifecycle == null) return "updated";

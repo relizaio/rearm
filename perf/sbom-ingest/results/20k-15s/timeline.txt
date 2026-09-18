@@ -1,0 +1,4 @@
+ACCEPT START: 2026-08-18T14:33:16Z
+org=38d8c6c3-f501-41cc-aad1-a4333f4f0c4f comp=3a8b3c16-8738-4a1f-bc0d-f194a8aedc4b threads=24 loops=834 total=20016 rpm=900 registry=testreg(registry:2) mode=warm comps/bom=50 drainbatch=250 rebom=4x heap=11.2G
+ACCEPT END: 2026-08-18T14:55:35Z
+DRAIN COMPLETE: 2026-08-18T15:54:17Z

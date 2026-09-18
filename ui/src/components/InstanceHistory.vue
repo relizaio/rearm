@@ -155,6 +155,7 @@ function formatChangeType(raw: any): string {
     // Cosmetic relabeling so the table reads naturally.
     s = s.replace('PRODUCT_RELEASE', 'Product Release')
     s = s.replace('TARGET_RELEASE', 'Target Release')
+    s = s.replace('CONFIGURATION', 'Configuration')
     s = s.replace('AGENT_DATA', 'Agent Data')
     s = s.replace('PRODUCT_MATCH', 'Product Match')
     s = s.replace('DEPLOYMENT', 'Deployment')

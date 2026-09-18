@@ -504,6 +504,7 @@ public class CommonVariables {
 		SOURCE_CODE_ENTRIES("source_code_entries"),
 		USERS("users"),
 		USER_GROUPS("user_groups"),
+		TEAMS("teams"),
 		VARIANTS("variants"),
 		VCS_REPOSITORIES("vcs_repositories"),
 		VERSION_ASSIGNMENTS("version_assignments"),

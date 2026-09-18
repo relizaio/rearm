@@ -1736,6 +1736,53 @@ public class IntegrationService {
 		return new LegacyDtrackPhaseOutResult(deleted, failed, cleared);
 	}
 
+	/** Outcome of {@link #deleteDtrackProjectForOrg}. */
+	public enum DtrackProjectDeletionOutcome {
+		/** Project is gone (includes the already-deleted 404 case). */
+		DELETED,
+		/** Org has no base DTrack integration; nothing to delete through. */
+		NO_INTEGRATION,
+		/** Transport / auth / server error — retryable. */
+		FAILED
+	}
+
+	/**
+	 * Delete one Dependency-Track project on behalf of an org, resolving the
+	 * org's base DTrack integration and credentials internally. Callers decide
+	 * what {@code NO_INTEGRATION} means for them: the legacy phase-out leaves
+	 * refs in place awaiting a re-added integration, while synthetic-bucket
+	 * retirement converges (the project is unreachable by us and harmless).
+	 */
+	public DtrackProjectDeletionOutcome deleteDtrackProjectForOrg(UUID orgUuid, String projectId) {
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(
+				orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		if (oid.isEmpty()) return DtrackProjectDeletionOutcome.NO_INTEGRATION;
+		try {
+			String apiToken = encryptionService.decrypt(oid.get().getSecret());
+			return deleteDtrackProject(oid.get(), apiToken, projectId)
+					? DtrackProjectDeletionOutcome.DELETED
+					: DtrackProjectDeletionOutcome.FAILED;
+		} catch (Exception e) {
+			// Undecryptable secret, missing encryption config, etc. — same
+			// retryable class as a transport failure.
+			log.warn("Could not delete DTrack project {} for org {}: {}",
+					projectId, orgUuid, e.getMessage());
+			return DtrackProjectDeletionOutcome.FAILED;
+		}
+	}
+
+	/**
+	 * Upper bound on one DTrack project deletion. Both callers run inside
+	 * shared scheduler passes (bucket retirement on the PT1M synthetic tick,
+	 * the legacy phase-out on its own), and the client has no other timeout —
+	 * an unresponsive DTrack would otherwise hold the tick for the OS-level
+	 * connect timeout (or indefinitely on a wedged response) PER project.
+	 * A timeout surfaces as the retryable FAILED outcome: retirement stays
+	 * PENDING and re-attempts next tick.
+	 */
+	private static final java.time.Duration DTRACK_PROJECT_DELETE_TIMEOUT =
+			java.time.Duration.ofSeconds(10);
+
 	/**
 	 * Delete a project from Dependency Track
 	 */
@@ -1743,13 +1790,14 @@ public class IntegrationService {
 		try {
 			URI deleteUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/project/" + projectId);
 			log.debug("[DTRACK-CLEANUP] Calling individual delete API: {}", deleteUri);
-			
+
 			var response = dtrackWebClient
 				.delete()
 				.uri(deleteUri)
 				.header("X-API-Key", apiToken)
 				.retrieve()
 				.toEntity(String.class)
+				.timeout(DTRACK_PROJECT_DELETE_TIMEOUT)
 				.block();
 			
 			boolean success = response.getStatusCode().is2xxSuccessful();

@@ -39,7 +39,13 @@ public record NotificationSubscriptionInput(
         FilterInput filter,
         List<RouteInput> routes,
         Integer dedupWindowMinutes,
-        RateLimitInput rateLimit) {
+        RateLimitInput rateLimit,
+        /*
+         * Ownership matching scope -- see
+         * NotificationSubscriptionData.ownedByTeam. Null = unscoped, which is
+         * every subscription written before this field existed.
+         */
+        UUID ownedByTeam) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FilterInput(
@@ -79,7 +85,19 @@ public record NotificationSubscriptionInput(
              * fan-out rather than save, so retargeting a team's channel
              * takes effect without editing every subscription naming it.
              */
-            List<UUID> teams) {
+            List<UUID> teams,
+            /*
+             * T4a -- when true, this route also delivers to the owner team of
+             * every component the event affects, resolved at fan-out from
+             * ComponentOwnershipService. Null / false = no owner expansion.
+             *
+             * Complements {@code teams} rather than replacing it: that names a
+             * FIXED set, this follows whatever the T2 assignment rules currently
+             * say. Nothing to validate at save time -- the flag references no
+             * entity, and ownership is deliberately resolved late so a
+             * reassignment takes effect without editing the subscription.
+             */
+            Boolean notifyComponentOwner) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

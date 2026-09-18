@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ComponentData;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.NotificationDeliveryOrigin;
@@ -77,6 +79,12 @@ public class SyntheticEventService {
     @Autowired
     private IntegrationRepository integrationRepo;
 
+    @Autowired
+    private ComponentService componentService;
+
+    @Autowired
+    private ComponentOwnershipService componentOwnershipService;
+
     /**
      * Inject a curated synthetic event into the outbox for the given org.
      * Returns the persisted outbox event so the caller can show "synthetic
@@ -105,6 +113,7 @@ public class SyntheticEventService {
         Object payload = SyntheticEventTemplates.payloadOf(template);
         @SuppressWarnings("unchecked")
         Map<String, Object> recordData = Utils.OM.convertValue(payload, Map.class);
+        stampRealComponent(org, recordData);
 
         ZonedDateTime now = ZonedDateTime.now();
         NotificationOutboxEvent event = new NotificationOutboxEvent();
@@ -126,6 +135,79 @@ public class SyntheticEventService {
         log.info("Injected synthetic event {} ({}) for org {} as outbox event {}",
                 template, eventType, org, saved.getUuid());
         return saved;
+    }
+
+    /**
+     * How many of the org's components to inspect looking for one with a
+     * routable owner. Bounded because this runs on a human-triggered "Test"
+     * click and each check costs the ownership service two org lookups; the
+     * first owned component wins, and rule-assigned ownership usually means
+     * that is the first one examined.
+     */
+    private static final int OWNED_COMPONENT_SCAN_LIMIT = 25;
+
+    /**
+     * Point the template's {@code affectedReleases} at a REAL component of the
+     * target org.
+     *
+     * <p>Templates carry {@code componentUuid = null} (they build releases with
+     * the back-compat {@code AffectedRelease} constructor, and their release
+     * uuids are illustrative). That was harmless
+     * while every consumer keyed off the payload's display fields, but two
+     * consumers now resolve real rows from {@code componentUuid}: the inbox
+     * component-team visibility arm, and T4a owner routing. Both silently
+     * resolve to nothing on a synthetic event, so the "Test" button reports zero
+     * deliveries for a subscription that is configured perfectly -- and an
+     * operator reasonably concludes the feature is broken.
+     *
+     * <p>Prefers a component with a routable owner so owner routing is actually
+     * exercised, falling back to any component, then to leaving the payload
+     * alone. Never throws: a test injection that cannot find a component is
+     * still a valid test of everything else in the pipeline.
+     */
+    private void stampRealComponent(UUID org, Map<String, Object> recordData) {
+        Object affected = recordData.get("affectedReleases");
+        if (!(affected instanceof List<?> list) || list.isEmpty()) return;
+        UUID componentUuid;
+        try {
+            componentUuid = pickComponentForTest(org);
+        } catch (RuntimeException e) {
+            log.warn("Could not pick a component to stamp on the synthetic event for org {}: {}",
+                    org, e.getMessage());
+            return;
+        }
+        if (componentUuid == null) {
+            log.info("Org {} has no components; synthetic event left with no componentUuid, so"
+                    + " owner routing and the inbox component-team arm will resolve nothing", org);
+            return;
+        }
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> mutable = (Map<String, Object>) map;
+                mutable.put("componentUuid", componentUuid.toString());
+            }
+        }
+    }
+
+    /** An owned component of the org if one is findable, else any, else null. */
+    private UUID pickComponentForTest(UUID org) {
+        List<ComponentData> components = componentService.listComponentDataByOrganization(
+                org, ComponentData.ComponentType.COMPONENT);
+        if (components.isEmpty()) return null;
+        int scanned = 0;
+        for (ComponentData cd : components) {
+            if (scanned++ >= OWNED_COMPONENT_SCAN_LIMIT) break;
+            // The authoritative predicate, not a local copy of the ownership
+            // policy: whatever T4a routes to is what a test should exercise.
+            if (!componentOwnershipService.resolveOwnerTeamChannels(List.of(cd), org).isEmpty()) {
+                return cd.getUuid();
+            }
+        }
+        // No owned component found. Stamp one anyway: an unowned component is a
+        // real, resolvable row, so owner routing reports "no owner" rather than
+        // the indistinguishable "no component at all".
+        return components.get(0).getUuid();
     }
 
     /**

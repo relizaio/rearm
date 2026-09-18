@@ -18,6 +18,7 @@ import * as SpdxRepository from '../../spdxRepository';
 import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
+import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
@@ -639,13 +640,13 @@ export async function enrichCycloneDxBom(
       '-o', outputFile
     ];
     
-    // Add skip patterns
-    for (const pattern of skipPatterns) {
+    // Built-in skip patterns (unresolvable purl types) merged with the
+    // org-configured ones — see enrichmentSkipPatterns.ts for why.
+    const patterns = effectiveSkipPatterns(skipPatterns);
+    for (const pattern of patterns) {
       args.push('--skipPattern', pattern);
     }
-    if (skipPatterns.length > 0) {
-      logger.debug({ skipPatterns }, 'Added skip patterns to enrichment command');
-    }
+    logger.debug({ skipPatterns: patterns }, 'Added skip patterns to enrichment command');
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
     const result = await shellExec('rearm', args, ENRICHMENT_TIMEOUT_MS);

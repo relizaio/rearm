@@ -34,7 +34,15 @@
                          import is emitted into __returned__ as a VALUE. That defeats
                          esbuild's elision of vue's type-only `Component` export, and
                          the browser then rejects the module for a named export the
-                         optimized dep does not have. Keep the rename. -->
+                         optimized dep does not have. Keep the rename.
+
+                         Keyed by $route.path, NOT fullPath: query params carry
+                         UI state (sub-tabs, filters, deep-link modals), and a
+                         fullPath key forced a full view teardown + refetch on
+                         every query-only navigation — e.g. the Integrations
+                         active-count visibly re-counting on each sub-tab
+                         switch. Views that sync state to the query react to
+                         query changes with watchers instead. -->
                     <router-view v-slot="{ Component: RouteComponent }">
                         <template v-if="RouteComponent">
                             <Suspense>
@@ -43,7 +51,7 @@
                                     style="margin-left: 5px; margin-right: 5px;"
                                     class="nofloat viewWrapper"
                                     @routerViewEvent="routerViewEventHandle"
-                                    :key="$route.fullPath"
+                                    :key="$route.path"
                                 />
                             </Suspense>
                         </template>
@@ -186,8 +194,8 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
             key: 'instances',
             icon: renderIcon(CloudServerOutlined)
         },
-        // Distribution module is SAAS-only for now.
-        ...(myuser.installationType === 'SAAS' ? [{
+        // Distribution module: every non-OSS installation.
+        ...(myuser.installationType !== 'OSS' ? [{
             label: () =>
                 h(
                     RouterLink,

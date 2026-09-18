@@ -28,6 +28,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -1336,6 +1338,14 @@ public class ReleaseDatafetcher {
 					ar.getWhoUpdated(), shouldRebuild, deferAutoIntegrate));
 			log.debug("release created: {}", rd);
 			VariantData vd = variantService.getBaseVariantForRelease(rd);
+			// Snapshot the OUTGOING deliverables before the clear wipes them. They are the only
+			// record of what the replacement BOMs are replacing: a rebuild does not swap artifacts
+			// one at a time, it discards the whole set and builds a fresh one, so after the clear
+			// there is nothing left to pair against and the new BOMs would be unscanned with no
+			// predecessor -- the release merge finds nothing to merge and drops to zero findings
+			// until the scans land.
+			Set<UUID> priorOutboundDeliverables = (shouldRebuild && null != vd.getOutboundDeliverables())
+					? new LinkedHashSet<>(vd.getOutboundDeliverables()) : Set.of();
 			// Clear existing outbound deliverables when rebuilding
 			if (shouldRebuild) {
 				variantService.clearOutboundDeliverables(vd.getUuid(), ar.getWhoUpdated());
@@ -1344,6 +1354,35 @@ public class ReleaseDatafetcher {
 				List<UUID> outboundDeliverables = deliverableService
 						.prepareListofDeliverables(outboundDeliverablesList, bd.getUuid(), version, ar.getWhoUpdated());
 				variantService.addOutboundDeliverables(outboundDeliverables, vd.getUuid(), ar.getWhoUpdated());
+				// Gated on shouldRebuild. Carry-forward only has something to do when a prior set was
+				// stripped (priorOutboundDeliverables is populated only under shouldRebuild); on a first
+				// create the pairing early-returns NOTHING. But carryFindingsAcrossRebuild is
+				// @Transactional(REQUIRES_NEW), so reaching it unconditionally opened and committed a
+				// physical transaction on EVERY addReleaseProgrammatic that carries deliverables -- the
+				// hottest CI path -- to do nothing. Guarding here keeps the proxy out of that path.
+				//
+				// Deferred to afterCommit, and the callee is REQUIRES_NEW. The new deliverables and
+				// their BOMs were created in THIS transaction, so a REQUIRES_NEW callee on its own
+				// connection could not see them and would silently carry nothing; and run inline, a
+				// throw would mark this transaction rollback-only and lose the whole release over an
+				// optional enhancement. After commit the rows are visible and there is no transaction
+				// left to poison. Carry-forward stays a best-effort improvement on the status quo:
+				// anything it cannot pair simply behaves as it does today.
+				if (shouldRebuild) {
+					final WhoUpdated cfWu = ar.getWhoUpdated();
+					final List<UUID> cfNewDeliverables = outboundDeliverables;
+					final UUID cfRelease = rd.getUuid();
+					if (TransactionSynchronizationManager.isSynchronizationActive()) {
+						TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+							@Override
+							public void afterCommit() {
+								runCarryForward(priorOutboundDeliverables, cfNewDeliverables, cfWu, cfRelease);
+							}
+						});
+					} else {
+						runCarryForward(priorOutboundDeliverables, cfNewDeliverables, cfWu, cfRelease);
+					}
+				}
 			}
 			// PR upsert + head advance after the release exists so the SCE
 			// UUID is available; the aggregator picks up this PR via SCE
@@ -2536,5 +2575,24 @@ public class ReleaseDatafetcher {
 		log.info("User {} requested findings recompute for release {}", oud.get().getUuid(), releaseUuid);
 		releaseService.computeReleaseMetrics(releaseUuid, true);
 		return true;
+	}	/**
+	 * The post-commit half of the rebuild deliverable carry-forward.
+	 *
+	 * <p>The try/catch is what makes the "best-effort" claim at the call site true. Spring propagates
+	 * exceptions thrown from {@code TransactionSynchronization.afterCommit} to whoever called commit
+	 * (unlike afterCompletion), so without this an unpairable deliverable would surface as a FAILED
+	 * addReleaseProgrammatic for a release that HAS already been committed -- and CI would retry,
+	 * creating duplicates. The sibling arm in OssReleaseService guards the same way.
+	 */
+	private void runCarryForward(Set<UUID> priorDeliverables, List<UUID> newDeliverables, WhoUpdated wu,
+			UUID releaseUuid) {
+		try {
+			deliverableService.carryFindingsAcrossRebuild(priorDeliverables, newDeliverables, wu, releaseUuid);
+		} catch (Exception e) {
+			log.error("[CARRY-FORWARD] rebuild deliverable arm failed after commit, release keeps "
+					+ "today's behaviour: {}", e.getMessage(), e);
+		}
 	}
+
+
 }

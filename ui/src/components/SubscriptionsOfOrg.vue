@@ -56,51 +56,82 @@
                                 <n-form-item label="Status">
                                     <n-select v-model:value="subForm.status" :options="subscriptionStatusOptions" />
                                 </n-form-item>
-                                <div class="field-hint">"Preview" is reserved and not available yet, so it isn't selectable -- a preview subscription would never deliver anything, exactly like Disabled. (An existing Preview subscription can still be switched to Active or Disabled.)</div>
                             </n-gi>
                         </n-grid>
 
-                        <n-form-item label="Event types">
-                            <n-select
-                                v-model:value="subForm.eventTypes"
-                                :options="eventTypeOptionsForForm"
-                                multiple
-                                placeholder="Pick one or more event types"
-                                data-testid="sub-eventtypes"
-                            />
-                        </n-form-item>
-                        <div class="field-hint">This subscription fires only when a selected event type is actually emitted. "VEX state changed" is reserved and not emitted yet, so it isn't selectable (an existing selection can still be removed).</div>
+                        <!-- ===== Section: which events ===== -->
+                        <div class="routes-section">
+                            <div class="routes-title">Events</div>
+                            <div class="routes-hint">Which events this subscription listens for.</div>
+                            <n-form-item label="Event types" :show-feedback="false">
+                                <n-select
+                                    v-model:value="subForm.eventTypes"
+                                    :options="eventTypeOptionsForForm"
+                                    multiple
+                                    placeholder="Pick one or more event types"
+                                    data-testid="sub-eventtypes"
+                                />
+                            </n-form-item>
+                            <div class="field-hint">Fires only when a selected event type is actually emitted. "VEX state changed" is reserved and not emitted yet, so it isn't selectable (an existing selection can still be removed).</div>
 
-                        <n-form-item label="Filter mode">
-                            <n-radio-group v-model:value="subForm.filterMode">
-                                <n-radio-button value="PRESET">Preset (match all selected event types)</n-radio-button>
-                                <n-radio-button value="ADVANCED">Advanced (CEL)</n-radio-button>
-                            </n-radio-group>
-                        </n-form-item>
-                        <n-form-item v-if="subForm.filterMode === 'ADVANCED'" label="CEL expression">
-                            <n-input
-                                v-model:value="subForm.celExpression"
-                                type="textarea"
-                                :autosize="{ minRows: 3, maxRows: 8 }"
-                                style="font-family: monospace; font-size: 12px;"
-                                placeholder='e.g. event.severity == "CRITICAL" && size(event.affectedReleases) > 0'
-                            />
-                        </n-form-item>
-                        <div v-if="subForm.filterMode === 'ADVANCED'" class="field-hint">
-                            A CEL boolean over the event. Examples:
-                            <code>event.severity == "CRITICAL"</code>,
-                            <code>event.kevListed == true</code>,
-                            <code>size(event.affectedReleases) &gt; 0</code>.
-                            Leave Preset mode to match on event type alone.
+                            <!-- Contextual: only for instance-deployment subscriptions, so
+                                 vuln/release subscriptions never see an irrelevant control. -->
+                            <template v-if="hasInstanceEventType">
+                                <n-form-item label="Instance-deployment templates" :show-feedback="false">
+                                    <n-select
+                                        v-model:value="selectedInstancePreset"
+                                        :options="instancePresetOptions"
+                                        placeholder="Optional: one-click setup for a common case"
+                                        clearable
+                                        @update:value="onInstancePresetPick"
+                                        data-testid="instance-preset"
+                                    />
+                                </n-form-item>
+                                <div class="field-hint">One-click filters for common instance-deployment setups (e.g. fully-converged only, or failures only). Adjust anything afterward.</div>
+                            </template>
                         </div>
 
-                        <!-- Severity and Perspectives live on the route in the
-                             backend model, but they are filters, not
-                             destinations, so they are grouped with the other
-                             filters here and written back onto the single
-                             route on save. -->
+                        <!-- ===== Section: when to deliver (filter) ===== -->
+                        <!-- Severity and Perspectives live on the route in the backend model,
+                             but they are filters (not destinations), so they are grouped with
+                             the other filters here and written back onto the route on save. -->
+                        <div class="routes-section">
+                            <div class="routes-title">When to deliver</div>
+                            <div class="routes-hint">By default every event of the selected types is delivered. Add filters below to narrow that down.</div>
+                            <n-form-item :show-feedback="false">
+                                <template #label>
+                                    <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                        Custom filter (CEL)
+                                        <n-tooltip trigger="hover" style="max-width: 360px;">
+                                            <template #trigger>
+                                                <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                            </template>
+                                            Off: deliver every event of the selected types. On: only deliver events
+                                            matching a CEL boolean expression you provide.
+                                        </n-tooltip>
+                                    </span>
+                                </template>
+                                <n-switch v-model:value="advancedFilter" data-testid="filter-advanced-toggle" />
+                            </n-form-item>
+                            <div v-if="!advancedFilter" class="field-hint">Off — delivering every event of the selected types. Turn on to match only some events with an expression.</div>
+                            <n-form-item v-if="advancedFilter" label="CEL expression" :show-feedback="false">
+                                <n-input
+                                    v-model:value="subForm.celExpression"
+                                    type="textarea"
+                                    :autosize="{ minRows: 3, maxRows: 8 }"
+                                    style="font-family: monospace; font-size: 12px;"
+                                    placeholder='e.g. event.severity == "CRITICAL" && size(event.affectedReleases) > 0'
+                                />
+                            </n-form-item>
+                            <div v-if="advancedFilter" class="field-hint">
+                                A CEL boolean over the event. Examples:
+                                <code>event.severity == "CRITICAL"</code>,
+                                <code>event.kevListed == true</code>,
+                                <code>"CONVERGED" in event.statuses</code>.
+                            </div>
+
                         <n-grid :cols="2" :x-gap="12">
-                            <n-gi>
+                            <n-gi v-if="severityApplies">
                                 <n-form-item label="Minimum severity">
                                     <n-select
                                         v-model:value="subForm.routes[0].whenSeverityAtLeast"
@@ -127,11 +158,27 @@
                         <div class="field-hint">
                             Perspectives gate what this subscription <strong>delivers</strong> — they do
                             not affect the in-app inbox or the bell. Leave empty for no restriction.
-                            Note they are resolved from the affected releases, which only vulnerability
-                            events carry: with perspectives set, release and approval events match
-                            nothing. Keep those on their own subscription.
+                            They are resolved from the event's affected releases, so a route only
+                            fires when an affected release's component belongs to one of the chosen
+                            perspectives -- a component with no perspectives set matches none of them.
+                        </div>
+                        <!-- This hint used to say perspectives are carried by vulnerability events
+                             only, so "release and approval events match nothing" with one set. That
+                             is FALSE, and it was the stated reason to hide this control the way the
+                             severity one is hidden. ReleaseChangeHookImpl (created / lifecycle /
+                             bom-diff) and ApprovalEventNotifierImpl (requested / resolved) both
+                             stamp ReleaseNotificationSupport.buildAffectedReleases onto the outbox
+                             payload, and that helper copies the COMPONENT's perspectives onto each
+                             AffectedRelease. So every event family carries them and this gate works
+                             on all of them; what it needs is a component IN the perspective. The
+                             same claim survives in perspectiveGateMatches' javadoc (rearm-saas) and
+                             is tracked on the board. Severity is genuinely different -- no producer
+                             resolves a severity outside the two vuln types -- which is why that one
+                             is hidden and this one is not. -->
+
                         </div>
 
+                        <!-- ===== Section: where (destination) ===== -->
                         <div class="routes-section">
                             <div class="routes-title">Destination</div>
                             <div class="routes-hint">
@@ -165,7 +212,20 @@
                                      than no picker. teamOptions still keeps ghosts for teams
                                      already saved on the route, so those stay removable. -->
                                 <template v-if="teamOptions.length">
-                                    <n-form-item label="Teams (optional)" :show-feedback="false">
+                                    <n-form-item :show-feedback="false">
+                                        <template #label>
+                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                Teams (optional)
+                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                    <template #trigger>
+                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                    </template>
+                                                    Delivers to each team's own notification channels, resolved
+                                                    when the event fires -- so if a team changes its channel,
+                                                    this follows automatically.
+                                                </n-tooltip>
+                                            </span>
+                                        </template>
                                         <n-select
                                             v-model:value="subForm.routes[0].teams"
                                             :options="teamOptions"
@@ -175,11 +235,6 @@
                                             data-testid="route-teams"
                                         />
                                     </n-form-item>
-                                    <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
-                                        Delivers to each team's own notification channels, resolved when the
-                                        event fires — so if a team changes its channel, this follows
-                                        automatically.
-                                    </div>
                                 </template>
                                 <!-- T4a. Pro-only: notifyComponentOwner does not exist in the CE
                                      schema, and GraphQL input coercion rejects unknown keys
@@ -190,7 +245,22 @@
                                      is empty on a Pro org with no teams yet, and non-empty on CE
                                      whenever ghosts survive for a route's saved teams. -->
                                 <template v-if="isPro">
-                                    <n-form-item label="Component owner" :show-feedback="false">
+                                    <n-form-item :show-feedback="false">
+                                        <template #label>
+                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                Notify Component Owner
+                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                    <template #trigger>
+                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                    </template>
+                                                    Resolved when the event fires, from the component's owner --
+                                                    set directly or by an assignment rule. Unlike picking a team
+                                                    above, this follows ownership changes on its own, so
+                                                    reassigning a component never means editing this
+                                                    subscription.
+                                                </n-tooltip>
+                                            </span>
+                                        </template>
                                         <n-checkbox
                                             v-model:checked="subForm.routes[0].notifyComponentOwner"
                                             data-testid="route-notify-owner"
@@ -198,20 +268,23 @@
                                             Also notify the team that owns the affected component
                                         </n-checkbox>
                                     </n-form-item>
-                                    <div class="muted-12" style="margin-top: -6px; margin-bottom: 6px;">
-                                        Resolved when the event fires, from the component's owner — set
-                                        directly or by an assignment rule. Unlike picking a team above,
-                                        this follows ownership changes on its own, so reassigning a
-                                        component never means editing this subscription.
-                                        <template v-if="!teamOptions.length">
-                                            This org has no teams yet, and only a team can own a
-                                            component, so this delivers nothing until one exists.
-                                        </template>
+                                    <!-- The description moved to the label's tooltip. This warning
+                                         stays INLINE and unconditional-looking on purpose: it is not
+                                         an explanation of the feature, it is a statement that ticking
+                                         the box right now achieves nothing, and a caveat hidden
+                                         behind a hover is a caveat nobody reads. -->
+                                    <div v-if="!teamOptions.length" class="muted-12"
+                                        style="margin-top: -6px; margin-bottom: 6px;">
+                                        This org has no teams yet, and only a team can own a
+                                        component, so this delivers nothing until one exists.
                                     </div>
                                 </template>
                             </div>
                         </div>
 
+                        <!-- ===== Section: delivery options ===== -->
+                        <div class="routes-section">
+                            <div class="routes-title">Delivery options</div>
                         <n-grid :cols="2" :x-gap="12">
                             <n-gi>
                                 <n-form-item label="Dedup window (minutes, optional)">
@@ -225,30 +298,21 @@
                                 </n-form-item>
                                 <div class="field-hint">Suppresses repeat deliveries of the same event within the window. Leave empty for the 24h default; set 0 to deliver every matching event.</div>
                             </n-gi>
-                            <n-gi>
-                                <n-space>
-                                    <n-form-item label="Rate limit max">
-                                        <n-input-number
-                                            v-model:value="subForm.rateLimitMaxPerWindow"
-                                            :min="1"
-                                            clearable
-                                            placeholder="None"
-                                            style="width: 100px;"
-                                        />
-                                    </n-form-item>
-                                    <n-form-item label="per (min)">
-                                        <n-input-number
-                                            v-model:value="subForm.rateLimitWindowMinutes"
-                                            :min="1"
-                                            clearable
-                                            placeholder="None"
-                                            style="width: 100px;"
-                                        />
-                                    </n-form-item>
-                                </n-space>
-                                <div class="field-hint">Stored but not enforced yet -- rate limiting is planned; leave empty for now.</div>
-                            </n-gi>
+                            <!-- The rate-limit control is deliberately absent. `rateLimit` is
+                                 parsed, stored and echoed back by the API, but NOTHING reads it:
+                                 neither the fan-out nor the delivery worker consults it, so a
+                                 rate limit set here has never suppressed anything. A field that
+                                 does nothing is a trap even with a hint saying so, which is the
+                                 same reason PREVIEW came out of the status list.
+
+                                 The PLUMBING stays on purpose -- the form still loads the stored
+                                 value in openEditSubscription and still sends it back on save --
+                                 so an existing subscription's rate limit round-trips untouched
+                                 rather than being silently cleared by an unrelated edit. When
+                                 enforcement lands, the control comes back and no data was lost
+                                 in the meantime. -->
                         </n-grid>
+                        </div>
 
                         <n-alert v-if="subModalError" type="error" :show-icon="false">
                             {{ subModalError }}
@@ -279,15 +343,15 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, h, onMounted, onUnmounted, Ref } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted, watch, Ref } from 'vue'
 import { useStore } from 'vuex'
 import {
     NDataTable, NButton, NIcon, NModal, NCard, NForm, NFormItem, NInput,
     NInputNumber, NSelect, NSpace, NAlert, NGrid, NGi, NTag, NDropdown, NTooltip,
-    NRadioGroup, NRadioButton, NCheckbox, useDialog, useMessage
+    NCheckbox, NSwitch, useDialog, useMessage
 } from 'naive-ui'
-import { CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
-import { useRouter } from 'vue-router'
+import { InfoCircle, CirclePlus, Trash, Edit as EditIcon, Send, History } from '@vicons/tabler'
+import { useRouter, useRoute } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { buildChannelOptions, withGhosts } from '@/utils/channelOptions'
@@ -302,10 +366,15 @@ import {
     buildNotificationRouteInput,
     routeHasTarget,
     classifySubscriptionTest,
-    isOwnerRouted,
+    severityAppliesTo,
+    clearInapplicableSeverity,
+    noDeliveryExplanation,
     ownerRoutedSuccessCaveat,
     routeCount,
     hasUneditableMultiRoute,
+    instanceDeploymentPresets,
+    instanceSubscriptionPrefillForUri,
+    type InstanceSubscriptionPrefill,
     type SubscriptionTestOutcome
 } from '@/utils/notificationsCommon'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
@@ -327,6 +396,7 @@ const dialog = useDialog()
 const message = useMessage()
 const store = useStore()
 const router = useRouter()
+const route = useRoute()
 
 // Deep-link into the Delivery History audit surface, pre-filtered to this
 // subscription, so a user can go from "this subscription" straight to "what did
@@ -379,6 +449,10 @@ interface SubscriptionForm {
     // (and any other field the UI doesn't model yet) survives an
     // Edit -> Save round-trip. Empty on Create.
     _rawFilter?: Record<string, any>
+    // Same idea for the rate limit, and load-bearing now that the control is
+    // hidden: the modelled pair drops a partial limit, and nothing on screen
+    // would show the operator what was lost. Empty on Create.
+    _rawRateLimit?: Record<string, any>
 }
 
 function freshRoute (): SubscriptionRoute {
@@ -414,6 +488,22 @@ const savingSubscription = ref<boolean>(false)
 const subModalError = ref<string>('')
 const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
 
+// Hide the minimum-severity control when no selected event type can carry a
+// severity. The predicate and the clearing live in notificationsCommon so the
+// spec suite can pin them -- there is no component test environment here, and
+// review found the first cut of this shipped its only behavioural rule inside
+// the .vue where nothing could reach it. See severityAppliesTo /
+// clearInapplicableSeverity for WHY a stale gate is a trap rather than a no-op.
+const severityApplies = computed<boolean>(() => severityAppliesTo(subForm.value.eventTypes))
+
+// Clears while the modal is OPEN, i.e. when the last vuln event type is
+// removed. The load and save paths clear too, and must: a watcher fires on
+// CHANGE, so opening a subscription that was ALREADY in the bad state never
+// runs this one.
+watch(severityApplies, () => {
+    clearInapplicableSeverity(subForm.value.routes, subForm.value.eventTypes)
+})
+
 // Event-type options for THIS form. The shared eventTypeOptions marks
 // VEX_STATE_CHANGED disabled (no backend producer yet), which also makes
 // naive-ui suppress its tag "x" (closable: !disabled). That would trap a
@@ -422,11 +512,52 @@ const subForm = ref<SubscriptionForm>(freshSubscriptionForm())
 // selected: unselectable for new subs, still removable when editing an
 // existing VEX subscription (after removal it re-disables, no re-add).
 const eventTypeOptionsForForm = computed(() =>
-    eventTypeOptions.map(o =>
-        o.value === 'VEX_STATE_CHANGED'
-            ? { ...o, disabled: !subForm.value.eventTypes.includes('VEX_STATE_CHANGED') }
-            : o)
+    eventTypeOptions.map(o => {
+        if (o.value === 'VEX_STATE_CHANGED') {
+            return { ...o, disabled: !subForm.value.eventTypes.includes('VEX_STATE_CHANGED') }
+        }
+        // Pro-only event types (instance deployment) are unselectable on CE, but
+        // stay removable if somehow already selected -- same non-trapping logic
+        // as the VEX row above.
+        if ((o as { proOnly?: boolean }).proOnly && !isPro.value) {
+            return { ...o, disabled: !subForm.value.eventTypes.includes(o.value) }
+        }
+        return o
+    })
 )
+
+// Instance-deployment quick-start presets (Pro-only). Picking one pre-fills the
+// event types + filter mode + CEL so the common intents are one click; the user
+// can still adjust everything afterward. The select is a launcher, not a stored
+// field -- it resets to null after applying, so re-picking the same preset
+// re-applies. Severity is reconciled by the severityApplies watcher above when
+// eventTypes changes.
+const instancePresetOptions = instanceDeploymentPresets.map(p => ({ label: p.label, value: p.key }))
+const selectedInstancePreset = ref<string | null>(null)
+// The instance-deployment templates are contextual: shown only once the
+// subscription actually targets an instance event type, so vuln/release
+// subscriptions never see an irrelevant instance control.
+const INSTANCE_EVENT_TYPES = ['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED']
+const hasInstanceEventType = computed(() =>
+    (subForm.value.eventTypes || []).some(t => INSTANCE_EVENT_TYPES.includes(t)))
+
+// The filter is off by default (deliver every matching event); flipping it on
+// switches the backend filterMode to ADVANCED and reveals the CEL box. Modelled
+// as a boolean toggle rather than a two-option radio because the "no filter"
+// choice was reading as a confusing "all events of these types".
+const advancedFilter = computed<boolean>({
+    get: () => subForm.value.filterMode === 'ADVANCED',
+    set: (on: boolean) => { subForm.value.filterMode = on ? 'ADVANCED' : 'PRESET' },
+})
+function onInstancePresetPick (key: string | null): void {
+    const preset = instanceDeploymentPresets.find(p => p.key === key)
+    if (preset) {
+        subForm.value.eventTypes = [...preset.prefill.eventTypes]
+        subForm.value.filterMode = preset.prefill.filterMode
+        subForm.value.celExpression = preset.prefill.celExpression
+    }
+    selectedInstancePreset.value = null
+}
 
 const channelOptions = computed(() => {
     // Ghost handling for already-referenced DISABLED/DELETED channels lives in
@@ -438,6 +569,32 @@ const channelOptions = computed(() => {
 })
 
 const teams = ref<any[]>([])
+
+/**
+ * The name of the team that owns a managed row.
+ *
+ * Falls back to the uuid rather than to nothing: this string is the operator's
+ * only route to the control that actually changes the subscription, so a team
+ * that failed to load must still leave them something to search for.
+ */
+/**
+ * Why every control on this row is withheld, or null when it is an ordinary
+ * subscription.
+ *
+ * One string for all three buttons: the operator does not care which control
+ * they reached for, they care where the switch actually is.
+ */
+function managedRowExplanation (row: SubscriptionRow): string | null {
+    if (!row.managedByTeam) return null
+    return `${managedTeamName(row)} owns this subscription -- it exists because that team asked to`
+        + ' hear about the components it owns. Change it on the team: Organization Settings ->'
+        + ' Teams.'
+}
+
+function managedTeamName (row: SubscriptionRow): string {
+    const team = teams.value.find((t: any) => t.uuid === row.managedByTeam)
+    return team?.name || String(row.managedByTeam)
+}
 
 // T4a: owner routing is a Pro-only route field. The control, the client-side
 // "route has a target" check and the error copy all gate on this one flag, so
@@ -457,8 +614,13 @@ const teamOptions = computed(() => {
     for (const r of subForm.value.routes) for (const t of (r.teams || [])) referenced.add(t)
     // Same shared builder as the channel picker, so the "keep dangling refs
     // visible and removable" behaviour cannot drift between the two.
+    //
+    // "(archived)" rather than "(deactivated)": the Teams tab calls the action
+    // Archive and reports "Team archived", and the assignment-rule picker
+    // already says archived. Three words for one state across three pickers is
+    // how an operator ends up wondering whether they mean different things.
     return withGhosts(selectable, teams.value, referenced,
-        (t: any, uuid) => t ? `${t.name} (deactivated)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
+        (t: any, uuid) => t ? `${t.name} (archived)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
 })
 
 const channelGroupOptions = computed(() =>
@@ -561,13 +723,13 @@ async function loadTeams (): Promise<void> {
     try {
         const res = await graphqlClient.query({
             query: gql`
-                query getUserGroupsForRoutes($org: ID!) {
-                    getUserGroups(org: $org) { uuid name status notificationChannels }
+                query getTeamsForRoutes($org: ID!) {
+                    getTeams(org: $org) { uuid name status notificationChannels }
                 }`,
             variables: { org: orgUuid.value },
             fetchPolicy: 'network-only',
         })
-        teams.value = res.data?.getUserGroups || []
+        teams.value = res.data?.getTeams || []
     } catch (e: any) {
         // Only schema drift means "this backend is older". A 401/5xx must not
         // blank the list: saved team targets have no ghost source then, and the
@@ -604,6 +766,16 @@ function openCreateSubscription (): void {
     subForm.value = freshSubscriptionForm()
     subModalError.value = ''
     showSubscriptionModal.value = true
+}
+
+// Deep-link entry: open the create modal pre-filled (e.g. from the Instance
+// page's "Subscribe" action). Kept separate from openCreateSubscription so a
+// template @click's MouseEvent can never be mistaken for a prefill.
+function openCreateSubscriptionPrefilled (prefill: InstanceSubscriptionPrefill): void {
+    openCreateSubscription()
+    subForm.value.eventTypes = [...prefill.eventTypes]
+    subForm.value.filterMode = prefill.filterMode
+    subForm.value.celExpression = prefill.celExpression
 }
 
 function openEditSubscription (row: SubscriptionRow): void {
@@ -645,8 +817,20 @@ function openEditSubscription (row: SubscriptionRow): void {
         if (rl) {
             f.rateLimitMaxPerWindow = rl.maxPerWindow ?? null
             f.rateLimitWindowMinutes = rl.windowMinutes ?? null
+            // Stash the blob for the same reason filter and routes stash theirs:
+            // the modelled pair cannot express a PARTIAL limit ({maxPerWindow}
+            // with no window, which the API accepts), and with the control gone
+            // there is no longer a field where an operator could even see the
+            // orphaned half before an unrelated save dropped it.
+            f._rawRateLimit = rl
         }
     } catch { /* skip */ }
+    // A gate that can never match is dropped HERE, not left to the watcher: the
+    // watcher is change-driven, and the common path -- open a subscription that
+    // was already release-only with a stored gate -- is not a change. Verified
+    // live before the fix: edit + save re-persisted whenSeverityAtLeast=HIGH on
+    // a RELEASE_CREATED subscription, with the control hidden.
+    clearInapplicableSeverity(f.routes, f.eventTypes)
     subForm.value = f
     subModalError.value = ''
     showSubscriptionModal.value = true
@@ -684,6 +868,11 @@ async function saveSubscription (): Promise<void> {
     // carries an unmodelled `presetConfig` object that must not leak into the
     // input (it 400s the mutation). See buildNotificationFilterInput.
     const filterInput = buildNotificationFilterInput(f._rawFilter, f.filterMode, f.celExpression)
+    // Belt and braces on the way out. openEditSubscription already clears an
+    // inapplicable gate, but this is the only choke point EVERY save passes
+    // through, and the failure it prevents is invisible: a gate that matches
+    // nothing, on a control that is no longer rendered.
+    clearInapplicableSeverity(f.routes, f.eventTypes)
     const input: any = {
         uuid: f.uuid || undefined,
         expectedRevision: f.expectedRevision,
@@ -702,6 +891,13 @@ async function saveSubscription (): Promise<void> {
             maxPerWindow: f.rateLimitMaxPerWindow,
             windowMinutes: f.rateLimitWindowMinutes,
         }
+    } else if (f._rawRateLimit) {
+        // A limit that the modelled pair cannot represent -- a partial one, or
+        // one carrying keys this form does not know about -- rides back
+        // verbatim. The upsert REPLACES rateLimit wholesale, so omitting it here
+        // is not "leave it alone", it is a silent delete on the next edit of any
+        // unrelated field. Same reasoning as _rawFilter and route._raw.
+        input.rateLimit = f._rawRateLimit
     }
     savingSubscription.value = true
     try {
@@ -879,25 +1075,6 @@ async function runSubscriptionTest (row: SubscriptionRow, template: string): Pro
     }
 }
 
-/**
- * Why a test produced no delivery.
- *
- * The default answer names the filter and the severity gate, which is right for
- * every route target that resolves to a fixed channel. It is WRONG for an
- * owner-routed route: that resolves through the affected component's owner, so
- * an unowned component, or an owner team with no channel, yields zero
- * deliveries with the filter and severity gate working perfectly. Sending the
- * operator to audit those instead is worse than saying nothing.
- */
-function noDeliveryExplanation (row: SubscriptionRow): string {
-    const base = 'The synthetic event was injected but produced no delivery for this subscription.'
-    if (isOwnerRouted(row.routes)) {
-        return `${base} A route delivers to the component owner, so this is also what you see when the`
-            + ' affected component has no owner, or its owner team has no notification channel --'
-            + " check those before the subscription's filter or a route's minimum-severity gate."
-    }
-    return `${base} Its filter, or a route's minimum-severity gate, likely excluded it.`
-}
 
 function reportSubscriptionTestResult (
     row: SubscriptionRow,
@@ -932,7 +1109,7 @@ function reportSubscriptionTestResult (
                 : timedOut
                     ? 'Gave up waiting after 60s -- the event had not finished fanning out.'
                         + ' Check Notification History for the eventual result.'
-                    : noDeliveryExplanation(row),
+                    : noDeliveryExplanation(row.routes),
         })
         return
     }
@@ -962,7 +1139,21 @@ function reportSubscriptionTestResult (
 
 
 const subscriptionColumns = computed(() => [
-    { title: 'Name', key: 'name' },
+    {
+        title: 'Name', key: 'name',
+        render: (row: SubscriptionRow) => {
+            if (!row.managedByTeam) return row.name
+            // Badged rather than hidden. A row that delivers but does not appear
+            // here is the failure this whole subsystem keeps producing; the
+            // honest version is visible, labelled, and pointing at the only
+            // place it can be changed.
+            return h('div', null, [
+                h('div', null, row.name),
+                h(NTag, { size: 'small', type: 'info', style: 'margin-top: 4px;' },
+                    { default: () => `Managed by ${managedTeamName(row)}` }),
+            ])
+        },
+    },
     {
         title: 'Status', key: 'status',
         render: (row: SubscriptionRow) => h(
@@ -1032,22 +1223,48 @@ const subscriptionColumns = computed(() => [
                                 size: 'tiny', secondary: true,
                                 onClick: () => openEditSubscription(row),
                                 disabled: !canWrite.value || subscriptionsDegraded.value
-                                    || hasUneditableMultiRoute(row.routes),
+                                    || hasUneditableMultiRoute(row.routes)
+                                    // The backend refuses an edit to a
+                                    // team-managed row. Leaving the control
+                                    // enabled would hand the operator an error
+                                    // where a pointer belongs.
+                                    || !!row.managedByTeam,
                                 'data-testid': 'edit-subscription',
                             }, { icon: () => h(NIcon, null, { default: () => h(EditIcon) }) }),
                         ]),
-                        default: () => hasUneditableMultiRoute(row.routes)
-                            ? `This subscription has ${routeCount(row.routes)} routes and this editor`
+                        default: () => managedRowExplanation(row)
+                            || (hasUneditableMultiRoute(row.routes)
+                                ? `This subscription has ${routeCount(row.routes)} routes and this editor`
                                 + ' shows one. Editing here would leave the others in place but hidden,'
                                 + ' so they are better changed through the API -- or collapse the'
                                 + ' subscription to a single route.'
-                            : 'Edit subscription',
+                                : 'Edit subscription'),
                     }),
-                    h(NButton, {
-                        size: 'tiny', secondary: true,
-                        onClick: () => toggleSubscriptionStatus(row),
-                        disabled: !canWrite.value,
-                    }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
+                    h(NTooltip, { trigger: 'hover' }, {
+                        // Span, not the button: a disabled <button> receives no
+                        // mouse events, so a tooltip bound to it never opens --
+                        // in exactly the case it exists to explain.
+                        trigger: () => h('span', { style: 'display: inline-flex;' }, [
+                            h(NButton, {
+                                size: 'tiny', secondary: true,
+                                onClick: () => toggleSubscriptionStatus(row),
+                                // A status flip is an edit, and the backend
+                                // refuses one on a managed row -- the team's
+                                // toggle is the switch. Also withheld on a
+                                // degraded load, where managedByTeam is absent
+                                // from the CORE query and every row would look
+                                // operator-owned.
+                                disabled: !canWrite.value || subscriptionsDegraded.value
+                                    || !!row.managedByTeam,
+                                'data-testid': 'toggle-subscription',
+                            }, { default: () => row.status === 'ACTIVE' ? 'Disable' : 'Enable' }),
+                        ]),
+                        default: () => managedRowExplanation(row)
+                            || (subscriptionsDegraded.value
+                                ? 'Some fields could not be loaded from this server, so changes are'
+                                    + ' withheld until the full record is available.'
+                                : (row.status === 'ACTIVE' ? 'Stop delivering' : 'Start delivering')),
+                    }),
                     h(NTooltip, { trigger: 'hover' }, {
                         trigger: () => testButton,
                         default: () => disabledReason || "Send a synthetic test event through this subscription's matching path (also exercises other subscriptions on the same event type -- asks for confirmation first).",
@@ -1060,11 +1277,21 @@ const subscriptionColumns = computed(() => [
                         }, { icon: () => h(NIcon, null, { default: () => h(History) }) }),
                         default: () => 'View delivery history for this subscription',
                     }),
-                    h(NButton, {
-                        size: 'tiny', secondary: true, type: 'error',
-                        onClick: () => confirmDeleteSubscription(row),
-                        disabled: !canWrite.value,
-                    }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
+                    h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => h('span', { style: 'display: inline-flex;' }, [
+                            h(NButton, {
+                                size: 'tiny', secondary: true, type: 'error',
+                                onClick: () => confirmDeleteSubscription(row),
+                                // Deleting would leave the team's toggle claiming
+                                // a subscription that no longer exists; the
+                                // backend refuses, so the button does too.
+                                disabled: !canWrite.value || subscriptionsDegraded.value
+                                    || !!row.managedByTeam,
+                                'data-testid': 'delete-subscription',
+                            }, { icon: () => h(NIcon, null, { default: () => h(Trash) }) }),
+                        ]),
+                        default: () => managedRowExplanation(row) || 'Delete subscription',
+                    }),
                 ],
             })
         },
@@ -1079,6 +1306,18 @@ onMounted(async () => {
         loadSubscriptions(),
         store.dispatch('fetchPerspectives', orgUuid.value),
     ])
+    // Instance-page "Subscribe" deep-link: ?newInstanceSub=<uri> opens the
+    // create modal pre-filled to notify on this instance's deployments. Pro-only
+    // (instance events don't exist on CE) and writable-only (create needs it).
+    const uri = route.query.newInstanceSub
+    if (typeof uri === 'string' && uri && isPro.value && props.isWritable) {
+        openCreateSubscriptionPrefilled(instanceSubscriptionPrefillForUri(uri))
+        // Consume the one-shot deep-link param: this component remounts on every
+        // subtab switch, so leaving it in the URL would re-pop the modal each time.
+        const q = { ...route.query }
+        delete q.newInstanceSub
+        router.replace({ path: route.path, query: q })
+    }
 })
 </script>
 

@@ -286,7 +286,18 @@ public final class ChangelogRecords {
 		String purl,
 		String severity,
 		Set<ReleaseMetricsDto.VulnerabilityAliasDto> aliases,
-		AnalysisState analysisState
+		AnalysisState analysisState,
+		/*
+		 * CISA KEV membership, carried through rather than probed.
+		 *
+		 * <p>Both sources of this record already know it -- VulnerabilityDto is
+		 * stamped by ReleaseMetricsComputeService, and FindingChangeEvent
+		 * persists it as a column -- so the changelog surface does not need org
+		 * context or a KEV lookup of its own. Null means "the producer did not
+		 * know", which reads as not-KEV; it is not a claim that the CVE is
+		 * absent from the catalog.
+		 */
+		Boolean knownExploited
 	) {
 		/**
 		 * Single source of truth for projecting a {@link ReleaseMetricsDto.VulnerabilityDto}
@@ -297,7 +308,7 @@ public final class ChangelogRecords {
 		public static ReleaseVulnerabilityInfo from(ReleaseMetricsDto.VulnerabilityDto v) {
 			return new ReleaseVulnerabilityInfo(v.vulnId(), v.purl(),
 				v.severity() != null ? v.severity().name() : null, v.aliases(),
-				v.analysisState());
+				v.analysisState(), v.knownExploited());
 		}
 	}
 

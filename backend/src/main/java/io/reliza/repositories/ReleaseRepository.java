@@ -150,6 +150,19 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	Optional<Release> findLatestReleaseBySce(String sceUuidAsString, String orgUuidAsString);
 
 	/**
+	 * Batched variant of {@link #findReleaseBySce}: releases of the org
+	 * whose primary sourceCodeEntry OR commits[] list matches any of the
+	 * given SCE UUIDs, in one round-trip. Both predicate branches are
+	 * index-backed (see {@code FIND_RELEASES_BY_SCES_AND_ORG}).
+	 */
+	@Query(
+			value = VariableQueries.FIND_RELEASES_BY_SCES_AND_ORG,
+			nativeQuery = true)
+	List<Release> findReleasesByScesIncludingCommits(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("sceUuidsAsStrings") String[] sceUuidsAsStrings);
+
+	/**
 	 * Find every release whose primary sourceCodeEntry is one of the given
 	 * SCE UUIDs in a single round-trip. Hits the
 	 * {@code releases_source_code_entry} expression index added in V30.
@@ -382,6 +395,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Query(value = "UPDATE rearm.releases SET metrics = CAST(:metrics AS jsonb), metrics_revision = metrics_revision + 1 WHERE uuid = :uuid", nativeQuery = true)
 	void updateMetrics(@Param("uuid") UUID uuid, @Param("metrics") String metrics);
 
+
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.releases SET metrics_revision = metrics_revision + 1 WHERE uuid = :uuid", nativeQuery = true)
@@ -391,6 +405,17 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Modifying
 	@Query(value = "UPDATE rearm.releases SET metrics = jsonb_set(coalesce(metrics, '{}'), '{lastScanned}', to_jsonb(extract(epoch from now()))), last_updated_date = now() WHERE uuid = :uuid", nativeQuery = true)
 	void touchLastScanned(@Param("uuid") UUID uuid);
+
+	/**
+	 * The ONLY writer of {@code approval_events}. The column is mapped
+	 * {@code updatable = false} (see {@link Release}), so an
+	 * ordinary release save cannot touch it and a stale caller cannot erase a
+	 * committed vote. Callers MUST hold the row write lock.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases SET approval_events = CAST(:approvalEvents AS jsonb) WHERE uuid = :uuid", nativeQuery = true)
+	void updateApprovalEvents(@Param("uuid") UUID uuid, @Param("approvalEvents") String approvalEvents);
 	@Query(
 			value = VariableQueries.LIST_RELEASE_UUIDS_BY_COMPONENTS,
 			nativeQuery = true)
@@ -661,6 +686,16 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * in-flight worker's clear then erased the queue entry -- the re-trigger was dropped
 	 * entirely (no scheduler retry). Bumping the timestamp lets the clear detect that a request
 	 * arrived after the claim and preserve it.
+	 *
+	 * <p>Does NOT yet clear the failure fence. Clearing it is the point of this work -- an operator
+	 * who fixes a broken integration should not wait out the escalating cooldown -- but during a
+	 * rolling deploy {@code autoIntegrateSkipUntil} is still an OLD pod's live lease, and dropping
+	 * it would let that pod re-claim a release it is already integrating. Step 2 adds the clear,
+	 * once no pod writes the lease there any more.
+	 *
+	 * <p>Safe now that the lease lives on {@code autoIntegrateClaimedAt}: this touches only the
+	 * fence, so a worker running right now keeps its claim. While the two shared one key this same
+	 * clear cancelled in-flight leases and allowed double-integration.
 	 */
 	@Transactional
 	@Modifying
@@ -674,11 +709,23 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * and the per-minute scheduler drain can otherwise pick up the SAME queued
 	 * release concurrently (the marker is only cleared at the end of a run) and
 	 * double-integrate it -- observed as duplicate same-second product releases.
-	 * Sets the skip-until lease iff the release is queued and not already
-	 * leased; returns 0 when the claim is lost (or nothing is queued) so the
-	 * caller skips. A successful run clears all markers; a failed run replaces
-	 * the lease with the retry backoff; a crashed run leaves the lease to
-	 * expire, after which the scheduler retries.
+	 * Stamps {@code autoIntegrateClaimedAt} iff the release is queued, not fenced by a failure
+	 * backoff, and not already leased; returns 0 when the claim is lost (or nothing is queued) so
+	 * the caller skips. A successful run clears all markers; a failed run arms the retry fence; a
+	 * crashed run leaves {@code claimedAt} to age past the lease, after which the scheduler retries.
+	 *
+	 * <p>The LEASE is moving to {@code claimedAt + leaseSeconds} and away from
+	 * {@code autoIntegrateSkipUntil}. Those are two different things -- "a worker is running this
+	 * right now" and "this failed, do not retry before X" -- and while they share one key, any
+	 * write that clears the fence also silently cancels a running worker's lease and lets a second
+	 * worker claim the same release: the double-integration this claim exists to prevent.
+	 *
+	 * <p>STEP 1 of a two-release migration. This version writes BOTH keys and honours EITHER as a
+	 * lease, so it is compatible in both directions with a pod running the previous release --
+	 * which reads only {@code skipUntil}. Deployments here are RollingUpdate with maxSurge, so old
+	 * and new pods overlap for tens of seconds and a one-shot switch would leave the new pod's
+	 * claim invisible to the old one. Once this release is everywhere, step 2 drops the
+	 * {@code skipUntil} write from the claim and lets a fresh trigger clear the fence.
 	 */
 	@Transactional
 	@Modifying
@@ -689,17 +736,28 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "    '{autoIntegrateClaimedAt}', to_jsonb(now()), true) "
 			+ "WHERE uuid = :uuid AND (flow_control->>'autoIntegrateRequestedAt') IS NOT NULL "
 			+ "AND ((flow_control->>'autoIntegrateSkipUntil') IS NULL "
-			+ "     OR (flow_control->>'autoIntegrateSkipUntil')::timestamptz < now())", nativeQuery = true)
+			+ "     OR (flow_control->>'autoIntegrateSkipUntil')::timestamptz < now()) "
+			+ "AND ((flow_control->>'autoIntegrateClaimedAt') IS NULL "
+			+ "     OR (flow_control->>'autoIntegrateClaimedAt')::timestamptz "
+			+ "         + (:leaseSeconds || ' seconds')::interval < now())", nativeQuery = true)
 	int claimAutoIntegrate(@Param("uuid") UUID uuid, @Param("leaseSeconds") int leaseSeconds);
 
-	/** Pending releases not in backoff, oldest-first. UUIDs only (heap guard). */
+	/**
+	 * Pending releases that are neither in failure backoff nor currently leased by a worker,
+	 * oldest-first. UUIDs only (heap guard). Mirrors {@link #claimAutoIntegrate}'s predicate so the
+	 * drain does not hand out work the claim will immediately refuse.
+	 */
 	@Query(value = "SELECT uuid FROM rearm.releases r "
 			+ "WHERE r.flow_control->>'autoIntegrateRequestedAt' IS NOT NULL "
 			+ "AND (r.flow_control->>'autoIntegrateSkipUntil' IS NULL "
 			+ "     OR (r.flow_control->>'autoIntegrateSkipUntil')::timestamptz < now()) "
+			+ "AND (r.flow_control->>'autoIntegrateClaimedAt' IS NULL "
+			+ "     OR (r.flow_control->>'autoIntegrateClaimedAt')::timestamptz "
+			+ "         + (:leaseSeconds || ' seconds')::interval < now()) "
 			+ "ORDER BY (r.flow_control->>'autoIntegrateRequestedAt')::timestamptz ASC "
 			+ "LIMIT :batchLimit", nativeQuery = true)
-	List<UUID> findUuidsOfReleasesPendingAutoIntegrate(@Param("batchLimit") int batchLimit);
+	List<UUID> findUuidsOfReleasesPendingAutoIntegrate(@Param("batchLimit") int batchLimit,
+			@Param("leaseSeconds") int leaseSeconds);
 
 	/**
 	 * Clear the markers after every feature set integrated (or no-op) -- UNLESS a new request
@@ -720,12 +778,20 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void clearAutoIntegrateRequested(@Param("uuid") UUID uuid);
 
-	/** Bump failure count + push next attempt out by skipSeconds; stays queued. */
+	/**
+	 * Bump the failure count and push the next attempt out by {@code skipSeconds}; stays queued.
+	 * The curve that produces {@code skipSeconds} lives in
+	 * {@link io.reliza.util.BackoffPolicy#autoIntegrateSkipSeconds}.
+	 *
+	 * <p>Also RELEASES the lease ({@code autoIntegrateClaimedAt}): this run is over, so the next
+	 * attempt should be gated by the failure fence alone. Leaving the lease behind would hold the
+	 * release for the full lease window even after a 120s fence had expired.
+	 */
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.releases "
 			+ "SET flow_control = jsonb_set("
-			+ "    jsonb_set(coalesce(flow_control, '{}'::jsonb), "
+			+ "    jsonb_set(coalesce(flow_control, '{}'::jsonb) - 'autoIntegrateClaimedAt', "
 			+ "              '{autoIntegrateFailureCount}', "
 			+ "              to_jsonb(coalesce((flow_control->>'autoIntegrateFailureCount')::int, 0) + 1), "
 			+ "              true), "

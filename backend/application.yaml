@@ -159,6 +159,10 @@ relizaprops:
   # deliveries dispatched per 5s tick.
   notificationOutboxBatch: ${NOTIFICATION_OUTBOX_BATCH:50}
   notificationDeliveryBatch: ${NOTIFICATION_DELIVERY_BATCH:50}
+  # SBOM reconciles processed per 5s tick (same shared scheduler). Bounds the
+  # work one drain claims while holding the advisory lock; raise for burst
+  # ingestion (e.g. mass SBOM re-reconciles) rather than shortening the tick.
+  sbomReconcileDrainBatch: ${SBOM_RECONCILE_DRAIN_BATCH:50}
   # Resumable finding-change v3 backfill drain (shared scheduler): kill switch and
   # max branches drained per 60s tick.
   findingChangeV3BackfillDrainEnabled: ${FINDING_CHANGE_V3_BACKFILL_DRAIN_ENABLED:true}

@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -27,9 +29,9 @@ import org.mockito.ArgumentCaptor;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
-import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.exceptions.RelizaException;
-import io.reliza.model.UserGroupData;
+import io.reliza.model.TeamData;
+import io.reliza.model.TeamStatus;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
@@ -65,7 +67,7 @@ class NotificationSubscriptionServiceTest {
     private NotificationChannelGroupRepository channelGroupRepo;
     private AuditService auditService;
     private NotificationCelEvaluator celEvaluator;
-    private UserGroupService userGroupService;
+    private TeamService teamService;
     private NotificationSubscriptionService service;
 
     @BeforeEach
@@ -75,7 +77,7 @@ class NotificationSubscriptionServiceTest {
         channelGroupRepo = mock(NotificationChannelGroupRepository.class);
         auditService = mock(AuditService.class);
         celEvaluator = mock(NotificationCelEvaluator.class);
-        userGroupService = mock(UserGroupService.class);
+        teamService = mock(TeamService.class);
         when(subRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service = new NotificationSubscriptionService();
@@ -84,7 +86,7 @@ class NotificationSubscriptionServiceTest {
         inject("channelGroupRepo", channelGroupRepo);
         inject("auditService", auditService);
         inject("celEvaluator", celEvaluator);
-        inject("userGroupService", userGroupService);
+        inject("teamService", teamService);
     }
 
     private void inject(String field, Object value) throws Exception {
@@ -128,6 +130,35 @@ class NotificationSubscriptionServiceTest {
                         WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
         assertTrue(e.getMessage().contains("CEL compile failed"));
         // No save attempted after validation failure
+        verify(subRepo, never()).save(any());
+    }
+
+    @Test
+    void filterFailingOnOneSelectedEventTypeRejectsAtSaveNamingIt() throws Exception {
+        // Syntactically valid (validate() passes), but the expression throws when
+        // evaluated against an APPROVAL_REQUESTED payload -- the realistic mis-scope
+        // the save-time dry-run exists to catch. The refusal must name the type so
+        // the operator knows which one to drop or how to guard the expression.
+        UUID orgUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        stubChannelInOrg(channelUuid, orgUuid);
+        doThrow(new RelizaException("no such key: affectedReleases"))
+                .when(celEvaluator).evaluate(any(), any(), argThat(ev ->
+                        ev != null && ev.getEventType() == NotificationEventType.APPROVAL_REQUESTED));
+
+        NotificationSubscriptionData seed = new NotificationSubscriptionData(
+                orgUuid, null, "test-sub", NotificationSubscriptionStatus.ACTIVE,
+                List.of(NotificationEventType.NEW_VULN_AFFECTS_RELEASES,
+                        NotificationEventType.APPROVAL_REQUESTED),
+                new FilterConfig(EvaluationMode.ADVANCED, null, "event.affectedReleases.size() > 0"),
+                List.of(new RouteConfig(null, null, null, List.of(channelUuid))),
+                null, null);
+
+        RelizaException e = assertThrows(RelizaException.class, () ->
+                service.upsertSubscription(null, seed,
+                        WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+        assertTrue(e.getMessage().contains("APPROVAL_REQUESTED"),
+                "refusal should name the offending event type, got: " + e.getMessage());
         verify(subRepo, never()).save(any());
     }
 
@@ -481,7 +512,7 @@ class NotificationSubscriptionServiceTest {
     void aTeamsOnlyRouteIsAccepted() throws Exception {
         UUID orgUuid = UUID.randomUUID();
         UUID teamUuid = UUID.randomUUID();
-        stubTeamInOrg(teamUuid, orgUuid, UserGroupStatus.ACTIVE);
+        stubTeamInOrg(teamUuid, orgUuid, TeamStatus.ACTIVE);
 
         NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(teamUuid));
         NotificationSubscription saved = service.upsertSubscription(
@@ -501,7 +532,7 @@ class NotificationSubscriptionServiceTest {
     void anUnknownTeamInARouteIsRejectedAtSave() {
         UUID orgUuid = UUID.randomUUID();
         UUID unknown = UUID.randomUUID();
-        when(userGroupService.getUserGroupData(unknown)).thenReturn(Optional.empty());
+        when(teamService.getReadableTeamData(unknown)).thenReturn(Optional.empty());
         NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(unknown));
         RelizaException e = assertThrows(RelizaException.class, () -> service.upsertSubscription(
                 null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
@@ -512,7 +543,7 @@ class NotificationSubscriptionServiceTest {
     void aCrossOrgTeamInARouteIsRejectedAtSave() {
         UUID orgUuid = UUID.randomUUID();
         UUID foreign = UUID.randomUUID();
-        stubTeamInOrg(foreign, UUID.randomUUID(), UserGroupStatus.ACTIVE);
+        stubTeamInOrg(foreign, UUID.randomUUID(), TeamStatus.ACTIVE);
         NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(foreign));
         RelizaException e = assertThrows(RelizaException.class, () -> service.upsertSubscription(
                 null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
@@ -529,18 +560,18 @@ class NotificationSubscriptionServiceTest {
     void aDeactivatedTeamInARouteStillSavesSoItCanBeCleanedUp() throws Exception {
         UUID orgUuid = UUID.randomUUID();
         UUID teamUuid = UUID.randomUUID();
-        stubTeamInOrg(teamUuid, orgUuid, UserGroupStatus.INACTIVE);
+        stubTeamInOrg(teamUuid, orgUuid, TeamStatus.INACTIVE);
         NotificationSubscriptionData seed = subscriptionSeedWithTeams(orgUuid, List.of(), List.of(teamUuid));
         assertNotNull(service.upsertSubscription(
                 null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
     }
 
-    private void stubTeamInOrg(UUID teamUuid, UUID orgUuid, UserGroupStatus status) {
-        UserGroupData ugd = mock(UserGroupData.class);
+    private void stubTeamInOrg(UUID teamUuid, UUID orgUuid, TeamStatus status) {
+        TeamData ugd = mock(TeamData.class);
         when(ugd.getUuid()).thenReturn(teamUuid);
         when(ugd.getOrg()).thenReturn(orgUuid);
         when(ugd.getStatus()).thenReturn(status);
-        when(userGroupService.getUserGroupData(teamUuid)).thenReturn(Optional.of(ugd));
+        when(teamService.getReadableTeamData(teamUuid)).thenReturn(Optional.of(ugd));
     }
 
     private static NotificationSubscriptionData subscriptionSeedWithTeams(UUID org,
@@ -551,5 +582,150 @@ class NotificationSubscriptionServiceTest {
                 null,
                 List.of(new RouteConfig(null, null, null, channels, null, null, teams)),
                 null, null);
+    }
+
+    /** T4a variant: same seed, plus the owner-routing flag on the single route. */
+    private static NotificationSubscriptionData subscriptionSeedWithOwnerFlag(UUID org,
+            List<UUID> channels, List<UUID> teams, Boolean notifyComponentOwner) {
+        return new NotificationSubscriptionData(
+                org, null, "test-sub", NotificationSubscriptionStatus.ACTIVE,
+                List.of(NotificationEventType.NEW_VULN_AFFECTS_RELEASES),
+                null,
+                List.of(new RouteConfig(null, null, null, channels, null, null, teams,
+                        notifyComponentOwner)),
+                null, null);
+    }
+
+    /**
+     * T4a: the point of owner routing is naming NO target at save time -- the
+     * target is whatever owns the affected component when the event fires.
+     * Requiring a channel alongside it would defeat the feature.
+     *
+     * <p>Driven through {@code upsertSubscription} like every other route-gate
+     * test in this class, not through reflection into {@code validateRoutes}:
+     * reflection would force {@code assertThrows(Exception.class)} (the checked
+     * RelizaException arrives wrapped), and that passes just as happily on
+     * "method not found" -- so a rename would silently retire the guard.
+     */
+    @Test
+    void anOwnerOnlyRouteIsValid() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        NotificationSubscriptionData seed = subscriptionSeedWithOwnerFlag(
+                orgUuid, List.of(), List.of(), Boolean.TRUE);
+        NotificationSubscription saved = service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test"));
+        assertNotNull(saved, "an owner-routed route naming no channel or team must be savable");
+    }
+
+    @Test
+    void aRouteWithNoTargetAtAllIsStillRejected() {
+        // The gate must still catch a genuinely empty route -- notifyComponentOwner
+        // false/null is not a target.
+        UUID orgUuid = UUID.randomUUID();
+        WhoUpdated who = WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test");
+        assertThrows(RelizaException.class, () -> service.upsertSubscription(null,
+                subscriptionSeedWithOwnerFlag(orgUuid, List.of(), List.of(), Boolean.FALSE), who));
+        assertThrows(RelizaException.class, () -> service.upsertSubscription(null,
+                subscriptionSeedWithOwnerFlag(orgUuid, List.of(), List.of(), null), who));
+    }
+
+    // ---------- ownedByTeam: validating the ownership matching scope ----------
+
+    /** Seed scoped to a team, delivering to that team -- the shape step 2 will write. */
+    private static NotificationSubscriptionData subscriptionSeedScopedTo(UUID org, UUID ownedByTeam,
+            List<UUID> teams) {
+        return new NotificationSubscriptionData(
+                org, null, "test-sub", NotificationSubscriptionStatus.ACTIVE,
+                List.of(NotificationEventType.NEW_VULN_AFFECTS_RELEASES),
+                null,
+                List.of(new RouteConfig(null, null, null, List.of(), null, null, teams)),
+                null, null, ownedByTeam);
+    }
+
+    @Test
+    void aScopeNamingAnUnknownTeamIsRejectedAtSave() {
+        // No foreign key backs the uuid, and the failure mode is invisible: a
+        // scope pointing at nothing matches nothing forever, which looks exactly
+        // like "no events have happened yet".
+        UUID orgUuid = UUID.randomUUID();
+        UUID teamUuid = UUID.randomUUID();
+        UUID unknown = UUID.randomUUID();
+        stubTeamInOrg(teamUuid, orgUuid, TeamStatus.ACTIVE);
+        when(teamService.getReadableTeamData(unknown)).thenReturn(Optional.empty());
+        NotificationSubscriptionData seed = subscriptionSeedScopedTo(orgUuid, unknown, List.of(teamUuid));
+        RelizaException e = assertThrows(RelizaException.class, () -> service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+        assertTrue(e.getMessage().contains("ownedByTeam"), e.getMessage());
+    }
+
+    @Test
+    void aCrossOrgScopeIsRejectedAtSave() {
+        UUID orgUuid = UUID.randomUUID();
+        UUID teamUuid = UUID.randomUUID();
+        UUID foreign = UUID.randomUUID();
+        stubTeamInOrg(teamUuid, orgUuid, TeamStatus.ACTIVE);
+        stubTeamInOrg(foreign, UUID.randomUUID(), TeamStatus.ACTIVE);
+        NotificationSubscriptionData seed = subscriptionSeedScopedTo(orgUuid, foreign, List.of(teamUuid));
+        RelizaException e = assertThrows(RelizaException.class, () -> service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+        assertTrue(e.getMessage().contains("different organization"), e.getMessage());
+    }
+
+    /**
+     * An ARCHIVED team must still save as a scope, for the same reason an
+     * archived team in a route does: rejecting it would lock an operator out of
+     * editing any other field on the subscription. Scoping is a matching rule,
+     * and an archived owner already resolves to nothing at fan-out.
+     */
+    @Test
+    void anArchivedTeamIsStillAcceptedAsAScope() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID teamUuid = UUID.randomUUID();
+        stubTeamInOrg(teamUuid, orgUuid, TeamStatus.INACTIVE);
+        NotificationSubscriptionData seed = subscriptionSeedScopedTo(orgUuid, teamUuid, List.of(teamUuid));
+        assertNotNull(service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+    }
+
+    @Test
+    void anUnscopedSubscriptionNeedsNoTeamLookup() throws Exception {
+        // Null scope is every subscription that exists today. It must not start
+        // costing a team read, and must not be able to fail validation.
+        UUID orgUuid = UUID.randomUUID();
+        NotificationSubscriptionData seed = subscriptionSeedWithOwnerFlag(
+                orgUuid, List.of(), List.of(), Boolean.TRUE);
+        assertNotNull(service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test")));
+        verify(teamService, never()).getReadableTeamData(any());
+    }
+
+    /**
+     * Flipping status must not silently unscope a team's subscription. It
+     * rebuilds the record field by field, so a field omitted there is dropped
+     * on the next disable/enable -- and a scoped subscription that loses its
+     * scope becomes an ORG-WIDE one, quietly delivering every team's events to
+     * one team's channel.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aStatusFlipPreservesTheScope() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID teamUuid = UUID.randomUUID();
+        stubTeamInOrg(teamUuid, orgUuid, TeamStatus.ACTIVE);
+        NotificationSubscriptionData seed = subscriptionSeedScopedTo(orgUuid, teamUuid, List.of(teamUuid));
+        NotificationSubscription saved = service.upsertSubscription(
+                null, seed, WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test"));
+        when(subRepo.findById(saved.getUuid())).thenReturn(Optional.of(saved));
+
+        service.setSubscriptionStatus(saved.getUuid(), NotificationSubscriptionStatus.DISABLED,
+                WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "test"));
+
+        ArgumentCaptor<NotificationSubscription> captor =
+                ArgumentCaptor.forClass(NotificationSubscription.class);
+        verify(subRepo, atLeastOnce()).save(captor.capture());
+        NotificationSubscriptionData after = Utils.OM.convertValue(
+                captor.getValue().getRecordData(), NotificationSubscriptionData.class);
+        assertEquals(NotificationSubscriptionStatus.DISABLED, after.status());
+        assertEquals(teamUuid, after.ownedByTeam(), "the status flip dropped the ownership scope");
     }
 }

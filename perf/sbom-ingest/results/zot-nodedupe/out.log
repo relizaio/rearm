@@ -1,0 +1,17 @@
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+WARN StatusConsoleListener The use of package scanning to locate plugins is deprecated and will be removed in a future release
+Creating summariser <summary>
+Created the tree successfully using sbom-ingest.jmx
+Starting standalone test @ 2026 Aug 18 22:47:59 UTC (1787093279634)
+Waiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445
+summary +      1 in 00:00:01 =    1.9/s Avg:   521 Min:   521 Max:   521 Err:     0 (0.00%) Active: 1 Started: 1 Finished: 0
+summary +    392 in 00:00:30 =   13.2/s Avg:   124 Min:    12 Max:   296 Err:     0 (0.00%) Active: 24 Started: 24 Finished: 0
+summary =    393 in 00:00:30 =   13.0/s Avg:   125 Min:    12 Max:   521 Err:     0 (0.00%)
+summary +    390 in 00:00:30 =   13.0/s Avg:   168 Min:   101 Max:   324 Err:     0 (0.00%) Active: 21 Started: 24 Finished: 3
+summary =    783 in 00:01:00 =   13.0/s Avg:   147 Min:    12 Max:   521 Err:     0 (0.00%)
+summary +    250 in 00:00:19 =   13.1/s Avg:   236 Min:   124 Max:   384 Err:     0 (0.00%) Active: 0 Started: 24 Finished: 24
+summary =   1033 in 00:01:19 =   13.0/s Avg:   168 Min:    12 Max:   521 Err:     0 (0.00%)
+Tidying up ...    @ 2026 Aug 18 22:49:19 UTC (1787093359114)
+... end of run

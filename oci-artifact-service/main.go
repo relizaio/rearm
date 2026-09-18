@@ -22,6 +22,11 @@ func main() {
 	defer sugar.Sync()
 
 	sugar.Info("OCI Artifact Service initializing")
+	if registryNamespace() == "" {
+		sugar.Warn("OCIARTIFACTS_REGISTRY_NAMESPACE is not set: repository names are " +
+			"validated for grammar only, namespace containment is DISABLED. Set the " +
+			"env var to restrict pushes/pulls to a single registry namespace.")
+	}
 	r := gin.New()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
 	r.Use(gin.Recovery())
@@ -162,7 +167,13 @@ func uploadFile(c *gin.Context) {
 		}
 	}
 
-	oc, err := NewOrasClient(form.Repo)
+	repo, err := validateRepo(form.Repo)
+	if err != nil {
+		getLogger().Warnw("Rejected repository name", "error", err, "repo", form.Repo)
+		c.String(http.StatusBadRequest, "invalid repo")
+		return
+	}
+	oc, err := GetOrasClient(repo)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error creating oras client: ", err)
 		return
@@ -170,6 +181,7 @@ func uploadFile(c *gin.Context) {
 
 	resp, err := oc.PushArtifact(c, fileToUpload, form.Tag, mimeType, compressionMetadata)
 	if err != nil {
+		invalidateOrasClient(repo)
 		getLogger().Errorw("Error Pushing Artifact", "error", err, "repo", form.Repo, "tag", form.Tag)
 		c.String(http.StatusBadRequest, "Error Pushing Artifact: ", err)
 		return
@@ -199,7 +211,13 @@ func downloadFile(c *gin.Context) {
 	var form Form
 	c.ShouldBind(&form)
 
-	oc, err := NewOrasClient(form.Repo)
+	repo, err := validateRepo(form.Repo)
+	if err != nil {
+		getLogger().Warnw("Rejected repository name", "error", err, "repo", form.Repo)
+		c.String(http.StatusBadRequest, "invalid repo")
+		return
+	}
+	oc, err := GetOrasClient(repo)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error creating oras client: ", err)
 		return

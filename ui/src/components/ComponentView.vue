@@ -1,7 +1,18 @@
 <template>
     <div class="componentOuterWrapper">
         <n-grid x-gap="8" cols="10">
-            <n-gi span="10">
+            <!-- DevOps view (header View dropdown) swaps the two charts for the
+                 "Deployed to" table; Security keeps the charts. -->
+            <n-gi v-if="myview === 'devops'" span="10">
+                <deployed-to-widget
+                    v-if="componentData?.uuid"
+                    :org-uuid="myorg?.uuid || ''"
+                    :component-uuid="componentData.uuid"
+                    :component-type="componentData.type"
+                    @open-release="openReleaseFromDeployedTo"
+                />
+            </n-gi>
+            <n-gi v-else span="10">
                 <n-grid x-gap="12" cols="2">
                     <n-gi>
                         <releases-per-day-chart
@@ -29,7 +40,7 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <n-gi span="3">
+            <n-gi :span="selectedTab === 'latest' ? 10 : 3">
                 <div class="componentTop">
                     <div class="componentSummary">
                         <h5 v-if="componentData">
@@ -346,8 +357,18 @@
                                                 </template>
                                                 <template #default="{ value }">
                                                     <n-select style="width: 200px;" v-model:value="value.idType"
-                                                        :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
-                                                    <n-input type="text" minlength="100" v-model:value="value.idValue" />
+                                                        :options="constants.IdentifierTypes"
+                                                        @update:value="() => { value.idValue = '' }" />
+                                                    <n-select v-if="value.idType === 'SPECIFICATION'" style="width: 260px;"
+                                                        v-model:value="value.idValue"
+                                                        :options="constants.SpecificationTypes"
+                                                        placeholder="Choose the document this component carries" />
+                                                    <n-select v-else-if="value.idType === 'COMPLIANCE_DOCUMENT'" style="width: 260px;"
+                                                        v-model:value="value.idValue"
+                                                        :options="constants.ComplianceDocumentTypes"
+                                                        filterable tag
+                                                        placeholder="Choose or enter a compliance document" />
+                                                    <n-input v-else type="text" minlength="100" v-model:value="value.idValue" />
                                                 </template>
                                             </n-dynamic-input>
                                             <!-- div v-else>{{ resolvedVisibilityLabel }}</div -->
@@ -400,43 +421,35 @@
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && ownershipSupported">
                                             <label>Owner</label>
                                             <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
-                                                <div v-if="componentOwnership && componentOwnership.ownership">
-                                                    <n-tag :type="ownershipTagType(componentOwnership.ownership.status)" size="small">
-                                                        {{ componentOwnership.ownership.status }}
-                                                    </n-tag>
-                                                    <span v-if="ownerLabel" style="margin-left: 8px;">{{ ownerLabel }}</span>
-                                                    <!-- A suggestion's reason line is suppressed: offering a candidate
-                                                         team directly above the owner picker invites reading it as a
-                                                         decision already made. Every other status explains itself. -->
-                                                    <span v-if="componentOwnership.ownership.reason && !ownershipIsSuggestion"
-                                                        class="text-muted" style="display: block; margin-top: 4px;">
-                                                        {{ componentOwnership.ownership.reason }}
-                                                    </span>
-                                                </div>
+                                                <!-- No status chip and no reason line, in ANY state. The chip
+                                                     used to report OWNED / NON_DURABLE / DEGRADED / ORPHANED; the
+                                                     first two differ only on durability, which is a governance
+                                                     signal rather than something an operator picking an owner acts
+                                                     on, and rhythm asked for the whole label gone rather than just
+                                                     the distinction. This block now answers one question: who owns
+                                                     it. The backend still computes every status for the ownership
+                                                     report, which is where coverage belongs. -->
+                                                <div v-if="ownerLabel">{{ ownerLabel }}</div>
+                                                <!-- Staged like every other core setting: picking (or clearing —
+                                                     the X hands the component back to org team-assignment rules)
+                                                     only stages the change; the shared Save Changes / Reset
+                                                     Changes buttons commit or revert it with the rest. -->
                                                 <div v-if="isWritable" style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
                                                     <n-select
                                                         style="width: 110px;"
                                                         v-model:value="ownerDraftType"
                                                         :options="[{label: 'Team', value: 'TEAM'}, {label: 'User', value: 'USER'}]"
-                                                        @update:value="ownerDraftRef = null" />
+                                                        @update:value="onOwnerTypeChange" />
                                                     <n-select
                                                         style="flex: 1; min-width: 0;"
                                                         filterable
+                                                        clearable
                                                         v-model:value="ownerDraftRef"
                                                         :options="ownerDraftType === 'TEAM' ? userGroups : users"
-                                                        :placeholder="ownerDraftType === 'TEAM' ? 'Pick a team (user group)' : 'Pick a user'" />
-                                                    <n-button type="primary" size="small" :loading="savingOwner" :disabled="!ownerDraftRef" @click="saveOwner">
-                                                        Set owner
-                                                    </n-button>
-                                                    <!-- Only meaningful when a stored owner exists: clearing hands the
-                                                         component back to org team-assignment rules. -->
-                                                    <n-button v-if="componentOwnership && componentOwnership.owner && componentOwnership.owner.ownerRef"
-                                                        size="small" :loading="savingOwner" @click="clearOwner">
-                                                        Clear owner
-                                                    </n-button>
+                                                        :placeholder="ownerDraftType === 'TEAM' ? 'Pick a team' : 'Pick a user'" />
                                                 </div>
                                                 <span class="text-muted" style="margin-top: 4px;">
-                                                    The durable owner accountable for this {{ words.component }}. A team is durable (survives members leaving); a single user is flagged non-durable.
+                                                    Who is accountable for this {{ words.component }}.
                                                 </span>
                                             </div>
                                         </div>
@@ -736,6 +749,27 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
+                                    <n-tab-pane name="locks" tab="Locks" v-if="myUser.installationType !== 'OSS'">
+                                        <!-- Gated like the other Pro panels for now: locks are CE
+                                             in the backend design, but the CE schema has none of
+                                             these fields until the sync lands, so offering the tab
+                                             there would open onto a GraphQL error. -->
+                                        <ComponentLocks
+                                            :org-uuid="orguuid"
+                                            :component-uuid="componentUuid"
+                                            :is-writable="isAdmin"
+                                            :component-word="words.component"/>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
+                                        <!-- Shown to everyone: what a release is held to is worth
+                                             knowing whether or not you may change it. Editing
+                                             needs the component ADMIN the backend asks for. -->
+                                        <ActionGuards
+                                            scope="COMPONENT"
+                                            :uuid="componentUuid"
+                                            :is-writable="isAdmin"
+                                            :component-word="words.component"/>
+                                    </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
                                             <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
@@ -1008,6 +1042,51 @@
                                                     <n-form-item v-if="outputTrigger.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
                                                         <n-select v-model:value="outputTrigger.approvedEnvironment" filterable :options="environmentTypeOptions" placeholder="Select an environment (e.g. UAT)" />
                                                     </n-form-item>
+                                                    <!-- LOCK. Unlike every other action, this one outlives the release that
+                                                         fired it, which is why it asks who may clear it and on what terms. -->
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="What to lock" path="lockScope">
+                                                        <n-radio-group v-model:value="outputTrigger.lockScope">
+                                                            <n-radio value="BRANCH">The {{ words.branch }} the release is on</n-radio>
+                                                            <n-radio value="COMPONENT">The whole {{ words.component }}</n-radio>
+                                                        </n-radio-group>
+                                                        <template #feedback>
+                                                            A lock refuses version assignment, release creation and release
+                                                            content on what it covers, until somebody releases it. Reading,
+                                                            and moving releases that already exist, are untouched.
+                                                        </template>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="Who may release it" path="lockUnlockLevel">
+                                                        <n-radio-group v-model:value="outputTrigger.lockUnlockLevel">
+                                                            <n-radio value="AGENT">Any recognized principal, including an agent through the API</n-radio>
+                                                            <n-radio value="HUMAN">Any user, but not an agent</n-radio>
+                                                            <n-radio value="ADMIN">An administrator</n-radio>
+                                                        </n-radio-group>
+                                                        <template #feedback>
+                                                            A disowned or contested commit raises this to administrator on its
+                                                            own, whatever is chosen here.
+                                                        </template>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="What must be true first" path="lockAttestationRequirement">
+                                                        <n-radio-group v-model:value="outputTrigger.lockAttestationRequirement">
+                                                            <n-radio value="NONE">Nothing — whoever holds the level above just releases it</n-radio>
+                                                            <n-radio value="ANY">Every cause claimed by anyone</n-radio>
+                                                            <n-radio value="HUMAN">Every cause claimed by a person</n-radio>
+                                                        </n-radio-group>
+                                                        <template #feedback>
+                                                            The causes are the release that failed this rule and every commit in
+                                                            it nobody is accountable for. With "claimed by anyone" the lock
+                                                            releases itself the moment the last one is claimed — which is the
+                                                            shape that lets an agent fix its own mistake and carry on.
+                                                        </template>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="Reason" path="lockReason">
+                                                        <n-input v-model:value="outputTrigger.lockReason"
+                                                            placeholder="e.g. a commit in this build is not recognized" />
+                                                        <template #feedback>
+                                                            Shown verbatim in every refusal, so write it for whoever hits it.
+                                                            Defaults to this action's name.
+                                                        </template>
+                                                    </n-form-item>
                                                     <n-button @click="addOutputTrigger" type="success">
                                                         Save
                                                     </n-button>
@@ -1031,11 +1110,17 @@
                                             v-model:value="cloneBrProps.name"
                                             required
                                             :placeholder="'Enter cloned ' + words.branchFirstUpper + ' name'" />
-                                            <label>Version Pin of new {{ words.branchFirstUpper }} (Defaults to Version Schema: {{ componentData.featureBranchVersioniong }} )"</label>
-                                        <n-input
+                                        <label>Version schema of new {{ words.branchFirstUpper }} (defaults to the {{ words.branchFirstUpper.toLowerCase() }} schema of {{ componentData.name }}: {{ componentData.featureBranchVersioning || 'not set' }})</label>
+                                        <n-select
                                             v-model:value="cloneBrProps.schema"
-                                            required
-                                            placeholder="Enter Version Pin" />
+                                            tag
+                                            filterable
+                                            :placeholder="'Select version schema for ' + words.branchFirstUpper"
+                                            :options="constants.BranchVersionTypes" />
+                                        <n-input
+                                            v-if="cloneBrProps.schema === 'custom_version'"
+                                            v-model:value="customCloneVersionSchema"
+                                            placeholder="Custom Version Schema" />
                                         <label>Type of new {{ words.branchFirstUpper }}</label>
                                         <n-select
                                             placeholder="Please choose type"
@@ -1053,21 +1138,26 @@
                     </div>
                 </div>
                 <div class="componentDetails">
-                    <n-tabs v-if="componentData && componentData.type === 'COMPONENT'" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
-                        <n-tab-pane name="branches" tab="Branches">
-                            <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                    <n-tabs v-if="componentData" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
+                        <n-tab-pane name="latest" tab="Latest">
+                            <latest-releases-of-component
+                                :componentUuid="componentUuid"
+                                :orgUuid="String(route.params.orguuid)"
+                                :selectedBranchUuid="selectedBranchUuid"
+                                :featureSetLabel="words.branchFirstUpper"
+                                :refreshToken="latestRefreshToken"
+                                @selectBranch="selectBranchFromLatest" />
                         </n-tab-pane>
-                        <n-tab-pane name="pull-requests" tab="Pull Requests">
-                            <n-data-table :data="pullRequests" :columns="pullRequestFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                        <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
+                            <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
-                        <n-tab-pane name="tags" tab="Tags">
+                        <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">
                             <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
                     </n-tabs>
-                    <n-data-table v-else :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                 </div>
             </n-gi>
-            <n-gi span="7">
+            <n-gi v-if="selectedTab !== 'latest'" span="7">
                 <div v-if="marketingVersionEnabled" class="marketingReleases">
                     <mrkt-releases-of-component :component="updatedComponent.uuid" />
                 </div>
@@ -1086,7 +1176,7 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ComputedRef, ref, Ref, computed, h, onMounted } from 'vue'
+import { ComputedRef, ref, Ref, computed, h, onMounted, watch } from 'vue'
 import type { Component } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
@@ -1095,7 +1185,10 @@ import commonFunctions from '../utils/commonFunctions'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
+import LatestReleasesOfComponent from './LatestReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
+import DeployedToWidget from './DeployedToWidget.vue'
+import { DashboardView } from '@/utils/dashboardView'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
@@ -1109,7 +1202,12 @@ import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
 import { InputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
+// Shared "keep a dangling reference visible and removable" builder, so the owner
+// picker behaves like the notification channel and team pickers.
+import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
+import ActionGuards from './ActionGuards.vue'
+import ComponentLocks from './ComponentLocks.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 
 const updatedComponent: Ref<any> = ref({})
@@ -1230,6 +1328,12 @@ async function copyToClipboard (text: string, label = 'uuid') {
 }
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+const myview: ComputedRef<DashboardView> = computed((): DashboardView => store.getters.myview)
+
+// The Deployed-to table links versions to the release page.
+function openReleaseFromDeployedTo (releaseUuid: string) {
+    router.push({ name: 'ReleaseView', params: { uuid: releaseUuid } })
+}
 const orguuid : Ref<string> = ref('')
 if (route.params.orguuid) {
     orguuid.value = route.params.orguuid.toString()
@@ -1433,7 +1537,9 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
-const selectedTab: Ref<string> = ref((route.query.tab as string) || 'branches')
+const selectedTab: Ref<string> = ref((route.query.tab as string) || 'latest')
+// Bumped after branch list changes so the Latest tab refetches.
+const latestRefreshToken = ref(0)
 const branchCollapseState: Ref<any> = ref({})
 const selectedPullRequest: Ref<string> = routePrnumber !== '' ? ref(branchRouteId + '-pr-' + routePrnumber) : ref('')
 branchCollapseState.value['branchCollapse' + branchRouteId] = true
@@ -1504,8 +1610,17 @@ const openComponentSettings = async function() {
     await fetchEffectiveApprovalPolicy()
     // Durable ownership (Phase 4 UI): load the owner picker's team list + the
     // computed ownership status when the settings panel opens.
-    loadUserGroups()
-    loadOwnership()
+    //
+    // AWAIT both option lists FIRST. loadOwnership pre-selects the stored owner
+    // only if it resolves to an option, so racing these would leave a perfectly
+    // valid owner unselected whenever the ownership query happened to win. Users
+    // are in here too: they are otherwise loaded fire-and-forget from initLoad,
+    // which is the same race one field over for a USER-typed owner.
+    // loadUserGroups swallows its own errors; loadUsers does not, and a rejection
+    // here would abort openComponentSettings before it ever shows the modal. A
+    // failed lookup must cost one empty picker, not the whole settings panel.
+    await Promise.all([loadUserGroups(), loadUsers().catch(() => {})])
+    await loadOwnership()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     showComponentSettingsModal.value = true
     
@@ -1518,6 +1633,7 @@ const openComponentSettings = async function() {
 
 const hasComponentChanges = function() {
     return JSON.stringify(originalComponent.value) !== JSON.stringify(updatedComponent.value)
+        || stagedOwnerChange.value !== 'none'
 }
 
 const handleComponentSettingsClose = async function(show: boolean) {
@@ -1528,9 +1644,10 @@ const handleComponentSettingsClose = async function(show: boolean) {
             showComponentSettingsModal.value = true
             return
         }
-        
+
         // Revert changes
         updatedComponent.value = commonFunctions.deepCopy(originalComponent.value)
+        resetOwnerDraft()
         if (hasTriggerChanges.value) {
             resetTriggers()
         }
@@ -1722,7 +1839,9 @@ const resourceGroupMap: ComputedRef<any> = computed((): any => {
 })
 
 const branches: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'PULL_REQUEST' && b.type !== 'TAG').map((b: any) => ({...b, key: b.uuid}))
+    // Pull-request branches (names starting with pull/ or pullrequest/, a legacy
+    // pipeline convention) stay in this list with a PR badge; tags have their own tab.
+    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'TAG').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
         // sort - TODO make sort configurable
         storeBranches.sort((a: any, b: any) => {
@@ -1754,19 +1873,6 @@ const mainBranch: ComputedRef<string> = computed((): any => {
         if (!mainBranch) mainBranch = branches.value[0].uuid
     }
     return mainBranch
-})
-
-const pullRequests: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'PULL_REQUEST').map((b: any) => ({...b, key: b.uuid}))
-    if (storeBranches && storeBranches.length) {
-        // Sort by creation date in descending order (newest first)
-        storeBranches.sort((a: any, b: any) => {
-            const dateA = a.createdDate ? new Date(a.createdDate).getTime() : 0
-            const dateB = b.createdDate ? new Date(b.createdDate).getTime() : 0
-            return dateB - dateA
-        })
-    }
-    return storeBranches
 })
 
 const tags: ComputedRef<any> = computed((): any => {
@@ -1822,19 +1928,68 @@ function selectBranch (uuid: string) {
     }
 }
 
-function handleTabChange (tabName: string) {
-    // Clear selected branch when switching tabs
-    selectedBranchUuid.value = ''
-    
+// A row in the Latest tab opens the branch in detail mode: the Latest tab
+// owns the full width, so the branch pane only exists under the Branches tab.
+function selectBranchFromLatest (uuid: string) {
+    selectedTab.value = 'branches'
+    selectedBranchUuid.value = uuid
     router.push({
         name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
         params: {
             orguuid: route.params.orguuid,
-            compuuid: componentUuid
+            compuuid: componentUuid,
+            branchuuid: uuid
+        },
+        query: { ...route.query, tab: 'branches' }
+    })
+}
+
+function handleTabChange (tabName: string) {
+    // Branches / Feature Sets: open the base branch right away so the pane
+    // is never empty on the first click. Other tabs start with no selection.
+    let preselect = ''
+    if (tabName === 'branches') {
+        const list = branches.value || []
+        const base = list.find((b: any) => b.type === 'BASE') || [...list].sort((a: any, b: any) => isMain(b) - isMain(a))[0]
+        preselect = base ? base.uuid : ''
+    }
+    selectedBranchUuid.value = preselect
+
+    router.push({
+        name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+        params: {
+            orguuid: route.params.orguuid,
+            compuuid: componentUuid,
+            ...(preselect ? { branchuuid: preselect } : {})
         },
         query: { ...route.query, tab: tabName }
     })
 }
+
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward across tab states must be applied to
+// local state here; absent param = the default tab, mirroring the old
+// remount-initializer. Local writes only — safe without a route guard.
+watch(() => route.query.tab, (t) => {
+    const next = (typeof t === 'string' && t) ? t : 'branches'
+    if (next !== selectedTab.value) {
+        selectedBranchUuid.value = ''
+        selectedTab.value = next
+    }
+})
+
+// Same for the settings-panel deep link. Open only while this view's route
+// is active (on route leave the param flips to the destination's and must
+// not trigger the async open cascade); closing on param removal mirrors
+// the old remount (which discarded the modal without an unsaved prompt).
+watch(() => route.query.componentSettingsView, async (v) => {
+    const here = route.name === 'ComponentsOfOrg' || route.name === 'ProductsOfOrg'
+    if (v === 'true' && here && !showComponentSettingsModal.value) {
+        await openComponentSettings()
+    } else if (v !== 'true' && showComponentSettingsModal.value) {
+        showComponentSettingsModal.value = false
+    }
+})
 
 const createBranchForm = ref<FormInst | null>(null)
 
@@ -1878,6 +2033,10 @@ const outputTrigger = ref({
     snapshotLifecycle: null as string | null,
     approvedEnvironment: null as string | null,
     checkName: null as string | null,
+    lockScope: 'BRANCH' as string,
+    lockUnlockLevel: 'HUMAN' as string,
+    lockAttestationRequirement: 'ANY' as string,
+    lockReason: '' as string,
 })
 const snapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
 
@@ -1900,6 +2059,12 @@ function resetOutputTrigger () {
         snapshotLifecycle: null,
         approvedEnvironment: null,
         checkName: null,
+        // Same cautious defaults the backend applies when a LOCK action leaves them unset:
+        // the branch rather than the whole component, a person rather than nobody.
+        lockScope: 'BRANCH',
+        lockUnlockLevel: 'HUMAN',
+        lockAttestationRequirement: 'ANY',
+        lockReason: '',
     }
     snapshotMode.value = 'NONE'
 }
@@ -2009,7 +2174,8 @@ const outputTriggerTypeOptions = [
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'},
     {label: 'Validate Pull Request', value: 'VALIDATE_PR'},
     {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'},
-    {label: 'Pull Request Comment', value: 'PR_COMMENT'}
+    {label: 'Pull Request Comment', value: 'PR_COMMENT'},
+    {label: 'Lock', value: 'LOCK'}
 ]
 
 const externalValidationConclusionOptions = [
@@ -2153,24 +2319,35 @@ const defaultCloneBrProps = {
 }
 
 const cloneBrProps: Ref<any> = ref(commonFunctions.deepCopy(defaultCloneBrProps))
+const customCloneVersionSchema = ref('')
 
 const cloneBranchReset = function () {
     cloneBrProps.value.name = ''
     cloneBrProps.value.type = ''
     cloneBrProps.value.schema = componentData.value.featureBranchVersioning
+    customCloneVersionSchema.value = ''
 }
 
 const cloneBranchSubmit = async function () {
-    let brProps = {
+    if (!cloneBrProps.value.name) { notify('warning', 'Missing', `Name of the new ${words.value.branchFirstUpper} is required`); return }
+    const versionSchema = cloneBrProps.value.schema === 'custom_version' ? customCloneVersionSchema.value : cloneBrProps.value.schema
+    const brProps = {
         name: cloneBrProps.value.name,
         branchUuid: cloneBrProps.value.originalBranch.uuid,
-        versionSchema: cloneBrProps.value.schema,
-        branchType: cloneBrProps.value.type
+        versionSchema,
+        branchType: cloneBrProps.value.type || null
     }
-    const response: any = store.dispatch('cloneBranch', brProps)
-    selectBranch(response.uuid)
-    cloneBranchReset()
-    showCloneBranchModal.value = false
+    try {
+        const response: any = await store.dispatch('cloneBranch', brProps)
+        await store.dispatch('fetchBranches', { componentId: componentUuid, forceRefresh: true })
+        latestRefreshToken.value++
+        cloneBranchReset()
+        showCloneBranchModal.value = false
+        notify('success', 'Cloned', `${words.value.branchFirstUpper} ${response.name} created`)
+        selectBranch(response.uuid)
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+    }
 }
 
 const onCreateBranchSubmit = async function() {
@@ -2184,6 +2361,7 @@ const onCreateBranchSubmit = async function() {
             }
             const createBranchResp = await store.dispatch('createBranch', createBranchObject.value)
             await store.dispatch('fetchBranches', { componentId: componentUuid, forceRefresh: true })
+            latestRefreshToken.value++
             onCreateBranchReset()
             showAddBranchModal.value = false
             selectBranch(createBranchResp.uuid)
@@ -2243,6 +2421,14 @@ async function save () {
     if (componentData.value?.approvalPolicy && !updatedComponent.value.approvalPolicy) {
         payload.clearApprovalPolicy = true
     }
+    // Owner rides the same UpdateComponentInput. owner:null means "no
+    // change" server-side, so a staged clear is an explicit flag.
+    if (stagedOwnerChange.value === 'set') {
+        payload.owner = { ownerType: ownerDraftType.value, ownerRef: ownerDraftRef.value }
+    } else if (stagedOwnerChange.value === 'clear') {
+        payload.clearOwner = true
+    }
+    const ownerWasStaged = stagedOwnerChange.value !== 'none'
     try {
         updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
         // Update originalComponent to match current state so hasComponentChanges() returns false
@@ -2251,6 +2437,9 @@ async function save () {
         // reflects whatever the operator just saved (or cleared, in which
         // case the resolver may now fall through to an org rule).
         await fetchEffectiveApprovalPolicy()
+        // Re-read ownership so the label and the staging baseline reflect
+        // the just-saved (or just-cleared) owner.
+        if (ownerWasStaged) await loadOwnership()
         notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
     } catch (err: any) {
         // RelizaException surfaces as BAD_REQUEST with the actual
@@ -2383,7 +2572,8 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         (updatedComponent.value.sidPurlOverride || null) !== (componentData.value.sidPurlOverride || null) ||
         commonFunctions.stableStringify(updatedComponent.value.sidAuthoritySegments || []) !== commonFunctions.stableStringify(componentData.value.sidAuthoritySegments || []) ||
         ((updatedComponent.value.isInternal || 'INTERNAL') !== (componentData.value.isInternal || 'INTERNAL')) ||
-        commonFunctions.stableStringify(updatedComponent.value.contacts || []) !== commonFunctions.stableStringify(componentData.value.contacts || [])
+        commonFunctions.stableStringify(updatedComponent.value.contacts || []) !== commonFunctions.stableStringify(componentData.value.contacts || []) ||
+        stagedOwnerChange.value !== 'none'
 })
 
 function resetCoreSettings() {
@@ -2404,6 +2594,7 @@ function resetCoreSettings() {
     updatedComponent.value.sidAuthoritySegments = commonFunctions.deepCopy(componentData.value.sidAuthoritySegments) || []
     updatedComponent.value.isInternal = componentData.value.isInternal
     updatedComponent.value.contacts = commonFunctions.deepCopy(componentData.value.contacts) || []
+    resetOwnerDraft()
     
     // Reset marketing version enabled state
     marketingVersionEnabled.value = componentData.value.versionType === 'MARKETING'
@@ -2862,14 +3053,23 @@ async function archiveBranchFromList (row: any) {
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
+// Action cells sit on a row whose click / double-click selects or opens the
+// branch. The whole cell swallows both events so a click near the icon can't
+// switch the selection.
+const actionCell = (children: any) => h('div', {
+    style: 'display: flex; justify-content: center; align-items: center; min-height: 28px;',
+    onClick: (e: Event) => e.stopPropagation(),
+    onDblclick: (e: Event) => e.stopPropagation(),
+}, children)
+
 function archiveActionCell (row: any) {
     if (!isWritable.value || row.type === 'BASE') return null
-    return h(NIcon, {
+    return actionCell(h(NIcon, {
         title: 'Archive ' + words.value.branchFirstUpper,
         class: 'icons clickable',
         size: 22,
         onClick: (e: Event) => { e.stopPropagation(); archiveBranchFromList(row) },
-    }, () => h(Trash))
+    }, () => h(Trash)))
 }
 
 const branchFields: any[] = [
@@ -2892,6 +3092,9 @@ const branchFields: any[] = [
         key: 'name',
         render: (row: any) => {
             const children: any[] = [h('span', row.name)]
+            if (row.type === 'PULL_REQUEST') {
+                children.push(h(NTag, { size: 'small', type: 'info', bordered: false, title: 'Pull request branch' }, () => 'PR'))
+            }
             if (row.type === 'BASE') {
                 children.push(h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NIcon, {
@@ -2924,47 +3127,30 @@ const branchFields: any[] = [
         render: archiveActionCell,
     },]
 
-if (!isComponent.value && isWritable){
-    branchFields.push({
-        title: '',
-        key: 'manage',
-        render: (row: any) => {
-            return h(
-                NIcon, 
-                {
-                    title: 'Clone ' + words.value.branchFirstUpper,
-                    class: 'icons clickable',
-                    size: 25,
-                    onClick: () => {cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; showCloneBranchModal.value = true}
-                }, 
-                () => h(Copy)
-            )
-        }
-    })
+// Clone lives on product feature sets for writers. isComponent / isWritable
+// only settle once the component loads, so the column is attached reactively
+// rather than pushed once at setup (which silently never ran for products).
+const cloneBranchColumn = {
+    title: '',
+    key: 'manage',
+    width: 50,
+    render: (row: any) => {
+        return actionCell(h(
+            NIcon,
+            {
+                title: 'Clone ' + words.value.branchFirstUpper,
+                class: 'icons clickable',
+                size: 25,
+                onClick: (e: Event) => { e.stopPropagation(); cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; customCloneVersionSchema.value = ''; showCloneBranchModal.value = true }
+            },
+            () => h(Copy)
+        ))
+    }
 }
+const branchColumns = computed(() => (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields)
 
 const branchTableRowKey = (row: any) => row.uuid
 
-// Pull Request fields - same as branch fields but with "Pull Request" header
-const pullRequestFields: any[] = [
-    {
-        title: 'Pull Request',
-        key: 'name'
-    },
-    {
-        title: 'Schema',
-        key: 'versionSchema',
-        render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
-    },
-    {
-        title: '',
-        key: 'archive',
-        width: 50,
-        render: archiveActionCell,
-    }
-]
-
-// Tag fields - same as branch fields but with "Tag" header
 const tagFields: any[] = [
     {
         title: 'Tag',
@@ -2998,6 +3184,17 @@ function openCreateActionFromRule (branch: 'true' | 'false') {
 }
 
 async function addOutputTrigger () {
+    // The four lock fields are only meaningful on a LOCK action, and the draft carries defaults
+    // for them the whole time a form is open. Sending them regardless would persist a scope, a
+    // level and a requirement on every rejection and notification -- noise in the stored JSONB
+    // that reads like configuration. The backend drops them too; this keeps the payload honest.
+    if (outputTrigger.value.type !== 'LOCK') {
+        outputTrigger.value.lockScope = undefined as any
+        outputTrigger.value.lockUnlockLevel = undefined as any
+        outputTrigger.value.lockAttestationRequirement = undefined as any
+        outputTrigger.value.lockReason = undefined as any
+    }
+
     if (!updatedComponent.value.outputTriggers) {
         updatedComponent.value.outputTriggers = []
     }
@@ -3081,6 +3278,13 @@ async function addOutputTrigger () {
 
 function editOutputTrigger (trigger: any) {
     outputTrigger.value = commonFunctions.deepCopy(trigger)
+    // A LOCK action stored before these were set, or one whose defaults the backend applied,
+    // comes back with nulls; show the defaults that are actually in force rather than an
+    // empty radio group that looks like a choice nobody made.
+    if (!outputTrigger.value.lockScope) outputTrigger.value.lockScope = 'BRANCH'
+    if (!outputTrigger.value.lockUnlockLevel) outputTrigger.value.lockUnlockLevel = 'HUMAN'
+    if (!outputTrigger.value.lockAttestationRequirement) outputTrigger.value.lockAttestationRequirement = 'ANY'
+    if (!outputTrigger.value.lockReason) outputTrigger.value.lockReason = ''
     if (trigger.snapshotApprovalEntry) {
         snapshotMode.value = 'APPROVAL'
     } else if (trigger.snapshotLifecycle) {
@@ -3375,41 +3579,105 @@ const COMPONENT_OWNERSHIP_QUERY = gql`
             ownership { ownerType ownerRef status durable derived reason }
         }
     }`
-const GET_USER_GROUPS_QUERY = gql`
-    query getUserGroups($org: ID!) { getUserGroups(org: $org) { uuid name } }`
-const SET_COMPONENT_OWNER_MUTATION = gql`
-    mutation setComponentOwner($component: UpdateComponentInput!) {
-        updateComponent(component: $component) { uuid }
-    }`
-
+// Owner points at a Team, not a permission group -- a team is who is
+// accountable, a group is who has access, and they are separate entities now.
+const GET_TEAMS_QUERY = gql`
+    query getTeamsForOwner($org: ID!) { getTeams(org: $org) { uuid name status } }`
 const componentOwnership = ref<any>(null)
 const ownershipSupported = ref<boolean>(true)
-const userGroups = ref<{ label: string, value: string }[]>([])
+// Every team the org has, INCLUDING archived ones. The picker's options are
+// derived below rather than filtered here, because an archived team can still
+// be the stored owner and has to stay visible.
+const orgTeams = ref<any[]>([])
 const ownerDraftType = ref<'TEAM' | 'USER'>('TEAM')
 const ownerDraftRef = ref<string | null>(null)
-const savingOwner = ref<boolean>(false)
+// What the draft picker was SEEDED with — the comparison anchor for staging.
+// Deliberately the seeded value rather than the raw stored owner: a stored
+// ref that doesn't resolve to a picker option seeds null, and comparing the
+// draft against the stored ref would then stage a clear the operator never
+// asked for.
+const ownerBaseline = ref<{ ownerType: 'TEAM' | 'USER', ownerRef: string } | null>(null)
 
-const ownershipTagType = (s: string): 'success' | 'warning' | 'error' | 'default' =>
-    s === 'OWNED' ? 'success'
-        : (s === 'NON_DURABLE' || s === 'DEGRADED') ? 'warning'
-            : s === 'UNSET' ? 'default'  // no owner yet -> neutral, not alarming
-                : 'error'                // ORPHANED (or unknown) -> needs attention
+/**
+ * Owner edit staged in the picker, pending the shared Save Changes button:
+ * 'set' when a (different) owner is picked, 'clear' when a seeded picker was
+ * emptied while a stored owner exists (clearing hands the component back to
+ * org team-assignment rules), 'none' otherwise.
+ */
+const stagedOwnerChange = computed<'none' | 'set' | 'clear'>(() => {
+    if (!ownershipSupported.value) return 'none'
+    const base = ownerBaseline.value
+    if (ownerDraftRef.value) {
+        return (base && base.ownerType === ownerDraftType.value && base.ownerRef === ownerDraftRef.value)
+            ? 'none' : 'set'
+    }
+    // Empty picker stages a clear only when the TYPE still matches the
+    // baseline: switching Team/User to browse auto-empties the ref, and
+    // that browsing gesture must not stage anything.
+    return (base && base.ownerType === ownerDraftType.value && componentOwnership.value?.owner?.ownerRef)
+        ? 'clear' : 'none'
+})
+
+function resetOwnerDraft() {
+    const base = ownerBaseline.value
+    ownerDraftType.value = base?.ownerType || 'TEAM'
+    ownerDraftRef.value = base?.ownerRef || null
+}
+
+/**
+ * Type toggle handler: switching away empties the ref (a TEAM ref is not a
+ * USER ref), but returning to the baseline type RE-SEEDS it. Always nulling
+ * made the round trip Team -> User -> Team land on exactly the staged-clear
+ * shape (empty ref + baseline type + stored owner), so a pure browsing
+ * gesture staged a destructive clear that would ride along with any
+ * unrelated Save Changes click.
+ */
+function onOwnerTypeChange(t: 'TEAM' | 'USER') {
+    const base = ownerBaseline.value
+    ownerDraftRef.value = (base && base.ownerType === t) ? base.ownerRef : null
+}
 
 // UNSET is the one ownership status that is a SUGGESTION rather than a fact:
 // the backend fills ownerRef with a candidate team it picked and puts its pitch
-// in `reason`. Every other status describes a real (or absent) owner. Both the
-// owner label and the reason line have to special-case it, and they have to
-// agree -- so the rule lives here once instead of as a string literal in each.
+// in `reason`. Every other status describes a real (or absent) owner. The owner
+// label special-cases it so a suggested team is never printed as the owner.
 const ownershipIsSuggestion = computed<boolean>(
     () => componentOwnership.value?.ownership?.status === 'UNSET')
+
+/** The team reference this component is stored against, if any. */
+const ownerTeamRef = computed<string | null>(() => {
+    const o = componentOwnership.value?.owner
+    return o?.ownerType === 'TEAM' && o?.ownerRef ? o.ownerRef : null
+})
+
+/**
+ * Selectable teams, plus a labelled ghost for a stored owner that is no longer
+ * selectable.
+ *
+ * Archived teams are not offered as NEW owners -- notification routing ignores
+ * them, so picking one buys an owner that is immediately reported DEGRADED. But
+ * dropping them outright is what made an archived owner render as no owner at
+ * all: the label found nothing, the picker pre-select found nothing, and with
+ * the status chip gone the block went silent about a component that IS owned.
+ * withGhosts is the same shared helper the subscription editor's team picker
+ * uses for the identical case, so the two cannot drift.
+ */
+const userGroups = computed<{ label: string, value: string }[]>(() => {
+    const selectable = (orgTeams.value || [])
+        .filter((t: any) => t && t.status !== 'INACTIVE')
+        .map((t: any) => ({ label: t.name, value: t.uuid }))
+    const referenced = ownerTeamRef.value ? [ownerTeamRef.value] : []
+    return withGhosts(selectable, orgTeams.value || [], referenced,
+        (t: any, uuid: string) => t ? `${t.name} (archived)` : `(deleted team) ${String(uuid).slice(0, 8)}`)
+})
 
 const ownerLabel = computed<string | null>(() => {
     // Fall back to the RESOLVED ownership when there is no per-component stored
     // owner: an org team-assignment rule can own a component without anything
-    // being stored on it. Reading only `owner` showed a green OWNED badge with
-    // no name next to it -- "owned by whom?".
+    // being stored on it. Reading only `owner` left the block naming nobody for
+    // a component that is genuinely owned -- "owned by whom?".
     // A suggestion is not an owner, so do NOT fall back to it: that would print
-    // the suggested team beside an UNSET tag as though it owned the component.
+    // a team the backend merely proposed as though it already owned this.
     const resolved = componentOwnership.value?.ownership
     const o = componentOwnership.value?.owner?.ownerRef
         ? componentOwnership.value.owner
@@ -3417,7 +3685,13 @@ const ownerLabel = computed<string | null>(() => {
     if (!o || !o.ownerRef) return null
     const list = o.ownerType === 'TEAM' ? userGroups.value : users.value
     const hit = list.find((x: any) => x.value === o.ownerRef)
-    return `${hit?.label || o.ownerRef} (${o.ownerType === 'TEAM' ? 'team' : 'user'})`
+    // A stored TEAM ref always resolves now -- userGroups keeps a ghost for it --
+    // so this is the genuinely unknown case: a user ref with no matching user, or
+    // a team ref on a component whose team list failed to load. Printing the raw
+    // uuid was the old behaviour; with the status chip and reason line gone it
+    // would be the only thing on the block and would explain nothing.
+    if (!hit) return null
+    return `${hit.label} (${o.ownerType === 'TEAM' ? 'team' : 'user'})`
 })
 
 async function loadOwnership() {
@@ -3431,8 +3705,24 @@ async function loadOwnership() {
         })
         componentOwnership.value = res.data?.component || null
         ownershipSupported.value = true
+        // Pre-select the stored owner in the picker -- but ONLY if it resolves to
+        // an option. An archived or deleted owner does not, and naive-ui then
+        // renders the raw uuid as the selected value: with the status chip gone
+        // that uuid is the only thing on the block, sitting in an editable
+        // control where it reads as a valid choice rather than a dangling
+        // reference. Leaving the picker empty says the same thing honestly, and
+        // Clear owner is still offered because a stored ref does exist.
         const o = componentOwnership.value?.owner
-        if (o && o.ownerType && o.ownerRef) { ownerDraftType.value = o.ownerType; ownerDraftRef.value = o.ownerRef }
+        if (o && o.ownerType && o.ownerRef) {
+            ownerDraftType.value = o.ownerType
+            const opts = o.ownerType === 'TEAM' ? userGroups.value : users.value
+            ownerDraftRef.value = opts.some((x: any) => x.value === o.ownerRef) ? o.ownerRef : null
+        } else {
+            ownerDraftRef.value = null
+        }
+        ownerBaseline.value = ownerDraftRef.value
+            ? { ownerType: ownerDraftType.value, ownerRef: ownerDraftRef.value }
+            : null
     } catch {
         // Backend without the ownership fields (older / CE mirror) -> hide the section.
         ownershipSupported.value = false
@@ -3442,65 +3732,26 @@ async function loadOwnership() {
 async function loadUserGroups() {
     try {
         const res = await graphqlClient.query({
-            query: GET_USER_GROUPS_QUERY,
+            query: GET_TEAMS_QUERY,
             variables: { org: orguuid.value },
             fetchPolicy: 'network-only',
         })
-        userGroups.value = (res.data?.getUserGroups || [])
-            .filter((g: any) => g)
-            .map((g: any) => ({ label: g.name, value: g.uuid }))
+        // Stored whole, archived teams included. The `userGroups` computed
+        // decides what is SELECTABLE; an archived team still has to be
+        // renderable when a component is already owned by it.
+        orgTeams.value = (res.data?.getTeams || []).filter((g: any) => !!g)
     } catch {
-        userGroups.value = []
+        orgTeams.value = []
     }
 }
 
-/**
- * Removes the stored owner so org team-assignment rules apply again. Sent as an
- * explicit clearOwner flag because owner:null already means "no change" on the
- * update input -- there is no way to express "remove it" with owner alone.
- */
-async function clearOwner() {
-    const uuid = componentData.value?.uuid
-    if (!uuid) return
-    savingOwner.value = true
-    try {
-        await graphqlClient.mutate({
-            mutation: SET_COMPONENT_OWNER_MUTATION,
-            variables: { component: { uuid, name: componentData.value.name, clearOwner: true } }
-        })
-        notify('success', 'Owner cleared', 'Team assignment rules now apply to this ' + words.value.component + '.')
-        await loadOwnership()
-    } catch (error: any) {
-        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
-    } finally {
-        savingOwner.value = false
-    }
-}
-
-async function saveOwner() {
-    if (!ownerDraftRef.value || !componentData.value?.uuid) return
-    savingOwner.value = true
-    try {
-        await graphqlClient.mutate({
-            mutation: SET_COMPONENT_OWNER_MUTATION,
-            variables: { component: {
-                uuid: componentData.value.uuid,
-                name: componentData.value.name,
-                owner: { ownerType: ownerDraftType.value, ownerRef: ownerDraftRef.value },
-            } },
-        })
-        notify('success', 'Owner updated', 'Component owner set.')
-        await loadOwnership()
-    } catch (err: any) {
-        notify('error', 'Failed to set owner', commonFunctions.parseGraphQLError(err.toString()))
-    } finally {
-        savingOwner.value = false
-    }
-}
+// Owner set/clear rides the shared save() with the rest of the core
+// settings (same UpdateComponentInput) — see stagedOwnerChange.
 
 async function initLoad() {
     const compUuid = route.params.compuuid.toString()
     await store.dispatch('fetchBranches', compUuid)
+    latestRefreshToken.value++
     let storeComponent = store.getters.componentById(compUuid)
     if (!storeComponent || !storeComponent.versionType) {
         storeComponent = await store.dispatch('fetchComponentFull', compUuid)

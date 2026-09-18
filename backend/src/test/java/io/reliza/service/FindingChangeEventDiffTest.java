@@ -522,6 +522,58 @@ public class FindingChangeEventDiffTest {
         assertEquals("CVE-C", appeared.get(0).getVulnId());
     }
 
+    /**
+     * The repair sweep's alert has to say WHICH of its two causes it is looking at, and when the store held
+     * nothing for the repaired revisions those two are indistinguishable from the store alone: an emit that
+     * never ran leaves it empty, and so does an emit that ran and correctly wrote nothing because every
+     * finding was inherited. {@code emitRuleWouldHaveProduced} is the tiebreak -- it replays the LIVE
+     * EMIT's rule over the same input. Pinned here because the alert built on it would quietly start
+     * accusing the wrong component if the emitter's rule and this replay ever diverged.
+     */
+    @Test
+    void v3_emitRuleReplay_separatesNeverRanFromCorrectlySilent() {
+        VulnerabilityDto a = vuln("CVE-A", VulnerabilitySeverity.HIGH, false);
+        VulnerabilityDto b = vuln("CVE-B", VulnerabilitySeverity.HIGH, false);
+        ReleaseMetricsDto firstScan = metricsVuln(a, b);
+        List<MetricsAudit> rows = List.of(audit(0, metricsVuln()), audit(1, firstScan));
+        FindingComparisonService svc = service();
+
+        // Nothing inherited: the emit would have written both APPEAREDs. An empty store therefore means it
+        // never ran -- the sweep may say so.
+        assertEquals(2, svc.produceForReleaseV3(rows, firstScan, ATTR, Set.of())
+                        .byRevision().get(0).emitRuleWouldHaveProduced(),
+                "with nothing inherited the live emit keeps every APPEARED, so an empty store means it never ran");
+
+        // Everything inherited: the emit would have written nothing at all, so an empty store is CORRECT and
+        // any rows the sweep adds are a producer disagreement, not a lost write.
+        Set<String> allInherited = Set.of("CVE-A|" + LODASH, "CVE-B|" + LODASH);
+        assertEquals(0, svc.produceForReleaseV3(rows, firstScan, ATTR, allInherited)
+                        .byRevision().get(0).emitRuleWouldHaveProduced(),
+                "with everything inherited the live emit writes nothing, so an empty store must NOT be "
+                + "reported as a lost emit");
+
+        // The half the earlier version of this test never exercised: an inherited finding APPEARING on a
+        // NON-first-scan pair. The emit applies its drop only on a first scan, so this must be KEPT -- an
+        // implementation that dropped inherited APPEAREDs on every pair would return 0 here and the alert
+        // would start calling lost emits "disagreements".
+        ReleaseMetricsDto trickleIn = metricsVuln(a, b);
+        List<MetricsAudit> withTrickle = List.of(
+                audit(0, metricsVuln()), audit(1, metricsVuln(a)), audit(2, trickleIn));
+        assertEquals(1, svc.produceForReleaseV3(withTrickle, trickleIn, ATTR, allInherited)
+                        .byRevision().get(1).emitRuleWouldHaveProduced(),
+                "an inherited finding appearing on a RE-SCAN keeps its APPEARED under the emit's rule, "
+                + "because that rule only drops on a first scan");
+
+        // The revision's changeDate is the ONLY input to the sweep's lifecycle lookup, so an off-by-one
+        // here (taking the newer snapshot's date) would silently ask "was it cancelled" about the wrong
+        // transition -- and nothing else in the suite would notice.
+        assertEquals(ZonedDateTime.parse("2026-02-01T00:00:00Z").plusDays(1),
+                svc.produceForReleaseV3(withTrickle, trickleIn, ATTR, allInherited)
+                        .byRevision().get(1).changeDate(),
+                "each revision must carry the date of the OLDER snapshot in its pair -- the instant that "
+                + "transition happened, which is what the lifecycle lookup asks about");
+    }
+
     /** Canonical per-event key for stream-equality (order-independent-of-uuid). */
     private static String evKey(FindingChangeEvent e) {
         return e.getChangeKind() + "|" + e.getFindingKind() + "|" + e.getFindingKey()
@@ -578,5 +630,66 @@ public class FindingChangeEventDiffTest {
         List<FindingChangeEvent> v3 = svc.backfillEventsForReleaseV3(rows, firstScan, ATTR, Set.of());
         assertEquals(perRelease.size(), v3.size(), "no inherited findings -> v3 identical to per-release");
         assertEquals(2, ofKind(v3, FindingChangeKind.APPEARED).size(), "both first-scan findings APPEAR");
+    }
+
+    /**
+     * The two counters the repair sweep's alert uses to say WHY it kept an APPEARED the live emit dropped.
+     * They exist because "the two producers derived different sets" is not actionable on its own: a
+     * re-appearance means the release's metrics flapped to empty and back (chase the metrics writer), while
+     * a not-born-with means the finding fell outside the slice's born-with set (possibly just an artefact of
+     * the lookback window, chase nothing).
+     *
+     * <p>Pinned here rather than through the log line: an earlier attempt asserted on rendered output via
+     * OutputCaptureExtension and was flaky, because log4j2 caches System.out at init so capture depends on
+     * ordering. These are record components on the public production result, so they can be asserted
+     * directly.
+     *
+     * <p>The gate on {@code firstScanPair} is the subtle part and is pinned last. Without it the counters
+     * fired on ordinary trickle-in, where the emit keeps everything and the producers therefore AGREE --
+     * which is the opposite of what the fields mean.
+     */
+    @Test
+    void v3_keptCounters_separateAFlapFromALookbackArtefact() {
+        VulnerabilityDto a = vuln("CVE-A", VulnerabilitySeverity.HIGH, false);
+        VulnerabilityDto b = vuln("CVE-B", VulnerabilitySeverity.HIGH, false);
+        Set<String> inheritedA = Set.of("CVE-A|" + LODASH);
+        FindingComparisonService svc = service();
+
+        // FLAP: present, wiped, back. The pair that brings it back has an EMPTY older side, so the emit
+        // calls it a first scan and drops the inherited APPEARED -- but this producer has already seen the
+        // finding appear on this release, so it keeps it. That difference IS the customer's alert.
+        ReleaseMetricsDto recovered = metricsVuln(a);
+        List<MetricsAudit> flap = List.of(
+                audit(0, metricsVuln()), audit(1, metricsVuln(a)), audit(2, metricsVuln()));
+        var flapProd = svc.produceForReleaseV3(flap, recovered, ATTR, inheritedA);
+        assertEquals(1, flapProd.byRevision().get(2).keptAsReappearance(),
+                "the finding already appeared on this release, so its return is a RE-appearance -- the "
+                + "counter must say so, because that is what sends the reader to the metrics writer");
+        assertEquals(0, flapProd.byRevision().get(2).keptAsNotBornWith(),
+                "and it must not be attributed to the born-with gate, which would send them nowhere");
+
+        // TRICKLE-IN on a re-scan: the emit keeps everything on a non-first-scan pair, so the producers
+        // AGREE and neither counter may fire. This is the case that was wrong before the firstScanPair gate.
+        ReleaseMetricsDto trickled = metricsVuln(a, b);
+        List<MetricsAudit> trickle = List.of(
+                audit(0, metricsVuln()), audit(1, metricsVuln(a)), audit(2, trickled));
+        var trickleProd = svc.produceForReleaseV3(trickle, trickled, ATTR,
+                Set.of("CVE-A|" + LODASH, "CVE-B|" + LODASH));
+        assertEquals(0, trickleProd.byRevision().get(1).keptAsReappearance(),
+                "on a re-scan pair the emit keeps every APPEARED, so there is nothing it dropped and "
+                + "nothing to explain -- a non-zero counter here means the gate regressed");
+        assertEquals(0, trickleProd.byRevision().get(1).keptAsNotBornWith(),
+                "same: counting on non-first-scan pairs made this fire where the producers agreed");
+
+        // AGREEMENT on a genuine first scan: everything inherited AND born-with, so both producers drop and
+        // there is no difference to decompose.
+        ReleaseMetricsDto born = metricsVuln(a);
+        List<MetricsAudit> firstScanOnly = List.of(audit(0, metricsVuln()), audit(1, born));
+        var agreeProd = svc.produceForReleaseV3(firstScanOnly, born, ATTR, inheritedA);
+        assertEquals(0, agreeProd.byRevision().get(0).keptAsReappearance(),
+                "a plain first scan of an inherited finding is dropped by BOTH producers, so neither "
+                + "counter may claim a difference");
+        assertEquals(0, agreeProd.byRevision().get(0).keptAsNotBornWith(),
+                "on the birth pair the newer snapshot IS the born-with set, so this arm cannot fire");
     }
 }

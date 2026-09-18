@@ -1,6 +1,26 @@
 <template>
     <div class="branchView" v-if="modifiedBranch && branchData && modifiedBranch.name && branchData.name && branchData.componentDetails && words.branchFirstUpper">
-        <h5>{{ words.branchFirstUpper }}: {{ branchData.name }}</h5>
+        <h5>
+            {{ words.branchFirstUpper }}: {{ branchData.name }}
+            <n-tooltip v-if="activeLock" trigger="hover" style="max-width: 460px;">
+                <template #trigger>
+                    <n-tag type="error" size="small" :bordered="false" style="margin-left: 8px; vertical-align: middle;">
+                        <template #icon><n-icon><Lock/></n-icon></template>
+                        locked
+                    </n-tag>
+                </template>
+                <div>{{ activeLock.reason }}</div>
+                <div style="margin-top: 6px;">
+                    No version can be assigned and no release created on this
+                    {{ words.branch }} until it is released, which needs
+                    {{ activeLock.effectiveLevel === 'ADMIN' ? 'an admin'
+                        : activeLock.effectiveLevel === 'HUMAN' ? 'a person' : 'any recognized principal' }}.
+                </div>
+                <div v-if="lockCauseCount" style="margin-top: 6px;">
+                    Waiting on {{ lockCauseCount }} {{ lockCauseCount === 1 ? 'cause' : 'causes' }}.
+                </div>
+            </n-tooltip>
+        </h5>
         <div class="branchControls">
             <div class="mainControls">
                 <n-icon v-if="isWritable" @click="showCreateReleaseModal = true" class="clickable" title="Add Release" size="24" style="margin-left: 4px;">
@@ -8,6 +28,10 @@
                 </n-icon>
                 <n-icon @click="openBranchSettings" class="clickable" :title="words.branchFirstUpper + ' Settings'" size="24" style="margin-left: 4px;">
                     <Tool />
+                </n-icon>
+                <n-icon v-if="activeLock && isAdmin" @click="releaseLockModalOpen = true" class="clickable"
+                    title="Release lock" size="24" style="margin-left: 4px;">
+                    <LockOpen />
                 </n-icon>
                 <n-icon @click="openNextVersionModal" class="clickable" title='Set Next Version' size="24" style="margin-left: 4px;">
                     <ArrowForward />
@@ -20,6 +44,39 @@
                 </n-icon>
             </div>
         </div>
+        <n-modal
+            v-model:show="releaseLockModalOpen"
+            title="Release lock"
+            preset="dialog"
+            style="width: 620px;"
+            :show-icon="false">
+            <n-form label-placement="top">
+                <p class="text-muted" v-if="activeLock">{{ activeLock.reason }}</p>
+                <n-alert v-if="activeLock && activeLock.droppedCauses > 0" type="warning"
+                    style="margin-bottom: 0.75rem; font-size: 13px;">
+                    This lock had more causes than it keeps ({{ activeLock.droppedCauses }} dropped), so it
+                    will not release itself however many are claimed. If those commits are still
+                    unaccounted for, the rule will lock this {{ words.branch }} again on the next build.
+                </n-alert>
+                <n-form-item label="Reason" required>
+                    <n-input v-model:value="releaseLockDraft.reason" placeholder="e.g. commits claimed"/>
+                </n-form-item>
+                <n-form-item>
+                    <n-checkbox v-model:checked="releaseLockDraft.override">
+                        Override — release without the requirement being met
+                    </n-checkbox>
+                    <template #feedback>
+                        Recorded on the attestation that releases the lock, so an override is never
+                        silent.
+                    </template>
+                </n-form-item>
+                <n-space>
+                    <n-button type="primary" :disabled="!releaseLockDraft.reason"
+                        @click="releaseBranchLock">Release</n-button>
+                    <n-button @click="releaseLockModalOpen = false">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
         <n-modal
             v-model:show="showCreateReleaseModal"
             title="Add New Release"
@@ -363,10 +420,10 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ComputedRef, computed, Ref, ref, h, watch } from 'vue'
+import { ComputedRef, computed, Ref, reactive, ref, h, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
 import AddComponent from './AddComponent.vue'
 import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
@@ -377,11 +434,12 @@ import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
-import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh } from '@vicons/tabler'
+import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh, Lock, LockOpen } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
+import { renderVulnerabilityCells, renderViolationCells } from '@/utils/releaseScanCells'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 
@@ -428,14 +486,6 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const dtrackConfigured: Ref<boolean> = ref(false)
 isDtrackConfiguredForOrg(orguuid).then((c) => { dtrackConfigured.value = c })
 
-function renderPendingBadge (status: { label: string, title: string, kind: string }) {
-    const bg = status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
-    return h('span', {
-        title: status.title,
-        style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`
-    }, status.label)
-}
-
 const branchUuid: Ref<string> = ref(props.branchUuidProp ? props.branchUuidProp.toString() : route.params.branchuuid ? route.params.branchuuid.toString() : '')
 
 const isLinkVcsRepo = ref(false)
@@ -472,6 +522,42 @@ const customBranchVersionSchema = ref('')
 
 const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
+/**
+ * The active lock on this branch, if any. A branch lock refuses version assignment and release
+ * creation here while leaving the rest of the component working, so the page it applies to is the
+ * page that has to say so -- a build failing with "branch is locked" is otherwise the first anyone
+ * hears of it.
+ */
+const activeLock: ComputedRef<any> = computed((): any =>
+    (branchData.value?.locks || []).find((l: any) => l.status === 'ACTIVE') || null)
+
+const lockCauseCount: ComputedRef<number> = computed((): number => {
+    if (!activeLock.value) return 0
+    return (activeLock.value.causes || []).length + (activeLock.value.droppedCauses || 0)
+})
+
+const isAdmin: ComputedRef<boolean> = computed((): boolean =>
+    commonFunctions.isAdmin(orguuid, myUser))
+
+const releaseLockModalOpen = ref(false)
+const releaseLockDraft = reactive({ reason: '', override: false })
+
+const releaseBranchLock = async () => {
+    try {
+        await store.dispatch('releaseLock', {
+            orgUuid: branchData.value.org,
+            lockUuid: activeLock.value.uuid,
+            reason: releaseLockDraft.reason,
+            override: releaseLockDraft.override
+        })
+        notify('success', 'Released', 'Recorded as an attestation.')
+        releaseLockModalOpen.value = false
+        await store.dispatch('fetchBranch', branchUuid.value)
+    } catch (e: any) {
+        notify('error', 'Could not release', commonFunctions.extractGraphQLErrorMessage(e))
+    }
+}
+
 const isWritable : ComputedRef<boolean> = computed((): boolean => {
     if (commonFunctions.isWritable(orguuid, myUser, 'COMPONENT')) return true
 
@@ -504,6 +590,25 @@ if (route.query.release) {
     showReleaseUuid.value = route.query.release as string
     showReleaseModal.value = true
 }
+
+// Router navigations that only change ?release= no longer remount the view
+// (router-view keys on path), so apply them here. showRelease/close write
+// the URL via history.replaceState, which vue-router never sees — so this
+// watcher fires exclusively for real navigations (deep links from other
+// components, browser back/forward), never for local open/close.
+watch(() => route.query.release, (rel) => {
+    if (typeof rel === 'string' && rel) {
+        if (rel !== showReleaseUuid.value || !showReleaseModal.value) {
+            showReleaseUuid.value = rel
+            showReleaseModal.value = true
+        }
+    } else if (showReleaseModal.value) {
+        // Param removed by a navigation: mirror the old remount, which
+        // came back without the modal.
+        showReleaseModal.value = false
+        showReleaseUuid.value = ''
+    }
+})
 const showRelease = function(uuid: string) {
     showReleaseUuid.value = uuid
     showReleaseModal.value = true
@@ -2011,38 +2116,12 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
     fields.push({
         key: 'vulnerabilities',
         title: 'Vulnerabilities',
-        render: (row: any) => {
-            const status = getReleaseScanStatus(row, dtrackConfigured.value)
-            if (status.kind !== 'ready') return [renderPendingBadge(status)]
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'CRITICAL', ['Vulnerability', 'Weakness'])}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'HIGH', ['Vulnerability', 'Weakness'])}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'MEDIUM', ['Vulnerability', 'Weakness'])}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'LOW', ['Vulnerability', 'Weakness'])}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'UNASSIGNED', ['Vulnerability', 'Weakness'])}, row.metrics.unassigned)
-                els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
-        }
+        render: (row: any) => renderVulnerabilityCells(row, getReleaseScanStatus(row, dtrackConfigured.value), viewDetailedVulnerabilitiesForRelease)
     })
     fields.push({
         key: 'violations',
         title: 'Violations',
-        render: (row: any) => {
-            const status = getReleaseScanStatus(row, dtrackConfigured.value)
-            if (status.kind !== 'ready') return [renderPendingBadge(status)]
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
-                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
-        }
+        render: (row: any) => renderViolationCells(row, getReleaseScanStatus(row, dtrackConfigured.value), viewDetailedVulnerabilitiesForRelease)
     })
 
     return fields
@@ -2098,18 +2177,44 @@ async function handleRefreshVulnerabilityData() {
 
 const releaseRowkey = (row: any) => row.uuid
 
+// True while the URL watcher below writes the pagination refs: their
+// watchers must not push for URL-originated writes — restoring a
+// perPage entry would otherwise push a page-1 query and destroy the
+// forward history stack.
+let applyingPaginationFromUrl = false
+
 // Watch pagination changes and sync to route query parameters
 watch(currentPage, (newPage) => {
+    if (applyingPaginationFromUrl) return
     router.push({
         query: { ...route.query, branchReleasePage: newPage.toString() }
     })
 })
 
 watch(perPage, (newPerPage) => {
+    if (applyingPaginationFromUrl) return
     router.push({
         query: { ...route.query, branchReleasePerPage: newPerPage.toString(), branchReleasePage: '1' }
     })
     currentPage.value = 1
+})
+
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward re-applies URL pagination here; absent
+// params = the defaults, mirroring the old remount-initializer.
+watch(() => [route.query.branchReleasePage, route.query.branchReleasePerPage], async () => {
+    applyingPaginationFromUrl = true
+    try {
+        const page = parseInt(route.query.branchReleasePage as string) || 1
+        const size = parseInt(route.query.branchReleasePerPage as string) || 25
+        if (page !== currentPage.value) currentPage.value = page
+        if (size !== perPage.value) perPage.value = size
+        // Hold the flag through the watcher flush so the sync watchers
+        // above observe it.
+        await nextTick()
+    } finally {
+        applyingPaginationFromUrl = false
+    }
 })
 
 onCreated().then(() => {
