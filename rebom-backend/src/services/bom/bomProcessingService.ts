@@ -878,45 +878,57 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
 const ABANDON_RUNNING_AFTER = '6 hours';
 
 /**
- * Mark runs that started and never finished.
+ * Mark runs that started and never reported back, across the table.
  *
- * Deliberately its own statement rather than folded into the reservation.
- * Ageing is housekeeping: it does not need to be atomic with anything, it is
- * idempotent, and it cannot change a sequence because it rewrites entries in
- * place without adding or removing any. Keeping it out of the reservation
- * leaves that statement as simple as its correctness argument needs it to be.
+ * Swept by the enrichment scheduler rather than at reservation time. Ageing at
+ * reservation only ever tidied rows that get ANOTHER run, which are the rows
+ * that need it least -- a row whose single run died never reserves again, and
+ * its entry would have stayed RUNNING for ever. It is also not the reservation's
+ * job: that statement's correctness argument is narrow enough without carrying
+ * housekeeping beside it.
  *
- * The threshold is hours, not minutes, because two schedulers working the same
- * row at once is a legitimate state -- a run is only abandoned when no plausible
- * reading has it still alive.
+ * Bounded by LIMIT so one cycle cannot turn into a long write, and idempotent,
+ * so whatever is left over is picked up next time. Six hours rather than minutes
+ * because two schedulers working the same row at once is a legitimate state: a
+ * run is only abandoned when no plausible reading has it still alive.
  */
-async function abandonStaleRuns(bomUuid: string): Promise<void> {
+export async function abandonStaleEnrichmentRuns(limit = 200): Promise<number> {
+  const staleEntry = `
+    SELECT 1 FROM jsonb_array_elements(b.meta->'enrichments') e
+    WHERE e->>'status' = 'RUNNING'
+      AND (e->>'startedAt')::timestamptz < NOW() - INTERVAL '${ABANDON_RUNNING_AFTER}'`;
   const queryText = `
-    UPDATE rebom.boms
-    SET meta = jsonb_set(meta, '{enrichments}', (
+    WITH stale AS (
+      SELECT b.uuid
+      FROM rebom.boms b
+      WHERE jsonb_typeof(b.meta->'enrichments') = 'array'
+        AND EXISTS (${staleEntry})
+      LIMIT $1
+    )
+    UPDATE rebom.boms b
+    SET meta = jsonb_set(b.meta, '{enrichments}', (
           SELECT jsonb_agg(
             CASE WHEN e->>'status' = 'RUNNING'
                   AND (e->>'startedAt')::timestamptz < NOW() - INTERVAL '${ABANDON_RUNNING_AFTER}'
                  THEN e || jsonb_build_object('status', 'ABANDONED',
                         'error', 'run did not report back within ${ABANDON_RUNNING_AFTER}')
                  ELSE e END)
-          FROM jsonb_array_elements(meta->'enrichments') e)),
+          FROM jsonb_array_elements(b.meta->'enrichments') e)),
         last_updated_date = NOW()
-    WHERE uuid = $1
-      AND jsonb_typeof(meta->'enrichments') = 'array'
-      AND EXISTS (
-        SELECT 1 FROM jsonb_array_elements(meta->'enrichments') e
-        WHERE e->>'status' = 'RUNNING'
-          AND (e->>'startedAt')::timestamptz < NOW() - INTERVAL '${ABANDON_RUNNING_AFTER}')
+    FROM stale
+    WHERE b.uuid = stale.uuid
   `;
   try {
-    const res = await runQuery(queryText, [bomUuid]);
-    if (res.rowCount) {
-      logger.warn({ bomUuid }, 'Marked enrichment runs abandoned: they started and never reported back');
+    const res = await runQuery(queryText, [limit]);
+    const count = res.rowCount || 0;
+    if (count) {
+      logger.warn({ rows: count },
+        'Marked enrichment runs abandoned: they started and never reported back');
     }
+    return count;
   } catch (error) {
-    // Housekeeping must not stop the run it precedes.
-    logger.error({ bomUuid, error }, 'Could not age out stale enrichment runs');
+    logger.error({ error }, 'Could not age out stale enrichment runs');
+    return 0;
   }
 }
 
@@ -969,7 +981,6 @@ export async function reserveEnrichmentRun(
     WHERE uuid = $1
     RETURNING jsonb_array_length(meta->'enrichments') - 1 AS sequence
   `;
-  await abandonStaleRuns(bomUuid);
   const res = await runQuery(queryText, [bomUuid, new Date().toISOString(), source, ENRICHER_VERSION]);
   const sequence = res.rows[0]?.sequence;
   if (typeof sequence !== 'number') {

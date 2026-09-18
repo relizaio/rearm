@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import crypto from 'node:crypto';
 
-import { reserveEnrichmentRun } from '../../src/services/bom/bomProcessingService';
+import { reserveEnrichmentRun, abandonStaleEnrichmentRuns } from '../../src/services/bom/bomProcessingService';
 import { runQuery, pool } from '../../src/utils';
 
 /**
@@ -134,6 +134,9 @@ describe('what a reserved run leaves behind when it never finishes', () => {
     });
 
     it('ages out a run that never reported back, and leaves a live one alone', async () => {
+        // Swept by the scheduler, not by the next reservation: a row whose only
+        // run died never reserves again, and that is exactly the row whose entry
+        // would otherwise stay RUNNING for ever.
         await runQuery(
             `UPDATE rebom.boms SET meta = jsonb_set(meta, '{enrichments}', $2::jsonb) WHERE uuid = $1`,
             [uuid, JSON.stringify([
@@ -145,8 +148,7 @@ describe('what a reserved run leaves behind when it never finishes', () => {
             ])]
         );
 
-        const sequence = await reserveEnrichmentRun(uuid, 'manual');
-        expect(sequence).toBe(3);
+        expect(await abandonStaleEnrichmentRuns()).toBeGreaterThanOrEqual(1);
 
         const res = await runQuery(`SELECT meta->'enrichments' AS runs FROM rebom.boms WHERE uuid = $1`, [uuid]);
         const runs = res.rows[0].runs;
@@ -155,8 +157,10 @@ describe('what a reserved run leaves behind when it never finishes', () => {
         // Five minutes old: two schedulers on one row is a legitimate state, and
         // this one may well still be pushing.
         expect(runs[2].status).toBe('RUNNING');
-        expect(runs[3].status).toBe('RUNNING');
         // Ageing rewrites entries in place; it must never change a sequence.
-        expect(runs.map((r: any) => r.sequence)).toEqual([0, 1, 2, 3]);
+        expect(runs.map((r: any) => r.sequence)).toEqual([0, 1, 2]);
+
+        // And the row is still reservable afterwards, at the next number.
+        expect(await reserveEnrichmentRun(uuid, 'manual')).toBe(3);
     });
 });
