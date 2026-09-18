@@ -16,3 +16,14 @@ plus `enrollkey`) — these are what an AI coding agent runs against
 a ReARM Pro instance after the operator hands it the FREEFORM
 `AGENT` key. See [Bootstrap an AI Agent](../workflows/agentic) for
 the operator-facing setup and the agent-side contract URL.
+
+### Rebuilds and SBOM serial numbers
+
+A rebuild uploads a new SBOM. If your generator pins `serialNumber`, it must also increment
+`version` per build, otherwise the upload is refused; alternatively let the generator mint a fresh
+serial number.
+
+The refusal names the serial number and both versions, and applies to `rearm addrelease --rebuild`
+and to any `rearm addartifact` that re-uses an existing serial. It exists because a stored raw SBOM
+is immutable: ReARM keeps the bytes it was given as the record of what was actually uploaded and
+scanned, so a second upload claiming the same identity cannot replace them.
