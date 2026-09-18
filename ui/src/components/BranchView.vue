@@ -690,33 +690,49 @@ async function triggerAutoIntegrate () {
     if (autoIntegrateInFlight.value) return
     autoIntegrateInFlight.value = true
     try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation autoIntegrateFeatureSet($branchUuid: ID!) {
-                    autoIntegrateFeatureSet(branchUuid: $branchUuid) {
-                        uuid
-                        version
-                    }
-                }`,
-            variables: { branchUuid: branchUuid.value },
-            fetchPolicy: 'no-cache'
-        })
+        let resp: any
+        try {
+            resp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation autoIntegrateFeatureSet($branchUuid: ID!) {
+                        autoIntegrateFeatureSet(branchUuid: $branchUuid) {
+                            uuid
+                            version
+                        }
+                    }`,
+                variables: { branchUuid: branchUuid.value },
+                fetchPolicy: 'no-cache'
+            })
+        } catch (e: any) {
+            notify('error', 'Auto Integrate Failed', commonFunctions.extractGraphQLErrorMessage(e))
+            // A failure does not mean nothing happened: the mutation is not idempotent, and a
+            // timeout after the release was committed is indistinguishable here from one before
+            // it. Refresh the RELEASE LIST so it is already correct when this modal closes, rather
+            // than staying stale until something else fetches.
+            //
+            // Deliberately not onCreated(): that reassigns modifiedBranch from branchData, i.e.
+            // resets this modal's edit form. On the error path the modal stays open, so that would
+            // silently discard unsaved settings edits -- the very loss handleBranchSettingsClose
+            // exists to make the operator confirm. fetchReleases feeds releasesOfBranch, which the
+            // list renders from, so this refreshes what needs refreshing and nothing else.
+            //
+            // Best-effort: this fetches too, so whatever broke the mutation has usually broken it
+            // as well, and its failure must not swallow the report above.
+            await store.dispatch('fetchReleases', { branch: branchUuid.value }).catch(() => {})
+            return
+        }
+        // Past here the mutation SUCCEEDED. Only its own failure may be reported as an
+        // auto-integrate failure: telling an operator it failed when the release exists is exactly
+        // what makes them click again and create a second one. So the refresh below is best-effort
+        // and the outcome is reported either way.
         const release = (resp.data as any)?.autoIntegrateFeatureSet
-        await onCreated()
+        await onCreated().catch(() => {})
         if (release && release.version) {
             notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
             showBranchSettingsModal.value = false
         } else {
             notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
         }
-    } catch (e: any) {
-        notify('error', 'Auto Integrate Failed', commonFunctions.extractGraphQLErrorMessage(e))
-        // A failure here does not mean nothing happened: the mutation is not idempotent, and a
-        // timeout after the release was committed looks identical from the client. Refresh so an
-        // operator who did get a release sees it instead of clicking again for a second one.
-        // Best-effort on purpose -- onCreated fetches too, so whatever broke the mutation has
-        // usually broken this as well, and its failure must not swallow the report above.
-        await onCreated().catch(() => {})
     } finally {
         // finally, not after the notify: a failed mutation must not leave the button dead.
         autoIntegrateInFlight.value = false
