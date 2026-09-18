@@ -726,11 +726,26 @@ async function triggerAutoIntegrate () {
         // what makes them click again and create a second one. So the refresh below is best-effort
         // and the outcome is reported either way.
         const release = (resp.data as any)?.autoIntegrateFeatureSet
-        await onCreated().catch(() => {})
         if (release && release.version) {
+            // A release was created and this modal is about to close, so the full
+            // refresh is free: nothing the operator is still looking at gets reset.
+            await onCreated().catch(() => {})
             notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
             showBranchSettingsModal.value = false
         } else {
+            // Succeeded and created nothing -- usually because a matching product
+            // release already exists. The modal STAYS OPEN here, so onCreated is
+            // the wrong refresh: it reassigns modifiedBranch from branchData and
+            // silently reverts whatever the operator had typed into the form they
+            // are still sitting in, with none of the confirmation that closing the
+            // modal on unsaved edits gives them (handleBranchSettingsClose).
+            // Verified on the sandbox before this line existed: an edit made in the
+            // settings form vanished on a null result.
+            //
+            // The list can still be stale -- a null result often means something
+            // else created that release moments ago -- so refresh the RELEASES and
+            // leave the form alone, the same split the error path above makes.
+            await store.dispatch('fetchReleases', { branch: branchUuid.value }).catch(() => {})
             notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
         }
     } finally {
