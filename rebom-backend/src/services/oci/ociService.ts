@@ -141,16 +141,16 @@ export async function fetchFromOci(tag: string, repositoryName?: string, expecte
             const actualDigest = createHash('sha256').update(rawContent).digest('hex');
 
             if (actualDigest !== expectedDigest) {
-                const error = new DigestValidationError(
+                // Thrown, not logged. From here a mismatch is not known to be a
+                // failure: the caller may be holding a row snapshot that an
+                // enrichment has since moved on from, in which case this is a
+                // race it will recover from silently. Only the caller that
+                // re-reads the row knows which it is, so only it logs at error
+                // (see fetchProcessedBomWithRetry and rawBomResolver). Logging
+                // here reported every recovered race as a failure.
+                throw new DigestValidationError(
                     `Digest validation failed for artifact ${tag} in repository ${repo}. Expected: ${expectedDigest}, Actual: ${actualDigest}`,
                     tag, repo, expectedDigest, actualDigest);
-                logger.error({
-                    tag,
-                    repository: repo,
-                    expectedDigest,
-                    actualDigest
-                }, "Downloaded artifact digest does not match stored digest");
-                throw error;
             }
 
             logger.debug({ tag, repository: repo, digest: actualDigest, expected: expectedDigest }, "Artifact digest validated successfully");
@@ -163,7 +163,11 @@ export async function fetchFromOci(tag: string, repositoryName?: string, expecte
         return bom
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        
+
+        // A digest mismatch is the caller's to judge (see above): rethrow without
+        // the error-level line, or every recovered race is reported twice.
+        if (error instanceof DigestValidationError) throw error;
+
         // Provide more context if we fell back to base repository
         if (isFallback && repositoryName) {
             logger.error({ 

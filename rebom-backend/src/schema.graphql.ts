@@ -122,6 +122,29 @@ const typeDefs = gql`
     enrichmentStatus: EnrichmentStatus
     enrichmentTimestamp: String
     enrichmentError: String
+    """
+    Every processed artifact this BOM has ever pointed at, oldest first, entry 0
+    being the upload. The scalars above summarise the last completed run; this
+    is the whole history, including runs that failed and moved nothing.
+    """
+    enrichments: [EnrichmentRun]
+  }
+
+  """One enrichment run, or entry 0: the upload that created the row."""
+  type EnrichmentRun {
+    """The n in <uuid>-e<n>; 0 is the upload itself."""
+    sequence: Int
+    """Null when the run pushed nothing -- it failed, or it changed nothing."""
+    tag: String
+    repository: String
+    digest: String
+    size: Int
+    startedAt: String
+    completedAt: String
+    status: String
+    error: String
+    source: String
+    enricherVersion: String
   }
 
   enum EnrichmentStatus {

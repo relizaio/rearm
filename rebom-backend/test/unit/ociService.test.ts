@@ -25,7 +25,13 @@ describe('OCI Service - Mock Mode', () => {
             expect(result).toBeDefined();
             expect(result.ociResponse).toBeDefined();
             expect(result.ociResponse!.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
-            expect(result.fileSHA256Digest).toBe(result.ociResponse!.digest);
+            // Bare hex, not the prefixed manifest digest: this is the hash of the
+            // uploaded bytes, and it is what production stores in
+            // originalFileDigest / processedFileDigest and validates downloads
+            // against. The mock returned the prefixed form for both until a
+            // caller started comparing a locally computed hash to a stored one.
+            expect(result.fileSHA256Digest).toMatch(/^[a-f0-9]{64}$/);
+            expect(`sha256:${result.fileSHA256Digest}`).toBe(result.ociResponse!.digest);
             expect(result.ociRepositoryName).toBeDefined();
         });
 

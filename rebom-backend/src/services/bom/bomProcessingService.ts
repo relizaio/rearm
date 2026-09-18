@@ -22,6 +22,9 @@ import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
+
+/** Stamped on every enrichment entry so a bad ruleset can be found by its runs. */
+const ENRICHER_VERSION = process.env.REBOM_VERSION || require('../../../package.json').version;
 import * as fs from 'fs';
 
 // Enrichment timeout constant - used by both enrichCycloneDxBom and triggerEnrichment
@@ -801,34 +804,137 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
   // Check if enrichment actually changed the BOM
   const wasEnriched = result.enrichedBom !== bom;
   
+  const sequence = await reserveEnrichmentRun(bomUuid, 'scheduler');
+
   if (wasEnriched) {
-    // Push enriched BOM to OCI (overwrites existing)
-    //use current month's repository
+    // A NEW tag every time. Overwriting the bytes at <uuid> is what let a
+    // reader validate fresh bytes against the digest it had already read.
     try {
       const repositoryName = getMonthlyRepositoryName();
-      
-      const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
-      
+      const tag = sequence === null ? bomUuid : enrichmentTag(bomUuid, sequence);
+
+      const pushResult = await pushToOci(tag, result.enrichedBom, repositoryName);
+
       // Validate repository name was set
       validateOciPushResult(pushResult, 'enrichment', bomUuid);
-      
+
       // Update database with new BOM reference, status, and repository name
-      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult, pushResult.ociRepositoryName);
-      
+      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
+        pushResult.ociRepositoryName, tag);
+      if (sequence !== null) {
+        await closeEnrichmentRun(bomUuid, sequence, {
+          status: 'COMPLETED', tag, repository: pushResult.ociRepositoryName,
+          digest: pushResult.fileSHA256Digest, size: pushResult.originalSize, error: null
+        });
+      }
+
       logger.info({ 
         bomUuid, 
         serialNumber: bom.serialNumber, 
+        tag,
         repositoryName: pushResult.ociRepositoryName
       }, 'Async BOM enrichment completed successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ bomUuid, error: errorMessage }, 'Failed to push enriched BOM to OCI');
       await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, errorMessage);
+      if (sequence !== null) {
+        await closeEnrichmentRun(bomUuid, sequence, { status: 'FAILED', error: errorMessage });
+      }
     }
   } else {
     logger.info({ bomUuid, serialNumber: bom.serialNumber }, 'BOM enrichment skipped - no enrichment needed');
     await updateEnrichmentStatus(bomUuid, EnrichmentStatus.COMPLETED);
+    // Completed, pushed nothing: the entry has no tag, which is the difference
+    // between "ran and changed nothing" and "never ran".
+    if (sequence !== null) {
+      await closeEnrichmentRun(bomUuid, sequence, { status: 'COMPLETED', error: null });
+    }
   }
+}
+
+/**
+ * Reserve the next enrichment sequence for a row, appending its RUNNING entry.
+ *
+ * The sequence has to exist before the push, because it names the tag the bytes
+ * go to. Two schedulers reserving at once must not mint the same tag, so the
+ * number is read and written inside one UPDATE: postgres serialises the two
+ * statements on the row and the second sees the first's entry. A reservation
+ * that never completes stays as a RUNNING entry, which is the honest record of
+ * a run that died mid-flight.
+ *
+ * Legacy rows get entry 0 synthesised here from the fields they already carry,
+ * so the history explains every artifact the row has ever pointed at rather
+ * than starting mid-story.
+ */
+async function reserveEnrichmentRun(
+  bomUuid: string,
+  source: 'scheduler' | 'on-upload' | 'manual'
+): Promise<number | null> {
+  const queryText = `
+    WITH current AS (
+      SELECT uuid,
+        CASE
+          WHEN meta->'enrichments' IS NULL OR jsonb_typeof(meta->'enrichments') <> 'array'
+          THEN jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+                 'sequence', 0,
+                 'tag', COALESCE(meta->>'processedTag', uuid::text),
+                 'repository', bom->>'ociRepositoryName',
+                 'digest', meta->>'processedFileDigest',
+                 'size', meta->'processedFileSize',
+                 'status', 'COMPLETED',
+                 'source', 'on-upload')))
+          ELSE meta->'enrichments'
+        END AS runs
+      FROM rebom.boms WHERE uuid = $1
+    )
+    UPDATE rebom.boms b
+    SET meta = jsonb_set(b.meta, '{enrichments}',
+          current.runs || jsonb_build_object(
+            'sequence', jsonb_array_length(current.runs),
+            'status', 'RUNNING',
+            'startedAt', $2::text,
+            'source', $3::text,
+            'enricherVersion', $4::text)),
+        last_updated_date = NOW()
+    FROM current
+    WHERE b.uuid = current.uuid
+    RETURNING jsonb_array_length(b.meta->'enrichments') - 1 AS sequence
+  `;
+  try {
+    const res = await runQuery(queryText, [bomUuid, new Date().toISOString(), source, ENRICHER_VERSION]);
+    const sequence = res.rows[0]?.sequence;
+    return typeof sequence === 'number' ? sequence : null;
+  } catch (error) {
+    logger.error({ bomUuid, error }, 'Failed to reserve an enrichment sequence');
+    return null;
+  }
+}
+
+/** Close the reserved entry, whatever happened, without touching the pointer. */
+async function closeEnrichmentRun(
+  bomUuid: string,
+  sequence: number,
+  fields: Record<string, unknown>
+): Promise<void> {
+  const queryText = `
+    UPDATE rebom.boms
+    SET meta = jsonb_set(meta, ARRAY['enrichments', $2::text],
+          COALESCE(meta->'enrichments'->$3::int, '{}'::jsonb) || $4::jsonb),
+        last_updated_date = NOW()
+    WHERE uuid = $1 AND jsonb_typeof(meta->'enrichments') = 'array'
+  `;
+  try {
+    await runQuery(queryText, [bomUuid, String(sequence), sequence,
+      JSON.stringify({ completedAt: new Date().toISOString(), ...fields })]);
+  } catch (error) {
+    logger.error({ bomUuid, sequence, error }, 'Failed to close the enrichment run entry');
+  }
+}
+
+/** The tag an enrichment run writes to. Never the bare uuid: that artifact is somebody's current. */
+function enrichmentTag(bomUuid: string, sequence: number): string {
+  return `${bomUuid}-e${sequence}`;
 }
 
 async function updateEnrichmentStatus(
@@ -994,20 +1100,38 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
       return;
     }
     
-    // Push only the final enriched BOM
-    // SIMPLIFIED: Always use current month's repository for better backup rotation
+    // Push only the final enriched BOM, to its own tag in the current month's
+    // repository. The artifact the row points at right now is left alone.
     const repositoryName = getMonthlyRepositoryName();
-    
-    const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
-    
+    const sequence = await reserveEnrichmentRun(bomUuid, 'manual');
+    const tag = sequence === null ? bomUuid : enrichmentTag(bomUuid, sequence);
+
+    let pushResult;
+    try {
+      pushResult = await pushToOci(tag, result.enrichedBom, repositoryName);
+    } catch (error) {
+      if (sequence !== null) {
+        await closeEnrichmentRun(bomUuid, sequence, {
+          status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
+      }
+      throw error;
+    }
+
     // Validate repository name was set
     if (!pushResult.ociRepositoryName) {
       throw new OciStorageError('Re-enrichment OCI push succeeded but repository name is missing', 'push', bomUuid);
     }
     
-    await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult, pushResult.ociRepositoryName);
+    await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
+      pushResult.ociRepositoryName, tag);
+    if (sequence !== null) {
+      await closeEnrichmentRun(bomUuid, sequence, {
+        status: 'COMPLETED', tag, repository: pushResult.ociRepositoryName,
+        digest: pushResult.fileSHA256Digest, size: pushResult.originalSize, error: null
+      });
+    }
     
-    logger.info({ bomUuid }, 'Forced re-enrichment completed successfully');
+    logger.info({ bomUuid, tag }, 'Forced re-enrichment completed successfully');
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1093,7 +1217,8 @@ async function updateEnrichmentStatusWithBom(
   bomUuid: string,
   status: EnrichmentStatus,
   oasResponse: any,
-  repositoryName?: string
+  repositoryName?: string,
+  processedTag?: string
 ): Promise<void> {
   try {
     // Update enrichment status in meta and repository name in bom field
@@ -1114,18 +1239,16 @@ async function updateEnrichmentStatusWithBom(
       SET 
         bom = $2,
         meta = jsonb_set(
-          jsonb_set(
-            jsonb_set(
-              jsonb_set(
-                jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
-                '{enrichmentTimestamp}', $4::jsonb
-              ),
-              '{enrichmentError}', $5::jsonb
-            ),
-            '{processedFileDigest}', $6::jsonb
-          ),
-          '{processedFileSize}', $7::jsonb
-        ),
+                 jsonb_set(
+                   jsonb_set(
+                     jsonb_set(
+                       jsonb_set(
+                         jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
+                         '{enrichmentTimestamp}', $4::jsonb),
+                       '{enrichmentError}', $5::jsonb),
+                     '{processedFileDigest}', $6::jsonb),
+                   '{processedFileSize}', $7::jsonb),
+                 '{processedTag}', $8::jsonb),
         last_updated_date = NOW()
       WHERE uuid = $1
     `;
@@ -1137,7 +1260,8 @@ async function updateEnrichmentStatusWithBom(
       JSON.stringify(new Date().toISOString()),
       JSON.stringify(null),
       JSON.stringify(oasResponse.fileSHA256Digest || null),
-      JSON.stringify(oasResponse.originalSize || null)
+      JSON.stringify(oasResponse.originalSize || null),
+      JSON.stringify(processedTag || bomUuid)
     ]);
     
     if (repositoryName) {

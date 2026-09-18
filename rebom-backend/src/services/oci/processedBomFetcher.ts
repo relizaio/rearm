@@ -5,17 +5,21 @@ import { extractRepositoryNameFromBom } from './ociRepositoryHelpers';
 import type { BomRecord } from '../../types/bom.types';
 
 /**
- * Processed-BOM fetch tolerant of the enrichment write race.
+ * Processed-BOM fetch, by the tag the row points at.
  *
- * Enrichment updates the processed BOM in TWO steps: it overwrites the bytes
- * at tag {@code <uuid>} in the registry, THEN writes the new
- * processedFileDigest (+ repository pointer) to the row. A reader whose row
- * snapshot predates step two but whose download lands after step one computes
- * the NEW bytes against the OLD digest and fails validation -- even though
- * nothing is corrupt. The window is milliseconds for request-scoped readers
- * but minutes for the enrichment scheduler (it loads its candidate rows up
- * front) and the per-minute reconcile in the ReARM backend, so purely
- * programmatic collisions are the common case.
+ * Enrichment no longer overwrites bytes in place: it pushes to a fresh
+ * {@code <uuid>-e<n>} tag and moves the row's processedTag, digest and
+ * repository pointer to it in one write. A reader holding an older row
+ * therefore fetches the older tag, whose bytes still hash to the digest that
+ * row carries -- the race is closed by construction rather than survived.
+ *
+ * The retry below remains for rows written BEFORE that change, whose processed
+ * bytes live at the bare {@code <uuid>} tag and were overwritten in place. For
+ * those, a reader whose snapshot predates the row update but whose download
+ * lands after the overwrite validates new bytes against an old digest. The
+ * window is milliseconds for request-scoped readers but minutes for the
+ * enrichment scheduler (it loads its candidate rows up front) and the
+ * per-minute reconcile in the ReARM backend.
  *
  * Recovery discipline: on a digest failure, RE-READ the row once. If the
  * stored digest (or repository pointer) changed while we were looking, it was
@@ -27,17 +31,29 @@ import type { BomRecord } from '../../types/bom.types';
 /** Structural minimum: callers like the enrichment scheduler carry partial rows. */
 type ProcessedBomSource = Pick<BomRecord, 'uuid' | 'meta' | 'bom'>;
 
+/**
+ * Which artifact holds this row's processed BOM.
+ *
+ * Rows written before enrichment stopped overwriting in place have no
+ * processedTag and their bytes are at the bare uuid, which is exactly what the
+ * fallback resolves to -- nothing was moved or migrated for them.
+ */
+export function resolveProcessedTag(bomRecord: Pick<BomRecord, 'uuid' | 'meta'>): string {
+    return bomRecord.meta?.processedTag || bomRecord.uuid;
+}
+
 export async function fetchProcessedBomWithRetry(
     bomRecord: ProcessedBomSource,
     fetchFromOci: (tag: string, repo?: string, digest?: string) => Promise<any> = defaultFetchFromOci,
     reReadRow: (uuid: string) => Promise<BomRecord[]> = defaultReReadRow
 ): Promise<any> {
     const bomUuid = bomRecord.uuid;
+    const tag = resolveProcessedTag(bomRecord);
     const repo = extractRepositoryNameFromBom(bomRecord);
     const digest = bomRecord.meta?.processedFileDigest;
 
     try {
-        return await fetchFromOci(bomUuid, repo, digest);
+        return await fetchFromOci(tag, repo, digest);
     } catch (error) {
         if (!(error instanceof DigestValidationError)) throw error;
 
@@ -45,21 +61,34 @@ export async function fetchProcessedBomWithRetry(
         const fresh = freshRows[0];
         const freshDigest = fresh?.meta?.processedFileDigest;
         const freshRepo = fresh ? extractRepositoryNameFromBom(fresh) : undefined;
+        const freshTag = fresh ? resolveProcessedTag(fresh) : undefined;
 
-        if (!fresh || (freshDigest === digest && freshRepo === repo)) {
+        if (!fresh || (freshDigest === digest && freshRepo === repo && freshTag === tag)) {
             // Row unchanged: the bytes genuinely do not match their stored
-            // digest. Surface the original failure.
+            // digest. This is the only path that knows the mismatch is a
+            // failure rather than a race, so it is the only one that logs at
+            // error -- fetchFromOci cannot tell the two apart from where it
+            // stands.
+            logger.error({
+                bomUuid,
+                tag,
+                repository: repo,
+                expectedDigest: digest,
+                actualDigest: (error as DigestValidationError).actualDigest
+            }, 'Processed BOM does not match its stored digest and the row is unchanged');
             throw error;
         }
 
         logger.warn({
             bomUuid,
+            staleTag: tag,
+            freshTag,
             staleDigest: digest,
             freshDigest,
             staleRepo: repo,
             freshRepo
-        }, 'Digest mismatch was a concurrent enrichment write (row changed under the reader); retrying with fresh digest');
-        return fetchFromOci(bomUuid, freshRepo, freshDigest);
+        }, 'Digest mismatch was a concurrent enrichment write (row changed under the reader); retrying with fresh row state');
+        return fetchFromOci(freshTag!, freshRepo, freshDigest);
     }
 }
 
