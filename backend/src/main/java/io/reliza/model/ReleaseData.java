@@ -336,7 +336,7 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	 *
 	 * <p>NOT the device support window. A device model's support commitment is declared once
 	 * on {@code ComponentData.medicalProfile.deviceSupportWindow} and resolved by
-	 * {@link io.reliza.service.DeviceLifecycleResolver}; reading these release dates as a
+	 * {@link io.reliza.service.DeviceLifecycleHook}; reading these release dates as a
 	 * device commitment is what let one physical device carry a different end-of-support date
 	 * for every firmware version it ever ran (decision D7).
 	 */

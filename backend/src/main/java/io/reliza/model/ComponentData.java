@@ -169,7 +169,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	 *
 	 * <p>Declared on the product component (this class's home) and optionally overridden
 	 * per {@code ShippedProduct}; resolved for a unit by
-	 * {@code DeviceLifecycleResolver}. Two dates and the provenance of the assertion --
+	 * {@code DeviceLifecycleHook}. Two dates and the provenance of the assertion --
 	 * the same {@code assertedBy}/{@code assessedAt} pairing the component attestations
 	 * use, for the same reason: a regulatory date without a recorded asserter and instant
 	 * is a claim nobody owns.

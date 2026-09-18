@@ -94,16 +94,6 @@ public class SbomComponentDataFetcher {
 	@Autowired
 	private SupportInjectionService supportInjectionService;
 
-	/** Enough to fill a screen. */
-	private static final int DEFAULT_FLEET_PAGE_SIZE = 50;
-
-	/**
-	 * Caps the RESPONSE, not the work: the service evaluates the whole in-field fleet per
-	 * request (memoised per shipment / release / site) so it can order at-risk first, and
-	 * this bounds how much of that comes back in one page.
-	 */
-	private static final int MAX_FLEET_PAGE_SIZE = 200;
-
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
 
@@ -177,7 +167,7 @@ public class SbomComponentDataFetcher {
 	 * declares no support window.
 	 */
 	/**
-	 * The device window for a release, from {@link DeviceLifecycleResolver} (D7).
+	 * The device window for a release, from {@link io.reliza.service.DeviceLifecycleHook} (D7).
 	 *
 	 * <p>Was a hand-rolled read of the release's own {@code eos}/{@code eol} behind a
 	 * PRODUCT-type check. Those dates are release lifecycle for TEA/CLE and never were the

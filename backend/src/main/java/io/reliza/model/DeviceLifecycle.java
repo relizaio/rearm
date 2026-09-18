@@ -9,7 +9,7 @@ import java.time.LocalDate;
  * The device's declared support window -- its end-of-support and end-of-life dates, both
  * tagged FDA section-524B.
  *
- * <p>Resolved by {@code DeviceLifecycleResolver} from the PRODUCT COMPONENT, or from a
+ * <p>Resolved through {@code DeviceLifecycleHook} from the PRODUCT COMPONENT, or from a
  * shipment override (decision D7). It is NOT {@code ReleaseData.eos}/{@code eol}: those
  * predate this work and remain release lifecycle for TEA/CLE. This record was populated from
  * them until 2026-09-10, which is why anything still saying so is stale.
