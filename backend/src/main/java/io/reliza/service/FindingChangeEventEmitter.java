@@ -68,8 +68,10 @@ public class FindingChangeEventEmitter {
 	 * back the metrics/audit write and NEVER blocks ingestion.
 	 *
 	 * <p>Gates (parity with #252 / the original emit): the caller already guards first-metrics
-	 * ({@code oldLiveRaw} is non-null). CANCELLED / REJECTED releases skip emission entirely (their
-	 * metrics may be incomplete). The change rows are bucketed at {@code changeDate}
+	 * ({@code oldLiveRaw} is non-null). CANCELLED / REJECTED releases skip emission entirely (PENDING deliberately does NOT --
+	 * it is where a new release's first scan usually lands) -- see
+	 * {@link ReleaseLifecycle#isFindingChangeEmitSuppressed}, which is the single definition of that
+	 * rule and carries the reasoning. The change rows are bucketed at {@code changeDate}
 	 * (== the audit row's {@code revisionCreatedDate}) and stamped with {@code toRevision} so dates
 	 * line up with backfill and the dedup tuple is unchanged.
 	 *
@@ -84,8 +86,7 @@ public class FindingChangeEventEmitter {
 	public void emit(Release r, Map<String, Object> oldLiveRaw, ReleaseMetricsDto newMetrics,
 			ZonedDateTime changeDate, int toRevision) throws JacksonException {
 		ReleaseData rd = ReleaseData.dataFromRecord(r);
-		if (rd.getLifecycle() == ReleaseLifecycle.CANCELLED
-				|| rd.getLifecycle() == ReleaseLifecycle.REJECTED) {
+		if (ReleaseLifecycle.isFindingChangeEmitSuppressed(rd.getLifecycle())) {
 			return;
 		}
 		ReleaseMetricsDto oldLive = (oldLiveRaw == null || oldLiveRaw.isEmpty())

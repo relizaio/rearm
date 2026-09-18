@@ -34,15 +34,26 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * GraphQL surface for KEV data.
  *
- * <p>Child resolvers serve {@code knownExploited} on the three vulnerability
- * read types ({@code Vulnerability}, {@code ReleaseVulnerabilityInfo},
- * {@code VulnerabilityWithAttribution}) from the value stamped on the
- * parent record by {@code ReleaseMetricsComputeService}. In V54 KEV moved
- * to per-org assertions and the parent assembly paths don't carry an
- * orgUuid into the field resolver, so a per-request fresh-probe is no
- * longer feasible at this layer; metrics compute runs immediately after
- * a per-org KEV sync via {@code KevCatalogSyncService.triggerKevReGate},
- * so the stamped value stays close to fresh.
+ * <p>One child resolver remains here: {@code Vulnerability.knownExploited},
+ * served from the value stamped on the parent record by
+ * {@code ReleaseMetricsComputeService}. {@code ReleaseVulnerabilityInfo} and
+ * {@code VulnerabilityWithAttribution} used to be served from here too -- as a
+ * hardcoded FALSE, because those assembly paths were thought not to carry KEV
+ * membership. They do: both expose it as a record component now, carried
+ * through from the stamped source, so no resolver is needed.
+ *
+ * <p>Note what "carried through" means for freshness. The live path carries a
+ * value that self-heals: {@code recomputeReleasesForNewlyKev} re-stamps every
+ * release carrying a CVE that newly enters the catalog. The changelog REVISION
+ * path carries {@code FindingChangeEvent.knownExploited}, which is baked at
+ * event-write time and never revisited -- so a historical change entry reflects
+ * KEV membership as it was then, not as it is today (and pre-V56 rows carry
+ * null). That is defensible for a historical record, but it is not the same
+ * guarantee as the live surfaces.
+ *
+ * <p>Metrics compute runs immediately after a per-org KEV sync via
+ * {@code KevCatalogSyncService.triggerKevReGate}, so a stamped value stays
+ * close to fresh.
  *
  * <p>{@code kevRecordDetails(orgUuid, cveId)} (org-authorized, READ)
  * returns the per-source assertion detail for the UI's CVE-details
@@ -71,25 +82,14 @@ public class KevDataFetcher {
 		return Boolean.TRUE.equals(vuln.knownExploited());
 	}
 
-	// V54 NOTE: ReleaseVulnerabilityInfo (changelog) and
-	// VulnerabilityWithAttribution (attribution) don't carry a stamped
-	// knownExploited; a fresh per-org probe at this layer would need
-	// orgUuid threaded through their assembly path. Followup ticket:
-	// thread orgUuid into the changelog + attribution assemblers and
-	// stamp knownExploited at construction (same pattern as
-	// VulnerabilityDto in ReleaseMetricsComputeService.recomputeKevFlags).
-	// For now, those surfaces show knownExploited = false; the primary
-	// release-findings + vulnerability-analysis surfaces (which DO go
-	// through metrics compute) remain correct.
-	@DgsData(parentType = "ReleaseVulnerabilityInfo", field = "knownExploited")
-	public Boolean knownExploitedOfReleaseVulnerabilityInfo(DgsDataFetchingEnvironment dfe) {
-		return Boolean.FALSE;
-	}
-
-	@DgsData(parentType = "VulnerabilityWithAttribution", field = "knownExploited")
-	public Boolean knownExploitedOfVulnerabilityWithAttribution(DgsDataFetchingEnvironment dfe) {
-		return Boolean.FALSE;
-	}
+	// ReleaseVulnerabilityInfo (changelog) and VulnerabilityWithAttribution
+	// (attribution) used to be served FALSE from here, behind a note proposing
+	// that orgUuid be threaded into their assemblers so they could be stamped
+	// at construction. That turned out to be unnecessary work: both assemblers
+	// already hold the stamped source -- VulnerabilityDto for the live path,
+	// and FindingChangeEvent (which persists knownExploited as a column) for
+	// the revision path -- so the flag is simply carried through now and the
+	// records expose it directly. No resolver, no org probe, no N+1.
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "kevRecordDetails")

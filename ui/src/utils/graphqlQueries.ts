@@ -53,6 +53,24 @@ const MULTI_RELEASE_GQL_DATA = `
             keyFingerprint
             verifiedAt
         }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            actorName
+            claimedAt
+            detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
+        }
     }
     branch
     branchDetails {
@@ -173,7 +191,37 @@ const CHILD_RELEASE_GQL_DATA = `
     }
 `
 
-const INSTANCE_GQL_DATA = `
+// Instance selection sets. The backend resolves DeployedRelease.releaseDetails,
+// InstanceProductMapPlan.*Details, deploymentFailures and deploymentHealth as
+// per-field resolvers, so the cost of an instance query is driven by what the
+// document asks for. The shallow deployed-release rows below are cheap (they
+// live on the instance record) and are what updateInstance sends back, so
+// every instance document keeps them; only releaseDetails -- one release
+// lookup plus its artifacts / source-code-entry / component fan-out per row --
+// is split out so InstanceView can defer it to the tab that renders it.
+const DEPLOYED_RELEASE_SHALLOW_GQL_DATA = `
+        timeSent
+        release
+        deliverable
+        namespace
+        properties
+        state
+        partOf
+        replicas {
+            id
+            state
+        }
+        isInError
+`
+const TARGET_RELEASE_SHALLOW_GQL_DATA = `
+        timeSent
+        release
+        deliverable
+        namespace
+        properties
+`
+// Everything on Instance before the two release lists ...
+const INSTANCE_HEAD_GQL_DATA = `
     uuid
     name
     instanceType
@@ -196,33 +244,10 @@ const INSTANCE_GQL_DATA = `
             defaultValue
         }
     }
-    releases {
-        timeSent
-        release
-        deliverable
-        namespace
-        properties
-        state
-        partOf
-        replicas {
-            id
-            state
-        }
-        isInError
-        releaseDetails {
-            ${MULTI_RELEASE_GQL_DATA}
-        }
-    }
-    targetReleases {
-        timeSent
-        release
-        deliverable
-        namespace
-        properties
-        releaseDetails {
-            ${MULTI_RELEASE_GQL_DATA}
-        }
-    }
+`
+// ... and everything after them. Both instance shapes below are composed
+// from these so the only difference between them is the release lists.
+const INSTANCE_TAIL_GQL_DATA = `
     unmatchedReleases {
         image
         digestRecords {
@@ -312,6 +337,36 @@ const INSTANCE_GQL_DATA = `
     status
     spawnType
 `
+// Slim shape: shallow release rows only. What InstanceView loads first.
+const INSTANCE_CORE_GQL_DATA = `
+    ${INSTANCE_HEAD_GQL_DATA}
+    releases {
+        ${DEPLOYED_RELEASE_SHALLOW_GQL_DATA}
+    }
+    targetReleases {
+        ${TARGET_RELEASE_SHALLOW_GQL_DATA}
+    }
+    ${INSTANCE_TAIL_GQL_DATA}
+`
+// Full shape: core plus resolved release details on both deployed-release
+// lists. Used where a single round trip must return everything (revision
+// comparison, legacy callers).
+const INSTANCE_GQL_DATA = `
+    ${INSTANCE_HEAD_GQL_DATA}
+    releases {
+        ${DEPLOYED_RELEASE_SHALLOW_GQL_DATA}
+        releaseDetails {
+            ${MULTI_RELEASE_GQL_DATA}
+        }
+    }
+    targetReleases {
+        ${TARGET_RELEASE_SHALLOW_GQL_DATA}
+        releaseDetails {
+            ${MULTI_RELEASE_GQL_DATA}
+        }
+    }
+    ${INSTANCE_TAIL_GQL_DATA}
+`
 
 const MULTI_INSTANCE_GQL_DATA = `
     uuid
@@ -372,6 +427,148 @@ const INSTANCE_GQL = gql`
 query FetchInstance($instanceUuid: ID!, $revision:Int, $stateType: InstanceStateType) {
     instance(instanceUuid: $instanceUuid, revision:$revision, stateType:$stateType) {
         ${INSTANCE_GQL_DATA}
+    }
+}`
+
+const INSTANCE_CORE_GQL = gql`
+query FetchInstanceCore($instanceUuid: ID!, $revision:Int, $stateType: InstanceStateType) {
+    instance(instanceUuid: $instanceUuid, revision:$revision, stateType:$stateType) {
+        ${INSTANCE_CORE_GQL_DATA}
+    }
+}`
+
+// Deferred halves of the instance view: release details for the deployed /
+// target release rows, keyed by the row's release uuid. Only the fields the
+// instance tables and the product-match tooltip read -- not the full release
+// fragment, whose artifact / ticket / metrics fan-out is the expensive part.
+// InstanceView merges these onto the shallow rows it already holds.
+const DEPLOYED_RELEASE_DETAILS_GQL_DATA = `
+            uuid
+            version
+            componentDetails {
+                uuid
+                name
+                type
+            }
+            sourceCodeEntryDetails {
+                uuid
+                commit
+                vcsRepository {
+                    uri
+                }
+            }
+`
+const INSTANCE_DEPLOYED_RELEASE_DETAILS_GQL = gql`
+query FetchInstanceDeployedReleaseDetails($instanceUuid: ID!) {
+    instance(instanceUuid: $instanceUuid, revision: -1) {
+        uuid
+        releases {
+            release
+            releaseDetails {
+                ${DEPLOYED_RELEASE_DETAILS_GQL_DATA}
+            }
+        }
+    }
+}`
+
+const INSTANCE_TARGET_RELEASE_DETAILS_GQL = gql`
+query FetchInstanceTargetReleaseDetails($instanceUuid: ID!) {
+    instance(instanceUuid: $instanceUuid, revision: -1) {
+        uuid
+        targetReleases {
+            release
+            releaseDetails {
+                ${DEPLOYED_RELEASE_DETAILS_GQL_DATA}
+            }
+        }
+    }
+}`
+
+// DevOps dashboard: one org-wide read for the instance status widget. Kept
+// separate from FetchInstances (the instances list) because deploymentHealth
+// and deploymentFailures resolve per instance on the backend, and the list
+// page has no use for them.
+const INSTANCE_STATUS_GQL = gql`
+query FetchInstanceStatus($orgUuid: ID!) {
+    instancesOfOrganization(orgUuid: $orgUuid) {
+        uuid
+        uri
+        name
+        displayName
+        instanceType
+        environment
+        releases {
+            namespace
+            isInError
+        }
+        productPlans {
+            featureSet
+            type
+            namespace
+            targetReleaseDetails {
+                version
+            }
+            featureSetDetails {
+                name
+                componentDetails {
+                    uuid
+                    name
+                }
+            }
+        }
+        productActuals {
+            featureSet
+            namespace
+            matchedRelease
+            matchedReleaseDetails {
+                version
+            }
+            notMatchingSince
+        }
+        deploymentHealth
+        deploymentFailures {
+            uuid
+        }
+    }
+}`
+
+const COMPONENTS_OF_PERSPECTIVE_GQL = gql`
+query ComponentsOfPerspective($perspectiveUuid: ID!) {
+    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+        uuid
+        name
+        type
+    }
+}`
+
+// Org default view (Pro org setting). Deliberately its own tiny document:
+// the boot-time organizations query must keep working on a backend that
+// predates the field. Uses the organizations list (the single-organization
+// query in the schema has no resolver and always returns null).
+const ORG_DEFAULT_VIEW_GQL = gql`
+query OrgDefaultView {
+    organizations {
+        uuid
+        settings {
+            defaultView
+        }
+    }
+}`
+
+// DevOps view on the component / product page: where is this thing deployed.
+// Pro-only query; the page degrades to a note when the backend lacks it.
+const DEPLOYED_TO_GQL = gql`
+query DeployedTo($componentUuid: ID!) {
+    deployedTo(componentUuid: $componentUuid) {
+        instanceUuid
+        instanceDisplayName
+        namespace
+        environment
+        featureSetUuid
+        featureSetName
+        releaseUuid
+        version
+        matched
     }
 }`
 
@@ -602,6 +799,24 @@ const singleReleaseDataNoParent = `
             keyFingerprint
             verifiedAt
         }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            actorName
+            claimedAt
+            detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
+        }
     }
     commitsDetails {
         uuid
@@ -619,6 +834,24 @@ const singleReleaseDataNoParent = `
             signedByOwnerUuid
             keyFingerprint
             verifiedAt
+        }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            actorName
+            claimedAt
+            detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
         }
     }
     pullRequests {
@@ -652,6 +885,7 @@ const singleReleaseDataNoParent = `
                 uuid
                 approvalName
                 approvalRequirements {
+                    allowedApprovalRoleIds
                     allowedApprovalRoleIdExpanded {
                         id
                         displayView
@@ -740,6 +974,24 @@ const singleReleaseDataNoParent = `
                 signedByOwnerUuid
                 keyFingerprint
                 verifiedAt
+            }
+            recognized
+            attestation {
+                state
+                actorType
+                actor
+                actorName
+                claimedAt
+                detail
+                claims {
+                    uuid
+                    verdict
+                    actorType
+                    actor
+                    actorName
+                    note
+                    createdDate
+                }
             }
         }
     }
@@ -870,11 +1122,16 @@ const COMPONENT_FULL_DATA = `
             clientPayload
             schedule
             celClientPayload
+            includeSuppressed
             snapshotApprovalEntry
             snapshotLifecycle
             approvedEnvironment
             checkName
             scope
+            lockScope
+            lockUnlockLevel
+            lockAttestationRequirement
+            lockReason
         }
     }
     outputTriggers {
@@ -890,11 +1147,16 @@ const COMPONENT_FULL_DATA = `
         clientPayload
         schedule
         celClientPayload
+        includeSuppressed
         snapshotApprovalEntry
         snapshotLifecycle
         approvedEnvironment
         checkName
         scope
+        lockScope
+        lockUnlockLevel
+        lockAttestationRequirement
+        lockReason
     }
     releaseInputTriggers {
         uuid
@@ -950,6 +1212,20 @@ const COMPONENT_FULL_DATA = `
 const BRANCH_GQL_DATA = `
     uuid
     name
+    locks {
+        uuid
+        status
+        reason
+        origin
+        effectiveLevel
+        attestationRequirement
+        droppedCauses
+        causes {
+            subjectType
+            subjectUuid
+            detail
+        }
+    }
     component
     componentDetails {
         uuid
@@ -1127,6 +1403,7 @@ const singleReleaseProductNoParent = `
                 uuid
                 approvalName
                 approvalRequirements {
+                    allowedApprovalRoleIds
                     allowedApprovalRoleIdExpanded {
                         id
                         displayView
@@ -1522,6 +1799,21 @@ query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!,
     }
 }`
 
+// Most recent releases of a component across all its branches, for the
+// component page's Latest tab. branchDetails is widened beyond the shared
+// fragment so the row can show the branch type without a store lookup.
+const LATEST_RELEASES_OF_COMPONENT_GQL = gql`
+query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
+    latestReleasesOfComponent(componentUuid: $componentUuid, limit: $limit) {
+        ${MULTI_RELEASE_GQL_DATA}
+        branchDetails {
+            uuid
+            name
+            type
+            status
+        }
+    }
+}`
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
 query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType) {
     releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType) {
@@ -1535,7 +1827,21 @@ export default {
     BranchGqlMutate: BRANCH_GQL_MUTATE,
     InstanceGql: INSTANCE_GQL,
     InstanceGqlData: INSTANCE_GQL_DATA,
+    InstanceCoreGql: INSTANCE_CORE_GQL,
+    InstanceCoreGqlData: INSTANCE_CORE_GQL_DATA,
+    DeployedReleaseShallowGqlData: DEPLOYED_RELEASE_SHALLOW_GQL_DATA,
+    TargetReleaseShallowGqlData: TARGET_RELEASE_SHALLOW_GQL_DATA,
+    // Keyed by the Instance field each document resolves, so callers can
+    // select the deferred half by field name (see store.fetchInstanceReleaseDetails).
+    InstanceReleaseDetailsGql: {
+        releases: INSTANCE_DEPLOYED_RELEASE_DETAILS_GQL,
+        targetReleases: INSTANCE_TARGET_RELEASE_DETAILS_GQL
+    },
     InstancesGql: INSTANCES_GQL,
+    InstanceStatusGql: INSTANCE_STATUS_GQL,
+    OrgDefaultViewGql: ORG_DEFAULT_VIEW_GQL,
+    DeployedToGql: DEPLOYED_TO_GQL,
+    ComponentsOfPerspectiveGql: COMPONENTS_OF_PERSPECTIVE_GQL,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,
     ChildReleaseGqlData: CHILD_RELEASE_GQL_DATA,
@@ -1559,6 +1865,7 @@ export default {
     EnvironmentTypesGql: ENVIRONMENT_TYPES_GQL,
     ReleasesByDateRangeGql: RELEASES_BY_DATE_RANGE_GQL,
     ReleasesByDateRangeAndPerspectiveGql: RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL,
+    LatestReleasesOfComponentGql: LATEST_RELEASES_OF_COMPONENT_GQL,
     FeatureSetsUsingComponentGql: FEATURE_SETS_USING_COMPONENT_GQL,
     FeatureSetsUsingBranchGql: FEATURE_SETS_USING_BRANCH_GQL,
 }

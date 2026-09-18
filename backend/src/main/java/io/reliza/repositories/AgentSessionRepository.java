@@ -3,6 +3,7 @@
 */
 package io.reliza.repositories;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -85,4 +86,28 @@ public interface AgentSessionRepository extends CrudRepository<AgentSession, UUI
 			+ "ORDER BY (s.record_data->>'lastActivityAt')::numeric ASC",
 			nativeQuery = true)
 	List<AgentSession> findOpenSessionsIdleBefore(@Param("cutoffEpochSeconds") double cutoffEpochSeconds);
+
+	/**
+	 * Per-status session counts for one ROOT agent, aggregated in SQL
+	 * so dashboard badge resolvers don't deserialize every session row
+	 * just to count them. Each result row is a (status, count) pair.
+	 */
+	@Query(value = "SELECT s.record_data->>'status' AS status, count(*) AS cnt "
+			+ "FROM rearm.agent_sessions s "
+			+ "WHERE s.record_data->>'agent' = :agentUuidAsString "
+			+ "GROUP BY s.record_data->>'status'",
+			nativeQuery = true)
+	List<Object[]> countByAgentGroupedByStatus(@Param("agentUuidAsString") String agentUuidAsString);
+
+	/**
+	 * Most recent {@code lastActivityAt} across one ROOT agent's
+	 * sessions, as the raw epoch-seconds-with-nanos numeric Jackson
+	 * writes to JSONB (format note on {@link #findOpenSessionsIdleBefore}).
+	 * Null when the agent has no sessions with recorded activity.
+	 */
+	@Query(value = "SELECT max((s.record_data->>'lastActivityAt')::numeric) "
+			+ "FROM rearm.agent_sessions s "
+			+ "WHERE s.record_data->>'agent' = :agentUuidAsString",
+			nativeQuery = true)
+	BigDecimal maxLastActivityAtForAgent(@Param("agentUuidAsString") String agentUuidAsString);
 }

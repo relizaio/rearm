@@ -4,7 +4,9 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -12,6 +14,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,6 +24,7 @@ import org.junit.jupiter.api.Test;
 
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.Integration;
@@ -47,6 +52,8 @@ class SyntheticEventServiceTest {
     private NotificationOutboxEventRepository outboxRepo;
     private GetOrganizationService getOrganizationService;
     private IntegrationRepository integrationRepo;
+    private ComponentService componentService;
+    private ComponentOwnershipService componentOwnershipService;
     private SyntheticEventService service;
 
     @BeforeEach
@@ -54,6 +61,12 @@ class SyntheticEventServiceTest {
         outboxRepo = mock(NotificationOutboxEventRepository.class);
         getOrganizationService = mock(GetOrganizationService.class);
         integrationRepo = mock(IntegrationRepository.class);
+        componentService = mock(ComponentService.class);
+        componentOwnershipService = mock(ComponentOwnershipService.class);
+        // Default: the org has no components, so injection leaves the payload's
+        // componentUuid alone. Tests that exercise stamping override per-call.
+        when(componentService.listComponentDataByOrganization(any(), any())).thenReturn(List.of());
+        when(componentOwnershipService.resolveOwnerTeamChannels(any(), any())).thenReturn(List.of());
         // The repo.save() returns whatever was passed in (typical Spring
         // Data behaviour for inserts).
         when(outboxRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -63,6 +76,8 @@ class SyntheticEventServiceTest {
         inject(service, "outboxRepo", outboxRepo);
         inject(service, "getOrganizationService", getOrganizationService);
         inject(service, "integrationRepo", integrationRepo);
+        inject(service, "componentService", componentService);
+        inject(service, "componentOwnershipService", componentOwnershipService);
     }
 
     private static void inject(Object target, String field, Object value) throws Exception {
@@ -279,7 +294,8 @@ class SyntheticEventServiceTest {
                 // yet; these arms keep the switch exhaustive and would fire only
                 // if such a template were added without a payload mapping here.
                 case RELEASE_CREATED, RELEASE_LIFECYCLE_CHANGED, RELEASE_BOM_DIFF,
-                        APPROVAL_REQUESTED, APPROVAL_RESOLVED ->
+                        APPROVAL_REQUESTED, APPROVAL_RESOLVED,
+                        INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED ->
                         throw new IllegalStateException(
                                 "No synthetic template maps " + SyntheticEventTemplates.eventTypeOf(t));
             };
@@ -287,5 +303,118 @@ class SyntheticEventServiceTest {
             assertNotNull(roundTripped,
                     "Template " + t + " did not round-trip back to " + payloadClass.getSimpleName());
         }
+    }
+
+    // ---------------- Real-component stamping ----------------
+
+    private ComponentData componentIn(UUID org) {
+        ComponentData cd = new ComponentData();
+        cd.setUuid(UUID.randomUUID());
+        cd.setOrg(org);
+        return cd;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> affectedReleasesOf(NotificationOutboxEvent event) {
+        return (List<Map<String, Object>>) event.getRecordData().get("affectedReleases");
+    }
+
+    @Test
+    void injectStampsARealComponentOntoTheAffectedReleases() throws Exception {
+        // Templates ship componentUuid = null. Two consumers resolve real rows
+        // from it -- the inbox component-team arm and T4a owner routing -- so
+        // without this a synthetic event can never exercise either, and the
+        // Test button reports zero deliveries for a correct configuration.
+        UUID org = UUID.randomUUID();
+        ComponentData cd = componentIn(org);
+        when(componentService.listComponentDataByOrganization(any(), any()))
+                .thenReturn(List.of(cd));
+
+        NotificationOutboxEvent saved = service.inject(
+                org, Template.CRITICAL_VULN_SINGLE_SHIPPED_RELEASE);
+
+        List<Map<String, Object>> releases = affectedReleasesOf(saved);
+        assertFalse(releases.isEmpty(), "precondition: the template carries affected releases");
+        for (Map<String, Object> r : releases) {
+            assertEquals(cd.getUuid().toString(), r.get("componentUuid"));
+        }
+    }
+
+    @Test
+    void injectStampsEveryAffectedReleaseOnAMultiReleaseTemplate() throws Exception {
+        UUID org = UUID.randomUUID();
+        ComponentData cd = componentIn(org);
+        when(componentService.listComponentDataByOrganization(any(), any()))
+                .thenReturn(List.of(cd));
+
+        NotificationOutboxEvent saved = service.inject(
+                org, Template.CRITICAL_KEV_VULN_THREE_RELEASES_IN_PAYLOAD);
+
+        List<Map<String, Object>> releases = affectedReleasesOf(saved);
+        assertEquals(3, releases.size(), "precondition: this template carries three releases");
+        assertTrue(releases.stream()
+                .allMatch(r -> cd.getUuid().toString().equals(r.get("componentUuid"))));
+    }
+
+    @Test
+    void injectPrefersAComponentThatActuallyHasARoutableOwner() throws Exception {
+        // The whole point of the stamping: a test of an owner-routed
+        // subscription must land on a component owner routing can resolve.
+        UUID org = UUID.randomUUID();
+        ComponentData unowned = componentIn(org);
+        ComponentData owned = componentIn(org);
+        when(componentService.listComponentDataByOrganization(any(), any()))
+                .thenReturn(List.of(unowned, owned));
+        when(componentOwnershipService.resolveOwnerTeamChannels(List.of(owned), org))
+                .thenReturn(List.of(UUID.randomUUID()));
+
+        NotificationOutboxEvent saved = service.inject(
+                org, Template.CRITICAL_VULN_SINGLE_SHIPPED_RELEASE);
+
+        assertEquals(owned.getUuid().toString(),
+                affectedReleasesOf(saved).get(0).get("componentUuid"),
+                "should skip the unowned component and stamp the owned one");
+    }
+
+    @Test
+    void injectFallsBackToAnyComponentWhenNoneIsOwned() throws Exception {
+        // An unowned component is still a REAL row, so owner routing can report
+        // "no owner" instead of the indistinguishable "no component at all".
+        UUID org = UUID.randomUUID();
+        ComponentData only = componentIn(org);
+        when(componentService.listComponentDataByOrganization(any(), any()))
+                .thenReturn(List.of(only));
+
+        NotificationOutboxEvent saved = service.inject(
+                org, Template.CRITICAL_VULN_SINGLE_SHIPPED_RELEASE);
+
+        assertEquals(only.getUuid().toString(),
+                affectedReleasesOf(saved).get(0).get("componentUuid"));
+    }
+
+    @Test
+    void injectStillWorksForAnOrgWithNoComponents() throws Exception {
+        // A test injection is a valid exercise of the rest of the pipeline even
+        // when there is nothing to stamp; it must not fail the injection.
+        UUID org = UUID.randomUUID();
+        NotificationOutboxEvent saved = service.inject(
+                org, Template.CRITICAL_VULN_SINGLE_SHIPPED_RELEASE);
+        assertNotNull(saved);
+        assertNull(affectedReleasesOf(saved).get(0).get("componentUuid"));
+    }
+
+    @Test
+    void injectSurvivesAFailingComponentLookup() throws Exception {
+        // Stamping is a convenience, not a precondition: an unreadable component
+        // row must not take down the operator's test injection.
+        UUID org = UUID.randomUUID();
+        when(componentService.listComponentDataByOrganization(any(), any()))
+                .thenThrow(new IllegalStateException("unsupported schema version"));
+
+        NotificationOutboxEvent saved = service.inject(
+                org, Template.CRITICAL_VULN_SINGLE_SHIPPED_RELEASE);
+
+        assertNotNull(saved, "a failed component lookup must not fail the injection");
+        assertNull(affectedReleasesOf(saved).get(0).get("componentUuid"));
     }
 }

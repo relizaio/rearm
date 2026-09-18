@@ -1,0 +1,4 @@
+ACCEPT START: 2026-08-17T02:06:35Z
+org=fd034593-1047-411b-ac2f-9902ea6fcc28 comp=b118d729-bdab-401e-8483-c9f59e3678d3 threads=24 loops=834 total=20016 rpm=900 mode=warm comps/bom=50 profile=lean heap=11.2G oci=val-cache-1
+ACCEPT END: 2026-08-17T03:47:47Z
+DRAIN COMPLETE: 2026-08-17T08:48:34Z

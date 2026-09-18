@@ -46,9 +46,12 @@ class SharedArtifactServiceFetchFailureTest {
             }
 
             @Override
-            public void saveArtifactMetrics(Artifact a, DependencyTrackIntegration metrics) {
+            public int saveArtifactMetrics(Artifact a, DependencyTrackIntegration metrics) {
                 savedRef.set(metrics);
                 saveCount.incrementAndGet();
+                // The real method returns how many times it advanced metrics_revision, for callers
+                // that flush the managed entity afterwards. This double performs no writes, so none.
+                return 0;
             }
         };
     }

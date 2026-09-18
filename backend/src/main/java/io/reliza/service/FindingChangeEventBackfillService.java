@@ -6,8 +6,11 @@ package io.reliza.service;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -21,6 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
+import io.reliza.dto.ChangelogRecords.FindingChangeKind;
 import io.reliza.model.Branch;
 import io.reliza.model.ComponentData;
 import io.reliza.model.FindingChangeEvent;
@@ -28,9 +32,15 @@ import io.reliza.model.MetricsAudit;
 import io.reliza.model.MetricsAudit.MetricsEntityType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.ReleaseData.ReleaseUpdateScope;
+import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.repositories.FindingChangeV3BranchSeedRepository;
 import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.service.FindingComparisonService.EventAttribution;
+import io.reliza.service.FindingComparisonService.RevisionProduction;
+import io.reliza.service.FindingComparisonService.V3Production;
+import io.reliza.service.FindingDimBackfillService.RevisionWrite;
+import io.reliza.service.FindingDimBackfillService.V3WriteResult;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -262,7 +272,8 @@ public class FindingChangeEventBackfillService {
 
 	/**
 	 * BRANCH-CHAINED backfill of one branch: walk its releases in CREATION order, threading each release's
-	 * PREDECESSOR-terminal metrics (the previous non-CANCELLED/REJECTED release on the SAME branch) as the
+	 * PREDECESSOR-terminal metrics (the previous emit-eligible release on the SAME branch, see
+	 * {@link ReleaseLifecycle#isFindingChangeEmitSuppressed}) as the
 	 * "inherited findings", so a dependency carried forward unchanged emits no APPEARED (the ~148x fan-out
 	 * collapse). The first release on the branch inherits NOTHING (empty -> byte-identical to the
 	 * per-release backfill), confining dedup to same-branch successors -- reconstruction anchors per-branch,
@@ -303,9 +314,10 @@ public class FindingChangeEventBackfillService {
 			if (rd == null) {
 				continue; // deleted between the list and the fetch -- skip
 			}
-			if (rd.getLifecycle() == ReleaseLifecycle.CANCELLED
-					|| rd.getLifecycle() == ReleaseLifecycle.REJECTED) {
-				continue; // never contributed posture; not a predecessor either
+			if (ReleaseLifecycle.isFindingChangeEmitSuppressed(rd.getLifecycle())) {
+				// Never contributed posture, and not a predecessor either: a release whose own events
+				// were never emitted must not anchor another release's inheritance.
+				continue;
 			}
 			// Snapshot of what earlier branch releases carried (this release does NOT dedup against itself).
 			final Set<String> inheritedKeys = seenKeys.isEmpty() ? Set.of() : new HashSet<>(seenKeys);
@@ -423,6 +435,26 @@ public class FindingChangeEventBackfillService {
 	 * inherited-drop MAY now remove an inherited finding's first appearance within the slice (the
 	 * empty-older guard is gone), which is harmless here: v3 writes are insert-only (ON CONFLICT DO NOTHING),
 	 * so the re-diff can only ADD genuinely-missing rows, never delete a row a live emit already wrote.
+	 *
+	 * <p><b>How to read what this sweep reports.</b> Repairing something is not by itself a fault, so the
+	 * severity is chosen by the ORG's v3 backfill watermark rather than by anything about the repaired rows:
+	 * <ul>
+	 *   <li>Org NOT yet v3-certified: its history is still being seeded, so missing rows are simply work the
+	 *       drain has not reached. Expected during rollout -- logged at INFO.</li>
+	 *   <li>Org v3-CERTIFIED: the live emit was responsible for every transition since certification, so a
+	 *       missing row is worth an operator's attention. It does NOT follow that the emit was lost -- see
+	 *       {@code RepairCause} for the three things it can be, which the alert reports per revision.
+	 *       Logged at ERROR.</li>
+	 * </ul>
+	 *
+	 * <p>The severity deliberately does NOT key off the shape of the repaired rows (kind mix, or whether the
+	 * slice reaches the release's birth). A lost emit on a release's FIRST scan produces an all-APPEARED,
+	 * birth-anchored repair -- indistinguishable in shape from a benign inherited-key disagreement -- so a
+	 * shape-based rule routes the single most important signal into the quiet arm. The kind mix is still
+	 * reported as evidence; it just does not decide severity. (Since the drift fix the two resolve inherited
+	 * keys identically AS OF THE SAME INSTANT, but they still apply the drop differently -- the emit only on
+	 * a first scan, this producer on any re-scan -- so disagreement remains a cause at
+	 * all; the branch backfill's cumulative rule remains a third, quieter one.)
 	 */
 	public V3BackfillResult repairSweepV3(int lookbackDays) {
 		ZonedDateTime since = ZonedDateTime.now().minusDays(lookbackDays);
@@ -432,23 +464,32 @@ public class FindingChangeEventBackfillService {
 		int releasesProcessed = 0;
 		int releasesFailed = 0;
 		int factsInserted = 0;
+		RepairTally settled = new RepairTally();
+		RepairTally backfilling = new RepairTally();
 		for (UUID org : metricsAuditRepository.findDistinctOrgsWithAuditsSince(ENTITY_TYPE, since)) {
 			if (org == null) {
 				continue; // legacy NULL-org rows are ancient -- nothing recent to repair
 			}
+			// The org's v3 watermark is what separates the sweep's two causes, so it is read ONCE per org
+			// (not per release) and decides which tally the org's repairs land in. Fail-safe: needsV3Backfill
+			// already reads a lookup failure as "needs backfill", which lands repairs in the quiet tally --
+			// the right way round, since we would rather under-alert than cry wolf on an unknown watermark.
+			boolean settledOrg = !findingDimBackfillService.needsV3Backfill(org);
+			RepairTally tally = settledOrg ? settled : backfilling;
 			for (UUID releaseUuid : metricsAuditRepository.findDistinctReleaseUuidsByOrgSince(
 					ENTITY_TYPE, org, since)) {
 				try {
-					Integer inserted = txTemplate.execute(status -> repairReleaseV3(org, releaseUuid, since));
+					RepairDetail detail = txTemplate.execute(status -> repairReleaseV3(org, releaseUuid, since));
 					releasesProcessed++;
-					int ins = inserted != null ? inserted : 0;
+					int ins = detail != null ? detail.inserted() : 0;
 					factsInserted += ins;
 					if (ins > 0) {
-						// A non-zero insert on a re-diff = a hole the live emit dropped. ERROR (operator
-						// alerting) -- repaired now, but a recurring pattern points at emit failures.
-						log.error("finding_change_events v3 repair sweep: release {} (org {}) was missing {} "
-								+ "event(s) -- repaired; investigate dropped live emits if recurring",
-								releaseUuid, org, ins);
+						tally.add(org, releaseUuid, detail);
+						// Per-release detail is INFO: on a large instance this fires for hundreds of
+						// releases in one sweep. The aggregate below is the alert.
+						log.info("finding_change_events v3 repair sweep: release {} (org {}) re-diffed {} "
+								+ "missing event(s) (v3_backfill_settled={}, kinds={})",
+								releaseUuid, org, ins, settledOrg, detail.landed().byKind());
 					}
 				} catch (RuntimeException e) {
 					releasesFailed++;
@@ -471,22 +512,316 @@ public class FindingChangeEventBackfillService {
 		} catch (Exception e) {
 			log.error("finding_change_events v3 repair sweep: vacuous certification candidate query failed", e);
 		}
+		// ONE aggregate line per run per cause, never one per release. Severity is decided by the ORG's v3
+		// watermark, not by the shape of the repaired rows -- see this method's javadoc for why the shape
+		// cannot carry that distinction.
+		if (backfilling.releases > 0) {
+			log.info("finding_change_events v3 repair sweep: seeded {} event(s) across {} release(s) in orgs "
+					+ "whose v3 backfill has not completed -- kinds={}. Expected during rollout; these orgs "
+					+ "have no live-emit guarantee yet",
+					backfilling.events, backfilling.releases, backfilling.byKind);
+		}
+		if (settled.releases > 0) {
+			// The ONE line an ERROR-only channel receives, so it has to carry the evidence, not a verdict.
+			// emit_never_ran vs emit_disagreed is the split that matters: the sweep only ever inserts a row
+			// that was absent, and whether the REST of that revision was already present says whether the
+			// emit failed to run or ran and produced a different set. Deliberately no change-date span --
+			// every repaired transition is inside the lookback by construction (the slice is selected on
+			// metrics_audit.revision_created_date), so a span could only ever restate the window.
+			log.error("finding_change_events v3 repair sweep: repaired {} event(s) across {} of {} release(s) "
+					+ "in the last {} day(s) on orgs whose v3 backfill has completed -- kinds={}, and per "
+					+ "repaired metrics revision: "
+					+ "emit_never_ran={}, emit_disagreed={}, emit_skipped_lifecycle={}. e.g. org/release {}. "
+					+ "Counts are per REVISION, not per release: a revision is one metrics save, so it is one "
+					+ "emit that either ran or did not, and a release can contribute to more than one bucket. "
+					+ "emit_never_ran = nothing was stored for that revision "
+					+ "and the emit's own rule would have written something, so it did not run (it is "
+					+ "best-effort: a pod dying between the metrics commit and the afterCommit callback drops "
+					+ "it silently; an emit that ran and THREW logs 'Failed to emit finding_change_events' "
+					+ "instead). NB \"nothing stored\" means no row THIS SWEEP offered for that revision was "
+					+ "already present. emit_skipped_lifecycle = the release was CANCELLED/REJECTED at that "
+					+ "transition, so the emit's early return was correct and this is benign. emit_disagreed "
+					+ "= rows were already present, or the emit's rule would have written nothing -- either "
+					+ "way the two producers derive different sets, which is not a lost write. An emit that "
+					+ "ran and THREW is a fourth case and logs its own ERROR.",
+					settled.events, settled.releases, releasesProcessed, lookbackDays, settled.byKind,
+					settled.revisions(RepairCause.EMIT_NEVER_RAN),
+					settled.revisions(RepairCause.EMIT_DISAGREED),
+					settled.revisions(RepairCause.EMIT_SKIPPED_LIFECYCLE), settled.sample);
+		}
+		if (!settled.disagreementSample.isEmpty()) {
+			// SEPARATE line, deliberately, despite this sweep's one-line-per-cause habit. The aggregate line
+			// above is ~1.5KB of legend before its arguments, so a payload appended to it is the first thing a
+			// log forwarder truncates -- and this payload is the only part an operator can actually act on.
+			// Its own line, evidence first, keeps it intact. The general sample above is drawn from ALL
+			// repaired releases, so where one cause dominates the counts a minority cause never gets an
+			// example; this is that example.
+			log.error("finding_change_events v3 repair sweep: emit_disagreed sample (one per release, "
+					+ "max {}): {}. produced vs emitRule EQUAL = the producers agreed and rows are merely "
+					+ "partly absent; produced > emitRule = they derived different sets. keptAsReappearance "
+					+ "= the release's metrics flapped to empty and back WITHIN THE LOOKBACK and the emit "
+					+ "misread the return as a first scan (correlate with the metrics-loss probe at rev N-1, "
+					+ "not rev N). A flap whose pre-loss snapshot predates the lookback shows BOTH counters "
+					+ "zero, so zero does not mean no flap. "
+					+ "keptAsNotBornWith may be a lookback artefact rather than a real difference.",
+					RepairTally.SAMPLE_LIMIT, settled.disagreementSample);
+		}
+		if (releasesFailed > 0) {
+			// Reported separately and unconditionally: a run where every release throws inserts nothing, so
+			// gating this on repairs would make a total failure the quietest outcome of all.
+			log.error("finding_change_events v3 repair sweep: {} of {} release(s) failed to repair -- the v3 "
+					+ "store may still have holes; see the per-release errors above",
+					releasesFailed, releasesFailed + releasesProcessed);
+		}
 		log.info("finding_change_events v3 repair sweep: done -- {} release(s), {} failed, {} event(s) repaired",
 				releasesProcessed, releasesFailed, factsInserted);
 		return new V3BackfillResult(0, releasesProcessed, releasesFailed, factsInserted);
 	}
 
+	/**
+	 * Why the sweep had to insert rows for one metrics revision. A revision is the unit an emit runs on, so
+	 * it is also the only unit at which this question has a single answer.
+	 */
+	enum RepairCause {
+		/** The release was CANCELLED/REJECTED then, so the emit's early return was correct. Benign. */
+		EMIT_SKIPPED_LIFECYCLE,
+		/** No row the sweep offered was already present, and the emit's rule would have kept some. It did not run. */
+		EMIT_NEVER_RAN,
+		/** Rows were already present, or the emit's rule would have written nothing. Producers differ. */
+		EMIT_DISAGREED
+	}
+
+	/** What one release's re-diff repaired, and why, per revision. */
+	private record RepairDetail(V3WriteResult landed, Map<RepairCause, Integer> revisionsByCause,
+			List<String> disagreementSample) {
+		static final RepairDetail NOTHING = new RepairDetail(V3WriteResult.NOTHING, Map.of(), List.of());
+
+		int inserted() {
+			return landed.landed();
+		}
+	}
+
+	/**
+	 * Running totals for ONE of the sweep's two causes. The sweep keeps a pair of these -- one for orgs whose
+	 * v3 backfill has completed, one for orgs still being seeded -- because those two need different
+	 * severities and must not be summed into a single number that means neither thing.
+	 */
+	private static final class RepairTally {
+		/**
+		 * Bounds BOTH samples the alert carries: the org/release pairs, and the wider per-revision disagreed
+		 * lines. Enough to start an investigation, not a wall of text.
+		 */
+		static final int SAMPLE_LIMIT = 5;
+
+		private int events;
+		private int releases;
+		private final Map<FindingChangeKind, Integer> byKind = new EnumMap<>(FindingChangeKind.class);
+		/** org/release pairs, because a bare release uuid is not resolvable by whoever reads the alert. */
+		private final List<String> sample = new ArrayList<>();
+		/** Repaired REVISIONS by cause -- revision grain, because that is where an emit either ran or did not. */
+		private final Map<RepairCause, Integer> revisionsByCause = new EnumMap<>(RepairCause.class);
+		/**
+		 * Sampled DISAGREED revisions, kept separately from {@link #sample}. The general sample is drawn from
+		 * every repaired release, so where one cause dominates the counts the other cause never gets an
+		 * example -- exactly the case an operator needs one for.
+		 */
+		private final List<String> disagreementSample = new ArrayList<>();
+
+		int revisions(RepairCause c) {
+			return revisionsByCause.getOrDefault(c, 0);
+		}
+
+		void add(UUID org, UUID releaseUuid, RepairDetail detail) {
+			V3WriteResult landed = detail.landed();
+			events += landed.landed();
+			releases++;
+			landed.byKind().forEach((k, v) -> byKind.merge(k, v, Integer::sum));
+			detail.revisionsByCause().forEach((c, n) -> revisionsByCause.merge(c, n, Integer::sum));
+			if (sample.size() < SAMPLE_LIMIT) {
+				sample.add(org + "/" + releaseUuid);
+			}
+			// One line per RELEASE, not per revision: the point of this sample is the VARIETY of the disagreed
+			// bucket, and a single multi-revision release would otherwise take every slot.
+			if (disagreementSample.size() < SAMPLE_LIMIT && !detail.disagreementSample().isEmpty()) {
+				disagreementSample.add(detail.disagreementSample().get(0));
+			}
+		}
+	}
+
+
+	/**
+	 * Why each repaired revision had to be repaired.
+	 *
+	 * <p>Extracted and package-private so it can be tested directly: this expression IS the verdict an
+	 * operator reads off the alert, and it was previously buried in {@code repairReleaseV3} where no test
+	 * could observe it -- swapping two of its arms passed the entire suite.
+	 *
+	 * <p>Per REVISION, never per release. A release's slice can span several revisions, and each is a
+	 * separate emit that either ran or did not; classifying per release would let one benign revision excuse
+	 * a genuine lost emit beside it, and would read one dropped emit among healthy ones as a disagreement.
+	 */
+	Map<RepairCause, Integer> classifyRepairedRevisions(ReleaseData rd, V3WriteResult landed,
+			V3Production produced) {
+		Map<RepairCause, Integer> byCause = new EnumMap<>(RepairCause.class);
+		causeByRevision(rd, landed, produced).values().forEach(c -> byCause.merge(c, 1, Integer::sum));
+		return byCause;
+	}
+
+	/**
+	 * The verdict for EACH repaired revision -- the SINGLE place the cause is decided.
+	 *
+	 * <p>Both the alert's counts and its per-revision diagnostic derive from this one map. An earlier revision
+	 * of this change had the diagnostic re-deriving "is this the disagreed arm" from the same inputs, and it
+	 * shipped already drifted: it omitted the lifecycle arm, so a benign CANCELLED/REJECTED skip printed as a
+	 * disagreement and could consume the whole bounded sample. That is the same failure
+	 * {@link #classifyRepairedRevisions}' own history records -- two copies of one expression, one untested.
+	 * Classify once; format from the result.
+	 */
+	Map<Integer, RepairCause> causeByRevision(ReleaseData rd, V3WriteResult landed, V3Production produced) {
+		Map<Integer, RepairCause> byRevision = new LinkedHashMap<>();
+		landed.byRevision().forEach((revision, write) -> {
+			if (write.landed() <= 0) {
+				return; // nothing was repaired at this revision
+			}
+			// Unreachable by construction -- every written event carries the revision of the pair that
+			// produced it, and that pair registered the same key. Kept, and deliberately resolved to the
+			// LOUD arm: a revision we cannot explain must not be filed as the benign "not a lost write".
+			RevisionProduction production = produced.byRevision().get(revision);
+			if (production == null) {
+				byRevision.put(revision, RepairCause.EMIT_NEVER_RAN);
+				return;
+			}
+			ReleaseLifecycle atTransition = production.changeDate() != null
+					? lifecycleAt(rd, production.changeDate())
+					: rd.getLifecycle();
+			RepairCause cause;
+			if (ReleaseLifecycle.isFindingChangeEmitSuppressed(atTransition)) {
+				// MUST use the same predicate as the live emitter. If the two ever diverge, revisions
+				// the emitter correctly skipped get classified EMIT_NEVER_RAN instead, and the nightly
+				// sweep reports a benign skip to the operator as a lost write -- which is the exact
+				// alert this whole line of work exists to silence.
+				cause = RepairCause.EMIT_SKIPPED_LIFECYCLE;
+			} else if (write.noOfferedRowWasAlreadyPresent() && production.emitRuleWouldHaveProduced() > 0) {
+				cause = RepairCause.EMIT_NEVER_RAN;
+			} else {
+				cause = RepairCause.EMIT_DISAGREED;
+			}
+			byRevision.put(revision, cause);
+		});
+		return byRevision;
+	}
+
+	/**
+	 * Per-revision evidence for the DISAGREED bucket, which the aggregate counts cannot supply.
+	 *
+	 * <p>Exists because {@code emit_disagreed} is the sweep's CATCH-ALL arm -- "rows were already present, or
+	 * the emit's rule would have written nothing" covers several distinct divergences, and the alert's
+	 * example list is drawn from ALL repaired releases, so on an instance whose repairs are overwhelmingly
+	 * one cause the other cause's examples never appear. An operator with ERROR-only logs and no SQL then has
+	 * a count they cannot act on. Each line carries what separates the candidate divergences:
+	 * {@code produced} vs {@code emitRule} (how far apart the two producers' sets are -- EQUAL means they
+	 * agreed and the rows are simply partly absent, which is a durability question, not a rule one),
+	 * {@code offered}/{@code landed} (how much was already stored), and as CONTEXT ONLY {@code firstScan},
+	 * {@code inheritedNow} and {@code bornWithInSlice}. Read the last three with their caveats: the producers
+	 * are NOT limited to differing at {@code firstScan=true}, {@code inheritedNow} is computed at sweep time
+	 * rather than emit time, and {@code bornWithInSlice} is the slice-start snapshot for any release born
+	 * before the lookback -- see {@link V3Production}.
+	 *
+	 * <p>Takes the already-decided causes rather than re-deriving them: see {@link #causeByRevision}.
+	 * {@code budget} stops the per-release formatting once the run's bounded sample is full -- the caller
+	 * discards the overflow anyway, and this runs inside every repaired release's transaction.
+	 */
+	List<String> describeDisagreements(UUID org, UUID releaseUuid, EventAttribution attr,
+			V3WriteResult landed, V3Production produced, Map<Integer, RepairCause> causes, int budget) {
+		if (budget <= 0) {
+			return List.of();
+		}
+		List<String> out = new ArrayList<>();
+		for (Map.Entry<Integer, RepairCause> e : causes.entrySet()) {
+			if (out.size() >= budget) {
+				break;
+			}
+			if (e.getValue() != RepairCause.EMIT_DISAGREED) {
+				continue;
+			}
+			Integer revision = e.getKey();
+			RevisionWrite write = landed.byRevision().get(revision);
+			RevisionProduction p = produced.byRevision().get(revision);
+			if (write == null || p == null) {
+				continue; // cannot happen for a DISAGREED verdict, which is only reachable with both present
+			}
+			out.add(org + "/" + releaseUuid + " " + attr.componentName() + " v" + attr.version()
+					+ " @rev" + revision
+					+ " at=" + (p.changeDate() == null ? "?" : p.changeDate().toInstant())
+					+ " produced=" + p.producedRows()
+					+ " emitRule=" + p.emitRuleWouldHaveProduced()
+					+ " offered=" + write.offered()
+					+ " landed=" + write.landed()
+					+ " firstScan=" + p.firstScanPair()
+					+ " inheritedNow=" + produced.inheritedNowSize()
+					+ " bornWithInSlice=" + produced.bornWithInSliceSize()
+					+ " keptAsReappearance=" + p.keptAsReappearance()
+					+ " keptAsNotBornWith=" + p.keptAsNotBornWith());
+		}
+		return out;
+	}
+
+	/**
+	 * The release's lifecycle as it stood at {@code at}, reconstructed from its recorded {@code LIFECYCLE}
+	 * update events.
+	 *
+	 * <p>Needed because the live emit returns early for an emit-suppressed lifecycle, so a release that
+	 * was cancelled or rejected when it was scanned and settled afterwards legitimately has NO events -- and the sweep,
+	 * seeing a healthy release with rows missing, would otherwise report a lost emit for something the emit
+	 * got right. Reconstructed rather than read live for exactly that reason: the CURRENT lifecycle is not
+	 * the one the emit saw.
+	 *
+	 * <p>Falls back to the current lifecycle when the release records no lifecycle history, which reads as
+	 * "not cancelled" for the common case and keeps the classification conservative -- it will call such a
+	 * release a lost emit rather than silently excuse it.
+	 */
+	ReleaseLifecycle lifecycleAt(ReleaseData rd, ZonedDateTime at) {
+		List<ReleaseUpdateEvent> lifecycleEvents = (rd.getUpdateEvents() == null) ? List.of()
+				: rd.getUpdateEvents().stream()
+						.filter(e -> e.rus() == ReleaseUpdateScope.LIFECYCLE && e.date() != null)
+						.sorted(Comparator.comparing(ReleaseUpdateEvent::date))
+						.toList();
+		if (lifecycleEvents.isEmpty()) {
+			return rd.getLifecycle();
+		}
+		ReleaseLifecycle atInstant = null;
+		for (ReleaseUpdateEvent e : lifecycleEvents) {
+			if (e.date().isAfter(at)) {
+				// First transition after `at`: whatever it moved AWAY from is what was in effect.
+				return atInstant != null ? atInstant : parseLifecycle(e.oldValue(), rd.getLifecycle());
+			}
+			atInstant = parseLifecycle(e.newValue(), atInstant);
+		}
+		return atInstant != null ? atInstant : rd.getLifecycle();
+	}
+
+	private ReleaseLifecycle parseLifecycle(String raw, ReleaseLifecycle fallback) {
+		if (raw == null || raw.isBlank()) {
+			return fallback;
+		}
+		try {
+			return ReleaseLifecycle.valueOf(raw.trim());
+		} catch (IllegalArgumentException e) {
+			return fallback;
+		}
+	}
+
 	/** Re-diff a release's recent (since) metrics_audit slice into v3, inside the caller's tx. Idempotent. */
-	private int repairReleaseV3(UUID org, UUID releaseUuid, ZonedDateTime since) {
+	private RepairDetail repairReleaseV3(UUID org, UUID releaseUuid, ZonedDateTime since) {
 		List<MetricsAudit> auditRows = metricsAuditRepository.findAllRevisionsForEntitySince(
 				ENTITY_TYPE, releaseUuid, since);
 		if (auditRows.isEmpty()) {
-			return 0;
+			return RepairDetail.NOTHING;
 		}
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElse(null);
-		if (rd == null || rd.getLifecycle() == ReleaseLifecycle.CANCELLED
-				|| rd.getLifecycle() == ReleaseLifecycle.REJECTED || rd.getBranch() == null) {
-			return 0;
+		if (rd == null || ReleaseLifecycle.isFindingChangeEmitSuppressed(rd.getLifecycle())
+				|| rd.getBranch() == null) {
+			return RepairDetail.NOTHING;
 		}
 		String componentName = getComponentService.getComponentData(rd.getComponent())
 				.map(ComponentData::getName)
@@ -497,8 +832,21 @@ public class FindingChangeEventBackfillService {
 		// this slice (the empty-older guard is gone), but v3 writes are insert-only (ON CONFLICT DO NOTHING),
 		// so the re-diff only fills genuinely-missing rows -- recent transitions re-diffed, holes repaired.
 		Set<String> inheritedKeys = findingComparisonService.firstScanInheritedKeys(rd);
-		List<FindingChangeEvent> events = findingComparisonService.backfillEventsForReleaseV3(
+		V3Production produced = findingComparisonService.produceForReleaseV3(
 				auditRows, rd.getMetrics(), attr, inheritedKeys);
-		return findingDimBackfillService.writeEventsToV3(org, events);
+		List<FindingChangeEvent> events = produced.events();
+		// By-kind because the kind mix is what discriminates the sweep's causes (see repairSweepV3's
+		// javadoc). Counts what LANDED, not what was produced: a re-diff re-produces the release's whole
+		// recent slice, so the produced mix would describe mostly already-present events.
+		V3WriteResult landed = findingDimBackfillService.writeEventsToV3ByKind(org, events);
+		if (landed.isEmpty()) {
+			return RepairDetail.NOTHING;
+		}
+		Map<Integer, RepairCause> causes = causeByRevision(rd, landed, produced);
+		Map<RepairCause, Integer> byCause = new EnumMap<>(RepairCause.class);
+		causes.values().forEach(c -> byCause.merge(c, 1, Integer::sum));
+		return new RepairDetail(landed, byCause,
+				describeDisagreements(org, releaseUuid, attr, landed, produced, causes,
+						RepairTally.SAMPLE_LIMIT));
 	}
 }

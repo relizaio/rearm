@@ -89,6 +89,11 @@ public class SystemInfoService {
 		var sysInfo = findSystemInfo();
 		return sysInfo.getLastDtrackSync();
 	}
+
+	protected ZonedDateTime getUnmappedBomSweepWatermark () {
+		var sysInfo = findSystemInfo();
+		return sysInfo.getUnmappedBomSweepWatermark();
+	}
 	
 
 	@Transactional
@@ -142,6 +147,14 @@ public class SystemInfoService {
 		SystemInfo sysInfo = this.repository.findSystemInfo();
 		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
 		sd.setLastDtrackSync(lastDtrackSync);
+		saveSystemInfo(sysInfo, sd);
+	}
+
+	@Transactional
+	public void setUnmappedBomSweepWatermark (ZonedDateTime watermark) {
+		SystemInfo sysInfo = this.repository.findSystemInfo();
+		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
+		sd.setUnmappedBomSweepWatermark(watermark);
 		saveSystemInfo(sysInfo, sd);
 	}
 	

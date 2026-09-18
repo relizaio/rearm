@@ -32,6 +32,7 @@ import { FormInst, NCard, NForm, NFormItem, NInput, NButton, NSelect, NSwitch, N
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
 import {ApprovalEntry} from '@/utils/commonTypes'
+import { resolveApprovalRoles } from '@/utils/approvalRoles'
 
 const props = defineProps<{
     orgProp: string,
@@ -64,7 +65,7 @@ const approvalEntityFields: DataTableColumns<any> = [
 
 const approvalEntityTableData: ComputedRef<any[]> = computed((): any => {
     const data = orgApprovalEntries.value.map(oae => {
-        const approvalRoles = oae.approvalRequirements.map(oaear => oaear.allowedApprovalRoleIdExpanded[0].displayView)
+        const approvalRoles = oae.approvalRequirements.flatMap(oaear => resolveApprovalRoles(oaear).map(r => r.displayView))
         return {
             uuid: oae.uuid,
             approvalName: oae.approvalName,
@@ -82,6 +83,7 @@ async function fetchApprovalEntries () {
                     uuid
                     approvalName
                     approvalRequirements {
+                        allowedApprovalRoleIds
                         allowedApprovalRoleIdExpanded {
                             id
                             displayView

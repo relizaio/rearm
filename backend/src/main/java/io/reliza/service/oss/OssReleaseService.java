@@ -856,7 +856,7 @@ public class OssReleaseService {
 	 * queue on CE is a separate change.
 	 */
 	public void processPendingAutoIntegrate(int batchLimit) {
-		for (UUID u : repository.findUuidsOfReleasesPendingAutoIntegrate(batchLimit)) {
+		for (UUID u : repository.findUuidsOfReleasesPendingAutoIntegrate(batchLimit, AUTO_INTEGRATE_LEASE_SECONDS)) {
 			try { processAutoIntegrateForRelease(u); }
 			catch (Exception e) { log.error("pending auto-integrate failed for release {}", u, e); }
 		}

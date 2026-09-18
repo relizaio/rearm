@@ -10,15 +10,19 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -38,6 +42,7 @@ import io.reliza.model.dto.notifications.AffectedComponent;
 import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.ApprovalRequestedPayload;
 import io.reliza.model.dto.notifications.ApprovalResolvedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.EmailDigestPolicy;
 import io.reliza.model.NotificationDelivery;
@@ -58,6 +63,7 @@ import io.reliza.repositories.NotificationSubscriptionRepository;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.util.BackoffPolicy;
 import io.reliza.model.dto.notifications.EvaluationMode;
 import lombok.extern.slf4j.Slf4j;
 
@@ -86,16 +92,34 @@ import lombok.extern.slf4j.Slf4j;
  * after the loop. If fan-out throws for a single event, that event flips
  * to {@code FAILED} but the rest of the batch is unaffected.
  *
- * <p>The whole batch runs in one transaction — keeps the
- * "outbox-row-and-its-deliveries land together" invariant. Per-event
- * isolation would require self-injection through a Spring proxy; the
- * single-tx approach is simpler and the failure modes (malformed event
- * blocking peers) are mitigated by the broad try/catch around
- * {@code fanOutSingle}.
+ * <p><b>Each event runs in its own transaction</b>, entered through a Spring
+ * proxy via a self-reference. The batch used to share one transaction, on the
+ * reasoning that per-event isolation "would require self-injection through a
+ * Spring proxy" and that the broad try/catch around {@code fanOutSingle}
+ * mitigated a bad event blocking its peers. That reasoning was wrong: a catch
+ * cannot rescue a transaction Spring has already marked rollback-only, so one
+ * poison event wedged the entire queue in a 5-second retry loop across all
+ * orgs. See {@link #drainBatch} for the full mechanism.
  */
 @Service
 @Slf4j
 public class NotificationFanOutService {
+
+    /**
+     * How many times a vuln event may be deferred waiting for its affected
+     * releases to become resolvable before a terminal decision is taken.
+     */
+    static final int MAX_ENRICHMENT_ATTEMPTS = 3;
+
+    /**
+     * Hard ceiling on deferrals when the empty result cannot be PROVEN
+     * trustworthy (the org's artifact metrics have not been refreshed since the
+     * event was emitted). Roughly 15 minutes at the capped backoff, after which
+     * the event is delivered rather than suppressed -- see the RESOLVED_EMPTY
+     * branch in {@link #fanOutSingle}. Exists so a permanently-stalled metrics
+     * pipeline cannot strand events in PENDING forever.
+     */
+    static final int MAX_ENRICHMENT_ATTEMPTS_UNPROVEN = 10;
 
     @Autowired
     private NotificationOutboxEventRepository outboxRepo;
@@ -130,7 +154,7 @@ public class NotificationFanOutService {
     private NotificationChannelGroupService channelGroupService;
 
     @Autowired
-    private UserGroupService userGroupService;
+    private TeamService teamService;
 
     // Defence-in-depth org guard (S-5). The save-time invariant
     // (channel.org == subscription.org checked at upsert) already
@@ -159,53 +183,258 @@ public class NotificationFanOutService {
     @Autowired
     private GetComponentService getComponentService;
 
+    // T4a -- owner-aware route targeting. Ownership policy (which states are
+    // routable, USER vs TEAM) lives in the ownership service; fan-out only
+    // decides WHEN to ask.
+    @Autowired
+    private ComponentOwnershipService componentOwnershipService;
+
+    // Self-injection so drainBatch can call fanOutOneEvent through Spring's
+    // proxy and pick up its REQUIRES_NEW propagation. A direct this.* call
+    // bypasses AOP entirely. @Lazy per the house pattern for self-injection.
+    @Autowired
+    @Lazy
+    private NotificationFanOutService self;
+
     /**
      * Drain one batch of pending events. Returns the number of events
      * processed (matched or not — just how many we looked at). Caller
      * holds the advisory lock for the duration; this method is the
      * critical section.
      *
-     * <p><b>Transaction semantics.</b> The whole batch runs in one
-     * transaction. Two consequences worth knowing:
+     * <p><b>Transaction semantics.</b> This method is deliberately NOT
+     * {@code @Transactional}: each event gets its own transaction via
+     * {@link #fanOutOneEvent}, and a failure is recorded in a second,
+     * independent one via {@link #markEventFailed}.
+     *
+     * <p>It used to wrap the whole batch in one transaction, which wedged
+     * the queue: when {@code fanOutSingle} threw through a nested
+     * {@code @Transactional} call (or hit a raw PG error), Spring marked the
+     * SHARED transaction rollback-only before the catch below ran. The catch
+     * then flipped the event to {@code FAILED} and saved -- into a doomed
+     * transaction. Commit threw {@code UnexpectedRollbackException}, the whole
+     * batch rolled back INCLUDING the FAILED mark, the poison event stayed
+     * {@code PENDING}, and the next tick replayed it 5 seconds later, forever.
+     * Because {@code findPendingBatch} has no org filter, that stalled
+     * notification delivery for EVERY org, not just the one with the bad data.
+     * Confirmed in production on 26.07.57 and reproduced by fault injection on
+     * the sandbox. This is the same trap {@link #markResolvedRequestsRead}
+     * documents at length for the mark-read path; the drain loop simply never
+     * got the same isolation.
+     *
+     * <p>Consequences of the per-event boundary worth knowing:
      * <ul>
      *   <li>If {@code fanOutSingle} throws mid-event after writing some
-     *       deliveries, the catch flips the event to {@code FAILED} and
-     *       calls {@link NotificationOutboxEventRepository#save}. On
-     *       commit, both the partial delivery rows AND the FAILED-marked
-     *       event flush together. Channel workers must therefore tolerate
-     *       seeing delivery rows whose outbox event is FAILED — treat them
-     *       as "best-effort partial fan-out" and process normally; the
-     *       FAILED status is operator-facing diagnostics, not a directive
-     *       to drop deliveries that already landed.
-     *   <li>If the commit itself fails (e.g., OptimisticLockException from
-     *       a concurrent write), the whole batch rolls back. The next tick
-     *       replays from PENDING events. This is benign with a single
-     *       writer (the advisory lock); document it here in case a future
-     *       refactor introduces additional writers.
+     *       deliveries, those delivery rows roll back with the event's own
+     *       transaction -- they no longer survive alongside a FAILED mark, so
+     *       partial fan-out is no longer observable. The event is then marked
+     *       {@code FAILED} separately, so a replay does not duplicate them.
+     *   <li>One poison event costs only itself. The other events in the batch
+     *       commit normally instead of being dragged into its rollback.
+     *   <li>Up to {@code batchSize} short transactions per tick rather than
+     *       one long one. Deliberate: the advisory lock already serialises
+     *       drains, so the extra commits cost latency, not contention, and
+     *       queue liveness is worth more than batch atomicity here.
      * </ul>
      */
-    @Transactional
     public int drainBatch(int batchSize) {
         List<NotificationOutboxEvent> batch = outboxRepo.findPendingBatch(batchSize);
         for (NotificationOutboxEvent event : batch) {
             try {
-                fanOutSingle(event);
-                event.setStatus(NotificationOutboxStatus.FANNED_OUT);
+                // Through the proxy, NOT this.fanOutOneEvent(...): a direct
+                // self-call bypasses the transaction interceptor entirely and
+                // would silently restore the single-transaction behaviour this
+                // fix exists to remove.
+                self.fanOutOneEvent(event);
             } catch (Exception e) {
                 log.error("Fan-out failed for event {} ({}); marking FAILED",
                         event.getUuid(), event.getEventType(), e);
-                event.setStatus(NotificationOutboxStatus.FAILED);
+                markEventFailed(event.getUuid());
             }
-            outboxRepo.save(event);
         }
         return batch.size();
     }
 
-    private void fanOutSingle(NotificationOutboxEvent event) {
+    /**
+     * Fan one event out and record its terminal status, atomically.
+     *
+     * <p>{@code REQUIRES_NEW} rather than the default {@code REQUIRED} so the
+     * isolation holds even if some future caller wraps {@link #drainBatch} in a
+     * transaction. Today the scheduler calls it with none, so this simply opens
+     * one and costs nothing extra. If a caller ever does wrap it, note the
+     * trade this repo documents elsewhere: a REQUIRES_NEW boundary takes a
+     * second physical connection and cannot see the outer transaction's
+     * uncommitted rows (see {@code SourceCodeEntryService} and
+     * {@code OssReleaseService} for where that has bitten).
+     *
+     * <p>Public only so Spring can proxy it -- treat as internal to
+     * {@link #drainBatch}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void fanOutOneEvent(NotificationOutboxEvent event) {
+        FanOutOutcome outcome = fanOutSingle(event);
+        switch (outcome) {
+            case PROCESSED -> {
+                event.setStatus(NotificationOutboxStatus.FANNED_OUT);
+                outboxRepo.save(event);
+            }
+            case SUPPRESSED -> {
+                event.setStatus(NotificationOutboxStatus.SUPPRESSED);
+                log.info("Suppressing {} event {} for org {} after {} attempts: it affects no release. "
+                        + "A vulnerability notification that names no release is not actionable.",
+                        event.getEventType(), event.getUuid(), event.getOrg(),
+                        event.getEnrichmentAttemptCount());
+                outboxRepo.save(event);
+            }
+            // Deliberately does NOT fall through to an entity save: the row is
+            // re-queued by a targeted update instead, so none of the payload
+            // scratch enrichment just wrote is persisted. See deferForEnrichment.
+            case DEFER -> deferForEnrichment(event);
+            // Enum-constant switch STATEMENTS are not checked for exhaustiveness,
+            // so without this a future fourth outcome would silently fall out
+            // here leaving the row PENDING and unmodified -- which the drain
+            // would re-pick every 5 seconds forever, the exact wedge this class
+            // documents at length. Fail loudly instead.
+            default -> throw new IllegalStateException(
+                    "Unhandled fan-out outcome " + outcome + " for event " + event.getUuid());
+        }
+    }
+
+    /**
+     * Push a still-unresolvable vuln event back onto the queue instead of
+     * terminating it. Status stays PENDING; the drain simply cannot see the
+     * row again until {@code next_attempt_at} elapses.
+     *
+     * <p>The backoff is deliberately short (see
+     * {@link #ENRICHMENT_BACKOFF_SECONDS}). The gap this covers is bounded:
+     * the producer commits its outbox row in {@code ingestOrgBuckets} and the
+     * {@code artifacts.metrics} write that answers the query lands in
+     * {@code fanOutOrg}, the very next call in the same per-org iteration of
+     * SchedulingService's ~1/min synthetic-SBOM tick. So the answer either
+     * appears within a couple of ticks or it is genuinely not coming, and a
+     * long backoff would only delay a notification that is already late.
+     * Reusing {@code BackoffPolicy.dtrackFetchSkipSeconds} (1 to 60 minutes)
+     * would be actively wrong here for that reason.
+     */
+    /**
+     * Can an empty affected-release resolve be trusted as a statement about the
+     * world for this org, rather than an artefact of the write we are racing?
+     *
+     * <p>The CVE to release link lives only in {@code artifacts.metrics}, and
+     * that column is written by the synthetic-SBOM fan-out pass. So the answer
+     * is trustworthy exactly when that pass has run for this org since the
+     * event was emitted. Compares the org's most recent scan stamp against the
+     * event's {@code occurred_at}.
+     *
+     * <p>A null stamp -- no scanned artifact anywhere in the org -- counts as
+     * current, and deliberately so: it is a definitive answer, not a missing
+     * one. Nothing in the org can be carrying the vuln.
+     *
+     * <p>Fails CLOSED (returns false, so the event is deferred and ultimately
+     * delivered rather than suppressed) if the probe itself throws. The whole
+     * point of this check is to avoid dropping a notification on insufficient
+     * evidence, and a failed probe is the definition of insufficient evidence.
+     *
+     * <p>Runs only on the terminal pass, not on every deferral, and is served
+     * by V74's {@code (org, cast(lastScanned as float))} index.
+     */
+    private boolean metricsAreCurrentFor(NotificationOutboxEvent event) {
+        try {
+            Double maxLastScanned = artifactRepo.findMaxLastScannedEpochForOrg(
+                    event.getOrg().toString());
+            if (maxLastScanned == null) return true;
+            ZonedDateTime occurredAt = event.getOccurredAt();
+            if (occurredAt == null) return true;
+            double occurredEpoch = occurredAt.toInstant().toEpochMilli() / 1000.0;
+            return maxLastScanned >= occurredEpoch;
+        } catch (RuntimeException e) {
+            log.warn("Could not establish whether org {} has current artifact metrics for event {}; "
+                    + "treating as not-current so the event is not suppressed on unproven evidence: {}",
+                    event.getOrg(), event.getUuid(), e.getMessage());
+            return false;
+        }
+    }
+
+    private void deferForEnrichment(NotificationOutboxEvent event) {
+        int nextAttempt = event.getEnrichmentAttemptCount() + 1;
+        int delaySeconds = BackoffPolicy.enrichmentDeferSeconds(nextAttempt);
+        // Targeted update, NOT an entity save: the delay is stamped from the
+        // database clock and the in-memory payload -- which enrichment has just
+        // written an empty affectedReleases list into -- is deliberately not
+        // persisted. A row that is still PENDING must not carry the answer we
+        // have explicitly declined to commit to; "not resolved yet" and
+        // "affects nothing" are precisely the two states this change exists to
+        // keep apart. It also keeps the next attempt honest, since re-resolution
+        // depends on the list still reading as unpopulated.
+        outboxRepo.deferForEnrichment(event.getUuid(), nextAttempt, delaySeconds);
+        // Keep the detached copy consistent with the row for any caller that
+        // inspects it after the drain (tests do).
+        event.setEnrichmentAttemptCount(nextAttempt);
+        log.debug("Deferring {} event {} for org {} by {}s (attempt {}): affected releases not resolvable yet",
+                event.getEventType(), event.getUuid(), event.getOrg(), delaySeconds, nextAttempt);
+    }
+
+    /**
+     * Record a failed event as {@code FAILED} in a transaction of its own.
+     *
+     * <p>Re-reads by uuid instead of reusing the passed entity: that instance
+     * belonged to the transaction that just rolled back, so it is detached and
+     * its {@code @Version} may be stale. Best-effort -- if even this write
+     * fails the event stays {@code PENDING} and is retried, which is the old
+     * behaviour and still better than throwing out of the drain loop.
+     */
+    private void markEventFailed(UUID eventUuid) {
+        try {
+            self.markEventFailedInNewTransaction(eventUuid);
+        } catch (Exception e) {
+            log.error("Could not mark event {} FAILED; it stays PENDING and will be retried: {}",
+                    eventUuid, e.getMessage());
+        }
+    }
+
+    /** Public only so Spring can proxy it -- see {@link #markEventFailed}. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markEventFailedInNewTransaction(UUID eventUuid) {
+        outboxRepo.findById(eventUuid).ifPresent(fresh -> {
+            // Only a still-PENDING row may be failed. The throw we are reacting to
+            // does not prove this event never fanned out: a second drainer that won
+            // a dropped advisory lock could have committed it already (leaving our
+            // detached copy stale, which is itself what threw), or something could
+            // have escaped an afterCommit synchronization AFTER a successful
+            // commit. Overwriting either case would strand committed delivery rows
+            // under a FAILED event -- exactly the state this class no longer
+            // produces and now documents as impossible.
+            if (NotificationOutboxStatus.PENDING != fresh.getStatus()) {
+                log.warn("Not marking event {} FAILED: it is already {} -- another drainer"
+                        + " or a post-commit path got there first", eventUuid, fresh.getStatus());
+                return;
+            }
+            // PENDING alone stopped being proof that nobody committed anything
+            // for this event once deferral existed: a deferred row is committed
+            // (its attempt count and due time bumped, @Version incremented) yet
+            // stays PENDING by design. So the losing drainer of a dropped-lock
+            // race would read PENDING here, having thrown only because the
+            // winner's deferral made its own copy stale, and would terminate an
+            // event that was merely waiting for its metrics write. Not due yet
+            // means somebody deferred it deliberately -- leave it alone and let
+            // it come back.
+            if (fresh.getNextAttemptAt() != null
+                    && fresh.getNextAttemptAt().isAfter(ZonedDateTime.now())) {
+                log.warn("Not marking event {} FAILED: another drainer deferred it until {} "
+                        + "(attempt {}); it is waiting, not broken",
+                        eventUuid, fresh.getNextAttemptAt(), fresh.getEnrichmentAttemptCount());
+                return;
+            }
+            fresh.setStatus(NotificationOutboxStatus.FAILED);
+            outboxRepo.save(fresh);
+        });
+    }
+
+    private FanOutOutcome fanOutSingle(NotificationOutboxEvent event) {
         if (event.getOrg() == null || event.getEventType() == null) {
             log.warn("Skipping malformed outbox event {} (org={}, type={})",
                     event.getUuid(), event.getOrg(), event.getEventType());
-            return;
+            return FanOutOutcome.PROCESSED;
         }
 
         // Channel-test bypass (Phase 2d). When channel_test_target is
@@ -214,10 +443,14 @@ public class NotificationFanOutService {
         // not the org's subscription / CEL / severity matrix. Enrich the
         // payload first so the formatter still sees affectedReleases /
         // affectedComponent populated, then write a single delivery row.
+        // The affected-release guard deliberately does NOT apply here: a
+        // channel test is an operator pressing "send me one", and it must
+        // deliver whatever it resolves -- including nothing. Withholding it
+        // would break the very affordance being tested.
         if (event.getChannelTestTarget() != null) {
-            enrichVulnEventIfNeeded(event);
+            enrichVulnEventIfNeeded(event, true);
             insertChannelTestDelivery(event);
-            return;
+            return FanOutOutcome.PROCESSED;
         }
 
         // Per-user targeted rows (Phase 4a). APPROVAL_REQUESTED carries a
@@ -241,7 +474,36 @@ public class NotificationFanOutService {
         }
 
         List<NotificationSubscription> subs = subscriptionRepo.findActiveByOrg(event.getOrg());
-        if (subs.isEmpty()) return;
+        if (subs.isEmpty()) return FanOutOutcome.PROCESSED;
+
+        // Nothing in this org subscribes to this event type, so there is
+        // nothing to enrich for and nothing to withhold. Checked BEFORE
+        // enrichment and before the affected-release guard -- a correctness
+        // point as much as a cost one.
+        //
+        // Cost: an org whose subscriptions cover only release/approval events
+        // would otherwise pay the org-wide vulnerabilityDetails scan on all
+        // four passes across 3.5 minutes, for an event that could never have
+        // produced a delivery row.
+        //
+        // Correctness: those events would terminate as SUPPRESSED, mixing
+        // "we withheld something actionable" into the very count that is meant
+        // to measure how often the race fires -- which would make the evidence
+        // SUPPRESSED exists to provide unusable.
+        //
+        // Safe to hoist above enrichment because matchesEventType reads only
+        // the subscription's declared eventTypes and never the payload, unlike
+        // filterMatches, whose CEL expressions do -- see the ordering invariant
+        // documented below.
+        boolean anySubWantsThisType = false;
+        for (NotificationSubscription sub : subs) {
+            NotificationSubscriptionData data = parseSubscription(sub);
+            if (data != null && matchesEventType(data, event)) {
+                anySubWantsThisType = true;
+                break;
+            }
+        }
+        if (!anySubWantsThisType) return FanOutOutcome.PROCESSED;
 
         // Ordering invariant: enrichment MUST run before extractEventSeverity
         // and the subscription loop. CEL filters in filterMatches read the
@@ -250,22 +512,185 @@ public class NotificationFanOutService {
         // Severity itself is producer-set (untouched by enrichment), so
         // its read order is moot — but moving extractEventSeverity above
         // enrichment would silently break filter semantics.
-        enrichVulnEventIfNeeded(event);
+        EnrichmentResult enrichment = enrichVulnEventIfNeeded(event, false);
+
+        // Affected-release guard. A vuln event that names no release is not
+        // actionable, so it is never delivered -- but "resolved to nothing"
+        // and "could not resolve" are different claims and are treated
+        // differently. Nothing has been written for this event yet at this
+        // point (the two APPROVAL_* writes above cannot coincide with a vuln
+        // event type), so both branches leave the transaction clean.
+        int attempts = event.getEnrichmentAttemptCount();
+        boolean budgetSpent = attempts >= MAX_ENRICHMENT_ATTEMPTS;
+        switch (enrichment) {
+            case RESOLVED_EMPTY -> {
+                if (!budgetSpent) return FanOutOutcome.DEFER;
+                // Budget spent -- but elapsed time is NOT evidence that nothing
+                // is affected, because nothing bounds the gap being waited on:
+                // fanOutOrg can throw and resume a tick later, a large org's
+                // pass can run long, and updateArtifactDti's idempotency guard
+                // can skip the metrics write outright. So before withholding a
+                // vulnerability notification permanently, ask whether the
+                // pipeline that writes the CVE -> release link has actually run
+                // for this org since the event was emitted. Only then does
+                // "we found nothing" justify concluding "there is nothing".
+                if (metricsAreCurrentFor(event)) return FanOutOutcome.SUPPRESSED;
+                if (attempts < MAX_ENRICHMENT_ATTEMPTS_UNPROVEN) return FanOutOutcome.DEFER;
+                // Waited as long as we are willing to and still cannot prove the
+                // answer. Deliver rather than suppress, for the same reason
+                // UNRESOLVED delivers: an unproven empty is an unknown, and
+                // silently dropping a real vulnerability notification is worse
+                // than an "affects 0 releases" one that is at least visible.
+                // ERROR, not WARN: operator alerting fires on ERROR, and
+                // reaching this ceiling means the org's artifact-metrics
+                // pipeline has not run for ~15 minutes while vuln records were
+                // still being written for it -- a stalled DT sync / synthetic
+                // -SBOM fan-out, which is operator-actionable and should not be
+                // discovered by reading logs. Rare by construction: a vuln
+                // record is only created from an org's own DT findings, so a
+                // scan has normally just happened.
+                log.error("Delivering {} event {} (org {}) with no affected releases after {} attempts: "
+                        + "the org's artifact metrics have still not been refreshed since the event "
+                        + "occurred at {}, so an empty result cannot be trusted enough to suppress it. "
+                        + "This usually means the DT sync / synthetic-SBOM fan-out is lagging or stalled.",
+                        event.getEventType(), event.getUuid(), event.getOrg(), attempts,
+                        event.getOccurredAt());
+            }
+            case UNRESOLVED -> {
+                // The resolve THREW, so we know nothing about whether releases
+                // are affected. Retry while there is budget, but never convert
+                // an unknown into a suppression: silently dropping a real
+                // vulnerability notification because a JSONB scan errored would
+                // be a worse failure than the one this guard exists to fix.
+                // Falling through preserves the pre-existing "enrichment
+                // failure is not a fan-out failure" contract.
+                if (!budgetSpent) return FanOutOutcome.DEFER;
+                log.warn("Enrichment for {} event {} (org {}) never resolved after {} attempts; "
+                        + "delivering anyway rather than suppressing on an unknown",
+                        event.getEventType(), event.getUuid(), event.getOrg(), MAX_ENRICHMENT_ATTEMPTS);
+            }
+            case RESOLVED_NON_EMPTY, NOT_APPLICABLE -> {
+                // Deliverable: either releases were found, or this is not a
+                // vuln event / the producer already populated the list.
+            }
+        }
 
         NotificationSeverity eventSeverity = extractEventSeverity(event);
+
+        // Ownership, resolved at most once per event per consumer and only if
+        // something asks. TWO suppliers, memoized independently -- see
+        // lazyOwnerChannels for why they are deliberately not composed. They
+        // share the component reads. Neither runs at all unless a route sets
+        // notifyComponentOwner or a subscription carries an ownedByTeam scope,
+        // which is to say: not for any subscription that exists today.
+        Supplier<List<ComponentData>> affectedComponents = lazyAffectedComponents(event);
+        Supplier<Set<UUID>> ownerTeams = lazyOwnerTeams(event, affectedComponents);
+        Supplier<List<UUID>> ownerChannels = lazyOwnerChannels(event, affectedComponents);
 
         for (NotificationSubscription sub : subs) {
             NotificationSubscriptionData data = parseSubscription(sub);
             if (data == null) continue;
             if (!matchesEventType(data, event)) continue;
             if (!filterMatches(data, sub, event)) continue;
-            applyRoutes(data, sub, event, eventSeverity);
+            // Ownership scope LAST of the three: event type is a list lookup and
+            // the filter is in-memory CEL, while this can hit the database. An
+            // unscoped subscription -- every subscription that exists today --
+            // never reaches the supplier at all.
+            if (!ownedByTeamMatches(data, event, ownerTeams)) continue;
+            applyRoutes(data, sub, event, eventSeverity, ownerChannels);
         }
+        return FanOutOutcome.PROCESSED;
+    }
+
+    /**
+     * What {@link #fanOutSingle} decided should happen to the outbox row.
+     * Modelled as an enum rather than a boolean because the three cases carry
+     * genuinely different meanings and two of them are terminal.
+     */
+    private enum FanOutOutcome {
+        /** Fan-out ran to completion; flip the row to FANNED_OUT. */
+        PROCESSED,
+        /** Not answerable yet; leave PENDING and look again after a delay. */
+        DEFER,
+        /** Answerable, and the answer is "affects nothing"; withhold it. */
+        SUPPRESSED
+    }
+
+    /**
+     * Outcome of the vuln-payload enrichment pass.
+     *
+     * <p>The distinction between {@link #RESOLVED_EMPTY} and
+     * {@link #UNRESOLVED} is load-bearing: only the former is a statement
+     * about the world ("no release carries this vuln"). The latter means the
+     * lookup itself failed, which is not evidence of anything and must never
+     * be turned into a silent drop.
+     */
+    private enum EnrichmentResult {
+        /** Not a vuln event, or the payload already carried affected releases. */
+        NOT_APPLICABLE,
+        /** Resolved, and at least one release is affected. */
+        RESOLVED_NON_EMPTY,
+        /** Resolved cleanly, and no release is affected. */
+        RESOLVED_EMPTY,
+        /** The resolve threw; whether any release is affected is unknown. */
+        UNRESOLVED
     }
 
     private boolean matchesEventType(NotificationSubscriptionData data, NotificationOutboxEvent event) {
         return data.eventTypes() != null
                 && data.eventTypes().contains(event.getEventType());
+    }
+
+    /**
+     * Ownership scope: a team-scoped subscription matches only events that
+     * affect at least one component ITS team owns.
+     *
+     * <p>This is the matching half of what {@code notifyComponentOwner} does as
+     * a destination, and it exists because the two cannot be the same thing. A
+     * subscription built for one team out of the owner-routing flag would
+     * deliver that team's events to every OTHER owning team as well; scoping
+     * here and targeting the team in the route keeps one team's feed to itself.
+     *
+     * <p>Fails CLOSED. An event that affects nothing resolvable -- no
+     * components on the payload, an unowned component, an owner that is a user,
+     * a suggestion, or an archived team -- matches no team-scoped subscription.
+     * The alternative (treating "cannot tell" as a match) would send a team
+     * events about components it does not own, which is worse than silence and
+     * much harder to notice.
+     *
+     * <p><b>{@code VEX_STATE_CHANGED} can never match a scoped subscription.</b>
+     * {@code VexStateChangedPayload} carries a component PURL but no
+     * {@code affectedReleases}, and enrichment stamps that key only for the two
+     * vuln event types, so {@link #extractAffectedComponentUuids} finds nothing
+     * and the scope fails closed forever. Harmless today -- no producer emits
+     * that event and the UI does not offer it -- but it is a real hole in any
+     * "all event types" promise built on this, and the same blind spot already
+     * affects {@code notifyComponentOwner}. Fixing it means stamping affected
+     * releases on the VEX payload, not special-casing it here.
+     *
+     * <p>The no-match line is DEBUG on purpose: for a scoped subscription, not
+     * matching is the normal case -- most events in an org are about somebody
+     * else's components -- so anything louder would be noise per event.
+     *
+     * <p>Scoping and {@code notifyComponentOwner} on the same subscription is
+     * permitted and does something coherent but surprising: it matches only
+     * events touching MY components, then delivers to EVERY owner of those
+     * events' components. No team hears about a component it does not own -- the
+     * other owners are owners of the same event -- but the result is redundant
+     * with those teams' own subscriptions. The materialiser in phase 2 targets
+     * the team directly rather than through the owner flag; a hand-built API
+     * combination gets what it asked for.
+     */
+    private boolean ownedByTeamMatches(NotificationSubscriptionData data, NotificationOutboxEvent event,
+            Supplier<Set<UUID>> ownerTeams) {
+        UUID scope = data.ownedByTeam();
+        if (scope == null) return true;
+        Set<UUID> owners = ownerTeams.get();
+        if (owners.contains(scope)) return true;
+        log.debug("Event {} ({}): no affected component is owned by team {}, so its scoped subscription "
+                + "does not match ({} owner team(s) resolved)",
+                event.getUuid(), event.getEventType(), scope, owners.size());
+        return false;
     }
 
     /**
@@ -301,7 +726,8 @@ public class NotificationFanOutService {
     }
 
     private void applyRoutes(NotificationSubscriptionData data, NotificationSubscription sub,
-            NotificationOutboxEvent event, NotificationSeverity eventSeverity) {
+            NotificationOutboxEvent event, NotificationSeverity eventSeverity,
+            Supplier<List<UUID>> ownerChannels) {
         if (data.routes() == null) return;
         for (RouteConfig route : data.routes()) {
             if (route == null) continue;
@@ -311,7 +737,7 @@ public class NotificationFanOutService {
             // channels; T3 adds team expansion. Dedup is first-seen across the
             // merged list, so a channel referenced directly, via a group AND via
             // a team still produces exactly one delivery row.
-            List<UUID> resolvedChannels = mergeRouteChannels(route, event.getOrg());
+            List<UUID> resolvedChannels = mergeRouteChannels(route, event.getOrg(), ownerChannels);
             if (resolvedChannels.isEmpty()) {
                 // No direct channels, no resolvable groups, no team channels -- log + skip.
                 // Distinct from "all channels resolved but every one was
@@ -338,7 +764,8 @@ public class NotificationFanOutService {
      * preserved even if a group later also contains it. Null entries
      * on either side are silently skipped.
      */
-    private List<UUID> mergeRouteChannels(RouteConfig route, UUID eventOrg) {
+    private List<UUID> mergeRouteChannels(RouteConfig route, UUID eventOrg,
+            Supplier<List<UUID>> ownerChannels) {
         Set<UUID> seen = new HashSet<>();
         List<UUID> out = new ArrayList<>();
         if (route.channels() != null) {
@@ -356,11 +783,173 @@ public class NotificationFanOutService {
         // Resolved late (here, not at save time) so retargeting a team's Slack
         // channel takes effect without touching every subscription that names it.
         if (route.teams() != null && !route.teams().isEmpty()) {
-            for (UUID ch : userGroupService.resolveTeamChannelUuids(route.teams(), eventOrg)) {
+            for (UUID ch : teamService.resolveTeamChannelUuids(route.teams(), eventOrg)) {
+                if (ch != null && seen.add(ch)) out.add(ch);
+            }
+        }
+        // T4a: "whoever owns the affected component". Last in the merge so an
+        // explicitly named channel or team keeps its first-seen position; the
+        // shared `seen` set means a team that is BOTH named on the route and
+        // the component's owner still yields exactly one delivery row.
+        //
+        // Supplied lazily and memoized per EVENT (not per route, not per
+        // subscription): resolving ownership reads the org's groups + org record
+        // and then every affected component, and one event routinely matches
+        // several subscriptions. Routes without the flag never trigger the work.
+        if (Boolean.TRUE.equals(route.notifyComponentOwner())) {
+            for (UUID ch : ownerChannels.get()) {
                 if (ch != null && seen.add(ch)) out.add(ch);
             }
         }
         return out;
+    }
+
+    /**
+     * Component uuids the event affects, read from the enriched
+     * {@code affectedReleases} payload.
+     *
+     * <p>Handles the same two payload shapes as {@link #perspectiveGateMatches}:
+     * a Jackson-round-tripped {@code Map} (the normal post-enrichment path) and a
+     * typed {@link AffectedRelease} (synthetic helpers and hand-built test
+     * payloads). A producer that skips the round-trip must not silently resolve
+     * to "no owner" -- that would look identical to "component has no owner".
+     */
+    private static Set<UUID> extractAffectedComponentUuids(NotificationOutboxEvent event) {
+        Object affected = event.getRecordData() != null
+                ? event.getRecordData().get("affectedReleases") : null;
+        if (!(affected instanceof List<?> list) || list.isEmpty()) return Set.of();
+        Set<UUID> out = new LinkedHashSet<>();
+        for (Object item : list) {
+            UUID cu = null;
+            if (item instanceof AffectedRelease ar) {
+                cu = ar.componentUuid();
+            } else if (item instanceof Map<?, ?> map) {
+                cu = coerceToUuid(map.get("componentUuid"), event.getUuid());
+            }
+            if (cu != null) out.add(cu);
+        }
+        return out;
+    }
+
+    /**
+     * The components this event affects, fetched at most once per event.
+     *
+     * <p>Shared by both ownership consumers below. They deliberately do not
+     * share an ownership RESOLUTION (see {@link #lazyOwnerChannels}), but there
+     * was never a reason for them not to share the component READS -- and an
+     * event carrying a widely-deployed CVE can name a lot of components, so
+     * fetching them twice is the expensive half of the duplication.
+     */
+    private Supplier<List<ComponentData>> lazyAffectedComponents(NotificationOutboxEvent event) {
+        return new Supplier<>() {
+            private List<ComponentData> cached;
+
+            @Override
+            public List<ComponentData> get() {
+                if (cached == null) {
+                    List<ComponentData> components = new ArrayList<>();
+                    for (UUID cu : extractAffectedComponentUuids(event)) {
+                        getComponentService.getComponentData(cu).ifPresent(components::add);
+                    }
+                    cached = components;
+                }
+                return cached;
+            }
+        };
+    }
+
+    /**
+     * The owner teams of everything this event affects, resolved at most once
+     * per event and shared by every team-scoped subscription on it.
+     *
+     * <p>Resolving once means an org with fifty team-scoped subscriptions pays
+     * for one ownership pass, not fifty.
+     */
+    private Supplier<Set<UUID>> lazyOwnerTeams(NotificationOutboxEvent event,
+            Supplier<List<ComponentData>> affectedComponents) {
+        return new Supplier<>() {
+            private Set<UUID> cached;
+
+            @Override
+            public Set<UUID> get() {
+                if (cached == null) {
+                    cached = componentOwnershipService.resolveOwnerTeams(
+                            affectedComponents.get(), event.getOrg());
+                }
+                return cached;
+            }
+        };
+    }
+
+    /**
+     * Owner CHANNELS, for the {@code notifyComponentOwner} route flag.
+     *
+     * <p>Deliberately still routed through {@code resolveOwnerTeamChannels}
+     * rather than composed from {@link #lazyOwnerTeams} above. Composing them
+     * would resolve ownership ONCE instead of twice when an event matches both
+     * an owner-routed route AND a team-scoped subscription. The cost of doing so
+     * is 8 stub/verify sites across {@code NotificationFanOutServiceTest} and
+     * {@code NotificationDrainTransactionTest} -- the two classes that guard
+     * owner routing through fan-out -- rewritten inside the commit that adds a
+     * new predicate to the same method. (The other two classes referencing
+     * {@code resolveOwnerTeamChannels} are unaffected: {@code
+     * ComponentOwnershipServiceTest} calls the real service, and {@code
+     * SyntheticEventServiceTest} stubs a different production caller. An earlier
+     * version of this comment cited the raw grep total of 24 and overstated the
+     * blast radius threefold.)
+     *
+     * <p>What remains duplicated is the ownership pass itself: one context load
+     * and one rule evaluation per component, twice. The component READS are
+     * shared via {@link #lazyAffectedComponents}, which is the expensive half on
+     * an event naming many components.
+     *
+     * <p>Both paths go through the same {@code resolveOwnerTeams} underneath, so
+     * they cannot disagree about who owns what -- only about how many times they
+     * ask. Unifying belongs in the phase that touches these tests anyway.
+     */
+    private Supplier<List<UUID>> lazyOwnerChannels(NotificationOutboxEvent event,
+            Supplier<List<ComponentData>> affectedComponents) {
+        return new Supplier<>() {
+            private List<UUID> cached;
+
+            @Override
+            public List<UUID> get() {
+                if (cached == null) {
+                    List<ComponentData> components = affectedComponents.get();
+                    cached = componentOwnershipService.resolveOwnerTeamChannels(
+                            components, event.getOrg());
+                    if (cached.isEmpty()) {
+                        // Worth a line: the operator ticked "notify the owner" and
+                        // nothing came back. Almost always an unowned component or
+                        // an owner team with no channel configured -- both silent
+                        // otherwise, and both look like "notifications are broken".
+                        //
+                        // The zero-component case is called out separately and is
+                        // NOT skipped. It used to be: this line was guarded on a
+                        // non-empty component set, so an event whose producer never
+                        // stamped affectedReleases resolved no owner AND logged
+                        // nothing about it. That combination is what made the
+                        // approval-event gap undiagnosable from outside the code.
+                        //
+                        // Re-extracted rather than read off `components`: the two
+                        // differ when the payload NAMES components that fail to
+                        // load, and that case must not be reported as "the payload
+                        // named none" -- distinguishing them is the entire point of
+                        // the branch.
+                        Set<UUID> componentUuids = extractAffectedComponentUuids(event);
+                        if (componentUuids.isEmpty()) {
+                            log.debug("Event {} ({}): notifyComponentOwner found no affectedReleases on the "
+                                    + "payload, so no component and no owner could be resolved",
+                                    event.getUuid(), event.getEventType());
+                        } else {
+                            log.debug("Event {}: notifyComponentOwner resolved no channels for {} affected component(s)",
+                                    event.getUuid(), componentUuids.size());
+                        }
+                    }
+                }
+                return cached;
+            }
+        };
     }
 
     private boolean severityGateMatches(RouteConfig route, NotificationSeverity eventSeverity) {
@@ -565,12 +1154,16 @@ public class NotificationFanOutService {
      * and continues — stale-unread is a cosmetic defect, not worth
      * failing the event's whole fan-out over. To make "continues" actually
      * hold, the {@code markRead} calls are deferred to an afterCommit
-     * synchronization rather than executed inside the batch transaction:
-     * a throw inside the batch tx would mark the shared transaction
-     * rollback-only before our catch ran — every event in the batch would
-     * replay as PENDING and wedge the queue on the same failure forever.
-     * (A plain SQL error would similarly abort the underlying PG
+     * synchronization rather than executed inside the event's transaction:
+     * a throw inside it would mark that transaction rollback-only before our
+     * catch ran, losing the event's whole fan-out over a cosmetic mark-read
+     * failure. (A plain SQL error would similarly abort the underlying PG
      * transaction.)
+     *
+     * <p>Since the drain gained a per-event transaction boundary, that blast
+     * radius is one event rather than the whole batch -- deferring is still
+     * right, but it is no longer all that stands between a mark-read failure
+     * and a wedged queue. See {@link #drainBatch}.
      *
      * <p>{@code markRead} MUST be {@code REQUIRES_NEW} for this to work:
      * inside afterCommit the completed transaction context is still bound,
@@ -579,9 +1172,11 @@ public class NotificationFanOutService {
      * the sandbox during the Phase 4b smoke). With {@code REQUIRES_NEW},
      * each markRead runs in its own fresh transaction and the targeted
      * rows it references are already durable — including the same-batch
-     * case, since the REQUESTED rows commit with the batch. If the batch
-     * rolls back for an unrelated reason, the synchronization never fires
-     * and the replayed event re-registers it — no marks lost.
+     * case, and now more strongly than before: the REQUESTED event committed
+     * in its OWN earlier per-event transaction, so its targeted rows are
+     * durable before the RESOLVED event's transaction even opens. If this
+     * event's transaction rolls back, the synchronization never fires and the
+     * replayed event re-registers it -- no marks lost.
      */
     private void markResolvedRequestsRead(NotificationOutboxEvent event) {
         ApprovalResolvedPayload payload;
@@ -770,11 +1365,13 @@ public class NotificationFanOutService {
      *       parse path marks the row FAILED with a record-data diagnostic.</li>
      * </ul>
      *
-     * <p>Costs one PK lookup per delivery row, but {@code drainBatch} is
-     * {@code @Transactional} and {@code getChannel} resolves by primary
-     * key, so repeated lookups of the same channel within a batch are
-     * served from the Hibernate first-level cache rather than re-hitting
-     * the DB — no explicit per-fan-out memo needed.
+     * <p>Costs one PK lookup per delivery row. Each event's fan-out runs in
+     * its own transaction ({@link #fanOutOneEvent}), and {@code getChannel}
+     * resolves by primary key, so repeated lookups of the same channel within
+     * ONE event are served from the Hibernate first-level cache. Across events
+     * the persistence context is fresh and the lookup re-hits the DB -- an
+     * accepted cost of the per-event boundary, since a batch rarely repeats a
+     * channel across events and the alternative was a queue-wide wedge.
      */
     private boolean channelEligibleForDelivery(UUID channelUuid, UUID eventOrg) {
         if (channelUuid == null || eventOrg == null) return false;
@@ -840,6 +1437,16 @@ public class NotificationFanOutService {
                 case APPROVAL_REQUESTED, APPROVAL_RESOLVED -> {
                     return null;
                 }
+                // Instance-deployment events carry a computed severity (max over
+                // items) so route severity gates can isolate outcomes. Without
+                // this case a new type returns null and severityGateMatches fails
+                // closed, silently dropping every instance event on any route
+                // that sets a minimum severity.
+                case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> {
+                    InstanceDeploymentChangedPayload p = Utils.OM.convertValue(
+                            event.getRecordData(), InstanceDeploymentChangedPayload.class);
+                    return p != null ? p.severity() : null;
+                }
             }
         } catch (Exception e) {
             log.warn("Full-payload severity extraction failed for event {}; "
@@ -899,21 +1506,38 @@ public class NotificationFanOutService {
      * without {@code affectedReleases} (and {@code affectedComponent} for
      * NEW_VULN events) because the artifact-metric updates that connect
      * a CVE to a release happen later in the DT-sync loop. At fan-out
-     * time those updates have committed, so we resolve them via the
+     * time those updates have USUALLY committed, so we resolve them via the
      * {@code metrics->vulnerabilityDetails} JSONB index and update the
      * event's recordData in place. CEL filters and channel formatters
-     * downstream see the enriched payload.
+     * downstream see the enriched payload. When they have NOT committed yet,
+     * the caller defers the event rather than delivering an empty answer --
+     * see the affected-release guard in {@link #fanOutSingle}.
      *
      * <p>Failure mode: an enrichment exception logs and proceeds with an
-     * empty release set — the event still ships, customers just see
-     * "affects 0 releases" rather than nothing at all. Better operator
-     * signal than swallowing the event entirely.
+     * empty release set, and the return value distinguishes that
+     * ({@code UNRESOLVED}) from a clean empty resolve ({@code RESOLVED_EMPTY}).
+     * The event still ships once its deferral budget is spent -- customers see
+     * "affects 0 releases" rather than nothing at all -- because a failed
+     * lookup is not evidence that nothing is affected, and dropping a real
+     * vulnerability notification on a transient DB error would be worse than
+     * the empty payload. Only a definitive empty resolve is suppressed.
+     *
+     * <p>Caveat worth knowing: a throw raised INSIDE a Spring Data repository
+     * call (e.g. a statement timeout on the org-wide scan) marks the
+     * surrounding transaction rollback-only, so the deferral written by this
+     * pass cannot commit and the drain's catch terminates the event as FAILED
+     * instead. That trap predates this guard -- it applied equally to the old
+     * "log and ship anyway" behaviour -- but it does mean the UNRESOLVED path
+     * covers in-memory enrichment faults more reliably than DB-level ones.
      *
      * <p>Mutating {@code event.getRecordData()} in place is the persistence
-     * mechanism: Hibernate's dirty-tracking on the {@code @Type(JsonBinaryType)}
-     * column re-serializes the JSONB on the {@code outboxRepo.save(event)}
-     * call in {@link #drainBatch}. Do NOT refactor to a defensive copy or
-     * the enrichment will vanish on commit.
+     * mechanism: the mutated {@code @Type(JsonBinaryType)} column is
+     * re-serialized by the {@code outboxRepo.save(event)} call in
+     * {@link #fanOutOneEvent}. Do NOT refactor to a defensive copy or the
+     * enrichment will vanish on commit. Note the entity arrives DETACHED --
+     * {@code drainBatch} reads the batch outside any transaction -- so that
+     * {@code save} is a merge rather than dirty-tracking on a managed
+     * instance; the outcome is the same, but the mechanism is the merge.
      *
      * <p><b>v1 perf note (known limitation):</b> the loop in
      * {@link #resolveAffectedReleases} calls
@@ -929,35 +1553,61 @@ public class NotificationFanOutService {
      * releases (and carries the purls along) is the follow-up if customer
      * scale starts showing tail-latency pain.
      */
-    private void enrichVulnEventIfNeeded(NotificationOutboxEvent event) {
+    private EnrichmentResult enrichVulnEventIfNeeded(NotificationOutboxEvent event,
+            boolean forChannelTest) {
         NotificationEventType type = event.getEventType();
         if (type != NotificationEventType.NEW_VULN_AFFECTS_RELEASES
                 && type != NotificationEventType.VULNERABILITY_RECORD_UPDATED) {
-            return;
+            return EnrichmentResult.NOT_APPLICABLE;
         }
         Map<String, Object> recordData = event.getRecordData();
-        if (recordData == null) return;
+        if (recordData == null) return EnrichmentResult.NOT_APPLICABLE;
         Object idRaw = recordData.get("vulnPrimaryId");
         if (!(idRaw instanceof String vulnPrimaryId) || StringUtils.isBlank(vulnPrimaryId)) {
-            return;
+            return EnrichmentResult.NOT_APPLICABLE;
         }
+        EnrichmentResult result;
         // If the producer already populated affectedReleases (synthetic
         // events do; future producers might), don't clobber it.
         Object existing = recordData.get("affectedReleases");
-        if (!(existing instanceof List<?> existingList && !existingList.isEmpty())) {
+        if (existing instanceof List<?> existingList && !existingList.isEmpty()) {
+            // Producer-populated and non-empty: nothing to resolve, and the
+            // affected-release guard has no business second-guessing it.
+            result = EnrichmentResult.NOT_APPLICABLE;
+        } else {
             try {
                 List<AffectedRelease> resolved = resolveAffectedReleases(event.getOrg(), vulnPrimaryId);
                 recordData.put("affectedReleases", Utils.OM.convertValue(resolved, List.class));
+                result = resolved.isEmpty()
+                        ? EnrichmentResult.RESOLVED_EMPTY
+                        : EnrichmentResult.RESOLVED_NON_EMPTY;
             } catch (RuntimeException e) {
                 log.warn("Failed to enrich vuln event {} ({} for {}): {}",
                         event.getUuid(), type, vulnPrimaryId, e.getMessage());
                 recordData.putIfAbsent("affectedReleases", Collections.emptyList());
+                result = EnrichmentResult.UNRESOLVED;
             }
         }
 
         // S-3: only the NEW_VULN payload carries affectedComponent; same
         // don't-clobber rule for synthetic/producer-populated events.
+        //
+        // Skipped on any outcome that is about to defer, which matters for
+        // correctness and not just cost. resolveAffectedComponent collapses
+        // multiple purls to the lexicographically-first one -- a pick its
+        // javadoc calls "deterministic across retries", which was true only
+        // while there was exactly one pass. Under deferral the early passes see
+        // a PARTIAL purl set (that is what they are waiting on), so resolving
+        // then would stamp a package from the incomplete view, and the
+        // "== null" don't-clobber rule would freeze it: the delivered payload
+        // could name a package belonging to none of the releases it lists.
+        // Resolving only on the pass that actually delivers keeps the two
+        // halves of the payload drawn from the same snapshot. It also drops an
+        // org-wide JSONB scan from every deferred pass.
+        boolean willDeliverNow = result != EnrichmentResult.RESOLVED_EMPTY
+                && result != EnrichmentResult.UNRESOLVED;
         if (type == NotificationEventType.NEW_VULN_AFFECTS_RELEASES
+                && (willDeliverNow || forChannelTest)
                 && recordData.get("affectedComponent") == null) {
             try {
                 AffectedComponent ac = resolveAffectedComponent(event.getOrg(), vulnPrimaryId);
@@ -969,6 +1619,7 @@ public class NotificationFanOutService {
                         event.getUuid(), vulnPrimaryId, e.getMessage());
             }
         }
+        return result;
     }
 
     /**

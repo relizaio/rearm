@@ -480,7 +480,13 @@
                     </n-spin>
                 </n-form>
                 <n-form v-if="exportBomType === 'CLE'">
-                    <h3>Format: CLE 1.0.0 (JSON)</h3>
+                    <!-- Deliberately NOT labelled "CLE 1.0.0". That is a conformance claim on a
+                         file a customer may hand to a regulator, and we do not currently meet it:
+                         endOfSupport events carry no resolvable supportId (the spec makes it
+                         mandatory), event ids are recomputed per export rather than persisted, and
+                         there is no pagination. Restore the version claim only when those are
+                         fixed -- see ai-plans/fda-readiness-1-plan.md in rearm-core. -->
+                    <h3>Format: Common Lifecycle Enumeration (JSON)</h3>
                     <n-button type="success"
                         :disabled="bomExportPending"
                         @click.prevent="exportReleaseCle">
@@ -913,7 +919,7 @@
                                 placeholder="Search SBOM components (name, version, group, type, purl)"
                                 clearable
                                 size="small"
-                                style="width: 480px;"
+                                style="width: 420px;"
                             />
                             <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
                                 <n-radio-button value="list" label="List" />
@@ -1212,6 +1218,7 @@
                     <n-dynamic-input v-model:value="updatedRelease.identifiers" :on-create="onCreateIdentifier">
                         <template #create-button-default>
                             Add Identifier
+
                         </template>
                         <template #default="{ value }">
                             <n-select style="width: 200px;" v-model:value="value.idType"
@@ -1246,7 +1253,65 @@
         </n-modal>
             </div>
     </div>
-
+        <n-modal
+            v-model:show="attestModalOpen"
+            title="Claim this commit"
+            preset="dialog"
+            style="width: 620px;"
+            :show-icon="false">
+            <n-form label-placement="top">
+                <p class="text-muted" v-if="attestSubject">
+                    {{ attestSubject.commit }}<span v-if="!attestSubject.recognized && !attestClaims.length">
+                    — nobody is accountable for it yet</span>.
+                </p>
+                <!-- Where everybody stands, and the way out of a contested commit: whoever should
+                     not have claimed it withdraws their statement. The log keeps the withdrawal;
+                     the standing claims are what recognition is computed from. -->
+                <n-alert v-if="attestClaims.length" :type="attestSubject?.attestation?.state === 'CONFLICT' ? 'error' : 'default'"
+                    :show-icon="false" style="margin-bottom: 0.9rem; font-size: 13px;">
+                    <div v-if="attestSubject?.attestation?.state === 'CONFLICT'" style="margin-bottom: 6px;">
+                        Two principals each say this commit is theirs. It stays contested until one
+                        of them withdraws.
+                    </div>
+                    <div v-for="c in attestClaims" :key="c.uuid"
+                        style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                        <n-tag size="tiny" :type="c.verdict === 'MINE' ? 'success' : 'warning'" :bordered="false">
+                            {{ c.verdict === 'MINE' ? 'claims it' : 'disowns it' }}
+                        </n-tag>
+                        <span>{{ c.actorName || (c.actorType === 'AGENT' ? 'an agent' : 'a user') }}</span>
+                        <span class="text-muted" v-if="c.createdDate">{{ new Date(c.createdDate).toLocaleString('en-CA') }}</span>
+                        <span class="text-muted" v-if="c.note">— {{ c.note }}</span>
+                        <n-button v-if="isWritable" size="tiny" quaternary type="error"
+                            @click="withdrawClaim(c)">withdraw</n-button>
+                    </div>
+                </n-alert>
+                <n-form-item label="Statement" required>
+                    <n-radio-group v-model:value="attestDraft.verdict">
+                        <n-radio value="MINE">This is mine</n-radio>
+                        <n-radio value="NOT_MINE">This is not mine</n-radio>
+                    </n-radio-group>
+                    <template #feedback>
+                        Claiming a commit makes it accountable. It does not certify the content, does not
+                        change any release's lifecycle and is not a review — a rejected release stays
+                        rejected. Disowning one leaves it unaccounted for and puts any lock waiting on it
+                        in an administrator's hands.
+                    </template>
+                </n-form-item>
+                <n-form-item label="Note">
+                    <n-input v-model:value="attestDraft.note" type="textarea" :rows="2"
+                        placeholder="e.g. malformed trailer, corrected in the next commit"/>
+                    <template #feedback>
+                        Whether the claim means "fixed later" or "fine as it is" belongs here. There is no
+                        pointer to a correcting commit on purpose: the correction is proven by the next
+                        build running the same rule, not declared.
+                    </template>
+                </n-form-item>
+                <n-space>
+                    <n-button type="primary" @click="submitAttest">Record</n-button>
+                    <n-button @click="attestModalOpen = false">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
 </template>
     
 <script lang="ts">
@@ -1268,15 +1333,16 @@ import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
+import { loadSbomComponentsForRelease } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NRadio, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
-import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -1284,6 +1350,7 @@ import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus } from '@/utils/releaseScanStatus'
+import { resolveApprovalRoles } from '@/utils/approvalRoles'
 import { processMetricsData } from '@/utils/metrics'
 import { annotateKnownExploited, fetchArtifactKevVulnIds } from '@/utils/kevService'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
@@ -1993,13 +2060,15 @@ async function fetchRelease () {
         approvalEntries.value.forEach(ae => {
             approvalMatrixCheckboxes.value[ae.uuid] = {}
             ae.approvalRequirements.forEach((ar: any) => {
-                availableApprovalIds.value[ar.allowedApprovalRoleIdExpanded[0].id] = ar.allowedApprovalRoleIdExpanded[0].displayView
+                const role = resolveApprovalRoles(ar)[0]
+                if (!role) return
+                availableApprovalIds.value[role.id] = role.displayView
                 let checkBoxValue = 'UNSET'
-                if (givenApprovals.value[ae.uuid] && (givenApprovals.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id] === 'APPROVED' || 
-                    givenApprovals.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id] === 'DISAPPROVED')) {
-                    checkBoxValue = givenApprovals.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id]
+                if (givenApprovals.value[ae.uuid] && (givenApprovals.value[ae.uuid][role.id] === 'APPROVED' ||
+                    givenApprovals.value[ae.uuid][role.id] === 'DISAPPROVED')) {
+                    checkBoxValue = givenApprovals.value[ae.uuid][role.id]
                 }
-                approvalMatrixCheckboxes.value[ae.uuid][ar.allowedApprovalRoleIdExpanded[0].id] = checkBoxValue
+                approvalMatrixCheckboxes.value[ae.uuid][role.id] = checkBoxValue
             })
         })
     }
@@ -2041,6 +2110,16 @@ async function goToRelease (uuid: string) {
     // right query (and its artifact handling) is used, and reset the lazy
     // product-artifacts flag.
     productArtifactsLoaded.value = false
+    // Same for the SBOM caches: this component is reused across releases rather than
+    // remounted, and loadSbomComponents() early-returns while sbomComponentsLoaded is true,
+    // so without this the next release renders the previous one's components. That was
+    // merely stale before; now the device-risk summary would state "N outlived by this
+    // device" about a device whose SBOM we are not showing.
+    sbomComponentsLoaded.value = false
+    sbomComponents.value = []
+    sbomGraphLoaded.value = false
+    sbomGraphByUuid.value = {}
+    sbomGraphDirty.value = true
     isLoading.value = true
     loadingBar.start()
     try {
@@ -2787,13 +2866,13 @@ const sbomGraphDirty: Ref<boolean> = ref(false)
 const sbomSearchQueryInput: Ref<string> = ref('')
 const filteredSbomComponents: ComputedRef<any[]> = computed((): any[] => {
     const q = (sbomSearchQueryInput.value || '').trim().toLowerCase()
-    if (!q) return sbomComponents.value
     return sbomComponents.value.filter((row: any) => {
         const c = row.component || {}
-        const haystack = [
-            c.name, c.version, c.group, c.type, c.canonicalPurl
-        ].filter(Boolean).join(' ').toLowerCase()
-        return haystack.includes(q)
+        if (q) {
+            const haystack = [c.name, c.version, c.group, c.type, c.canonicalPurl].filter(Boolean).join(' ').toLowerCase()
+            if (!haystack.includes(q)) return false
+        }
+        return true
     })
 })
 
@@ -2802,31 +2881,7 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
     if (sbomComponentsLoaded.value && !forceRefresh) return
     sbomComponentsLoading.value = true
     try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query getReleaseSbomComponentsList($releaseUuid: ID!) {
-                    getReleaseSbomComponents(releaseUuid: $releaseUuid) {
-                        uuid
-                        sbomComponentUuid
-                        component {
-                            uuid
-                            canonicalPurl
-                            type
-                            group
-                            name
-                            version
-                            isRoot
-                        }
-                        artifactParticipations {
-                            artifact
-                            exactPurls
-                        }
-                    }
-                }`,
-            variables: { releaseUuid: updatedRelease.value.uuid },
-            fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
-        })
-        sbomComponents.value = (resp.data as any).getReleaseSbomComponents || []
+        sbomComponents.value = await loadSbomComponentsForRelease(graphqlClient as any, updatedRelease.value.uuid)
         sbomComponentsLoaded.value = true
         // Refresh invalidates the deeper graph too — rows may have changed.
         if (forceRefresh) {
@@ -2983,10 +3038,10 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
-        render: (row: any) => h(NButton, {
-            size: 'small',
-            onClick: () => openSbomComponentGraph(row)
-        }, () => 'View graph')
+        render: (row: any) => {
+            const els: any[] = [h(NButton, { size: 'small', onClick: () => openSbomComponentGraph(row) }, () => 'View graph')]
+            return h('div', { style: 'display: flex; gap: 6px;' }, els)
+        }
     }
 ]
 
@@ -3188,7 +3243,11 @@ async function lifecycleChange(newLifecycle: string) {
         notify('success', 'Saved', 'Lifecycle updated.')
     } catch (error: any) {
         console.error(error)
-        notify('error', 'Error', 'Error updating release lifecycle.')
+        // The backend refuses a promotion that an action guard governs, and the message names the
+        // guard that stopped it -- which is the whole point of the refusal, so show it rather
+        // than a generic failure. Falls back to the generic wording when there is no message.
+        const message = commonFunctions.extractGraphQLErrorMessage(error)
+        notify('error', 'Error', message === 'Unknown error' ? 'Error updating release lifecycle.' : message)
         updatedRelease.value = deepCopyRelease(release.value)
     }
     approvalPending.value = false
@@ -4788,7 +4847,9 @@ const releaseHistoryFields = computed(() => [
                     default: () => row.message,
                 })
                 : null
-            if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER') {
+            // GUARD rows record an automated promotion a guard withheld, and the message naming
+            // the guard is the whole point of the row — same treatment as the trigger rows.
+            if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER' || row.rus === 'GUARD') {
                 const txt = row.newValue || row.objectId
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
@@ -5177,7 +5238,8 @@ const releaseApprovalTableData: ComputedRef<any[]> = computed((): any[] => {
 
             }
             ae.approvalRequirements.forEach((ar: any) => {
-                aeObj[ar.allowedApprovalRoleIdExpanded[0].id] = true
+                const role = resolveApprovalRoles(ar)[0]
+                if (role) aeObj[role.id] = true
             })
             return aeObj
         })
@@ -5798,6 +5860,129 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
 ])
 
 /**
+ * Is anybody accountable for this commit, and can the reader do something about it.
+ *
+ * <p>Recognition is signed by an enrolled key, attributed to a live agent session, or claimed in
+ * an attestation -- the three ways somebody can be held to a commit. Unrecognized is the state
+ * locks and integrity rules are written about, so the badge offers the one action that resolves
+ * it rather than making the reader go and find it.
+ */
+/** "claimed by Ada" rather than "claimed": the point of a claim is which person it names. */
+function claimantOf (row: any): string {
+    const att = row.attestation
+    if (!att) return ''
+    return att.actorName || (att.actorType === 'AGENT' ? 'an agent' : att.actor ? 'a user' : '')
+}
+
+/** Every principal's standing statement, newest first, for the tooltip and the modal. */
+function standingClaims (row: any): any[] {
+    return (row?.attestation?.claims || []).filter((c: any) => !!c)
+}
+
+function claimLine (c: any): string {
+    const who = c.actorName || (c.actorType === 'AGENT' ? 'an agent' : 'a user')
+    const when = c.createdDate ? new Date(c.createdDate).toLocaleString('en-CA') : ''
+    const verb = c.verdict === 'MINE' ? 'claims it' : 'disowns it'
+    return `${who} ${verb}${when ? ' · ' + when : ''}${c.note ? ' — ' + c.note : ''}`
+}
+
+function renderRecognitionBadge (row: any) {
+    const claim = row.attestation?.state
+    const who = claimantOf(row)
+    if (row.recognized) {
+        const how = claim === 'MINE' ? (who ? `claimed by ${who}` : 'claimed') : 'recognized'
+        const when = row.attestation?.claimedAt
+            ? new Date(row.attestation.claimedAt).toLocaleString('en-CA') : ''
+        return h(NTooltip, { style: 'max-width: 380px;' }, {
+            trigger: () => h(NTag, { size: 'tiny', type: 'success', bordered: false }, { default: () => how }),
+            default: () => [
+                h('div', row.attestation?.detail
+                    || 'Somebody can be held to this commit: an enrolled key signed it, an agent session owns it, or it has been claimed.'),
+                when ? h('div', { style: 'margin-top: 4px;' }, `claimed ${when}`) : null,
+            ].filter(Boolean),
+        })
+    }
+    const claims = standingClaims(row)
+    const children: any[] = [
+        h(NTooltip, { style: 'max-width: 420px;' }, {
+            trigger: () => h(NTag, {
+                size: 'tiny',
+                type: claim === 'CONFLICT' || claim === 'NOT_MINE' ? 'error' : 'warning',
+                bordered: false
+            }, { default: () => claim === 'NOT_MINE' ? 'disowned' : claim === 'CONFLICT' ? 'contested' : 'unclaimed' }),
+            // A contested commit that says only "contested" tells the reader nothing they can act
+            // on. Who says what, with their notes, is the whole content of the disagreement.
+            default: () => [
+                h('div', claim === 'CONFLICT'
+                    ? 'Two principals each say this commit is theirs. One of them has to withdraw.'
+                    : (row.attestation?.detail
+                        || 'Nobody is accountable for this commit: it is unsigned, unattributed and unclaimed.')),
+                ...claims.map((c: any) => h('div', { style: 'margin-top: 4px;' }, claimLine(c))),
+            ],
+        })
+    ]
+    if (isWritable.value && row.uuid) {
+        children.push(h(NButton, {
+            size: 'tiny', quaternary: true, style: 'margin-left: 4px;',
+            onClick: () => openAttest(row)
+        }, { default: () => claim === 'CONFLICT' ? 'resolve' : 'claim' }))
+    }
+    return h('div', { style: 'display: flex; align-items: center;' }, children)
+}
+
+const attestModalOpen = ref(false)
+const attestSubject = ref<any>(null)
+const attestDraft = reactive({ verdict: 'MINE', note: '' })
+
+const attestClaims: ComputedRef<any[]> = computed((): any[] =>
+    (attestSubject.value?.attestation?.claims || []).filter((c: any) => !!c))
+
+/**
+ * Withdraw one standing statement. This is what resolves a contested commit: the claim that
+ * should not have been made is revoked, the log keeps it, and recognition is recomputed from
+ * what still stands.
+ */
+async function withdrawClaim (claim: any) {
+    try {
+        await store.dispatch('revokeAttestation', {
+            uuid: claim.uuid,
+            reason: 'withdrawn from the release page'
+        })
+        notify('success', 'Withdrawn', 'The statement is revoked and kept on the record.')
+        attestModalOpen.value = false
+        await fetchRelease()
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.extractGraphQLErrorMessage(error))
+    }
+}
+
+function openAttest (row: any) {
+    attestSubject.value = row
+    attestDraft.verdict = 'MINE'
+    attestDraft.note = ''
+    attestModalOpen.value = true
+}
+
+async function submitAttest () {
+    try {
+        await store.dispatch('attest', {
+            subjectType: 'SCE',
+            subjectUuid: attestSubject.value.uuid,
+            verdict: attestDraft.verdict,
+            note: attestDraft.note
+        })
+        notify('success', 'Recorded',
+            attestDraft.verdict === 'MINE'
+                ? 'The commit is now accountable. Any lock waiting only on it can be released.'
+                : 'Recorded as disowned. Locks waiting on it now need an admin.')
+        attestModalOpen.value = false
+        await fetchRelease()
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.extractGraphQLErrorMessage(error))
+    }
+}
+
+/**
  * Render the SourceCodeEntry.signature verdict as a small NTag with a
  * tooltip carrying the format / owner / fingerprint / verifiedAt details.
  * Mirrors the AiAgentSessionView Commits-tab badge so the two pages
@@ -5929,6 +6114,12 @@ const commitTableFields: DataTableColumns<any> = [
         render: (row: any) => renderSignatureBadge(row.signature),
     },
     {
+        key: 'recognized',
+        title: 'Accountable',
+        width: 150,
+        render: (row: any) => renderRecognitionBadge(row),
+    },
+    {
         key: 'commitMessage',
         title: 'Message'
     },
@@ -6028,6 +6219,12 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
         title: 'Signature',
         width: 130,
         render: (row: any) => renderSignatureBadge(row.signature),
+    },
+    {
+        key: 'recognized',
+        title: 'Accountable',
+        width: 150,
+        render: (row: any) => renderRecognitionBadge(row),
     },
     {
         key: 'commitMessage',

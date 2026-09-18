@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -107,6 +108,55 @@ public class NotificationChannelService {
     public Optional<Integration> getChannel(UUID uuid) {
         if (uuid == null) return Optional.empty();
         return integrationRepo.findById(uuid);
+    }
+
+    /**
+     * Every channel reference on {@code channels} must exist, belong to
+     * {@code orgUuid}, and actually BE a notification channel.
+     *
+     * <p>Lives here rather than on each owning entity because the rule is about
+     * channels, not about who points at them -- it had drifted into three
+     * near-identical copies (user groups, channel groups, and now teams). A
+     * reference to a deleted, cross-org or non-channel integration is a
+     * save-time error, not a fan-out-time surprise: without the last check a
+     * same-org CI integration (DTrack, GitHub, Jira) can be attached, and
+     * fan-out then writes a delivery row per event that the worker terminates
+     * FAILED for want of a dispatcher.
+     *
+     * <p>Note this class is deliberately NOT {@code @Transactional} at class
+     * level, so a caller inside a write transaction can turn a bad reference
+     * into a message instead of having its transaction poisoned on the way out.
+     *
+     * @param label how to name the referring entity in error messages, e.g. "team"
+     */
+    public void validateChannelRefs(Set<UUID> channels, UUID orgUuid, String label)
+            throws RelizaException {
+        if (null == channels) return;
+        for (UUID channelUuid : channels) {
+            if (null == channelUuid) {
+                throw new RelizaException("A " + label + "'s channels cannot contain null entries");
+            }
+            var oc = getChannel(channelUuid);
+            if (oc.isEmpty()) {
+                throw new RelizaException("Notification channel not found: " + channelUuid
+                        + ". Remove it from this " + label + "'s channels to continue.");
+            }
+            IntegrationData idata;
+            try {
+                idata = IntegrationData.dataFromRecord(oc.get());
+            } catch (RuntimeException e) {
+                throw new RelizaException("Notification channel " + channelUuid + " is unreadable");
+            }
+            if (null == idata || null == idata.getOrg() || !idata.getOrg().equals(orgUuid)) {
+                throw new RelizaException("Notification channel " + channelUuid
+                        + " does not belong to this organization");
+            }
+            if (null == idata.getName()
+                    || !IntegrationData.NOTIFICATION_DESTINATION_TYPES.contains(idata.getType())) {
+                throw new RelizaException("Integration " + channelUuid
+                        + " is not a notification channel");
+            }
+        }
     }
 
     /**

@@ -22,3 +22,11 @@ sidebarDepth: 2
 ```
 rearm login -u YOUR_REARM_URI -i YOUR_PERSONAL_API_ID -k YOUR_PERSONAL_API_KEY
 ```
+
+::: tip Preview: sign in from your browser instead
+The CLI can also sign in through your browser, with no key to copy onto the machine — run
+`rearm login -u YOUR_REARM_URI` with no key flags. A GitHub Actions job can skip credentials
+entirely and authenticate with its own identity token. Both are **preview** functionality that has
+not shipped in a released version yet. See [Programmatic Access](./programmatic-access) for those
+flows, for exchanging a key for a short-lived access token, and for rotating key secrets.
+:::

@@ -12,6 +12,7 @@
                     v-for="pt in permissionTypesWithAdmin"
                     :key="pt"
                     :value="pt"
+                    :disabled="!!maxOrgType && permissionTypesWithAdmin.indexOf(pt) > permissionTypesWithAdmin.indexOf(maxOrgType)"
                 >
                     <span v-if="pt === 'ESSENTIAL_READ'" style="display: inline-flex; align-items: center;">
                         {{ translatePermissionName(pt) }}
@@ -208,14 +209,14 @@
         </div>
 
         <!-- Per-Cluster Permissions (scope=INSTANCE on a CLUSTER row). SAAS-only. -->
-        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="isSaas && orgPermission.type !== 'ADMIN' && clusters.length">
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="hasDevOps && orgPermission.type !== 'ADMIN' && clusters.length">
             <n-h5>
                 <n-text depth="1">
                     Per-Cluster Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="isSaas && orgPermission.type !== 'ADMIN' && clusters.length">
+        <div v-if="hasDevOps && orgPermission.type !== 'ADMIN' && clusters.length">
             <n-space vertical>
                 <n-card v-for="sp in scopedClusterPermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
                     <n-space align="center" justify="space-between" style="width: 100%;">
@@ -252,14 +253,14 @@
         </div>
 
         <!-- Per-Instance Permissions (scope=INSTANCE on a STANDALONE_INSTANCE / CLUSTER_INSTANCE row). SAAS-only. -->
-        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="isSaas && orgPermission.type !== 'ADMIN' && instances.length">
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="hasDevOps && orgPermission.type !== 'ADMIN' && instances.length">
             <n-h5>
                 <n-text depth="1">
                     Per-Instance Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="isSaas && orgPermission.type !== 'ADMIN' && instances.length">
+        <div v-if="hasDevOps && orgPermission.type !== 'ADMIN' && instances.length">
             <n-space vertical>
                 <n-card v-for="sp in scopedInstancePermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
                     <n-space align="center" justify="space-between" style="width: 100%;">
@@ -352,6 +353,10 @@ interface Props {
      */
     clusters?: any[]
     showSbomProbing?: boolean
+    /** highest organization-wide level offered; radios above it are disabled (a personal key is capped by its owner) */
+    maxOrgType?: string
+    /** when set, only these functions are offered anywhere in the editor (the owner's own functions) */
+    allowedFunctions?: string[]
     modelValue: {
         orgPermission: OrgPermission
         scopedPermissions: ScopedPermission[]
@@ -370,7 +375,7 @@ const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
 const permissionFunctions: string[] = constants.PermissionFunctions
 const essentialReadPermissionFunctions: string[] = constants.EssentialReadPermissionFunctions
-const isSaas = computed(() => installationType.value === 'SAAS')
+const hasDevOps = computed(() => installationType.value !== 'OSS')
 
 const orgPermission = ref<OrgPermission>({
     type: 'NONE',
@@ -378,15 +383,16 @@ const orgPermission = ref<OrgPermission>({
     approvals: []
 })
 
-// DevOps Read/Write only make sense (and are only honored by the backend) for
-// SAAS installations; everywhere else they're hidden. At ESSENTIAL_READ we
+// DevOps Read/Write gate the instance / cluster surface, which exists on every
+// non-OSS installation (SaaS, managed service, on-prem Pro); OSS hides them. At ESSENTIAL_READ we
 // only expose the functions that explicitly support it (currently AGENT) —
 // most org-wide functions are paired with READ_ONLY / READ_WRITE.
 const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
     f !== 'RESOURCE' &&
+    (!props.allowedFunctions || props.allowedFunctions.includes(f)) &&
     (props.showSbomProbing || f !== 'SBOM_PROBING') &&
     (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE') &&
-    (isSaas.value || (f !== 'DEVOPS_READ' && f !== 'DEVOPS_WRITE')) &&
+    (hasDevOps.value || (f !== 'DEVOPS_READ' && f !== 'DEVOPS_WRITE')) &&
     (orgPermission.value.type !== 'ESSENTIAL_READ' || essentialReadPermissionFunctions.includes(f))
 ))
 
@@ -394,6 +400,7 @@ const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
 // belong on cluster / instance scopes.
 const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f =>
     f !== 'RESOURCE' &&
+    (!props.allowedFunctions || props.allowedFunctions.includes(f)) &&
     f !== 'FINDING_ANALYSIS_WRITE' &&
     f !== 'DEVOPS_READ' &&
     f !== 'DEVOPS_WRITE' &&

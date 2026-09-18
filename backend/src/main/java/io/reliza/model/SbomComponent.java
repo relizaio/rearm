@@ -4,6 +4,7 @@
 package io.reliza.model;
 
 import java.io.Serializable;
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,8 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -85,6 +88,32 @@ public class SbomComponent implements Serializable, RelizaEntity {
 	// SyntheticSbomService.submitOrg.
 	@Column
 	private Integer syntheticBucketIndex;
+
+	// Per-component support disclosure (FDA-Readiness-1). First-class columns
+	// because they are mutable (manufacturer attestation / enrichment refresh) and
+	// queried (the approaching/past-EOS filter) -- unlike the parse-time-immutable
+	// recordData. The support STATUS is DERIVED at read time (see SupportStatus),
+	// never stored here. supportSource is set server-side per write path and drives
+	// the MANUAL > SUPPLIER > ENRICHED precedence; the reconcile path load-merges and
+	// leaves these columns untouched. supportNotes is internal-only (never exported).
+	@Column(name = "end_of_support_date")
+	private LocalDate endOfSupportDate;
+
+	@Column(name = "end_of_life_date")
+	private LocalDate endOfLifeDate;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "support_source")
+	private SupportSource supportSource;
+
+	@Column(name = "support_last_assessed")
+	private ZonedDateTime supportLastAssessed;
+
+	@Column(name = "support_asserted_by")
+	private UUID supportAssertedBy;
+
+	@Column(name = "support_notes")
+	private String supportNotes;
 
 	@Override
 	public UUID getUuid() {
@@ -205,5 +234,53 @@ public class SbomComponent implements Serializable, RelizaEntity {
 
 	public void setSyntheticBucketIndex(Integer syntheticBucketIndex) {
 		this.syntheticBucketIndex = syntheticBucketIndex;
+	}
+
+	public LocalDate getEndOfSupportDate() {
+		return endOfSupportDate;
+	}
+
+	public void setEndOfSupportDate(LocalDate endOfSupportDate) {
+		this.endOfSupportDate = endOfSupportDate;
+	}
+
+	public LocalDate getEndOfLifeDate() {
+		return endOfLifeDate;
+	}
+
+	public void setEndOfLifeDate(LocalDate endOfLifeDate) {
+		this.endOfLifeDate = endOfLifeDate;
+	}
+
+	public SupportSource getSupportSource() {
+		return supportSource;
+	}
+
+	public void setSupportSource(SupportSource supportSource) {
+		this.supportSource = supportSource;
+	}
+
+	public ZonedDateTime getSupportLastAssessed() {
+		return supportLastAssessed;
+	}
+
+	public void setSupportLastAssessed(ZonedDateTime supportLastAssessed) {
+		this.supportLastAssessed = supportLastAssessed;
+	}
+
+	public UUID getSupportAssertedBy() {
+		return supportAssertedBy;
+	}
+
+	public void setSupportAssertedBy(UUID supportAssertedBy) {
+		this.supportAssertedBy = supportAssertedBy;
+	}
+
+	public String getSupportNotes() {
+		return supportNotes;
+	}
+
+	public void setSupportNotes(String supportNotes) {
+		this.supportNotes = supportNotes;
 	}
 }

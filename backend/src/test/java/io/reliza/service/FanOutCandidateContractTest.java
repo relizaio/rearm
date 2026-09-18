@@ -5,12 +5,14 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -115,6 +117,39 @@ public class FanOutCandidateContractTest {
 		List<UUID> slice = artifactRepository.findFanOutPoolSlice(org, STALE_EPOCH - 1.0, 1000);
 		assertEquals(0, slice.size(),
 				"a stamp at or above the cutoff must not be pooled -- steady state is an empty index range");
+	}
+
+	/**
+	 * The coalesce sentinel in findFanOutPoolSlice must sort below the cutoff's
+	 * floor, and that floor is 0: findCanonicalArtifactsNeedingFanOut seeds
+	 * cutoffEpoch to 0d and only ever raises it with Math.max, so cutoff == 0 is
+	 * reachable for any org whose INGESTED buckets carry no lastUpdatedDate.
+	 * With a sentinel of 0 -- the spelling used for this field elsewhere, and
+	 * the obvious thing to "tidy" this to -- never-scanned artifacts stop
+	 * qualifying at exactly that cutoff, so the pool silently drains nothing for
+	 * the orgs it exists to serve, with no error and nothing in the logs.
+	 * Pins the predicate spelling shared by ArtifactRepository and V80.
+	 */
+	@Test
+	public void neverScannedArtifactsStayPooledAtTheZeroCutoff() {
+		UUID org = testInitializer.obtainOrganization().getUuid();
+		UUID pending = mapArtifactWithComponent(org, "pkg:npm/pending@1.0.0", null);
+		UUID scanned = mapArtifactWithComponent(org, "pkg:npm/settled@1.0.0", STALE_EPOCH);
+
+		List<UUID> slice = artifactRepository.findFanOutPoolSlice(org, 0d, 1000);
+
+		assertTrue(canonicalsOf(slice).contains(pending),
+				"a never-scanned artifact must still be pooled at cutoff 0 -- the seed value");
+		assertFalse(canonicalsOf(slice).contains(scanned),
+				"an artifact stamped above the cutoff must stay out of the pool");
+	}
+
+	private List<UUID> canonicalsOf(List<UUID> artifactUuids) {
+		return artifactUuids.stream()
+				.map(u -> artifactCanonicalMapRepository.findByArtifactUuid(u))
+				.filter(Optional::isPresent)
+				.map(m -> m.get().getCanonicalArtifactUuid())
+				.toList();
 	}
 
 	@Test

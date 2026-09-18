@@ -889,15 +889,9 @@ public class AuthorizationService {
 					releaseUuid, orgUuid, session.getUuid(), matchingKeyId);
 			throw new AccessDeniedException("Release not found in this org");
 		}
-		boolean releaseInSession = false;
-		if (session.getCommits() != null) {
-			for (UUID sceUuid : session.getCommits()) {
-				for (ReleaseData rd : sharedReleaseService.findReleaseDatasBySce(sceUuid, orgUuid)) {
-					if (releaseUuid.equals(rd.getUuid())) { releaseInSession = true; break; }
-				}
-				if (releaseInSession) break;
-			}
-		}
+		boolean releaseInSession = session.getCommits() != null
+				&& sharedReleaseService.findReleaseDatasBySces(session.getCommits(), orgUuid)
+						.stream().anyMatch(rd -> releaseUuid.equals(rd.getUuid()));
 		if (!releaseInSession) {
 			log.info("agentic-session-read: release {} is not attributed to session {} (callingKey={}, org={}) — caller may fall back to RESOURCE-on-release path",
 					releaseUuid, session.getUuid(), matchingKeyId, orgUuid);

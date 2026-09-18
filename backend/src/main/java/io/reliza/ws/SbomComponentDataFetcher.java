@@ -3,6 +3,9 @@
 */
 package io.reliza.ws;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -19,6 +22,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -37,6 +41,7 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SupportStatus;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
@@ -355,6 +360,82 @@ public class SbomComponentDataFetcher {
 		return sbomComponentService.searchSbomComponentByPurl(purl, orgUuid);
 	}
 
+	/**
+	 * FDA-Readiness-1: manufacturer (MANUAL) attestation of a component's support
+	 * level / EOS-EOL dates. Org-scoped WRITE; the org is derived from the loaded
+	 * component (IDOR guard), never from client input. supportSource is set
+	 * server-side to MANUAL and the attester is the authenticated user; the derived
+	 * status is computed on read, not set here. Retries a concurrent-reconcile
+	 * optimistic-lock conflict a bounded number of times.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setSbomComponentSupport")
+	public Map<String, Object> setSbomComponentSupport(
+			@InputArgument("sbomComponentUuid") UUID sbomComponentUuid,
+			@InputArgument("endOfSupportDate") String endOfSupportDate,
+			@InputArgument("endOfLifeDate") String endOfLifeDate,
+			@InputArgument("supportNotes") String supportNotes) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		SbomComponent sc = sbomComponentService.getSbomComponent(sbomComponentUuid)
+				.orElseThrow(() -> new RelizaException("sbom component not found"));
+		UUID orgUuid = sc.getOrg();
+		RelizaObject ro = getOrganizationService.getOrganizationData(orgUuid)
+				.orElseThrow(() -> new RelizaException("organization not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
+
+		LocalDate eos = parseIsoDate(endOfSupportDate, "endOfSupportDate");
+		LocalDate eol = parseIsoDate(endOfLifeDate, "endOfLifeDate");
+		if (eos != null && eol != null && eos.isAfter(eol)) {
+			throw new RelizaException("endOfSupportDate must not be after endOfLifeDate");
+		}
+		UUID assertedBy = oud.get().getUuid();
+		// Bounded retry against a concurrent-reconcile optimistic-lock conflict.
+		for (int attempt = 0; attempt < 3; attempt++) {
+			try {
+				SbomComponent updated = sbomComponentService.setSbomComponentSupport(
+						sbomComponentUuid, eos, eol, supportNotes, assertedBy);
+				return toComponentDto(updated);
+			} catch (OptimisticLockingFailureException ole) {
+				// retry
+			}
+		}
+		throw new RelizaException("concurrent update in progress, please retry");
+	}
+
+	/**
+	 * FDA-Readiness-1: support-disclosure coverage for an org (attested vs total
+	 * non-root components) -- a pre-submission completeness signal.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "sbomComponentSupportCoverage")
+	public Map<String, Object> sbomComponentSupportCoverage(
+			@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		// orgUuid is client-supplied: a non-existent id must not reach List.of(null)
+		// (which NPEs) -- resolve to not-found first.
+		RelizaObject ro = getOrganizationService.getOrganizationData(orgUuid)
+				.orElseThrow(() -> new RelizaException("organization not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		SbomComponentService.SupportCoverage cov = sbomComponentService.getSupportCoverage(orgUuid);
+		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("total", (int) cov.total());
+		dto.put("attested", (int) cov.attested());
+		return dto;
+	}
+
+	private static LocalDate parseIsoDate(String value, String field) throws RelizaException {
+		if (value == null || value.isBlank()) return null;
+		try {
+			return LocalDate.parse(value.trim());
+		} catch (DateTimeParseException dtpe) {
+			throw new RelizaException(field + " must be an ISO-8601 date (YYYY-MM-DD)");
+		}
+	}
+
 	@DgsData(parentType = "ReleaseSbomComponent", field = "component")
 	public Map<String, Object> getComponent(DgsDataFetchingEnvironment dfe) {
 		ReleaseGraphContext ctx = dfe.getLocalContext();
@@ -491,6 +572,20 @@ public class SbomComponentDataFetcher {
 		} else {
 			dto.put("isRoot", false);
 		}
+		// Support disclosure. supportStatus is DERIVED from the dates + now (never
+		// stored). Dates emitted as ISO-8601 (YYYY-MM-DD); supportLastAssessed as a
+		// UTC RFC-3339 instant (trailing Z), never ZonedDateTime.toString().
+		LocalDate endOfSupport = sc.getEndOfSupportDate();
+		LocalDate endOfLife = sc.getEndOfLifeDate();
+		SupportStatus supportStatus = SupportStatus.derive(
+				endOfSupport, endOfLife, sc.getSupportSource(), LocalDate.now(ZoneOffset.UTC));
+		dto.put("supportStatus", supportStatus.name());
+		dto.put("endOfSupportDate", endOfSupport == null ? null : endOfSupport.toString());
+		dto.put("endOfLifeDate", endOfLife == null ? null : endOfLife.toString());
+		dto.put("supportSource", sc.getSupportSource() == null ? null : sc.getSupportSource().name());
+		dto.put("supportLastAssessed", sc.getSupportLastAssessed() == null
+				? null : sc.getSupportLastAssessed().toInstant().toString());
+		dto.put("supportNotes", sc.getSupportNotes());
 		return dto;
 	}
 

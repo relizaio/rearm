@@ -946,6 +946,16 @@ async function switchSubTab(t: SubTab) {
     await router.push({ query: { ...route.query, integrationsTab: t } })
 }
 
+// Query-only navigations no longer remount the view (router-view keys on
+// path), so browser back/forward must be applied to local state here. An
+// absent/invalid param means the default tab — the pre-fix remount re-ran
+// the initializer, and going back past the first sub-tab click must still
+// land on Catalog.
+watch(() => route.query.integrationsTab, (t) => {
+    const next: SubTab = isSubTabAccessible(t) ? t : 'catalog'
+    if (next !== subTab.value) subTab.value = next
+})
+
 // ---- Data refs lifted from OrgSettings -------------------------------------
 const configuredIntegrations: Ref<string[]> = ref([])
 const ciIntegrations: Ref<any[]> = ref([])

@@ -37,6 +37,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
@@ -45,6 +46,7 @@ import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.RebomService;
 import io.reliza.service.RebomService.EnrichmentTriggerResult;
+import io.reliza.service.ReleaseMetricsComputeService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -56,6 +58,9 @@ public class ArtifactDataFetcher {
 	
 	@Autowired
 	private AuthorizationService authorizationService;
+
+	@Autowired
+	private ReleaseMetricsComputeService releaseMetricsComputeService;
 	
 	@Autowired
 	private ArtifactService artifactService;
@@ -177,6 +182,40 @@ public class ArtifactDataFetcher {
 			}
 		}
 		return artList;
+	}
+
+	/**
+	 * Artifact metrics with CISA KEV membership stamped at read time.
+	 *
+	 * <p>Without this an artifact reports {@code knownExploited = false} for a
+	 * finding its own release reports as KEV: metrics compute merges each
+	 * artifact's metrics INTO the release aggregate and stamps only the
+	 * aggregate, so the artifact's stored copy is never stamped. The UI's
+	 * per-artifact KEV path then gets all-false.
+	 *
+	 * <p>Stamped on read rather than persisted, because
+	 * {@code recomputeReleasesForNewlyKev} refreshes releases and not artifacts
+	 * -- a stored artifact stamp would go stale the next time CISA adds a CVE
+	 * that an already-scanned artifact ships. Costs one indexed KEV lookup per
+	 * artifact that actually selects {@code vulnerabilityDetails}, and none at
+	 * all otherwise or when the artifact has no CVE-shaped findings.
+	 */
+	@DgsData(parentType = "Artifact", field = "metrics")
+	public ReleaseMetricsDto metricsOfArtifact(DgsDataFetchingEnvironment dfe) {
+		ArtifactData ad = dfe.getSource();
+		if (null == ad) return null;
+		// Only pay for the KEV probe when the query asks for the flag ITSELF, not
+		// merely for findings. Artifact.metrics is selected in bulk on the
+		// release page, and the CLI/agent paths select vulnerabilityDetails
+		// WITHOUT knownExploited -- guarding on the parent alone would be one KEV
+		// round trip per artifact for data nobody selected.
+		//
+		// Keep this narrow. ReleaseDatafetcher's artifactsOfReleaseWithDep serves
+		// a LIGHT artifact load (details stripped, counts from metrics_totals)
+		// unless metrics/vulnerabilityDetails is selected, so a broader glob here
+		// could stamp a light-loaded artifact whose detail lists are empty.
+		if (!dfe.getSelectionSet().containsAnyOf("vulnerabilityDetails/knownExploited")) return ad.getMetrics();
+		return releaseMetricsComputeService.knownExploitedStampedCopy(ad.getOrg(), ad.getMetrics());
 	}
 
 	/**

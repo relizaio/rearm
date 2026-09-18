@@ -65,6 +65,18 @@
   ],
   "useCasePanels": [
     {
+      "q": "Shipping products made of many components?",
+      "name": "SBOM Aggregation",
+      "c1": "#7B6CF6",
+      "c2": "#5EEBC3"
+    },
+    {
+      "q": "Drowning in CVEs that don't apply?",
+      "name": "VEX Exploitability eXchange",
+      "c1": "#C86CD8",
+      "c2": "#5B7CFA"
+    },
+    {
       "q": "Shipping a regulated medical device?",
       "name": "Medical Devices",
       "c1": "#5EEBC3",
@@ -78,7 +90,7 @@
     },
     {
       "q": "Need to know what's actually running?",
-      "name": "Deployment Governance",
+      "name": "Deployment Governance, DevOps, BYOC",
       "c1": "#F08A4B",
       "c2": "#F4B04B"
     },
@@ -104,7 +116,7 @@
     },
     {
       "q": "What exactly is deployed in production right now?",
-      "page": "Deployment Governance"
+      "page": "Deployment Governance, DevOps, BYOC"
     },
     {
       "q": "Which of our code did agents write, and under what approval?",
@@ -422,6 +434,122 @@
   ],
   "ucPages": [
     {
+      "label": "SBOM Aggregation",
+      "path": "/use-cases/sbom-aggregation",
+      "persona": "FOR PRODUCT SECURITY + ENGINEERING TEAMS SHIPPING MULTI-COMPONENT PRODUCTS",
+      "h1": "One SBOM per product version, assembled from what actually shipped.",
+      "pain": "A product is dozens of components, each with its own repository, pipeline and SBOM. The customer asks for one SBOM for the version they received. Stitching it together by hand means guessing which component versions went into that release.",
+      "steps": [
+        {
+          "num": "01",
+          "title": "Component releases arrive from CI",
+          "cap": "SBOM/XBOM Management",
+          "body": "Every pipeline run creates a component release in ReARM and attaches the SBOMs it produced. Nothing to collect later: the SBOMs are recorded at build time, against the exact version they describe."
+        },
+        {
+          "num": "02",
+          "title": "Products are assembled by rules",
+          "cap": "Feature Sets",
+          "body": "A product's feature set defines which component branches belong to it. Rules decide when a new component release rolls into a new product release, automatically or after approval. No one maintains a version matrix by hand."
+        },
+        {
+          "num": "03",
+          "title": "Every product release is pinned",
+          "cap": "Feature Sets",
+          "body": "Each product release records the exact component releases it contains. Ask ReARM what went into product version 3.2.1 and the answer is a list of pinned versions, not a best guess from dates."
+        },
+        {
+          "num": "04",
+          "title": "Aggregated SBOM on demand",
+          "cap": "SBOM/XBOM Management",
+          "body": "For any product release, ReARM merges the component SBOMs into one product SBOM: one document that covers everything shipped in that version, ready to hand to a customer, a regulator or a scanner."
+        },
+        {
+          "num": "05",
+          "title": "Delivered with the product",
+          "cap": "Distribution",
+          "body": "Aggregated SBOMs are ready to be served downstream, so each customer can receive the SBOM for each version they run."
+        },
+        {
+          "num": "06",
+          "title": "Findings follow the aggregate",
+          "cap": "Findings Aggregation",
+          "body": "New vulnerabilities are evaluated against every component pinned in every shipped product version, so a finding in one library maps straight to the product versions and customers it affects."
+        }
+      ],
+      "note": false,
+      "shot": false,
+      "a1": "rgba(123,108,246,0.10)",
+      "a2": "rgba(94,235,195,0.10)",
+      "id": "3e",
+      "href": "#3e",
+      "publicDemo": true,
+      "stripLabel": "EVIDENCE",
+      "strip": [
+        "Pinned Composition",
+        "Aggregated SBOM"
+      ],
+      "evidence": "COMPONENT SBOMS · FEATURE SETS · PINNED PRODUCT RELEASES · AGGREGATED SBOM · FINDINGS"
+    },
+    {
+      "label": "VEX Exploitability eXchange",
+      "path": "/use-cases/vex-exploitability-exchange",
+      "persona": "FOR PRODUCT SECURITY TEAMS RECEIVING AND ISSUING VEX",
+      "h1": "Vendor said \"not affected\". Prove it, apply it, and pass it on.",
+      "pain": "Scanners flag thousands of CVEs; most do not apply to how the code is actually used. Vendors send VEX documents saying so, your own reviews produce more, and the decisions end up in tickets and spreadsheets where nobody can trace who decided what, for which version, on what evidence.",
+      "steps": [
+        {
+          "num": "01",
+          "title": "VEX is just another artifact",
+          "cap": "SBOM/XBOM Management",
+          "body": "Attach a CycloneDX-VEX or OpenVEX document to a release from the UI, the CLI or your pipeline. ReARM matches every statement against the release's SBOM inventory, so a claim only lands where the affected component actually is."
+        },
+        {
+          "num": "02",
+          "title": "Trust depends on who is talking",
+          "cap": "Findings Aggregation",
+          "body": "A vendor's \"exploitable\" is accepted at once; a vendor's \"not affected\" is staged for your review, because that is where downplaying happens. Your own analyses auto-accept; third-party claims always wait. Import mode and issuer trust compose, and the least permissive wins."
+        },
+        {
+          "num": "03",
+          "title": "One decision, the right scope",
+          "cap": "Findings Aggregation",
+          "body": "A claim can apply to one release, a branch, a whole component, or the entire portfolio. ReARM records it once at the scope you choose, and stages any claim that contradicts an existing broader decision for review instead of silently overriding it."
+        },
+        {
+          "num": "04",
+          "title": "Conditional claims wait for evidence",
+          "cap": "Release Policies",
+          "body": "\"Not affected, protected at perimeter\" is only true while the perimeter holds. ReARM defers such decisions until someone attests the mitigation is in place, with the evidence recorded; waive it and the decision is never written."
+        },
+        {
+          "num": "05",
+          "title": "Review with the original in view",
+          "cap": "Audit Evidence",
+          "body": "Every staged statement is reviewed next to the verbatim VEX it came from and any existing analysis it would touch. Accept, modify, or reject with a required comment; who decided what, and when, stays on record."
+        },
+        {
+          "num": "06",
+          "title": "Export VEX for your customers",
+          "cap": "Distribution",
+          "body": "Your decisions re-emit as CycloneDX-VEX or OpenVEX per release, so the VEX you ship downstream carries the same provenance you demanded upstream, and survives a round trip."
+        }
+      ],
+      "note": false,
+      "shot": false,
+      "a1": "rgba(200,108,216,0.10)",
+      "a2": "rgba(91,124,250,0.10)",
+      "id": "3d",
+      "href": "#3d",
+      "publicDemo": true,
+      "stripLabel": "EVIDENCE",
+      "strip": [
+        "CycloneDX-VEX · OpenVEX",
+        "Trust Gate"
+      ],
+      "evidence": "VEX IMPORT · TRUST GATE · SCOPED ANALYSIS · MITIGATION ATTESTATIONS · VEX EXPORT"
+    },
+    {
       "id": "3f",
       "href": "#3f",
       "path": "/use-cases/medical-devices",
@@ -524,10 +652,10 @@
       "id": "3h",
       "href": "#3h",
       "path": "/use-cases/deployment-governance",
-      "label": "Deployment Governance",
-      "persona": "FOR PLATFORM + DEVOPS LEADS",
-      "h1": "What should be running, what is actually running, and the delta.",
-      "pain": "Release records say what was approved. Nobody can prove what is deployed where right now. ReARM closes the loop between plan and actual.",
+      "label": "Deployment Governance, DevOps, BYOC",
+      "persona": "FOR PLATFORM + DEVOPS TEAMS, AND VENDORS SHIPPING INTO CUSTOMER CLOUDS",
+      "h1": "DevOps, BYOC, Air-Gap at Scale.",
+      "pain": "Bring Your Own Cloud means your product runs on infrastructure you do not operate: a customer's VPC, a partner's cluster, an air-gapped site. CI cannot push there, and once it ships nobody can say which version is live. ReARM holds the plan; ReARM CD inside each cluster pulls it, applies it, and reports back.",
       "a1": "rgba(240,138,75,0.10)",
       "a2": "rgba(244,176,75,0.10)",
       "stripLabel": "EVIDENCE",
@@ -538,43 +666,49 @@
       "evidence": "INSTANCES · ENVIRONMENTS · FEATURE-SET TARGETING · RUNTIME EVIDENCE",
       "publicDemo": true,
       "shot": "[ SCREENSHOT 8: instances page, plan vs actual side by side ]",
-      "note": false,
+      "note": "Instances, secrets, feature-set deploys and ReARM CD control are part of ReARM Pro.",
       "steps": [
         {
           "num": "01",
-          "title": "Instances and environments registered",
-          "body": "Every instance and environment is a first-class object in ReARM, not a spreadsheet row.",
-          "cap": "Deployment Model"
+          "title": "Each target is an instance",
+          "cap": "Deployment Model",
+          "body": "Every cluster, namespace or site you deploy into is registered as an instance in ReARM, grouped into clusters, with its own secrets and configuration. Customer infrastructure becomes a first-class object in ReARM."
         },
         {
           "num": "02",
-          "title": "Plan vs actual, continuously reconciled",
-          "body": "Approved and expected state vs observed state, resolved side by side and kept current.",
-          "cap": "Reconciliation"
+          "title": "Ship by pointing, not pushing",
+          "cap": "Feature Sets",
+          "body": "A feature set pins the exact component and product releases that ship together. Point an instance at it and ReARM records the target. Nothing is pushed from CI, and no CI credentials ever reach the customer's cloud."
         },
         {
           "num": "03",
-          "title": "Drift surfaced immediately",
-          "body": "The moment actual diverges from plan, it is visible. No quarterly audits to find out.",
-          "cap": "Drift Detection"
+          "title": "ReARM CD pulls it in",
+          "cap": "ReARM CD",
+          "body": "A small open-source agent installed in the customer's cluster connects outbound to ReARM, watches the instance's target, reconciles the running workloads to match, and reports what actually landed. Sensitive configuration is transmitted securely: encrypted for that cluster alone, so only it can open it."
         },
         {
           "num": "04",
-          "title": "Feature-set targeting",
-          "body": "Point an instance at a feature set; ReARM reconciles what should land there. Your CI/CD queries ReARM for the latest release that passed all required approval gates and promotes only that version. No approved status in ReARM, no deployment.",
-          "cap": "Feature Sets"
+          "title": "Promotion follows approvals",
+          "cap": "Release Policies",
+          "body": "Which releases each environment takes is configurable per environment: for example, test instances take every release while staging and production take only releases that passed the approval gates you define. Promotion is a change of target in ReARM, and rollback is the previous feature set."
         },
         {
           "num": "05",
-          "title": "Evidence, extended to runtime",
-          "body": "The same evidence trail that covers releases now covers what actually runs.",
-          "cap": "Audit Evidence"
+          "title": "Plan versus actual, per instance or per customer",
+          "cap": "Drift Detection",
+          "body": "Every instance shows expected against observed state side by side. When a cluster drifts, a manual hotfix or a failed rollout, it is visible immediately, not at the next support call."
         },
         {
           "num": "06",
-          "title": "ReARM CD closes the loop",
-          "body": "ReARM CD, the open-source deployment controller, pulls each instance's expected state from ReARM, applies it, and reports back what actually landed. The reconcile loop that keeps plan and actual honest.",
-          "cap": "ReARM CD"
+          "title": "Evidence follows the deployment",
+          "cap": "Audit Evidence",
+          "body": "What was approved, what was targeted, what ran and when, per instance, in one immutable history. The SBOM, findings and approvals attached to a release travel with it into the deployment record."
+        },
+        {
+          "num": "07",
+          "title": "Air-gapped sites",
+          "cap": "Distribution",
+          "body": "Where nothing can connect, the release goes out instead of the agent coming in. The CLI resolves which release an environment is cleared for under your approvals, packages it with its artifacts and evidence as a bundle you carry across the gap, and ReARM records the transfer against the site, as a distribution target or a placeholder instance, so what landed there is still on record."
         }
       ],
       "img": "/screenshots/19-instance-page.png"
@@ -672,7 +806,7 @@
     {
       "name": "Enterprise",
       "price": "$75",
-      "unit": "/write user/mo",
+      "unit": "/user/mo",
       "border": "#E3E5EC",
       "bg": "#fff",
       "popular": false,

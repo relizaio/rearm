@@ -19,13 +19,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.GlobalTeamAssignmentRule;
-import io.reliza.model.UserGroupData;
+import io.reliza.model.TeamData;
+import io.reliza.model.TeamStatus;
 import io.reliza.model.WhoUpdated;
 import lombok.extern.slf4j.Slf4j;
 
@@ -77,13 +77,13 @@ public class OrgTeamAssignmentRuleService {
 	private final Map<String, Pattern> patternCache = new ConcurrentHashMap<>();
 
 	@Autowired
-	private UserGroupService userGroupService;
+	private TeamService teamService;
 
 	@Autowired
 	private OrganizationService organizationService;
 
 	/** A rule that matched, together with the team it resolves to. */
-	public record TeamAssignmentMatch (GlobalTeamAssignmentRule rule, UserGroupData team) {}
+	public record TeamAssignmentMatch (GlobalTeamAssignmentRule rule, TeamData team) {}
 
 	/** Raised when a pattern exceeds {@link #MATCH_STEP_BUDGET} steps. */
 	private static final class MatchBudgetExceededException extends RuntimeException {
@@ -152,7 +152,7 @@ public class OrgTeamAssignmentRuleService {
 	 * exists to prevent.
 	 */
 	public Optional<TeamAssignmentMatch> matchFor (ComponentData cd, OrganizationData od,
-			List<UserGroupData> orgGroups) {
+			List<TeamData> orgTeams) {
 		if (null == cd || null == od || null == od.getGlobalTeamAssignmentRules()) return Optional.empty();
 		String name = StringUtils.defaultString(cd.getName(), "");
 		ComponentType cType = cd.getType();
@@ -160,7 +160,7 @@ public class OrgTeamAssignmentRuleService {
 			if (null == rule || StringUtils.isBlank(rule.getNamePattern())) continue;
 			if (!typeFilterMatches(rule.getComponentType(), cType)) continue;
 			if (!matchesSafely(rule.getNamePattern(), name, rule.getName(), od.getUuid())) continue;
-			UserGroupData team = resolveTeam(rule, od.getUuid(), orgGroups);
+			TeamData team = resolveTeam(rule, od.getUuid(), orgTeams);
 			if (null == team) continue;
 			return Optional.of(new TeamAssignmentMatch(rule, team));
 		}
@@ -179,21 +179,23 @@ public class OrgTeamAssignmentRuleService {
 	 * DEGRADED, which is more useful than silently falling through to the next
 	 * rule and hiding that the intended owner was archived.
 	 */
-	private UserGroupData resolveTeam (GlobalTeamAssignmentRule rule, UUID orgUuid,
-			List<UserGroupData> orgGroups) {
+	private TeamData resolveTeam (GlobalTeamAssignmentRule rule, UUID orgUuid,
+			List<TeamData> orgTeams) {
 		if (null == rule.getOwnerTeam()) return null;
-		if (null != orgGroups) {
-			Optional<UserGroupData> hoisted = orgGroups.stream()
-					.filter(g -> rule.getOwnerTeam().equals(g.getUuid())).findFirst();
+		if (null != orgTeams) {
+			Optional<TeamData> hoisted = orgTeams.stream()
+					.filter(t -> rule.getOwnerTeam().equals(t.getUuid())).findFirst();
 			if (hoisted.isPresent()) {
 				return orgUuid.equals(hoisted.get().getOrg()) ? hoisted.get() : null;
 			}
 		}
-		Optional<UserGroupData> ougd = userGroupService.getUserGroupData(rule.getOwnerTeam());
-		if (ougd.isEmpty()) return null;
-		UserGroupData ugd = ougd.get();
-		if (!orgUuid.equals(ugd.getOrg())) return null;
-		return ugd;
+		// Readable, not plain: this is reached from the fan-out through ownership
+		// resolution, and an exception crossing TeamService's transactional
+		// boundary would mark the caller rollback-only before anything here could
+		// contain it.
+		TeamData td = teamService.getReadableTeamData(rule.getOwnerTeam()).orElse(null);
+		if (null == td || !orgUuid.equals(td.getOrg())) return null;
+		return td;
 	}
 
 	/**
@@ -243,12 +245,12 @@ public class OrgTeamAssignmentRuleService {
 			if (null == r.getOwnerTeam()) {
 				throw new RelizaException("Rule '" + r.getName() + "' has no ownerTeam set");
 			}
-			UserGroupData team = resolveTeam(r, orgUuid, List.of());
+			TeamData team = resolveTeam(r, orgUuid, List.of());
 			if (null == team) {
 				throw new RelizaException("Rule '" + r.getName()
 						+ "' ownerTeam is missing or belongs to a different org");
 			}
-			if (UserGroupStatus.INACTIVE == team.getStatus()) {
+			if (TeamStatus.INACTIVE == team.getStatus()) {
 				throw new RelizaException("Rule '" + r.getName()
 						+ "' points at an archived team; restore the team or pick another");
 			}

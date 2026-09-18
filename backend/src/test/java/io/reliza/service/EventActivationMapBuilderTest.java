@@ -17,8 +17,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import io.reliza.common.Utils;
+import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.dto.notifications.AffectedComponent;
+import io.reliza.model.dto.notifications.InstanceDeploymentChangedPayload;
+import io.reliza.model.dto.notifications.InstanceDeploymentItem;
+import io.reliza.model.dto.notifications.InstanceRef;
+import io.reliza.model.dto.UpdateStatus;
 import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
 import io.reliza.model.NotificationEventType;
@@ -182,6 +187,42 @@ class EventActivationMapBuilderTest {
     // ---------- helpers ----------
 
     @SuppressWarnings("unchecked")
+    @Test
+    void instanceDeploymentExposesInstanceStatusesAndSeverity() {
+        UUID instUuid = UUID.randomUUID();
+        UUID compUuid = UUID.randomUUID();
+        InstanceDeploymentChangedPayload payload = new InstanceDeploymentChangedPayload(
+                new InstanceRef(instUuid, "test.relizahub.com", "test", "PRODUCTION", "STANDALONE_INSTANCE"),
+                4, 5,
+                List.of(new InstanceDeploymentItem(ComponentType.PRODUCT, "Reliza", "reliza",
+                        UpdateStatus.CONVERGED, "26.02.4.14", null, null, compUuid, UUID.randomUUID())),
+                List.of("CONVERGED"),
+                NotificationSeverity.MEDIUM);
+
+        Map<String, Object> event = castEvent(builder.buildForEvent(
+                eventOf(NotificationEventType.INSTANCE_DEPLOYMENT_CHANGED, payload)));
+
+        assertEquals("INSTANCE_DEPLOYMENT_CHANGED", event.get("type"));
+        assertEquals("MEDIUM", event.get("severity"));
+        // statuses MUST be a List<String> so a customer CEL `in` matches (not raw enums).
+        assertTrue(event.get("statuses") instanceof List, "statuses must be a list for CEL `in`");
+        assertEquals(List.of("CONVERGED"), event.get("statuses"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> inst = (Map<String, Object>) event.get("instance");
+        assertNotNull(inst);
+        assertEquals("test.relizahub.com", inst.get("uri"));
+        assertEquals("PRODUCTION", inst.get("environment"));
+        assertEquals(instUuid.toString(), inst.get("uuid"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) event.get("items");
+        assertEquals(1, items.size());
+        assertEquals("PRODUCT", items.get(0).get("componentType"));
+        assertEquals("CONVERGED", items.get(0).get("status"));
+        assertEquals("26.02.4.14", items.get(0).get("version"));
+    }
+
     private NotificationOutboxEvent eventOf(NotificationEventType type, Object payload) {
         NotificationOutboxEvent ev = new NotificationOutboxEvent();
         ev.setOrg(UUID.randomUUID());

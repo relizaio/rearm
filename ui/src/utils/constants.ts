@@ -154,6 +154,60 @@ const CONTENT_TYPES = [
 
 const PERMISSION_TYPES: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE']
 const PERMISSION_TYPES_WITH_ADMIN: string[] = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
+// Identifier types offered on a component, and the vocabulary behind SPECIFICATION.
+// A SPECIFICATION identifier says the component IS a document of a well-known kind -- the
+// design-stage counterpart of TEA's compliance documents -- so the value is picked from a
+// list rather than typed, and the backend refuses anything outside it.
+const IDENTIFIER_TYPES = [
+    { label: 'PURL', value: 'PURL' },
+    { label: 'TEI', value: 'TEI' },
+    { label: 'CPE', value: 'CPE' },
+    { label: 'Compliance document', value: 'COMPLIANCE_DOCUMENT' },
+    { label: 'Specification', value: 'SPECIFICATION' }
+]
+
+// TEA's well-known compliance documents. Offered as suggestions, not a closed set: the spec
+// says the value SHOULD be one of these, so an audit report outside the list stays typeable.
+// Values are the wire form TEA expects -- note FedRAMP, which is not the enum-name spelling.
+const COMPLIANCE_DOCUMENT_TYPES = [
+    { label: 'SOC 2 Type I', value: 'SOC_2_TYPE_I' },
+    { label: 'SOC 2 Type II', value: 'SOC_2_TYPE_II' },
+    { label: 'SOC 3', value: 'SOC_3' },
+    { label: 'ISO 27001', value: 'ISO_27001' },
+    { label: 'ISO 27017', value: 'ISO_27017' },
+    { label: 'ISO 27018', value: 'ISO_27018' },
+    { label: 'ISO 27701', value: 'ISO_27701' },
+    { label: 'ISO 42001', value: 'ISO_42001' },
+    { label: 'PCI DSS', value: 'PCI_DSS' },
+    { label: 'HIPAA', value: 'HIPAA' },
+    { label: 'FedRAMP', value: 'FedRAMP' },
+    { label: 'GDPR', value: 'GDPR' },
+    { label: 'CSA STAR', value: 'CSA_STAR' },
+    { label: 'NIST 800-53', value: 'NIST_800_53' },
+    { label: 'NIST 800-171', value: 'NIST_800_171' },
+    { label: 'CMMC', value: 'CMMC' },
+    { label: 'HITRUST', value: 'HITRUST' },
+    { label: 'TISAX', value: 'TISAX' },
+    { label: 'Cyber Essentials', value: 'CYBER_ESSENTIALS' },
+    { label: 'Cyber Essentials Plus', value: 'CYBER_ESSENTIALS_PLUS' }
+]
+
+const SPECIFICATION_TYPES = [
+    { label: 'Concept of operations', value: 'CONOPS' },
+    { label: 'Use cases', value: 'USE_CASES' },
+    { label: 'Requirements', value: 'REQUIREMENTS' },
+    { label: 'Functions', value: 'FUNCTIONS' },
+    { label: 'Product breakdown', value: 'PRODUCT_BREAKDOWN' },
+    { label: 'Interfaces', value: 'INTERFACES' },
+    { label: 'Data model', value: 'DATA_MODEL' },
+    { label: 'Architecture', value: 'ARCHITECTURE' },
+    { label: 'Detailed design', value: 'DETAILED_DESIGN' },
+    { label: 'UX concept', value: 'UX_CONCEPT' },
+    { label: 'Test plan', value: 'TEST_PLAN' },
+    { label: 'Glossary', value: 'GLOSSARY' },
+    { label: 'Decision record (ADR)', value: 'DECISION_RECORD' }
+]
+
 const PERMISSION_FUNCTIONS: string[] = [
     'FINDING_ANALYSIS_READ',
     'FINDING_ANALYSIS_WRITE',
@@ -180,7 +234,11 @@ const PERMISSION_FUNCTIONS: string[] = [
     'AGENT',
     // Gates the Distribution module surface (clients, sites, shipments,
     // devices, device events) for non-admin users and FREEFORM keys.
-    'DISTRIBUTION'
+    'DISTRIBUTION',
+    // Gate the declarative configuration surface (export / apply of spec
+    // files through the programmatic API). WRITE implies READ.
+    'CONFIGURATION_READ',
+    'CONFIGURATION_WRITE'
 ]
 // Functions that are grantable at the ESSENTIAL_READ permission type.
 // Most org-wide functions only make sense alongside READ_ONLY/READ_WRITE
@@ -262,5 +320,8 @@ export default {
     PermissionTypes: PERMISSION_TYPES,
     PermissionTypesWithAdmin: PERMISSION_TYPES_WITH_ADMIN,
     PermissionFunctions: PERMISSION_FUNCTIONS,
-    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS
+    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS,
+    IdentifierTypes: IDENTIFIER_TYPES,
+    SpecificationTypes: SPECIFICATION_TYPES,
+    ComplianceDocumentTypes: COMPLIANCE_DOCUMENT_TYPES
 }

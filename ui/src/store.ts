@@ -4,7 +4,12 @@ import gql from 'graphql-tag'
 import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
+import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
+import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
 import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
+
+// Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
+const VIEW_STORAGE_KEY = 'relizaView'
 
 const storeObject : any = {
     state () {
@@ -26,7 +31,11 @@ const storeObject : any = {
                 orgUuid: '',
                 appUuid: '00000000-0000-0000-0000-000000000000',
                 name: '',
-                perspectiveUuid: 'default'
+                perspectiveUuid: 'default',
+                // Dashboard / component-page view: 'security' | 'devops'. Resolved at
+                // boot from the browser's last choice, then the org default, then
+                // security. Header dropdown, like the perspective.
+                view: 'security'
             },
             perspectives: [],
             fetchUserStatus: null,
@@ -75,6 +84,9 @@ const storeObject : any = {
         },
         myperspective (state : any) {
             return state.iam.perspectiveUuid
+        },
+        myview (state : any) {
+            return state.iam.view
         },
         allPerspectives (state: any) {
             return state.perspectives.slice()
@@ -264,6 +276,9 @@ const storeObject : any = {
         },
         UPDATE_MY_PERSPECTIVE (state : any, uuid : string) {
             state.iam.perspectiveUuid = uuid
+        },
+        UPDATE_MY_VIEW (state : any, view : string) {
+            state.iam.view = view
         },
         SET_PERSPECTIVES (state: any, perspectives: any[]) {
             state.perspectives = perspectives
@@ -551,6 +566,10 @@ const storeObject : any = {
                     } else {
                         context.commit('UPDATE_MY_PERSPECTIVE', 'default')
                     }
+
+                    // Resolve the view: this browser's choice wins over the org
+                    // default, which wins over the built-in default.
+                    await context.dispatch('resolveMyView', myOrg)
                 } else {
                     console.error('Error fetching user organizations')
                 }
@@ -709,9 +728,10 @@ const storeObject : any = {
             context.commit('ADD_RELEASES', response.data.releases)
             return response.data.releases
         },
-        updateMyOrg (context : any, orgUuid : string) {
+        async updateMyOrg (context : any, orgUuid : string) {
             // set local browser storage
             window.localStorage.setItem('relizaOrgUuid', orgUuid)
+            await context.dispatch('resolveMyView', orgUuid)
             context.commit('UPDATE_MY_ORG', orgUuid)
             // Reset perspective to default when changing org
             context.dispatch('updateMyPerspective', 'default')
@@ -720,6 +740,56 @@ const storeObject : any = {
             // set local browser storage
             window.localStorage.setItem('relizaPerspectiveUuid', perspectiveUuid)
             context.commit('UPDATE_MY_PERSPECTIVE', perspectiveUuid)
+        },
+        // The org's default view lives in Pro org settings; a backend without the
+        // field (CE mirror lag) fails this single small document only, and the
+        // view falls back to the built-in default.
+        async fetchOrgDefaultView (context : any, orgUuid : string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: graphqlQueries.OrgDefaultViewGql,
+                    fetchPolicy: 'no-cache'
+                })
+                const org = (response.data.organizations || []).find((o: any) => o.uuid === orgUuid)
+                return dashboardViewFromWire(org?.settings?.defaultView)
+            } catch (err) {
+                console.error('Org default view unavailable, using built-in default', err)
+                return null
+            }
+        },
+        async resolveMyView (context : any, orgUuid : string) {
+            let stored: string | null = null
+            try { stored = window.localStorage.getItem(VIEW_STORAGE_KEY) } catch { /* storage unavailable */ }
+            let view: DashboardView = 'security'
+            if (isDashboardView(stored)) {
+                view = stored
+            } else if (orgUuid) {
+                view = (await context.dispatch('fetchOrgDefaultView', orgUuid)) || 'security'
+            }
+            context.commit('UPDATE_MY_VIEW', view)
+        },
+        async updateMyView (context : any, view : DashboardView) {
+            try { window.localStorage.setItem(VIEW_STORAGE_KEY, view) } catch { /* storage unavailable */ }
+            context.commit('UPDATE_MY_VIEW', view)
+        },
+        // Returns { rows, supported }: supported=false when the backend has no
+        // deployedTo query (CE mirror lag) so the page can say so instead of
+        // showing an empty table.
+        async fetchDeployedTo (context : any, componentUuid : string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: graphqlQueries.DeployedToGql,
+                    variables: { componentUuid },
+                    fetchPolicy: 'no-cache'
+                })
+                return { rows: response.data.deployedTo || [], supported: true }
+            } catch (err: any) {
+                if (classifyGraphqlError(err) === 'validation') {
+                    console.error('deployedTo query not available on this backend', err)
+                    return { rows: [], supported: false }
+                }
+                throw err
+            }
         },
         async fetchPerspectives (context : any, orgUuid : string) {
             try {
@@ -911,7 +981,7 @@ const storeObject : any = {
                 mutation: gql`
                     mutation updateInstance($inst: InstanceInput!) {
                         updateInstance(instance:$inst) {
-                            ${graphqlQueries.InstanceGqlData}
+                            ${graphqlQueries.InstanceCoreGqlData}
                         }
                     }`,
                 variables: {
@@ -989,7 +1059,13 @@ const storeObject : any = {
                 // value intact rather than silently clearing it.
                 contacts: Array.isArray(component.contacts)
                     ? component.contacts.map(({ name, contact }: any) => ({ name, contact }))
-                    : undefined
+                    : undefined,
+                // Owner set/clear staged in component settings. null owner is
+                // "leave unchanged" server-side; removal is the explicit flag.
+                owner: component.owner
+                    ? { ownerType: component.owner.ownerType, ownerRef: component.owner.ownerRef }
+                    : null,
+                clearOwner: component.clearOwner || false
             }
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.ComponentMutate,
@@ -1268,6 +1344,215 @@ const storeObject : any = {
             const orgs = response.data.organizations || []
             const found = orgs.find((o: any) => o.uuid === orgUuid)
             return found?.globalApprovalPolicyRules || []
+        },
+        // Action guards -- read per scope, written wholesale per scope. The three
+        // mutations replace the whole list for their scope, because a guard list is a
+        // policy document and a partial write is how two editors lose one version.
+        async fetchOrgActionGuards (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query orgActionGuards {
+                        organizations {
+                            uuid
+                            settings {
+                                actionGuards { name action cel mode namePattern }
+                            }
+                        }
+                    }`,
+                fetchPolicy: 'no-cache'
+            })
+            const orgs = response.data.organizations || []
+            const found = orgs.find((o: any) => o.uuid === orgUuid)
+            return found?.settings?.actionGuards || []
+        },
+        async setOrgActionGuards (context: any, payload: { orgUuid: string, guards: any[] }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setOrgActionGuards($orgUuid: ID!, $guards: [ActionGuardInput!]!) {
+                        setOrgActionGuards(orgUuid: $orgUuid, guards: $guards) {
+                            uuid
+                            settings {
+                                actionGuards { name action cel mode namePattern }
+                            }
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, guards: payload.guards }
+            })
+            return data.setOrgActionGuards.settings?.actionGuards || []
+        },
+        async fetchPerspectiveActionGuards (context: any, payload: { orgUuid: string, perspectiveUuid: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query perspectiveActionGuards($org: ID!) {
+                        perspectives(org: $org) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { org: payload.orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            const found = (response.data.perspectives || []).find((p: any) => p.uuid === payload.perspectiveUuid)
+            return found?.actionGuards || []
+        },
+        async setPerspectiveActionGuards (context: any, payload: { perspectiveUuid: string, guards: any[] }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setPerspectiveActionGuards($uuid: ID!, $guards: [ActionGuardInput!]!) {
+                        setPerspectiveActionGuards(uuid: $uuid, guards: $guards) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { uuid: payload.perspectiveUuid, guards: payload.guards }
+            })
+            return data.setPerspectiveActionGuards.actionGuards || []
+        },
+        // --- Build integrity: locks, attestations, recognition ---------------------------
+        async fetchLocks (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query locks($orgUuid: ID!) {
+                        locks(orgUuid: $orgUuid) {
+                            uuid scope branch branchName component componentName status reason origin
+                            outputEvent droppedCauses unlockLevel attestationRequirement
+                            escalatedLevel effectiveLevel raisedAt releasedAt releaseAttestation
+                            causes { subjectType subjectUuid detail }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.locks || []
+        },
+        async fetchIntegrityInbox (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query integrityInbox($orgUuid: ID!) {
+                        integrityInbox(orgUuid: $orgUuid) {
+                            activeLocks {
+                                uuid scope branch branchName component componentName status reason
+                                origin droppedCauses unlockLevel attestationRequirement
+                                effectiveLevel raisedAt
+                                causes { subjectType subjectUuid detail }
+                            }
+                            escalatedLocks { uuid reason effectiveLevel componentName branchName }
+                            unrecognizedCommits {
+                                sourceCodeEntry commit component componentName detail claimState
+                            }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.integrityInbox
+        },
+        async fetchAttestations (context: any, payload: { orgUuid: string, subjectType: string, subjectUuid: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query attestations($orgUuid: ID!, $subjectType: AttestationSubjectType!, $subjectUuid: ID!) {
+                        attestations(orgUuid: $orgUuid, subjectType: $subjectType, subjectUuid: $subjectUuid) {
+                            uuid type verdict note actorType actorUuid agentSession override status
+                            revokeReason createdDate
+                            subjectRef { componentName commit version }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.attestations || []
+        },
+        async lockComponent (context: any, payload: { componentUuid: string, reason: string, unlockLevel?: string, attestationRequirement?: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation lockComponent($componentUuid: ID!, $reason: String!, $unlockLevel: UnlockLevel,
+                            $attestationRequirement: AttestationRequirement) {
+                        lockComponent(componentUuid: $componentUuid, reason: $reason,
+                                unlockLevel: $unlockLevel, attestationRequirement: $attestationRequirement) {
+                            uuid status reason
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.lockComponent
+        },
+        async lockBranch (context: any, payload: { branchUuid: string, reason: string, unlockLevel?: string, attestationRequirement?: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation lockBranch($branchUuid: ID!, $reason: String!, $unlockLevel: UnlockLevel,
+                            $attestationRequirement: AttestationRequirement) {
+                        lockBranch(branchUuid: $branchUuid, reason: $reason,
+                                unlockLevel: $unlockLevel, attestationRequirement: $attestationRequirement) {
+                            uuid status reason
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.lockBranch
+        },
+        async releaseLock (context: any, payload: { orgUuid: string, lockUuid: string, reason: string, override?: boolean }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseLock($orgUuid: ID!, $lockUuid: ID!, $reason: String!, $override: Boolean) {
+                        releaseLock(orgUuid: $orgUuid, lockUuid: $lockUuid, reason: $reason, override: $override) {
+                            uuid status releasedAt
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.releaseLock
+        },
+        async attest (context: any, payload: { subjectType: string, subjectUuid: string, verdict: string, note?: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation attest($subjectType: AttestationSubjectType!, $subjectUuid: ID!,
+                            $verdict: AttestationVerdict!, $note: String) {
+                        attest(subjectType: $subjectType, subjectUuid: $subjectUuid, verdict: $verdict, note: $note) {
+                            uuid verdict note actorType createdDate
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.attest
+        },
+        async revokeAttestation (context: any, payload: { uuid: string, reason: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation revokeAttestation($uuid: ID!, $reason: String!) {
+                        revokeAttestation(uuid: $uuid, reason: $reason) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.revokeAttestation
+        },
+        async fetchComponentActionGuards (context: any, componentUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query componentActionGuards($componentUuid: ID!) {
+                        component(componentUuid: $componentUuid) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { componentUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.component?.actionGuards || []
+        },
+        async setComponentActionGuards (context: any, payload: { componentUuid: string, guards: any[] }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setComponentActionGuards($componentUuid: ID!, $guards: [ActionGuardInput!]!) {
+                        setComponentActionGuards(componentUuid: $componentUuid, guards: $guards) {
+                            uuid
+                            actionGuards { name action cel mode namePattern }
+                        }
+                    }`,
+                variables: { componentUuid: payload.componentUuid, guards: payload.guards }
+            })
+            return data.setComponentActionGuards.actionGuards || []
         },
         async fetchOrgTeamAssignmentRules (context: any, orgUuid: string) {
             // organizations (plural, no args) is the resolver the org-settings
@@ -1633,14 +1918,52 @@ const storeObject : any = {
             if (!instFetchProps.revision) instFetchProps.revision = -1
             const variables: any = { instanceUuid: instFetchProps.id, revision: instFetchProps.revision }
             if (instFetchProps.stateType) variables.stateType = instFetchProps.stateType
+            // core: skip DeployedRelease.releaseDetails on both release lists
+            // (the per-row release fan-out that dominates the query); the
+            // InstanceView tabs fetch those on demand via
+            // fetchInstanceReleaseDetails. Either shape is committed to the
+            // store under (uuid, revision); store readers of instanceById only
+            // use the shallow row fields, so the two shapes are interchangeable
+            // there. A reader that needs releaseDetails must fetch them itself.
             const response = await graphqlClient.query({
-                query: graphqlQueries.InstanceGql,
+                query: instFetchProps.core ? graphqlQueries.InstanceCoreGql : graphqlQueries.InstanceGql,
                 variables,
                 fetchPolicy: 'no-cache'
             })
             response.data.instance.revision = instFetchProps.revision
             context.commit('ADD_INSTANCE', response.data.instance)
             return response.data.instance
+        },
+        // params.part is the Instance field to resolve with releaseDetails:
+        // 'releases' (deployed) or 'targetReleases'. Returns
+        // { release, releaseDetails } pairs for that field only; the caller
+        // merges them onto the shallow rows it already holds.
+        async fetchInstanceReleaseDetails (context: any, params: { id: string, part: 'releases' | 'targetReleases' }) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.InstanceReleaseDetailsGql[params.part],
+                variables: { instanceUuid: params.id },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.instance ? (response.data.instance[params.part] || []) : []
+        },
+        // DevOps dashboard reads. Neither is committed to the store: the status
+        // rows are a widget-local roll-up, and the perspective's components are
+        // only needed to scope them.
+        async fetchInstanceStatus (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.InstanceStatusGql,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.instancesOfOrganization || []
+        },
+        async fetchComponentsOfPerspective (context: any, perspectiveUuid: string) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.ComponentsOfPerspectiveGql,
+                variables: { perspectiveUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.componentsOfPerspective || []
         },
         async fetchInstances (context: any, id: string) {
             const response = await graphqlClient.query({

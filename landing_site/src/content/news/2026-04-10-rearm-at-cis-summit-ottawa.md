@@ -1,7 +1,7 @@
 ---
 title: "ReARM will be presented at CIS Summit in Ottawa"
 date: "2026-04-10"
-ogImage: "2026-04-10-reliza_cis.png"
+ogImage: "/news_images/2026-04-10-reliza_cis.png"
 ---
 
 We are excited to announce that ReARM will be presented at the [CIS Summit](https://cis-events.com/) in Ottawa!

@@ -86,14 +86,16 @@ public interface PullRequestRepository extends CrudRepository<PullRequest, UUID>
 	 * SCE. The aggregator calls this whenever a release is added/updated
 	 * to determine which PRs should be re-aggregated.
 	 *
-	 * jsonb_contains on `commits` matches the pattern used in
-	 * FIND_RELEASES_BY_SCE_AND_ORG; PostgreSQL can use a GIN index on
-	 * record_data if one is added later for hot loads.
+	 * Top-level containment (@>) on `commits` matches the pattern used
+	 * in FIND_RELEASES_BY_SCE_AND_ORG; unlike the jsonb_contains
+	 * function-call form on a sub-path, this shape can use a
+	 * jsonb_path_ops GIN index on record_data if one is added later
+	 * for hot loads.
 	 */
 	@Query(value = "SELECT * FROM rearm.pull_requests pr "
 			+ "WHERE pr.record_data->>'targetVcsRepository' = :targetRepoUuidAsString "
 			+ "AND pr.record_data->>'state' = 'OPEN' "
-			+ "AND jsonb_contains(pr.record_data->'commits', jsonb_build_array(:sceUuidAsString))",
+			+ "AND pr.record_data @> jsonb_build_object('commits', jsonb_build_array(:sceUuidAsString))",
 			nativeQuery = true)
 	List<PullRequest> findOpenByTargetRepoAndCommit(@Param("targetRepoUuidAsString") String targetRepoUuidAsString,
 			@Param("sceUuidAsString") String sceUuidAsString);

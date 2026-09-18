@@ -1,0 +1,66 @@
+---
+// Site-wide dismissible announcement bar above the header. One campaign at a
+// time: update the id, href and message together. Dismissal is remembered
+// per-campaign in localStorage, so a new id re-shows the bar for everyone.
+const id = 'bh-india-2026';
+const href = '/news/2026-08-18-rearm-ce-at-black-hat-india-2026-arsenal/';
+---
+
+<div class="announce" id="announce-bar" hidden>
+  <a class="announce-link" href={href}>
+    Meet us at Black Hat India 2026 in Bengaluru, Oct 29&ndash;30. Catch a live ReARM CE demo at Arsenal.
+  </a>
+  <button class="announce-close" id="announce-close" aria-label="Dismiss announcement">&#10005;</button>
+</div>
+
+<style>
+  .announce {
+    position: relative;
+    background: linear-gradient(90deg, var(--navy) 0%, var(--navy-grad-end) 60%, var(--navy-panel) 100%);
+    text-align: center;
+    padding: 9px 56px;
+  }
+  .announce-link {
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .announce-link:hover { color: var(--mint); text-decoration: underline; }
+  .announce-close {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--dark-muted-2);
+    font-size: 15px;
+    line-height: 1;
+    padding: 6px;
+  }
+  .announce-close:hover { color: #FFFFFF; }
+  @media (max-width: 900px) {
+    .announce { padding: 8px 44px; }
+    .announce-link { font-size: 13px; }
+  }
+</style>
+
+<script is:inline define:vars={{ id }}>
+  (() => {
+    const key = 'rearm-announce-dismissed-' + id;
+    const bar = document.getElementById('announce-bar');
+    if (!bar) return;
+    try {
+      if (localStorage.getItem(key)) return;
+    } catch {}
+    bar.hidden = false;
+    document.getElementById('announce-close')?.addEventListener('click', () => {
+      bar.hidden = true;
+      try {
+        localStorage.setItem(key, '1');
+      } catch {}
+    });
+  })();
+</script>

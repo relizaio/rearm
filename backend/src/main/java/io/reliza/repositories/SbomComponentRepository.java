@@ -347,4 +347,46 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 		nativeQuery = true)
 	String findOldestStaleUnbucketedPurl(@Param("orgUuidAsString") String orgUuidAsString,
 			@Param("cutoff") java.time.ZonedDateTime cutoff);
+
+	/**
+	 * Cheap existence probe for the export-injection hot path: does the org have ANY component
+	 * carrying a support assertion? Lets a zero-support org skip the per-component resolution on
+	 * every BOM download (the injector still runs to strip forged props + stamp the marker).
+	 */
+	@Query(value = """
+			SELECT EXISTS(
+				SELECT 1 FROM rearm.sbom_components sc
+				WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+				  AND sc.support_source IS NOT NULL)
+			""", nativeQuery = true)
+	boolean existsSupportByOrg(@Param("orgUuidAsString") String orgUuidAsString);
+
+	/**
+	 * Support-disclosure coverage denominator: the org's non-root components (roots
+	 * are the app itself, not third-party dependencies to attest).
+	 */
+	@Query(value = """
+			SELECT count(*) FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			  AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
+			""", nativeQuery = true)
+	long countNonRootByOrg(@Param("orgUuidAsString") String orgUuidAsString);
+
+	/**
+	 * Coverage numerator: non-root components carrying a MANUFACTURER (MANUAL)
+	 * attestation. Deliberately NOT {@code support_source IS NOT NULL}: later slices
+	 * auto-stamp SUPPLIER (at reconcile) and ENRICHED (endoflife.date puller), which
+	 * are machine/vendor-sourced, not a manufacturer disclosure -- counting them
+	 * would silently inflate the pre-submission readiness signal toward 100%. A
+	 * MANUAL row with no dates still counts: an explicit "assessed, indeterminate"
+	 * attestation is a disclosure. Per-source breakdown fields can be added to the
+	 * coverage type additively if a caller later needs them.
+	 */
+	@Query(value = """
+			SELECT count(*) FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			  AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
+			  AND sc.support_source = 'MANUAL'
+			""", nativeQuery = true)
+	long countAttestedNonRootByOrg(@Param("orgUuidAsString") String orgUuidAsString);
 }

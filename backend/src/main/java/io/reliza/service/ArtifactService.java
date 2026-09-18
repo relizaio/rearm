@@ -28,6 +28,10 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import io.reliza.model.dto.CarryForwardArm;
+import io.reliza.model.dto.CarryForwardPairing;
+import io.reliza.model.dto.CarryForwardTally;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -48,6 +52,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
@@ -257,12 +262,19 @@ public class ArtifactService {
 	}
 
 	/**
-	 * BOM-typed artifacts with an internalBom but no canonical-map row after
-	 * {@code olderThanMinutes} — drivers for the unmapped-BOM sweep in
+	 * BOM-typed artifacts with an internalBom but no canonical-map row,
+	 * created within [fromTs, toTs) — drivers for the watermark-windowed
+	 * unmapped-BOM sweep in
 	 * {@code SbomComponentService.sweepUnmappedBomArtifacts}.
 	 */
-	public List<UUID> listUnmappedBomArtifactUuids (int olderThanMinutes, int lim) {
-		return repository.findUnmappedBomArtifactUuids(olderThanMinutes, lim);
+	public List<UUID> listUnmappedBomArtifactUuidsInWindow (ZonedDateTime fromTs, ZonedDateTime toTs, int lim) {
+		return repository.findUnmappedBomArtifactUuidsInWindow(fromTs, toTs, lim);
+	}
+
+	/** Creation date of the oldest BOM artifact — sweep watermark bootstrap. */
+	public ZonedDateTime getOldestBomArtifactCreatedDate () {
+		java.time.Instant oldest = repository.findOldestBomArtifactCreatedDate();
+		return oldest == null ? null : ZonedDateTime.ofInstant(oldest, ZoneOffset.UTC);
 	}
 
 	//Creates or Updates existing artifact
@@ -294,7 +306,70 @@ public class ArtifactService {
 					"Artifact with storedIn=EXTERNALLY must carry at least one downloadLink");
 		}
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
+		// IN-PLACE re-upload: this row already existed, so a fresh artifactDataFactory product would
+		// take its empty metrics straight over the column and wipe the findings. That is the SAME
+		// collapse-to-zero the replacement seam fixes, on the other branch of the same mutation:
+		// validateCycloneDxUpdate only mints a new uuid when the BOM's serialNumber CHANGES, so the
+		// ordinary "new version of this BOM" flow -- and all SPDX, which never reassigns -- reuse the
+		// row and land here instead.
+		//
+		// Carry the findings forward for exactly the reason the other seam does: the new content has
+		// not been scanned, so the release has nothing to merge and drops to zero until it is. Scan
+		// stamps stay null, which is already what happens today, so the only change is that the
+		// findings survive.
+		//
+		// The successor argument is the row's INCOMING metrics, not a blank object. An earlier
+		// revision passed `new DependencyTrackIntegration()` here, which broke two things at once:
+		// it discarded whatever artifactDataFactory had just parsed off this upload (SARIF / VDR /
+		// BOV findings, and the DTrack project + upload token registered for THIS submission), and
+		// it made inheritFindingsFromPredecessor's "never overwrite a real scan" guard unreachable,
+		// because a throwaway object's firstScanned is always null. Pass the real metrics and both
+		// guards do their job -- an upload that already carries its own findings declines.
+		DependencyTrackIntegration carried = oa.isEmpty() ? null
+				: SharedArtifactService.inheritFindingsFromPredecessor(
+						ad.getMetrics(), ArtifactData.dataFromRecord(oa.get()).getMetrics());
+		if (null != carried) {
+			// BEFORE saveArtifact, and ad.setMetrics below, on purpose. saveArtifactMetrics stamps the
+			// metrics_audit row from the entity's CURRENT column, and `a` is the same managed row --
+			// so running it after saveArtifact would have overwritten that column with the blank
+			// incoming metrics first, and the audit row would record an empty snapshot rather than the
+			// findings it replaced. Replaying an artifact's audit trail across an in-place re-upload
+			// would then show a phantom drop-to-zero revision that never existed in the column. Every
+			// other saveArtifactMetrics caller passes an entity still holding its prior content.
+			// The UNCONDITIONAL write is correct here, unlike the replacement seam. This is an
+			// IN-PLACE re-upload: the row is reused, so its persisted firstScanned is still the
+			// PREVIOUS upload's and a "only while unscanned" predicate would refuse every time and
+			// silently disable this seam. The guard that matters here already ran --
+			// inheritFindingsFromPredecessor declined if the INCOMING metrics carried findings or a
+			// stamp of their own.
+			// This caller FLUSHES the managed entity immediately below, so it must bring the entity
+			// into step with what the native writes did -- both fields. Applying the count here rather
+			// than inside saveArtifactMetrics keeps the per-minute fan-out path clean: dirtying the
+			// entity there would add a full-column UPDATE and a @Version bump to every artifact
+			// metrics write in the system. And it must be the count the writer REPORTS, not a
+			// hard-coded +1: the duplicate-revision repair branch advances the row twice.
+			int bumps = sharedArtifactService.saveArtifactMetrics(a, carried);
+			a.setMetricsRevision(a.getMetricsRevision() + bumps);
+			// And the carried metrics onto the DTO, so the saveArtifact below writes them rather than
+			// putting the blank incoming metrics back over them.
+			ad.setMetrics(carried);
+		}
 		a = sharedArtifactService.saveArtifact(a, ad, wu);
+		if (null != carried) {
+			// The write went through saveArtifactMetrics above, NOT via saveArtifact alone: that is the
+			// single chokepoint every artifact-metrics write passes through, so it is what writes the
+			// metrics_audit row and pushes the carrying releases back into the recompute pool. Setting
+			// the column via saveArtifact only would carry the findings but leave every release holding
+			// this artifact un-enqueued, so the release would keep advertising its stale scanned state
+			// until something unrelated happened to touch its row.
+			// ERROR, matching the new-uuid manual seam. Both are manual user actions with nil volume,
+			// and the instance this matters on retains ERROR only -- logging one half at INFO meant an
+			// in-place carry could not be correlated against [METRICS-LOSS] / [METRICS-LOSS-PROVENANCE],
+			// which is the entire reason the manual line is ERROR at all. The REBUILD seam is the one
+			// that must stay off this channel; this is not it.
+			log.error("[CARRY-FORWARD] artifact {} re-uploaded in place, {} finding(s) carried over "
+					+ "pending re-scan", a.getUuid(), SharedArtifactService.countInheritedFindings(carried));
+		}
 		return a;
 	}
 
@@ -1220,5 +1295,109 @@ public class ArtifactService {
 			   (content.contains(":") && !content.contains("{") && !content.contains("<"));
 	}
 	
+
+
+	/**
+	 * Carry findings forward across a flat artifact swap -- the RELEASE-DIRECT and SCE arms of a CI
+	 * rebuild.
+	 *
+	 * <p>A rebuild replaces all three owner arms from CI input: release-direct {@code artifacts}, the
+	 * {@code sourceCodeEntry}, and the outbound deliverables. The deliverable arm pairs on the
+	 * deliverable's {@code displayIdentifier} (see {@code DeliverableService.carryFindingsAcrossRebuild}).
+	 * These two arms have no such handle -- there is no container carrying a stable name, and
+	 * artifact-level {@code displayIdentifier} is populated on ZERO of 5891 production BOMs, so it
+	 * cannot serve as a key either.
+	 *
+	 * <p>So this pairs only the unambiguous case: exactly one BOM on each side. That is not the
+	 * compromise it looks like -- every BOM-carrying release measured on production holds exactly one
+	 * BOM -- but it IS a real bound, and anything else is declined and counted rather than guessed.
+	 * A wrong pairing credits one component's vulnerabilities to another, which is worse than the
+	 * collapse being fixed.
+	 *
+	 * @return the tally, so declines are visible in production rather than silent
+	 *
+	 * <p><b>REQUIRES_NEW, and its callers defer it to afterCommit.</b> Both halves are load-bearing
+	 * and neither works alone. Without REQUIRES_NEW a throw in here marks the CALLER's transaction
+	 * rollback-only, so the caller's catch swallows the exception but not the flag and the whole
+	 * rebuild dies at commit with UnexpectedRollbackException -- the exact opposite of the
+	 * best-effort behaviour the callers claim. Without the afterCommit deferral, REQUIRES_NEW runs
+	 * on a SEPARATE connection that cannot see the caller's uncommitted rows, so the freshly created
+	 * replacement artifacts are invisible, every lookup comes back empty and the seam silently
+	 * carries nothing while logging that it ran. Deferring until after the caller commits gives both:
+	 * the rows are visible, and a failure cannot reach a transaction that no longer exists.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public CarryForwardTally carryFindingsAcrossArtifactSwap(Collection<UUID> priorArtifacts,
+			Collection<UUID> newArtifacts, WhoUpdated wu, CarryForwardArm arm, UUID releaseUuid) {
+		return sharedArtifactService.executeCarryForward(
+				pairBySoleBom(priorArtifacts, newArtifacts), arm, releaseUuid, wu);
+	}
+
+	/**
+	 * Pair a flat artifact set across a rebuild: the single BOM on each side.
+	 *
+	 * <p>The release-direct and SCE arms hold a release's own artifacts, so both sides already belong
+	 * to the same release and component -- the identity corroboration the DELIVERABLE arm needs (name
+	 * plus version-agnostic purl agreement) has no counterpart to check here, because there is only
+	 * ever one candidate. What this arm must still do, and now does, is DECLINE rather than guess
+	 * when there is more than one BOM, and treat "no BOM on this arm" as ordinary rather than as a
+	 * failed pairing.
+	 *
+	 * <p>That last distinction is the one that mattered: a single sole-BOM lookup returned empty for
+	 * BOTH "no BOM" and "several BOMs", so a release whose direct artifacts are an attestation or a
+	 * VEX -- an entirely normal shape, since BOMs usually hang off deliverables -- was recorded as an
+	 * ambiguous pairing and alerted on, on every CI build.
+	 */
+	CarryForwardPairing pairBySoleBom(Collection<UUID> priorArtifacts, Collection<UUID> newArtifacts) {
+		if (null == priorArtifacts || priorArtifacts.isEmpty()
+				|| null == newArtifacts || newArtifacts.isEmpty()) {
+			return CarryForwardPairing.NOTHING;
+		}
+		List<UUID> priorBoms = bomsAmong(priorArtifacts);
+		List<UUID> newBoms = bomsAmong(newArtifacts);
+		if (priorBoms.isEmpty() || newBoms.isEmpty()) {
+			// Nothing to carry on this arm, and NO candidate either -- candidates=0 is what makes
+			// executeCarryForward's no-op guard fire, so this logs nothing at all. Fabricating
+			// candidates=1 here meant every rebuild of an attestation-only or VEX-only release emitted
+			// a "0 of 1 seeded" line, which is the same per-build noise the no-op guard was added to
+			// remove. This arm's "candidate" is a BOM to pair; with none, there is nothing to count.
+			// noBom is still reported so the tally says WHY nothing happened -- only `candidates`
+			// drives the logging guard, so quiet-on-the-channel and countable-by-the-caller do not
+			// conflict.
+			return new CarryForwardPairing(List.of(), 0, 0, 0, 0, 1);
+		}
+		if (priorBoms.size() > 1 || newBoms.size() > 1) {
+			// Several BOMs and no tiebreaker. Artifact-level displayIdentifier would be the natural
+			// one but production carries it on 0 of 5891 BOMs, so there is nothing to pair on.
+			// The count is how many BOMs went unpaired, not a hard-coded 1. Both arms emit the same
+			// field names into the same [CARRY-FORWARD] log population, so a fabricated denominator
+			// makes any aggregation across them wrong by construction -- a four-BOM arm reporting
+			// "0 of 1" understates the loss by three.
+			int declined = newBoms.size();
+			return new CarryForwardPairing(List.of(), declined, 0, 0, declined, 0);
+		}
+		if (priorBoms.get(0).equals(newBoms.get(0))) {
+			// Same row on both sides: nothing was swapped. Seeding a row from ITSELF would duplicate
+			// its whole previousVersions list in place on every rebuild. The in-place re-upload case
+			// is handled at createArtifact instead.
+			return CarryForwardPairing.NOTHING;
+		}
+		return new CarryForwardPairing(
+				List.of(new CarryForwardPairing.BomPair(priorBoms.get(0), newBoms.get(0))),
+				1, 0, 0, 0, 0);
+	}
+
+	/**
+	 * Every BOM among these artifacts. Reads through the LIGHT view: this only needs {@code type}
+	 * (which lives in record_data and so is populated by {@code ArtifactData.fromLite}) and the uuid,
+	 * never the heavy metrics JSONB. It runs twice per successor inside the rebuild seam's afterCommit
+	 * transaction, so pulling full metrics for every candidate row was pure waste.
+	 */
+	public List<UUID> bomsAmong(Collection<UUID> artifactUuids) {
+		return getArtifactDataListLight(artifactUuids).stream()
+				.filter(ad -> ArtifactType.BOM == ad.getType())
+				.map(ArtifactData::getUuid)
+				.toList();
+	}
 
 }

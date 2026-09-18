@@ -39,6 +39,16 @@ public record NotificationSubscriptionResult(
         String routes,
         Integer dedupWindowMinutes,
         String rateLimit,
+        // Ownership matching scope -- see NotificationSubscriptionData.ownedByTeam.
+        // Projected so a client can tell a team-scoped subscription from an
+        // org-wide one without inferring it from the route table, which cannot
+        // express the difference.
+        UUID ownedByTeam,
+        // Set when a team's own notification setting owns this row. The list
+        // uses it to badge the row and to hide Edit and Delete -- both of which
+        // now throw for a managed subscription, so without projecting this the
+        // UI offers two controls that are guaranteed to fail.
+        UUID managedByTeam,
         // Hibernate @Version-managed row revision. See
         // NotificationChannelResult.revision javadoc.
         Integer revision) {

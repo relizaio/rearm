@@ -20,9 +20,11 @@ export const productNav = [
 ];
 
 export const useCaseNav = [
+  { label: 'SBOM Aggregation', href: '/use-cases/sbom-aggregation/' },
+  { label: 'VEX Exploitability eXchange', href: '/use-cases/vex-exploitability-exchange/' },
   { label: 'Medical Devices', href: '/use-cases/medical-devices/' },
   { label: 'Field Digital Twin', href: '/use-cases/field-digital-twin/' },
-  { label: 'Deployment Governance', href: '/use-cases/deployment-governance/' },
+  { label: 'Deployment Governance, DevOps, BYOC', href: '/use-cases/deployment-governance/' },
   { label: 'EU CRA Compliance', href: '/use-cases/eu-cra/' },
 ];
 
@@ -32,9 +34,12 @@ export const pageHrefs: Record<string, string> = {
   'Findings Aggregation': '/product/findings-aggregation/',
   'Release Policies': '/product/release-policies/',
   'AI Governance': '/product/ai-governance/',
+  'SBOM Aggregation': '/use-cases/sbom-aggregation/',
+  'VEX Exploitability eXchange': '/use-cases/vex-exploitability-exchange/',
   'Medical Devices': '/use-cases/medical-devices/',
   'Field Digital Twin': '/use-cases/field-digital-twin/',
   'Deployment Governance': '/use-cases/deployment-governance/',
+  'Deployment Governance, DevOps, BYOC': '/use-cases/deployment-governance/',
   'EU CRA': '/use-cases/eu-cra/',
   'EU CRA Compliance': '/use-cases/eu-cra/',
   Pricing: '/pricing/',
@@ -96,6 +101,7 @@ export const integrations = [
   { file: 'clearlydefined.png', url: 'https://clearlydefined.io', title: 'ClearlyDefined' },
   { file: 'depsdev.png', url: 'https://deps.dev', title: 'deps.dev' },
   { file: 'cdxgen.png', url: 'https://github.com/cdxgen/cdxgen', title: 'cdxgen' },
+  { file: 'microsoft_sentinel.png', url: '#', title: 'Microsoft sentinel' },
 ];
 
 export const clientsPartners = [
@@ -106,6 +112,7 @@ export const clientsPartners = [
   { file: 'ovh.png', url: 'https://ovhcloud.com', title: 'OVHcloud' },
   { file: 'wicwac.png', url: 'https://wicwac.com', title: 'WicWac' },
   { file: 'semperis.png', url: 'https://www.semperis.com', title: 'Semperis' },
+  { file: 'medware_cyber.png', url: 'https://medwarecyber.com/', title: 'MedWare Cyber' },
 ];
 
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';

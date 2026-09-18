@@ -312,22 +312,16 @@ public class AgentDataFetcher {
 
 	/**
 	 * Session.releases — distinct releases produced from this session's
-	 * commits. Walks session.commits → Release.sourceCodeEntry (and
-	 * Release.commits[] for multi-commit releases) via the existing
-	 * findReleasesBySce lookup. Empty list when no commits or no
-	 * releases minted yet.
+	 * commits, matched on Release.sourceCodeEntry or Release.commits[]
+	 * in one batched query for the whole commits list (most recently
+	 * updated first). Empty list when no commits or no releases minted
+	 * yet.
 	 */
 	@DgsData(parentType = "Session", field = "releases")
 	public List<io.reliza.model.ReleaseData> sessionReleases(DgsDataFetchingEnvironment dfe) {
 		AgentSessionData sd = dfe.getSource();
 		if (sd == null || sd.getCommits() == null || sd.getCommits().isEmpty()) return List.of();
-		java.util.LinkedHashMap<UUID, io.reliza.model.ReleaseData> byUuid = new java.util.LinkedHashMap<>();
-		for (UUID sceUuid : sd.getCommits()) {
-			for (var rd : sharedReleaseService.findReleaseDatasBySce(sceUuid, sd.getOrg())) {
-				byUuid.putIfAbsent(rd.getUuid(), rd);
-			}
-		}
-		return new java.util.ArrayList<>(byUuid.values());
+		return sharedReleaseService.findReleaseDatasBySces(sd.getCommits(), sd.getOrg());
 	}
 
 	/**
@@ -646,18 +640,13 @@ public class AgentDataFetcher {
 		List<Map<String, Object>> events = new java.util.ArrayList<>();
 
 		// 1. Release-side events (LIFECYCLE_CHANGE, APPROVAL) for every
-		//    release this session's commits touched. Walks the existing
-		//    findReleasesBySce path used by the Session.releases resolver
-		//    so we stay consistent with what the dashboard shows.
-		java.util.LinkedHashMap<UUID, io.reliza.model.ReleaseData> releasesByUuid = new java.util.LinkedHashMap<>();
-		if (sd.getCommits() != null) {
-			for (UUID sceUuid : sd.getCommits()) {
-				for (var rd : sharedReleaseService.findReleaseDatasBySce(sceUuid, sd.getOrg())) {
-					releasesByUuid.putIfAbsent(rd.getUuid(), rd);
-				}
-			}
-		}
-		for (var rd : releasesByUuid.values()) {
+		//    release this session's commits touched. Same batched
+		//    findReleaseDatasBySces lookup as the Session.releases
+		//    resolver so we stay consistent with what the dashboard shows.
+		List<io.reliza.model.ReleaseData> sessionReleases = (sd.getCommits() != null)
+				? sharedReleaseService.findReleaseDatasBySces(sd.getCommits(), sd.getOrg())
+				: List.of();
+		for (var rd : sessionReleases) {
 			if (rd.getUpdateEvents() != null) {
 				for (var ue : rd.getUpdateEvents()) {
 					if (ue.rus() != io.reliza.model.ReleaseData.ReleaseUpdateScope.LIFECYCLE) continue;

@@ -7,49 +7,51 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 
-import io.reliza.model.TeamRole;
+import io.reliza.model.SupportSource;
+import io.reliza.model.SupportStatus;
 
 /**
- * Regression guard for the Team-primitive role enum (sibling of
- * {@code ComponentOwnershipSchemaEnumSyncTest} /
- * {@code NotificationSchemaEnumSyncTest}).
- *
- * <p>{@code TeamRole} is declared in BOTH the Java model and
- * {@code schema.graphqls}, and DGS binds the GraphQL enum to the Java enum of the
- * same name -- so a value present on one side but not the other silently breaks
- * binding. Adding an org-facing role is exactly the kind of change that lands on
- * one side only, and the failure mode (a role that cannot be selected, or a
- * deserialization error at request time) is invisible until runtime. This test
- * parses the raw schema (no Spring / DGS) and asserts the value sets are equal.
+ * Regression guard for the FDA-Readiness-1 support enums (sibling of
+ * {@code FindingChangeKindSchemaEnumSyncTest}). {@code SupportStatus} and
+ * {@code SupportSource} are declared in BOTH the Java model and the GraphQL
+ * schema and round-tripped over the wire on {@code SbomComponent}, so a value
+ * present on one side but not the other silently breaks serialization. Parses
+ * the raw {@code schema.graphqls} (no Spring / DGS bootstrap) and asserts each
+ * schema enum's value set equals the Java enum's.
  */
-class TeamRoleSchemaEnumSyncTest {
+class SupportEnumsSchemaEnumSyncTest {
 
 	/** "enum Foo { ... }" block -- captures the body between the braces. */
 	private static final Pattern ENUM_BLOCK = Pattern.compile(
 			"enum\\s+(\\w+)\\s*\\{([^}]*)\\}", Pattern.DOTALL);
 
 	@Test
-	void teamRoleEnumIsInSync() {
-		assertEnumInSync("TeamRole",
-				Arrays.stream(TeamRole.values()).map(Enum::name)
-						.collect(Collectors.toCollection(TreeSet::new)));
+	void supportStatusEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportStatus.values()).map(Enum::name)
+				.collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportStatus");
+		assertEquals(javaValues, schemaValues,
+				"GraphQL enum SupportStatus drifted from Java enum;"
+						+ " missing in schema: " + diff(javaValues, schemaValues)
+						+ "; extra in schema: " + diff(schemaValues, javaValues));
 	}
 
-	private void assertEnumInSync(String schemaEnumName, Set<String> javaValues) {
-		Set<String> schemaValues = readSchemaEnum(schemaEnumName);
+	@Test
+	void supportSourceEnumIsInSync() {
+		Set<String> javaValues = Arrays.stream(SupportSource.values()).map(Enum::name)
+				.collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+		Set<String> schemaValues = readSchemaEnum("SupportSource");
 		assertEquals(javaValues, schemaValues,
-				"GraphQL enum " + schemaEnumName + " drifted from Java enum;"
+				"GraphQL enum SupportSource drifted from Java enum;"
 						+ " missing in schema: " + diff(javaValues, schemaValues)
 						+ "; extra in schema: " + diff(schemaValues, javaValues));
 	}
@@ -60,6 +62,7 @@ class TeamRoleSchemaEnumSyncTest {
 		return r;
 	}
 
+	/** Returns the enum values declared in the GraphQL schema file. */
 	private static Set<String> readSchemaEnum(String enumName) {
 		String schema = readSchema();
 		Matcher m = ENUM_BLOCK.matcher(schema);
@@ -79,11 +82,11 @@ class TeamRoleSchemaEnumSyncTest {
 	}
 
 	private static String readSchema() {
-		try (InputStream in = TeamRoleSchemaEnumSyncTest.class.getResourceAsStream(
+		try (InputStream in = SupportEnumsSchemaEnumSyncTest.class.getResourceAsStream(
 				"/schema/schema.graphqls")) {
 			if (in == null) throw new IllegalStateException("schema.graphqls not on test classpath");
 			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-		} catch (IOException e) {
+		} catch (java.io.IOException e) {
 			throw new RuntimeException(e);
 		}
 	}

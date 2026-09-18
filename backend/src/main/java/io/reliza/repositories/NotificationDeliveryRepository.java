@@ -20,6 +20,15 @@ import io.reliza.model.NotificationDeliveryStatus;
 public interface NotificationDeliveryRepository extends CrudRepository<NotificationDelivery, UUID> {
 
 	/**
+	 * How many delivery rows one outbox event produced. Derived query.
+	 *
+	 * <p>Exists so a caller can ask about a single event rather than the whole
+	 * table. That distinction matters because the fan-out drain is deliberately
+	 * org-agnostic, so a global row count is never attributable to one event.
+	 */
+	long countByOutboxEventUuid(UUID outboxEventUuid);
+
+	/**
 	 * Channel worker's hot query. Picks up PENDING deliveries whose
 	 * BackoffPolicy backoff timer has elapsed.
 	 */

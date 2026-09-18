@@ -1,0 +1,4 @@
+ACCEPT START: 2026-08-19T13:00:03Z
+org=e11dd573-7454-461c-b055-0433472f5569 comp=f52464ba-35b6-42de-a634-596b7ffb615e threads=24 loops=834 total=20016 rpm=780(13/s) keys=5 registry=ACR-premium(remote) mode=warm comps/bom=50 drainbatch=250 rebom=4x
+ACCEPT END: 2026-08-19T14:23:22Z
+DRAIN COMPLETE: 2026-08-19T16:56:19Z (watcher; sampler exit blocked by 20,014<20,016 after 3 accept errors)
