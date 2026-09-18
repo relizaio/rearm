@@ -2504,17 +2504,34 @@ function computeApprovals () : ApprovalInput[] {
 }
 
 /**
- * The most recent guard refusal recorded on a release, if any.
+ * Identity of the guard refusals already on a release, taken before an action.
  *
- * GUARD events are written when an automated promotion is withheld; the newest one describes the
- * state the reader is looking at. Undated events sort last rather than winning by accident.
+ * A GUARD event records an automated promotion a guard withheld, and it stays on the release. So
+ * "the newest GUARD event" is not the same as "something was withheld just now": an approval that
+ * fires nothing today, on a release withheld last week, would otherwise report last week's message
+ * as if it had just happened. The backend deduplicates these on trigger and message, so that pair
+ * is their identity.
  */
-function latestGuardNote (rel: any): string | null {
-    const guards = (rel?.updateEvents || []).filter((e: any) => e.rus === 'GUARD' && e.message)
-    if (!guards.length) return null
-    const newest = [...guards].sort((a: any, b: any) =>
-        new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0]
-    return newest?.message || null
+function guardKeys (rel: any): Set<string> {
+    return new Set(((rel?.updateEvents || []) as any[])
+        .filter(e => e.rus === 'GUARD' && e.message)
+        .map(e => `${e.objectId}|${e.message}`))
+}
+
+/**
+ * The refusal this action produced, if it produced one.
+ *
+ * Only events absent before the call count. One consequence worth knowing: because the backend
+ * records a given refusal once, a second approval refused for the identical reason adds no event
+ * and so reports nothing here -- quiet, rather than wrong, and the refusal is still on the release
+ * for anyone reading its history.
+ */
+function newGuardNote (before: Set<string>, rel: any): string | null {
+    const fresh = ((rel?.updateEvents || []) as any[])
+        .filter(e => e.rus === 'GUARD' && e.message && !before.has(`${e.objectId}|${e.message}`))
+    if (!fresh.length) return null
+    return [...fresh].sort((a: any, b: any) =>
+        new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0]?.message || null
 }
 
 async function approve(approvals: ApprovalInput[]) {
@@ -2522,6 +2539,7 @@ async function approve(approvals: ApprovalInput[]) {
         release: updatedRelease.value.uuid,
         approvals
     }
+    const guardsBefore = guardKeys(updatedRelease.value)
     store.dispatch('approveRelease', approvalProps).then(response => {
         approvalRowComments.value = {}
         fetchRelease()
@@ -2530,7 +2548,7 @@ async function approve(approvals: ApprovalInput[]) {
         // "Approvals Saved" to somebody who expected the release to move is how "I approved it and
         // nothing happened" starts. The backend records the refusal on the release before the
         // mutation returns, so it is already in the response.
-        const withheld = latestGuardNote(response?.data?.approveReleaseManual)
+        const withheld = newGuardNote(guardsBefore, response?.data?.approveReleaseManual)
         if (withheld) {
             notify('warning', 'Approved, but promotion withheld', withheld, 0)
         } else {
@@ -2580,15 +2598,16 @@ async function reevaluateTriggers () {
     reevaluatePending.value = true
     try {
         const before = updatedRelease.value?.lifecycle
+        const guardsBefore = guardKeys(updatedRelease.value)
         const after = await store.dispatch('reevaluateReleaseTriggers', updatedRelease.value.uuid)
         await fetchRelease()
-        const withheld = latestGuardNote(after)
+        const withheld = newGuardNote(guardsBefore, after)
         if (after?.lifecycle && after.lifecycle !== before) {
             notify('success', 'Re-evaluated', `Lifecycle moved to ${after.lifecycle}.`)
         } else if (withheld) {
             notify('warning', 'Still withheld', withheld, 0)
         } else {
-            notify('info', 'Re-evaluated', 'No rule had anything to do for this release.')
+            notify('info', 'Re-evaluated', 'Nothing changed for this release.')
         }
     } catch (error: any) {
         notify('error', 'Error', commonFunctions.extractGraphQLErrorMessage(error))
