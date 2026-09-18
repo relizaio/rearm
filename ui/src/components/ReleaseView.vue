@@ -822,12 +822,24 @@
                                 </div>
                             </template>
                         </div>
-                        <n-space v-if="isWritable && approvalEntries.length" style="margin-bottom: 10px;">
-                            <n-button @click="requestApprovals" :loading="requestApprovalsPending" :disabled="requestApprovalsPending" title="Notify everyone who can still approve this release" data-testid="request-approvals">
+                        <n-space v-if="approvalEntries.length && (isWritable || canReevaluate)" style="margin-bottom: 10px;">
+                            <n-button v-if="isWritable" @click="requestApprovals" :loading="requestApprovalsPending" :disabled="requestApprovalsPending" title="Notify everyone who can still approve this release" data-testid="request-approvals">
                                 <template #icon>
                                     <n-icon><Bell /></n-icon>
                                 </template>
                                 Request Approvals
+                            </n-button>
+                            <!-- Offered to approvers as well as writers on purpose: an approval can
+                                 fire a promotion a guard withholds, and the reason usually clears
+                                 somewhere else, so the person who approved needs a way to finish
+                                 what they started without holding the lifecycle permission. -->
+                            <n-button v-if="canReevaluate" @click="reevaluateTriggers" :loading="reevaluatePending"
+                                :disabled="reevaluatePending" data-testid="reevaluate-release"
+                                title="Re-run this release's rules. Promotes nothing by itself: guards still apply, and anything that already fired is not fired again.">
+                                <template #icon>
+                                    <n-icon><Refresh /></n-icon>
+                                </template>
+                                Re-evaluate
                             </n-button>
                         </n-space>
                         <div v-if="openApprovalRequests.length" style="margin-bottom: 10px;">
@@ -1361,11 +1373,13 @@ const router = useRouter()
 const store = useStore()
 const notification = useNotification()
 const loadingBar = useLoadingBar()
-const notify = async function (type: NotificationType, title: string, content: string) {
+const notify = async function (type: NotificationType, title: string, content: string, duration = 3500) {
     notification[type]({
         content: content,
         meta: title,
-        duration: 3500,
+        // 0 means it stays until dismissed: a withheld promotion is something the reader has to
+        // act on, and 3.5 seconds is long enough to miss.
+        duration: duration === 0 ? undefined : duration,
         keepAliveOnHover: true
     })
 }
@@ -2489,6 +2503,20 @@ function computeApprovals () : ApprovalInput[] {
     return approvals
 }
 
+/**
+ * The most recent guard refusal recorded on a release, if any.
+ *
+ * GUARD events are written when an automated promotion is withheld; the newest one describes the
+ * state the reader is looking at. Undated events sort last rather than winning by accident.
+ */
+function latestGuardNote (rel: any): string | null {
+    const guards = (rel?.updateEvents || []).filter((e: any) => e.rus === 'GUARD' && e.message)
+    if (!guards.length) return null
+    const newest = [...guards].sort((a: any, b: any) =>
+        new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0]
+    return newest?.message || null
+}
+
 async function approve(approvals: ApprovalInput[]) {
     const approvalProps = {
         release: updatedRelease.value.uuid,
@@ -2497,7 +2525,17 @@ async function approve(approvals: ApprovalInput[]) {
     store.dispatch('approveRelease', approvalProps).then(response => {
         approvalRowComments.value = {}
         fetchRelease()
-        notify('success', 'Saved', 'Approvals Saved.')
+        // An approval can be the thing that fires a promotion rule, and a guard can withhold that
+        // promotion. The approval itself still stands, so this is not an error -- but saying only
+        // "Approvals Saved" to somebody who expected the release to move is how "I approved it and
+        // nothing happened" starts. The backend records the refusal on the release before the
+        // mutation returns, so it is already in the response.
+        const withheld = latestGuardNote(response?.data?.approveReleaseManual)
+        if (withheld) {
+            notify('warning', 'Approved, but promotion withheld', withheld, 0)
+        } else {
+            notify('success', 'Saved', 'Approvals Saved.')
+        }
     }).catch(error => {
         Swal.fire(
             'Error!',
@@ -2508,6 +2546,55 @@ async function approve(approvals: ApprovalInput[]) {
     }).finally(() => {
         approvalPending.value = false
     })
+}
+
+/**
+ * Who sees the Re-evaluate button.
+ *
+ * Writers, and anyone with an approval role on this release -- which is the case it exists for:
+ * they approved, a guard withheld the promotion, and they may not hold the permission to move the
+ * release by hand. Pro only, because guards are what create the situation. The backend makes the
+ * same decision; this only keeps the button out of the way of people it would refuse.
+ */
+const canReevaluate: ComputedRef<boolean> = computed((): boolean => {
+    if (!myUser?.installationType || myUser.installationType === 'OSS') return false
+    if (isWritable.value) return true
+    const org = updatedRelease.value?.org
+    const component = updatedRelease.value?.component
+    const releaseUuid = updatedRelease.value?.uuid
+    const perms = myUser?.permissions?.permissions || []
+    // Mirrors the backend rule closely enough to keep the button out of the way of people it would
+    // refuse. PERSPECTIVE scope is treated as possibly covering: membership cannot be resolved
+    // here, and the backend is the one that decides -- showing a button to somebody who turns out
+    // not to qualify is a worse failure than the reverse only if the server would not tell them.
+    return perms.some((p: any) => p.org === org && (
+        (p.type === 'ADMIN' && p.scope === 'ORGANIZATION')
+        || ((p.approvals?.length || 0) > 0
+            && (p.scope === 'ORGANIZATION' || p.scope === 'PERSPECTIVE'
+                || p.object === component || p.object === releaseUuid))))
+})
+
+const reevaluatePending: Ref<boolean> = ref(false)
+
+async function reevaluateTriggers () {
+    reevaluatePending.value = true
+    try {
+        const before = updatedRelease.value?.lifecycle
+        const after = await store.dispatch('reevaluateReleaseTriggers', updatedRelease.value.uuid)
+        await fetchRelease()
+        const withheld = latestGuardNote(after)
+        if (after?.lifecycle && after.lifecycle !== before) {
+            notify('success', 'Re-evaluated', `Lifecycle moved to ${after.lifecycle}.`)
+        } else if (withheld) {
+            notify('warning', 'Still withheld', withheld, 0)
+        } else {
+            notify('info', 'Re-evaluated', 'No rule had anything to do for this release.')
+        }
+    } catch (error: any) {
+        notify('error', 'Error', commonFunctions.extractGraphQLErrorMessage(error))
+    } finally {
+        reevaluatePending.value = false
+    }
 }
 
 const requestApprovalsPending: Ref<boolean> = ref(false)
