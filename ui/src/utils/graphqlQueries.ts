@@ -1122,6 +1122,7 @@ const COMPONENT_FULL_DATA = `
             clientPayload
             schedule
             celClientPayload
+            includeSuppressed
             snapshotApprovalEntry
             snapshotLifecycle
             approvedEnvironment
@@ -1146,6 +1147,7 @@ const COMPONENT_FULL_DATA = `
         clientPayload
         schedule
         celClientPayload
+        includeSuppressed
         snapshotApprovalEntry
         snapshotLifecycle
         approvedEnvironment

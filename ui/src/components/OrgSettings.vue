@@ -5379,6 +5379,7 @@ async function fetchApprovalPolicies () {
                         schedule
                         scope
                         celClientPayload
+                        includeSuppressed
                         snapshotApprovalEntry
                         snapshotLifecycle
                         approvedEnvironment
