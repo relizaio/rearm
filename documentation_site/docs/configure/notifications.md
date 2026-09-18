@@ -15,10 +15,11 @@ Subscriptions, routes, and channel groups are available on **both** editions,
 as are the **Slack**, **Microsoft Teams**, and **Webhook** channel types.
 
 Pro adds two channel types -- **Email** and
-[**Microsoft Sentinel**](../integrations/sentinel) -- [**teams**](./teams)
-themselves, the two route targets that depend on them (**team** and **notify the
-component owner**), and
-[subscription filtering](#filters-severity-and-routes).
+[**Microsoft Sentinel**](../integrations/sentinel) -- the **notify the component
+owner** route target, and
+[subscription filtering](#filters-severity-and-routes). [Teams](./teams) and
+routes targeting them are available on either edition, given a server build that
+has teams.
 :::
 
 ## How it fits together
@@ -77,11 +78,13 @@ A subscription's `eventTypes` list controls what it can match:
   in the in-app inbox or the bell.
 
 ::: warning A minimum severity on a non-vulnerability subscription silences it entirely
-Only two event types carry a severity: `NEW_VULN_AFFECTS_RELEASES` and
-`VULNERABILITY_RECORD_UPDATED`. Release and approval events carry none, and a
-gate then compares against *nothing* rather than against zero -- so it does not
-match. A minimum severity on a release-only subscription therefore does not
-merely fail to narrow it, it **stops every event on that route**.
+Four event types carry a severity: the two vulnerability ones
+(`NEW_VULN_AFFECTS_RELEASES`, `VULNERABILITY_RECORD_UPDATED`) and the two
+instance-deployment ones, which compute theirs. Release, approval, BOM-diff and
+VEX events carry none, and a gate then compares against *nothing* rather than
+against zero -- so it does not match. A minimum severity on a release-only
+subscription therefore does not merely fail to narrow it, it **stops every event
+on that route**.
 
 This does not error and writes no delivery row you could go looking for. If a
 subscription you believe is correct has never fired, check whether it carries a
@@ -116,7 +119,7 @@ delivers nothing, so the editor will not let you save one.
 |---|---|---|
 | **Channels** | The channels you name explicitly | CE and Pro |
 | **Channel groups** | Every channel in the named group | CE and Pro |
-| **Teams** | The named [team](./teams)'s own notification channels | Pro |
+| **Teams** | The named [team](./teams)'s own notification channels | CE and Pro |
 | **Notify the component owner** | The channels of whichever team owns the affected component | Pro |
 
 The last two are what let a route describe *who* should hear about something

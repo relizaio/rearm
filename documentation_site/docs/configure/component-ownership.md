@@ -36,9 +36,13 @@ The picker offers active teams only, so an archived team cannot be chosen as a
 new owner. A component already owned by a team that was archived since keeps
 that owner on record and still shows it, labelled `(archived)` -- it reports
 `DEGRADED` and stops receiving owner-routed notifications until you point it
-somewhere else. An owner that no longer resolves at all -- a deleted user, say
--- leaves the picker empty rather than showing a bare uuid; clearing is still
-offered, because a stored reference does exist.
+somewhere else. A stored team reference that ReARM cannot resolve at
+all -- teams have no delete action, but a stale reference can outlive its
+target -- shows as `(deleted team)` with a short id, and can be cleared like any
+other owner. An **individual** owner who no longer resolves -- a user
+removed from the organization -- is the one case that leaves the picker empty;
+from there, pick a new owner, because an empty picker in that state stages
+nothing to save.
 
 ## Ownership status
 

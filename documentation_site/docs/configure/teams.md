@@ -13,11 +13,13 @@ holding permissions does not put you on a team. Access is configured with
 [user groups](./user-and-user-group-permissions); a team says who is
 *accountable*, a group says who can *do* things.
 
-::: tip Teams are a ReARM Pro capability
-On Community Edition the Teams tab reports that teams are not available on this
-server version, and the rest of Organization Settings works normally. Notification
-routes on CE address [channels and channel groups](./notifications#route-targets)
-directly, both of which are available on either edition.
+::: tip Teams need a server build that has them
+Teams are available on both editions, but they arrived in a specific server
+version. Against an older backend the Teams tab says so -- "Teams are not
+available on this server version" -- and everything else on that page keeps
+working. Notification routes on such a server address
+[channels and channel groups](./notifications#route-targets) directly, both of
+which have always been available.
 :::
 
 Only **organization admins** can see or edit teams.
@@ -101,9 +103,10 @@ Two things to know before relying on it:
   editor names the offending subscription when it spots this.
 
 Behind the toggle, ReARM maintains a subscription for the team. It appears in
-**Integrations -> Subscriptions** badged **Managed by** the team's name, and its edit,
-pause and delete actions are disabled -- the team editor is the only place it
-can be changed. It is visible rather than hidden precisely because a
+**Integrations -> Subscriptions** badged **Managed by** the team's name, with its
+edit, enable/disable and delete actions turned off -- the team editor is the only
+place it can be changed. Testing it and reading its delivery history still work,
+which is the point of leaving the row visible. It is visible rather than hidden precisely because a
 subscription that delivers but appears nowhere is the harder thing to debug.
 
 ## Archiving a team
