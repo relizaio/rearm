@@ -682,6 +682,11 @@ async function triggerAutoIntegrate () {
     // not. That check-then-act takes no lock server-side, so two in-flight calls can both find
     // nothing and both create a product release. The button is a plain icon with no built-in
     // disabled state, so without this a double-click sends two mutations.
+    //
+    // This guard closes the double-click, NOT the race. It is per component instance: two tabs on
+    // the same branch, two operators, or any API caller still get two concurrent mutations and two
+    // product releases. Closing it properly needs a lock or an idempotency key server-side; this
+    // only stops the client from being the one to cause it.
     if (autoIntegrateInFlight.value) return
     autoIntegrateInFlight.value = true
     try {
@@ -704,6 +709,14 @@ async function triggerAutoIntegrate () {
         } else {
             notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
         }
+    } catch (e: any) {
+        notify('error', 'Auto Integrate Failed', commonFunctions.extractGraphQLErrorMessage(e))
+        // A failure here does not mean nothing happened: the mutation is not idempotent, and a
+        // timeout after the release was committed looks identical from the client. Refresh so an
+        // operator who did get a release sees it instead of clicking again for a second one.
+        // Best-effort on purpose -- onCreated fetches too, so whatever broke the mutation has
+        // usually broken this as well, and its failure must not swallow the report above.
+        await onCreated().catch(() => {})
     } finally {
         // finally, not after the notify: a failed mutation must not leave the button dead.
         autoIntegrateInFlight.value = false
