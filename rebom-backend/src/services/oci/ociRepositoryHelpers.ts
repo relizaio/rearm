@@ -92,7 +92,7 @@ export function validateOciPushResult(
  * 
  * @param result1 - First push result (e.g., raw BOM)
  * @param result2 - Second push result (e.g., processed BOM)
- * @param context - Context for error message (e.g., 'upload', 'replacement')
+ * @param context - Context for error message (e.g., 'upload')
  * @param uuid - BOM UUID for error reporting
  * @throws OciStorageError if repositories don't match
  */

@@ -1,6 +1,6 @@
 import { logger } from '../../logger';
 import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto } from '../../types';
-import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError } from '../../types/errors';
+import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError } from '../../types/errors';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
@@ -16,6 +16,7 @@ import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../c
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { runQuery } from '../../utils';
+import { createHash } from 'crypto';
 
 /**
  * Configuration flag: When true, BOMs are augmented with component context before storage.
@@ -159,7 +160,46 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   const newUuid = uuidv4();
   const rawUuid = newUuid + '-raw';
 
-  // Step 4: Store artifacts in OCI
+  // Step 4: Decide BEFORE pushing anything.
+  //
+  // The digest that decides duplication is computed here rather than read back
+  // from the push, so a duplicate and a refused upload both cost zero writes to
+  // the registry. It is byte-for-byte what pushToOci sends -- the same
+  // JSON.stringify of the same object -- and the push result is compared against
+  // it below, so a divergence would be visible rather than assumed.
+  const serialNumber = rebomOptions.serialNumber;
+  const newRawDigest = createHash('sha256').update(JSON.stringify(rawBom)).digest('hex');
+
+  // First check if this exact file was already uploaded (any version)
+  const duplicateBom = await findBomByRawDigest(serialNumber, newRawDigest, bomInput.bomInput.org);
+  if (duplicateBom) {
+    logger.info({ 
+      serialNumber, 
+      rawFileDigest: newRawDigest,
+      existingUuid: duplicateBom.uuid,
+      existingVersion: duplicateBom.meta?.bomVersion
+    }, "Duplicate CycloneDX BOM detected (identical raw file) - returning existing record");
+    
+    return duplicateBom;
+  }
+
+  // Not a duplicate - a different file claiming the same identity has to claim
+  // a higher version, or it is asking us to rewrite artifacts that are already
+  // stored and already scanned.
+  const latestBom = await findLatestBomBySerialNumber(serialNumber, bomInput.bomInput.org);
+  if (latestBom) {
+    const latestVersion = parseInt(latestBom.meta?.bomVersion) || 0;
+    const newVersion = parseInt(rebomOptions.bomVersion) || 0;
+    if (newVersion <= latestVersion) {
+      throw new BomVersionConflictError(
+        `BOM with serialNumber ${serialNumber} already exists at version ${latestVersion}; ` +
+        `uploaded version ${newVersion} must be greater. ` +
+        `Raw artifacts are immutable and are never replaced.`,
+        serialNumber, latestVersion, newVersion, latestBom.uuid);
+    }
+  }
+
+  // Step 5: Store artifacts in OCI
   // Calculate repository name ONCE to prevent month boundary race conditions
   const uploadTimestamp = new Date();
   const repositoryName = getMonthlyRepositoryName(uploadTimestamp);
@@ -171,6 +211,18 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   
   // Validate both BOMs went to same repository and have repository names set
   validateDualBomPush(rawPushResult, pushResult, 'upload', newUuid);
+
+  // The decision above was made on a locally computed digest. If the registry
+  // reports a different one, it transformed the bytes on the way in, and every
+  // duplicate check from here on is comparing against something we never sent.
+  if (rawPushResult.fileSHA256Digest && rawPushResult.fileSHA256Digest !== newRawDigest) {
+    logger.error({
+      serialNumber,
+      uuid: newUuid,
+      localDigest: newRawDigest,
+      ociDigest: rawPushResult.fileSHA256Digest
+    }, 'OCI-reported raw digest differs from the bytes rebom sent -- deduplication is comparing different things');
+  }
   
   // Track raw BOM metadata for ReARM backend (use actual file digest from OCI)
   // Note: rawBomUuid is always `uuid + '-raw'` so ReARM backend can reconstruct it
@@ -186,114 +238,41 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // Track processed/augmented BOM metadata for validation
   rebomOptions.processedFileDigest = pushResult.fileSHA256Digest;  // Augmented BOM digest
   rebomOptions.processedFileSize = pushResult.originalSize;
+  // The first processed artifact lives at the bare uuid. Set explicitly so every
+  // new row carries the pointer and the legacy fallback only serves old rows.
+  rebomOptions.processedTag = newUuid;
   
   // Repository name is already stored in pushResult.ociRepositoryName (bom field)
   // No need to duplicate it in meta
 
-  // Step 5: Check for deduplication and determine INSERT vs UPDATE
-  const serialNumber = rebomOptions.serialNumber;
-  const newRawDigest = rebomOptions.originalFileDigest;
-  
-  // First check if this exact file was already uploaded (any version)
-  if (newRawDigest) {
-    const duplicateBom = await findBomByRawDigest(serialNumber, newRawDigest, bomInput.bomInput.org);
-    if (duplicateBom) {
-      logger.info({ 
-        serialNumber, 
-        rawFileDigest: newRawDigest,
-        existingUuid: duplicateBom.uuid,
-        existingVersion: duplicateBom.meta?.bomVersion
-      }, "Duplicate CycloneDX BOM detected (identical raw file) - returning existing record");
-      
-      return duplicateBom;
-    }
-  }
-  
-  // Not a duplicate - check for latest version to compare
-  const latestBom = await findLatestBomBySerialNumber(serialNumber, bomInput.bomInput.org);
-  
-  let queryText: string;
-  let queryParams: any[];
-  
-  if (latestBom) {
-    // Different raw file - determine if this is a version increment or replacement
-    const latestVersion = parseInt(latestBom.meta?.bomVersion) || 0;
-    const newVersion = parseInt(rebomOptions.bomVersion) || 0;
-    
-    if (newVersion > latestVersion) {
-      // Version increment - INSERT new version
-      logger.info({ 
-        serialNumber,
-        bomVersion: rebomOptions.bomVersion,
-        uuid: newUuid,
-        latestVersion: latestBom.meta?.bomVersion,
-        latestRawDigest: latestBom.meta?.originalFileDigest,
-        newRawDigest
-      }, "Inserting new version of existing BOM (version increment)");
-      
-      queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
-      queryParams = [newUuid, rebomOptions, pushResult, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
-    } else {
-      // Same or lower version - REPLACE/UPDATE existing record
-      logger.info({ 
-        serialNumber,
-        bomVersion: rebomOptions.bomVersion,
-        latestUuid: latestBom.uuid,
-        latestVersion: latestBom.meta?.bomVersion,
-        latestRawDigest: latestBom.meta?.originalFileDigest,
-        newRawDigest
-      }, "Replacing existing BOM record (same or lower version - correction/replacement)");
-      
-      // Use existing UUID for storage to replace old files
-      const existingUuid = latestBom.uuid;
-      const existingRawUuid = existingUuid + '-raw';
-      
-      // use current month's repository
-      logger.info({
-        existingUuid,
-        currentMonthRepository: repositoryName,
-        operation: 'bom_replacement'
-      }, "Replacing BOM in current month's repository");
-      
-      // Re-upload to existing UUIDs (overwrites old files in OCI)
-      // Always use current month's repository
-      const rawReplacementResult = await pushToOci(existingRawUuid, rawBom, repositoryName);
-      const replacementPushResult = await pushToOci(existingUuid, finalBom, repositoryName);
-      
-      // Validate both BOMs went to same repository and have repository names set
-      validateDualBomPush(rawReplacementResult, replacementPushResult, 'replacement', existingUuid);
-      
-      queryText = 'UPDATE rebom.boms SET meta = $1, bom = $2, tags = $3, last_updated_date = NOW() WHERE uuid = $4 RETURNING *';
-      queryParams = [rebomOptions, replacementPushResult, bomInput.bomInput.tags, existingUuid];
-    }
-  } else {
-    // No existing BOM - INSERT new record
-    logger.info({ 
-      serialNumber,
-      bomVersion: rebomOptions.bomVersion,
-      uuid: newUuid
-    }, "Inserting new BOM (no existing record)");
-    
-    queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
-    queryParams = [newUuid, rebomOptions, pushResult, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
-  }
-  
-  // Step 6: Execute database operation
+  // Step 6: Insert. Every accepted upload is a new row now -- the only paths
+  // that reach here are a first upload and a version increment.
   logger.info({ 
-    queryType: queryText.startsWith('INSERT') ? 'INSERT' : 'UPDATE',
+    serialNumber,
+    bomVersion: rebomOptions.bomVersion,
+    uuid: newUuid,
+    latestVersion: latestBom?.meta?.bomVersion,
+    newRawDigest
+  }, latestBom ? "Inserting new version of existing BOM (version increment)" : "Inserting new BOM (no existing record)");
+
+  const queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
+  const queryParams = [newUuid, rebomOptions, pushResult, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
+  
+  // Step 7: Execute database operation
+  logger.info({ 
     serialNumber,
     bomVersion: rebomOptions.bomVersion,
     bomDigest: rebomOptions.bomDigest,
     augmented: AUGMENT_ON_STORAGE
-  }, "Executing database operation");
+  }, "Inserting BOM record");
 
   const queryRes = await runQuery(queryText, queryParams);
   const bomRecord = queryRes.rows[0];
   
   if (!bomRecord) {
     throw new BomStorageError('Failed to store BOM record', undefined, {
-      operation: queryText.startsWith('INSERT') ? 'INSERT' : 'UPDATE',
-      bomId: queryText.startsWith('INSERT') ? newUuid : latestBom?.uuid,
+      operation: 'INSERT',
+      bomId: newUuid,
       serialNumber
     });
   }
@@ -458,6 +437,8 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     // Store processed BOM digest for validation (converted CycloneDX is the processed version)
     mergedOptions.processedFileDigest = cycloneDxPushResult.fileSHA256Digest;
     mergedOptions.processedFileSize = cycloneDxPushResult.originalSize;
+    // Same reason as the CycloneDX path: the pointer is explicit on every new row.
+    mergedOptions.processedTag = convertedBomUuid;
     
     // Repository name is already in cycloneDxPushResult.ociRepositoryName
 
