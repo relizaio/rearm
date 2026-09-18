@@ -874,6 +874,52 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
  * so the history explains every artifact the row has ever pointed at rather
  * than starting mid-story.
  */
+/** A run that has not reported back in this long is not coming back. */
+const ABANDON_RUNNING_AFTER = '6 hours';
+
+/**
+ * Mark runs that started and never finished.
+ *
+ * Deliberately its own statement rather than folded into the reservation.
+ * Ageing is housekeeping: it does not need to be atomic with anything, it is
+ * idempotent, and it cannot change a sequence because it rewrites entries in
+ * place without adding or removing any. Keeping it out of the reservation
+ * leaves that statement as simple as its correctness argument needs it to be.
+ *
+ * The threshold is hours, not minutes, because two schedulers working the same
+ * row at once is a legitimate state -- a run is only abandoned when no plausible
+ * reading has it still alive.
+ */
+async function abandonStaleRuns(bomUuid: string): Promise<void> {
+  const queryText = `
+    UPDATE rebom.boms
+    SET meta = jsonb_set(meta, '{enrichments}', (
+          SELECT jsonb_agg(
+            CASE WHEN e->>'status' = 'RUNNING'
+                  AND (e->>'startedAt')::timestamptz < NOW() - INTERVAL '${ABANDON_RUNNING_AFTER}'
+                 THEN e || jsonb_build_object('status', 'ABANDONED',
+                        'error', 'run did not report back within ${ABANDON_RUNNING_AFTER}')
+                 ELSE e END)
+          FROM jsonb_array_elements(meta->'enrichments') e)),
+        last_updated_date = NOW()
+    WHERE uuid = $1
+      AND jsonb_typeof(meta->'enrichments') = 'array'
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(meta->'enrichments') e
+        WHERE e->>'status' = 'RUNNING'
+          AND (e->>'startedAt')::timestamptz < NOW() - INTERVAL '${ABANDON_RUNNING_AFTER}')
+  `;
+  try {
+    const res = await runQuery(queryText, [bomUuid]);
+    if (res.rowCount) {
+      logger.warn({ bomUuid }, 'Marked enrichment runs abandoned: they started and never reported back');
+    }
+  } catch (error) {
+    // Housekeeping must not stop the run it precedes.
+    logger.error({ bomUuid, error }, 'Could not age out stale enrichment runs');
+  }
+}
+
 export async function reserveEnrichmentRun(
   bomUuid: string,
   source: 'scheduler' | 'on-upload' | 'manual'
@@ -909,6 +955,12 @@ export async function reserveEnrichmentRun(
     SET meta = jsonb_set(meta, '{enrichments}',
           (${runsExpr}) || jsonb_build_object(
             'sequence', jsonb_array_length(${runsExpr}),
+            -- The tag is written NOW, not at close. A run that dies after its
+            -- push has still created an artifact, and if its name only appeared
+            -- on completion nothing would know that artifact exists -- which is
+            -- a hole in the one thing this history is for. Built from the same
+            -- length as the sequence so the two cannot disagree.
+            'tag', $1::text || '-e' || jsonb_array_length(${runsExpr})::text,
             'status', 'RUNNING',
             'startedAt', $2::text,
             'source', $3::text,
@@ -917,6 +969,7 @@ export async function reserveEnrichmentRun(
     WHERE uuid = $1
     RETURNING jsonb_array_length(meta->'enrichments') - 1 AS sequence
   `;
+  await abandonStaleRuns(bomUuid);
   const res = await runQuery(queryText, [bomUuid, new Date().toISOString(), source, ENRICHER_VERSION]);
   const sequence = res.rows[0]?.sequence;
   if (typeof sequence !== 'number') {
@@ -1137,9 +1190,17 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
       throw new OciStorageError('Re-enrichment OCI push succeeded but repository name is missing', 'push', bomUuid);
     }
     
-    // Pointer and history in one write; see the scheduler path.
-    await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
-      pushResult.ociRepositoryName, tag, sequence);
+    // Pointer and history in one write; see the scheduler path. If it throws,
+    // the artifact exists and the row still points elsewhere: close the entry
+    // FAILED so the history says so, and let the outer catch mark the run.
+    try {
+      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
+        pushResult.ociRepositoryName, tag, sequence);
+    } catch (error) {
+      await closeEnrichmentRun(bomUuid, sequence, {
+        status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
     
     logger.info({ bomUuid, tag }, 'Forced re-enrichment completed successfully');
     
@@ -1232,7 +1293,7 @@ async function reprocessSpdxBom(bomRecord: BomRecord, spdxUuid: string, org: str
  * <uuid>-e<n> with that entry still RUNNING, and the invariant retention will
  * read -- the pointer is the last COMPLETED entry -- would be quietly false.
  */
-async function updateEnrichmentStatusWithBom(
+export async function updateEnrichmentStatusWithBom(
   bomUuid: string,
   status: EnrichmentStatus,
   oasResponse: any,
@@ -1325,6 +1386,13 @@ async function updateEnrichmentStatusWithBom(
       logger.debug({ bomUuid, repositoryName }, 'Updated OCI repository name in bom field during enrichment');
     }
   } catch (error) {
+    // Rethrown, not swallowed. This write is what makes the pushed artifact the
+    // row's current one; if it fails, the artifact exists and nothing points at
+    // it. Swallowing meant the caller went on to log the run as completed
+    // successfully and to leave its history entry RUNNING for ever -- a false
+    // success and a stale record from one failed statement. The callers mark
+    // the run FAILED and close its entry.
     logger.error({ bomUuid, status, error }, 'Failed to update enrichment status with BOM');
+    throw error;
   }
 }

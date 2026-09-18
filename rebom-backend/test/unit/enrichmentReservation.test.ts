@@ -103,3 +103,60 @@ describe('enrichment sequence reservation under concurrency', () => {
         expect(entry1).toMatchObject({ sequence: 1, status: 'RUNNING', source: 'scheduler' });
     });
 });
+
+describe('what a reserved run leaves behind when it never finishes', () => {
+    const uuid = crypto.randomUUID();
+
+    beforeEach(async () => {
+        await runQuery(
+            `INSERT INTO rebom.boms (uuid, meta, bom, organization, source_format)
+             VALUES ($1, $2, $3, $4, 'CYCLONEDX')`,
+            [uuid,
+             { serialNumber: `urn:uuid:${crypto.randomUUID()}`, processedFileDigest: 'digest-0',
+               processedFileSize: 10 },
+             { ociRepositoryName: 'rebom-artifacts-2026-08' },
+             '00000000-0000-0000-0000-000000000000']
+        );
+    });
+
+    afterEach(async () => {
+        await runQuery('DELETE FROM rebom.boms WHERE uuid = $1', [uuid]);
+    });
+
+    it('names the artifact it may create before it tries to create it', async () => {
+        // A run that dies after its push has still written <uuid>-e<n>. If the
+        // tag were only recorded on completion, nothing would know that artifact
+        // exists and retention could not sweep it.
+        const sequence = await reserveEnrichmentRun(uuid, 'scheduler');
+        const res = await runQuery(`SELECT meta->'enrichments' AS runs FROM rebom.boms WHERE uuid = $1`, [uuid]);
+        const running = res.rows[0].runs.find((r: any) => r.status === 'RUNNING');
+        expect(running.tag).toBe(`${uuid}-e${sequence}`);
+    });
+
+    it('ages out a run that never reported back, and leaves a live one alone', async () => {
+        await runQuery(
+            `UPDATE rebom.boms SET meta = jsonb_set(meta, '{enrichments}', $2::jsonb) WHERE uuid = $1`,
+            [uuid, JSON.stringify([
+                { sequence: 0, tag: uuid, status: 'COMPLETED', source: 'on-upload' },
+                { sequence: 1, tag: `${uuid}-e1`, status: 'RUNNING', source: 'scheduler',
+                  startedAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString() },
+                { sequence: 2, tag: `${uuid}-e2`, status: 'RUNNING', source: 'scheduler',
+                  startedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString() }
+            ])]
+        );
+
+        const sequence = await reserveEnrichmentRun(uuid, 'manual');
+        expect(sequence).toBe(3);
+
+        const res = await runQuery(`SELECT meta->'enrichments' AS runs FROM rebom.boms WHERE uuid = $1`, [uuid]);
+        const runs = res.rows[0].runs;
+        expect(runs[1].status).toBe('ABANDONED');
+        expect(runs[1].error).toMatch(/did not report back/);
+        // Five minutes old: two schedulers on one row is a legitimate state, and
+        // this one may well still be pushing.
+        expect(runs[2].status).toBe('RUNNING');
+        expect(runs[3].status).toBe('RUNNING');
+        // Ageing rewrites entries in place; it must never change a sequence.
+        expect(runs.map((r: any) => r.sequence)).toEqual([0, 1, 2, 3]);
+    });
+});

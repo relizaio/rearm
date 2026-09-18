@@ -141,6 +141,7 @@ const typeDefs = gql`
     size: Int
     startedAt: String
     completedAt: String
+    """RUNNING, COMPLETED, FAILED, or ABANDONED when a run never reported back."""
     status: String
     error: String
     source: String

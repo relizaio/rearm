@@ -81,7 +81,8 @@ export type EnrichmentRun = {
     size?: number,
     startedAt?: string,
     completedAt?: string,
-    status: 'RUNNING' | 'COMPLETED' | 'FAILED',
+    // ABANDONED: started and never reported back; aged out by a later run.
+    status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'ABANDONED',
     error?: string | null,
     source?: 'scheduler' | 'on-upload' | 'manual',
     enricherVersion?: string
