@@ -238,8 +238,13 @@
                         @click="showAddComponentModal = true" title="Add Dependency" size="20" style="margin-left: 4px; vertical-align: middle;">
                         <CirclePlus />
                     </n-icon>
-                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable"
-                        @click="triggerAutoIntegrate" title="Trigger Auto Integrate" size="20" style="margin-left: 4px; vertical-align: middle;">
+                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED'" :class="autoIntegrateInFlight ? '' : 'clickable'"
+                        @click="triggerAutoIntegrate"
+                        :title="autoIntegrateInFlight ? 'Auto Integrate in progress...' : 'Trigger Auto Integrate'"
+                        size="20"
+                        :style="{ 'margin-left': '4px', 'vertical-align': 'middle',
+                                  opacity: autoIntegrateInFlight ? 0.5 : 1,
+                                  cursor: autoIntegrateInFlight ? 'not-allowed' : undefined }">
                         <TrendingUp />
                     </n-icon>
                 </p>
@@ -499,6 +504,7 @@ const selectNewVcsRepo = ref(false)
 
 
 const compareMode = ref(false)
+const autoIntegrateInFlight = ref(false)
 const comparisonCheckboxes: Ref<any> = ref({})
 const showReleaseComparisonModal = ref(false)
 
@@ -671,24 +677,80 @@ const createFsFromRelease = async function(){
 }
 
 async function triggerAutoIntegrate () {
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-            mutation autoIntegrateFeatureSet($branchUuid: ID!) {
-                autoIntegrateFeatureSet(branchUuid: $branchUuid) {
-                    uuid
-                    version
-                }
-            }`,
-        variables: { branchUuid: branchUuid.value },
-        fetchPolicy: 'no-cache'
-    })
-    const release = (resp.data as any)?.autoIntegrateFeatureSet
-    await onCreated()
-    if (release && release.version) {
-        notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
-        showBranchSettingsModal.value = false
-    } else {
-        notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+    // The mutation is not idempotent: autoIntegrateFeatureSetOnDemand gathers each dependency's
+    // latest release, checks whether a matching product release already exists, and creates one if
+    // not. That check-then-act takes no lock server-side, so two in-flight calls can both find
+    // nothing and both create a product release. The button is a plain icon with no built-in
+    // disabled state, so without this a double-click sends two mutations.
+    //
+    // This guard closes the double-click, NOT the race. It is per component instance: two tabs on
+    // the same branch, two operators, or any API caller still get two concurrent mutations and two
+    // product releases. Closing it properly needs a lock or an idempotency key server-side; this
+    // only stops the client from being the one to cause it.
+    if (autoIntegrateInFlight.value) return
+    autoIntegrateInFlight.value = true
+    try {
+        let resp: any
+        try {
+            resp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation autoIntegrateFeatureSet($branchUuid: ID!) {
+                        autoIntegrateFeatureSet(branchUuid: $branchUuid) {
+                            uuid
+                            version
+                        }
+                    }`,
+                variables: { branchUuid: branchUuid.value },
+                fetchPolicy: 'no-cache'
+            })
+        } catch (e: any) {
+            notify('error', 'Auto Integrate Failed', commonFunctions.extractGraphQLErrorMessage(e))
+            // A failure does not mean nothing happened: the mutation is not idempotent, and a
+            // timeout after the release was committed is indistinguishable here from one before
+            // it. Refresh the RELEASE LIST so it is already correct when this modal closes, rather
+            // than staying stale until something else fetches.
+            //
+            // Deliberately not onCreated(): that reassigns modifiedBranch from branchData, i.e.
+            // resets this modal's edit form. On the error path the modal stays open, so that would
+            // silently discard unsaved settings edits -- the very loss handleBranchSettingsClose
+            // exists to make the operator confirm. fetchReleases feeds releasesOfBranch, which the
+            // list renders from, so this refreshes what needs refreshing and nothing else.
+            //
+            // Best-effort: this fetches too, so whatever broke the mutation has usually broken it
+            // as well, and its failure must not swallow the report above.
+            await store.dispatch('fetchReleases', { branch: branchUuid.value }).catch(() => {})
+            return
+        }
+        // Past here the mutation SUCCEEDED. Only its own failure may be reported as an
+        // auto-integrate failure: telling an operator it failed when the release exists is exactly
+        // what makes them click again and create a second one. So the refresh below is best-effort
+        // and the outcome is reported either way.
+        const release = (resp.data as any)?.autoIntegrateFeatureSet
+        if (release && release.version) {
+            // A release was created and this modal is about to close, so the full
+            // refresh is free: nothing the operator is still looking at gets reset.
+            await onCreated().catch(() => {})
+            notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
+            showBranchSettingsModal.value = false
+        } else {
+            // Succeeded and created nothing -- usually because a matching product
+            // release already exists. The modal STAYS OPEN here, so onCreated is
+            // the wrong refresh: it reassigns modifiedBranch from branchData and
+            // silently reverts whatever the operator had typed into the form they
+            // are still sitting in, with none of the confirmation that closing the
+            // modal on unsaved edits gives them (handleBranchSettingsClose).
+            // Verified on the sandbox before this line existed: an edit made in the
+            // settings form vanished on a null result.
+            //
+            // The list can still be stale -- a null result often means something
+            // else created that release moments ago -- so refresh the RELEASES and
+            // leave the form alone, the same split the error path above makes.
+            await store.dispatch('fetchReleases', { branch: branchUuid.value }).catch(() => {})
+            notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+        }
+    } finally {
+        // finally, not after the notify: a failed mutation must not leave the button dead.
+        autoIntegrateInFlight.value = false
     }
 }
 
