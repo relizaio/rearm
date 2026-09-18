@@ -788,6 +788,13 @@ const singleReleaseDataNoParent = `
             keyFingerprint
             verifiedAt
         }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            detail
+        }
     }
     commitsDetails {
         uuid
