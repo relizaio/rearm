@@ -1,6 +1,26 @@
 <template>
     <div class="branchView" v-if="modifiedBranch && branchData && modifiedBranch.name && branchData.name && branchData.componentDetails && words.branchFirstUpper">
-        <h5>{{ words.branchFirstUpper }}: {{ branchData.name }}</h5>
+        <h5>
+            {{ words.branchFirstUpper }}: {{ branchData.name }}
+            <n-tooltip v-if="activeLock" trigger="hover" style="max-width: 460px;">
+                <template #trigger>
+                    <n-tag type="error" size="small" :bordered="false" style="margin-left: 8px; vertical-align: middle;">
+                        <template #icon><n-icon><Lock/></n-icon></template>
+                        locked
+                    </n-tag>
+                </template>
+                <div>{{ activeLock.reason }}</div>
+                <div style="margin-top: 6px;">
+                    No version can be assigned and no release created on this
+                    {{ words.branch }} until it is released, which needs
+                    {{ activeLock.effectiveLevel === 'ADMIN' ? 'an admin'
+                        : activeLock.effectiveLevel === 'HUMAN' ? 'a person' : 'any recognized principal' }}.
+                </div>
+                <div v-if="lockCauseCount" style="margin-top: 6px;">
+                    Waiting on {{ lockCauseCount }} {{ lockCauseCount === 1 ? 'cause' : 'causes' }}.
+                </div>
+            </n-tooltip>
+        </h5>
         <div class="branchControls">
             <div class="mainControls">
                 <n-icon v-if="isWritable" @click="showCreateReleaseModal = true" class="clickable" title="Add Release" size="24" style="margin-left: 4px;">
@@ -8,6 +28,10 @@
                 </n-icon>
                 <n-icon @click="openBranchSettings" class="clickable" :title="words.branchFirstUpper + ' Settings'" size="24" style="margin-left: 4px;">
                     <Tool />
+                </n-icon>
+                <n-icon v-if="activeLock && isAdmin" @click="releaseLockModalOpen = true" class="clickable"
+                    title="Release lock" size="24" style="margin-left: 4px;">
+                    <LockOpen />
                 </n-icon>
                 <n-icon @click="openNextVersionModal" class="clickable" title='Set Next Version' size="24" style="margin-left: 4px;">
                     <ArrowForward />
@@ -20,6 +44,39 @@
                 </n-icon>
             </div>
         </div>
+        <n-modal
+            v-model:show="releaseLockModalOpen"
+            title="Release lock"
+            preset="dialog"
+            style="width: 620px;"
+            :show-icon="false">
+            <n-form label-placement="top">
+                <p class="text-muted" v-if="activeLock">{{ activeLock.reason }}</p>
+                <n-alert v-if="activeLock && activeLock.droppedCauses > 0" type="warning"
+                    style="margin-bottom: 0.75rem; font-size: 13px;">
+                    This lock had more causes than it keeps ({{ activeLock.droppedCauses }} dropped), so it
+                    will not release itself however many are claimed. If those commits are still
+                    unaccounted for, the rule will lock this {{ words.branch }} again on the next build.
+                </n-alert>
+                <n-form-item label="Reason" required>
+                    <n-input v-model:value="releaseLockDraft.reason" placeholder="e.g. commits claimed"/>
+                </n-form-item>
+                <n-form-item>
+                    <n-checkbox v-model:checked="releaseLockDraft.override">
+                        Override — release without the requirement being met
+                    </n-checkbox>
+                    <template #feedback>
+                        Recorded on the attestation that releases the lock, so an override is never
+                        silent.
+                    </template>
+                </n-form-item>
+                <n-space>
+                    <n-button type="primary" :disabled="!releaseLockDraft.reason"
+                        @click="releaseBranchLock">Release</n-button>
+                    <n-button @click="releaseLockModalOpen = false">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
         <n-modal
             v-model:show="showCreateReleaseModal"
             title="Add New Release"
@@ -358,10 +415,10 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ComputedRef, computed, Ref, ref, h, watch, nextTick } from 'vue'
+import { ComputedRef, computed, Ref, reactive, ref, h, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
 import AddComponent from './AddComponent.vue'
 import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
@@ -372,7 +429,7 @@ import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
-import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh } from '@vicons/tabler'
+import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh, Lock, LockOpen } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
@@ -458,6 +515,42 @@ const originalBranch: Ref<any> = ref({})
 const customBranchVersionSchema = ref('')
 
 const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
+/**
+ * The active lock on this branch, if any. A branch lock refuses version assignment and release
+ * creation here while leaving the rest of the component working, so the page it applies to is the
+ * page that has to say so -- a build failing with "branch is locked" is otherwise the first anyone
+ * hears of it.
+ */
+const activeLock: ComputedRef<any> = computed((): any =>
+    (branchData.value?.locks || []).find((l: any) => l.status === 'ACTIVE') || null)
+
+const lockCauseCount: ComputedRef<number> = computed((): number => {
+    if (!activeLock.value) return 0
+    return (activeLock.value.causes || []).length + (activeLock.value.droppedCauses || 0)
+})
+
+const isAdmin: ComputedRef<boolean> = computed((): boolean =>
+    commonFunctions.isAdmin(orguuid, myUser))
+
+const releaseLockModalOpen = ref(false)
+const releaseLockDraft = reactive({ reason: '', override: false })
+
+const releaseBranchLock = async () => {
+    try {
+        await store.dispatch('releaseLock', {
+            orgUuid: branchData.value.org,
+            lockUuid: activeLock.value.uuid,
+            reason: releaseLockDraft.reason,
+            override: releaseLockDraft.override
+        })
+        notify('success', 'Released', 'Recorded as an attestation.')
+        releaseLockModalOpen.value = false
+        await store.dispatch('fetchBranch', branchUuid.value)
+    } catch (e: any) {
+        notify('error', 'Could not release', commonFunctions.extractGraphQLErrorMessage(e))
+    }
+}
 
 const isWritable : ComputedRef<boolean> = computed((): boolean => {
     if (commonFunctions.isWritable(orguuid, myUser, 'COMPONENT')) return true

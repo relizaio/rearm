@@ -1408,6 +1408,125 @@ const storeObject : any = {
             })
             return data.setPerspectiveActionGuards.actionGuards || []
         },
+        // --- Build integrity: locks, attestations, recognition ---------------------------
+        async fetchLocks (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query locks($orgUuid: ID!) {
+                        locks(orgUuid: $orgUuid) {
+                            uuid scope branch branchName component componentName status reason origin
+                            outputEvent droppedCauses unlockLevel attestationRequirement
+                            escalatedLevel effectiveLevel raisedAt releasedAt releaseAttestation
+                            causes { subjectType subjectUuid detail }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.locks || []
+        },
+        async fetchIntegrityInbox (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query integrityInbox($orgUuid: ID!) {
+                        integrityInbox(orgUuid: $orgUuid) {
+                            activeLocks {
+                                uuid scope branch branchName component componentName status reason
+                                origin droppedCauses unlockLevel attestationRequirement
+                                effectiveLevel raisedAt
+                                causes { subjectType subjectUuid detail }
+                            }
+                            escalatedLocks { uuid reason effectiveLevel componentName branchName }
+                            unrecognizedCommits {
+                                sourceCodeEntry commit component componentName detail claimState
+                            }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.integrityInbox
+        },
+        async fetchAttestations (context: any, payload: { orgUuid: string, subjectType: string, subjectUuid: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query attestations($orgUuid: ID!, $subjectType: AttestationSubjectType!, $subjectUuid: ID!) {
+                        attestations(orgUuid: $orgUuid, subjectType: $subjectType, subjectUuid: $subjectUuid) {
+                            uuid type verdict note actorType actorUuid agentSession override status
+                            revokeReason createdDate
+                            subjectRef { componentName commit version }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.attestations || []
+        },
+        async lockComponent (context: any, payload: { componentUuid: string, reason: string, unlockLevel?: string, attestationRequirement?: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation lockComponent($componentUuid: ID!, $reason: String!, $unlockLevel: UnlockLevel,
+                            $attestationRequirement: AttestationRequirement) {
+                        lockComponent(componentUuid: $componentUuid, reason: $reason,
+                                unlockLevel: $unlockLevel, attestationRequirement: $attestationRequirement) {
+                            uuid status reason
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.lockComponent
+        },
+        async lockBranch (context: any, payload: { branchUuid: string, reason: string, unlockLevel?: string, attestationRequirement?: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation lockBranch($branchUuid: ID!, $reason: String!, $unlockLevel: UnlockLevel,
+                            $attestationRequirement: AttestationRequirement) {
+                        lockBranch(branchUuid: $branchUuid, reason: $reason,
+                                unlockLevel: $unlockLevel, attestationRequirement: $attestationRequirement) {
+                            uuid status reason
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.lockBranch
+        },
+        async releaseLock (context: any, payload: { orgUuid: string, lockUuid: string, reason: string, override?: boolean }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseLock($orgUuid: ID!, $lockUuid: ID!, $reason: String!, $override: Boolean) {
+                        releaseLock(orgUuid: $orgUuid, lockUuid: $lockUuid, reason: $reason, override: $override) {
+                            uuid status releasedAt
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.releaseLock
+        },
+        async attest (context: any, payload: { subjectType: string, subjectUuid: string, verdict: string, note?: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation attest($subjectType: AttestationSubjectType!, $subjectUuid: ID!,
+                            $verdict: AttestationVerdict!, $note: String) {
+                        attest(subjectType: $subjectType, subjectUuid: $subjectUuid, verdict: $verdict, note: $note) {
+                            uuid verdict note actorType createdDate
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.attest
+        },
+        async revokeAttestation (context: any, payload: { uuid: string, reason: string }) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation revokeAttestation($uuid: ID!, $reason: String!) {
+                        revokeAttestation(uuid: $uuid, reason: $reason) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload
+            })
+            return data.revokeAttestation
+        },
         async fetchComponentActionGuards (context: any, componentUuid: NonNullable<string>) {
             const response = await graphqlClient.query({
                 query: gql`
