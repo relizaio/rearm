@@ -2268,6 +2268,26 @@ const storeObject : any = {
                 })
             })
         },
+        /**
+         * Ask a release's rules to look at it again (Pro only).
+         *
+         * Rules run when a release changes, so a promotion a guard withheld stays withheld while
+         * the reason clears elsewhere -- a dependency promoted, a lock released. Nothing about
+         * this release changed, so nothing re-evaluates it.
+         */
+        async reevaluateReleaseTriggers (context: any, releaseUuid: string) {
+            const { data } = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation reevaluateReleaseTriggers($release: ID!) {
+                        reevaluateReleaseTriggers(release: $release) {
+                            ${graphqlQueries.SingleReleaseGqlData}
+                        }
+                    }`,
+                variables: { release: releaseUuid }
+            })
+            context.commit('ADD_RELEASE', data.reevaluateReleaseTriggers)
+            return data.reevaluateReleaseTriggers
+        },
         async approveReleaseLegacy (context: any, approveProps: any) {
             return new Promise((resolve, reject) => {
                 let constructedApprovals: any = {} // no nulls
