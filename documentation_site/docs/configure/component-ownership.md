@@ -20,7 +20,12 @@ accountability is carried by a [team](./teams).
 ## Setting an owner
 
 Open a component, go to **Settings**, and use the **Owner** picker. You can
-name a [team](./teams) or an individual user.
+name a [team](./teams) or an individual user. The picker stages the change like
+every other setting on that panel: nothing is written until you press **Save
+Changes**, and **Reset Changes** discards it. Clearing the picker stages a
+*clear*, which hands the component back to whatever the org's
+[assignment rules](#assignment-rules) decide for it -- that is not the same as
+leaving it unowned.
 
 Prefer a **team**. An individual owner is valid and ReARM records it, but a
 person leaves, and only a team can be a notification target -- a user has no
@@ -29,8 +34,11 @@ deliver for a user-owned component.
 
 The picker offers active teams only, so an archived team cannot be chosen as a
 new owner. A component already owned by a team that was archived since keeps
-that owner on record -- it reports `DEGRADED` and stops receiving owner-routed
-notifications until you point it somewhere else.
+that owner on record and still shows it, labelled `(archived)` -- it reports
+`DEGRADED` and stops receiving owner-routed notifications until you point it
+somewhere else. An owner that no longer resolves at all -- a deleted user, say
+-- leaves the picker empty rather than showing a bare uuid; clearing is still
+offered, because a stored reference does exist.
 
 ## Ownership status
 

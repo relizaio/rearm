@@ -157,6 +157,15 @@ noisy -- worth remembering when a test produces nothing (see
 One event can affect several components with different owners; each owner team
 is resolved independently and every one of them is notified.
 
+::: tip A team can also subscribe itself
+Owner routing is the org-wide version: one subscription, every owner. The other
+direction is a single team asking to hear about its own components, configured
+on the team rather than here -- see
+[Notifying a team about what it owns](./teams#notifying-a-team-about-what-it-owns).
+Both can be in play at once, and then both deliver: dedup is per subscription,
+so an overlapping pair sends the team's channel two messages for one event.
+:::
+
 ## Duplicate delivery protection
 
 ReARM deduplicates deliveries to the same channel from the same subscription
