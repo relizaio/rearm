@@ -4,6 +4,9 @@
 
 package io.reliza.model;
 
+import java.util.Arrays;
+import java.util.List;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -29,4 +32,27 @@ public class RearmIdentifier {
 
 	@JsonProperty
 	private String idValue;
+
+	/**
+	 * Rejects identifiers whose value must come from a published vocabulary. Only
+	 * {@link RearmIdentifierType#SPECIFICATION} is constrained today; every other type
+	 * carries a value from somebody else's namespace (a purl, a CPE, a UDI, a compliance
+	 * document standard) and is taken as given.
+	 *
+	 * <p>Called on write, never on read: stored records are deserialized as they stand, so a
+	 * vocabulary that changes later cannot make existing data unreadable.
+	 *
+	 * @param identifiers the list about to be stored, may be null
+	 * @throws IllegalArgumentException naming the offending value and the allowed set
+	 */
+	public static void validateVocabulary(List<RearmIdentifier> identifiers) {
+		if (null == identifiers) return;
+		for (RearmIdentifier ri : identifiers) {
+			if (null == ri || RearmIdentifierType.SPECIFICATION != ri.getIdType()) continue;
+			if (null == RearmSpecificationType.fromValue(ri.getIdValue())) {
+				throw new IllegalArgumentException("Unknown SPECIFICATION identifier value '" + ri.getIdValue()
+						+ "'; expected one of " + Arrays.toString(RearmSpecificationType.values()));
+			}
+		}
+	}
 }

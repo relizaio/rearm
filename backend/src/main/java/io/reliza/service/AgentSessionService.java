@@ -16,6 +16,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.TableName;
@@ -451,8 +452,22 @@ public class AgentSessionService {
 	 * close-races-a-final-push) still records the SCE so the historical
 	 * attribution survives, but does NOT re-open the session — CLOSED
 	 * is terminal by design (§3.2).
+	 *
+	 * REQUIRES_NEW, never the caller's transaction. Both callers in
+	 * {@link SourceCodeEntryService} sit inside one addrelease request
+	 * that walks a whole commit list: the merge path runs in the
+	 * request-wide tx (connection A) and {@code createSourceCodeEntry}
+	 * runs REQUIRES_NEW (connection B). If this method joined A while
+	 * handling an already-registered commit, A would hold the session
+	 * row lock until the release committed; the next never-registered
+	 * commit on B would then wait for that lock while A's thread waits
+	 * for B to return -- a self-deadlock Postgres cannot detect, which
+	 * only ends on statement timeout and leaves A rollback-only
+	 * ({@code UnexpectedRollbackException}, whole release lost). On its
+	 * own connection the row lock is held for milliseconds and released
+	 * before the caller continues.
 	 */
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public AgentSessionData recordCommit(UUID sessionUuid, UUID sceUuid, WhoUpdated wu)
 			throws RelizaException {
 		if (sceUuid == null) throw new RelizaException("sceUuid is required");

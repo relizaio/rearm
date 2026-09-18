@@ -7,6 +7,8 @@ package io.reliza.service.oss;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import io.reliza.common.SchedulerGuard;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -61,6 +63,7 @@ public class OssAnalyticsMetricsService {
 		ZonedDateTime yesterday = ZonedDateTime.now().minusDays(1);
 
 		var orgs = organizationService.listAllOrganizationData();
+		Set<UUID> dailyFailures = new LinkedHashSet<>();
 		orgs.forEach(org -> {
 			if (org.getStatus() != StatusEnum.ARCHIVED &&
 					!CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(org.getUuid())) {
@@ -68,14 +71,18 @@ public class OssAnalyticsMetricsService {
 				// concurrent today-refresh tick on the seed insert) must not abort
 				// the whole nightly pass -- with the hot-recompute fallback gone,
 				// aborted orgs would show right-edge chart holes all day
-				try {
-					computeAndRecordAnalyticsMetricsForOrg(org.getUuid(), yesterday,
-							WhoUpdated.getAutoWhoUpdated(), true);
-				} catch (Exception e) {
-					log.error("daily analytics compute failed for org {} -- continuing with batch", org.getUuid(), e);
+				// Throwable, for the same reason as the change-driven tick below: an Error from
+				// one org's component graph must not end the nightly pass for the rest.
+				if (!SchedulerGuard.runIsolated("daily analytics org " + org.getUuid(), () ->
+						computeAndRecordAnalyticsMetricsForOrg(org.getUuid(), yesterday,
+								WhoUpdated.getAutoWhoUpdated(), true))) {
+					dailyFailures.add(org.getUuid());
 				}
 			}
 		});
+		if (!dailyFailures.isEmpty()) {
+			log.warn("daily analytics compute: {} org(s) failed ({})", dailyFailures.size(), dailyFailures);
+		}
 	}
 
 	/**
@@ -109,26 +116,35 @@ public class OssAnalyticsMetricsService {
 				.collect(Collectors.toSet());
 		int refreshed = 0;
 		int failed = 0;
+		Set<UUID> failedOrgs = new LinkedHashSet<>();
 		ZonedDateTime now = ZonedDateTime.now();
 		for (Map.Entry<UUID, OrgMetricsSignal> entry : currentSignals.entrySet()) {
 			UUID org = entry.getKey();
 			if (!eligibleOrgs.contains(org)) continue;
 			OrgMetricsSignal signalBeforeCompute = entry.getValue();
 			if (signalBeforeCompute.equals(todayAnalyticsSignals.get(org))) continue;
-			try {
-				computeAndRecordAnalyticsMetricsForOrg(org, now,
-						WhoUpdated.getAutoWhoUpdated(), false);
+			// Throwable, not Exception: a StackOverflowError from one organization's component
+			// graph used to escape here and end the tick for everyone behind it.
+			boolean ok = SchedulerGuard.runIsolated("today-analytics org " + org, () ->
+					computeAndRecordAnalyticsMetricsForOrg(org, now,
+							WhoUpdated.getAutoWhoUpdated(), false));
+			if (ok) {
 				todayAnalyticsSignals.put(org, signalBeforeCompute);
 				refreshed++;
-			} catch (Exception e) {
+			} else {
 				// keep the stale snapshot -> retried next tick
 				failed++;
-				log.error("today-analytics refresh failed for org {} -- continuing with batch", org, e);
+				failedOrgs.add(org);
 			}
 		}
-		if (refreshed > 0 || failed > 0) {
-			log.info("today-analytics refresh: {} org(s) recomputed, {} failed, {} ms",
-					refreshed, failed, System.currentTimeMillis() - startedAt);
+		if (failed > 0) {
+			// WARN, and naming them: this line was INFO, and an operator filtering INFO had no way
+			// to see that the same organizations had been failing every tick for ten hours.
+			log.warn("today-analytics refresh: {} org(s) recomputed, {} failed ({}), {} ms",
+					refreshed, failed, failedOrgs, System.currentTimeMillis() - startedAt);
+		} else if (refreshed > 0) {
+			log.info("today-analytics refresh: {} org(s) recomputed, {} ms",
+					refreshed, System.currentTimeMillis() - startedAt);
 		}
 	}
 

@@ -10,6 +10,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import io.reliza.service.ApiKeyService;
+import io.reliza.service.ApiTokenService;
+import io.reliza.service.CliSessionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
@@ -28,10 +31,12 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -42,6 +47,7 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -65,6 +71,12 @@ import jakarta.servlet.http.HttpServletResponse;
 @EnableTransactionManagement
 @EntityScan("io.reliza.model") 
 public class App {
+
+	@Autowired
+	private CliSessionService cliSessionService;
+
+	@Autowired
+	private io.reliza.service.FederatedTrustRuleService federatedTrustRuleService;
 	
 	private static final Logger log = LoggerFactory.getLogger(App.class);
 
@@ -183,18 +195,40 @@ public class App {
 				aud -> aud != null && aud.contains(expectedAudience));
 	}
 
+	/**
+	 * Security for machine-to-machine paths that authenticate every request themselves:
+	 * the programmatic GraphQL endpoint ({@link ProgrammaticGraphQlConfig#PATH}, API key
+	 * checked inside the resolvers) and the webhook intake (HMAC-SHA256 via
+	 * X-Hub-Signature-256, verified by the controller before any state mutation; GitHub can
+	 * carry no CSRF cookie anyway). The chain is stateless: no session is created, no CSRF
+	 * token is required, and the OAuth2 resource server does not run (a key caller never sees
+	 * a bearer-token 401 page). This is also where an API-key authentication filter belongs
+	 * once programmatic authorization is reworked to put a principal in the security context.
+	 *
+	 * <p>Deliberately NOT here: the artifact download endpoints under /api/programmatic/v1,
+	 * which accept a user JWT as well as a key and therefore need the bearer-token filter of
+	 * the browser chain below. /graphql keeps that chain unchanged.
+	 */
+	@Bean
+	@Order(1)
+	public SecurityFilterChain programmaticFilterChain(HttpSecurity http, ApiTokenService apiTokenService, ApiKeyService apiKeyService) throws Exception {
+		http
+			.securityMatcher(ProgrammaticGraphQlConfig.PATH, ProgrammaticTokenController.PATH, ProgrammaticSchemaController.PATH,
+					DeviceAuthorizationController.DEVICE_CODE_PATH, DeviceAuthorizationController.REVOKE_PATH, "/api/programmatic/v1/webhook/**")
+			.csrf(c -> c.disable())
+			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+			// bearer access tokens are verified here; Basic still passes through to the resolvers (deprecated)
+			.addFilterBefore(new ProgrammaticAuthenticationFilter(apiTokenService, apiKeyService, cliSessionService, federatedTrustRuleService), AuthorizationFilter.class)
+			.authorizeHttpRequests(authz -> authz.anyRequest().permitAll()); // per-operation auth in the resolvers
+		return http.build();
+	}
+
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter) throws Exception {
 	  http
 	  .csrf(c -> c
 			.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
 			.csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-			// Webhook intake is signature-authenticated (HMAC-SHA256 via
-			// X-Hub-Signature-256) — CSRF protection doesn't apply, and
-			// GitHub can't carry a CSRF cookie anyway. The path is opt-in
-			// and the controller verifies the signature before any state
-			// mutation.
-			.ignoringRequestMatchers("/api/programmatic/v1/webhook/**")
 	  )
 	  .oauth2ResourceServer(
 		    oauth2 -> oauth2.jwt(Customizer.withDefaults())

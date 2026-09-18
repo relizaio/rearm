@@ -158,6 +158,8 @@ public class CommonVariables {
 	public static final String CREATED_TYPE_FIELD = "createdType";
 	public static final String LAST_UPDATED_BY_FIELD = "lastUpdatedBy";
 	public static final String LAST_UPDATED_IP_ADDRESS_FIELD = "lastUpdatedIp";
+	/** the human behind a key-authenticated write (CLI browser login); absent for plain key calls */
+	public static final String LAST_UPDATED_ACTOR_FIELD = "lastUpdatedActor";
 	public static final String CREATED_DATE_FIELD = "createdDate";
 	public static final String ENVIRONMENT_FIELD = "environment";
 	public static final String OPTIONAL_RELEASES_FIELD = "optionalReleases";
@@ -510,6 +512,7 @@ public class CommonVariables {
 		VERSION_ASSIGNMENTS("version_assignments"),
 		VEX_STATEMENT_PROPOSAL("vex_statement_proposals"),
 		MITIGATION_ATTESTATION("mitigation_attestations"),
+		ATTESTATION("attestations"),
 		VULNERABILITY_RECORDS("vulnerability_records"),
 		VULN_ANALYSIS("vuln_analysis"),
 		PERSPECTIVE("perspectives"),
@@ -606,8 +609,59 @@ public class CommonVariables {
 		@Setter(AccessLevel.PRIVATE) private UUID orgUuid;
 		@Setter(AccessLevel.PRIVATE) private String keyOrder;
 		@Setter(AccessLevel.PRIVATE) private String remoteIp;
+		/**
+		 * Set when the caller presented a ReARM access token instead of the key secret: the
+		 * token was already verified against the stored key (signature, expiry, audience and
+		 * secret fingerprint), so isMatchingApiKey short-circuits to this uuid and apiKey stays null.
+		 */
+		@Setter(AccessLevel.PRIVATE) private UUID verifiedKeyUuid;
+		/** CLI browser login: the user who approved the session this token came from */
+		@Setter(AccessLevel.PRIVATE) private UUID actorUser;
+		/** Federated identity exchange: the rules that admitted the token and the external identity behind it */
+		@Setter(AccessLevel.PRIVATE) private FederatedContext federation;
+		/** Slot of the secret that matched (Basic) or that the access token was exchanged with (Bearer). */
+		private Integer matchedSecretSlot;
 		private AuthorizationStatus authStatus = AuthorizationStatus.FORBIDDEN;
 
+		/** Principal for a request authenticated by an access token issued for this key. */
+		public static AuthHeaderParse fromVerifiedKey(io.reliza.model.ApiKey ak, Integer slot, String ipAddr) {
+			ApiTypeEnum type = ak.getObjectType();
+			String apiKeyId = type + "__" + ak.getObjectUuid();
+			if (type == ApiTypeEnum.FREEFORM || (ak.getKeyOrder() != null && !ak.getKeyOrder().isEmpty())) {
+				apiKeyId = apiKeyId + "__ord__" + ak.getKeyOrder();
+			}
+			AuthHeaderParseBuilder b = AuthHeaderParse.builder().type(type).objUuid(ak.getObjectUuid())
+					.keyOrder(ak.getKeyOrder()).apiKeyId(apiKeyId).remoteIp(ipAddr).verifiedKeyUuid(ak.getUuid()).matchedSecretSlot(slot);
+			if (type == ApiTypeEnum.ORGANIZATION || type == ApiTypeEnum.ORGANIZATION_RW) b.orgUuid(ak.getOrg());
+			return b.build();
+		}
+
+		/** Principal for a CLI-session access token: the key, plus the user who logged in as the actor. */
+		public static AuthHeaderParse fromVerifiedSession(io.reliza.model.ApiKey ak, UUID actorUser, String ipAddr) {
+			AuthHeaderParse p = fromVerifiedKey(ak, null, ipAddr);
+			p.setActorUser(actorUser);
+			return p;
+		}
+
+
+		/** A federated exchange delivered this principal: a FEDERATED identity row or a FREEFORM key a rule binds to. */
+		public static AuthHeaderParse fromVerifiedFederation(io.reliza.model.ApiKey ak, FederatedContext federation, String ipAddr) {
+			AuthHeaderParse p = fromVerifiedKey(ak, null, ipAddr);
+			p.setFederation(federation);
+			return p;
+		}
+		/** FREEFORM and USER keys carry their own permission set (USER additionally clamped by the owner's); FEDERATED rows compute theirs from the trust rules. */
+		public boolean isRbacKey() {
+			return type == ApiTypeEnum.FREEFORM || type == ApiTypeEnum.USER || type == ApiTypeEnum.FEDERATED;
+		}
+		/** The access token came from a federated exchange (a FEDERATED identity row, or a Free Form key a rule binds to). */
+		public boolean isFederated() {
+			return federation != null;
+		}
+		/** A FEDERATED identity row acting through a template rule: permissions computed at check time, creation through its own gate. */
+		public boolean isFederatedIdentity() {
+			return federation != null && type == ApiTypeEnum.FEDERATED;
+		}
 
 		public static AuthHeaderParse parseAuthHeader(HttpHeaders headers, String ipAddr) {
 			final String authorization = headers.getFirst(HttpHeaders.AUTHORIZATION);
@@ -670,6 +724,14 @@ public class CommonVariables {
 		
 	}
 	
+	/**
+	 * The external identity a federated access token carries: which rules admitted it and the
+	 * provider claims kept for authorization (repository) and provenance (ref, sha, run, actor).
+	 */
+	public record FederatedContext(List<UUID> ruleUuids, String provider, String issuer, String owner, String repository,
+			String repositoryUri, String ref, String sha, String workflowRef, String environment, String event,
+			String actor, String runId) {}
+
 	public enum CallType {
 		ADMIN,
 		GLOBAL_ADMIN,

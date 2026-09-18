@@ -17,7 +17,7 @@ import io.reliza.model.dto.UpdateStatus;
  * diff produces, flattened for the notification surface.
  *
  * <p>{@code componentType} reuses the existing {@link ComponentType}
- * ({@code PRODUCT} renders as "Bundle", {@code COMPONENT} as "Project" in the
+ * ({@code PRODUCT} renders as "Product", {@code COMPONENT} as "Component" in the
  * customer-facing samples) rather than a new enum. {@code version} is the settled
  * (new) version, populated on a deployed item; {@code fromVersion} is the prior
  * version when this was an update (null on first deploy / undeploy), so formatters

@@ -3,13 +3,19 @@
 */
 package io.reliza.ws;
 
+import io.reliza.service.DeviceLifecycleHook;
+
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -22,7 +28,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -36,11 +42,24 @@ import graphql.execution.DataFetcherResult;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ArtifactSbomComponent;
 import io.reliza.model.ComponentData;
+import io.reliza.model.DeviceLifecycle;
+import io.reliza.model.DeviceSupportRisk;
+import io.reliza.model.LevelOfSupport;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SbomComponentPage;
+import io.reliza.model.SupportAttestationFilter;
+import io.reliza.model.SupportAttestationRequest;
+import io.reliza.model.SupportBulkResult;
+import io.reliza.model.SupportData;
+import io.reliza.model.SupportMilestoneFact;
+import io.reliza.model.SupportMilestoneType;
+import io.reliza.model.SupportParty;
+import io.reliza.model.SupportState;
 import io.reliza.model.SupportStatus;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -49,6 +68,7 @@ import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.SbomComponentService;
+import io.reliza.service.SupportInjectionService;
 import io.reliza.service.SbomComponentService.ComponentPurlToSbom;
 import io.reliza.service.SbomComponentService.SbomComponentSearchQuery;
 import io.reliza.service.SharedReleaseService;
@@ -72,10 +92,27 @@ public class SbomComponentDataFetcher {
 	private AuthorizationService authorizationService;
 
 	@Autowired
+	private SupportInjectionService supportInjectionService;
+
+	/** Enough to fill a screen. */
+	private static final int DEFAULT_FLEET_PAGE_SIZE = 50;
+
+	/**
+	 * Caps the RESPONSE, not the work: the service evaluates the whole in-field fleet per
+	 * request (memoised per shipment / release / site) so it can order at-risk first, and
+	 * this bounds how much of that comes back in one page.
+	 */
+	private static final int MAX_FLEET_PAGE_SIZE = 200;
+
+	@Autowired
 	private SharedReleaseService sharedReleaseService;
 
 	@Autowired
 	private UserService userService;
+
+	// Optional: the implementation is Pro-side, and CE has no devices.
+	@Autowired(required = false)
+	private DeviceLifecycleHook deviceLifecycleHook;
 
 	@Autowired
 	private SbomComponentService sbomComponentService;
@@ -107,7 +144,14 @@ public class SbomComponentDataFetcher {
 	private record ReleaseGraphContext(
 			Map<UUID, ReleaseSbomComponent> rowByComponentUuid,
 			Map<UUID, SbomComponent> componentByUuid,
-			Map<UUID, List<Map<String, Object>>> forwardEdgesBySource) {}
+			// Per-component support attestations, bulk-loaded once for the whole release list
+			// (never per component) -- see SbomComponentService.findSupportByComponentIds.
+			Map<UUID, SupportData> supportByComponentUuid,
+			Map<UUID, List<Map<String, Object>>> forwardEdgesBySource,
+			// The enclosing device's support window for the per-component DeviceSupportRisk
+			// derivation, resolved from the PRODUCT COMPONENT (D7) rather than from the
+			// release's own eos/eol; null when no window is declared.
+			DeviceLifecycle deviceLifecycle) {}
 
 	private static final Comparator<Map<String, Object>> EDGE_SORTER = (a, b) -> {
 		String ta = (String) a.get("targetCanonicalPurl");
@@ -126,6 +170,28 @@ public class SbomComponentDataFetcher {
 	private record ReleaseGraphLoad(List<Map<String, Object>> dtos, ReleaseGraphContext ctx) {}
 
 	/**
+	 * The device support window for a release's SBOM view, gated to PRODUCT (device) releases.
+	 * A plain component/library declares no device window, so the risk resolves to UNKNOWN there.
+	 * lifecycle, not a device horizon, so the DeviceSupportRisk concept does not apply and this
+	 * returns null (every component then resolves to {@code UNKNOWN}). Null too when the device
+	 * declares no support window.
+	 */
+	/**
+	 * The device window for a release, from {@link DeviceLifecycleResolver} (D7).
+	 *
+	 * <p>Was a hand-rolled read of the release's own {@code eos}/{@code eol} behind a
+	 * PRODUCT-type check. Those dates are release lifecycle for TEA/CLE and never were the
+	 * device window; the window is declared on the product component. The PRODUCT check is
+	 * gone with them -- a non-device component simply declares no window, so there is
+	 * nothing left for the check to prevent.
+	 */
+	private DeviceLifecycle deviceLifecycleFor(Optional<ReleaseData> ord) {
+		// Absent in CE, which has no devices: the field answers null rather than a made-up window.
+		if (null == deviceLifecycleHook) return null;
+		return ord.map(deviceLifecycleHook::forRelease).orElse(null);
+	}
+
+	/**
 	 * Build the per-request graph state used by both the full-release query
 	 * and the single-component graph query. Loads the release's rows once,
 	 * bulk-fetches every {@code sbom_components} row referenced by any row
@@ -133,8 +199,28 @@ public class SbomComponentDataFetcher {
 	 * {@code parents} into a forward-edge map keyed by source uuid so the
 	 * downstream field resolvers are O(1) lookups instead of N+1 queries.
 	 */
-	private ReleaseGraphLoad loadReleaseGraph(UUID releaseUuid, UUID orgUuid) {
-		List<ReleaseSbomComponent> rows = sbomComponentService.listReleaseSbomComponents(releaseUuid);
+	private ReleaseGraphLoad loadReleaseGraph(UUID releaseUuid, UUID orgUuid, DeviceLifecycle deviceLifecycle) {
+		return loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycle, null, null);
+	}
+
+	/**
+	 * @param restrictTo when non-null, load and hydrate ONLY these components. The two
+	 *        hydration calls below are keyed by component id, so narrowing here is what
+	 *        makes a page cost a page rather than a BOM. Both edge maps are then built from
+	 *        the retained rows only, so on a restricted load ALL THREE graph fields are
+	 *        page-scoped: {@code dependencies} (via {@code forwardEdgesBySource}),
+	 *        {@code dependedOnBy} and {@code ancestors} (both via
+	 *        {@code rowByComponentUuid}). That is why the graph view keeps using the
+	 *        unrestricted call, and why the paged query's schema comment tells clients not
+	 *        to select those fields.
+	 * @param preResolved artifact rows the caller already resolved, to avoid resolving the
+	 *        release a second time; null to resolve here.
+	 */
+	private ReleaseGraphLoad loadReleaseGraph(UUID releaseUuid, UUID orgUuid,
+			DeviceLifecycle deviceLifecycle, Set<UUID> restrictTo,
+			List<ArtifactSbomComponent> preResolved) {
+		List<ReleaseSbomComponent> rows =
+				sbomComponentService.listReleaseSbomComponents(releaseUuid, restrictTo, preResolved);
 
 		Set<UUID> referencedComponentIds = new HashSet<>();
 		for (ReleaseSbomComponent row : rows) {
@@ -150,6 +236,8 @@ public class SbomComponentDataFetcher {
 		Map<UUID, SbomComponent> componentByUuid = orgUuid == null
 				? Map.of()
 				: sbomComponentService.findSbomComponentsByIds(referencedComponentIds, orgUuid);
+		Map<UUID, SupportData> supportByComponentUuid =
+				sbomComponentService.findSupportByComponentIds(orgUuid, componentByUuid.keySet());
 
 		Map<UUID, ReleaseSbomComponent> rowByComponentUuid = new HashMap<>(rows.size() * 2);
 		for (ReleaseSbomComponent row : rows) {
@@ -180,7 +268,7 @@ public class SbomComponentDataFetcher {
 		}
 
 		ReleaseGraphContext ctx = new ReleaseGraphContext(
-				rowByComponentUuid, componentByUuid, forwardEdgesBySource);
+				rowByComponentUuid, componentByUuid, supportByComponentUuid, forwardEdgesBySource, deviceLifecycle);
 		List<Map<String, Object>> dtos = rows.stream()
 				.map(SbomComponentDataFetcher::toDto)
 				.toList();
@@ -197,14 +285,95 @@ public class SbomComponentDataFetcher {
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(
 				oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE,
-				releaseUuid, List.of(ro), CallType.READ);
+				releaseUuid, Collections.singletonList(ro), CallType.READ);
 
 		UUID orgUuid = ord.map(ReleaseData::getOrg).orElse(null);
-		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid);
+		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord));
 		return DataFetcherResult.<List<Map<String, Object>>>newResult()
 				.data(load.dtos())
 				.localContext(load.ctx())
 				.build();
+	}
+
+	/**
+	 * Paged, filtered sibling of {@code getReleaseSbomComponents}, for the support
+	 * attestation table.
+	 *
+	 * <p>The id set is sliced in SQL and only the page is hydrated. The slice is a KEYSET
+	 * cursor over (canonical_purl, uuid), applied in the same statement as the ordering, so
+	 * a walk visits every row exactly once even while the caller is attesting rows out of
+	 * the UNATTESTED set as it goes. The order is then reimposed on the merged rows below,
+	 * which come back through a HashMap whose iteration order would not survive a second
+	 * request.
+	 *
+	 * <p>The coverage gauge is NOT recomputed here. It is release-scoped by design and the
+	 * page must not narrow it: an operator paging through the undisclosed components would
+	 * otherwise watch the number they are working to close shrink on every click.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "getReleaseSbomComponentsPage")
+	public DataFetcherResult<Map<String, Object>> getReleaseSbomComponentsPage(
+			@InputArgument("releaseUuid") UUID releaseUuid,
+			@InputArgument("attestation") SupportAttestationFilter attestation,
+			@InputArgument("search") String search,
+			@InputArgument("limit") Integer limit,
+			@InputArgument("after") UUID after) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(
+				oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE,
+				releaseUuid, Collections.singletonList(ro), CallType.READ);
+
+		UUID orgUuid = ord.map(ReleaseData::getOrg).orElse(null);
+		if (null == orgUuid) {
+			return DataFetcherResult.<Map<String, Object>>newResult()
+					.data(pageDto(List.of(), 0L, DEFAULT_PAGE_LIMIT, null, false))
+					.build();
+		}
+		SbomComponentPage page = sbomComponentService.listReleaseSbomComponentPage(
+				orgUuid, releaseUuid, attestation, search,
+				null == limit ? DEFAULT_PAGE_LIMIT : limit, after);
+
+		// LinkedHashSet, not the list: the restriction is a membership test, but the ORDER
+		// comes from the SQL and has to be reimposed on the merged rows below, which come
+		// back grouped by a map rather than in query order.
+		Set<UUID> pageIds = new LinkedHashSet<>(page.componentUuids());
+		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord), pageIds,
+				page.resolvedArtifactRows());
+		Map<UUID, Map<String, Object>> dtoByComponent = new HashMap<>();
+		for (Map<String, Object> dto : load.dtos()) {
+			dtoByComponent.put((UUID) dto.get("sbomComponentUuid"), dto);
+		}
+		List<Map<String, Object>> ordered = new ArrayList<>(pageIds.size());
+		for (UUID id : page.componentUuids()) {
+			Map<String, Object> dto = dtoByComponent.get(id);
+			if (dto != null) ordered.add(dto);
+		}
+		return DataFetcherResult.<Map<String, Object>>newResult()
+				.data(pageDto(ordered, page.totalCount(), page.limit(), page.endCursor(),
+						page.hasMore()))
+				.localContext(load.ctx())
+				.build();
+	}
+
+	/** Default page size when the caller does not ask. */
+	private static final int DEFAULT_PAGE_LIMIT = 50;
+
+
+	private static Map<String, Object> pageDto(List<Map<String, Object>> items, long totalCount,
+			int limit, UUID endCursor, boolean hasMore) {
+		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("items", items);
+		// Cast to int to match the sibling gauge resolver, which does the same for a GraphQL
+		// Int field. graphql-java coerces an in-range Long anyway; the point is that one file
+		// should not do it two ways.
+		dto.put("totalCount", (int) totalCount);
+		dto.put("limit", limit);
+		dto.put("endCursor", endCursor);
+		dto.put("hasMore", hasMore);
+		return dto;
 	}
 
 	/**
@@ -232,10 +401,10 @@ public class SbomComponentDataFetcher {
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(
 				oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE,
-				releaseUuid, List.of(ro), CallType.READ);
+				releaseUuid, Collections.singletonList(ro), CallType.READ);
 
 		UUID orgUuid = ord.map(ReleaseData::getOrg).orElse(null);
-		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid);
+		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord));
 		ReleaseSbomComponent target = load.ctx().rowByComponentUuid().get(sbomComponentUuid);
 		if (target == null) {
 			return DataFetcherResult.<Map<String, Object>>newResult()
@@ -268,7 +437,7 @@ public class SbomComponentDataFetcher {
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(
 				oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE,
-				releaseUuid, List.of(ro), CallType.WRITE);
+				releaseUuid, Collections.singletonList(ro), CallType.WRITE);
 		sbomComponentService.forceReconcileWithDeps(releaseUuid);
 		return true;
 	}
@@ -291,11 +460,11 @@ public class SbomComponentDataFetcher {
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		final Set<UUID> perspectiveComponentUuids;
 		if (null == perspectiveUuid) {
-			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
 			perspectiveComponentUuids = null;
 		} else {
 			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).orElseThrow();
-			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, Arrays.asList(ro, pd), CallType.READ);
 			perspectiveComponentUuids = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
 					.map(ComponentData::getUuid)
 					.collect(Collectors.toSet());
@@ -329,10 +498,10 @@ public class SbomComponentDataFetcher {
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		if (null == perspectiveUuid) {
-			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.ESSENTIAL_READ);
 		} else {
 			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).orElseThrow();
-			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.ESSENTIAL_READ);
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, Arrays.asList(ro, pd), CallType.ESSENTIAL_READ);
 		}
 		List<SbomComponentSearchQuery> searchQueries = queries.stream()
 				.map(q -> new SbomComponentSearchQuery(q.get("name"), q.get("version")))
@@ -356,7 +525,7 @@ public class SbomComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.ESSENTIAL_READ);
 		return sbomComponentService.searchSbomComponentByPurl(purl, orgUuid);
 	}
 
@@ -368,13 +537,146 @@ public class SbomComponentDataFetcher {
 	 * status is computed on read, not set here. Retries a concurrent-reconcile
 	 * optimistic-lock conflict a bounded number of times.
 	 */
+	/**
+	 * FDA-Readiness-1: attest MANY components in one pass. Same authorization shape as the
+	 * single-component mutation -- the org is derived from the loaded components, never from
+	 * client input -- and every component must belong to it.
+	 *
+	 * <p>Returns per-component outcomes rather than a count, and does NOT throw when an
+	 * individual component is skipped or rejected: that is the point of skip-and-report, and
+	 * a caller needs the list to show which rows need attention.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "bulkSetSbomComponentSupport")
+	public Map<String, Object> bulkSetSbomComponentSupport(
+			@InputArgument("sbomComponentUuids") List<UUID> sbomComponentUuids,
+			@InputArgument("levelOfSupport") LevelOfSupport levelOfSupport,
+			@InputArgument("justification") String justification,
+			@InputArgument("assessedAt") String assessedAt,
+			@InputArgument("endOfGuaranteedSupportDate") String endOfGuaranteedSupportDate,
+			@InputArgument("endOfSupportDate") String endOfSupportDate,
+			@InputArgument("endOfLifeDate") String endOfLifeDate,
+			@InputArgument("supportNotes") String supportNotes,
+			@InputArgument("supportParty") SupportParty supportParty,
+			@InputArgument("reason") String reason,
+			@InputArgument("batchId") UUID batchId) throws RelizaException {
+		// Minted here, once, BEFORE the empty-input return, so every response carries the same
+		// id the write used and there is exactly one place this value comes from.
+		//
+		// Server-ISSUED, and deliberately not server-ENFORCED. The server generates the id; the
+		// intended client use is to echo back the one it was given, which is how batches 2..n of
+		// a paged sweep join the first batch's id. But the argument is taken verbatim and NOT
+		// validated: a scripted caller can send an arbitrary or repeated uuid and the audit rows
+		// will carry it, asserting "these writes were one act" about writes that were not.
+		//
+		// Not validated because the obvious check makes the feature wrong. Requiring a supplied
+		// id to already name rows in this org would reject the legitimate case where the first
+		// batch of a paged sweep applied NOTHING -- every component came back SKIPPED_ATTESTED,
+		// so no audit row exists to point at -- and batch two would then be refused for echoing
+		// exactly what it was told to echo. A recency or same-user binding has the same shape.
+		//
+		// The exposure is bounded to audit fidelity WITHIN one org: the batch read is org-scoped
+		// (see SbomComponentSupportAuditRepository), so a borrowed id cannot reach another
+		// tenant's rows, and a caller who muddies their own audit trail is already the party the
+		// trail is about. If that trade stops being acceptable, the fix is a server-issued id
+		// with a short server-side TTL, not a lookup.
+		UUID effectiveBatchId = (null == batchId) ? UUID.randomUUID() : batchId;
+		if (null == sbomComponentUuids || sbomComponentUuids.isEmpty()) {
+			return bulkDto(List.of(), effectiveBatchId);
+		}
+		// Bounded BEFORE anything touches the database, and before authorization, because the
+		// cost this bounds is incurred by the request existing at all. RateLimitingFilter
+		// charges ONE TOKEN PER REQUEST, not per item, so without this a single 100k-id
+		// mutation costs a caller exactly what a 1-id mutation costs while occupying a
+		// connection long enough to starve the pool for the whole tenant. Per-item rate
+		// limiting is deliberately NOT the answer -- the cap bounds the amplification
+		// factor, which is the actual problem.
+		//
+		// Our own client batches at 200, so it never approaches this; a caller who does is
+		// scripting against the API directly and gets a named error rather than a timeout.
+		if (sbomComponentUuids.size() > SbomComponentService.BULK_SUPPORT_MAX_IDS) {
+			throw new RelizaException("a bulk support attestation is limited to "
+					+ SbomComponentService.BULK_SUPPORT_MAX_IDS + " components per call; " + sbomComponentUuids.size()
+					+ " were supplied. Split the sweep into batches and pass the batchId"
+					+ " returned by the first call so they stay one correlated action.");
+		}
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+
+		// Org comes from the FIRST component and every other is then required to match, so a
+		// caller cannot smuggle a foreign component into an authorized batch and have it
+		// written under someone else's org.
+		SbomComponent first = sbomComponentService.getSbomComponent(sbomComponentUuids.get(0))
+				.orElseThrow(() -> new RelizaException("sbom component not found"));
+		UUID orgUuid = first.getOrg();
+		RelizaObject ro = getOrganizationService.getOrganizationData(orgUuid)
+				.orElseThrow(() -> new RelizaException("organization not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
+
+		// state and clearMilestones are deliberately absent from this mutation -- see the
+		// schema comment for why neither could ever succeed on a bulk write.
+		SupportAttestationRequest request = new SupportAttestationRequest(
+				levelOfSupport, null, supportParty, justification, parseAssessedAt(assessedAt),
+				parseIsoDate(endOfGuaranteedSupportDate, "endOfGuaranteedSupportDate"),
+				parseIsoDate(endOfSupportDate, "endOfSupportDate"),
+				parseIsoDate(endOfLifeDate, "endOfLifeDate"),
+				supportNotes, null, reason);
+
+		return bulkDto(sbomComponentService.bulkSetSbomComponentSupport(
+				orgUuid, sbomComponentUuids, request, oud.get().getUuid(), effectiveBatchId),
+				effectiveBatchId);
+	}
+
+	/**
+	 * The bulk response: the per-item list plus counts derived FROM that list.
+	 *
+	 * <p>Derived, not tallied alongside the loop, so a client that renders the summary and a
+	 * client that iterates the results cannot disagree about the same run.
+	 */
+	private static Map<String, Object> bulkDto(List<SupportBulkResult> results, UUID batchId) {
+		List<Map<String, Object>> items = new ArrayList<>(results.size());
+		int applied = 0;
+		int skipped = 0;
+		int failed = 0;
+		for (SupportBulkResult r : results) {
+			Map<String, Object> dto = new LinkedHashMap<>();
+			dto.put("sbomComponentUuid", r.sbomComponentUuid());
+			dto.put("outcome", r.outcome().name());
+			dto.put("message", r.message());
+			items.add(dto);
+			switch (r.outcome()) {
+				case APPLIED -> applied++;
+				case SKIPPED_ROOT, SKIPPED_ATTESTED -> skipped++;
+				case FAILED -> failed++;
+			}
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("results", items);
+		out.put("appliedCount", applied);
+		out.put("skippedCount", skipped);
+		out.put("failedCount", failed);
+		// Non-null on every response, including the empty one, so a paged client can always
+		// echo it back rather than having to decide whether it got one.
+		out.put("batchId", batchId);
+		return out;
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "setSbomComponentSupport")
 	public Map<String, Object> setSbomComponentSupport(
 			@InputArgument("sbomComponentUuid") UUID sbomComponentUuid,
+			@InputArgument("levelOfSupport") LevelOfSupport levelOfSupport,
+			@InputArgument("justification") String justification,
+			@InputArgument("assessedAt") String assessedAt,
+			@InputArgument("state") SupportState state,
+			@InputArgument("endOfGuaranteedSupportDate") String endOfGuaranteedSupportDate,
 			@InputArgument("endOfSupportDate") String endOfSupportDate,
 			@InputArgument("endOfLifeDate") String endOfLifeDate,
-			@InputArgument("supportNotes") String supportNotes) throws RelizaException {
+			@InputArgument("supportNotes") String supportNotes,
+			@InputArgument("supportParty") SupportParty supportParty,
+			@InputArgument("clearMilestones") List<SupportMilestoneType> clearMilestones,
+			@InputArgument("reason") String reason) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		SbomComponent sc = sbomComponentService.getSbomComponent(sbomComponentUuid)
@@ -385,23 +687,42 @@ public class SbomComponentDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
 
+		LocalDate eogs = parseIsoDate(endOfGuaranteedSupportDate, "endOfGuaranteedSupportDate");
 		LocalDate eos = parseIsoDate(endOfSupportDate, "endOfSupportDate");
 		LocalDate eol = parseIsoDate(endOfLifeDate, "endOfLifeDate");
-		if (eos != null && eol != null && eos.isAfter(eol)) {
-			throw new RelizaException("endOfSupportDate must not be after endOfLifeDate");
-		}
 		UUID assertedBy = oud.get().getUuid();
-		// Bounded retry against a concurrent-reconcile optimistic-lock conflict.
-		for (int attempt = 0; attempt < 3; attempt++) {
-			try {
-				SbomComponent updated = sbomComponentService.setSbomComponentSupport(
-						sbomComponentUuid, eos, eol, supportNotes, assertedBy);
-				return toComponentDto(updated);
-			} catch (OptimisticLockingFailureException ole) {
-				// retry
-			}
-		}
-		throw new RelizaException("concurrent update in progress, please retry");
+		// CALLER-SUPPLIED assessment instant: when the human actually assessed, which is not
+		// necessarily when they filed it. Null falls back to now inside the service. Rejected
+		// loudly if malformed rather than silently defaulted -- a wrong date on a regulatory
+		// record is worse than a refused write.
+		ZonedDateTime assessed = parseAssessedAt(assessedAt);
+		SupportAttestationRequest request = new SupportAttestationRequest(
+				levelOfSupport, state, supportParty, justification, assessed, eogs, eos, eol,
+				supportNotes,
+				// Normalisation (null/empty -> Set.of(), defensive copy) is the compact
+				// constructor's job; doing it here too would be a second place to keep right.
+				null == clearMilestones ? null : Set.copyOf(clearMilestones),
+				reason);
+		// The bounded retry against a concurrent write to the same component lives in the
+		// SERVICE now, not here. It has to: retrying without discarding the persistence
+		// context poisoned by the failed flush makes every attempt fail identically, and this
+		// layer has no EntityManager to discard it with. See
+		// setSbomComponentSupportWithRetry, and t20260907-044617-29802 for how that was
+		// established without a concurrency harness.
+		//
+		// The date-ordering check runs inside the service against the EFFECTIVE dates --
+		// staged this call plus whatever is already stored for an untouched milestone -- so it
+		// is re-validated on each attempt against the latest row.
+		sbomComponentService.setSbomComponentSupportWithRetry(sbomComponentUuid, request, assertedBy);
+		SbomComponent updated = sbomComponentService.getSbomComponent(sbomComponentUuid)
+				.orElseThrow(() -> new RelizaException("sbom component not found"));
+		// Mutation response is org-scoped (no enclosing release) -> no device-EOL anchor;
+		// deviceSupportRisk resolves to UNKNOWN. The release-scoped list query (which the
+		// client refetches after save) carries the real flag.
+		return toComponentDto(updated,
+				sbomComponentService.findSupportByComponentIds(orgUuid, Set.of(sbomComponentUuid))
+						.get(sbomComponentUuid),
+				null);
 	}
 
 	/**
@@ -411,7 +732,8 @@ public class SbomComponentDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "sbomComponentSupportCoverage")
 	public Map<String, Object> sbomComponentSupportCoverage(
-			@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("releaseUuid") UUID releaseUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		// orgUuid is client-supplied: a non-existent id must not reach List.of(null)
@@ -419,20 +741,50 @@ public class SbomComponentDataFetcher {
 		RelizaObject ro = getOrganizationService.getOrganizationData(orgUuid)
 				.orElseThrow(() -> new RelizaException("organization not found"));
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
-		SbomComponentService.SupportCoverage cov = sbomComponentService.getSupportCoverage(orgUuid);
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
+		// The release is CLIENT-SUPPLIED, so it must be proven to belong to the org the caller
+		// was just authorized for. Without this the query answers 0/0 for another org's
+		// release -- the org filter in the count queries means nothing leaks, but a valid
+		// release reported as empty is a confusing answer to a question that should have been
+		// refused. Fail closed and say why.
+		if (null != releaseUuid) {
+			UUID releaseOrg = sharedReleaseService.getReleaseData(releaseUuid)
+					.map(ReleaseData::getOrg).orElse(null);
+			if (!orgUuid.equals(releaseOrg)) {
+				throw new RelizaException("release not found in this organization: " + releaseUuid);
+			}
+		}
+		SbomComponentService.SupportCoverage cov =
+				sbomComponentService.getSupportCoverage(orgUuid, releaseUuid);
 		Map<String, Object> dto = new LinkedHashMap<>();
 		dto.put("total", (int) cov.total());
 		dto.put("attested", (int) cov.attested());
+		// Same response as the counts, deliberately -- see the schema comment. A client that
+		// had to ask twice could render full coverage beside an export carrying nothing.
+		// From the injection service, which is the same predicate the EGRESS uses. Reading it
+		// from anywhere else would let the gauge and the export disagree, and a gauge saying
+		// "injection ON" beside an export carrying nothing is the exact lie-by-omission this
+		// gate exists to prevent.
+		dto.put("supportExportState", supportInjectionService.supportExportState(orgUuid).name());
 		return dto;
 	}
 
 	private static LocalDate parseIsoDate(String value, String field) throws RelizaException {
 		if (value == null || value.isBlank()) return null;
 		try {
-			return LocalDate.parse(value.trim());
+			LocalDate parsed = LocalDate.parse(value);
+			// ISO_LOCAL_DATE accepts EXPANDED years ("+10000-01-01", "-0001-01-01"), which the
+			// storage constraint rejects. Without this check the write reaches flush and fails
+			// as a raw persistence error: the caller gets an opaque "Database error" instead of
+			// a field-level message, and the server logs Postgres's DETAIL line, which contains
+			// the whole support_data payload, the org uuid and the canonical purl. Reject it
+			// here, where it is a bad request and nothing is logged.
+			if (parsed.toString().length() != 10) {
+				throw new RelizaException(field + " must be a plain ISO date (YYYY-MM-DD), got: " + value);
+			}
+			return parsed;
 		} catch (DateTimeParseException dtpe) {
-			throw new RelizaException(field + " must be an ISO-8601 date (YYYY-MM-DD)");
+			throw new RelizaException(field + " must be an ISO date (YYYY-MM-DD), got: " + value);
 		}
 	}
 
@@ -443,13 +795,19 @@ public class SbomComponentDataFetcher {
 		if (componentUuid == null) return null;
 		if (ctx != null) {
 			SbomComponent sc = ctx.componentByUuid().get(componentUuid);
-			return sc == null ? null : toComponentDto(sc);
+			if (sc == null) return null;
+			return toComponentDto(sc, ctx.supportByComponentUuid().get(componentUuid),
+					ctx.deviceLifecycle());
 		}
 		// Defensive fallback if this resolver is reached outside the top-level
 		// query path (no localContext); behaves like the original single-row
-		// fetch, so direct callers keep working.
+		// fetch, so direct callers keep working. No release context here, so the
+		// device support window is unavailable -> deviceSupportRisk resolves to UNKNOWN.
 		return sbomComponentService.getSbomComponent(componentUuid)
-				.map(SbomComponentDataFetcher::toComponentDto)
+				.map(sc -> toComponentDto(sc,
+						sbomComponentService.findSupportByComponentIds(sc.getOrg(), Set.of(componentUuid))
+								.get(componentUuid),
+						null))
 				.orElse(null);
 	}
 
@@ -558,7 +916,14 @@ public class SbomComponentDataFetcher {
 		return dto;
 	}
 
-	private static Map<String, Object> toComponentDto(SbomComponent sc) {
+	/**
+	 * Package-private, not private, so {@code SbomComponentSupportStatusTest} can exercise THIS
+	 * method rather than a reimplementation of it. The withdrawn-status defect it guards was a
+	 * one-line omission inside this body; a test that rebuilt the derivation would have carried
+	 * the same omission and passed.
+	 */
+	static Map<String, Object> toComponentDto(SbomComponent sc,
+			SupportData support, DeviceLifecycle device) {
 		Map<String, Object> dto = new LinkedHashMap<>();
 		dto.put("uuid", sc.getUuid());
 		dto.put("canonicalPurl", sc.getCanonicalPurl());
@@ -572,21 +937,112 @@ public class SbomComponentDataFetcher {
 		} else {
 			dto.put("isRoot", false);
 		}
-		// Support disclosure. supportStatus is DERIVED from the dates + now (never
-		// stored). Dates emitted as ISO-8601 (YYYY-MM-DD); supportLastAssessed as a
-		// UTC RFC-3339 instant (trailing Z), never ZonedDateTime.toString().
-		LocalDate endOfSupport = sc.getEndOfSupportDate();
-		LocalDate endOfLife = sc.getEndOfLifeDate();
-		SupportStatus supportStatus = SupportStatus.derive(
-				endOfSupport, endOfLife, sc.getSupportSource(), LocalDate.now(ZoneOffset.UTC));
+		Map<SupportMilestoneType, SupportMilestoneFact> milestones =
+				support == null ? Map.of() : support.milestones();
+		// Support disclosure. Dates + provenance live inside the attestation's JSONB (see
+		// SupportData). Dates emitted as ISO-8601 (YYYY-MM-DD); instants as stored, which is
+		// already UTC RFC-3339 with a trailing Z, never ZonedDateTime.toString().
+		SupportMilestoneFact eogsM = milestones.get(SupportMilestoneType.END_OF_GUARANTEED_SUPPORT);
+		SupportMilestoneFact eosM = milestones.get(SupportMilestoneType.END_OF_SUPPORT);
+		SupportMilestoneFact eolM = milestones.get(SupportMilestoneType.END_OF_LIFE);
+		LocalDate endOfGuaranteedSupport = eogsM == null ? null : eogsM.dateValue();
+		LocalDate endOfSupport = eosM == null ? null : eosM.dateValue();
+		LocalDate endOfLife = eolM == null ? null : eolM.dateValue();
+		// Dates only, and end-of-life is not among them: since D5 it means end of SALE, which
+		// is not a support state. derive() no longer takes a source either -- see D5.
+		//
+		// A WITHDRAWN attestation derives NOTHING. Its milestone dates are still on the row --
+		// withdrawal supersedes, it does not erase -- so deriving from them served a live
+		// "End of support" status for a claim the manufacturer had taken back, and the list
+		// rendered it as a current fact. An operator running the walkthrough saw exactly that
+		// (board t20260909-061338-23148), beside the same component that the Not-disclosed
+		// filter correctly counted as unattested: two surfaces of one screen disagreeing about
+		// whether a claim exists.
+		//
+		// UNKNOWN, and it is the accurate word: we hold no live assertion about this
+		// component's support state. attestationState travels beside it so a client can say
+		// WITHDRAWN specifically rather than just "not assessed" -- the two are different
+		// facts and the row is the evidence of the first.
+		//
+		// This matches what the EXPORT has always done: SupportBomInjector skips a WITHDRAWN
+		// row entirely. The list was the surface that disagreed with the served document.
+		// ONE flag, read by BOTH derived verdicts below. The first revision of this fix set only
+		// supportStatus and left deviceSupportRisk deriving from the same retracted dates, so a
+		// withdrawn row rendered a neutral "Withdrawn" chip beside a red "EOS before device"
+		// tag -- half-closing the very list-vs-document divergence it was written to close.
+		// Anything DERIVED from a retracted claim has to go with the claim.
+		boolean withdrawn = support != null && SupportState.WITHDRAWN == support.state();
+		SupportStatus supportStatus = withdrawn
+				? SupportStatus.UNKNOWN
+				: SupportStatus.derive(endOfGuaranteedSupport, endOfSupport, LocalDate.now(ZoneOffset.UTC));
+		// TWO SEPARATE FIELDS, NEVER RECONCILED. supportStatus is what the DATES entail;
+		// attestedLevelOfSupport is what a HUMAN claimed about upstream maintenance. When they
+		// disagree, the client shows both and a reviewer judges -- collapsing them here would
+		// discard exactly the signal that makes the disagreement worth surfacing.
 		dto.put("supportStatus", supportStatus.name());
+		dto.put("attestedLevelOfSupport", support == null || support.levelOfSupport() == null
+				? null : support.levelOfSupport().name());
+		// The wire form FDA and CycloneDX PR #186 expect, alongside the enum name the UI
+		// binds to. Serving only the name would make every consumer re-map it.
+		dto.put("attestedLevelOfSupportText", support == null || support.levelOfSupport() == null
+				? null : support.levelOfSupport().getWireValue());
+		// A level is never served bare: assessedAt and the attester travel with it so a
+		// consumer can weigh the claim's age instead of trusting it indefinitely.
+		dto.put("assessedAt", support == null ? null : support.assessedAt());
+		dto.put("assertedBy", support == null ? null : support.assertedBy());
+		dto.put("justification", support == null ? null : support.justification());
+		dto.put("attestationState", support == null ? null : support.state().name());
+		dto.put("endOfGuaranteedSupportDate", endOfGuaranteedSupport == null ? null : endOfGuaranteedSupport.toString());
 		dto.put("endOfSupportDate", endOfSupport == null ? null : endOfSupport.toString());
 		dto.put("endOfLifeDate", endOfLife == null ? null : endOfLife.toString());
-		dto.put("supportSource", sc.getSupportSource() == null ? null : sc.getSupportSource().name());
-		dto.put("supportLastAssessed", sc.getSupportLastAssessed() == null
-				? null : sc.getSupportLastAssessed().toInstant().toString());
-		dto.put("supportNotes", sc.getSupportNotes());
+		// Back-compat for the pre-milestone flat fields (PR2a export / PR3 UI): these mean
+		// "the END_OF_SUPPORT milestone's own provenance," not a component-wide value.
+		dto.put("supportSource", eosM == null || eosM.source() == null ? null : eosM.source().name());
+		dto.put("supportLastAssessed", eosM == null ? null : eosM.lastAssessed());
+		dto.put("supportNotes", eosM == null ? null : eosM.notes());
+		dto.put("supportParty", support == null || support.party() == null ? null : support.party().name());
+		dto.put("supportMilestones", milestones.entrySet().stream()
+				.map(e -> toMilestoneDto(e.getKey(), e.getValue()))
+				.toList());
+		// DeviceSupportRisk is DERIVED (never stored) from the component's dates + the enclosing
+		// device's support window. Emitted as the full enum ALWAYS on this API surface (incl.
+		// UNKNOWN) -- e.g. org-scoped reads with no release context (device == null) resolve to
+		// UNKNOWN. The device axis compares END-OF-SUPPORT only: EOGS is out of scope, and
+		// since D5 end-of-life is too.
+		// UNKNOWN for a withdrawn row, for the same reason supportStatus is: the date it would
+		// be measured against has been retracted, and the served export omits the component
+		// entirely (SupportBomInjector skips WITHDRAWN). A red "outlived by this device" verdict
+		// on a claim the manufacturer took back is a disclosure the document does not make.
+		dto.put("deviceSupportRisk", withdrawn
+				? DeviceSupportRisk.UNKNOWN.name()
+				: DeviceSupportRisk.derive(endOfSupport, device).name());
 		return dto;
+	}
+
+	private static Map<String, Object> toMilestoneDto(SupportMilestoneType type, SupportMilestoneFact m) {
+		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("milestoneType", type.name());
+		dto.put("date", m.date());
+		dto.put("source", m.source() == null ? null : m.source().name());
+		dto.put("lastAssessed", m.lastAssessed());
+		dto.put("assertedBy", m.assertedBy());
+		dto.put("notes", m.notes());
+		return dto;
+	}
+
+	/**
+	 * Parse the caller-supplied assessment instant. Accepts any RFC-3339 offset form and
+	 * normalises to UTC. Null/blank means "not supplied" (the service uses now); anything
+	 * else that will not parse is an error, never a silent fallback to now -- quietly
+	 * substituting the wrong date is how an attestation stops being evidence.
+	 */
+	private static ZonedDateTime parseAssessedAt(String value) throws RelizaException {
+		if (value == null || value.isBlank()) return null;
+		try {
+			return OffsetDateTime.parse(value).atZoneSameInstant(ZoneOffset.UTC);
+		} catch (DateTimeParseException dtpe) {
+			throw new RelizaException("assessedAt must be an RFC-3339 instant, got: " + value);
+		}
 	}
 
 	private static UUID parseUuid(Object value) {

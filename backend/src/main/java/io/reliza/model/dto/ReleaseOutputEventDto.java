@@ -9,6 +9,7 @@ import java.util.UUID;
 import io.reliza.model.ComponentData.EventScope;
 import io.reliza.model.ComponentData.EventType;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
+import io.reliza.model.ComponentLock;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import lombok.Builder;
 import lombok.Data;
@@ -33,6 +34,11 @@ public class ReleaseOutputEventDto {
 	private ReleaseLifecycle snapshotLifecycle;
 	private String approvedEnvironment;
 	private String checkName;
+	private Boolean includeSuppressed;
+	private ComponentLock.Scope lockScope;
+	private ComponentLock.UnlockLevel lockUnlockLevel;
+	private ComponentLock.AttestationRequirement lockAttestationRequirement;
+	private String lockReason;
 
 	public static ReleaseOutputEventDto fromData(ReleaseOutputEvent event, EventScope scope) {
 		return ReleaseOutputEventDto.builder()
@@ -53,6 +59,15 @@ public class ReleaseOutputEventDto {
 				.snapshotLifecycle(event.getSnapshotLifecycle())
 				.approvedEnvironment(event.getApprovedEnvironment())
 				.checkName(event.getCheckName())
+				// Every field the stored event carries has to be here. A field that is persisted
+				// and reads back null is worse than one that is missing: the editor fills in a
+				// default for it and the next save silently rewrites the stored policy to that
+				// default. ReleaseOutputEventDtoCoverageTest pins the whole set.
+				.includeSuppressed(event.getIncludeSuppressed())
+				.lockScope(event.getLockScope())
+				.lockUnlockLevel(event.getLockUnlockLevel())
+				.lockAttestationRequirement(event.getLockAttestationRequirement())
+				.lockReason(event.getLockReason())
 				.build();
 	}
 }

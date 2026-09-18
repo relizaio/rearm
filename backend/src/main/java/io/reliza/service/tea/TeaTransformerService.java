@@ -4,7 +4,11 @@
 package io.reliza.service.tea;
 
 import java.net.URI;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -93,7 +97,7 @@ public class TeaTransformerService {
 	
 	@Autowired
 	private GetDeliverableService getDeliverableService;
-	
+
 	private RelizaConfigProps relizaConfigProps;
 	
 	@Autowired
@@ -454,10 +458,26 @@ public class TeaTransformerService {
 
 	private TeaCle transformComponentOrProductToCle(ComponentData cd) {
 		List<TeaCleEvent> all = new ArrayList<>();
-		// 300-cap mirrors the rest of the TEA surface; pagination is a TODO.
-		List<ReleaseData> releases = sharedReleaseService.listReleaseDatasOfComponent(cd.getUuid(), 300, 0);
+		// Was 300, which silently dropped the OLDEST releases -- exactly the ones
+		// carrying end-of-support/end-of-life history -- while presenting the result as
+		// a complete document.
+		// This is a BOUND, not unboundedness, and the distinction is deliberate.
+		// listReleaseDatasOfComponent documents limit < 1 as an "ALL" sentinel, but that
+		// sentinel is UNUSABLE through this path: FIND_ALL_RELEASES_OF_COMPONENT renders
+		// it as LIMIT cast('ALL' as bigint), which Postgres rejects outright
+		// (invalid input syntax for type bigint). Every other caller passes a positive
+		// limit, so nothing had reached that branch before. Passing 0 here would throw at
+		// runtime while the mocked unit tests stayed green.
+		// So: 100000, matching OssReleaseService:1601. It does not enforce the CLE spec's
+		// 100,000-EVENT limit -- the cap is on RELEASES and each yields 1..N events -- it
+		// simply sits far enough above real data to be inert. Pagination (index + next)
+		// is the actual fix and is tracked on board task t20260831-115702-13297; see also
+		// the quadratic versions[] dedupe in mergeNonReleasedByMinute, which this cap was
+		// previously masking.
+		List<ReleaseData> releases = sharedReleaseService.listReleaseDatasOfComponent(cd.getUuid(), 100000, 0);
 		for (ReleaseData rd : releases) {
-			all.addAll(buildReleaseCleCandidates(rd));
+			List<TeaCleEvent> candidates = buildReleaseCleCandidates(rd);
+			all.addAll(candidates);
 		}
 		all.addAll(buildComponentRenameCandidates(cd));
 		List<TeaCleEvent> merged = mergeNonReleasedByMinute(all);
@@ -476,6 +496,11 @@ public class TeaTransformerService {
 	 *   <li>Release was minted directly at ≥ GA via CLI (no LIFECYCLE
 	 *       events in history) ⇒ synthesize a {@code released} event at
 	 *       {@code release.createdDate}.</li>
+	 *   <li>No LIFECYCLE transition produced an endOfSupport/endOfLife event,
+	 *       but the release declares {@code eos}/{@code eol} -- synthesize
+	 *       one from the date, so a declared-but-not-yet-workflow-transitioned
+	 *       window still gets disclosed (see the DATE-DERIVED FALLBACK note
+	 *       below).</li>
 	 * </ul>
 	 * Each candidate is stamped with id=-1; callers renumber after merging.
 	 */
@@ -483,6 +508,8 @@ public class TeaTransformerService {
 		List<TeaCleEvent> out = new LinkedList<>();
 		boolean sawAnyLifecycleEvent = false;
 		boolean sawReleasedEvent = false;
+		boolean sawEndOfSupportEvent = false;
+		boolean sawEndOfLifeEvent = false;
 		if (rd.getUpdateEvents() != null) {
 			for (var ue : rd.getUpdateEvents()) {
 				if (ue.rus() != ReleaseUpdateScope.LIFECYCLE) continue;
@@ -498,6 +525,8 @@ public class TeaTransformerService {
 					TeaCleEventType cleType = mapLifecycleToCleEventType(newLc);
 					if (cleType == null) continue;
 					out.add(makeVersionEvent(cleType, rd.getVersion(), ts));
+					if (cleType == TeaCleEventType.END_OF_SUPPORT) sawEndOfSupportEvent = true;
+					if (cleType == TeaCleEventType.END_OF_LIFE) sawEndOfLifeEvent = true;
 				}
 			}
 		}
@@ -514,7 +543,51 @@ public class TeaTransformerService {
 			OffsetDateTime ts = rd.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
 			out.add(makeReleasedEvent(rd.getVersion(), ts));
 		}
+		// DATE-DERIVED FALLBACK: a device that only declares eos/eol (governed via
+		// updateRelease's SUPPORT_WINDOW path, board t20260830-164643-29472) without
+		// ever recording a matching LIFECYCLE transition would otherwise publish NO
+		// endOfSupport/endOfLife event until someone manually flips the release's
+		// overall workflow lifecycle -- by which time a past date is history, not
+		// disclosure. The LIFECYCLE transition, when one exists, is authoritative (an
+		// explicit workflow action beats a declared date) and is left exactly as
+		// before; this only fills the gap when there is none, so it can never produce
+		// two endOfSupport (or two endOfLife) events for one release.
+		if ((!sawEndOfSupportEvent && null != rd.getEos()) || (!sawEndOfLifeEvent && null != rd.getEol())) {
+			// Computed once and threaded through both calls below -- it's a linear
+			// scan of updateEvents, and a release can need both an eos- and an
+			// eol-derived event, so recomputing it per call would scan the same
+			// list twice for no reason.
+			ZonedDateTime assessedAt = rd.getSupportWindowLastAssessed();
+			if (!sawEndOfSupportEvent && null != rd.getEos()) {
+				out.add(makeDateDerivedSupportEvent(TeaCleEventType.END_OF_SUPPORT, rd.getEos(), assessedAt, rd));
+			}
+			if (!sawEndOfLifeEvent && null != rd.getEol()) {
+				out.add(makeDateDerivedSupportEvent(TeaCleEventType.END_OF_LIFE, rd.getEol(), assessedAt, rd));
+			}
+		}
 		return out;
+	}
+
+	/**
+	 * A CLE Version Event synthesized directly from a declared {@code eos}/{@code eol}
+	 * date rather than a LIFECYCLE transition. Per the spec, {@code effective} is when
+	 * the event takes effect (the declared date itself -- future-dated is exactly the
+	 * intent, per spec 3.1) and {@code published} is when the event was first
+	 * published; the closest fact we have for "published" is when the support window
+	 * was last touched ({@code assessedAt}, the SUPPORT_WINDOW update event date),
+	 * falling back to the release's own createdDate, and then (since createdDate is
+	 * itself nullable -- {@code RelizaDataParent.createdDate} defaults to null) to
+	 * effective, for a window declared before that provenance existed (a legacy
+	 * release, or one whose window was set before board #29472 shipped).
+	 */
+	private TeaCleEvent makeDateDerivedSupportEvent(TeaCleEventType type, LocalDate date,
+			ZonedDateTime assessedAt, ReleaseData rd) {
+		OffsetDateTime effective = date.atStartOfDay(ZoneOffset.UTC).toOffsetDateTime();
+		ZonedDateTime publishedSource = null != assessedAt ? assessedAt : rd.getCreatedDate();
+		OffsetDateTime published = null != publishedSource
+				? publishedSource.toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS)
+				: effective;
+		return makeVersionEvent(type, rd.getVersion(), effective, published);
 	}
 
 	private List<TeaCleEvent> buildComponentRenameCandidates(ComponentData cd) {
@@ -524,7 +597,7 @@ public class TeaTransformerService {
 			if (ue.cus() != ComponentData.ComponentUpdateScope.NAME) continue;
 			if (ue.cua() != ComponentData.ComponentUpdateAction.CHANGED) continue;
 			OffsetDateTime ts = ue.date().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
-			TeaCleEvent ev = new TeaCleEvent(-1, TeaCleEventType.COMPONENT_RENAMED, ts, ts);
+			TeaCleEvent ev = new TeaCleEvent(-1, TeaCleEventType.COMPONENT_RENAMED, utc(ts), utc(ts));
 			// Per spec 7.8 — `identifiers[]` carries the NEW identifiers for
 			// the component. The TEA enum doesn't include NAME (only
 			// CPE/TEI/PURL/COMPLIANCE_DOCUMENT), so we snapshot the component's
@@ -545,15 +618,31 @@ public class TeaTransformerService {
 	}
 
 	private TeaCleEvent makeReleasedEvent(String version, OffsetDateTime ts) {
-		TeaCleEvent ev = new TeaCleEvent(-1, TeaCleEventType.RELEASED, ts, ts);
+		TeaCleEvent ev = new TeaCleEvent(-1, TeaCleEventType.RELEASED, utc(ts), utc(ts));
 		// Spec 7.1 — released carries a single `version` field (string),
 		// never the `versions` array. Don't merge across releases.
 		ev.setVersion(version);
 		return ev;
 	}
 
+	/**
+	 * CLE requires ISO-8601 timestamps in UTC "ending in Z". @JsonFormat(shape=STRING)
+	 * renders whatever offset the value carries, so a ZonedDateTime that arrived in a
+	 * non-UTC zone would serialise as ...-04:00 and fail the spec (and
+	 * coding_principles.md, which is categorical about the trailing Z). Normalise the
+	 * INSTANT here, once, at every CLE event construction site.
+	 */
+	private static OffsetDateTime utc(OffsetDateTime odt) {
+		return odt == null ? null : odt.withOffsetSameInstant(ZoneOffset.UTC);
+	}
+
 	private TeaCleEvent makeVersionEvent(TeaCleEventType type, String version, OffsetDateTime ts) {
-		TeaCleEvent ev = new TeaCleEvent(-1, type, ts, ts);
+		return makeVersionEvent(type, version, ts, ts);
+	}
+
+	private TeaCleEvent makeVersionEvent(TeaCleEventType type, String version,
+			OffsetDateTime effective, OffsetDateTime published) {
+		TeaCleEvent ev = new TeaCleEvent(-1, type, utc(effective), utc(published));
 		// Spec 7.2-7.6 — Version Events use `versions[]` of VERS specifiers.
 		// One specifier per concrete version; merging happens in
 		// mergeNonReleasedByMinute when multiple releases hit the same
@@ -631,19 +720,56 @@ public class TeaTransformerService {
 			OffsetDateTime minute = ev.getEffective() != null
 					? ev.getEffective().truncatedTo(ChronoUnit.MINUTES)
 					: null;
-			String key = ev.getType().toString() + "|" + minute;
+			// supportId is always null here today: the support-policy catalog was removed
+			// (ai-plans/fda-readiness-1-plan.md P1) and no production path can set it, so
+			// this key component is constant and non-discriminating. Kept ON PURPOSE so
+			// that when policies return, two releases hitting the same (type, minute)
+			// under DIFFERENT policies do not collapse into one event carrying only the
+			// first release's supportId.
+			// HONEST CAVEAT: that property is currently UNVERIFIED. The test that pinned
+			// it (componentLevelMergeDoesNotCollapseDifferentSupportPoliciesAtTheSameMinute)
+			// was removed with the catalog, because no reachable code path can produce two
+			// differing supportIds to test with. Restore the test in the same change that
+			// restores the catalog -- do not trust this comment as evidence.
+			String key = ev.getType().toString() + "|" + minute + "|" + ev.getSupportId();
 			TeaCleEvent existing = bucket.get(key);
 			if (existing == null) {
 				// First sighting at this (type, minute) — adopt as-is but
 				// snap the effective timestamp down to the minute boundary
 				// so consumers see a clean per-minute aggregate.
 				if (minute != null) ev.setEffective(minute);
-				if (ev.getPublished() != null) ev.setPublished(minute);
+				// Snap published to ITS OWN minute, never to effective's -- a
+				// date-derived support event (board t20260830-164643-29472 half B)
+				// deliberately has published != effective (published = when the
+				// window was asserted, effective = the future/past eos/eol date
+				// itself), and collapsing published down to effective's minute here
+				// would silently overwrite that with a nonsense far-future/past
+				// "published" timestamp. Before date-derived events existed,
+				// published always equalled effective already, so this produces the
+				// same result for every event this method previously handled.
+				if (ev.getPublished() != null) ev.setPublished(ev.getPublished().truncatedTo(ChronoUnit.MINUTES));
 				bucket.put(key, ev);
 			} else {
-				// Subsequent — merge versions[]. Avoid duplicates by
-				// comparing the bare version field (which is what we set in
-				// versionSpecifierFor for both semver and generic schemes).
+				// Subsequent -- merge versions[], and keep the EARLIER published.
+				// Before date-derived events, published always equalled effective, so
+				// whichever sighting "won" here was harmless. Now that a date-derived
+				// event can have a genuinely different published than another event
+				// sharing this key (e.g. two releases of one device family declaring
+				// the SAME eos but asserted months apart -- the normal case, not an
+				// edge case), first-encountered-wins is wrong on two counts: CLE
+				// defines published as when the event was FIRST published, so the
+				// correct pick is the earlier of the two; and "first encountered"
+				// depends on DB return order (listReleaseDatasOfComponent), so the
+				// same data could silently produce a different document across calls.
+				if (ev.getPublished() != null) {
+					OffsetDateTime candidatePublished = ev.getPublished().truncatedTo(ChronoUnit.MINUTES);
+					if (existing.getPublished() == null || candidatePublished.isBefore(existing.getPublished())) {
+						existing.setPublished(candidatePublished);
+					}
+				}
+				// Merge versions[]. Avoid duplicates by comparing the bare version
+				// field (which is what we set in versionSpecifierFor for both semver
+				// and generic schemes).
 				if (ev.getVersions() != null) {
 					for (var spec : ev.getVersions()) {
 						boolean dup = existing.getVersions() != null
@@ -662,9 +788,20 @@ public class TeaTransformerService {
 		return out;
 	}
 
-	// Spec 6.1 — `$schema` is a stable per-version URI; until ECMA publish a
+	// Spec 6.1 -- `$schema` is a stable per-version URI; until ECMA publish a
 	// canonical one, the spec uses cle.example.com as the documentation
 	// placeholder. Match that so consumers can recognise the version.
+	//
+	// KNOWN DEVIATION, deliberately disclosed here rather than left implicit.
+	// This URI identifies the version the document is SHAPED to; it is not a
+	// claim that the document meets that version's conformance bar, and right now
+	// it does not. CLE 1.0.0 states supportId "MUST be included" on endOfSupport
+	// events, and since the support-policy catalog was removed (see
+	// ai-plans/fda-readiness-1-plan.md P1) we never populate it, nor emit
+	// definitions.support[] at all. Event ids are also recomputed per export
+	// rather than persisted. The UI no longer advertises "CLE 1.0.0"
+	// (relizaio/rearm#313); do not reinstate that claim, here or anywhere else,
+	// until board t20260831-115702-299 and -13297 land.
 	private static final String CLE_SCHEMA_URI = "https://cle.example.com/schema/cle-1.0.0.schema.json";
 
 	/**
@@ -693,7 +830,11 @@ public class TeaTransformerService {
 				}
 			}
 		}
-		root.put("updatedAt", OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString());
+		// Instant.toString() always renders seconds; OffsetDateTime.toString() OMITS them
+		// when second-of-minute and nanos are both zero, so 1 export in 60 emitted
+		// "2026-09-02T10:15Z" -- valid ISO-8601 but NOT RFC-3339, failing date-time
+		// schema validation intermittently.
+		root.put("updatedAt", Instant.now().truncatedTo(ChronoUnit.SECONDS).toString());
 		root.set("events", io.reliza.common.Utils.OM.valueToTree(cle.getEvents()));
 		if (cle.getDefinitions() != null) {
 			root.set("definitions", io.reliza.common.Utils.OM.valueToTree(cle.getDefinitions()));
@@ -702,9 +843,15 @@ public class TeaTransformerService {
 	}
 
 	private static void renumberAndSortNewestFirst(List<TeaCleEvent> events) {
+		// Tiebreak on type when effective is equal (byte-identical, not just same
+		// minute) -- otherwise List.sort's stability leaves the order, and so the
+		// document-local id assignment, dependent on DB row order. Two date-derived
+		// events sharing one instant is a real case: a release with eos == eol
+		// produces exactly this (both land on date.atStartOfDay(UTC)).
 		events.sort(Comparator.comparing(
-				(TeaCleEvent e) -> e.getEffective(),
-				Comparator.nullsLast(Comparator.reverseOrder())));
+					(TeaCleEvent e) -> e.getEffective(),
+					Comparator.nullsLast(Comparator.reverseOrder()))
+				.thenComparing(TeaCleEvent::getType, Comparator.nullsLast(Comparator.naturalOrder())));
 		int id = 0;
 		for (TeaCleEvent ev : events) ev.setId(id++);
 	}

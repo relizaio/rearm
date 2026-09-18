@@ -39,6 +39,7 @@ import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.CommitRecognitionService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
@@ -59,6 +60,9 @@ public class SourceCodeEntryDataFetcher {
 
 	@Autowired
 	ArtifactService artifactService;
+
+	@Autowired
+	CommitRecognitionService commitRecognitionService;
 	
 	@Autowired
 	UserService userService;

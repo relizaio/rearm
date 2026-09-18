@@ -406,13 +406,13 @@ public class TeamsAdaptiveCardFormatter {
     /**
      * Customer-facing component-type label. Switches on {@link ComponentType}
      * directly (no default) so a future enum value compiles-errors rather than
-     * silently mislabelling. PRODUCT reads as "Bundle", COMPONENT as "Project".
+     * silently mislabelling. PRODUCT reads as "Product", COMPONENT as "Component".
      */
     private static String componentTypeLabel(ComponentType componentType) {
         if (componentType == null) return "Component";
         return switch (componentType) {
-            case PRODUCT -> "Bundle";
-            case COMPONENT -> "Project";
+            case PRODUCT -> "Product";
+            case COMPONENT -> "Component";
             case ANY -> "Component";
         };
     }

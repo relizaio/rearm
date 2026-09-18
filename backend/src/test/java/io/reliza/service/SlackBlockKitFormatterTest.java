@@ -560,8 +560,8 @@ class SlackBlockKitFormatterTest {
         String allText = allBlockText(blocks);
         assertTrue(allText.contains("Event for the instance"), "legacy-style title");
         assertTrue(allText.contains("test.relizahub.com"), "instance named");
-        assertTrue(allText.contains("Bundle:") && allText.contains("Reliza"), "PRODUCT renders as Bundle");
-        assertTrue(allText.contains("Project:") && allText.contains("Reliza Hub Back-end"), "COMPONENT renders as Project");
+        assertTrue(allText.contains("Product:") && allText.contains("Reliza"), "PRODUCT renders as Product");
+        assertTrue(allText.contains("Component:") && allText.contains("Reliza Hub Back-end"), "COMPONENT renders as Component");
         assertTrue(allText.contains("converged") && allText.contains("undeployed"), "summary counts present");
         assertTrue(allText.contains("PRODUCTION"), "environment shown");
         // The "to" version is rendered inside the release link, so assert the

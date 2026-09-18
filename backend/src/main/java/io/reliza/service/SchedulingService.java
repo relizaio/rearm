@@ -21,6 +21,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.AdvisoryLockKey;
+import io.reliza.common.SchedulerGuard;
 import io.reliza.service.kev.KevCatalogSyncService;
 import io.reliza.service.oss.OssAnalyticsMetricsService;
 import lombok.extern.slf4j.Slf4j;
@@ -65,6 +66,9 @@ public class SchedulingService {
     
     @Autowired
 	ArtifactService artifactService;
+
+    @Autowired
+    CliSessionService cliSessionService;
     
     @Autowired
     AnalyticsMetricsService analyticsMetricsService;
@@ -355,21 +359,19 @@ public class SchedulingService {
 
     @Scheduled(cron="1 0 0 * * *") // once daily at 00:00:01 (1 second past midnight)
     public void computeAnalyticsMetrics () {
-        try {
+        // Throwable, via SchedulerGuard: an Error escaping here reached Spring, which reports it
+        // as "Unexpected error occurred in scheduled task" with no scheduler name -- ten hours of
+        // a dead analytics tick looked like that one line.
+        SchedulerGuard.runIsolated("computeAnalyticsMetrics", () -> {
             Boolean lock = getLock(AdvisoryLockKey.COMPUTE_ANALYTICS_METRICS);
-            log.debug("compute analytics metrics lock acquired {}", lock);
-			if (lock) {
-				try {
-					ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForAllOrgs();
-				} catch (Exception e) {
-					log.error("Exception in computing analytics metrics", e);
-				} finally {
-					releaseLock(AdvisoryLockKey.COMPUTE_ANALYTICS_METRICS);
-				}
-			}
-		} catch (Exception e) {
-			log.error("Compute analytics metrics run failed with an error", e);
-		}
+            if (lock) {
+                try {
+                    ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForAllOrgs();
+                } finally {
+                    releaseLock(AdvisoryLockKey.COMPUTE_ANALYTICS_METRICS);
+                }
+            }
+        });
     }
     
     /**
@@ -382,21 +384,19 @@ public class SchedulingService {
      */
     @Scheduled(fixedRateString = "${relizaprops.analyticsTodayRefreshRate:PT15M}")
     public void refreshTodayAnalytics () {
-        try {
+        // Throwable, via SchedulerGuard: an Error escaping here reached Spring, which reports it
+        // as "Unexpected error occurred in scheduled task" with no scheduler name -- ten hours of
+        // a dead analytics tick looked like that one line.
+        SchedulerGuard.runIsolated("refreshTodayAnalytics", () -> {
             Boolean lock = getLock(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS);
-            log.debug("refresh today analytics lock acquired {}", lock);
-			if (lock) {
-				try {
-					ossAnalyticsMetricsService.refreshTodayAnalyticsForChangedOrgs();
-				} catch (Exception e) {
-					log.error("Exception in refreshing today analytics", e);
-				} finally {
-					releaseLock(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS);
-				}
-			}
-		} catch (Exception e) {
-			log.error("Refresh today analytics run failed with an error", e);
-		}
+            if (lock) {
+                try {
+                    ossAnalyticsMetricsService.refreshTodayAnalyticsForChangedOrgs();
+                } finally {
+                    releaseLock(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS);
+                }
+            }
+        });
     }
     
     @Scheduled(cron="0 15 3 * * *") // once daily 3:15 AM — separated from other daily crons
@@ -494,6 +494,26 @@ public class SchedulingService {
             apiKeyAccessService.flushPendingLastAccessTouches();
         } catch (Exception e) {
             log.error("api key last-access flush failed", e);
+        }
+    }
+
+    /** Expired pending CLI logins, and ended sessions past their retention (see CliSessionCodes). */
+    @Scheduled(cron="0 40 4 * * *")
+    public void purgeCliSessions() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.PURGE_CLI_SESSIONS);
+            if (lock) {
+                try {
+                    int n = cliSessionService.purge();
+                    if (n > 0) log.info("purged {} CLI login rows", n);
+                } catch (Exception e) {
+                    log.error("CLI session purge failed", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.PURGE_CLI_SESSIONS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("CLI session purge failed with an error", e);
         }
     }
 

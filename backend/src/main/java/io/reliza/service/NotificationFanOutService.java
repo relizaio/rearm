@@ -962,17 +962,32 @@ public class NotificationFanOutService {
      * Perspective gate (Phase 12). When the route declares a non-empty
      * perspective list, the event must carry at least one affected
      * release whose component's perspectives intersect the route's list
-     * — otherwise the delivery is gated out for that route.
+     * -- otherwise the delivery is gated out for that route.
      *
      * <p>Null/empty perspectives on the route = "any perspective" (no
-     * filter), preserving the pre-Phase-12 default behavior. Events
-     * outside the {@code NEW_VULN_AFFECTS_RELEASES /
-     * VULNERABILITY_RECORD_UPDATED} family don't carry affectedReleases
-     * and so a perspective-scoped route will gate them out — that's
-     * intentional: a route filtered to "perspective Payments" shouldn't
-     * fire on a VEX state change with no release context. Authors
-     * mixing event types under one subscription should use multiple
-     * routes.
+     * filter), preserving the pre-Phase-12 default behavior.
+     *
+     * <p><b>This gate is not vuln-only.</b> An earlier version of this comment
+     * said that events outside the {@code NEW_VULN_AFFECTS_RELEASES /
+     * VULNERABILITY_RECORD_UPDATED} family carry no {@code affectedReleases}
+     * and are therefore gated out BY DESIGN. That is wrong, and the word
+     * "design" is what made it expensive: the claim propagated into a UI hint
+     * in the subscription editor and was caught only when someone checked the
+     * producers. {@code affectedReleases} reaches a payload by two different
+     * routes -- {@link ReleaseNotificationSupport#buildAffectedReleases} stamps
+     * it at PRODUCE time for {@code RELEASE_CREATED},
+     * {@code RELEASE_LIFECYCLE_CHANGED}, {@code RELEASE_BOM_DIFF} and both
+     * approval events, complete with the component's perspectives, while
+     * enrichment stamps it at FAN-OUT time for the two vuln types. A
+     * perspective-scoped route matches every one of those. What it needs is a
+     * component that BELONGS to one of the named perspectives; a component with
+     * none matches no perspective-scoped route, whatever the event type.
+     *
+     * <p>{@code VEX_STATE_CHANGED} is the one type that genuinely cannot match:
+     * it gets neither treatment, so there is nothing to intersect and it fails
+     * closed here forever. That is the same blind spot {@link #ownedByTeamMatches}
+     * documents, with the same fix -- stamp affected releases on the VEX payload
+     * rather than special-case either gate.
      */
     private boolean perspectiveGateMatches(RouteConfig route, NotificationOutboxEvent event) {
         if (route.perspectives() == null || route.perspectives().isEmpty()) return true;

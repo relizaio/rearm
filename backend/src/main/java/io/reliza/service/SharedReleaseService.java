@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -242,23 +243,128 @@ public class SharedReleaseService {
 	 * @throws RelizaException if a cycle is detected
 	 */
 	public void checkCircularDependency(UUID selfUuid, Collection<ParentRelease> proposedParents) throws RelizaException {
+		if (null == selfUuid || null == proposedParents || proposedParents.isEmpty()) return;
+		Set<UUID> roots = parentUuids(proposedParents);
+		Map<UUID, List<UUID>> ancestry = loadAncestry(roots);
+		// Which proposed parent each reached release was found through, so the refusal can name the
+		// parent the caller actually passed as well as the release it closes the loop on -- "release
+		// X would depend on itself" alone leaves the operator to find the offending parent by hand.
+		Map<UUID, UUID> reachedVia = new HashMap<>();
 		Set<UUID> visited = new HashSet<>();
 		Deque<UUID> queue = new ArrayDeque<>();
-		for (ParentRelease pr : proposedParents) {
-			queue.add(pr.getRelease());
+		for (UUID root : roots) {
+			queue.add(root);
+			reachedVia.putIfAbsent(root, root);
 		}
 		while (!queue.isEmpty()) {
 			UUID current = queue.poll();
 			if (selfUuid.equals(current)) {
-				throw new RelizaException("Circular dependency detected: release " + selfUuid + " would depend on itself");
+				throw new RelizaException("Circular dependency detected: release " + selfUuid
+						+ " would depend on itself via parent release " + reachedVia.get(current));
 			}
 			if (visited.add(current)) {
-				getReleaseData(current).ifPresent(rd ->
-					rd.getParentReleases().forEach(pr -> queue.add(pr.getRelease()))
-				);
+				UUID via = reachedVia.get(current);
+				for (UUID parent : ancestry.getOrDefault(current, List.of())) {
+					queue.add(parent);
+					reachedVia.putIfAbsent(parent, via);
+				}
 			}
 		}
 	}
+
+	/**
+	 * Validates the parent releases about to be attached to a release that does not exist yet, and
+	 * so has no uuid to look for in their ancestry. What is checkable at that point is the ancestry
+	 * itself: a release that is already its own transitive ancestor is invalid data whichever
+	 * release points at it, and attaching it spreads the cycle rather than creating it.
+	 *
+	 * <p>One traversal over one loaded ancestry rather than one {@link #checkCircularDependency}
+	 * walk per parent -- the parents of a product release share most of their ancestry, and walking
+	 * it once per parent is the difference between this being affordable on the create path and not.
+	 *
+	 * <p>Note what this deliberately does NOT refuse: a parent whose ancestry contains another
+	 * release of the component being created on. That is the component-level case documented on
+	 * {@link #obtainComponentsOfProductOrComponent} -- legal data, and not this method's business.
+	 *
+	 * @throws RelizaException if any release reachable through the proposed parents is its own ancestor
+	 */
+	public void checkProposedParentsAcyclic (Collection<ParentRelease> proposedParents) throws RelizaException {
+		if (null == proposedParents || proposedParents.isEmpty()) return;
+		Set<UUID> roots = parentUuids(proposedParents);
+		Map<UUID, List<UUID>> ancestry = loadAncestry(roots);
+		// Iterative depth-first over the loaded map with the classic three colours: ON_STACK is the
+		// current ancestry path, so reaching a release that is already on it is a back edge, which
+		// is the cycle. Recursion would be the obvious way to write this and the wrong one --
+		// unbounded depth on hostile data is the failure this whole change is about.
+		Map<UUID, TraversalColour> colours = new HashMap<>();
+		Deque<UUID> stack = new ArrayDeque<>();
+		for (UUID root : roots) {
+			if (TraversalColour.DONE == colours.get(root)) continue;
+			stack.push(root);
+			while (!stack.isEmpty()) {
+				UUID current = stack.peek();
+				TraversalColour colour = colours.get(current);
+				if (null == colour) {
+					colours.put(current, TraversalColour.ON_STACK);
+					for (UUID parent : ancestry.getOrDefault(current, List.of())) {
+						if (TraversalColour.ON_STACK == colours.get(parent)) {
+							throw new RelizaException("Circular dependency detected in the proposed"
+									+ " parent releases: release " + parent + " is its own ancestor,"
+									+ " reached again through release " + current);
+						}
+						if (null == colours.get(parent)) stack.push(parent);
+					}
+				} else {
+					// All of its parents have been dealt with by the time we come back to it.
+					if (TraversalColour.ON_STACK == colour) colours.put(current, TraversalColour.DONE);
+					stack.pop();
+				}
+			}
+		}
+	}
+
+	private static Set<UUID> parentUuids (Collection<ParentRelease> parents) {
+		return parents.stream().map(ParentRelease::getRelease).filter(java.util.Objects::nonNull)
+				.collect(Collectors.toCollection(LinkedHashSet::new));
+	}
+
+	/**
+	 * Release uuid -> its parent release uuids, for everything reachable from {@code roots}.
+	 *
+	 * <p>Loaded breadth-first one level at a time with a single batched, totals-only read per level.
+	 * Both validators run on write paths -- {@code createRelease} among them -- so the shape that
+	 * matters is one query per level of ancestry rather than one heavy per-release load per node.
+	 *
+	 * <p>Bounded by {@link #MAX_RELEASES_PER_TRAVERSAL}: a validator that can be made to read the
+	 * whole estate is its own availability problem. Truncation is logged and leaves the caller
+	 * validating what was loaded, which is the same posture the component traversal takes.
+	 */
+	private Map<UUID, List<UUID>> loadAncestry (Set<UUID> roots) {
+		Map<UUID, List<UUID>> ancestry = new HashMap<>();
+		Set<UUID> frontier = new LinkedHashSet<>(roots);
+		while (!frontier.isEmpty()) {
+			if (ancestry.size() + frontier.size() > MAX_RELEASES_PER_TRAVERSAL) {
+				log.error("Parent-release validation stopped at the release ceiling ({}) walking the"
+						+ " ancestry of {}; validated the {} release(s) loaded so far",
+						MAX_RELEASES_PER_TRAVERSAL, roots, ancestry.size());
+				return ancestry;
+			}
+			Set<UUID> next = new LinkedHashSet<>();
+			for (ReleaseData rd : getReleaseDataListLight(frontier)) {
+				List<UUID> parents = rd.getParentReleases().stream().map(ParentRelease::getRelease)
+						.filter(java.util.Objects::nonNull).toList();
+				ancestry.put(rd.getUuid(), parents);
+				parents.stream().filter(p -> !ancestry.containsKey(p)).forEach(next::add);
+			}
+			// Unresolvable uuids would otherwise be re-requested for ever; recording them as
+			// childless is what the per-uuid reads did by returning empty.
+			frontier.forEach(u -> ancestry.putIfAbsent(u, List.of()));
+			frontier = next;
+		}
+		return ancestry;
+	}
+
+	private enum TraversalColour { ON_STACK, DONE }
 
 	public Optional<Release> getRelease (UUID uuid) {
 		return repository.findById(uuid);
@@ -562,26 +668,77 @@ public class SharedReleaseService {
 		return releases.stream().map(ReleaseData::dataFromRecord).toList();
 	}
 	
+	/** Components discovered in one traversal before it gives up and says so. */
+	static final int MAX_COMPONENTS_PER_TRAVERSAL = 10_000;
+	/** Releases unwound in one traversal before it gives up and says so. */
+	static final int MAX_RELEASES_PER_TRAVERSAL = 100_000;
+
 	/**
-	 * This method parses 10 most recent releases of a product (could be a component as well) to establish component level dependencies
-	 * @param componentUuid
-	 * @return
+	 * The components reachable from a product (or a component), by walking the dependencies of its
+	 * ten most recent releases and then theirs, and so on.
+	 *
+	 * <p><b>The component graph is allowed to contain cycles.</b> A release graph is acyclic -- a
+	 * release's parents are fixed when it is written -- but the graph this walks is the component
+	 * graph induced over the last ten releases of each component, and that can close a loop without
+	 * any single release depending on itself: release A1 of component A names a release of B as a
+	 * parent, and a later release B2 of component B names a release of A. Neither release is
+	 * circular; the components are. That is unusual but not invalid, and forbidding it would mean
+	 * walking the whole component graph on every upload. So the invariant ReARM guarantees is that
+	 * every traversal is cycle-safe, not that the data is acyclic -- which is why this is an
+	 * iterative walk with one visited set for the whole traversal rather than a recursion that
+	 * passes the current frame's set down.
+	 *
+	 * <p>It previously did the latter, and two components pointing at each other recursed until the
+	 * stack ran out. The StackOverflowError escaped every per-org {@code catch (Exception)} above
+	 * it and stopped the analytics scheduler for every organization, not just the one holding the
+	 * cycle.
+	 *
+	 * <p>The ceilings are the part that makes this a guarantee rather than a fix for one shape:
+	 * whatever the data does, the walk stops, says where it started and how far it got, and returns
+	 * what it found.
+	 *
+	 * @param dedupComponents components the caller already knows about; never returned
+	 * @return components discovered, in the order they were reached
 	 */
 	public Set<UUID> obtainComponentsOfProductOrComponent (UUID componentUuid, Set<UUID> dedupComponents) {
-		Set<UUID> components = new LinkedHashSet<>();
-		var latestReleases = listReleaseDatasOfComponent(componentUuid, 10, 0);
-		if (!latestReleases.isEmpty()) {
-			Set<ReleaseData> releaseDeps = new LinkedHashSet<>();
-			latestReleases.forEach(x -> releaseDeps.addAll(unwindReleaseDependencies(x)));
-			releaseDeps.forEach(rd -> {
-				if (!dedupComponents.contains(rd.getComponent())) {
-					components.add(rd.getComponent());
-					var recursiveComps = obtainComponentsOfProductOrComponent(rd.getComponent(), components);
-					components.addAll(recursiveComps);
+		Set<UUID> result = new LinkedHashSet<>();
+		if (null == componentUuid) return result;
+		// Seeded with the caller's set and with the starting component: neither may be returned, and
+		// a component reached twice must not be walked twice.
+		Set<UUID> visited = new HashSet<>(null == dedupComponents ? Set.of() : dedupComponents);
+		visited.add(componentUuid);
+		// The same release is reached through many paths in a product tree; unwinding it once per
+		// traversal rather than once per path is what keeps this affordable on real products.
+		Map<UUID, Set<ReleaseData>> unwoundByRelease = new HashMap<>();
+		Deque<UUID> queue = new ArrayDeque<>();
+		queue.add(componentUuid);
+		int releasesUnwound = 0;
+
+		while (!queue.isEmpty()) {
+			UUID current = queue.poll();
+			for (ReleaseData rd : listReleaseDatasOfComponent(current, 10, 0)) {
+				Set<ReleaseData> deps = unwoundByRelease.computeIfAbsent(rd.getUuid(),
+						u -> unwindReleaseDependencies(rd));
+				if (++releasesUnwound > MAX_RELEASES_PER_TRAVERSAL) {
+					log.error("Component traversal from {} stopped at the release ceiling ({}); "
+							+ "returning the {} component(s) found so far",
+							componentUuid, MAX_RELEASES_PER_TRAVERSAL, result.size());
+					return result;
 				}
-			});
+				for (ReleaseData dep : deps) {
+					UUID depComponent = dep.getComponent();
+					if (null == depComponent || !visited.add(depComponent)) continue;
+					result.add(depComponent);
+					queue.add(depComponent);
+					if (result.size() >= MAX_COMPONENTS_PER_TRAVERSAL) {
+						log.error("Component traversal from {} stopped at the component ceiling ({})",
+								componentUuid, MAX_COMPONENTS_PER_TRAVERSAL);
+						return result;
+					}
+				}
+			}
 		}
-		return components;
+		return result;
 	}
 	
 	/**
@@ -590,8 +747,21 @@ public class SharedReleaseService {
 	 * @return List of releases that are dependencies to the release we are unwinding
 	 */
 	public Set<ReleaseData> unwindReleaseDependencies (ReleaseData rd) {
+		return unwindReleaseDependencies(rd, new HashSet<>());
+	}
+
+	/**
+	 * @param seen releases already unwound anywhere in THIS traversal. Shared across the recursion
+	 *        on purpose: it used to be created per frame, which checks only whether a release is
+	 *        its own parent's parent. A → B → A then recursed forever, each frame starting with an
+	 *        empty set and rediscovering the release its caller had just visited. Release graphs
+	 *        are normally acyclic, but nothing enforced that on the create paths, so the guard has
+	 *        to be the traversal's own.
+	 */
+	private Set<ReleaseData> unwindReleaseDependencies (ReleaseData rd, Set<UUID> seen) {
 		Set<ReleaseData> retListOfReleases = new LinkedHashSet<>();
-		Set<UUID> retListOfUuids = new HashSet<>(); // needed to check for circular links
+		Set<UUID> retListOfUuids = seen;
+		retListOfUuids.add(rd.getUuid());
 		List<UUID> dependencies = rd.getParentReleases().stream().map(ParentRelease::getRelease).collect(Collectors.toList());
 		// base case - no dependencies
 		if (dependencies.isEmpty()) {
@@ -608,13 +778,14 @@ public class SharedReleaseService {
 						log.error("Security: Release from another organization with id " + depData.getUuid() + " is detected among dependencies of release " + rd.getUuid());
 						throw new IllegalStateException("Security: Detected release from a different organization");
 					} else {
-						Set<ReleaseData> recursiveSet = unwindReleaseDependencies(depData);
-						recursiveSet.forEach(recRl -> {
-							if (!retListOfUuids.contains(recRl.getUuid())) {
-								retListOfUuids.add(recRl.getUuid());
-								retListOfReleases.add(recRl);
-							}
-						});
+						// Unconditionally: the child ran with the SAME seen set, so everything it
+						// returns is already in there. Re-filtering against it (as this did while
+						// the set was per frame) drops every release below depth one -- each frame
+						// would return its direct parents only, and the closure would be one level
+						// deep. With one set per traversal a release is discovered by exactly one
+						// frame, so unioning the child's result upward is both complete and
+						// duplicate-free.
+						retListOfReleases.addAll(unwindReleaseDependencies(depData, retListOfUuids));
 					}
 				}
 			});
@@ -1354,23 +1525,41 @@ public class SharedReleaseService {
 	}
 	
 	/**
-	 * We expect no more than one release here, but will log warn if not
+	 * Release carrying the deliverable in its base variant. Usually one; when several do
+	 * (same digest on different branches, release + proxy in legacy data) the pick prefers a
+	 * BASE branch, then the newest release -- see {@link DeliverableReleasePicker}.
 	 * @param deliverableUuid
 	 * @param orgUuid - organization UUID - will only search for this org + external org
 	 * @return
 	 */
 	public Optional<ReleaseData> getReleaseByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid) {
-		Optional<Release> or = Optional.empty();
-		List<Release> releases = repository.findReleasesByDeliverable(deliverableUuid.toString(), orgUuid.toString());
-		if (null != releases && !releases.isEmpty()) {
-			or = Optional.of(releases.get(0));
-			if (releases.size() > 1) {
-				log.warn("More than one release returned per deliverable uuid = " + deliverableUuid);
-			}
+		return getReleaseByOutboundDeliverable(deliverableUuid, orgUuid, Set.of());
+	}
+
+	/**
+	 * Same as {@link #getReleaseByOutboundDeliverable(UUID, UUID)} with a set of branches to
+	 * prefer before the BASE-branch / newest fallback -- instance matching passes the branches
+	 * its plan depends on so a shared digest resolves to the release the plan expects.
+	 */
+	public Optional<ReleaseData> getReleaseByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid,
+			Set<UUID> preferredBranches) {
+		List<ReleaseData> candidates = listReleasesByOutboundDeliverable(deliverableUuid, orgUuid);
+		if (candidates.size() > 1) {
+			log.warn("More than one release ({}) carries deliverable uuid = {}; picking by preferred / base branch / newest",
+					candidates.size(), deliverableUuid);
 		}
-		Optional<ReleaseData> ord = Optional.empty();
-		if (or.isPresent()) ord = Optional.of(ReleaseData.dataFromRecord(or.get()));
+		Optional<ReleaseData> ord = DeliverableReleasePicker.pick(candidates, preferredBranches,
+				b -> branchService.getBranchData(b).map(BranchData::getType));
 		return ord;
+	}
+
+	/** Every release whose base variant carries the deliverable, newest first (org + external org). */
+	public List<ReleaseData> listReleasesByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid) {
+		List<Release> releases = repository.findReleasesByDeliverable(deliverableUuid.toString(), orgUuid.toString());
+		if (null == releases || releases.isEmpty()) {
+			return List.of();
+		}
+		return releases.stream().map(ReleaseData::dataFromRecord).toList();
 	}
 	
 	public List<Release> findReleasesBySce(UUID sce, UUID org) {
@@ -1733,6 +1922,13 @@ public class SharedReleaseService {
 		if (rd == null || rd.getComponent() == null) return false;
 		var ocd = getComponentService.getComponentData(rd.getComponent());
 		return ocd.isPresent() && componentType.equals(ocd.get().getType());
+	}
+
+	/** Most recent releases of the component across all branches, newest first, {@code limit} capped at 200. */
+	public List<ReleaseData> listLatestReleaseDataOfComponent(UUID componentUuid, Integer limit) {
+		int effective = (limit == null || limit < 1) ? 20 : Math.min(limit, 200);
+		return repository.findReleasesOfComponent(componentUuid.toString(), Integer.toString(effective), "0")
+				.stream().map(ReleaseData::dataFromRecord).collect(Collectors.toList());
 	}
 
 	public List<ReleaseData> listReleaseDataOfComponentBetweenDates(UUID componentUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit) {

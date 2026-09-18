@@ -147,6 +147,17 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 	private String metadata;
 	
 	private AutoIntegrateState autoIntegrate = AutoIntegrateState.DISABLED;
+	/** Last declarative apply that touched this row; null when never applied declaratively. */
+	@JsonProperty
+	private DeclarativeProvenance declarative;
+
+	/**
+	 * Locks raised on this branch, active and recently released. Same shape and same bound as
+	 * {@code ComponentData.locks}; a branch lock stops this branch's builds while the component
+	 * keeps working.
+	 */
+	@JsonProperty
+	private List<ComponentLock> locks;
 	
 	@JsonProperty("findingAnalyticsParticipation")
 	private FindingAnalyticsParticipation findingAnalyticsParticipation;

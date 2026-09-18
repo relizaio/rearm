@@ -15,6 +15,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.CommonVariables.SidPurlOverride;
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.model.ActionGuard;
 import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentOwner;
 import io.reliza.model.ComponentData.ComponentKind;
@@ -23,6 +24,7 @@ import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.FreeformContact;
 import io.reliza.model.ComponentData.DeviceClass;
 import io.reliza.model.ComponentData.GlobalInputEventRef;
+import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.MedicalProfile;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
@@ -86,6 +88,9 @@ public class ComponentDto {
 	private List<GlobalInputEventRef> globalInputEventRefs;
 	@JsonProperty
 	private List<RearmIdentifier> identifiers;
+	/** Replaces the component's guard list wholesale; null leaves it alone. */
+	@JsonProperty
+	private List<ActionGuard> actionGuards;
 	/** Distribution module: device classification + profiles. */
 	@JsonProperty
 	private ComponentNature nature;
@@ -93,6 +98,18 @@ public class ComponentDto {
 	private DeviceClass deviceClass;
 	@JsonProperty
 	private MedicalProfile medicalProfile;
+	/**
+	 * The section 524B device support window (D7). Omitted leaves the stored value alone --
+	 * this is a PATCH, like every other field here.
+	 */
+	private ComponentData.DeviceSupportWindow deviceSupportWindow;
+	/**
+	 * Explicitly retract the declared window. Distinct from omitting the field, and distinct
+	 * from sending an empty window object: an empty object is what a form with two blank date
+	 * pickers posts by accident, and it must not retract a regulatory commitment. Same idiom
+	 * as ReleaseInput's clearEos/clearEol.
+	 */
+	private Boolean clearDeviceSupportWindow;
 	@JsonProperty
 	private String repoPath;
 	@JsonProperty

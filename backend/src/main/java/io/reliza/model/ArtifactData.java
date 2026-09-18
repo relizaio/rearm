@@ -136,7 +136,39 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		OPENVEX_0_2,
 		// CSAF versions
 		CSAF_2_0,
-		CSAF_2_1
+		CSAF_2_1;
+
+		/**
+		 * The CycloneDX {@code specVersion} string ("1.6") as a constant, or null for a value
+		 * that is not a CycloneDX version we know.
+		 *
+		 * <p>Lives on the enum rather than in a caller so that "parse at the boundary, compare
+		 * on the enum" has a boundary to parse at. Two callers now need it -- the ingest
+		 * classifier and the support injector's declarations gate -- and the second arrived by
+		 * writing a string comparison, which is the outcome this method exists to prevent.
+		 *
+		 * <p><b>Do not compare members of this enum with {@code ordinal()}.</b> It holds four
+		 * unrelated format families in one declaration, so {@code SPDX_2_0} outranks
+		 * {@code CYCLONEDX_1_6} and any "at least version X" test written that way is wrong for
+		 * every non-CycloneDX document. Use explicit set membership.
+		 */
+		public static SpecVersion fromCycloneDxVersionString(String version) {
+			if (null == version) {
+				return null;
+			}
+			return switch (version) {
+				case "1.0" -> CYCLONEDX_1_0;
+				case "1.1" -> CYCLONEDX_1_1;
+				case "1.2" -> CYCLONEDX_1_2;
+				case "1.3" -> CYCLONEDX_1_3;
+				case "1.4" -> CYCLONEDX_1_4;
+				case "1.5" -> CYCLONEDX_1_5;
+				case "1.6" -> CYCLONEDX_1_6;
+				case "1.7" -> CYCLONEDX_1_7;
+				case "2.0" -> CYCLONEDX_2_0;
+				default -> null;
+			};
+		}
 	}
 
 	public enum DigestScope {

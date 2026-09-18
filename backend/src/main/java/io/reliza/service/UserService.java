@@ -86,6 +86,10 @@ public class UserService {
 
 	@Autowired
 	@Lazy
+	private ApiKeyService apiKeyService;
+
+	@Autowired
+	@Lazy
 	private OrganizationService organizationService;
 
 	private static final Logger log = LoggerFactory.getLogger(UserService.class);
@@ -653,6 +657,7 @@ public class UserService {
 			if (removed) {
 				ud.revokeAllOrgPermissions(orgUuid);
 				userGroupService.removeUserFromAllGroupsInOrg(userUuid, orgUuid, wu);
+				apiKeyService.revokeUserKeysInOrg(userUuid, orgUuid, wu);
 			}
 			componentService.handleRemoveUserFromTriggers(orgUuid, userUuid, wu);
 			saveUser(ou.get(), Utils.dataToRecord(ud), wu);

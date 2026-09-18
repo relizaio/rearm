@@ -33,6 +33,8 @@ import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
+import io.reliza.model.ComponentLock;
+import io.reliza.model.DeclarativeProvenance;
 import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
@@ -44,9 +46,15 @@ import io.reliza.repositories.BranchRepository;
 import io.reliza.versioning.VersionType;
 import lombok.extern.slf4j.Slf4j;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 @Slf4j
 @Service
 public class BranchService {
+
+	@PersistenceContext
+	private EntityManager entityManager;
 	
 	@Autowired
     private GetComponentService getComponentService;
@@ -370,6 +378,30 @@ public class BranchService {
 		return createBranch(name, component, type, null, null, null, null, wu);
 	}
 	
+	/**
+	 * The branch's data read under a row write lock. Same contract and same reason as
+	 * {@code ComponentService.getComponentDataWriteLocked}.
+	 */
+	@Transactional
+	public BranchData getBranchDataWriteLocked(UUID branchUuid) throws RelizaException {
+		Branch b = repository.findByIdWriteLocked(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found: " + branchUuid));
+		// Discard any pre-lock copy of this row; see ComponentService.getComponentDataWriteLocked.
+		entityManager.refresh(b);
+		return BranchData.branchDataFromDbRecord(b);
+	}
+	
+	/** Replace the branch's lock list. Persistence only; see {@code ComponentService.setLocks}. */
+	@Transactional
+	public BranchData setLocks(UUID branchUuid, List<ComponentLock> locks, WhoUpdated wu)
+			throws RelizaException {
+		Branch b = repository.findByIdWriteLocked(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found: " + branchUuid));
+		BranchData bd = BranchData.branchDataFromDbRecord(b);
+		bd.setLocks(locks == null ? new LinkedList<>() : locks);
+		return BranchData.branchDataFromDbRecord(saveBranch(b, Utils.dataToRecord(bd), wu));
+	}
+
 	@Transactional
 	private Branch saveBranch (Branch b, Map<String,Object> recordData, WhoUpdated wu) throws RelizaException {
 		// let's add some validation here
@@ -391,6 +423,15 @@ public class BranchService {
 		b.setRecordData(recordData);
 		b = (Branch) WhoUpdated.injectWhoUpdatedData(b, wu);
 		return repository.save(b);
+	}
+
+	/** Record the last declarative apply on a branch (no other field changes). */
+	@Transactional
+	public void stampDeclarativeProvenance(UUID branchUuid, DeclarativeProvenance provenance, WhoUpdated wu) throws RelizaException {
+		Branch b = getBranch(branchUuid).orElseThrow(() -> new RelizaException("Branch not found: " + branchUuid));
+		BranchData bd = BranchData.branchDataFromDbRecord(b);
+		bd.setDeclarative(provenance);
+		saveBranch(b, Utils.dataToRecord(bd), wu);
 	}
 
 	@Transactional
@@ -654,6 +695,8 @@ public class BranchService {
 			bd.setVersionSchema(originalBranch.getVersionSchema());
 		}
 
+		// the clone inherits the full dependency configuration: manual deps and patterns
+		bd.setDependencyPatterns(new LinkedList<>(originalBranch.getDependencyPatterns()));
 		if(dependecyOverride == null){
 			bd.setDependencies(new LinkedList<>(originalBranch.getDependencies()));
 		}else{

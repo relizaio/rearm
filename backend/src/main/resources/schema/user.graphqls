@@ -1,0 +1,4894 @@
+# ---------------------------------------------------------------------------
+# User (JWT) root fields
+#
+# The ReARM GraphQL schema is split by caller:
+#   schema.graphqls        shared types, inputs, enums, scalars
+#   user.graphqls          root fields for signed-in users (JWT); the Query and
+#                          Mutation base types are declared here
+#   programmatic.graphqls  root fields for API keys (extend Query / Mutation)
+#
+# /api/programmatic/graphql (no version segment: the programmatic schema evolves
+# additively, with deprecations) accepts only the fields declared in
+# programmatic.graphqls and needs no CSRF token or session. /graphql keeps
+# serving every field for backward compatibility.
+# ---------------------------------------------------------------------------
+
+type Query {
+	user: User
+	"""Every lock in the organization, active and recently released."""
+	locks(orgUuid: ID!): [Lock!]
+	"""What a lock or a commit has been attested to."""
+	attestations(orgUuid: ID!, subjectType: AttestationSubjectType!, subjectUuid: ID!): [Attestation!]
+	"""
+	What needs attention: active locks, the commits behind them nobody has claimed, and the
+	locks that have escalated to an administrator.
+	"""
+	integrityInbox(orgUuid: ID!): IntegrityInbox
+	organizations: [Organization]
+	adminOrganization(org: ID!): AdminOrganization
+	allOrganizations: [Organization]
+	
+	# changelog (sealed interface API)
+	componentChangelog(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType!, timeZone: String): ComponentChangelog
+	componentChangelogByDate(componentUuid:ID!, branchUuid:ID, orgUuid:ID!, aggregated: AggregationType!, timeZone: String, dateFrom: DateTime!, dateTo: DateTime!): ComponentChangelog
+	organizationChangelogByDate(orgUuid: ID!, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, aggregated: AggregationType!, timeZone: String): OrganizationChangelog
+	# Paginated drill-down for ONE finding's attribution bucket (the "+N more" expansion behind the
+	# preview-capped appearedIn/presentIn/resolvedIn lists on the *WithAttribution types). Recomputes the
+	# SAME scope + path as the changelog with a single-finding filter, so the page total matches the
+	# corresponding *InCount shown inline. Scope: org (only orgUuid) / component (+componentUuid) /
+	# branch (+componentUuid+branchUuid). findingKey is the opaque handle from the finding DTO.
+	findingAttributionByDate(orgUuid: ID!, componentUuid: ID, branchUuid: ID, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, findingKind: ChangelogFindingKind!, findingKey: String!, bucket: FindingAttributionBucket!, page: Int, pageSize: Int): ComponentAttributionPage!
+	# Paginated over-time timeline behind the capped inline overTimeFindingChanges (the drawer source).
+	# Optional findingKey narrows to one finding's timeline. Scope: org / component (+componentUuid) /
+	# branch (+componentUuid+branchUuid). Newest-first; `total` is the full count, `since` the retention clamp.
+	# `scope` (org-level only): RELEASE_ANCHORED (default) bounds to releases produced in the window;
+	# ALL_POSTURE also surfaces re-scan-driven changes on releases produced before the window.
+	findingChangeTimelineByDate(orgUuid: ID!, componentUuid: ID, branchUuid: ID, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, findingKey: String, page: Int, pageSize: Int, scope: FindingChangeScope = RELEASE_ANCHORED): MetricsRevisionFindingChangePage!
+
+	releaseTagKeys(orgUuid: ID!): [String]
+	component(componentUuid:ID!): Component
+	components(orgUuid:ID!, componentType:ComponentType!, perspective:ID): [Component]
+	"""
+	Durable-ownership report (RFC Phase 4c): every NON-OWNED component in the org
+	with its computed ownership status/suggestion. Org-admin only; read-only
+	governance view -- never blocks releases.
+	"""
+	componentOwnershipReport(orgUuid: ID!): [ComponentOwnershipReportRow!]!
+	branch(branchUuid:ID!): Branch
+	branchesOfComponent(componentUuid:ID!): [Branch]
+	releases(branchFilter:ID, orgFilter:ID, releaseFilter:[ID], numRecords:Int): [Release]
+	getNextVersion(branchUuid:ID!, versionType: VersionType): String
+	vcsRepository(vcs:ID!): VcsRepository
+	listVcsReposOfOrganization(orgUuid:ID!): [VcsRepository]
+	pullRequest(prUuid: ID!): PullRequest
+	"""
+	List PullRequests for an org. {@code states} narrows the result to
+	the supplied {@link PullRequestState} values (case-insensitive); pass
+	null/empty to fetch every state. The UI defaults to {@code [OPEN]}
+	so terminal-state PRs aren't loaded until the user opts in via the
+	state filter.
+	"""
+	pullRequestsOfOrg(orgUuid: ID!, states: [String!]): [PullRequest]
+	"""
+	List PullRequests targeting a given VCS repository. {@code states}
+	narrows the result by {@link PullRequestState}; pass null/empty for
+	all states. Mirrors the {@code pullRequestsOfOrg} default of {@code
+	[OPEN]} on the UI side.
+	"""
+	pullRequestsOfVcs(vcs: ID!, states: [String!]): [PullRequest]
+	vcsRepositoryTypes: [String]
+	sourceCodeEntry(sceUuid:ID!): SourceCodeEntry
+	artifact(artifactUuid: ID!): Artifact
+	artifactVersionHistory(artifactUuid: ID!): [Artifact]
+	artifactTypes: [String]
+	users(orgUuid: ID!, includeInactive: Boolean): [OrgUserData]
+	combinedUserOrgPermissions(orgUuid: ID!, userUuid: ID!): Permissions
+	resourceGroups(orgUuid: ID!): [ResourceGroup]
+	releaseAnalytics(orgUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	releaseAnalyticsByComponent(componentUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	releaseAnalyticsByBranch(branchUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	releaseAnalyticsByPerspective(perspectiveUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	totalsAnalytics(orgUuid: ID!): Object
+	apiKeys(orgUuid: ID!): [ApiKey]
+	"Live keys the calling user owns (USER) or holds (FREEFORM requested by them), across organizations"
+	myApiKeys: [ApiKey]
+	"CLI browser login: the pending request behind a user code (null when unknown or expired)"
+	cliLoginRequest(userCode: String!): CliSession
+	"The calling user's active CLI sessions"
+	myCliSessions: [CliSession]
+	"Org admins: active CLI sessions riding this key"
+	cliSessionsOfKey(apiKeyUuid: ID!): [CliSession]
+	"Org admins: the organization's federated identity trust rules"
+	federatedTrustRules(orgUuid: ID!): [FederatedTrustRule]
+	marketingRelease(marketingReleaseUuid: ID!): MarketingRelease
+	marketingReleases(componentUuid: ID!): [MarketingRelease]
+	marketingReleaseLifecycles: [MarketingReleaseLifecycle]
+	defaultApprovalRoles: [ApprovalRole]
+	approvalPoliciesOfOrg(orgUuid: ID!): [ApprovalPolicy]
+	approvalEntriesOfOrg(orgUuid: ID!): [ApprovalEntry]
+	"""
+	Read-only "what needs my approval" view: releases in the given org that are
+	awaiting the calling user's approval. A release is returned when its effective
+	approval policy has at least one unsatisfied requirement whose allowed roles
+	intersect an approval role the user holds (via a permission that covers the
+	release) and which the user has not yet voted on. Org admins are NOT auto-listed:
+	the view keys off assigned approval roles, not the admin override capability.
+	"""
+	releasesNeedingMyApproval(orgUuid: ID!): [ReleasePendingApproval!]
+	artifactReleases(artUuid: ID!): [Release]
+	artifactBomLatestVersion(artUuid: ID!): String
+	# Deliverables
+	deliverable(deliverable: ID!): Deliverable
+	listDeliverablesByComponent(componentUuid: ID!): [Deliverable]
+	
+	# Artifact Collections
+	getAcollectionsOfRelease(releaseUuid: ID!): [AcollectionData]
+
+	# Detailed SBOM components aggregated across all BOM artifacts of a release.
+	# Each entry is keyed by the canonical purl (purl with qualifiers stripped);
+	# artifactParticipations carries the list of artifacts that referenced this
+	# component and the exact (qualifier-carrying) purls each one used.
+	getReleaseSbomComponents(releaseUuid: ID!): [ReleaseSbomComponent]
+
+	# Single-component graph view: the merged ReleaseSbomComponent row for
+	# (release, canonical sbom component), with the same dependencies /
+	# dependedOnBy resolvers as getReleaseSbomComponents. Returns null when
+	# the canonical component does not appear in the release (or its dep tree,
+	# for product releases). Use this from a graph-detail page to navigate by
+	# stable (releaseUuid, sbomComponentUuid) instead of scanning the full
+	# release set client-side.
+	getReleaseSbomComponentGraph(releaseUuid: ID!, sbomComponentUuid: ID!): ReleaseSbomComponent
+
+	configuredBaseIntegrations(org: ID!): [IntegrationType]
+	# Detected Dependency-Track generation ("V4"/"V5") of the org's base
+	# DEPENDENCYTRACK integration; null when none is configured.
+	dependencyTrackVersion(org: ID!): String
+	ciIntegrations(org: ID!): [CiIntegration]
+
+	# Inbound webhook reception. {org}/{slug} forms the public URL path
+	# the GitHub App is configured to POST to.
+	webhook(uuid: ID!): Webhook
+	webhooks(orgUuid: ID!): [Webhook]
+	
+	# Analytics
+	mostActiveComponentsOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerComponent]
+	mostActiveBranchesOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerBranch]
+	mostActiveComponentsOverTimeByPerspective(activeComponentsInput: ActiveComponentsInput!, perspectiveUuid: ID!): [ReleasesPerComponent]
+	mostActiveBranchesOverTimeByPerspective(activeComponentsInput: ActiveComponentsInput!, perspectiveUuid: ID!): [ReleasesPerBranch]
+	vulnerabilitiesViolationsOverTime(orgUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	vulnerabilitiesViolationsOverTimeByComponent(componentUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	vulnerabilitiesViolationsOverTimeByBranch(branchUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	vulnerabilitiesViolationsOverTimeByPerspective(perspectiveUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	mostVulnerableComponentsPerOrg(orgUuid: ID!, createdDate: DateTime!, componentType: ComponentType!, maxComponents: Int!, perspectiveUuid: ID): [MostVulnerableComponent]
+	findingsPerDay(orgUuid: ID!, date: String!): DependencyTrackMetrics
+	findingsPerDayForComponent(componentUuid: ID!, date: String!): DependencyTrackMetrics
+	findingsPerDayForBranch(branchUuid: ID!, date: String!): DependencyTrackMetrics
+	findingsPerDayByPerspective(perspectiveUuid: ID!, date: String!): DependencyTrackMetrics
+	
+	organization(orgUuid: ID!): Organization
+	
+	healthCheck: String
+	searchDigestVersion(orgUuid: ID!, query: String!, perspectiveUuid: ID): SearchDigestVersionResponse
+	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String, perspectiveUuid: ID): [Release]
+	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID], perspectiveUuid: ID): [ComponentWithBranches]
+	sbomComponentSearch(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToDtrack]
+	searchDtrackComponentByPurlAndProjects(orgUuid: ID!, purl: String!, dtrackProjects: [ID]!): ID
+
+	# Native (non-DependencyTrack) SBOM-component analogues of the three queries
+	# above. Search and grouping run against rearm.sbom_components /
+	# rearm.release_sbom_components instead of dtrack -- same shapes, sbom_component
+	# UUIDs in place of dtrack project UUIDs. See SbomComponentDataFetcher.
+	releasesBySbomComponents(orgUuid: ID!, sbomComponentUuids: [ID]!, perspectiveUuid: ID): [ComponentWithBranches]
+	sbomComponentSearchNative(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToSbom]
+	searchSbomComponentByPurl(orgUuid: ID!, purl: String!): ID
+
+	getAllOrganizations: [Organization]
+	
+	getSystemInfoIsSet: SystemInfoIsSet
+	license: LicensePayload
+	
+	exportAsObomManual(releaseUuid: ID!): String
+
+	"""
+	Export a Common Lifecycle Enumeration (CLE) JSON document for a component
+	(or product). The events array is the same chronological union the TEA
+	endpoint returns; this query wraps it with `$schema` and `lastUpdated`
+	metadata so the response stands alone as a CLE document.
+
+	NOT currently CLE-1.0.0 CONFORMANT, and deliberately no longer described as
+	such: endOfSupport events carry no supportId (the spec makes it mandatory)
+	and no definitions.support[], because the support-policy catalog was
+	removed -- see ai-plans/fda-readiness-1-plan.md P1. Event ids are also
+	recomputed per export rather than persisted. Do not reinstate a conformance
+	claim here until board t20260831-115702-299 and -13297 land.
+	"""
+	exportComponentCleManual(componentUuid: ID!): String
+
+	"""
+	Export a Common Lifecycle Enumeration (CLE) JSON document for a single
+	release. Mirrors exportComponentCleManual at the release level -- events
+	come from transformReleaseToCle. Carries the same conformance caveat; see
+	exportComponentCleManual above.
+	"""
+	exportReleaseCleManual(releaseUuid: ID!): String
+	
+	# User Groups
+	getUserGroups(org: ID!): [UserGroupWebDto]
+	getTeams(org: ID!): [TeamWebDto]
+
+	# Vulnerability Analysis
+	getVulnAnalysis(org: ID!): [VulnAnalysisWebDto]
+	getVulnAnalysisByComponent(componentUuid: ID!): [VulnAnalysisWebDto]
+	getVulnAnalysisByBranch(branchUuid: ID!): [VulnAnalysisWebDto]
+	getVulnAnalysisByRelease(releaseUuid: ID!): [VulnAnalysisWebDto]
+	getVulnAnalysisByLocationAndFinding(org: ID!, location: String!, findingId: String!, findingType: FindingType!): [VulnAnalysisWebDto]
+	getVulnAnalysisByPerspective(perspectiveUuid: ID!): [VulnAnalysisWebDto]
+	getVexStatementProposals(org: ID!, status: ProposalStatus): [VexStatementProposalWebDto]
+	getVexStatementProposal(uuid: ID!): VexStatementProposalWebDto
+	getVexStatementProposalsBySourceArtifact(artifact: ID!): [VexStatementProposalWebDto]
+	getVexStatementProposalsByRelease(org: ID!, release: ID!): [VexStatementProposalWebDto]
+	getMitigationAttestations(org: ID!, status: AttestationStatus): [MitigationAttestationWebDto]
+	getMitigationAttestation(uuid: ID!): MitigationAttestationWebDto
+	getMitigationAttestationsByAssignee(assignee: ID!, status: AttestationStatus): [MitigationAttestationWebDto]
+
+	# Perspectives
+	perspectives(org: ID!): [Perspective]
+	componentsOfPerspective(perspectiveUuid: ID!): [Component]
+
+	# Download Logs
+	listDownloadLogs(org: ID!, fromDate: DateTime, toDate: DateTime, perspective: ID): [DownloadLog]
+	
+	# CVE Search
+	"""
+	Bounded search: the hierarchy covers the 500 newest matching releases;
+	totalReleases/truncated tell the client when more matches exist.
+	"""
+	searchReleasesByCveId(org: ID!, cveId: String!, perspectiveUuid: ID): CveSearchResult
+	# Time Frame Search
+	searchReleasesByTimeFrame(org: ID!, startDate: DateTime!, endDate: DateTime!, perspectiveUuid: ID): [ComponentWithBranches]
+	searchReleasesByTimeFrameAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
+	searchReleasesByTimeFrameAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
+	# Date Range Queries - return flat [Release] list
+	releasesByDateRange(org: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType): [Release]
+	releasesByDateRangeAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
+	"""
+	The limit most recent releases of the component across all its branches, newest first
+	(default 20, capped at 200). Feeds the component page's Latest tab.
+	"""
+	latestReleasesOfComponent(componentUuid: ID!, limit: Int): [Release]
+	releasesByDateRangeAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
+	releasesByDateRangeAndPerspective(perspectiveUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType): [Release]
+	# Pattern Preview
+	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
+
+	# Reverse dependency lookup: which feature sets include this component/branch as a dependency
+	# (any requirement type -- REQUIRED, OPTIONAL, or IGNORED -- via explicit deps or patterns)
+	featureSetsUsingComponent(componentUuid: ID!): [Branch]
+	featureSetsUsingBranch(branchUuid: ID!): [Branch]
+
+	# Instances
+	#
+	# When `revision` is null or -1, returns the live instance state.
+	# When `revision` is a positive integer, the lookup is scoped by
+	# `stateType`: PLAN (default) reads from the instance_data_plan
+	# audit table using the plan-revision counter; ACTUAL reads from
+	# instance_data_actual using the actual-revision counter. This
+	# matches the per-table revision counters surfaced by
+	# instanceHistoryPlan / instanceHistoryActual so the UI can
+	# side-by-side a history row against the current state.
+	instance(instanceUuid: ID!, revision: Int, stateType: InstanceStateType): Instance
+	instancesOfOrganization(orgUuid: ID!): [Instance]
+	"""
+	Where a component or product is deployed, one row per (instance, namespace)
+	occurrence. For a PRODUCT the rows come from the instances' product plans
+	(featureSet = the linked feature set, version = the matched product release
+	or null when not matched). For a COMPONENT the rows come from the instances'
+	deployed releases (featureSet = the release's branch, version = the deployed
+	release). Requires read access to the component. SAAS-only.
+	"""
+	deployedTo(componentUuid: ID!): [DeployedToEntry!]!
+	instancesByProp(orgUuid: ID!, propKey: ID, propVal: String!): [Instance]
+	instanceHistoryPlan(instanceUuid: ID!): [InstanceHistoryPlan]
+	instanceHistoryActual(instanceUuid: ID!): [InstanceHistoryActual]
+	instanceHistoryPlanByDate(instanceUuid: ID!, fromDate: DateTime!, toDate: DateTime!, changeType: InstancePlanChangeType): [InstanceHistoryPlan]
+	instanceHistoryActualByDate(instanceUuid: ID!, fromDate: DateTime!, toDate: DateTime!, changeType: InstanceActualChangeType): [InstanceHistoryActual]
+	searchChangesOverTime(orgUuid: ID!, fromDate: DateTime!, toDate: DateTime!): [InstanceWithHistory]
+	environmentTypes(orgUuid: ID, includeBuiltIn: Boolean): [String]
+	getInstanceRevisionCycloneDxExportManual(instanceUuid: ID!, revision: Int, namespace: String, stateType: InstanceStateType): String
+
+	# properties
+	property(propertyUuid: ID!): Property
+	propertyDataTypes: [PropertyDataType]
+	propertyConfigTypes: [PropertyConfigurableType]
+	propertiesOfOrg(orgUuid: ID!): [Property]
+
+	# secrets
+	secret(secretUuid:ID!, orgUuid:ID!): Secret
+	secrets(orgUuid:ID!): [Secret]
+	
+	# BEAR integration
+	getBearIntegration(org: ID!): BearIntegration
+
+	# AI Agents
+	agent(uuid: ID!): Agent
+	agentsOfOrg(orgUuid: ID!): [Agent]
+	subAgentsOf(rootAgentUuid: ID!): [Agent]
+	session(uuid: ID!): Session
+	sessionsOfOrg(orgUuid: ID!, statuses: [SessionStatus]): [Session]
+	sessionsOfAgent(rootAgentUuid: ID!, statuses: [SessionStatus]): [Session]
+	modelOntology(uuid: ID!): ModelOntology
+	modelOntologiesOfOrg(orgUuid: ID!): [ModelOntology]
+	"""
+	Cross-cutting KPIs for the AI Agents dashboard header -- active
+	sessions, closed-in-last-30d, artifacts produced in last 7d, and
+	registered-agent count.
+	"""
+	agentDashboardKpis(orgUuid: ID!): AgentDashboardKpis
+
+	# AI-Agent policies (SAAS-only).
+	agentPolicy(uuid: ID!): AgentPolicy
+	agentPoliciesOfOrg(orgUuid: ID!): [AgentPolicy]
+
+	# Distribution module (SAAS-only): clients + sites.
+	client(uuid: ID!): Client
+	clientsOfOrg(orgUuid: ID!): [Client]
+	site(uuid: ID!): Site
+	sitesOfOrg(orgUuid: ID!): [Site]
+	sitesOfClient(clientUuid: ID!): [Site]
+
+	# Distribution module (SAAS-only): shipments / installed base.
+	shippedProduct(uuid: ID!): ShippedProduct
+	shippedProductsOfOrg(orgUuid: ID!): [ShippedProduct]
+	shippedProductsOfSite(siteUuid: ID!): [ShippedProduct]
+	shippedProductsOfFeatureSet(featureSetUuid: ID!, orgUuid: ID!): [ShippedProduct]
+	# Recall scope: every shipment of a release.
+	shippedProductsOfRelease(releaseUuid: ID!, orgUuid: ID!): [ShippedProduct]
+
+	# Per-device layer (optional, one level below a shipment).
+	device(uuid: ID!): Device
+	devicesOfShipment(shippedProductUuid: ID!): [Device]
+	devicesOfSite(siteUuid: ID!, orgUuid: ID!): [Device]
+
+	# Digital twin: field events + as-maintained hardware view of a unit.
+	deviceEventsOfDevice(deviceUuid: ID!): [DeviceEvent]
+	deviceHbomComponents(deviceUuid: ID!): [DeviceHbomComponent]
+
+	# Fleet drift in a single query: every unit in the org diverging from its
+	# authorized baseline, with the site/client it is fielded at.
+	driftedDevicesOfOrg(orgUuid: ID!): [FleetDriftEntry]
+
+	# Resolve a feature set's device identity (UDI-DI + regulatory class)
+	# from its single UDI-bearing constituent component.
+	featureSetDeviceIdentity(featureSetUuid: ID!, orgUuid: ID!): DeviceIdentity
+
+	# HBOM (hardware BOM) components of a release; parsed + cached on first read.
+	hbomComponentsOfRelease(releaseUuid: ID!): [HbomComponent]
+
+	# CDX #929 choice slots of a release tree (ship form + repair flow).
+	releaseComponentChoices(releaseUuid: ID!): [ComponentChoice]
+
+	# Committers + signing keys + signature verifications.
+	committer(uuid: ID!): Committer
+	committersOfOrg(orgUuid: ID!): [Committer]
+	signingKey(uuid: ID!): SigningKey
+	signingKeysOfOwner(orgUuid: ID!, ownerType: SigningKeyOwnerType!, ownerUuid: ID!): [SigningKey]
+	signingKeysOfOrg(orgUuid: ID!): [SigningKey]
+	signatureVerification(uuid: ID!): SignatureVerification
+	signatureVerificationsForSubject(subjectType: SignatureSubjectType!, subjectUuid: ID!): [SignatureVerification]
+
+	# Notifications framework -- read surface (Phase 2e).
+	#
+	# All queries below are org-admin scoped. The data fetcher resolves
+	# the org from the entity uuid before authorizing, so a caller
+	# cannot guess uuids in another tenant.
+
+	# Single outbox event lookup -- pairs with injectSyntheticEvent /
+	# testNotificationChannel mutations so the UI can poll for the
+	# event's row after the mutation returns.
+	notificationOutboxEvent(uuid: ID!): NotificationOutboxEventResult
+
+	# Single delivery row lookup.
+	notificationDelivery(uuid: ID!): NotificationDeliveryResult
+
+	# Paginated delivery listing with optional filters. Items are
+	# ordered newest-first by created_date.
+	#   eventUuid  -- filter to deliveries for one outbox event
+	#   channelUuid -- filter to deliveries for one channel
+	#   subscriptionUuid -- filter to deliveries for one subscription
+	#   status     -- typed enum filter; typos rejected at the GraphQL layer
+	#   origin     -- typed enum filter; typos rejected at the GraphQL layer
+	notificationDeliveries(
+		orgUuid: ID!,
+		eventUuid: ID,
+		channelUuid: ID,
+		subscriptionUuid: ID,
+		status: NotificationDeliveryStatusEnum,
+		origin: NotificationDeliveryOriginEnum,
+		limit: Int,
+		offset: Int): NotificationDeliveriesPage!
+
+	# Single subscription lookup. Returns null on miss.
+	notificationSubscription(uuid: ID!): NotificationSubscriptionResult
+
+	# List subscriptions for an org.
+	notificationSubscriptions(orgUuid: ID!): [NotificationSubscriptionResult!]!
+
+	# Single channel lookup. Encrypted secrets are stripped (see
+	# NotificationChannelResult). Returns null on miss.
+	notificationChannel(uuid: ID!): NotificationChannelResult
+
+	# List channels for an org. Encrypted secrets are stripped from
+	# the read surface.
+	notificationChannels(orgUuid: ID!): [NotificationChannelResult!]!
+
+	# Notifications framework -- channel-group reads (Phase 13b).
+	#
+	# Single channel-group lookup. Returns null on miss. Org-admin
+	# authorized -- the fetcher resolves org from the row before
+	# authorizing so a caller can't probe uuids across tenants.
+	notificationChannelGroup(uuid: ID!): NotificationChannelGroupResult
+
+	# List channel groups for an org. Channel-group membership lists
+	# (just UUIDs) ride along with the result so the UI can render the
+	# group's contents in one round-trip.
+	notificationChannelGroups(orgUuid: ID!): [NotificationChannelGroupResult!]!
+
+	# Notifications framework -- Inbox MVP (Phase 14).
+	#
+	# Personal, visibility-filtered view of delivery rows:
+	#   - org-admin tier sees every delivery in the org
+	#   - perspective-member sees deliveries whose event payload's
+	#     affectedReleases[*].perspectives intersect the caller's
+	#     perspective membership
+	#   - non-admin without perspective membership sees nothing
+	#
+	# Distinct from notificationDeliveries (the org-admin audit log).
+	# This query is the "what's relevant to me" surface -- visibility
+	# is enforced at the SQL layer (no fan-out of per-user rows).
+	#
+	# unreadOnly defaults to true so the typical badge-driven open
+	# lands on the unread queue without the operator needing to flip
+	# the filter.
+	notificationInbox(
+		orgUuid: ID!,
+		unreadOnly: Boolean,
+		status: NotificationDeliveryStatusEnum,
+		# Filter by the originating outbox event's type. Useful for
+		# high-volume orgs that want to triage NEW_VULN_AFFECTS_RELEASES
+		# separately from VULNERABILITY_RECORD_UPDATED or
+		# VEX_STATE_CHANGED. Null = match all event types.
+		eventType: NotificationEventTypeEnum,
+		# Visibility scope. PERSONAL (default) shows the caller's own
+		# component-team + perspective + targeted rows and does NOT auto-show
+		# an org admin every delivery in the org; ORG_ALL is the org-wide
+		# firehose, honored only for org admins (a non-admin request collapses
+		# to PERSONAL). The org-wide audit view also lives in Delivery History.
+		inboxScope: NotificationInboxScope = PERSONAL,
+		limit: Int,
+		offset: Int): NotificationInboxPage!
+
+	# Count of unread deliveries the caller can see, for the inbox-tab
+	# badge. Same visibility filter as notificationInbox; defaults to the
+	# PERSONAL scope so an admin's badge reflects their own actionable
+	# count rather than the whole-org firehose.
+	notificationUnreadCount(orgUuid: ID!, inboxScope: NotificationInboxScope = PERSONAL): Int!
+
+	# CISA KEV catalog details for one CVE id (Phase 6a). The catalog is
+	# global (public CISA data, no org rows) -- orgUuid is for
+	# authorization only. Returns null when the CVE is not KEV-listed.
+	kevRecordDetails(orgUuid: ID!, cveId: String!): KevRecordDetails
+
+	# Paged, filtered view of the SAME release component set, for the support
+	# attestation table. Separate from the unpaged query above rather than
+	# replacing it: the graph view needs every node and the release's own root
+	# component, while this one excludes root (a root is the release's own
+	# artifact coordinate, never a third-party dependency to disclose) so that
+	# its ALL total is the same denominator sbomComponentSupportCoverage
+	# reports. Both resolve the release through the same path, PRODUCT unwind
+	# included.
+	#
+	# attestation filters against the SAME SQL body the coverage gauge counts
+	# with, and UNATTESTED is its exact complement -- so the rows this returns
+	# are exactly the ones the gauge says are missing. search is a
+	# case-insensitive substring of the canonical purl, with LIKE metacharacters
+	# treated as literals. limit is clamped to the range 1..500 and defaults to
+	# 50 -- a limit of 0 becomes 1, since a zero-size page would page forever.
+	#
+	# KEYSET pagination, not offset. after is the uuid of the last item you saw
+	# (endCursor); omit it for the first page. This is not a house-style
+	# deviation for its own sake -- attestation:UNATTESTED is a predicate over
+	# MUTABLE state, and attesting a page removes those rows from the set. An
+	# offset would index into a set that had shifted underneath it and skip
+	# exactly as many components as were just written, leaving the operator
+	# paged to the end with the gauge still short and no way to find what was
+	# missed. A cursor anchored to the sort key is unaffected by rows
+	# disappearing behind it, so "select all unattested" walks every row
+	# exactly once with no client-side protocol to get wrong.
+	#
+	# The cursor component only has to still EXIST, not still match the filter
+	# -- under UNATTESTED you will have just attested it out of the set. An
+	# unrecognised cursor is an error, never a silent restart from the
+	# beginning, which would turn a sweep into an infinite loop.
+	#
+	# totalCount is the FILTERED population, not the release size and not the
+	# coverage denominator. Keep reading the gauge from
+	# sbomComponentSupportCoverage: it is release-scoped on purpose and must
+	# not be recomputed per page.
+	#
+	# LIMITATION, deliberate: only the page is hydrated, so ALL THREE graph
+	# fields on the returned rows are page-scoped, not release-scoped --
+	# dependencies, dependedOnBy and ancestors. A component that depends on 40
+	# things will report only those that happened to sort onto the same page,
+	# which is WRONG data presented as complete, not merely partial. Do not
+	# select them here. Each row's own parents array IS complete. Use the
+	# unpaged getReleaseSbomComponents, or getReleaseSbomComponentGraph for a
+	# single component, when the graph edges matter -- resolving them here
+	# would mean loading the whole BOM, which is the cost this query exists to
+	# avoid.
+	getReleaseSbomComponentsPage(
+		releaseUuid: ID!,
+		attestation: SupportAttestationFilter = ALL,
+		search: String,
+		limit: Int,
+		after: ID): ReleaseSbomComponentsPage!
+
+	# releaseUuid is OPTIONAL and additive: omit it for the org-wide readiness number
+	# (unchanged behaviour), pass it to scope the count to one release's own components.
+	#
+	# Both scopes are intended. Org-wide answers "how ready is this organisation"; the
+	# release scope answers "how much of THIS BOM is disclosed", which is the only number
+	# that may sit beside an export -- a gauge reading 100% next to a release whose export
+	# carries nothing is the failure that scope exists to prevent.
+	#
+	# The release scope resolves its components through the same path the component list
+	# walks, PRODUCT dependency unwind included, so the gauge and the list beneath it cannot
+	# disagree. An empty release returns 0/0 rather than falling back to the org number.
+	sbomComponentSupportCoverage(orgUuid: ID!, releaseUuid: ID): SbomComponentSupportCoverage
+
+	"""
+	THE FLEET QUESTION (D7): which units in the field outlive their software.
+
+	Per in-field unit: the release it is judged on (what it REPORTED running, else what it
+	was planned to run -- the row says which), the device support window resolved for its
+	batch, the resulting risk, the soonest ATTESTED component end-of-support in that
+	release, and how many attested components end before the device does.
+
+	Units whose disposition is RETURNED, EXPLANTED, DISPOSED or LOST are excluded: they are
+	not in service, and counting them inflates the number an operator acts on. A unit with
+	no recorded disposition IS included -- absence of a record is not evidence of removal.
+
+	Read-only. `page` is zero-based.
+	"""
+	devicesAtSupportRisk(orgUuid: ID!, clientUuid: ID, siteUuid: ID, page: Int, size: Int): DevicesAtSupportRiskPage
+}
+
+type Mutation {
+	# user management
+	acceptUserPolicies(tosAccepted: Boolean!, marketingAccepted: Boolean!, email: String): User
+	verifyEmail(secret: String!): User
+	inviteUser(invitationProperties: InviteUserInput!): AdminOrganization
+	joinUserToOrganization(secret: String!): User
+	cancelInvite(org: ID!, userEmail: String!): AdminOrganization
+	updateUserPermissions(orgUuid: ID!, userUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput]): OrgUserData
+	updateUserName(name: String!): User
+		
+	# system global
+	unSealSystem(secret: String): Boolean
+	uploadLicense(license: String!): LicensePayload
+	finalizeAllReleases: Boolean
+	createOrganization(name: String!): Organization
+	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
+	# Global setVulnCheckKevToken removed in V54 KEV per-org refactor;
+	# use setVulnCheckKevTokenForOrg(orgUuid, token) below (org-admin scope).
+	setDefaultOrganization(organization: ID!): Boolean
+	inactivateUser(userUuid: ID!): User
+	reactivateUser(userUuid: ID!): User
+	sendTestEmail: Boolean
+	
+	# integrations
+	createIntegration(integration: IntegrationInput!): Integration
+	createTriggerIntegration(integration: IntegrationInput!): Integration
+	deleteBaseIntegration(org: ID!, type: IntegrationType!): Boolean
+	# Replace the capabilities asserted on an Integration. Org-admin
+	# authorized; idempotent; preserves all other fields.
+	updateIntegrationCapabilities(uuid: ID!, capabilities: [IntegrationCapability!]!): Integration
+	# Replace the GitHub App private key (and optionally the App ID) on an existing
+	# GITHUB integration without re-creating it. The key is normalized + re-encrypted
+	# and the PR_VALIDATE-needs-key rule is re-asserted. A blank appId leaves the
+	# stored App ID unchanged. Org-admin authorized.
+	updateGithubAppCredentials(uuid: ID!, privateKey: String!, appId: String): Integration
+	# "Test connection" for a GITHUB integration: validates the stored App key + App
+	# ID by minting an App JWT and calling GitHub GET /app/installations. No
+	# installation id needed (that lives on the trigger). Org-admin authorized.
+	testGithubIntegration(uuid: ID!): GithubIntegrationTestResult
+	# "Test credentials" for UNSAVED GitHub App input (the key + App ID typed into a
+	# create/edit form), validated against GitHub WITHOUT persisting anything, so the
+	# user can verify before saving. Org-admin authorized on the supplied org. The
+	# privateKey is never logged/echoed -- only the verdict is returned.
+	testGithubCredentialsInput(org: ID!, privateKey: String!, appId: String): GithubIntegrationTestResult
+	# Delete a CI integration by uuid. Refuses with an error message
+	# listing reference counts when any Webhook, GlobalPrValidationTriggerRule,
+	# VcsRepository.outputTriggers entry, or ApprovalPolicy.globalOutputEvents
+	# entry still points at this integration -- those have to be cleaned
+	# up first so the integration delete doesn't silently break them.
+	deleteCiIntegration(uuid: ID!): Boolean
+
+	# KEV per-org integration management (V54 refactor). All three are
+	# org-admin authorized on the target org. CISA_KEV is auto-created
+	# enabled when an org is provisioned (migration backfill + new-org
+	# hook), so the UI typically only calls enableKevSource/disableKevSource
+	# for CISA. VULNCHECK_KEV is opt-in: the org admin sets a token via
+	# setVulnCheckKevTokenForOrg, which lazily creates the integration row
+	# (enabled) and fires an immediate async first sync.
+	enableKevSource(orgUuid: ID!, source: IntegrationType!): Boolean
+	disableKevSource(orgUuid: ID!, source: IntegrationType!): Boolean
+	setVulnCheckKevTokenForOrg(orgUuid: ID!, token: String): Boolean
+
+	# webhooks (inbound)
+	createWebhook(webhook: WebhookInput!): Webhook
+	updateWebhook(webhook: WebhookUpdateInput!): Webhook
+	deleteWebhook(uuid: ID!): Boolean
+
+	# cdx import
+	importCyclonedxComponents(orgUuid: ID!, cdxJson: String!): [ImportComponentResult]
+	
+	# components and products
+	createComponent(component: CreateComponentInput!): Component
+	updateComponent(component: UpdateComponentInput!): Component
+	createBranch(componentUuid: ID!, name: String!, versionSchema: String): Branch
+	updateBranch(branch: BranchInput!): Branch
+	"""
+	Clone a branch / feature set under the same component or product: the new branch starts
+	with the source's version schema (unless overridden), auto-integrate setting, manual
+	dependencies and dependency patterns. branchType defaults to the source's type (a BASE
+	source is cloned as the type its name resolves to). Name must be unique on the component.
+	"""
+	cloneBranch(branchUuid: ID!, name: String!, branchType: BranchType, versionSchema: String): Branch
+	autoIntegrateFeatureSet(branchUuid: ID!): Release
+	archiveBranch(branchUuid: ID!): Boolean
+	archiveComponent(componentUuid: ID!): Boolean
+	setNextVersion(branchUuid: ID!, versionString: String!, versionType: VersionType): Boolean
+	"""
+	Iterates active releases of the component and fills in identifiers for any that
+	currently have an empty identifier list. Releases that already carry any identifier
+	(PURL, CPE, TEI, etc.) are left untouched -- this mutation is intentionally narrow
+	per design D13 / D15: v1 does not productize a "rebuild sid PURL on existing releases"
+	flow. Operators wanting to migrate sid identity on already-identified releases must
+	use a one-off script.
+	"""
+	updateComponentReleasesIdentifiers(componentUuid: ID!): Boolean
+	
+	createVcsRepository(vcsRepository: VcsRepositoryInput!): VcsRepository
+	updateVcsRepository(vcsUuid: ID!, name: String, uri: String): VcsRepository
+	"""
+	Replace the VCS repository's output triggers. Constraint: at most one
+	entry, and (if present) must be of type EXTERNAL_VALIDATION. Pass an
+	empty list to clear.
+	"""
+	setVcsRepositoryOutputTriggers(vcsUuid: ID!, triggers: [ReleaseOutputEventInput!]!): VcsRepository
+	"""
+	Replace the org's global PR-validation trigger rules atomically.
+	Each input rule must (a) carry a non-blank, org-unique {@code name},
+	(b) compile as a valid Java regex, (c) supply a trigger of type
+	EXTERNAL_VALIDATION whose {@code integration} resolves to a GITHUB
+	integration in the same org with the PR_VALIDATE capability. Pass
+	an empty list to clear all rules. SAAS-only -- the SAAS DataFetcher
+	guards on installation type. List order is the priority order;
+	send the rules in the order you want first-match-wins to honour.
+	"""
+	setGlobalPrValidationTriggerRules(orgUuid: ID!, rules: [GlobalPrValidationTriggerRuleInput!]!): Organization
+	"""
+	Replace the org's team-assignment rules wholesale. Each rule needs a name
+	(unique within the org, case-insensitive), a compilable regex no longer than
+	512 characters, and an ownerTeam that exists, is ACTIVE and belongs to this
+	org. List order is the priority order; send the rules in the order you want
+	first-match-wins to honour. Pass an empty list to clear all rules.
+	Org-admin only.
+	"""
+	setGlobalTeamAssignmentRules(orgUuid: ID!, rules: [GlobalTeamAssignmentRuleInput!]!): Organization
+	"""
+	Replace the org's global approval-policy assignment rules
+	atomically. Each input rule must (a) carry a non-blank, org-unique
+	{@code name}, (b) compile as a valid Java regex in
+	{@code namePattern}, (c) supply an {@code approvalPolicy} UUID
+	that resolves to an existing policy in the same org. Pass an empty
+	list to clear all rules. SAAS-only -- the SAAS DataFetcher guards on
+	installation type. List order is the priority order; send the
+	rules in the order you want first-match-wins to honour.
+	"""
+	setGlobalApprovalPolicyRules(orgUuid: ID!, rules: [GlobalApprovalPolicyRuleInput!]!): Organization
+	"""
+	Replace the organization's action-guard list. Each guard picks the components it governs by
+	name pattern; a blank pattern governs every component in the org. Admin on the org required.
+	"""
+	setOrgActionGuards(orgUuid: ID!, guards: [ActionGuardInput!]!): Organization
+	"""
+	Lock a component by hand. Defaults to the strictest release rule: an administrator, with no
+	attestation able to resolve it. ADMIN on the component required.
+	"""
+	lockComponent(componentUuid: ID!, reason: String!, unlockLevel: UnlockLevel,
+		attestationRequirement: AttestationRequirement): Lock
+	"""Lock one branch of a component. ADMIN on the component required."""
+	lockBranch(branchUuid: ID!, reason: String!, unlockLevel: UnlockLevel,
+		attestationRequirement: AttestationRequirement): Lock
+	"""
+	Release a lock, writing the LOCK_RELEASE attestation that is the record of it. Permission
+	comes from the lock's effective level. `override` is an administrator releasing without the
+	requirement being met -- allowed, never silent, and requires a reason.
+	"""
+	releaseLock(orgUuid: ID!, lockUuid: ID!, reason: String!, override: Boolean): Lock
+	"""
+	Claim or disown a commit. MINE makes it recognized, which is what lets a rule about
+	accountability pass on the next build and what releases a lock waiting on it. It certifies
+	nothing about the content.
+	"""
+	attest(subjectType: AttestationSubjectType!, subjectUuid: ID!, verdict: AttestationVerdict!,
+		note: String): Attestation
+	"""Revoke an attestation. The row stays and is marked; the history is the point."""
+	revokeAttestation(uuid: ID!, reason: String!): Attestation
+	"""
+	Replace the guards written on one component. These accumulate with the guards its
+	perspectives and its organization declare -- a component can add to what it is held to,
+	never subtract from it.
+	"""
+	setComponentActionGuards(componentUuid: ID!, guards: [ActionGuardInput!]!): Component
+	"""
+	Replace the guards applying to every component of a perspective. Real perspectives only --
+	a product-derived perspective is a view of a product, not something anybody configures.
+	"""
+	setPerspectiveActionGuards(uuid: ID!, guards: [ActionGuardInput!]!): Perspective
+	archiveVcsRepository(vcsUuid: ID!): Boolean
+	getNewVersionManual(branchUuid: ID!, action: ActionEnum): Version
+	createSourceCodeEntry(sourceCodeEntry: SourceCodeEntryInput!): SourceCodeEntry
+	addReleaseManual(release: ReleaseInput!): Release
+	setComponentApiKey(componentUuid: ID!): ApiKeyForUser
+	setOrgApiKey(orgUuid: ID!, apiType: ApiTypeEnum!, keyOrder: String, notes: String): ApiKeyForUser
+	"Create an org-level key id with no secret yet; mint the first secret with addApiKeySecret"
+	createOrgApiKey(orgUuid: ID!, apiType: ApiTypeEnum!, notes: String): ApiKey
+	"Personal USER key for the calling user in this org: created without a secret and with an empty permission ceiling"
+	createUserApiKey(orgUuid: ID!, notes: String): ApiKey
+	"CLI browser login: approve the pending request with an existing key of mine (apiKeyUuid), or with a personal key created for this session in createKeyOrgUuid"
+	approveCliLogin(userCode: String!, apiKeyUuid: ID, createKeyOrgUuid: ID, createKeyNotes: String, permissionType: PermissionType, permissions: [PermissionInput]): CliSession
+	denyCliLogin(userCode: String!): Boolean
+	"Revoke one of my CLI sessions, or (org admin) any session in my org; a key created for that session is deleted with it"
+	revokeCliSession(uuid: ID!): Boolean
+	"Org admins: trust identity tokens from an external issuer (issuer defaults per provider, e.g. GitHub Actions on github.com)"
+	createFederatedTrustRule(orgUuid: ID!, name: String!, provider: FederatedProvider!, issuer: String, matcher: FederatedMatcherInput!, grant: FederatedGrantInput!, expiresDate: DateTime): FederatedTrustRule
+	"Org admins: edit a rule; bumps its version, which invalidates tokens minted through it"
+	updateFederatedTrustRule(uuid: ID!, name: String!, matcher: FederatedMatcherInput!, grant: FederatedGrantInput!, expiresDate: DateTime): FederatedTrustRule
+	setFederatedTrustRuleStatus(uuid: ID!, status: FederatedTrustRuleStatus!): FederatedTrustRule
+	deleteFederatedTrustRule(uuid: ID!): Boolean
+	"Org admins: accept whatever owner id the next exchange presents"
+	resetFederatedTrustRulePin(uuid: ID!): FederatedTrustRule
+	"Org admins: accept whatever repository id the next exchange presents for this identity"
+	resetFederatedIdentityPin(apiKeyUuid: ID!): ApiKey
+	"Write user asks admins for a FREEFORM key: created at once as REQUESTED with the caller as holder and the proposed permissions; unusable until approved"
+	requestFreeformApiKey(orgUuid: ID!, notes: String, permissionType: PermissionType, permissions: [PermissionInput]): ApiKey
+	"Admin approves (ACTIVE, still without a secret) or denies (DENIED, reason appended to notes) a REQUESTED key"
+	resolveApiKeyRequest(apiKeyUuid: ID!, approve: Boolean!, reason: String): ApiKey
+	"Admin reassigns or clears (null) the holder of a FREEFORM key; the holder must be a member of the org"
+	setApiKeyHolder(apiKeyUuid: ID!, holder: ID): ApiKey
+	updateRelease(release: ReleaseInput!): Release
+	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
+
+	"""
+	Record an approval request on a release and notify the users able to act
+	on it (APPROVAL_REQUESTED targeted notifications). `approvalEntries`
+	defaults to every entry of the release's effective approval policy;
+	entries already satisfied / disapproved or covered by an open request
+	are skipped. Errors if nothing actionable remains. Requires WRITE on
+	the release.
+	"""
+	requestReleaseApprovals(release: ID!, approvalEntries: [ID!]): ReleaseApprovalRequest
+
+	"""
+	Bulk-advance every release of a component whose lifecycle is
+	≥ GENERAL_AVAILABILITY but < `targetLifecycle` to `targetLifecycle`.
+	Pre-GA releases (PENDING, DRAFT, ASSEMBLED, READY_TO_SHIP) and
+	terminal-state releases (CANCELLED, REJECTED) are untouched, as are
+	releases already at or beyond the target. Each bumped release records
+	a normal LIFECYCLE-CHANGED update event so per-release histories stay
+	coherent and the CLE synthesis surfaces the bump as a merged
+	component-level event by minute. `targetLifecycle` must be > GA
+	(ordinal-bounded so the validation survives future enum additions);
+	GA itself isn't a meaningful bulk target -- that's the natural state
+	for assembled releases.
+	"""
+	bulkUpdateComponentReleaseLifecycle(componentUuid: ID!, targetLifecycle: ReleaseLifecycleEnum!): BulkLifecycleUpdateResult
+	updateReleaseTagsMeta(release: ReleaseInput!): Release
+	overrideApprovedEnvironments(releaseUuid: ID!, approvedEnvironments: [String!]!): Release
+	addMarketingReleaseManual(marketingRelease: MarketingReleaseInput!): MarketingRelease
+	updateMarketingRelease(marketingRelease: MarketingReleaseInput!): MarketingRelease
+	modifyMarketingReleaseLifecycle(marketingReleaseUuid: ID!, newLifecycle: MarketingReleaseLifecycleEnum): MarketingRelease 
+	archiveMarketingRelease(marketingReleaseUuid: ID!): Boolean
+	releaseMarketingRelease(marketingRelease: MarketingReleaseInput!, marketingVersion: String!): MarketingRelease
+	addApprovalRole(orgUuid: ID!, approvalRole: ApprovalRoleInput!): Organization
+	deleteApprovalRole(orgUuid: ID!, approvalRoleId: String!): Organization
+	updateOrganizationTerminology(orgUuid: ID!, terminology: TerminologyInput!): Organization
+	updateOrganizationIgnoreViolation(orgUuid: ID!, ignoreViolation: IgnoreViolationInput!): Organization
+	updateOrganizationSettings(orgUuid: ID!, settings: SettingsInput!): Organization
+	# Admin-gated, org-scoped backfill of finding_change_events from the existing metrics_audit
+	# history (board task #38, phase 2). Idempotent + restartable: re-running is a near no-op.
+	# sinceRevisionDate bounds the lower edge of the audit window (null = full range). reseed=true
+	# bypasses the per-release "already covered" skip and re-diffs covered history -- required after
+	# the FindingChangeKind vocabulary widens so historical rows of the new kinds are emitted (and the
+	# org's watermark is bumped to the current vocabulary version). Returns the number of releases
+	# processed for the org.
+	backfillFindingChangeEvents(org: ID!, sinceRevisionDate: DateTime, reseed: Boolean): Int
+	createApprovalEntry(approvalEntry: ApprovalEntryInput!): ApprovalEntry
+	archiveApprovalEntry(approvalEntryUuid: ID!): ApprovalEntry
+	createApprovalPolicy(approvalPolicy: ApprovalPolicyInput!): ApprovalPolicy
+	archiveApprovalPolicy(approvalPolicyUuid: ID!): ApprovalPolicy
+	setGlobalInputEvents(approvalPolicyUuid: ID!, events: [ReleaseInputEventInput!]!): ApprovalPolicy
+	setGlobalOutputEvents(approvalPolicyUuid: ID!, events: [ReleaseOutputEventInput!]!): ApprovalPolicy
+	
+	approveReleaseManual(release: ID!, approvals: [ReleaseApprovalInput!]): Release
+	"""
+	Ask this release's rules to look at it again.
+
+	Rules are evaluated when the release changes, so a release whose promotion was withheld by a
+	guard can sit still while the reason clears somewhere else -- a dependency is promoted, a lock
+	is released, a scan finishes. Nothing about the release itself changed, so nothing re-evaluates
+	it, and an approver without lifecycle permissions cannot finish what their approval started.
+
+	This promotes nothing by itself: it re-runs the same evaluation the engine runs on any change,
+	and every guard still applies. Triggers that already fired are not fired again, so the only
+	thing that can happen is the thing that was withheld. Available to anyone who may write the
+	component or who may approve anything on this release.
+	"""
+	reevaluateReleaseTriggers(release: ID!): Release
+	
+	# Analytics
+	computeAnalyticsMetricsForDate(orgUuid: ID!, date: String!): DependencyTrackMetrics
+	
+	updateArtifactTags(artifact: ID!, tags: [TagRecordInput]!): Artifact
+	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
+
+	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
+	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType]): String
+	releaseVdrExport(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
+	releaseVdrExportWithApproval(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
+	"""
+	Generate a CycloneDX 1.6 VEX (Vulnerability Exploitability eXchange) document for a release.
+	Filters vulnerabilities[] to decided analysis statements (EXPLOITABLE, NOT_AFFECTED, RESOLVED, FALSE_POSITIVE);
+	IN_TRIAGE and analysis-less entries are excluded unless includeInTriage=true, in which case they are
+	stamped with an explicit IN_TRIAGE analysis state. components[] is retained so the document is
+	self-contained. Marked with VEX_DOCUMENT=true in metadata.properties. CE-compatible: supports DATE
+	and LIFECYCLE snapshots.
+	"""
+	releaseCdxVexExport(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
+	"""
+	SaaS-only. Generate a CycloneDX 1.6 VEX document with approval-snapshot support.
+	Precedence: targetLifecycle > targetApproval > upToDate. Same filtering and metadata contract
+	as releaseCdxVexExport.
+	"""
+	releaseCdxVexExportWithApproval(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
+	"""
+	Generate an OpenVEX 0.2.0 document for a release. Reuses the same enrichment + snapshot +
+	filtering pipeline as releaseCdxVexExport; each retained vulnerability is emitted as one
+	OpenVEX statement. Status mapping: EXPLOITABLE→affected, NOT_AFFECTED→not_affected,
+	FALSE_POSITIVE→not_affected (+ justification vulnerable_code_not_present), RESOLVED→fixed,
+	IN_TRIAGE→under_investigation. CE-compatible: supports DATE and LIFECYCLE snapshots.
+	"""
+	releaseOpenVexExport(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
+	"""
+	SaaS-only. Generate an OpenVEX 0.2.0 document with approval-snapshot support.
+	Precedence: targetLifecycle > targetApproval > upToDate. Same status-mapping contract as
+	releaseOpenVexExport.
+	"""
+	releaseOpenVexExportWithApproval(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
+
+	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
+
+	# Synchronously rebuild the SBOM component / dependency aggregation for a single release.
+	# Operator escape hatch when a release is left with stale or empty release_sbom_components rows
+	# (e.g. an earlier async reconcile failed). Returns true on success; throws on failure so the
+	# caller sees the underlying error.
+	reconcileReleaseSbomComponents(releaseUuid: ID!): Boolean
+	"""
+	Recompute a release's findings metrics from CURRENT scan and KEV state:
+	re-gathers the release's artifacts, merges their (fan-out-maintained)
+	metrics, re-applies the analysis overlay and re-stamps known-exploited
+	membership against kev_assertions. No Dependency-Track round-trip -- this
+	refreshes from data already ingested, so it is cheap and idempotent. Use
+	forceReuploadDtrackData for a true org-wide re-analysis. Requires WRITE on
+	the release (satisfied by component/org-scoped WRITE permissions).
+	"""
+	recomputeReleaseFindings(releaseUuid: ID!): Boolean
+	"""
+	Org-ADMIN repair for duplicate component registrations: several live
+	COMPONENT-type components on one (vcs, repoPath) carrying the SAME name.
+	Folds non-conflicting releases under the oldest component and archives the
+	duplicates; on version conflicts archives without folding. Same-vcs groups
+	with differing names are reported but never auto-merged. Same routine the
+	enforceUniqueComponents startup sweep runs.
+	"""
+	repairDuplicateComponents(orgUuid: ID!): DuplicateComponentRepairSummary
+
+	# Programmatic
+	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
+	setPermissionsOnFreeformApiKey(apiKeyUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput]): ApiKey
+	"""
+	Edit just the notes field on an API key. Admin auth on the owning
+	org -- paired with setPermissionsOnFreeformApiKey so a notes-only
+	UI tab doesn't have to round-trip the full permissions list. Notes
+	is a generic field on the api_keys recordData jsonb, so works for
+	any key type (FREEFORM is the primary consumer today).
+	"""
+	setNotesOnApiKey(apiKeyUuid: ID!, notes: String): ApiKey
+	deleteApiKey(apiKeyUuid: ID!): Boolean
+	"""Add the second secret of a key id (rotation). Org admin. Returns the new secret once."""
+	addApiKeySecret(apiKeyUuid: ID!, expiresDate: DateTime): ApiKeyForUser
+	"""Replace one secret in place; tokens exchanged with the old one stop working. Org admin. Returns the new secret once."""
+	regenerateApiKeySecret(apiKeyUuid: ID!, slot: Int!, expiresDate: DateTime): ApiKeyForUser
+	"Set or clear (null) the expiry of one secret"
+	setApiKeySecretExpiry(apiKeyUuid: ID!, slot: Int!, expiresDate: DateTime): ApiKey
+	"""Retire or re-enable one secret without deleting it. Org admin."""
+	setApiKeySecretActive(apiKeyUuid: ID!, slot: Int!, active: Boolean!): ApiKey
+	"Remove one secret for good; the slot frees up and tokens exchanged with it stop working"
+	deleteApiKeySecret(apiKeyUuid: ID!, slot: Int!): ApiKey
+	"""Kill switch for the whole key id. Org admin."""
+	setApiKeyStatus(apiKeyUuid: ID!, status: ApiKeyStatus!): ApiKey
+	triggerReleasecompletionfinalizer(release: ID!): Boolean
+	removeUser(org: ID!, user: ID!): Boolean
+
+
+	archiveOrganization(orgUuid: ID!): Boolean
+	
+	createResourceGroup(orgUuid: ID!, name: String!): ResourceGroup
+
+	acceptPolicies(acceptTos: Boolean!, acceptMarketing: Boolean!, email: String): User
+	logout: Boolean
+	updateEmailAddress(oldEmail: String!, newEmail: String!, makePrimary: Boolean!, acceptMarketing: Boolean!): Boolean
+	resendEmailVerification: Boolean
+	
+	# User Groups
+	createUserGroup(userGroup: CreateUserGroupInput!): UserGroupWebDto
+	updateUserGroup(userGroup: UpdateUserGroupInput!): UserGroupWebDto
+	createTeam(team: CreateTeamInput!): TeamWebDto
+	updateTeam(team: UpdateTeamInput!): TeamWebDto
+
+	# Vulnerability Analysis
+	createVulnAnalysis(analysis: CreateVulnAnalysisInput!): VulnAnalysisWebDto
+	updateVulnAnalysis(analysis: UpdateVulnAnalysisInput!): VulnAnalysisWebDto
+	acceptVexStatementProposal(uuid: ID!, comment: String): VexStatementProposalWebDto
+	rejectVexStatementProposal(uuid: ID!, reason: String): VexStatementProposalWebDto
+	updateVexStatementProposal(uuid: ID!, updates: VexProposalUpdateInput!): VexStatementProposalWebDto
+	attestMitigation(uuid: ID!, evidence: String!): MitigationAttestationWebDto
+	waiveMitigation(uuid: ID!, reason: String!): MitigationAttestationWebDto
+
+	# Perspectives
+	createPerspective(org: ID!, name: String!): Perspective
+	updatePerspective(uuid: ID!, name: String!): Perspective
+	"""
+	Set the sid override + authority segments on a real perspective (SaaS only;
+	rejects product-derived perspectives with a clear error). Each field is
+	optional -- null leaves the existing value unchanged. ENABLE/DISABLE override
+	writes are rejected when the org is not in ENABLED_FLEXIBLE (D3 / G2).
+	"""
+	updatePerspectiveSidPurl(uuid: ID!, sidPurlOverride: SidPurlOverride, sidAuthoritySegments: [String!]): Perspective
+	deletePerspective(uuid: ID!): Perspective
+	setPerspectivesOnComponent(componentUuid: ID!, perspectiveUuids: [ID!]!): Component
+	"""
+	SaaS-only. Creates a component or product and atomically assigns it to the given
+	perspective. Requires WRITE permission on the perspective. Only real perspectives
+	(PerspectiveType.PERSPECTIVE) are allowed -- product-derived perspectives are rejected.
+	Perspective org must match component's target org (enforced by authorization).
+	"""
+	createComponentInPerspective(component: CreateComponentInput!, perspectiveUuid: ID!): Component
+	
+	# Enrichment
+	triggerEnrichment(artifact: ID!): EnrichmentTriggerResult
+	
+	# DTrack
+	syncDtrackProjects(orgUuid: ID!): Boolean
+	# Admin-only force re-upload: re-submit every synthetic bucket to DTrack
+	# (existing project or a new one), triggering full re-analysis + re-ingest.
+	forceReuploadDtrackData(orgUuid: ID!): Boolean
+
+	# Instances
+	createInstance(orgUuid: ID!, name: String, instanceType: InstanceType, namespace: String, uri: String!, environment: String, clusterId: ID): Instance
+	createInstanceFromDto(instance: CreateInstanceInput!, plan: UpdateInstancePlanInput): Instance
+	updateInstance(instance: InstanceInput!): Instance
+	setInstanceApiKey(instanceUuid: ID!): ApiKeyForUser
+	generateProductRelease(instanceUuid: ID!): [InstanceProductMapActual]
+	archiveInstance(instanceUuid: ID!): Boolean
+
+	# properties
+	createProperty(property: PropertyInput!): Property
+
+	# secrets
+	createSecret(secret: SecretInput!): Secret
+	updateSecretDistribution(orgUuid: ID!, secretUuid: ID!, permissions: [PermissionInput]): Secret
+	updateSecretDetails( secretUuid: ID!, secret: SecretUpdateInput!): Secret
+	deleteSecret(orgUuid: ID!, secretUuid: ID!): Boolean
+	
+	# BEAR integration
+	setBearIntegration(org: ID!, uri: String!, apiKey: String!, skipPatterns: [String]): BearIntegration
+	updateBearSkipPatterns(org: ID!, skipPatterns: [String]): BearIntegration
+	deleteBearIntegration(org: ID!): Boolean!
+
+	# AI Agents
+	# Refine display fields on an existing Agent (name, icon, color,
+	# notes, status). Only non-null fields are applied -- partial edits
+	# can't blank unrelated fields. Hierarchy fields and the model
+	# ontology pointer are immutable from this entry point; sub-agent
+	# registration goes through spawnSubAgentProgrammatic.
+	updateAgent(input: AgentUpdateInput!): Agent
+
+	# Set the admin-chosen display label for an agent. Org-admin only.
+	# Does NOT touch the registration `name` (the runtime resolution
+	# key) -- pass null/blank to clear and fall back to name.
+	setAgentDisplayName(uuid: ID!, displayName: String): Agent
+
+	# Refine ModelOntology display fields (publisher, description,
+	# purl, notes). Name + version are immutable identity -- re-register
+	# under a new name+version pair if needed.
+	updateModelOntology(input: ModelOntologyUpdateInput!): ModelOntology
+
+	# AI-Agent policies (SAAS-only).
+	#
+	# Create or update an Agent policy. CEL is validated at write time
+	# -- an invalid expression throws so a typo never silently no-ops
+	# at evaluation. Use the same input to update (pass uuid).
+	upsertAgentPolicy(input: AgentPolicyInput!): AgentPolicy
+
+	# Toggle a policy's enabled flag without rewriting the rest.
+	setAgentPolicyEnabled(uuid: ID!, enabled: Boolean!): AgentPolicy
+
+	# Delete a policy (org admin only). Past verdicts on sessions keep
+	# their recorded policy uuid for forensic value.
+	deleteAgentPolicy(uuid: ID!): Boolean
+
+	# Distribution module (SAAS-only): client + site CRUD. Pass uuid to
+	# update. Deleting a client cascades to its sites (no DB FK).
+	upsertClient(input: ClientInput!): Client
+	"""Soft delete: archives the client, cascading to sites, shipments, and devices."""
+	deleteClient(uuid: ID!): Boolean
+	upsertSite(input: SiteInput!): Site
+	"""Soft delete: archives the site, cascading to shipments and devices."""
+	deleteSite(uuid: ID!): Boolean
+
+	# Distribution module (SAAS-only): shipments (batch). shipProduct is
+	# append-only (always a new row).
+	shipProduct(input: ShipProductInput!): ShippedProduct
+	"""Admin edit of an existing shipment (same input shape as shipProduct)."""
+	updateShippedProduct(uuid: ID!, input: ShipProductInput!): ShippedProduct
+	"""Soft delete: archives the shipment, cascading to its devices."""
+	deleteShippedProduct(uuid: ID!): Boolean
+
+	# Per-device layer. Phone-home (actual) and 821 disposition (tracking) are
+	# per-device. updateDevicePlan records a field-repair / version change.
+	upsertDevice(input: DeviceInput!): Device
+	reportDeviceActual(uuid: ID!, input: ActualReportInput!): Device
+	updateDeviceTracking(uuid: ID!, input: TrackingInput!): Device
+	updateDevicePlan(uuid: ID!, expectedRelease: ID): Device
+	"""Soft delete: archives the device."""
+	deleteDevice(uuid: ID!): Boolean
+
+	# Digital twin. addDeviceEvent records a field event (failure / repair /
+	# replacement / inspection) anchored to the release ontology (hbomRef / purl).
+	# reportDeviceState is the programmatic (API-key) phone-home: submit observed
+	# digests (or a raw k8s image list) and reconcile against the expected release.
+	addDeviceEvent(input: DeviceEventInput!): DeviceEvent
+	"""Soft delete: archives the event."""
+	deleteDeviceEvent(uuid: ID!): Boolean
+	"""Operator-posted observed-state report (same payload as reportDeviceState, JWT auth)."""
+	reportDeviceStateManual(report: DeviceStateReportInput!): Device
+
+	# Rebuild a hardware release HBOM components from its BOM artifact.
+	reconcileReleaseHbomComponents(releaseUuid: ID!): Boolean
+
+	# Committer + signing-key management.
+	upsertCommitter(input: CommitterInput!): Committer
+	archiveCommitter(uuid: ID!): Committer
+	enrollSigningKey(input: SigningKeyInput!): SigningKey
+	revokeSigningKey(uuid: ID!): SigningKey
+	"""
+	Update the allowed_signers principal (identity) on an enrolled key.
+	Operator JWT path. Fingerprint / pubKey are immutable; SSH keys
+	must keep a non-blank identity. Pass null/blank to clear a GPG
+	informational identity.
+	"""
+	updateSigningKeyIdentity(uuid: ID!, identity: String): SigningKey
+
+	# Notifications framework -- synthetic event injection (Phase 2d).
+	#
+	# Write a curated synthetic event into the org's outbox so the rest
+	# of the pipeline (fan-out, channel dispatch, history) can be
+	# exercised end-to-end without waiting for a real CVE / VEX change.
+	# Operator-only -- gated as ADMIN at ORGANIZATION scope. Returns the
+	# persisted outbox event for the caller to link to the resulting
+	# history rows (which land asynchronously on the next fan-out tick).
+	injectSyntheticEvent(orgUuid: ID!, template: SyntheticEventTemplateEnum!): NotificationOutboxEventResult!
+
+	# Notifications framework -- channel test (Phase 2d).
+	#
+	# Inject a synthetic event tagged with the given channel as the
+	# direct test target. The fan-out worker skips subscription / CEL /
+	# severity-gate evaluation and writes a single delivery row addressed
+	# at this channel; the channel worker then dispatches the rendered
+	# payload to the real webhook. Used by the "Test channel" button to
+	# confirm a webhook is reachable + auth'd before relying on real
+	# event traffic. Org-admin only; the channel must belong to the
+	# caller's org.
+	testNotificationChannel(channelUuid: ID!): NotificationOutboxEventResult!
+
+	# Notifications framework -- channel CRUD (Phase 3).
+	#
+	# Upsert is one mutation per the rearm convention (see
+	# upsertAgentPolicy, upsertCommitter). uuid null on the input = create;
+	# uuid present = update. webhookUrl null/blank on update preserves
+	# the existing encrypted value (rename without re-typing the URL).
+	# Slack URL prefix is enforced server-side at save time.
+	upsertNotificationChannel(input: NotificationChannelInput!): NotificationChannelResult!
+
+	# Status flip (ENABLED / DISABLED). Free-form transitions; the
+	# fan-out + dispatch workers already short-circuit on DISABLED so
+	# this is the kill-switch surface. No-op when status already matches.
+	setNotificationChannelStatus(uuid: ID!, status: NotificationChannelStatusEnum!): NotificationChannelResult!
+
+	# Hard delete. In-flight deliveries pointing at this channel get
+	# marked FAILED by the delivery worker (channel-no-longer-exists path).
+	# Soft-delete semantics are available via setNotificationChannelStatus(DISABLED).
+	deleteNotificationChannel(uuid: ID!): Boolean!
+
+	# Notifications framework -- channel-group CRUD (Phase 13b).
+	#
+	# A channel group is a named, cross-type bundle of channels
+	# ("security-oncall" = Slack #sec + Teams #leadership + Email
+	# security@) referenceable from a subscription route. At fan-out
+	# the route's channelGroups list is resolved to member channel
+	# UUIDs and merged with the route's direct channels (dedup,
+	# first-seen order preserved). Each member channel still produces
+	# its own delivery row with independent retry / dedup / audit --
+	# the group is purely a naming layer.
+	#
+	# Upsert: uuid null = create; uuid present = update. Service-layer
+	# validation rejects empty channel lists, duplicate channel UUIDs,
+	# missing channel UUIDs, and cross-org channel membership.
+	# Cross-org reparent on update is also rejected.
+	upsertNotificationChannelGroup(input: NotificationChannelGroupInput!): NotificationChannelGroupResult!
+
+	# Hard delete. Subscriptions that referenced this group keep their
+	# reference UUID; the fan-out treats a missing group as "no members"
+	# and silently no-ops the group from the route's resolution. No
+	# cascade -- operators may want to recreate a group with the same
+	# name and have existing references stay broken until manually
+	# repointed.
+	deleteNotificationChannelGroup(uuid: ID!): Boolean!
+
+	# Notifications framework -- subscription CRUD (Phase 3).
+	#
+	# Upsert: uuid null = create, present = update. Service-layer
+	# validation enforces: CEL filter compiles + meets the safety caps,
+	# every route channel uuid exists in the same org, record_data
+	# stays under the 256 KB JSONB cap.
+	upsertNotificationSubscription(input: NotificationSubscriptionInput!): NotificationSubscriptionResult!
+
+	# Status flip (ACTIVE / DISABLED / PREVIEW). PREVIEW is the
+	# observe-only mode used during Quick Start verification; the
+	# fan-out worker's active-subscription query treats it like
+	# DISABLED for live traffic. No-op when status already matches.
+	setNotificationSubscriptionStatus(uuid: ID!, status: NotificationSubscriptionStatusEnum!): NotificationSubscriptionResult!
+
+	# Hard delete. Customers wanting reversible pause flip status to
+	# DISABLED instead.
+	deleteNotificationSubscription(uuid: ID!): Boolean!
+
+	# Notifications framework -- Inbox MVP read-state (Phase 14).
+	#
+	# markNotificationRead: idempotent. A repeat call on the same
+	# (caller × delivery) is a no-op upsert; read_at anchors to the
+	# FIRST read so the inbox can show "you saw this 3 days ago"
+	# without drifting on every re-render. Authorization: the caller
+	# must be able to see this delivery under the inbox visibility
+	# filter (org-admin tier OR perspective-member with intersecting
+	# perspectives) -- toggling read-state of a delivery you can't see
+	# is rejected, not silently succeeded.
+	markNotificationRead(deliveryUuid: ID!): NotificationInboxItem!
+
+	# markNotificationUnread: returns true when an existing read row
+	# was removed, false when the (caller × delivery) pair was already
+	# unread. Same visibility auth as markNotificationRead.
+	markNotificationUnread(deliveryUuid: ID!): Boolean!
+
+	# Mark every currently-visible-and-unread delivery in the org as
+	# read for the caller. Returns the count of newly-created read
+	# rows AND a hasMore flag -- the backend caps a single sweep at
+	# 500 to bound the per-call work; the UI uses hasMore to decide
+	# whether to surface "re-run to clear the remaining" guidance.
+	# Bulk variant of markNotificationRead; same visibility scope
+	# (org-admin or perspective-member).
+	#
+	# Note: ignores notificationInbox's status / eventType / unreadOnly
+	# filters by design -- "Mark all as read" is the user-facing
+	# kill-switch for the whole inbox-tab badge, not a scoped sweep.
+	# A future "Mark filtered as read" would land as a separate
+	# mutation that takes the same filter inputs as notificationInbox.
+	markAllNotificationsRead(orgUuid: ID!, inboxScope: NotificationInboxScope = PERSONAL): MarkAllNotificationsReadResult!
+
+	# FDA-Readiness-1: manufacturer attests a component's support level / milestone dates.
+	# Server-set source=MANUAL, attester recorded, appended to the append-only attestation
+	# history. Dates are ISO-8601 (YYYY-MM-DD).
+	#
+	# levelOfSupport is the manufacturer's ATTESTED claim about what the upstream maintainer
+	# is actually doing -- the thing FDA asks for, which cannot be computed from dates. It is
+	# stored, and is NOT the same field as the derived supportStatus; the two are surfaced
+	# separately and never reconciled, so a reviewer can see when they disagree.
+	#
+	# assessedAt is an RFC-3339 instant stating when the HUMAN assessed, which need not be
+	# when they filed it ("read the advisory on the 12th, recorded it on the 30th"). Omit it
+	# to mean now. A malformed value is rejected, never silently defaulted.
+	#
+	# state: WITHDRAWN retracts an attestation without erasing it -- the row and its history
+	# survive, and exports stop making the claim. This is how a mistaken attestation is
+	# corrected, because a regulatory record is superseded rather than deleted.
+	#
+	# Each date argument is independent: an omitted one leaves that milestone's own date AND
+	# provenance untouched (so e.g. an EOL asserted from a different source than EOS survives
+	# an EOS-only edit) -- only a non-null value upserts that milestone.
+	#
+	# reason records WHY this write happened. It is stored on the audit row and is NEVER
+	# exported. Do not confuse it with justification, which is the basis for the
+	# level-of-support CLAIM and IS exported: keeping them separate is what stops a milestone
+	# removal note ("removed a typo'd EOL") from becoming the stated reason a third party's
+	# project was called abandoned. REQUIRED when clearMilestones is non-empty.
+	#
+	# clearMilestones REMOVES milestones, and is the only way to correct a mistaken date. A
+	# null date means "leave alone", so without this a typo'd endOfLife is re-merged by every
+	# later write and permanently blocks any date after it; WITHDRAWN is not a substitute,
+	# because it suppresses the whole component from exports and coverage rather than removing
+	# the one wrong fact. Clearing still SUPERSEDES rather than erases: the removal writes an
+	# audit row carrying `reason`, so the history keeps what was claimed, when it was
+	# withdrawn and why. Setting and clearing the same milestone in one call is rejected.
+	#
+	# assessedAt dates the level-of-support claim and is PRESERVED across writes that do not
+	# supply it or re-assert a level, so editing a date cannot silently re-date an older
+	# attestation.
+	setSbomComponentSupport(sbomComponentUuid: ID!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, state: SupportState, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, clearMilestones: [SupportMilestoneType!], reason: String): SbomComponent
+
+	# Attest MANY components in one pass, reporting PER COMPONENT rather than as a count.
+	#
+	# Three rules: ROOT components are skipped (the application itself is not a third-party
+	# dependency to attest); an already-attested component is SKIPPED, never overwritten, so a
+	# sweep cannot flatten a considered per-component judgement; and therefore a re-run applies
+	# nothing. Each component is written in its own transaction, so one rejection fails that
+	# component alone.
+	#
+	# The result carries a per-item list, not just a count, because skip-and-report is only
+	# useful if the caller can show WHICH rows were skipped and why -- "312 applied" of 450
+	# leaves an operator no way to find the other 138, and the two skip reasons need
+	# different responses.
+	#
+	# That list is WRAPPED in a response type rather than returned bare, matching the other
+	# bulk mutations in this file. The input is an unbounded [ID!]!, so this surface will
+	# eventually need to say something about the batch as a whole -- a cap, a truncation
+	# flag -- and a bare list can never gain a sibling field without a breaking change. The
+	# schema is carried into the Community Edition verbatim, so that change is not available
+	# later.
+	#
+	# "Already attested" here means exactly what the coverage gauge means: a MANUAL attestation
+	# that is not WITHDRAWN. Row-existence would be a different, weaker test, and a bulk sweep
+	# that used it could never close the gap the gauge reports -- a withdrawn attestation reads
+	# as unattested on the gauge, so bulk must be able to re-attest it.
+	#
+	# SINGLE-ORG BY CONSTRUCTION: the organization is taken from the FIRST component in
+	# sbomComponentUuids and every other id must resolve within it. Ids from another org
+	# come back as FAILED "component not found in this organization" rather than being
+	# written, so a caller cannot smuggle a foreign component into an authorized batch.
+	#
+	# NO state OR clearMilestones ARGUMENT, deliberately. Both would be dead on this mutation:
+	# it only writes rows it has judged un-attested, so any row with a milestone to clear is
+	# skipped first, and on a fresh row a clear is rejected as "not set" -- clearMilestones
+	# could never succeed. A bulk WITHDRAWN is likewise incoherent: fresh attestations are
+	# implicitly ATTESTED, so it would conjure an assessment and retract it in one call. Use
+	# the single-component mutation for both. `reason` IS accepted: it records why this batch
+	# happened, on the audit row.
+	# batchId: OPTIONAL, and normally omitted. The server issues one per call and returns it
+	# on SbomComponentSupportBulkResponse; pass that value back on batches 2..n of a paged
+	# sweep so the whole sweep is ONE id in the audit history. Supplying an arbitrary id is
+	# accepted and not validated -- see the resolver for why validating it would break the
+	# legitimate paged case, and what that exposure is bounded to.
+	#
+	# At most 1000 uuids per call (SbomComponentService.BULK_SUPPORT_MAX_IDS). A larger call
+	# is refused outright rather than truncated, because a silently truncated sweep reports
+	# success over components it never wrote. Split and reuse the batchId.
+	bulkSetSbomComponentSupport(sbomComponentUuids: [ID!]!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, reason: String, batchId: ID): SbomComponentSupportBulkResponse!
+}
+
+
+
+# Artifact Collections
+type AcollectionData {
+	uuid: ID
+	release: ID
+	org: ID
+	version: Long
+	updateReason: CollectionUpdateReasonType
+	artifactComparison: ArtifactComparison
+	artifacts: [VersionedArtifact]
+	createdDate: DateTime
+	updatedDate: DateTime
+	whoUpdated: WhoUpdated
+}
+
+enum ActionEnum {
+	BUMP
+	BUMP_PATCH
+	BUMP_MINOR
+	BUMP_MAJOR
+	BUMP_DATE
+}
+
+input ActionGuardInput {
+	name: String!
+	action: GuardedAction!
+	cel: String!
+	mode: GuardMode!
+	"""Fully-anchored Java regex over the component name; organization-wide guards only."""
+	namePattern: String
+}
+
+input ActiveComponentsInput {
+	organization: ID
+	cutOffDate: DateTime
+	componentType: ComponentType
+	maxComponents: Int
+}
+
+input ActualReportInput {
+	reportedRelease: ID
+	reportedAt: DateTime
+	source: ReportSource
+}
+
+input AddDeliverableInput {
+	release: ID
+	variant: ID
+	deliverables: [DeliverableInput]
+}
+
+type AdminOrganization {
+	uuid: ID
+	name: String
+	approvalRoles: [ApprovalRole]
+	invitees: [InvitedObject]
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+"""
+Cross-cutting KPIs for the AI Agents dashboard header (mockup's
+four-card row).
+"""
+type AgentDashboardKpis {
+	"""Count of OPEN sessions across the org."""
+	activeSessions: Int
+	"""Sessions closed within the last 30 days."""
+	closedSessions30d: Int
+	"""Artifact UUIDs attached to sessions active in the last 7 days. Sum, not distinct."""
+	artifactsProduced7d: Int
+	"""Total registered agents in the org (ROOT + SUB)."""
+	registeredAgents: Int
+}
+
+input AgentPolicyInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	name: String!
+	description: String
+	kind: PolicyKind!
+	severity: PolicySeverity!
+	cel: String!
+	enabled: Boolean
+}
+
+input AgentUpdateInput {
+	uuid: ID!
+	name: String
+	iconKind: String
+	color: String
+	notes: String
+	status: AgentStatus
+}
+
+type AggregatedBranchChanges {
+	branchUuid: ID!
+	branchName: String!
+	componentUuid: ID
+	componentName: String
+	firstReleaseUuid: ID
+	firstVersion: String
+	lastReleaseUuid: ID
+	lastVersion: String
+	commitsByType: [CommitsByType!]!
+	changeType: ChangeType
+}
+
+type AggregatedChangelog {
+	componentUuid: ID!
+	componentName: String!
+	orgUuid: ID!
+	"Nullable (board task #38, phase 3): null on the empty-window component posture-diff path (no in-window release, posture-only). Always present on the legacy release-anchored path."
+	firstRelease: ReleaseInfo
+	"Nullable (board task #38, phase 3): null on the empty-window component posture-diff path (no in-window release, posture-only). Always present on the legacy release-anchored path."
+	lastRelease: ReleaseInfo
+	branches: [AggregatedBranchChanges!]!
+	sbomChanges: SbomChangesWithAttribution!
+	findingChanges: FindingChangesWithAttribution!
+	"ADDITIVE (board task #37): re-scan-driven finding changes over time, read from finding_change_events. Defaults to empty."
+	overTimeFindingChanges: [MetricsRevisionFindingChange!]!
+	"ADDITIVE (board task #38, phase 3): effective lower bound the over-time read started at when the requested window was clamped to the retention horizon; null when not clamped."
+	overTimeFindingChangesSince: DateTime
+	"ADDITIVE (board task #38, phase 3): COMPONENT-scope window posture-diff (New/StillPresent/Resolved + attribution + KEV overlay). Populated only when the changelogPostureDiffEnabled flag is on and the component posture-diff path runs; null otherwise. isNewToOrganization at this scope means new-to-component (relabeled by the UI by context)."
+	postureFindingChanges: FindingChangesWithAttribution
+}
+
+type AggregatedOrganizationChangelog {
+	orgUuid: ID!
+	dateFrom: DateTime!
+	dateTo: DateTime!
+	components: [ComponentChangelog!]!
+	sbomChanges: SbomChangesWithAttribution!
+	findingChanges: FindingChangesWithAttribution!
+	"ADDITIVE (board task #37): org-wide re-scan-driven finding changes over time, read from finding_change_events. Defaults to empty."
+	overTimeFindingChanges: [MetricsRevisionFindingChange!]!
+	"ADDITIVE (board task #38, phase 3): effective lower bound the over-time read started at when the requested window was clamped to the retention horizon; null when not clamped."
+	overTimeFindingChangesSince: DateTime
+}
+
+enum AggregationType {
+	NONE
+	AGGREGATED
+	AGGREGATED_BY_TICKET
+}
+
+type AnalysisHistoryWebDto {
+	state: AnalysisState!
+	justification: AnalysisJustification
+	details: String
+	createdDate: DateTime!
+	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+}
+
+enum AnalysisJustification {
+	CODE_NOT_PRESENT
+	CODE_NOT_REACHABLE
+	REQUIRES_CONFIGURATION
+	REQUIRES_DEPENDENCY
+	REQUIRES_ENVIRONMENT
+	PROTECTED_BY_COMPILER
+	PROTECTED_AT_RUNTIME
+	PROTECTED_AT_PERIMETER
+	PROTECTED_BY_MITIGATING_CONTROL
+}
+
+# CycloneDX 1.7 analysis.response values - declares the supplier action
+# against an affecting vulnerability (CISA VEX "action statement").
+enum AnalysisResponse {
+	CAN_NOT_FIX
+	WILL_NOT_FIX
+	UPDATE
+	ROLLBACK
+	WORKAROUND_AVAILABLE
+}
+
+type ApiKeyForUser {
+	apiKey: String
+	id: String
+	authorizationHeader: String
+}
+
+input ApprovalEntryInput {
+	org: ID
+	approvalRequirements: [ApprovalRequirementInput]
+	approvalName: String
+}
+
+input ApprovalMappingInput {
+	mappingClass: ApprovalMappingClass
+	mapTo: String
+	approvalEntries: [ID]
+}
+
+input ApprovalPolicyInput {
+	org: ID
+	resourceGroup: String
+	policyName: String
+	approvalMappings: [ApprovalMappingInput]
+	approvalEntries: [ID]
+	globalInputEvents: [ReleaseInputEventInput]
+	globalOutputEvents: [ReleaseOutputEventInput]
+}
+
+input ApprovalRequirementInput {
+	allowedApprovalRoleIds: [ID]
+	requiredNumberOfApprovals: Int
+	permittedNumberOfDisapprovals: Int
+}
+
+input ApprovalRoleInput {
+	id: String
+	displayView: String
+}
+
+enum ArtifactBelongsToEnum {
+	DELIVERABLE
+	RELEASE
+	SCE
+}
+
+enum ArtifactCoverageType {
+	DEV
+	TEST
+	BUILD_TIME
+}
+
+type ArtifactWithAttribution {
+	purl: String!
+	name: String
+	version: String!
+	# Preview-capped lists + true totals (see VulnerabilityWithAttribution).
+	addedIn: [ComponentAttribution!]!
+	removedIn: [ComponentAttribution!]!
+	addedInCount: Int!
+	removedInCount: Int!
+	isNetAdded: Boolean!
+	isNetRemoved: Boolean!
+}
+
+enum AttestationStatus {
+	PENDING
+	ATTESTED
+	WAIVED
+	EXPIRED
+}
+
+type BearIntegration {
+	uri: String
+	configured: Boolean!
+	skipPatterns: [String]
+}
+
+enum BomMediaType {
+    JSON
+    CSV
+    EXCEL
+}
+
+enum BomStructureType{
+	FLAT
+	HIERARCHICAL
+}
+
+input BranchInput {
+	uuid: ID
+	name: String
+	vcs: ID
+	vcsBranch: String
+	versionSchema: String
+	metadata: String
+	dependencies: [ChildComponentInput]
+	dependencyPatterns: [DependencyPatternInput]
+	autoIntegrate: AutoIntegrateState
+	type: BranchType
+	marketingVersionSchema: String
+	findingAnalyticsParticipation: FindingAnalyticsParticipation
+}
+
+type BranchWithReleases {
+	uuid: ID
+	name: String
+	status: Status
+	versionSchema: String
+	latestReleaseVersion: String
+	releases: [Release]
+}
+
+type BulkLifecycleUpdateResult {
+	"""Number of releases that were bumped to the target lifecycle."""
+	releasesBumped: Int!
+	"""UUIDs of the bumped releases (caller can re-fetch for fresh state)."""
+	releaseUuids: [ID!]!
+}
+
+enum ChangeType {
+	ADDED
+	CHANGED
+	REMOVED
+}
+
+# Which finding family the drill-down key belongs to.
+enum ChangelogFindingKind { VULNERABILITY, VIOLATION, WEAKNESS }
+
+input ChildComponentInput {
+	uuid: ID
+	status: Status
+	branch: ID
+	release: ID
+	isFollowVersion: Boolean
+}
+
+"""One resolved choice slot of a produced lot (XOR: one ref; OPTIONAL: zero/one; AND: implicit)."""
+type ChoiceResolution {
+	choiceRef: String
+	selectedRefs: [String]
+}
+
+input ChoiceResolutionInput {
+	choiceRef: String!
+	selectedRefs: [String]
+}
+
+type CiIntegration {
+	uuid: ID
+	identifier: String
+	org: ID
+	isEnabled: Boolean
+	type: IntegrationType
+	note: String
+	capabilities: [IntegrationCapability!]
+}
+
+enum ClaimType {
+	WORKAROUND
+	ENVIRONMENTAL_CONTROL
+}
+
+"""
+Two groups the approval page keeps apart: fields the requesting CLI reported about itself, which
+the requester controls, and the address this server observed, which it does not.
+"""
+type CliDeviceInfo {
+	reportedHostname: String
+	reportedOs: String
+	reportedTimeZone: String
+	reportedClient: String
+	observedIp: String
+}
+
+"A CLI browser login: a pending request, or the session it became once approved. Never carries codes or tokens."
+type CliSession {
+	uuid: ID!
+	status: CliSessionStatus!
+	"The short code the CLI showed; only meaningful while PENDING"
+	userCode: String
+	"Key the session acts as (a personal key, or a held Free Form key)"
+	apiKey: ID
+	"User who approved the login"
+	user: ID
+	org: ID
+	"What the CLI reported about itself, e.g. host name"
+	requestedFrom: String
+	"What the CLI reported about itself and what the server observed at login time"
+	deviceInfo: CliDeviceInfo
+	createdDate: DateTime
+	approvedDate: DateTime
+	"Sliding: each refresh moves it 30 days out, never past 90 days after approval"
+	expiresDate: DateTime
+	lastUsedDate: DateTime
+	revokedDate: DateTime
+}
+
+enum CliSessionStatus {
+	PENDING
+	ACTIVE
+	DENIED
+	REVOKED
+}
+
+"""A customer / establishment that receives shipments. Parent of Site."""
+type Client {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	name: String
+	domain: DistributionDomain
+	contact: Contact
+	notes: String
+	createdDate: DateTime
+}
+
+input ClientInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	name: String!
+	domain: DistributionDomain
+	contact: ContactInput
+	notes: String
+}
+
+type CodeCommit {
+	commitId: String
+	commitUri: String
+	message: String!
+	author: String
+	email: String
+	changeType: String!
+}
+
+enum CollectionUpdateReasonType {
+	INITIAL_RELEASE
+	VEX_UPDATED
+	ARTIFACT_UPDATED
+	ARTIFACT_ADDED
+	ARTIFACT_REMOVED
+}
+
+type CommitsByType {
+	changeType: String!
+	commits: [CodeCommit!]!
+}
+
+"""
+A natural person (or external bot) whose commits show up in the
+org's SCEs. Owns enrolled signing keys the verifier matches against.
+May or may not be bound to a ReARM user -- the binding is optional so
+external contributors and ex-employees are covered.
+"""
+type Committer {
+	uuid: ID
+	org: ID
+	name: String
+	email: String
+	"""Optional binding to a ReARM users row."""
+	user: ID
+	"""Historical email aliases -- same committer, different addresses."""
+	aliases: [String]
+	status: CommitterStatus
+	createdDate: DateTime
+	"""Enrolled keys this committer owns. Includes revoked entries."""
+	signingKeys: [SigningKey]
+}
+
+input CommitterInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	name: String!
+	email: String!
+	user: ID
+	aliases: [String]
+}
+
+enum CommitterStatus {
+	ACTIVE
+	ARCHIVED
+}
+
+type ComponentAttribution {
+	componentUuid: ID!
+	componentName: String!
+	releaseUuid: ID!
+	releaseVersion: String!
+	branchUuid: ID
+	branchName: String
+}
+
+# One page of a finding's attribution. total is the FULL bucket size (== the *InCount shown inline),
+# so the UI can render pagination and "+N more".
+type ComponentAttributionPage {
+	items: [ComponentAttribution!]!
+	total: Int!
+	page: Int!
+	pageSize: Int!
+}
+
+input ComponentAuthenticationInput {
+	login: String
+	password: String
+	type: RearmCDAuthType
+}
+
+union ComponentChangelog = NoneChangelog | AggregatedChangelog | NoneProductChangelog
+
+"""A CDX #929 choice slot of a release tree, with its option nodes."""
+type ComponentChoice {
+	choice: HbomComponent
+	options: [HbomComponent]
+}
+
+input ComponentContactInput {
+	name: String
+	contact: String
+}
+
+"""Identity claims of an HBOM component grouped by asserting party (CDX 2.0, spec PR #936)."""
+type ComponentIdentifier {
+	bomRef: String
+	"""bom-ref of the Party making these identity assertions."""
+	party: String
+	identities: [Identifier]
+}
+
+"""Input to set a component's durable owner (a Team/UserGroup or a single user)."""
+input ComponentOwnerInput {
+	ownerType: ComponentOwnerType!
+	ownerRef: ID!
+}
+
+"""One NON-OWNED component in the durable-ownership report (RFC Phase 4c)."""
+type ComponentOwnershipReportRow {
+	componentUuid: ID!
+	componentName: String
+	componentType: ComponentType
+	ownership: ComponentOwnership!
+}
+
+type ComponentPurlToDtrack {
+	purl: String
+	projects: [ID]
+}
+
+# Native SBOM analogue of ComponentPurlToDtrack. Each canonical purl maps to
+# exactly one sbom_components row today, so sbomComponents typically has length
+# 1 -- kept as a list for shape parity and to leave room for future
+# canonicalization changes.
+type ComponentPurlToSbom {
+	purl: String
+	sbomComponents: [ID]
+}
+
+type ComponentWithBranches {
+	uuid: ID
+	name: String
+	type: ComponentType
+	versionSchema: String
+	branches: [BranchWithReleases]
+}
+
+"""Contact / establishment details (821 consignee-chain fields)."""
+type Contact {
+	address: String
+	phone: String
+	email: String
+}
+
+input ContactInput {
+	address: String
+	phone: String
+	email: String
+}
+
+input CreateArtifactInput {
+	release: ID
+	component: ID
+	deliverable: ID
+	releaseVersion: String
+	artifact: ArtifactInput
+	sce: ID
+	belongsTo: ArtifactBelongsToEnum
+}
+
+input CreateInstanceInput {
+	org: ID!
+	name: String
+	instanceType: InstanceType
+	namespace: String
+	uri: String
+	environment: String
+	clusterId: ID
+}
+
+input CreateTeamInput {
+	name: String!
+	description: String
+	org: ID!
+}
+
+input CreateUserGroupInput {
+	name: String!
+	description: String
+	org: ID!
+}
+
+input CreateVulnAnalysisInput {
+	org: ID!
+	location: String!
+	locationType: LocationType!
+	findingId: String!
+	findingAliases: [String]
+	findingType: FindingType!
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	state: AnalysisState!
+	justification: AnalysisJustification
+	details: String
+	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+}
+
+"""Bounded CVE search response — components built from the shownReleases newest matches."""
+type CveSearchResult {
+	components: [ComponentWithBranches]
+	totalReleases: Int!
+	shownReleases: Int!
+	truncated: Boolean!
+}
+
+input DependencyPatternInput {
+	uuid: ID
+	pattern: String!
+	targetBranchName: String
+	defaultStatus: Status
+	fallbackToBase: FallbackToBase
+}
+
+input DeployedReleaseInput {
+	timeSent: DateTime
+	release: ID
+	artifact: ID
+	type: ProgrammaticType
+	namespace: String
+	properties: Object
+	state: ServiceState
+	partOf: String
+	replicas: [DeployedReplicaInput]
+}
+
+input DeployedReplicaInput {
+	id: String
+	state: ServiceState
+}
+
+"""
+One (instance, namespace) occurrence of a component or product, see Query.deployedTo.
+"""
+type DeployedToEntry {
+	instanceUuid: ID!
+	instanceDisplayName: String!
+	namespace: String
+	environment: String
+	featureSetUuid: ID
+	featureSetName: String
+	releaseUuid: ID
+	version: String
+	"""
+	True when a concrete release is deployed / matched; false for a product plan
+	whose feature set has no matched release on the instance.
+	"""
+	matched: Boolean!
+}
+
+"""
+A field event on a fielded unit. Hardware events anchor to the release's HBOM
+ontology via hbomRef; software events via purl. Append-only.
+"""
+type DeviceEvent {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	device: ID
+	eventType: DeviceEventType
+	date: DateTime
+	hbomRef: String
+	componentName: String
+	purl: String
+	replacement: ReplacementPart
+	"""For OBSERVATION events: the full reconciled report (history; the device's observedState is latest-only)."""
+	observation: ObservedState
+	notes: String
+	createdDate: DateTime
+}
+
+input DeviceEventInput {
+	device: ID!
+	eventType: DeviceEventType!
+	date: DateTime
+	hbomRef: String
+	componentName: String
+	purl: String
+	replacement: ReplacementPartInput
+	notes: String
+}
+
+enum DeviceEventType {
+	FAILURE
+	REPAIR
+	REPLACEMENT
+	INSPECTION
+	OBSERVATION
+}
+
+"""One HBOM node of a unit's as-maintained view (release HBOM + replacements)."""
+type DeviceHbomComponent {
+	component: HbomComponent
+	"""ORIGINAL | REPLACED | ALTERNATE | UNRESOLVED_CHOICE"""
+	twinStatus: String
+	"""Latest field event on this node (FAILURE / REPAIR / INSPECTION / REPLACEMENT); null when none."""
+	eventType: String
+	eventDate: DateTime
+	replacement: ReplacementPart
+	eventNotes: String
+	"""bom-ref of the CDX #929 choice slot this node belongs to (null otherwise)."""
+	choiceRef: String
+}
+
+"""
+Resolved device identity for a feature set: its effective UDI-DI and
+regulatory class, derived from the single UDI-bearing constituent component.
+"""
+type DeviceIdentity {
+	featureSet: ID
+	deviceClass: DeviceClass
+	udiBearingComponent: ID
+	udiBearingRelease: ID
+	udiDi: String
+	"""
+	Physical-ness of what a shipment of this feature set records: HARDWARE when any constituent
+	component is HARDWARE-nature, SOFTWARE otherwise. Together with deviceClass this is the
+	same two-axis classification components carry: HARDWARE = physical batch, SOFTWARE +
+	MEDICAL_* = SaMD (shipped and tracked per unit like hardware), SOFTWARE + NONE = plain
+	software.
+	"""
+	nature: ComponentNature
+}
+
+input DeviceInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	shippedProduct: ID!
+	identifiers: [IdentifierInput]
+	plan: DevicePlanInput
+	notes: String
+}
+
+input DevicePlanInput {
+	expectedRelease: ID
+}
+
+# DERIVED per-component verdict: whether the component's declared support window ends
+# before the DEVICE's support horizon (the Feb-2026 FDA signal). The device horizon is the
+# DEVICE WINDOW resolved by DeviceLifecycleResolver -- declared on the device model and
+# optionally overridden per batch -- and NOT the release's own eos, which is a CLE lifecycle
+# projection. There is no end-of-life fallback, because end-of-life means end of SALE.
+# Computed from the component's end-of-support and that horizon; never stored.
+enum DeviceSupportRisk {
+	OK
+	EOS_BEFORE_DEVICE
+	UNKNOWN
+}
+
+"""One in-field unit's support-risk evaluation (D7)."""
+type DeviceSupportRiskRow {
+	device: ID
+	shippedProduct: ID
+	site: ID
+	"""Unit-level identifiers (SERIAL, UDI, ...), so a row can be labelled without a device read."""
+	identifiers: [Identifier]
+	"""The site the unit is fielded at, or null when it has none or the site is archived."""
+	siteName: String
+	"""The client that owns that site, or null when unresolved or archived."""
+	clientName: String
+	"""The release this unit was judged on, or null when it has neither."""
+	release: ID
+	"""Which release that was: REPORTED (ground truth) or EXPECTED (the plan)."""
+	releaseSource: EvaluatedRelease
+	"""The device window that applied, or null when none is declared."""
+	window: ResolvedDeviceSupportWindow
+	risk: DeviceSupportRisk
+	"""Soonest ATTESTED component end-of-support in that release (WITHDRAWN excluded)."""
+	earliestComponentEos: String
+	"""How many attested components end support before the device does."""
+	componentsDrivingRisk: Int
+}
+
+"""
+A declared window, for writes. Rejected when the component has no device class, or when
+`eos` is after `eol`.
+
+**An empty object is NOT a clear.** A form bound to two date pickers posts `{}` the moment
+both are blank; retracting a regulatory commitment has to be asked for explicitly, with
+`clearDeviceSupportWindow`.
+"""
+input DeviceSupportWindowInput {
+	"""ISO-8601 date, YYYY-MM-DD."""
+	eos: String
+	"""ISO-8601 date, YYYY-MM-DD."""
+	eol: String
+	"""UTC RFC-3339 instant. Defaults to the time of the write when omitted."""
+	assessedAt: String
+}
+
+"""
+A page of fleet rows plus the unpaged totals, so a caller can show "N of M" and "K at risk".
+Rows come at-risk first (EOS_BEFORE_DEVICE, then UNKNOWN, then OK; uuid order within a
+verdict), so page 1 answers the question.
+"""
+type DevicesAtSupportRiskPage {
+	rows: [DeviceSupportRiskRow]
+	"""The size of the whole in-field fleet matching the filters, not of this page."""
+	total: Int
+	"""How many units in that fleet are EOS_BEFORE_DEVICE, counted before paging."""
+	atRiskTotal: Int
+}
+
+"""Industry framing for a distribution; drives UI terminology per client."""
+enum DistributionDomain {
+	GENERIC
+	MEDICAL
+	DEFENSE
+}
+
+type DownloadConfig {
+	artifactUuid: ID
+	artifactVersion: Int
+	releaseUuid: ID
+	componentUuid: ID
+	tldOnly: Boolean
+	ignoreDev: Boolean
+	structure: BomStructureType
+	belongsTo: ArtifactBelongsToEnum
+	mediaType: BomMediaType
+	excludeCoverageTypes: [ArtifactCoverageType]
+	includeSuppressed: Boolean
+	includeInTriage: Boolean
+	upToDate: DateTime
+	targetLifecycle: ReleaseLifecycleEnum
+	targetApproval: String
+}
+
+type DownloadLog {
+	uuid: ID
+	org: ID
+	downloadType: DownloadType
+	subjectType: DownloadSubjectType
+	subjectUuid: ID
+	subjectName: String
+	downloadedBy: ID
+	downloadedByName: String
+	createdType: ProgrammaticType
+	ipAddress: String
+	downloadConfig: DownloadConfig
+	createdDate: DateTime
+}
+
+enum DownloadSubjectType {
+	ARTIFACT
+	RELEASE
+	COMPONENT
+}
+
+enum DownloadType {
+	ARTIFACT_DOWNLOAD
+	RAW_ARTIFACT_DOWNLOAD
+	VDR_EXPORT
+	VEX_EXPORT
+	SBOM_EXPORT
+	CLE_EXPORT
+}
+
+type DuplicateComponentRepairSummary {
+	groupsExamined: Int!
+	releasesFolded: Int!
+	componentsArchived: Int!
+	branchesArchived: Int!
+	conflictGroups: Int!
+}
+
+# The role a member plays on a Team. An addressing LABEL only -- never grants
+# access (membership stays decoupled from RBAC). CUSTOM carries an org-defined
+# label alongside in customRole.
+type EmailObject {
+	email: String
+	isPrimary: Boolean
+	isVerified: Boolean
+	isAcceptMarketing: Boolean
+}
+
+input EmailPropertiesInput {
+	sendGridKey: String
+	fromEmail: String
+	smtpProps: SmtpPropsInput
+	emailSendType: EmailSendType
+}
+
+enum EmailSendType {
+	UNSET
+	SMTP
+	SENDGRID
+}
+
+type EnrichmentTriggerResult {
+	triggered: Boolean!
+	message: String
+	bomUuid: ID
+}
+
+"""Which release a unit was evaluated against, and why that one."""
+enum EvaluatedRelease {
+	"""What the unit actually reported running. Preferred: it is the ground truth."""
+	REPORTED
+	"""What the unit was planned to run. Used only when nothing has been reported."""
+	EXPECTED
+}
+
+type FederatedGrant {
+	type: FederatedGrantType
+	"KEY: the Free Form key to act as"
+	keyUuid: ID
+	"TEMPLATE: org-wide level, usually READ_ONLY so names resolve; NONE for nothing"
+	orgPermission: PermissionType
+	"TEMPLATE: level on components, branches and releases whose VCS repository is the calling repository"
+	vcsPermission: PermissionType
+	"TEMPLATE: may create components (and the VCS repository record) bound to the calling repository"
+	createComponents: Boolean
+	"TEMPLATE: functions on the org-wide and repository-scoped permissions; RESOURCE is implicit"
+	functions: [PermissionFunction!]
+	"TEMPLATE: extra static scope"
+	permissions: [FederatedStaticPermission!]
+}
+
+input FederatedGrantInput {
+	type: FederatedGrantType!
+	keyUuid: ID
+	orgPermission: PermissionType
+	vcsPermission: PermissionType
+	createComponents: Boolean
+	functions: [PermissionFunction!]
+	permissions: [FederatedStaticPermissionInput!]
+}
+
+"""
+TEMPLATE: scope evaluated against the token on every call (the calling repository's components, optionally
+creating them, plus optional static extras), acting through an identity row materialised per repository.
+KEY: act as one Free Form key of the organization, with its permissions and attribution.
+"""
+enum FederatedGrantType {
+	TEMPLATE
+	KEY
+}
+
+"""
+Which identity tokens a trust rule accepts. owner is required; every list constrains only when non-empty.
+Repository entries are globs over the bare name or owner/name; refs are globs over the full ref (a bare pattern
+matches both heads and tags); workflows match the workflow file name or a glob over workflow_ref; subjects
+are globs over the raw sub claim.
+"""
+type FederatedMatcher {
+	owner: String
+	repositories: [String!]
+	excludeRepositories: [String!]
+	refs: [String!]
+	environments: [String!]
+	workflows: [String!]
+	events: [String!]
+	subjects: [String!]
+}
+
+input FederatedMatcherInput {
+	owner: String!
+	repositories: [String!]
+	excludeRepositories: [String!]
+	refs: [String!]
+	environments: [String!]
+	workflows: [String!]
+	events: [String!]
+	subjects: [String!]
+}
+
+type FederatedStaticPermission {
+	scope: PermissionScope
+	object: ID
+	type: PermissionType
+	functions: [PermissionFunction!]
+}
+
+input FederatedStaticPermissionInput {
+	scope: PermissionScope!
+	object: ID!
+	type: PermissionType!
+	functions: [PermissionFunction!]
+}
+
+"""
+An organization's trust in identity tokens from an external issuer. Every edit or status change bumps the
+version, which invalidates access tokens minted through the rule. The owner id on the provider side is pinned
+on first use; a changed id is refused until an admin resets the pin.
+"""
+type FederatedTrustRule {
+	uuid: ID
+	org: ID
+	name: String
+	provider: FederatedProvider
+	issuer: String
+	status: FederatedTrustRuleStatus
+	version: Int
+	matcher: FederatedMatcher
+	grant: FederatedGrant
+	pinnedOwnerId: String
+	expiresDate: DateTime
+	createdDate: DateTime
+	lastUpdatedDate: DateTime
+	lastUsedDate: DateTime
+	createdBy: ID
+	lastUpdatedBy: ID
+}
+
+enum FederatedTrustRuleStatus {
+	ACTIVE
+	DISABLED
+}
+
+# Which finding-lifecycle bucket to page in findingAttributionByDate.
+enum FindingAttributionBucket { APPEARED, PRESENT, RESOLVED }
+
+"Kind of re-scan-driven finding change between two consecutive metrics snapshots of the same release (board task #37)."
+enum FindingChangeKind {
+	APPEARED
+	RESOLVED
+	SEVERITY_INCREASED
+	SEVERITY_DECREASED
+	KEV_ADDED
+	KEV_REMOVED
+}
+
+# Read scope for findingChangeTimelineByDate (org-level only). RELEASE_ANCHORED (default) bounds events to
+# releases produced in the window; ALL_POSTURE also surfaces re-scan-driven changes on releases produced
+# before the window (a newly-disclosed CVE against an already-shipped release). See FindingChangeScope.java.
+enum FindingChangeScope {
+	RELEASE_ANCHORED
+	ALL_POSTURE
+}
+
+type FindingChangesWithAttribution {
+	vulnerabilities: [VulnerabilityWithAttribution!]!
+	violations: [ViolationWithAttribution!]!
+	weaknesses: [WeaknessWithAttribution!]!
+	totalAppeared: Int!
+	totalResolved: Int!
+	# "Worsened" rollup counts (board task #38, phase 3 posture-diff). 0 on the legacy path.
+	totalNewlyKev: Int
+	totalSeverityIncreased: Int
+	# Non-null when the window `from` predates the org's finding-change-event retention horizon: the
+	# from-baseline could not be fully reconstructed, so buckets degrade to comparing against current
+	# metrics for postures before this instant. Null when the window is fully within retention / legacy path.
+	reconstructionClampedSince: DateTime
+	# true = posture-endpoint diff semantics (window-endpoint reconstruction); false/absent = legacy
+	# pairwise-across-releases semantics (e.g. an org whose event-log backfill has not yet certified).
+	# Lets a client tell WHICH semantics it renders, since both share this payload at org scope.
+	postureDiffApplied: Boolean
+}
+
+enum FindingType {
+	VULNERABILITY
+	VIOLATION
+	WEAKNESS
+}
+
+"""One fleet-drift hit: a unit diverging from its authorized baseline, and where it is fielded."""
+type FleetDriftEntry {
+	device: Device
+	siteName: String
+	clientName: String
+}
+
+# Result of a GitHub App "Test connection" probe (testGithubIntegration).
+type GithubIntegrationTestResult {
+	ok: Boolean!
+	message: String!
+	installations: Int!
+}
+
+input GlobalApprovalPolicyRuleInput {
+	name: String!
+	namePattern: String!
+	componentType: ComponentType
+	approvalPolicy: ID!
+}
+
+input GlobalInputEventRefInput {
+	uuid: ID
+	disabled: Boolean
+	overrideOutputEventsLocally: Boolean
+	outputEventsOverride: [ID]
+}
+
+input GlobalPrValidationTriggerRuleInput {
+	name: String!
+	uriPattern: String!
+	trigger: ReleaseOutputEventInput!
+}
+
+input GlobalTeamAssignmentRuleInput {
+	name: String!
+	namePattern: String!
+	componentType: ComponentType
+	ownerTeam: ID!
+}
+
+type GlobalUserCounts {
+	writeUsers: Int
+	readUsers: Int
+	totalUsers: Int
+}
+
+"""A parsed HBOM hardware node (device/firmware) attached to a release."""
+type HbomComponent {
+	uuid: ID
+	org: ID
+	release: ID
+	bomRef: String
+	type: String
+	"""CDX #929 choice operator (XOR / AND / OPTIONAL); null for plain devices."""
+	operator: String
+	name: String
+	version: String
+	description: String
+	category: String
+	subcategory: String
+	"""CDX 2.0 parties (manufacturer/supplier/... incl. address), spec PR #930."""
+	parties: [Party]
+	"""Party-asserted identity claims (CDX 2.0 identity model, spec PR #936)."""
+	identifiers: [ComponentIdentifier]
+	"""Derived: part-number-like claims (MPN/PART_NUMBER/...), deduped."""
+	partNumbers: [String]
+	"""Derived: first MANUFACTURER-role party's name."""
+	manufacturer: String
+	boardLocation: String
+	deviceType: String
+	quantity: Int
+	parentRef: String
+	isRoot: Boolean
+}
+
+input IgnoreViolationInput {
+	licenseViolationRegexIgnore: [String]
+	securityViolationRegexIgnore: [String]
+	operationalViolationRegexIgnore: [String]
+}
+
+type ImportComponentResult {
+	componentName: String
+	version: String
+	success: Boolean
+	error: String
+}
+
+enum InstanceActualChangeType {
+	DEPLOYMENT
+	AGENT_DATA
+	PRODUCT_MATCH
+}
+
+type InstanceHistoryActual {
+	uuid: ID
+	instanceUuid: ID
+	revision: Int
+	date: DateTime
+	updateType: ProgrammaticType
+	updatedBy: ID
+	changeType: [InstanceActualChangeType]
+}
+
+type InstanceHistoryPlan {
+	uuid: ID
+	instanceUuid: ID
+	revision: Int
+	date: DateTime
+	updateType: ProgrammaticType
+	updatedBy: ID
+	changeType: [InstancePlanChangeType]
+}
+
+input InstanceInput {
+	uuid: ID!
+	uri: String
+	org: String
+	properties: [InstancePropertyRecordInput]
+	agentData: String
+	releases: [DeployedReleaseInput]
+	targetReleases: [DeployedReleaseInput]
+	environment: String
+	products: [InstanceProductMapPlanInput]
+	notes: String
+	name: String
+	namespace: String
+}
+
+enum InstancePlanChangeType {
+	PRODUCT_RELEASE
+	PROPERTY
+	ENVIRONMENT
+	TARGET_RELEASE
+	# extra configuration (e.g. Helm values file) of a product in the plan changed
+	CONFIGURATION
+}
+
+input InstanceProductMapPlanInput {
+	featureSet: ID
+	type: IntegrateType
+	release: ID
+	namespace: String
+	targetRelease: ID
+	identifier: String
+	configuration: String
+	alertsEnabled: Boolean
+}
+
+input InstancePropertyRecordInput {
+	uuid: ID!
+	type: PropertyConfigurableType!
+	value: String!
+	namespace: String
+	product: ID
+}
+
+type InstanceWithHistory {
+	instanceData: Instance
+	instanceHistory: [InstanceHistoryPlan]
+}
+
+type Integration {
+	uuid: ID
+	identifier: String
+	org: ID
+	type: IntegrationType
+	uri: String
+	frontendUri: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	capabilities: [IntegrationCapability!]
+}
+
+# Capabilities a GITHUB integration is wired up to perform. Picked at
+# create/update time, validated by the server, and used both as a UI
+# filter (e.g. the "create webhook" picker only shows integrations with
+# WEBHOOK) and as a runtime guard on outbound dispatch paths.
+enum IntegrationCapability {
+	WORKFLOW_DISPATCH
+	PR_VALIDATE
+	WEBHOOK
+}
+
+input IntegrationInput {
+	org: ID!
+	uri: String
+	identifier: String!
+	secret: String!
+	type: IntegrationType!
+	frontendUri: String
+	tenant: String
+	client: String
+	note: String
+	schedule: String
+	capabilities: [IntegrationCapability!]
+}
+
+enum IntegrationType {
+	GITHUB
+	GITLAB
+	JENKINS
+	ADO
+	SLACK
+	MSTEAMS
+	DEPENDENCYTRACK
+	# KEV catalog sources (V54 per-org refactor). Must stay in sync with the
+	# Java IntegrationType enum: enableKevSource/disableKevSource take these as
+	# an input arg and configuredBaseIntegrations returns them as output, so a
+	# missing value here breaks both coercion (enable/disable) and output
+	# serialization (every org has a CISA_KEV row after the V54 backfill).
+	CISA_KEV
+	VULNCHECK_KEV
+}
+
+"""What needs a person's attention: what is locked, and what nobody has claimed."""
+type IntegrityInbox {
+	activeLocks: [Lock!]
+	"""Commits behind those locks that nobody is accountable for."""
+	unrecognizedCommits: [UnrecognizedCommit!]
+	"""Locks that need an administrator because a cause was disowned or contested."""
+	escalatedLocks: [Lock!]
+}
+
+input InviteUserInput {
+	org: ID!,
+	email: String!,
+	type: PermissionType!
+}
+
+type InvitedObject {
+	email: String
+	type: PermissionType
+	challengeExpiry: DateTime
+}
+
+# A named ransomware campaign (with optional reference URL). Empty for CISA,
+# which supplies no campaign names; populated by richer sources.
+type KevRansomwareCampaign {
+	name: String!
+	url: String
+}
+
+# Whether a source reports a vulnerability as used in known ransomware
+# campaigns. Three-state so "source says no" (UNKNOWN) and "source is
+# silent" (UNSPECIFIED) stay distinct.
+enum KevRansomwareStatus {
+	KNOWN
+	UNKNOWN
+	UNSPECIFIED
+}
+
+# KEV detail for one CVE: the aggregated ransomware status plus every
+# source's assertion (active and revoked).
+type KevRecordDetails {
+	cveId: String!
+	ransomwareStatus: KevRansomwareStatus
+	assertions: [KevSourceAssertion!]!
+}
+
+# One source's assertion that a CVE is known-exploited. revokedDate set means
+# the source withdrew the listing -- the CVE still counts as KEV, the date is
+# shown as a note. Date fields stay feed-format strings (yyyy-MM-dd).
+type KevSourceAssertion {
+	source: String!
+	revokedDate: String
+	vendorProject: String
+	product: String
+	vulnerabilityName: String
+	dateAdded: String
+	shortDescription: String
+	requiredAction: String
+	dueDate: String
+	ransomwareStatus: KevRansomwareStatus
+	ransomwareCampaigns: [KevRansomwareCampaign!]
+	notes: String
+	cwes: [String!]
+}
+
+# The manufacturer's ATTESTED claim about what a component's upstream maintainer is
+# actually doing -- FDA's "level of support provided through monitoring and maintenance
+# from the software component manufacturer" (V.A.4(b)). Distinct from SupportStatus,
+# which is derived from dates, and never reconciled with it.
+#
+# Deliberately THREE members and no "unknown": FDA gives three words, CycloneDX taxonomy
+# PR #186 has three, and CLE has no such vocabulary. "Assessed but indeterminate" is a
+# null level plus a justification, which is the L1021-1022 mechanism for being unable to
+# provide the information and a stronger record than an undefined token.
+#
+# NO_LONGER_MAINTAINED and ABANDONED are negative claims about a named third party and
+# REQUIRE a justification. FDA defines neither term, so an organisation must define the
+# boundary once in its submission narrative and apply it consistently; ReARM ships no
+# default definition for either.
+enum LevelOfSupport {
+	ACTIVELY_MAINTAINED
+	NO_LONGER_MAINTAINED
+	ABANDONED
+}
+
+type LicensePayload {
+	baseUri: String
+	validFrom: DateTime
+	validTo: DateTime
+	maxWriteUsers: Int
+	maxReadUsers: Int
+	globalUserCounts: GlobalUserCounts
+}
+
+enum LocationType {
+	PURL
+	CODE_POINT
+}
+
+# Phase 14 Inbox MVP -- markAllNotificationsRead result. See the
+# mutation's javadoc for the cap rationale and the count/hasMore
+# semantics.
+type MarkAllNotificationsReadResult {
+	count: Int!
+	hasMore: Boolean!
+}
+
+type MarketingRelease {
+	uuid: ID
+	version: String
+	status: Status
+	org: ID
+	orgDetails: Organization
+	component: ID
+	componentDetails: Component
+	notes: String
+	tags: [TagRecord]
+	lifecycle: MarketingReleaseLifecycleEnum
+	integrateType: IntegrateType
+	integrateBranch: ID
+	integrateBranchDetails: Branch
+	devReleasePointer: ID
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	devReleaseDetails: Release
+	events: [MarketingReleaseEvent]
+}
+
+type MarketingReleaseEvent {
+	release: ID
+	releaseDetails: Release
+	lifecycle: MarketingReleaseLifecycleEnum
+	date: DateTime
+	wu: WhoUpdated
+}
+
+input MarketingReleaseInput {
+	uuid: String
+	version: String
+	status: Status
+	org: ID
+	component: ID
+	notes: String
+	tags: [TagRecordInput]
+	lifecycle: MarketingReleaseLifecycleEnum
+	integrateType: IntegrateType
+	integrateBranch: ID
+	devReleasePointer: ID
+}
+
+type MarketingReleaseLifecycle {
+	lifecycle: MarketingReleaseLifecycleEnum
+	suffix: String
+	prettyName: String
+	ordinal: Int
+}
+
+enum MarketingReleaseLifecycleEnum {
+	FIRST_MENTION
+	ALPHA_TESTING
+	BETA_TESTING
+	RELEASE_CANDIDATE
+	GENERAL_AVAILABILITY
+	END_OF_LIFE
+}
+
+"""
+A single re-scan-driven finding change for one release, bucketed at the date the change took
+effect (the metrics_audit revision date, NOT the release creation date). Exactly one of
+vulnerability / violation / weakness is non-null. previousSeverity is populated for
+SEVERITY_INCREASED and SEVERITY_DECREASED (the pre-change severity).
+"""
+type MetricsRevisionFindingChange {
+	changeDate: DateTime!
+	changeKind: FindingChangeKind!
+	releaseUuid: ID!
+	version: String!
+	componentUuid: ID!
+	componentName: String!
+	"ADDITIVE (board task F7b): the producing branch, so the timeline drawer can distinguish rows that share one component@version."
+	branchUuid: ID
+	branchName: String
+	vulnerability: ReleaseVulnerabilityInfo
+	violation: ReleaseViolationInfo
+	weakness: ReleaseWeaknessInfo
+	previousSeverity: String
+}
+
+# One page of the over-time finding-change timeline (findingChangeTimelineByDate). total is the full count;
+# since is the retention-clamp lower bound (non-null only when the window predated the retention horizon).
+type MetricsRevisionFindingChangePage {
+	items: [MetricsRevisionFindingChange!]!
+	total: Int!
+	page: Int!
+	pageSize: Int!
+	since: DateTime
+	"ADDITIVE (board task F4): true when total is a FLOOR, not the true count -- the org-scope ALL_POSTURE scan hit its row cap, so more events exist than were counted. Render the total as 'N+' and hint to narrow the window. Always false for the release-anchored (default) scope, which is unbounded."
+	truncated: Boolean!
+}
+
+type MitigationAttestationWebDto {
+	uuid: ID!
+	org: ID!
+	proposal: ID!
+	claimType: ClaimType!
+	claimText: String!
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	assignedTo: ID
+	assignedAt: DateTime
+	deadline: DateTime
+	status: AttestationStatus!
+	evidence: String
+	attestedAt: DateTime
+	attestedBy: ID
+	statusReason: String
+}
+
+input ModelOntologyUpdateInput {
+	uuid: ID!
+	publisher: String
+	description: String
+	purl: String
+	notes: String
+}
+
+type MostVulnerableComponent {
+	componentuuid: ID
+	componentname: String
+	componenttype: ComponentType
+	metrics: DependencyTrackMetrics
+}
+
+type NoneBranchChanges {
+	branchUuid: ID!
+	branchName: String!
+	componentUuid: ID
+	componentName: String
+	releases: [NoneReleaseChanges!]!
+	changeType: ChangeType
+}
+
+type NoneChangelog {
+	componentUuid: ID!
+	componentName: String!
+	orgUuid: ID!
+	# firstRelease/lastRelease are nullable on ALL ComponentChangelog members even though only
+	# AggregatedChangelog has a null-producing path (the posture empty-window bypass): GraphQL's
+	# OverlappingFieldsCanBeMerged rule rejects a merged inline-fragment selection when the same
+	# field name has different nullability across union members (FieldsConflict 400, observed live).
+	firstRelease: ReleaseInfo
+	lastRelease: ReleaseInfo
+	branches: [NoneBranchChanges!]!
+	"ADDITIVE (board task #37): re-scan-driven finding changes over time, read from finding_change_events. Defaults to empty."
+	overTimeFindingChanges: [MetricsRevisionFindingChange!]!
+	"ADDITIVE (board task #38, phase 3): effective lower bound the over-time read started at when the requested window was clamped to the retention horizon; null when not clamped."
+	overTimeFindingChangesSince: DateTime
+}
+
+type NoneOrganizationChangelog {
+	orgUuid: ID!
+	dateFrom: DateTime!
+	dateTo: DateTime!
+	components: [ComponentChangelog!]!
+	"ADDITIVE (board task #37): org-wide re-scan-driven finding changes over time, read from finding_change_events. Defaults to empty."
+	overTimeFindingChanges: [MetricsRevisionFindingChange!]!
+	"ADDITIVE (board task #38, phase 3): effective lower bound the over-time read started at when the requested window was clamped to the retention horizon; null when not clamped."
+	overTimeFindingChangesSince: DateTime
+}
+
+type NoneProductChangelog {
+	componentUuid: ID!
+	componentName: String!
+	orgUuid: ID!
+	firstRelease: ReleaseInfo
+	lastRelease: ReleaseInfo
+	productReleases: [ProductReleaseChanges!]!
+}
+
+type NoneReleaseChanges {
+	releaseUuid: ID!
+	version: String!
+	lifecycle: ReleaseLifecycleEnum!
+	commits: [CodeCommit!]!
+	sbomChanges: ReleaseSbomChanges!
+	findingChanges: ReleaseFindingChanges!
+	createdDate: DateTime!
+	"ADDITIVE (changelog re-scan visibility): true when this is the component's first release EVER -- its finding/SBOM sections are empty because there is no baseline to diff against, not because nothing changed."
+	baselineRelease: Boolean!
+}
+
+# Channel-group write input (Phase 13b). uuid null = create; uuid
+# present = update. Every {@code channels} UUID must resolve to a
+# channel in the same {@code org}; duplicate UUIDs within the list
+# are rejected at save time. Empty {@code channels} list is also
+# rejected -- a group with zero members would silently no-op every
+# route that referenced it.
+input NotificationChannelGroupInput {
+	uuid: ID
+	# Optimistic-locking gate. See NotificationChannelInput.expectedRevision.
+	expectedRevision: Int
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	channels: [ID!]!
+}
+
+# Channel-group summary (Phase 13b). Pure-naming layer -- no per-type
+# config, no secrets, no status. {@code channels} is the ordered list
+# of member channel UUIDs (each one points at a NotificationChannel
+# in the same org; cross-org membership is rejected at save time).
+# revision / createdDate / lastUpdatedDate ride along so the UI can
+# show "last edited by whom, when" without a second round-trip.
+type NotificationChannelGroupResult {
+	uuid: ID!
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	channels: [ID!]!
+	revision: Int!
+	createdDate: String
+	lastUpdatedDate: String
+}
+
+# Channel write input. uuid null = create; uuid present = update. The
+# per-type secret config lives in a nested input matching the channel
+# type -- customer supplies the one matching `type` and the service
+# ignores the others. On update, leaving the matching config null
+# preserves the existing encrypted value ("rename without re-typing").
+input NotificationChannelInput {
+	uuid: ID
+	# Optimistic-locking gate. On update, the UI sends the revision
+	# value it captured at Edit-load time; the service rejects the
+	# save when the current DB row's revision is higher (a concurrent
+	# admin edit landed between load and save). Null on create or for
+	# callers opting out of the check.
+	expectedRevision: Int
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	type: NotificationChannelTypeEnum!
+	status: NotificationChannelStatusEnum
+	slackConfig: NotificationSlackChannelConfigInput
+	webhookConfig: NotificationWebhookChannelConfigInput
+	emailConfig: NotificationEmailChannelConfigInput
+	teamsConfig: NotificationTeamsChannelConfigInput
+	sentinelConfig: NotificationSentinelChannelConfigInput
+}
+
+# Channel summary. encryptedSecret is NEVER projected through this
+# read surface -- webhook URLs / SMTP passwords are set-only.
+#
+# configData is intentionally omitted in Phase 2e. The blob can carry
+# Slack/Teams webhook URLs (when the customer chose to store them as
+# config rather than as the encrypted secret), and a webhook URL is
+# itself an auth credential -- exposing it through an org-admin read
+# would let any admin lift production-channel URLs and post arbitrary
+# content. Phase 3 channel CRUD introduces typed input fields that
+# split credential-vs-display; the read surface stays conservative.
+type NotificationChannelResult {
+	uuid: ID!
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	type: NotificationChannelTypeEnum!
+	status: NotificationChannelStatusEnum!
+	# Row revision (bumped manually on each save -- the underlying
+	# Integration row has no Hibernate @Version); round-tripped as
+	# expectedRevision on the next save to reject concurrent admin
+	# edits. See the NotificationSubscriptionResult.revision comment.
+	revision: Int!
+	# Effective email digest policy (EMAIL channels only; null for
+	# other types). Defaults applied: absent config reads back as
+	# ROLLING / PT24H. Not credentials -- safe on the read surface,
+	# unlike configData (see type comment above).
+	digestMode: NotificationEmailDigestModeEnum
+	digestInterval: String
+	# Recipient inbox addresses (EMAIL channels only; null for other
+	# types). Display data, not credentials -- the edit UI needs the
+	# current list to render. The configData embargo stays in force
+	# for every other type.
+	emailRecipients: [String!]
+	# Operator-facing reason a channel was AUTO-disabled (e.g. its webhook
+	# URL isn't the expected host). Null when enabled or manually disabled.
+	# Lets the Catalog explain why a channel stopped delivering and prompt a
+	# re-verify, instead of the failure only showing as FAILED History rows.
+	disabledReason: String
+}
+
+# Channel lifecycle status. DISABLED short-circuits dispatch.
+enum NotificationChannelStatusEnum {
+	ENABLED
+	DISABLED
+}
+
+# Channel destination types. Slack only in v1; Teams / SMTP / Sentinel
+# land in later phases.
+enum NotificationChannelTypeEnum {
+	SLACK
+	# Generic webhook (Phase 4). Customer-defined HTTPS endpoint with
+	# optional bearer-token or HMAC-SHA256 auth. Catches PagerDuty /
+	# Opsgenie / Splunk / in-house receivers without per-vendor work.
+	WEBHOOK
+	# Email recipient list (Phase 9). SMTP / SendGrid creds come from
+	# system config; per-channel state is just the recipient list.
+	EMAIL
+	# Microsoft Teams via Power Automate Workflows webhook (Phase 10).
+	# Adaptive Card v1.5 envelope; webhook URL is the auth credential.
+	MS_TEAMS
+	# Azure Sentinel via the Logs Ingestion API + DCR (Phase 11).
+	# Six-field SP-credential + DCR-routing secret; client-credentials
+	# OAuth bearer.
+	SENTINEL
+}
+
+type NotificationDeliveriesPage {
+	items: [NotificationDeliveryResult!]!
+	totalCount: Int!
+	limit: Int!
+	offset: Int!
+}
+
+# Whether the delivery's originating outbox event was REAL traffic or
+# a SYNTHETIC injection (channel test / Quick Start verify / harness).
+enum NotificationDeliveryOriginEnum {
+	REAL
+	SYNTHETIC
+}
+
+# One delivery row -- the result of fan-out picking a channel for an
+# event. Carries queue state (status, attemptCount, nextAttemptAt) for
+# the operator UI's "what's happening with my notifications" view.
+# subscriptionUuid is nullable for Phase 2d channel-test rows;
+# channelUuid is nullable for per-user targeted rows (approval-request
+# events), which bypass channel routing entirely.
+# nextAttemptAt is nullable to match the projector's null defense --
+# the DB column is non-null in practice, but the schema declaration
+# stays permissive so a hypothetical future row with a null value
+# wouldn't blow up the GraphQL layer.
+type NotificationDeliveryResult {
+	uuid: ID!
+	org: ID!
+	outboxEventUuid: ID!
+	subscriptionUuid: ID
+	channelUuid: ID
+	status: NotificationDeliveryStatusEnum!
+	origin: NotificationDeliveryOriginEnum!
+	dedupKey: String
+	attemptCount: Int!
+	nextAttemptAt: String
+	sentAt: String
+	lastError: String
+	createdDate: String!
+	"""The outbox event's rendered payload as JSON (BUG 3); null when unavailable. Truncation sentinel past the byte cap."""
+	payloadJson: String
+}
+
+# Lifecycle status of a single delivery row. Promoted to a typed
+# GraphQL enum (Phase 2e layer-2) so filter args + output projections
+# share one declaration and a typo in either direction is rejected at
+# the parser instead of silently returning zero rows.
+enum NotificationDeliveryStatusEnum {
+	PENDING
+	SENT
+	FAILED
+	ACKED
+	# Rate limit hit at fan-out time -- delivery row persisted for
+	# history but never dispatched.
+	RATE_LIMITED
+	# CEL evaluation aborted on the wall-clock budget; subscription
+	# circuit-breaker may auto-disable.
+	EVAL_TIMEOUT
+	# Customer-initiated channel test from the "send test event" UI button.
+	TEST
+	# Subscription is in PREVIEW mode; render captured for history,
+	# never dispatched.
+	PREVIEW
+	# Held in an EMAIL channel's rolling-cap digest window; flushed as
+	# one digest email when the window expires.
+	BATCHED
+}
+
+# Email-channel config (Phase 9; digest fields Phase 5). The "auth
+# credential" for email is the system's SMTP / SendGrid setup on
+# SystemInfoService; per-channel state is the recipient list plus the
+# digest policy. Stored unencrypted in the channel's parameters
+# (recipients aren't secret -- they're inbox addresses on customer
+# infrastructure). Update semantics are per-field: null recipients
+# preserves the existing list (digest-only update); null digest fields
+# preserve the existing digest config. digestInterval is an ISO-8601
+# duration (e.g. "PT24H"), accepted range PT5M..P7D. Absent digest
+# config means rolling 24h digest (on by default); actionable events
+# (approval requests / resolutions) always send immediately.
+# Mid-window changes: switching digestMode to IMMEDIATE releases any
+# already-batched rows for individual delivery right away; changing
+# only digestInterval leaves the open batch's deadline as-is -- the
+# new interval applies from the next window.
+input NotificationEmailChannelConfigInput {
+	recipients: [String!]
+	digestMode: NotificationEmailDigestModeEnum
+	digestInterval: String
+}
+
+# Email digest batching mode. ROLLING = at most one non-actionable
+# email per digestInterval; overflow is held and flushed as a single
+# digest email when the window expires. IMMEDIATE = no batching.
+enum NotificationEmailDigestModeEnum {
+	IMMEDIATE
+	ROLLING
+}
+
+# CEL evaluation mode for subscription filters.
+enum NotificationEvaluationModeEnum {
+	PRESET
+	ADVANCED
+}
+
+# Domain event types that can trigger notifications.
+enum NotificationEventTypeEnum {
+	NEW_VULN_AFFECTS_RELEASES
+	VULNERABILITY_RECORD_UPDATED
+	VEX_STATE_CHANGED
+	RELEASE_CREATED
+	RELEASE_LIFECYCLE_CHANGED
+	RELEASE_BOM_DIFF
+	APPROVAL_REQUESTED
+	APPROVAL_RESOLVED
+	INSTANCE_DEPLOYMENT_CHANGED
+	INSTANCE_DEPLOYMENT_FAILED
+}
+
+input NotificationFilterInput {
+	mode: NotificationEvaluationModeEnum!
+	# Free-form preset state surfaced as a JSON string so the UI can
+	# evolve the preset toggles without a schema bump per field.
+	presetConfigJson: String
+	# CEL expression. Validated server-side via NotificationCelEvaluator.
+	celExpression: String
+}
+
+# Phase 14 Inbox MVP item. Sibling to NotificationDeliveryResult -- same
+# core delivery fields (uuid, status, attemptCount, etc.) plus the
+# per-caller read-state (readAt is null when unread for this user).
+# Maintained as a separate type rather than extending
+# NotificationDeliveryResult so the History view's projection
+# stays clean (History is org-scoped audit, not per-user).
+type NotificationInboxItem {
+	uuid: ID!
+	org: ID!
+	outboxEventUuid: ID!
+	subscriptionUuid: ID
+	# Nullable: per-user targeted rows (approval requests) have no channel.
+	channelUuid: ID
+	# Server-resolved display name of the channel addressed by channelUuid.
+	# Carried here so the non-admin notification bell never has to call the
+	# admin-only channel-list query to label a row. Null when the channel
+	# has been deleted (channelUuid no longer resolves to an Integration).
+	channelName: String
+	# Whether the addressed channel is currently enabled. Null when the row is
+	# channel-less (targeted) or the channel was deleted. False means deliveries
+	# to it are paused -- lets the inbox distinguish a disabled channel from a
+	# deleted one instead of dead-ending at "(deleted channel)".
+	channelEnabled: Boolean
+	# Operator-facing reason a channel was auto-disabled (e.g. a bad webhook
+	# URL); null when the channel is enabled, manually disabled, deleted, or
+	# channel-less. Surfaced so a failed delivery explains itself.
+	channelDisabledReason: String
+	status: NotificationDeliveryStatusEnum!
+	origin: NotificationDeliveryOriginEnum!
+	dedupKey: String
+	attemptCount: Int!
+	nextAttemptAt: String
+	sentAt: String
+	lastError: String
+	createdDate: String!
+	# Null = unread for the calling user; non-null = ISO-8601 timestamp
+	# of when the caller first marked this delivery read. Subsequent
+	# re-reads are idempotent and do NOT advance this anchor -- the
+	# inbox MVP needs a stable "first seen" cue.
+	readAt: String
+	# Event-type label from the originating outbox event. Lifted so the
+	# inbox row can render the event kind without a separate lookup.
+	eventType: NotificationEventTypeEnum
+	# Severity rolled up from the outbox event payload. NONE when the
+	# event type doesn't carry a severity (e.g. some VEX state changes).
+	severity: NotificationSeverityEnum
+	# Canonical human-rendered inbox text built server-side by
+	# NotificationInboxFormatter. Mirrors what a user would see at the
+	# top of their Slack / email notification but stays channel-agnostic.
+	# Either can be null when the event payload is malformed; the UI
+	# falls back to {eventType, severity} for a label-only row.
+	title: String
+	description: String
+	# The originating outbox event's recordData serialized as a JSON
+	# string. Lets the UI deep-link into the affected release /
+	# vulnerability without an extra round-trip. UI parses on demand --
+	# the schema doesn't enumerate per-event-type fields here so a new
+	# event type doesn't break the inbox query.
+	payloadJson: String
+}
+
+type NotificationInboxPage {
+	items: [NotificationInboxItem!]!
+	totalCount: Int!
+	# Subset of totalCount that is currently unread for the caller --
+	# convenient for the inbox-tab badge so the UI doesn't need a
+	# separate notificationUnreadCount round-trip when it's already
+	# rendering the page.
+	unreadCount: Int!
+	limit: Int!
+	offset: Int!
+}
+
+# Inbox visibility scope for notificationInbox / notificationUnreadCount /
+# markAllNotificationsRead. PERSONAL (default) = the caller's own component-team
+# + perspective + targeted rows (an org admin is NOT auto-shown every delivery,
+# so the bell and badge stay relevant). ORG_ALL = the org-wide firehose, honored
+# only for admins; a non-admin request safely collapses to PERSONAL.
+enum NotificationInboxScope {
+	PERSONAL
+	ORG_ALL
+}
+
+# Returned by injectSyntheticEvent + testNotificationChannel + the
+# notificationOutboxEvent read query. The UI polls
+# notificationDeliveries(eventUuid: ...) keyed by uuid to show the
+# rendered output.
+type NotificationOutboxEventResult {
+	uuid: ID!
+	org: ID!
+	eventType: String!
+	status: String!
+	occurredAt: String!
+	origin: String!
+	dedupKey: String
+	# Non-null only for testNotificationChannel -- the target channel.
+	channelTestTarget: ID
+}
+
+input NotificationRateLimitInput {
+	maxPerWindow: Int
+	windowMinutes: Int
+}
+
+input NotificationRouteInput {
+	whenSeverityAtLeast: NotificationSeverityEnum
+	andEnvIn: [String!]
+	# Re-uses the existing release-lifecycle enum (declared elsewhere
+	# in this schema) so a customer using the same lifecycle name in
+	# a route as in a release stays consistent.
+	andLifecycleIn: [ReleaseLifecycleEnum!]
+	# Direct channel UUIDs the route delivers to. May be empty when
+	# channelGroups is non-empty -- at least one of {channels, channelGroups}
+	# must resolve to a non-empty merged list at fan-out time, otherwise
+	# the route is logged + skipped.
+	channels: [ID!]!
+	# Phase 12 perspective scoping: limit this route's deliveries to
+	# events that touch a release in at least one of these perspectives.
+	# Empty / unset = no perspective gate (match anything). The route
+	# enrichment populates AffectedRelease.perspectives from the
+	# release's component, and the fan-out intersects against this list.
+	#
+	# Null vs. [] equivalence: DGS coerces a missing / explicit-null
+	# field to Java `null`; an explicit `[]` becomes an empty List.
+	# Both are treated as "no gate" by the gate logic
+	# (perspectiveGateMatches in NotificationFanOutService), so callers
+	# may pass either shape with identical effect.
+	perspectives: [ID!]
+	# Phase 13b channel-group expansion. UUIDs of NotificationChannelGroups
+	# whose member channels are merged with the route's direct {@code channels}
+	# list at fan-out time. Missing groups (deleted, never existed) are
+	# silently skipped; dedup is first-seen across {channels ⨁ groups}.
+	# Same null/[] equivalence as perspectives: both treated as "no group
+	# expansion."
+	channelGroups: [ID!]
+	# T3 team targeting. UUIDs of Teams (user groups) whose own
+	# notificationChannels are merged into this route at fan-out time. Lets an
+	# operator say "tell the Payments Team" without knowing which Slack channel
+	# that is today, and keeps it correct when the team later changes channel.
+	# Teams are resolved at fan-out, not at save: a team that no longer exists
+	# contributes nothing rather than failing the route. Expands to team
+	# CHANNELS only -- it does not push rows into members' inboxes, which have
+	# their own visibility arms. Same null/[] equivalence as the fields above.
+	teams: [ID!]
+	# T4a owner-aware targeting. When true the route ALSO delivers to the owner
+	# team of every component the event affects, resolved at fan-out from the
+	# component's ownership (stored owner, else a matching team-assignment
+	# rule). Complements `teams`: that names a FIXED set an operator must keep
+	# up to date, this follows whatever currently owns the component, so
+	# reassigning ownership needs no subscription edit.
+	# Only OWNED / NON_DURABLE ownership delivers -- a suggestion is not an
+	# owner and an archived owner team's channels are stale. USER owners
+	# contribute no channel; they are reached through the inbox arms.
+	# Null / false = no owner expansion.
+	notifyComponentOwner: Boolean
+}
+
+# Azure Sentinel channel config (Phase 11). Six required fields:
+# the three SP-credential fields (tenantId, clientId, clientSecret)
+# acquire an Azure AD bearer token; the three DCR-routing fields
+# (dcrEndpoint, dcrImmutableId, streamName) target the Logs Ingestion
+# API. All six are serialized together as a SentinelChannelSecret blob
+# and encrypted at rest. On update, leaving the SP-credential fields
+# blank preserves the existing encrypted value.
+input NotificationSentinelChannelConfigInput {
+	tenantId: String
+	clientId: String
+	clientSecret: String
+	dcrEndpoint: String
+	dcrImmutableId: String
+	streamName: String
+}
+
+# Vuln severity classification carried on event payloads + route gates.
+enum NotificationSeverityEnum {
+	CRITICAL
+	HIGH
+	MEDIUM
+	LOW
+	INFO
+	NONE
+}
+
+# Slack-specific channel config. Only the incoming-webhook URL -- the
+# URL itself is the auth credential.
+input NotificationSlackChannelConfigInput {
+	webhookUrl: String
+}
+
+# Subscription write input. Mirrors the existing
+# NotificationSubscriptionData record 1:1; nested config is typed
+# rather than JSON-stringified because the write path needs schema-
+# level validation.
+input NotificationSubscriptionInput {
+	uuid: ID
+	# Optimistic-locking gate. See NotificationChannelInput.expectedRevision.
+	expectedRevision: Int
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	status: NotificationSubscriptionStatusEnum!
+	eventTypes: [NotificationEventTypeEnum!]!
+	filter: NotificationFilterInput
+	routes: [NotificationRouteInput!]!
+	dedupWindowMinutes: Int
+	rateLimit: NotificationRateLimitInput
+	# Ownership MATCHING scope -- "only events about components THIS team owns".
+	# Validated at save: must resolve to a team in the same org. An ARCHIVED team
+	# is accepted, since scoping is a matching rule and an archived owner already
+	# resolves to nothing at fan-out; rejecting it would block editing unrelated
+	# fields on a subscription whose team was archived after it was written.
+	#
+	# Do not confuse with routes[].notifyComponentOwner: that is a destination
+	# covering EVERY owner, this restricts which events match at all. A
+	# per-team subscription built from the flag would deliver one team's events
+	# to all the others. See ai-plans/team-owned-component-notifications.md.
+	ownedByTeam: ID
+}
+
+# Subscription summary. Complex nested config (filter, routes, rateLimit)
+# remains JSON-stringified through the read surface -- Phase 3 introduces
+# typed *Input* shapes for writes, but the read side keeps the existing
+# string projection to avoid expanding the schema with parallel inner
+# types. A future phase can unify them.
+type NotificationSubscriptionResult {
+	uuid: ID!
+	org: ID!
+	resourceGroup: ID
+	name: String!
+	status: NotificationSubscriptionStatusEnum!
+	eventTypes: [NotificationEventTypeEnum!]!
+	# JSON-stringified filter config: { mode, presetConfig, celExpression }.
+	filter: String
+	# JSON-stringified route table:
+	# [{ whenSeverityAtLeast, andEnvIn, andLifecycleIn, channels, perspectives, channelGroups,
+	#    teams, notifyComponentOwner }].
+	# perspectives is the Phase 12 list of UUIDs gating the route -- null/empty = no gate.
+	# channelGroups is the Phase 13b list of group UUIDs expanded to member channels at fan-out.
+	# teams is the T3 list of team UUIDs whose own channels are merged in at fan-out.
+	# notifyComponentOwner is the T4a flag: when true the route also delivers to the owner
+	# team of each affected component, resolved at fan-out -- null/false = no owner expansion.
+	routes: String
+	dedupWindowMinutes: Int
+	# JSON-stringified rate limit config: { maxPerWindow, windowMinutes }. Nullable.
+	rateLimit: String
+	# Ownership MATCHING scope: when set, this subscription matches an event only
+	# if at least one component the event affects is owned by this team. Null =
+	# unscoped (org-wide), which is every subscription written before this field.
+	# Distinct from routes[].notifyComponentOwner, which is a DESTINATION meaning
+	# "deliver to whoever owns the affected component" -- every owner, not one.
+	ownedByTeam: ID
+	# Set when this row is MATERIALISED by a team's own notification setting
+	# rather than authored here. Such a row cannot be edited, disabled or deleted
+	# through the subscription API -- it is changed on the team that owns it -- so
+	# a client must use this to badge the row and withhold those controls.
+	managedByTeam: ID
+	# Hibernate @Version-managed row revision. The UI captures this on
+	# Edit load and round-trips it as expectedRevision on the next save
+	# so a concurrent edit by another admin is rejected with a clear
+	# "this record was edited by another user -- reload" error rather
+	# than silently overwriting their changes.
+	revision: Int!
+}
+
+# Subscription lifecycle status. PREVIEW is observe-only (used during
+# Quick Start verification); the fan-out worker treats it as not-active
+# for live traffic.
+enum NotificationSubscriptionStatusEnum {
+	ACTIVE
+	DISABLED
+	PREVIEW
+}
+
+# MS Teams channel config (Phase 10). The webhook URL is the auth
+# credential -- same shape as Slack. Validated at save and dispatch
+# against the Power Automate Workflows host suffixes (logic.azure.com
+# for the LogicApps-style URL and powerplatform.com for the newer
+# Power-Platform-environment URL Microsoft hands out).
+input NotificationTeamsChannelConfigInput {
+	webhookUrl: String
+}
+
+# Generic webhook channel config (Phase 4). url is the customer
+# endpoint (required, must be HTTPS). authScheme picks how the
+# dispatcher signs each POST. authToken carries the bearer token or
+# HMAC shared secret -- required when authScheme != NONE.
+input NotificationWebhookChannelConfigInput {
+	url: String
+	authScheme: WebhookAuthSchemeEnum
+	authToken: String
+}
+
+enum OAuthType {
+	GITHUB
+	GOOGLE
+	MICROSOFT
+}
+
+type OrgLevelContext {
+	isNewToOrganization: Boolean!
+	wasPreviouslyReported: Boolean!
+	isPartiallyResolved: Boolean!
+	isFullyResolved: Boolean!
+	isInheritedInAllComponents: Boolean!
+	componentCount: Int!
+	affectedComponentNames: [String!]!
+	# "Worsened" annotations from the posture-diff rollup (board task #38, phase 3). Tri-state:
+	# null = not computed (legacy pairwise-diff path); true/false = computed from in-window
+	# finding_change_events on the posture-diff path. previousSeverity is null unless
+	# isSeverityIncreased is true.
+	isNewlyKev: Boolean
+	isSeverityIncreased: Boolean
+	previousSeverity: String
+}
+
+union OrganizationChangelog = NoneOrganizationChangelog | AggregatedOrganizationChangelog
+
+"""
+A team's owned-component notification preference.
+
+excludedEventTypes is an OPT-OUT list: the effective set is every event type
+ReARM emits MINUS these, so a team hears about a new class of event happening to
+its components without editing anything. VEX_STATE_CHANGED is never included --
+nothing emits it, and its payload carries no affected releases, so an
+ownership-scoped subscription could not match it in any case.
+"""
+type OwnedComponentNotifications {
+	enabled: Boolean!
+	excludedEventTypes: [NotificationEventTypeEnum!]
+}
+
+input OwnedComponentNotificationsInput {
+	enabled: Boolean!
+	excludedEventTypes: [NotificationEventTypeEnum!]
+}
+
+input ParentReleaseInput {
+	release: ID!
+	artifact: ID
+}
+
+"""One pending approval entry on a ReleasePendingApproval and the roles the
+calling user is still able to cast on it (roles they hold, that an unsatisfied
+requirement allows, and that they have not already voted)."""
+type PendingApprovalEntry {
+	approvalEntryUuid: ID
+	approvalName: String
+	pendingRoleIds: [String!]
+}
+
+input PermissionInput {
+	org: ID
+	object: ID
+	type: PermissionType
+	scope: PermissionScope
+	functions: [PermissionFunction]
+	approvals: [String]
+}
+
+type ProductReleaseChanges {
+	releaseUuid: ID!
+	version: String!
+	lifecycle: ReleaseLifecycleEnum!
+	createdDate: DateTime!
+	branches: [NoneBranchChanges!]!
+}
+
+input PropertyInput {
+	org: ID!
+	name: String
+	dataType: PropertyDataType
+	targetType: PropertyTargetType
+	targetUuid: ID
+	defaultValue: String
+}
+
+enum ProposalStatus {
+	PENDING
+	ACCEPTED
+	REJECTED
+	SUPERSEDED
+	ERRORED
+}
+
+enum RearmCDAuthType {
+	NOCREDS
+	CREDS
+	ECR
+}
+
+type ReleaseFindingChanges {
+	appearedCount: Int!
+	resolvedCount: Int!
+	appearedVulnerabilities: [ReleaseVulnerabilityInfo!]!
+	resolvedVulnerabilities: [ReleaseVulnerabilityInfo!]!
+	appearedViolations: [ReleaseViolationInfo!]!
+	resolvedViolations: [ReleaseViolationInfo!]!
+	appearedWeaknesses: [ReleaseWeaknessInfo!]!
+	resolvedWeaknesses: [ReleaseWeaknessInfo!]!
+}
+
+type ReleaseInfo {
+	uuid: ID!
+	version: String!
+	lifecycle: ReleaseLifecycleEnum!
+}
+
+input ReleaseInput {
+	uuid: ID
+	version: String
+	lifecycle: ReleaseLifecycleEnum
+	org: ID!
+	project: ID
+	branch: ID
+	parentReleases: [ParentReleaseInput]
+	sourceCodeEntry: ID
+	artifacts: [ID]
+	notes: String
+	endpoint: String
+	commits: [ID]
+	tags: [TagRecordInput]
+	identifiers: [IdentifierInput]
+	gudidRecord: GudidRecordInput
+	gudidStatus: GudidStatus
+	"""
+	Release lifecycle date: the CLE END_OF_SUPPORT projection (TeaTransformerService).
+	NOT the device support window -- that is declared on the device model at
+	ComponentData.medicalProfile.deviceSupportWindow and resolved by DeviceLifecycleResolver.
+	"""
+	eos: String
+	"""
+	Release lifecycle date: the CLE END_OF_LIFE projection (TeaTransformerService).
+	NOT the device support window -- that is declared on the device model at
+	ComponentData.medicalProfile.deviceSupportWindow and resolved by DeviceLifecycleResolver.
+	"""
+	eol: String
+	"""
+	Update-only: explicitly unset eos, distinct from omitting the field (which
+	leaves it unchanged). Wins over a concurrently-supplied eos value. Ignored
+	on create (there is nothing to clear yet).
+	"""
+	clearEos: Boolean
+	# Update-only: explicitly unset eol. See clearEos.
+	clearEol: Boolean
+	"""
+	Per-release override of the org FDA assessment narrative. PATCH: omitting the
+	field leaves the stored value alone; supplying an EMPTY STRING is a deliberate
+	clear that returns the release to inheriting the org default. Bounded to the same
+	length as the org-level prose fields.
+
+	Deliberately NOT a clearFdaAssessmentNarrative flag like clearEos above: a date
+	has no empty form, so the flag expresses something the value cannot, while prose
+	has one and the org-level prose fields already read blank as clear.
+	"""
+	fdaAssessmentNarrative: String
+	vcsUri: String
+	repoPath: String
+}
+
+input ReleaseInputEventInput {
+	uuid: ID
+	name: String
+	outputEvents: [ID]
+	outputEventsOnFalse: [ID]
+	celExpression: String
+	enabled: Boolean
+	preconditionCelExpression: String
+}
+
+input ReleaseOutputEventInput {
+	uuid: ID
+	name: String
+	type: EventType
+	toReleaseLifecycle: ReleaseLifecycleEnum
+	integration: ID
+	users: [ID]
+	notificationMessage: String
+	vcs: ID
+	eventType: String
+	clientPayload: String
+	celClientPayload: String
+	schedule: String
+	includeSuppressed: Boolean
+	snapshotApprovalEntry: ID
+	snapshotLifecycle: ReleaseLifecycleEnum
+	approvedEnvironment: String
+	"""
+	Override the check-run name reported to the SCM for EXTERNAL_VALIDATION
+	events. Defaults to `rearm/<componentName>` when null/empty.
+	"""
+	checkName: String
+	"""LOCK: the branch this release is on, or the whole component. Defaults to BRANCH."""
+	lockScope: LockScope
+	"""LOCK: who may release the lock this raises. Defaults to HUMAN."""
+	lockUnlockLevel: UnlockLevel
+	"""LOCK: what must be claimed before the lock may be released. Defaults to ANY."""
+	lockAttestationRequirement: AttestationRequirement
+	"""LOCK: shown verbatim in every refusal, so it is written for whoever hits it."""
+	lockReason: String
+}
+
+"""
+One release awaiting the calling user's approval, with the specific approval
+entries (and the roles within them the user can still cast) that are pending.
+Projection backing the read-only releasesNeedingMyApproval query.
+"""
+type ReleasePendingApproval {
+	releaseUuid: ID
+	version: String
+	componentUuid: ID
+	componentName: String
+	componentType: ComponentType
+	lifecycle: ReleaseLifecycleEnum
+	pendingEntries: [PendingApprovalEntry!]
+}
+
+type ReleaseSbomArtifact {
+	purl: String!
+	name: String
+	version: String
+}
+
+type ReleaseSbomChanges {
+	addedArtifacts: [ReleaseSbomArtifact!]!
+	removedArtifacts: [ReleaseSbomArtifact!]!
+}
+
+# One row per (release, canonical component). artifactParticipations lists
+# every artifact inside this release whose BOM referenced the component,
+# together with the exact (qualifier-carrying) purls that artifact used.
+# Edges are persisted as in-edges (parents) for fast impact-analysis lookups;
+# dependedOnBy is therefore a direct read of the persisted parents column,
+# while dependencies is reconstructed in memory by inverting parents across
+# all rows of the same release. Each forward edge records the resolved
+# target plus per-artifact declarations (preserving exact source/target
+# purls).
+type ReleaseSbomComponent {
+	uuid: ID!
+	releaseUuid: ID!
+	sbomComponentUuid: ID!
+	component: SbomComponent
+	artifactParticipations: [SbomArtifactParticipation]
+	dependencies: [ReleaseSbomDependency]
+	dependedOnBy: [ReleaseSbomComponent]
+	# Transitive `dependedOnBy` closure (deduped, BFS order) for this component
+	# within the release. Use to render multi-hop "upstream paths to root":
+	# each ancestor's own `dependedOnBy` resolves against the same per-request
+	# graph context, so the UI can walk one hop at a time over this bounded
+	# subgraph instead of re-fetching the entire release. Computed in memory
+	# from the same context that drives `dependencies` / `dependedOnBy`, so
+	# selecting it adds no DB work -- but it is per-row, so do not select on
+	# every row of a release-wide list.
+	ancestors: [ReleaseSbomComponent]
+	createdDate: DateTime
+	lastUpdatedDate: DateTime
+}
+
+type ReleaseSbomComponentsPage {
+	items: [ReleaseSbomComponent!]!
+	# Components matching the filter, across all pages. Under attestation:UNATTESTED this
+	# is a moving target by design -- it is the size of the remaining work, so it falls as
+	# you attest. Do not derive "is there another page" from it; use hasMore.
+	totalCount: Int!
+	limit: Int!
+	# Pass as `after` to get the next page. Null on an empty page.
+	endCursor: ID
+	# Answered by over-fetching one row, not by arithmetic on totalCount.
+	hasMore: Boolean!
+}
+
+type ReleaseSbomDependency {
+	targetSbomComponentUuid: ID!
+	targetCanonicalPurl: String!
+	relationshipType: String!
+	target: ReleaseSbomComponent
+	declaringArtifacts: [SbomDependencyDeclaration]
+}
+
+type ReleaseViolationInfo {
+	type: String!
+	purl: String
+	analysisState: AnalysisState
+}
+
+type ReleaseVulnerabilityInfo {
+	vulnId: String!
+	purl: String
+	severity: String
+	aliases: [VulnerabilityAlias!]
+	analysisState: AnalysisState
+	"True when this vulnerability (by CVE id or alias) is in the CISA KEV catalog"
+	knownExploited: Boolean
+}
+
+type ReleaseWeaknessInfo {
+	cweId: String!
+	severity: String
+	ruleId: String
+	location: String
+	analysisState: AnalysisState
+}
+
+type ReleasesPerBranch {
+	componentuuid: ID
+	componentname: String
+	componenttype: ComponentType
+	branchuuid: ID
+	branchname: String
+	rlzcount: Int
+}
+
+type ReleasesPerComponent {
+	componentuuid: ID
+	componentname: String
+	componenttype: ComponentType
+	rlzcount: Int
+}
+
+"""The part installed by a REPLACEMENT event."""
+type ReplacementPart {
+	"""Typed identity of the installed part (MPN/PART_NUMBER/...) plus unit production identifiers (LOT, SERIAL)."""
+	identifiers: [Identifier]
+	manufacturer: String
+}
+
+input ReplacementPartInput {
+	identifiers: [IdentifierInput]
+	manufacturer: String
+}
+
+type ResourceGroup {
+	uuid: ID
+	org: ID
+	name: String
+	createdType: ProgrammaticType
+	protectedEnvironments: [String]
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+type SbomArtifactParticipation {
+	artifact: ID!
+	exactPurls: [String]
+}
+
+type SbomChangesWithAttribution {
+	artifacts: [ArtifactWithAttribution!]!
+	totalAdded: Int!
+	totalRemoved: Int!
+}
+
+# Canonical SBOM component identity shared across releases. canonicalPurl is
+# the purl with qualifiers and subpath stripped; name / group / version /
+# type are cached from the purl for quick display and filtering. isRoot is
+# true when at least one uploaded BOM had this component as its
+# metadata.component (the "subject" of the BOM).
+type SbomComponent {
+	uuid: ID!
+	canonicalPurl: String!
+	type: String
+	group: String
+	name: String
+	version: String
+	isRoot: Boolean
+	# FDA-Readiness-1 per-component support disclosure. Dates + provenance live per-milestone
+	# (see supportMilestones); supportStatus is DERIVED from them and the current date (never
+	# stored). Dates are ISO-8601 (YYYY-MM-DD); supportLastAssessed is a UTC RFC-3339 instant.
+	# supportNotes is internal-only (shown to authorized org users, never injected into an
+	# export). endOfSupportDate/endOfLifeDate/supportSource/supportLastAssessed/supportNotes
+	# are BACK-COMPAT convenience fields meaning "the END_OF_SUPPORT milestone's own values" --
+	# not a component-wide value now that provenance is per-milestone; use supportMilestones
+	# for the full per-date detail (e.g. an EOL asserted from a different source than EOS).
+	supportStatus: SupportStatus
+	# The manufacturer's ATTESTED level of support: what the upstream maintainer is actually
+	# doing. Stored, not computed -- see SupportStatus. DELIBERATELY SEPARATE from
+	# supportStatus, which is what the dates entail. When they disagree (a far-future EOL on
+	# a library abandoned in practice), both are served and a reviewer judges; reconciling
+	# them server-side would discard the disagreement, which is the signal worth having.
+	# Never consume this without assessedAt: an undated claim cannot be weighed.
+	attestedLevelOfSupport: LevelOfSupport
+	# The same claim in FDA's own words, lowercase and verbatim ("actively maintained"),
+	# which is what the guidance and CycloneDX taxonomy PR #186 expect on the wire.
+	#
+	# Today this happens to equal name().toLowerCase().replace('_',' '), so it looks like a
+	# transform a client could do itself. Do NOT rely on that: the mapping is a deliberate
+	# per-constant table precisely so a guidance revision changing FDA's wording is a
+	# one-line server change rather than a break in every consumer that reimplemented the
+	# rule. The coincidence holds for these three values and is not a contract.
+	attestedLevelOfSupportText: String
+	# When the HUMAN assessed (RFC-3339, UTC). Caller-supplied, so it may precede the moment
+	# the attestation was filed; the system's own record time lives in the audit history.
+	assessedAt: String
+	# The user who made the attestation.
+	assertedBy: ID
+	# The manufacturer's stated basis for the claim -- what they checked and what they found.
+	# The part a reviewer actually reads when the dates are absent or contested.
+	justification: String
+	# ATTESTED or WITHDRAWN. A WITHDRAWN attestation is retracted: it keeps its history but
+	# is not injected into exports, so it reads as unassessed rather than as a live claim.
+	attestationState: SupportState
+	endOfGuaranteedSupportDate: String
+	endOfSupportDate: String
+	endOfLifeDate: String
+	supportSource: SupportSource
+	supportLastAssessed: String
+	supportNotes: String
+	# Full per-milestone detail: independent date + provenance for each milestone actually
+	# asserted (0-3 entries). notes is internal-only here too, never exported.
+	supportMilestones: [SupportMilestone!]!
+	# Whether the manufacturer is the FIRST party for this component (its own device/release)
+	# or a THIRD party making a claim about a component it has no operational control over
+	# (e.g. log4j). Null means UNKNOWN -- never inferred from isRoot. Orthogonal to
+	# supportSource: a supplier-provided BOM asserting a date for the org's OWN in-house
+	# library is a first-party fact learned through a supplier channel, not a third-party one.
+	supportParty: SupportParty
+	# DERIVED (never stored): does this component's declared support window end before the
+	# enclosing DEVICE's support horizon? The horizon is the DEVICE WINDOW resolved by
+	# DeviceLifecycleResolver (device model, or the batch override where there is one) --
+	# NOT the release's own eos, which is a CLE lifecycle projection. UNKNOWN for
+	# non-PRODUCT releases, org-scoped reads, or when a horizon is missing.
+	deviceSupportRisk: DeviceSupportRisk
+}
+
+input SbomComponentSearchInput {
+	name: String!
+	version: String
+}
+
+# A bulk attestation's outcome. The counts are derived server-side from results, so a
+# client rendering "312 applied, 138 skipped" and a client iterating the list cannot
+# disagree about the same run.
+type SbomComponentSupportBulkResponse {
+	results: [SbomComponentSupportBulkResult!]!
+	appliedCount: Int!
+	skippedCount: Int!
+	failedCount: Int!
+	# Correlates every audit row this call wrote. SERVER-minted; pass it back as the
+	# batchId argument on batches 2..n of a paged sweep so the whole sweep is one id in
+	# the audit history. Without it nothing in the record distinguishes an 800-component
+	# sweep from 800 separate judgements -- assessmentSource is MANUAL either way.
+	# Always present, including on an empty call.
+	batchId: ID!
+}
+
+# One component's outcome from a bulk attestation.
+type SbomComponentSupportBulkResult {
+	sbomComponentUuid: ID!
+	outcome: SupportBulkOutcome!
+	# Why, when the outcome is FAILED; null otherwise. Deliberately never echoes the
+	# attestation content back -- a caller that treats the response as confirmation of what
+	# was stored is not re-reading, and the stored value is the one that matters.
+	message: String
+}
+
+type SbomComponentSupportCoverage {
+	total: Int!
+	attested: Int!
+	"""
+	Whether this org's BOM exports actually CARRY the support properties these counts
+	describe. Returned by the SAME resolver as the counts, deliberately: a client that
+	fetched coverage and export state separately could render a full-coverage gauge beside
+	an export that silently carries nothing, and that combination is precisely the failure
+	a default-off export setting creates. One response, one resolver, cannot drift.
+
+	An ENUM rather than a Boolean because an export setting is the kind of field that grows
+	a third state -- inherited from a parent scope, per-release override, enabled-but-nothing
+	-to-inject -- and this schema is published verbatim to the Community Edition, where a
+	Boolean could not grow one without breaking clients. Same shape as sidPurlMode, which
+	models org-level configuration the same way.
+
+	Reads the org's supportInjection setting: ENABLED or DISABLED as configured, and UNKNOWN
+	when the organization row cannot be read. Unset counts as DISABLED -- off is the default,
+	so support properties do not appear in an export unless someone asks for them.
+
+	It is the SAME predicate that gates every egress -- the native single-artifact download,
+	the SPDX-augmented download and the merged release export -- so this field cannot report
+	one thing while an export does another. The raw artifact download is the exception: it is
+	swept for forged reliza:* provenance and marked, but never injected into, on any setting.
+
+	That strip is unconditional everywhere and is NOT governed by this field. A security
+	control and a content choice are not the same switch: turning injection off never stops
+	us removing an uploader's forged attribution.
+
+	UNKNOWN is a real answer, not a placeholder: once this reads a stored setting, that
+	setting can be absent or unreadable, and saying so beats guessing. Clients must render
+	UNKNOWN as unknown and must NOT collapse it to either state -- a gauge that silently
+	assumes exports carry disclosures is the failure this field exists to prevent.
+
+	NON-NULL deliberately. UNKNOWN carries "not determined" in band, so allowing null too
+	would give the same condition two representations and put clients in the position of
+	handling both -- which is the dual-representation problem choosing an enum over a
+	Boolean was meant to avoid in the first place. There is exactly one answer shape.
+	"""
+	supportExportState: SupportExportState!
+}
+
+type SbomDependencyDeclaration {
+	artifact: ID!
+	sourceExactPurl: String!
+	targetExactPurl: String!
+}
+
+type SearchDigestVersionResponse {
+	commitReleases: [Release]
+}
+
+type Secret {
+	uuid: ID
+	name: String
+	org: ID
+	description: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	permissions: Permissions
+}
+
+input SecretInput {
+	org: ID!
+	name: String!
+	description: String
+	ptSecret: String!
+}
+
+input SecretUpdateInput {
+	org: ID!
+	description: String
+	ptSecret: String
+}
+
+input SettingsInput {
+	"""Org-wide prune mode for declarative applies. Partial-patch idiom: null leaves the existing value unchanged."""
+	declarativePrune: DeclarativePruneMode
+	justificationMandatory: Boolean
+	branchSuffixMode: BranchSuffixMode
+	vexComplianceFramework: VexComplianceFramework
+	"""
+	Org-wide default UI view. Partial-patch idiom: null leaves the existing value unchanged.
+	"""
+	defaultView: DashboardView
+	"""
+	Set the org-level sid PURL mode. See SidPurlMode docs. Partial-patch idiom:
+	null leaves the existing value unchanged. Pairs with sidAuthoritySegments;
+	ENABLED_STRICT requires non-empty segments to be present (either in this
+	patch or already on the record).
+	"""
+	sidPurlMode: SidPurlMode
+	"""
+	Set the org-level decoded authority segments. Validation: domain-form first
+	segment passes RFC 1035; registry-form first segment (no dot) accepted with
+	a warning since the backend cannot verify the upstream PURL registry.
+	Internal whitespace allowed (e.g. "Acme Robotics"); leading/trailing
+	whitespace rejected.
+	"""
+	sidAuthoritySegments: [String!]
+	"""
+	Set the retention window, in days, for the org's notification rows
+	(outbox events, deliveries, read marks). Accepted range 14..730; the
+	minimum keeps clear of the email digest's maximum parking window plus
+	the delivery retry curve. Partial-patch idiom: null leaves the existing
+	value unchanged (90-day default applies when never set).
+	"""
+	notificationRetentionDays: Int
+	"""
+	The submission-level justification: what FDA L1021-1022 asks for literally, the reason
+	per-component support information cannot be included. At the measured 2.3% upstream
+	coverage this is the centre of a submission rather than a footnote.
+
+	Null is a real state, not a default. A document with an empty REQUIRED slot is blocked
+	rather than generated with the section missing -- on a submission a reviewer expects
+	gaps, but on the patient-facing Device Support Statement a silent gap is itself
+	misleading under 502(a)(1). No product-shipped default text: these are the
+	manufacturer's own commitments.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaAssessmentNarrative: String
+	"""
+	PATCH: omitting the field leaves the stored value alone. There is no clear --
+	the enum's two members already express both states, and null on the wire means
+	"not part of this patch".
+	"""
+	supportInjection: SupportInjectionSetting
+	"""
+	Labeling VI.A.2: that patches and software updates may cease at end of support.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaPatchesMayCeaseStatement: String
+	"""
+	Labeling VI.A.3: a REFERENCE to the controlled risk-transfer process -- an identifier or
+	URL, never the process itself. Plans are design-history-file records, and a pasted copy
+	becomes a second, unversioned original that drifts from the controlled one.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaRiskTransferProcessRef: String
+	"""
+	Labeling VI.A.4: that end-user cybersecurity risk can be expected to increase over
+	time.
+	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null
+	in storage, so a generator's "required slot missing" test stays a null test.
+
+	An explicit null is treated as OMITTED, not as a clear -- the clear signal is "", the
+	same as on the attestation write. Worth knowing because null-to-clear is the more common
+	convention elsewhere.
+	"""
+	fdaRiskIncreasesNotice: String
+}
+
+input ShipProductInput {
+	org: ID!
+	site: ID!
+	featureSet: ID!
+	release: ID!
+	deliverable: ID
+	"""
+	Override the product component's device support window for this batch (D7). Omit to
+	inherit, which is the ordinary case.
+	"""
+	deviceSupportWindow: DeviceSupportWindowInput
+	"""
+	Update-only: drop this batch's override so it inherits the product component again.
+	Distinct from omitting the field (leaves it alone) and from sending an empty window
+	object (which is a batch declaring nothing, not a retraction).
+	"""
+	clearDeviceSupportWindow: Boolean
+	shipDate: String
+	quantity: Int
+	identifiers: [IdentifierInput]
+	choiceResolutions: [ChoiceResolutionInput]
+	manufactureDate: String
+	expiryDate: String
+	notes: String
+	"""
+	Plain software only: uuids of devices at the same site the release applies to (optional).
+	Ignored for hardware and SaMD shipments, whose units are Device rows of their own.
+	"""
+	devices: [ID]
+}
+
+"""
+An append-only, batch-level Distribution-module shipment record. Per-unit
+observed state (actual / tracking) lives on the optional Device child.
+"""
+type ShippedProduct {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	site: ID
+	featureSet: ID
+	release: ID
+	deliverable: ID
+	shipDate: String
+	quantity: Int
+	"""Batch-level production identifiers (LOT, UDI-DI, ...)."""
+	identifiers: [Identifier]
+	"""As-produced resolution of the release HBOM's CDX #929 choice slots."""
+	choiceResolutions: [ChoiceResolution]
+	manufactureDate: String
+	expiryDate: String
+	"""
+	THIS BATCH's override of the device support window (D7). Null means INHERIT from the
+	product component -- the ordinary case, and deliberately distinct from a window whose
+	dates are both null, which is a batch asserting "not declared" over a model that does
+	declare one.
+	"""
+	deviceSupportWindow: DeviceSupportWindow
+	"""
+	The window that actually applies to this batch: its own override if it has one, else
+	the product component's declaration, with the level it came from.
+	"""
+	effectiveDeviceSupportWindow: ResolvedDeviceSupportWindow
+	notes: String
+	"""
+	Physical-ness of the shipped feature set (any HARDWARE-nature component -> HARDWARE), derived
+	at ship time; legacy rows are resolved the same way when listed.
+	"""
+	nature: ComponentNature
+	"""
+	Regulatory class of the shipped feature set's UDI-bearing component (NONE when there is
+	none), derived at ship time. SOFTWARE + MEDICAL_* is SaMD.
+	"""
+	deviceClass: DeviceClass
+	"""
+	Plain software (nature SOFTWARE, deviceClass NONE) only: devices from hardware / SaMD
+	shipments at the same site this release applies to. Empty when shipped without any device.
+	"""
+	devices: [ID]
+	createdDate: DateTime
+}
+
+enum SignatureStatus {
+	UNSIGNED
+	VERIFIED_TRUSTED
+	VERIFIED_UNTRUSTED
+	INVALID
+}
+
+enum SignatureSubjectType {
+	SCE
+	"""Reserved for v2 -- image / SBOM signature attestations."""
+	ARTIFACT
+}
+
+"""
+Verdict snapshot for a (subject, signature-artifact) pair. CEL reads
+the most-recent row via {@code commit.signature.*}.
+"""
+type SignatureVerification {
+	uuid: ID
+	org: ID
+	subjectType: SignatureSubjectType
+	subjectUuid: ID
+	signatureArtifact: Artifact
+	signedPayloadArtifact: Artifact
+	publicKeyArtifact: Artifact
+	format: SignatureFormat
+	verdict: SignatureVerificationState
+	"""Set on VERIFIED -- Agent or Committer that holds the matched key."""
+	ownerType: SigningKeyOwnerType
+	ownerUuid: ID
+	"""Fingerprint of the matched enrolled key -- set on VERIFIED."""
+	keyFingerprint: String
+	verifiedAt: DateTime
+	verifierVersion: Int
+	"""Free-form diagnostic for the UI / debugging."""
+	details: String
+	createdDate: DateTime
+}
+
+input SigningKeyInput {
+	org: ID!
+	format: SignatureFormat!
+	ownerType: SigningKeyOwnerType!
+	ownerUuid: ID!
+	"""SHA256:... for SSH; long key id for GPG. Derived from pubKey when omitted."""
+	fingerprint: String
+	"""Optional override; for COMMITTER owners defaults to committer.email."""
+	identity: String
+	"""Single-line SSH or ASCII-armoured GPG block."""
+	pubKey: String!
+}
+
+"""A physical location belonging to a Client. Flat child (no nesting)."""
+type Site {
+	uuid: ID
+	org: ID
+	"""Soft-delete marker: ARCHIVED rows are hidden from listings."""
+	status: Status
+	client: ID
+	name: String
+	contact: Contact
+	notes: String
+	createdDate: DateTime
+}
+
+input SiteInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	client: ID!
+	name: String!
+	contact: ContactInput
+	notes: String
+}
+
+input SmtpPropsInput {
+	userName: String
+	password: String
+	smtpHost: String
+	port: Int
+	isStarttls: Boolean
+	isSsl: Boolean 
+	fromName: String
+}
+
+enum SourceFormat {
+	OPENVEX
+	CDX_VEX
+}
+
+type SshKey {
+	uuid: ID
+	name: String
+}
+
+enum SupportAttestationFilter {
+	# Every non-root component in the release.
+	ALL
+	# Only those the coverage gauge counts as disclosed.
+	ATTESTED
+	# Only those the gauge counts as missing -- the bulk-attest work queue.
+	UNATTESTED
+}
+
+# What a bulk attestation did to one component.
+enum SupportBulkOutcome {
+	# The attestation was written.
+	APPLIED
+	# Skipped: the component is the application itself, not a third-party dependency.
+	SKIPPED_ROOT
+	# Skipped: an attestation already exists. A bulk pass never overwrites one -- that is what
+	# makes a re-run idempotent and what protects an earlier per-component judgement.
+	SKIPPED_ATTESTED
+	# This component's write was rejected; `message` says why. The batch continued.
+	FAILED
+}
+
+# Support-disclosure completeness for an org. attested = non-root components with a
+# MANUFACTURER (MANUAL) attestation (excludes machine ENRICHED / supplier-declared
+# provenance, which are not a manufacturer disclosure). total = all non-root components.
+# Per-source counts can be added as new fields additively if needed.
+"""
+Whether an org's BOM exports carry the FDA support-disclosure properties.
+
+Deliberately NOT a Boolean -- see supportExportState on SbomComponentSupportCoverage.
+"""
+enum SupportExportState {
+	"""Exports carry the support properties."""
+	ENABLED
+	"""Exports omit them; the coverage counts describe data that is not being shipped."""
+	DISABLED
+	"""
+	RETIRED. Never returned.
+
+	It described a real state that no longer exists: injection reaching some egresses and
+	not others, when the native artifact download injected while the SPDX-augmented form and
+	the release-level export did not. One setting now gates all three, so an export either
+	carries the properties or it does not.
+
+	Retained so clients built against the published schema keep parsing. A client that still
+	branches on it should treat it as it always meant: do not assume this export carries the
+	disclosure.
+	"""
+	PARTIAL @deprecated(reason: "Retired: one setting now gates every egress, so an export either carries the properties or it does not. Never returned; retained so published-schema clients keep parsing.")
+	"""The server could not determine the setting. Never collapse this to ENABLED or DISABLED."""
+	UNKNOWN
+}
+
+# One independently-provenanced support milestone assertion. An entry's presence IS the
+# assertion of that date. notes is internal-only, never exported.
+#
+# NOTE the nullability change from the previous shape: these fields are no longer
+# non-null. The facts now live in the attestation's JSONB rather than in a table whose
+# NOT NULL constraints enforced them, so the schema states what the storage can actually
+# guarantee. Claiming non-null here and serving null on a hand-edited or partially
+# migrated payload would be a runtime error at the client, which is a worse failure than
+# an honest nullable field.
+type SupportMilestone {
+	milestoneType: SupportMilestoneType!
+	date: String
+	source: SupportSource
+	lastAssessed: String
+	assertedBy: ID
+	notes: String
+}
+
+# Which per-component support milestone is being asserted. Scoped to per-component
+# support only; a full per-component CLE mapping (e.g. endOfDevelopment) is out of
+# scope here -- CLE 1.0.0 treats per-component assertions as third-party claims,
+# future-scope there. Device-level CLE events are a separate axis.
+enum SupportMilestoneType {
+	# Bug fixes stop, security fixes continue. Feeds SupportStatus.SECURITY_ONLY.
+	END_OF_GUARANTEED_SUPPORT
+	# All support ceases (transfer of risk) -- the date FDA's disclosure wants.
+	END_OF_SUPPORT
+	# The component reaches end of life.
+	END_OF_LIFE
+}
+
+# Whether the manufacturer is the first party for a component's support facts (its own
+# device/release) or a third party making a claim about a component it has no
+# operational control over (e.g. log4j).
+enum SupportParty {
+	FIRST_PARTY
+	THIRD_PARTY
+}
+
+# Provenance of one milestone's support assertion, set server-side per write path.
+# Independent per milestone -- see SupportMilestone.
+enum SupportSource {
+	MANUAL
+	SUPPLIER
+	ENRICHED
+}
+
+# Lifecycle of the attestation RECORD itself, as opposed to the support lifecycle of
+# the component it describes. WITHDRAWN exists because a regulatory record is corrected
+# by superseding it, never by erasing it: a manufacturer who finds an attestation was
+# made in error must be able to say so on the record, and deleting the row would destroy
+# the history that makes the correction credible.
+enum SupportState {
+	ATTESTED
+	WITHDRAWN
+}
+
+# The DERIVED per-component support state: what the stored dates entail as of a clock, and
+# nothing more. The manufacturer's own claim is a different field with a different type --
+# see LevelOfSupport and attestedLevelOfSupport. The two are shown side by side and are never
+# reconciled: a maintainer can publish a far-future end-of-support and have abandoned the
+# library in practice, and a reviewer needs to see both.
+#
+# ACTIVELY_SUPPORTED, ABANDONED and END_OF_LIFE are retained but NEVER returned. The first two
+# moved to LevelOfSupport as attested claims; END_OF_LIFE was retired because it means END OF
+# SALE, which is not a support state. They stay because this enum is published in the CE
+# schema and removing a value would break consumers who already hold it.
+enum SupportStatus {
+	ACTIVELY_SUPPORTED
+	SECURITY_ONLY
+	END_OF_SUPPORT
+	END_OF_LIFE
+	ABANDONED
+	UNKNOWN
+}
+
+# Curated synthetic event templates surfaced through the
+# injectSyntheticEvent mutation. The full set lives on
+# {@code SyntheticEventTemplates.Template}; each value here maps 1:1
+# to a constant in that enum.
+enum SyntheticEventTemplateEnum {
+	CRITICAL_VULN_SINGLE_SHIPPED_RELEASE
+	CRITICAL_KEV_VULN_THREE_RELEASES_IN_PAYLOAD
+	KEV_LISTED_DRAFT_RELEASE
+	SEVERITY_BUMP_MEDIUM_TO_CRITICAL
+	KEV_ADDED
+	VEX_RESOLVED_NOT_AFFECTED
+}
+
+type SystemInfoIsSet {
+	emailDetailsSet: Boolean
+	defaultOrg: ID
+	defaultOrgDetails: Organization
+	# vulncheckKevConfigured dropped in V54 KEV per-org refactor; surfaced
+	# per-org via the Integrations Catalog cards on Organization Settings.
+}
+
+enum TeamStatus {
+	ACTIVE
+	INACTIVE
+}
+
+"""
+A Team is the organization's addressable unit -- what a notification route can
+point at, and (from a later phase) what a component is owned by. A team grants
+NOTHING: access comes from UserGroup and the permission model, and the two are
+separate entities so neither drifts into doing the other's job.
+"""
+type TeamWebDto {
+	uuid: ID
+	name: String
+	description: String
+	org: ID
+	status: TeamStatus
+	# Individually-added members.
+	members: [ID]
+	"""
+	Permission groups whose members are also on this team. Not a convenience:
+	component ownership derives its candidate teams from COMPONENT-scoped
+	permissions and its durability from SSO-backed groups, so a team that could
+	hold only individual users would lose both once ownership retargets here.
+	"""
+	userGroups: [ID]
+	# Channels this team is reachable on (e.g. its Slack channel).
+	notificationChannels: [ID]
+	"""
+	Members who may administer this team. Stored and validated now; nothing
+	reads it for authorization yet -- delegated administration is a later phase.
+	Distinct from ComponentData.leads, which names people on a component.
+	"""
+	leads: [ID]
+	"""
+	This team's own "notify me about the components I own" setting. ReARM
+	materialises an ordinary subscription behind it, scoped to this team's
+	components and delivering to this team's channels; the subscription appears
+	in the subscription list flagged as team-managed and is edited HERE, not
+	there. Null means never configured, which reads as off.
+	"""
+	ownedComponentNotifications: OwnedComponentNotifications
+}
+
+input TerminologyInput {
+	featureSetLabel: String
+}
+
+input TrackingInput {
+	receivedDate: String
+	patientId: String
+	disposition: Disposition
+	dispositionDate: String
+}
+
+type UnrecognizedCommit {
+	sourceCodeEntry: ID
+	commit: String
+	component: ID
+	componentName: String
+	"""Why nobody is accountable: "unsigned, no attribution"."""
+	detail: String
+	claimState: String
+}
+
+input UpdateComponentInput {
+	"""
+	The section 524B device support window for this device model (D7). PATCH: omitted
+	leaves the stored value alone. Rejected when the component has no device class, or
+	when eos is after eol.
+	"""
+	deviceSupportWindow: DeviceSupportWindowInput
+	"""
+	Explicitly retract the declared window. Distinct from omitting the field and from
+	sending an empty window object -- an empty object is what a form with two blank date
+	pickers posts by accident, and it must not withdraw a regulatory commitment.
+	"""
+	clearDeviceSupportWindow: Boolean
+	uuid: ID
+	name: String!
+	kind: ComponentKind
+	versionSchema: String
+	marketingVersionSchema: String
+	versionType: VersionType
+	featureBranchVersioning: String
+	vcs: ID
+	approvalPolicy: ID
+	"""
+	Explicitly clear the per-component approvalPolicy reference. The
+	default {@code null} on {@code approvalPolicy} means "leave the
+	existing value alone" (server-side leave-unchanged convention), so
+	a separate flag is needed to express "actually remove the assigned
+	policy". When {@code true}, the server unsets the reference; the
+	same guard as the change-policy path still applies (the component
+	must not still reference globalInputEvents from the old policy).
+	{@code approvalPolicy} is ignored when this flag is true.
+	"""
+	clearApprovalPolicy: Boolean
+	releaseInputTriggers: [ReleaseInputEventInput]
+	outputTriggers: [ReleaseOutputEventInput]
+	globalInputEventRefs: [GlobalInputEventRefInput]
+	identifiers: [IdentifierInput]
+	# Distribution module: device classification + profiles + native identifiers.
+	nature: ComponentNature
+	deviceClass: DeviceClass
+	medicalProfile: MedicalProfileInput
+	repoPath: String
+	authentication: ComponentAuthenticationInput
+	branchSuffixMode: BranchSuffixMode
+	"""
+	Update component-level sid override. Null leaves the existing value unchanged.
+	INHERIT clears the override (defers to higher level). Only writeable under
+	org ENABLED_FLEXIBLE.
+	"""
+	sidPurlOverride: SidPurlOverride
+	"""
+	Update component-level authority segments. Null leaves the existing value unchanged.
+	"""
+	sidAuthoritySegments: [String!]
+	"""
+	Update internal/external classification (D16). Null leaves the existing value unchanged.
+	"""
+	isInternal: BelongsToOrganization
+	"""Manually-assigned lead user UUIDs. Null leaves unchanged; empty list clears."""
+	leads: [ID!]
+	"""Freeform stakeholder contacts (HTML-sanitized server-side). Null leaves unchanged; empty list clears."""
+	contacts: [ComponentContactInput!]
+	"""
+	Set the durable owner (RFC Phase 4b). Validated server-side against this
+	component's org (no DB FK). Null leaves the existing owner unchanged.
+	"""
+	owner: ComponentOwnerInput
+	"""
+	Explicitly remove the stored owner. Needed because owner: null already means
+	"no change", so it cannot express removal. Clearing hands the component back
+	to org team-assignment rules. Takes precedence over owner when both are sent.
+	"""
+	clearOwner: Boolean
+}
+
+input UpdateInstancePlanInput {
+	properties: [InstancePropertyRecordInput]
+	addProperties: [InstancePropertyRecordInput]
+	targetReleases: [DeployedReleaseInput]
+	environment: String
+	products: [InstanceProductMapPlanInput]
+}
+
+"""
+Every collection is NULL-MEANS-KEEP: omitting a field leaves the stored value
+alone, sending an empty list REPLACES it with nothing. A partially-loaded editor
+must omit rather than send [] -- that is how a roster gets silently emptied.
+"""
+input UpdateTeamInput {
+	teamId: ID!
+	name: String
+	description: String
+	status: TeamStatus
+	members: [ID]
+	# Must exist and belong to this org; validated on save.
+	userGroups: [ID]
+	# Must exist, belong to this org, and actually be notification channels.
+	notificationChannels: [ID]
+	# Must be on the effective roster (members + members of contained groups).
+	leads: [ID]
+	# Omit to leave the team's notification setting alone. Sending it replaces
+	# the whole object, and saving the team re-materialises its subscription.
+	ownedComponentNotifications: OwnedComponentNotificationsInput
+}
+
+input UpdateUserGroupInput {
+	groupId: ID!
+	name: String
+	description: String
+	users: [ID]
+	manualUsers: [ID]
+	permissions: [UserGroupPermissionInput]
+	approvals: [String]
+	status: UserGroupStatus
+	connectedSsoGroups: [String]
+}
+
+input UpdateVulnAnalysisInput {
+	analysisUuid: ID!
+	state: AnalysisState!
+	justification: AnalysisJustification
+	details: String
+	findingAliases: [String]
+	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+}
+
+type User {
+	uuid: ID
+	name: String
+	email: String
+	allEmails: [EmailObject]
+	githubId: String
+	oauthId: String
+	oauthType: OAuthType
+	organizations: [ID]
+	policiesAccepted: Boolean
+	permissions: Permissions
+	publicSshKeys: [SshKey]
+	systemSealed: Boolean
+	installationType: String
+	isGlobalAdmin: Boolean
+	isLicenseValid: Boolean
+	status: UserStatus
+}
+
+input UserGroupPermissionInput {
+	scope: PermissionScope!
+	objectId: ID!
+	type: PermissionType!
+	functions: [PermissionFunction]
+	approvals: [String]
+}
+
+enum UserGroupStatus {
+	ACTIVE
+	INACTIVE
+}
+
+type UserGroupWebDto {
+	uuid: ID
+	name: String
+	description: String
+	org: ID
+	users: [ID]
+	manualUsers: [ID]
+	userDetails: [OrgUserData]
+	manualUserDetails: [OrgUserData]
+	permissions: Permissions
+	status: UserGroupStatus
+	connectedSsoGroups: [String]
+	createdDate: DateTime
+	lastUpdatedBy: ID
+}
+
+type VegaDateValue {
+	date: String
+	num: Int
+}
+
+type VersionedArtifact {
+	artifactUuid: ID
+	version: Long
+	type: ArtifactType
+	artifactDetails: Artifact
+}
+
+input VexProposalUpdateInput {
+	analysisState: AnalysisState
+	analysisJustification: AnalysisJustification
+	details: String
+	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+}
+
+type VexStatementProposalWebDto {
+	uuid: ID!
+	org: ID!
+	sourceArtifact: ID!
+	sourceFormat: SourceFormat!
+	sourceStatementJson: String!
+	signatureStatus: SignatureStatus!
+	issuerIdentity: String
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	location: String!
+	rawLocation: String
+	locationType: LocationType!
+	findingId: String!
+	findingAliases: [String]
+	findingType: FindingType!
+	analysisState: AnalysisState!
+	analysisJustification: AnalysisJustification
+	details: String
+	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+	status: ProposalStatus!
+	statusReason: String
+	targetVulnAnalysis: ID
+	mitigationAttestation: ID
+	actedAt: DateTime
+	actedBy: ID
+	translationNotes: [String]
+	issuerClass: IssuerClass
+	userImportMode: VexImportMode
+	userIssuerClassOverride: IssuerClass
+	demotionReason: String
+	# Human-readable resolution of scope + scopeUuid, filled server-side and
+	# batched across the page (the client would otherwise need one to three
+	# lookups per proposal on an org-wide list). A RELEASE-scoped proposal fills
+	# all three levels, BRANCH fills branch + component, COMPONENT fills only the
+	# component, ORG / RESOURCE_GROUP fill none. Every field below is also null
+	# when the scoped object no longer resolves -- render the raw scopeUuid then.
+	"""Component owning this proposal's scope; null for ORG / RESOURCE_GROUP scope or when unresolvable."""
+	scopeComponentUuid: ID
+	"""Display name of scopeComponentUuid; null whenever that is null."""
+	scopeComponentName: String
+	"""Branch of this proposal's scope; null for COMPONENT / ORG / RESOURCE_GROUP scope or when unresolvable."""
+	scopeBranchUuid: ID
+	"""Display name of scopeBranchUuid; null whenever that is null."""
+	scopeBranchName: String
+	"""Release of this proposal's scope; set only for RELEASE scope, and null when unresolvable."""
+	scopeReleaseUuid: ID
+	"""Version string of scopeReleaseUuid; null whenever that is null."""
+	scopeReleaseVersion: String
+}
+
+type ViolationWithAttribution {
+	# Opaque handle to page this finding's full attribution via findingAttributionByDate.
+	findingKey: String!
+	type: String
+	purl: String!
+	# Preview-capped lists + true totals (see VulnerabilityWithAttribution).
+	resolvedIn: [ComponentAttribution!]!
+	appearedIn: [ComponentAttribution!]!
+	presentIn: [ComponentAttribution!]!
+	resolvedInCount: Int!
+	appearedInCount: Int!
+	presentInCount: Int!
+	isNetResolved: Boolean!
+	isNetAppeared: Boolean!
+	isStillPresent: Boolean!
+	orgContext: OrgLevelContext
+	analysisState: AnalysisState
+	"ADDITIVE (changelog re-scan visibility): earliest in-window APPEARED finding_change_event date for this finding; null when the appearance is not event-backed."
+	scanArrivalDate: DateTime
+	"ADDITIVE: earliest in-window release (by creation) whose current metrics carry this finding."
+	earliestCarrier: ComponentAttribution
+	"ADDITIVE: latest in-window release (by creation) whose current metrics carry this finding."
+	latestCarrier: ComponentAttribution
+}
+
+type VulnAnalysisWebDto {
+	uuid: ID!
+	org: ID!
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+	location: String!
+	locationType: LocationType!
+	findingId: String!
+	findingAliases: [String]
+	findingType: FindingType!
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	release: ID
+	branch: ID
+	component: ID
+	analysisState: AnalysisState!
+	analysisJustification: AnalysisJustification
+	analysisHistory: [AnalysisHistoryWebDto]
+	severity: VulnerabilitySeverity
+	releaseDetails: Release
+	branchDetails: Branch
+	componentDetails: Component
+}
+
+type VulnerabilityAlias {
+	aliasId: String!
+}
+
+type VulnerabilityViolationChart {
+	createdDate: DateTime
+	num: Int
+	type: String
+}
+
+type VulnerabilityWithAttribution {
+	# Opaque handle to page this finding's full attribution via findingAttributionByDate.
+	findingKey: String!
+	vulnId: String!
+	severity: String
+	purl: String!
+	aliases: [VulnerabilityAlias!]
+	# resolvedIn/appearedIn/presentIn are PREVIEW-capped (first few entries) for payload control.
+	# The *Count fields are the true totals; when a count exceeds the preview length the UI shows
+	# "+N more" and drills down via findingAttributionByDate. See changelog-read-contract-redesign.md.
+	resolvedIn: [ComponentAttribution!]!
+	appearedIn: [ComponentAttribution!]!
+	presentIn: [ComponentAttribution!]!
+	resolvedInCount: Int!
+	appearedInCount: Int!
+	presentInCount: Int!
+	isNetResolved: Boolean!
+	isNetAppeared: Boolean!
+	isStillPresent: Boolean!
+	orgContext: OrgLevelContext
+	analysisState: AnalysisState
+	"True when this vulnerability (by CVE id or alias) is in the CISA KEV catalog"
+	knownExploited: Boolean
+	"ADDITIVE (changelog re-scan visibility): earliest in-window APPEARED finding_change_event date for this finding; null when the appearance is not event-backed."
+	scanArrivalDate: DateTime
+	"ADDITIVE: earliest in-window release (by creation) whose current metrics carry this finding."
+	earliestCarrier: ComponentAttribution
+	"ADDITIVE: latest in-window release (by creation) whose current metrics carry this finding."
+	latestCarrier: ComponentAttribution
+}
+
+type WeaknessWithAttribution {
+	# Opaque handle to page this finding's full attribution via findingAttributionByDate.
+	findingKey: String!
+	cweId: String!
+	severity: String
+	ruleId: String
+	location: String!
+	# Preview-capped lists + true totals (see VulnerabilityWithAttribution).
+	resolvedIn: [ComponentAttribution!]!
+	appearedIn: [ComponentAttribution!]!
+	presentIn: [ComponentAttribution!]!
+	resolvedInCount: Int!
+	appearedInCount: Int!
+	presentInCount: Int!
+	isNetResolved: Boolean!
+	isNetAppeared: Boolean!
+	isStillPresent: Boolean!
+	orgContext: OrgLevelContext
+	analysisState: AnalysisState
+	"ADDITIVE (changelog re-scan visibility): earliest in-window APPEARED finding_change_event date for this finding; null when the appearance is not event-backed."
+	scanArrivalDate: DateTime
+	"ADDITIVE: earliest in-window release (by creation) whose current metrics carry this finding."
+	earliestCarrier: ComponentAttribution
+	"ADDITIVE: latest in-window release (by creation) whose current metrics carry this finding."
+	latestCarrier: ComponentAttribution
+}
+
+# Inbound GitHub webhook receiver. The (org, slug) pair forms the public
+# URL path /api/programmatic/v1/webhook/{org}/{slug}; delivery, signature
+# verification and PR upsert key entirely on (org, slug) + the row's own
+# secret. The integration link is OPTIONAL (null = standalone): it is an
+# organizational association only (capability gate, one-to-one cardinality,
+# integration delete-protection) and is never read on delivery.
+# encryptedSecret is intentionally not exposed back through the API --
+# it's set-only on create / update.
+type Webhook {
+	uuid: ID
+	org: ID
+	# Optional associated GITHUB+WEBHOOK integration; null for a standalone webhook.
+	integration: ID
+	slug: String
+	note: String
+	status: WebhookStatus
+	lastDeliveryAt: DateTime
+	lastDeliveryStatus: WebhookDeliveryOutcome
+	lastDeliveryId: String
+	consecutiveFailureCount: Int
+	createdDate: DateTime
+	updatedDate: DateTime
+}
+
+# Authentication scheme for outbound WEBHOOK deliveries.
+#   NONE          -- no auth header (URL secrecy + transport security only)
+#   BEARER        -- Authorization: Bearer <token>
+#   HMAC_SHA256   -- X-Reliza-Signature: sha256=<hex of HMAC over body>
+enum WebhookAuthSchemeEnum {
+	NONE
+	BEARER
+	HMAC_SHA256
+}
+
+enum WebhookDeliveryOutcome {
+	SUCCESS
+	SIGNATURE_INVALID
+	HANDLER_ERROR
+	UNKNOWN_EVENT
+	DUPLICATE
+	WEBHOOK_DISABLED
+}
+
+input WebhookInput {
+	org: ID!
+	# Optional. Associate with a GITHUB+WEBHOOK integration (organizational
+	# link only). Omit/null for a standalone webhook -- delivery is identical.
+	integration: ID
+	# Lowercase ASCII, 4-63 chars, no leading/trailing hyphen. Unique
+	# within the org. Reserved values are rejected.
+	slug: String!
+	# Plain HMAC-SHA256 key (matches the value pasted into the GitHub
+	# App's "Webhook secret" field). Encrypted at rest.
+	secret: String!
+	# GitHub installation ID (numeric, passed as string for symmetry
+	# with the GH App's existing schedule field).
+	installation: String
+	note: String
+}
+
+enum WebhookStatus {
+	ACTIVE
+	DISABLED
+}
+
+input WebhookUpdateInput {
+	uuid: ID!
+	note: String
+	status: WebhookStatus
+	# Pass empty string to clear, omit to preserve.
+	installation: String
+	# Optional association change (organizational link only, never affects
+	# delivery): omit to preserve, empty string to clear (-> standalone),
+	# or a GITHUB+WEBHOOK integration id to set/change it.
+	integration: ID
+	# Pass to rotate; omit to keep existing.
+	secret: String
+	# Pass to rename. Same regex + uniqueness rules as create. Changing
+	# the slug also changes the public webhook URL -- re-register it on
+	# the GitHub App side at the same time.
+	slug: String
+}
