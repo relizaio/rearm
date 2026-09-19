@@ -124,6 +124,11 @@
                     </div>
                 </div>
 
+                <div class="dsec" v-if="(task.usage?.reports ?? 0) > 0">
+                    <div class="dsec__h">Usage</div>
+                    <agent-usage-summary :usage="task.usage" :show-by-model="false" />
+                </div>
+
                 <div class="dsec">
                     <div class="dsec__h">History</div>
                     <div v-if="!history.length" class="empty">No hops recorded yet.</div>
@@ -141,6 +146,8 @@
                                     · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</template></span>
                                 <code v-if="e.rec.promptVersion" class="hist__pv"
                                       title="Served role-prompt version">{{ e.rec.promptVersion }}</code>
+                                <span v-if="hopHasUsage(e.rec)" class="hist__usage"
+                                      :title="hopTitle(e.rec)">{{ hopLabel(e.rec) }}</span>
                                 <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                             </template>
                             <template v-else>
@@ -148,6 +155,8 @@
                                 <span class="hist__role">{{ e.rec.role }}</span>
                                 <span class="hist__agent">{{ agentName(e.rec.agent) }}</span>
                                 <span class="hist__time">{{ ts(e.rec.returnedAt) }} · {{ e.rec.reason }}</span>
+                                <span v-if="hopHasUsage(e.rec)" class="hist__usage"
+                                      :title="hopTitle(e.rec)">{{ hopLabel(e.rec) }}</span>
                                 <div v-if="e.rec.description" class="hist__note">{{ e.rec.description }}</div>
                             </template>
                         </div>
@@ -192,6 +201,8 @@
 <script lang="ts" setup>
 import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NDrawer, NDrawerContent, NInput, NSpace, NTag } from 'naive-ui'
+import AgentUsageSummary from './AgentUsageSummary.vue'
+import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 
 const props = defineProps<{
     task: any | null
@@ -209,6 +220,25 @@ const emit = defineEmits<{
 }>()
 
 const reviewNote = ref('')
+
+// Per-hop cost, shown inline on the history row rather than in a column: a hop
+// that cost nothing to report is the common case, and an always-present column
+// of dashes would push the role and agent off the row for no gain.
+function hopHasUsage (rec: any): boolean {
+    return (rec?.usage?.reports ?? 0) > 0
+}
+
+function hopLabel (rec: any): string {
+    return costLabel(rec.usage) + ' · ' + formatTokens(totalTokens(rec.usage)) + ' tok'
+}
+
+function hopTitle (rec: any): string {
+    const u = rec.usage ?? {}
+    return `${u.requests ?? 0} requests, ${u.turns ?? 0} turns\n` +
+        `in ${formatTokens(u.inputTokens)} · out ${formatTokens(u.outputTokens)} · ` +
+        `cache read ${formatTokens(u.cacheReadTokens)} · cache write ${formatTokens(u.cacheWriteTokens)}` +
+        (u.costComplete === false ? '\nSome rows had no applicable price: the cost is a lower bound.' : '')
+}
 watch(() => props.task?.uuid, () => { reviewNote.value = '' })
 
 const terminal = computed(() =>
@@ -329,6 +359,9 @@ function statusTone (s: string): string {
     &__agent { color: #666; }
     &__time { color: #999; font-size: 11.5px; }
     &__pv { font-size: 10.5px; color: #999; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
+    // Pushed to the right so the hop reads role/agent/time first and cost last:
+    // the money is the qualifier on the hop, not its headline.
+    &__usage { margin-left: auto; font-size: 11.5px; color: #777; white-space: nowrap; }
     &__note { width: 100%; color: #555; font-size: 12px; padding-left: 2px; }
 }
 .shist {

@@ -22,6 +22,14 @@
 
         <n-tabs type="segment" v-model:value="tab" animated>
             <n-tab-pane name="overview" tab="Overview">
+                <n-card size="small" title="Usage" style="margin-bottom: 14px;">
+                    <agent-usage-summary
+                        :usage="session.usageTotals"
+                        :completeness="session.usageCompleteness"
+                        :model-mismatch="session.modelMismatch"
+                        empty-hint=" — this agent is running without the usage hooks installed"
+                    />
+                </n-card>
                 <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="Status">
                         <n-tag :type="session.status === 'OPEN' ? 'info' : 'default'" size="small">{{ session.status }}</n-tag>
@@ -101,7 +109,8 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NSpace, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import AgentUsageSummary from './AgentUsageSummary.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
 import { PrismEditor } from 'vue-prism-editor'
 import 'vue-prism-editor/dist/prismeditor.min.css'

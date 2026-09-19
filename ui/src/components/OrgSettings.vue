@@ -406,6 +406,10 @@
                         v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
                         <IntegrityInbox :org-uuid="orgResolved"/>
                     </n-tab-pane>
+                    <n-tab-pane name="models" tab="Models"
+                        v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
+                        <AiModelCatalogueOfOrg :org-uuid="orgResolved"/>
+                    </n-tab-pane>
                     </n-tabs>
                 </div>
                 <n-modal
@@ -1230,6 +1234,7 @@ import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
+import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
