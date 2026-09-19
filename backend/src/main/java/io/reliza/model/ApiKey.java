@@ -31,7 +31,9 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 		COMPONENT,
 		ORGANIZATION,
 		ORGANIZATION_RW,
-		FREEFORM; // arbitrary-permissioned key for RBAC
+		FREEFORM, // arbitrary-permissioned key for RBAC
+		USER, // personal key owned by a user: its permissions are a ceiling, intersected with the owner's current permissions
+		FEDERATED; // identity row for one external repository trusted by the org's federated trust rules: no secret, permissions computed from the rules on every call
 	}
 	
 	private static final long serialVersionUID = 2347342;

@@ -18,12 +18,20 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import io.reliza.common.Utils;
 import io.reliza.model.Organization;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SbomComponentSupport;
+import io.reliza.model.SupportData;
+import io.reliza.model.SupportMilestoneFact;
+import io.reliza.model.SupportMilestoneType;
 import io.reliza.model.SupportSource;
+import io.reliza.model.SupportState;
 import io.reliza.repositories.SbomComponentRepository;
+import io.reliza.repositories.SbomComponentSupportRepository;
 import io.reliza.ws.App;
 import io.reliza.ws.oss.TestInitializer;
 import tools.jackson.databind.JsonNode;
@@ -41,20 +49,45 @@ public class SupportInjectionServiceIntegrationTest {
 
 	@Autowired private SupportInjectionService supportInjectionService;
 	@Autowired private SbomComponentRepository sbomComponentRepository;
+	@Autowired private SbomComponentSupportRepository sbomComponentSupportRepository;
 	@Autowired private TestInitializer testInitializer;
+	@Autowired private PlatformTransactionManager transactionManager;
 
+	/**
+	 * Both rows in ONE transaction, which matters more than it looks.
+	 *
+	 * <p>{@code gcOrphanedComponents} runs on the PT1M tick in every {@code @SpringBootTest}
+	 * context, and deletes any sbom_component that is unbucketed, mapped to no artifact, and
+	 * carries no support row. Between a committed component save and a separately committed
+	 * support save, this fixture's component is exactly that, and the support row it would have
+	 * been protected by does not exist yet. A tick landing in that window deletes the component,
+	 * the byte-exact pass then matches nothing, and the test fails with no properties injected --
+	 * only ever in a long run, never standalone, which is what a millisecond window looks like.
+	 * Production does not have the window: the ingest path writes components and their
+	 * artifact_sbom_components mappings inside one {@code @Transactional} method.
+	 */
 	private SbomComponent supported(UUID org, String canonicalPurl, String name, String version, LocalDate eos) {
-		SbomComponent sc = new SbomComponent();
-		sc.setOrg(org);
-		sc.setCanonicalPurl(canonicalPurl);
-		Map<String, Object> rd = new HashMap<>();
-		rd.put("name", name);
-		rd.put("version", version);
-		sc.setRecordData(rd);
-		sc.setSupportSource(SupportSource.MANUAL);
-		sc.setEndOfSupportDate(eos);
-		sc.setSupportLastAssessed(ZonedDateTime.now());
-		return sbomComponentRepository.save(sc);
+		return new TransactionTemplate(transactionManager).execute(status -> {
+			SbomComponent sc = new SbomComponent();
+			sc.setOrg(org);
+			sc.setCanonicalPurl(canonicalPurl);
+			Map<String, Object> rd = new HashMap<>();
+			rd.put("name", name);
+			rd.put("version", version);
+			sc.setRecordData(rd);
+			sc = sbomComponentRepository.save(sc);
+			String assessedAt = ZonedDateTime.now().toInstant().toString();
+			SbomComponentSupport row = new SbomComponentSupport();
+			row.setSbomComponentUuid(sc.getUuid());
+			row.setOrg(org);
+			row.setCanonicalPurl(canonicalPurl);
+			row.setSupportData(new SupportData(null, SupportState.ATTESTED, null, SupportSource.MANUAL,
+					assessedAt, null, null,
+					Map.of(SupportMilestoneType.END_OF_SUPPORT, new SupportMilestoneFact(
+							eos.toString(), SupportSource.MANUAL, assessedAt, null, null))));
+			sbomComponentSupportRepository.save(row);
+			return sc;
+		});
 	}
 
 	private Map<String, String> propMap(JsonNode component) {
@@ -95,13 +128,15 @@ public class SupportInjectionServiceIntegrationTest {
 
 		JsonNode comps = bom.get("components");
 		Map<String, String> a = propMap(comps.get(0));
-		assertEquals("MANUAL", a.get(SupportBomInjector.PROP_SOURCE), "byte-exact component matched");
+		assertEquals("MANUAL", a.get(SupportBomInjector.PROP_SOURCE_PREFIX + "endOfSupport"), "byte-exact component matched");
 		assertEquals("END_OF_SUPPORT", a.get(SupportBomInjector.PROP_STATUS));
 
 		Map<String, String> b = propMap(comps.get(1));
-		assertEquals("MANUAL", b.get(SupportBomInjector.PROP_SOURCE),
+		assertEquals("MANUAL", b.get(SupportBomInjector.PROP_SOURCE_PREFIX + "endOfSupport"),
 				"encoding-drifted (+ vs %2B) component matched via the fallback");
-		assertEquals("ACTIVELY_SUPPORTED", b.get(SupportBomInjector.PROP_STATUS));
+		// Future EOS -> UNKNOWN. The point of this assertion is that the component MATCHED
+		// (proved by the MANUAL provenance above); the derived status is future-dated.
+		assertEquals("UNKNOWN", b.get(SupportBomInjector.PROP_STATUS));
 
 		assertTrue(propMap(comps.get(2)).isEmpty(), "unmatched component gets no support properties");
 

@@ -1202,18 +1202,7 @@ public class ArtifactService {
 			if (isCycloneDx) {
 				String version = root.has("specVersion") ? root.get("specVersion").asText() : null;
 				if (version != null) {
-					return switch (version) {
-						case "1.0" -> SpecVersion.CYCLONEDX_1_0;
-						case "1.1" -> SpecVersion.CYCLONEDX_1_1;
-						case "1.2" -> SpecVersion.CYCLONEDX_1_2;
-						case "1.3" -> SpecVersion.CYCLONEDX_1_3;
-						case "1.4" -> SpecVersion.CYCLONEDX_1_4;
-						case "1.5" -> SpecVersion.CYCLONEDX_1_5;
-						case "1.6" -> SpecVersion.CYCLONEDX_1_6;
-						case "1.7" -> SpecVersion.CYCLONEDX_1_7;
-						case "2.0" -> SpecVersion.CYCLONEDX_2_0;
-						default -> null;
-					};
+					return SpecVersion.fromCycloneDxVersionString(version);
 				}
 			}
 			

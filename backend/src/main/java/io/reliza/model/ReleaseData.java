@@ -5,6 +5,7 @@
 package io.reliza.model;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,6 +27,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalState;
+import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.EnvironmentType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.SidPurlUtils;
@@ -70,7 +72,28 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		MARKETING_VERSION,
 		TRIGGER,
 		INPUT_TRIGGER,
-		APPROVED_ENVIRONMENT
+		/**
+		 * Something a guard had to say about this release -- today, an automated promotion it
+		 * withheld. Deliberately NOT {@link #TRIGGER}: that scope is the record of a trigger
+		 * having fired, and {@code processRelease} reads it back to decide what has already
+		 * fired. Recording a withheld promotion there would mark the trigger as fired and it
+		 * would never be re-evaluated, which is the opposite of what a withheld promotion means.
+		 */
+		GUARD,
+		APPROVED_ENVIRONMENT,
+		/**
+		 * A change to the release's own eos/eol -- the CLE lifecycle projections. NOT the
+		 * device support window, which is declared on the device model and audited there.
+		 * See {@code ReleaseData.eos}/{@code eol}.
+		 */
+		SUPPORT_WINDOW,
+		/**
+		 * The per-release FDA assessment narrative override. Distinct from SUPPORT_WINDOW:
+		 * the window is a factual commitment, this is the manufacturer's justification prose,
+		 * and an auditor asking "when did the wording change" must not have to read through
+		 * date edits to find out.
+		 */
+		FDA_NARRATIVE
 	}
 	
 	public enum ReleaseUpdateAction {
@@ -124,6 +147,26 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	    END_OF_SUPPORT, // cle - endOfSupport
 		END_OF_LIFE // cle - endOfLife
 		;
+
+		/**
+		 * How far a release has got: DRAFT below ASSEMBLED below READY_TO_SHIP below shipped,
+		 * with everything from GENERAL_AVAILABILITY onwards sharing the top rank -- the
+		 * post-shipment values describe a market lifecycle, not more maturity, so a release that
+		 * has reached end of life still ranks as shipped. Baselined is {@code >= 3}, shipped is
+		 * {@code >= 4}. Whether a shipped release is still supported is a separate question; see
+		 * the `supported` flag the release activation exposes.
+		 */
+		public static int maturity(ReleaseLifecycle rl) {
+			if (null == rl) return -1;
+			return switch (rl) {
+				case CANCELLED, REJECTED -> -1;
+				case PENDING -> 0;
+				case DRAFT -> 1;
+				case ASSEMBLED -> 2;
+				case READY_TO_SHIP -> 3;
+				default -> 4;
+			};
+		}
 
 		public static boolean isAssemblyAllowed(ReleaseLifecycle rl) {
 			boolean isAllowed = false;
@@ -288,13 +331,207 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	@JsonProperty
 	private GudidStatus gudidStatus;
 
-	/** End-of-support date (§524B cyber-device support window). */
+	/**
+	 * Release lifecycle date: the CLE END_OF_SUPPORT projection (TeaTransformerService).
+	 *
+	 * <p>NOT the device support window. A device model's support commitment is declared once
+	 * on {@code ComponentData.medicalProfile.deviceSupportWindow} and resolved by
+	 * {@link io.reliza.service.DeviceLifecycleHook}; reading these release dates as a
+	 * device commitment is what let one physical device carry a different end-of-support date
+	 * for every firmware version it ever ran (decision D7).
+	 */
 	@JsonProperty
-	private java.time.LocalDate eos;
+	private LocalDate eos;
 
-	/** End-of-life date (§524B cyber-device support window). */
+	/**
+	 * Release lifecycle date: the CLE END_OF_LIFE projection (TeaTransformerService).
+	 *
+	 * <p>NOT the device support window -- see {@link #eos}.
+	 */
 	@JsonProperty
-	private java.time.LocalDate eol;
+	private LocalDate eol;
+
+	/**
+	 * Per-release override of the org-level FDA assessment narrative.
+	 *
+	 * <p>ORG-LEVEL IS THE DEFAULT AND THIS IS THE OVERRIDE, which is the whole reason it
+	 * exists as a nullable field rather than a copy. A manufacturer writes the justification
+	 * for why per-component support information cannot be included ONCE, and it is true of
+	 * every device they ship; a specific device that needs different words is the exception.
+	 * Storing the org text onto each release at write time would turn a later correction
+	 * into a migration across every release that ever inherited it.
+	 *
+	 * <p>Null means INHERIT, not "empty". Readers must go through
+	 * {@link #resolveFdaAssessmentNarrative} rather than reading either field directly -- a
+	 * generator that reads the org field alone silently ignores every override, and one that
+	 * reads this field alone renders a blank section for every release that never set it.
+	 *
+	 * <p>Bounded by {@link FdaProse#MAX_LENGTH}, the same bound as the org default, so the
+	 * override cannot accept text the default would refuse.
+	 */
+	@JsonProperty
+	private String fdaAssessmentNarrative;
+
+	/**
+	 * The most recent SUPPORT_WINDOW {@link ReleaseUpdateEvent}, or null if the
+	 * device support window (eos/eol) has never been touched. Provenance for
+	 * the window is DERIVED from this event rather than duplicated into
+	 * separate stored fields -- {@code ReleaseUpdateEvent.wu} already carries
+	 * the attester and human-vs-programmatic distinction, and {@code date}
+	 * already carries the assessment timestamp; storing a second copy would
+	 * just be two values that can drift.
+	 *
+	 * <p>{@code updateEvents} is append-only in write order (every writer calls
+	 * {@link #addUpdateEvent}, nothing re-sorts it), so "most recent" is simply
+	 * the LAST matching entry -- no date comparison needed, and so no tie-break
+	 * ambiguity when two events share a timestamp (coarse clock resolution, a
+	 * frozen clock in tests) the way a date-based comparison would have.
+	 */
+	private ReleaseUpdateEvent latestSupportWindowEvent() {
+		if (null == updateEvents) return null;
+		ReleaseUpdateEvent latest = null;
+		for (ReleaseUpdateEvent ue : updateEvents) {
+			if (ue.rus() == ReleaseUpdateScope.SUPPORT_WINDOW) latest = ue;
+		}
+		return latest;
+	}
+
+	/**
+	 * THE one place the FDA assessment narrative is resolved: release override else org
+	 * default.
+	 *
+	 * <p>Every reader goes through here -- the CSV addendum, and the PDF and Device Support
+	 * Statement that follow it. Reading either stored field directly is the rework this seam
+	 * exists to prevent: a generator that reads the org field alone silently ignores every
+	 * per-release override, and one that reads the release field alone renders a blank
+	 * section for the overwhelming majority of releases, which never set it. Both failures
+	 * produce a document that looks complete.
+	 *
+	 * <p>Blank is treated as absent on BOTH sides. Neither writer can store an empty string
+	 * today ({@link FdaProse#normalize} maps blank to null), so this is defence against a
+	 * future writer that does not go through it, not a live case -- and the alternative is a
+	 * document with an empty justification section, which reads as "we had nothing to say"
+	 * rather than "nobody has written this yet".
+	 *
+	 * @param release the release being documented, or null
+	 * @param orgSettings the organization's settings, or null
+	 * @return the narrative to render, or null if neither level has one -- callers must NOT
+	 *         generate a document with an empty justification section
+	 */
+	public static String resolveFdaAssessmentNarrative(ReleaseData release,
+			OrganizationData.Settings orgSettings) {
+		String override = (null == release) ? null : release.getFdaAssessmentNarrative();
+		if (null != override && !override.isBlank()) return override.strip();
+		String orgDefault = (null == orgSettings) ? null : orgSettings.getFdaAssessmentNarrative();
+		return (null != orgDefault && !orgDefault.isBlank()) ? orgDefault.strip() : null;
+	}
+
+	/** Who/what last touched the device support window -- human (MANUAL/API) vs machine (AUTO). Null if never set. */
+	@JsonIgnore
+	public ProgrammaticType getSupportWindowSource() {
+		ReleaseUpdateEvent ev = latestSupportWindowEvent();
+		return (null == ev || null == ev.wu()) ? null : ev.wu().getCreatedType();
+	}
+
+	/**
+	 * The {@code WhoUpdated.lastUpdatedBy} id of whoever/whatever last touched the
+	 * device support window -- a user id for a MANUAL/UI setter, an API key id for
+	 * an API setter. NOT gated by {@link #getSupportWindowSource}: an API-key
+	 * caller's id is still useful for tracing which key made the change. Use
+	 * {@code supportWindowSource} to tell the two kinds of id apart. Null if never
+	 * set.
+	 */
+	@JsonIgnore
+	public UUID getSupportWindowAssertedBy() {
+		ReleaseUpdateEvent ev = latestSupportWindowEvent();
+		return (null == ev || null == ev.wu()) ? null : ev.wu().getLastUpdatedBy();
+	}
+
+	/** When the device support window was last touched (CLE "published" for the resulting event). Null if never set. */
+	@JsonIgnore
+	public ZonedDateTime getSupportWindowLastAssessed() {
+		ReleaseUpdateEvent ev = latestSupportWindowEvent();
+		return null == ev ? null : ev.date();
+	}
+
+	/**
+	 * Compact old/new value for a SUPPORT_WINDOW {@link ReleaseUpdateEvent} -- one
+	 * string, since the event record carries a single oldValue/newValue pair, not
+	 * separate eos/eol slots. Used identically at creation and at update so the
+	 * trail is consistently formatted and greppable.
+	 */
+	public static String supportWindowValueString(LocalDate eos, LocalDate eol) {
+		return "eos=" + (null == eos ? "null" : eos) + ", eol=" + (null == eol ? "null" : eol);
+	}
+
+	/**
+	 * ADDED when the window went from wholly unset to at least partially set,
+	 * REMOVED when it went the other way, CHANGED for every other edit (partial
+	 * modification while the window remains at least partially set). Distinct
+	 * from the CHANGED-only shape NOTES/TAGS/VERSION use because a support
+	 * window, unlike those, can be fully cleared back to "never set" -- an
+	 * audit trail that renders every clear as a CHANGED "to null" would make a
+	 * REMOVED-filtered view miss every full removal.
+	 */
+	public static ReleaseUpdateAction supportWindowAction(LocalDate oldEos, LocalDate oldEol,
+			LocalDate newEos, LocalDate newEol) {
+		boolean hadWindow = null != oldEos || null != oldEol;
+		boolean hasWindow = null != newEos || null != newEol;
+		if (!hadWindow && hasWindow) return ReleaseUpdateAction.ADDED;
+		if (hadWindow && !hasWindow) return ReleaseUpdateAction.REMOVED;
+		return ReleaseUpdateAction.CHANGED;
+	}
+
+	/**
+	 * ADDED / REMOVED / CHANGED for a narrative write, mirroring
+	 * {@link #supportWindowAction}.
+	 *
+	 * <p>REMOVED means the release went back to INHERITING the org default -- it does not
+	 * mean the document loses its justification section. That distinction matters to anyone
+	 * reading the audit trail: "removed" here is a return to the default, not a deletion of
+	 * the manufacturer's justification.
+	 *
+	 * <p>PRECONDITION: the two values differ. Callers guard with {@code Objects.equals}
+	 * before emitting an event at all, so (null, null) never reaches this; it would answer
+	 * CHANGED, which is why the guard is the caller's job and not a second check here.
+	 */
+	/**
+	 * How much narrative text a single update event carries.
+	 *
+	 * <p>The event stream is APPEND-ONLY and lives in the release's own {@code record_data},
+	 * which {@code dataFromRecord} materialises in full. Storing both the old and the new
+	 * narrative verbatim would put up to 16,000 characters into that row PER EDIT -- fifty
+	 * revisions is most of a megabyte re-parsed on every read of the release. That is the
+	 * very cost {@link FdaProse#MAX_LENGTH} exists to avoid, reintroduced through the audit
+	 * trail.
+	 *
+	 * <p>An excerpt rather than nothing: "the narrative changed" with no indication of what
+	 * it changed to makes the history unreadable, and the timestamp and {@code wu} alone
+	 * cannot answer "which edit introduced this wording". The full current text is always
+	 * available on the release itself; the history's job is to say when it moved and roughly
+	 * to what.
+	 */
+	public static final int NARRATIVE_EVENT_EXCERPT_MAX = 200;
+
+	/**
+	 * The bounded form of a narrative for storage in an update event.
+	 *
+	 * <p>Truncation is MARKED and the true length stated, so a reader can never mistake an
+	 * excerpt for the whole text -- an audit trail that silently shortens the manufacturer's
+	 * words would be worse than one that omits them.
+	 */
+	public static String narrativeExcerpt(String narrative) {
+		if (null == narrative) return null;
+		if (narrative.length() <= NARRATIVE_EVENT_EXCERPT_MAX) return narrative;
+		return narrative.substring(0, NARRATIVE_EVENT_EXCERPT_MAX)
+				+ "... (" + narrative.length() + " characters)";
+	}
+
+	public static ReleaseUpdateAction narrativeAction(String oldNarrative, String newNarrative) {
+		if (null == oldNarrative && null != newNarrative) return ReleaseUpdateAction.ADDED;
+		if (null != oldNarrative && null == newNarrative) return ReleaseUpdateAction.REMOVED;
+		return ReleaseUpdateAction.CHANGED;
+	}
 
 	/**
 	 * Component name captured at first sid emission. Immutable thereafter — a later
@@ -453,6 +690,15 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		if (null != releaseDto.getSidComponentName()) {
 			rd.setSidComponentName(releaseDto.getSidComponentName());
 		}
+		// Blank-to-null here so a create carrying "" stores INHERIT rather than an empty
+		// string, matching what the update path does. The BOUND is checked in
+		// validateReleaseData, which saveRelease calls on every write including this one --
+		// this factory cannot throw RelizaException and every caller is downstream of that
+		// check anyway.
+		if (null != releaseDto.getFdaAssessmentNarrative()) {
+			String narrative = releaseDto.getFdaAssessmentNarrative().strip();
+			rd.setFdaAssessmentNarrative(narrative.isEmpty() ? null : narrative);
+		}
 		return rd;
 	}
 	
@@ -475,6 +721,36 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		}
 		if (maxTagCount > 1) {
 			vr.setErrors(List.of("Release cannot have more than one tag with the same key"));
+		}
+
+		/** device support window (section-524B) **/
+		// The single enforcement point for both eos<=eol AND every write path: every
+		// save (create and update alike) funnels through OssReleaseService.saveRelease,
+		// which calls this method -- so the invariant holds even for a future writer
+		// that doesn't go through doUpdateRelease's own inline check.
+		//
+		// Rebuild via a fresh mutable list rather than vr.getErrors().add(...): the
+		// tags branch above replaces errors with List.of(...), which is IMMUTABLE, so
+		// calling .add() straight on it would throw if BOTH checks fail on the same
+		// release. This has to tolerate that regardless of whether the tags branch's
+		// own list happens to be mutable.
+		if (null != rd.getEos() && null != rd.getEol() && rd.getEos().isAfter(rd.getEol())) {
+			List<String> errors = new ArrayList<>(vr.getErrors());
+			errors.add("Release eos must not be after eol (device support window)");
+			vr.setErrors(errors);
+		}
+		// The narrative bound, for the SAME reason and by the same argument as eos<=eol
+		// above. FdaProse.normalize enforces it on the update path, but that is one writer;
+		// the create path cannot call it (this factory cannot throw), and a future importer
+		// or repair sweep would not either. This is what makes the bound hold for every
+		// writer -- which matters because the whole point of bounding prose is that an
+		// unbounded field gets read far more often than it is displayed.
+		if (null != rd.getFdaAssessmentNarrative()
+				&& rd.getFdaAssessmentNarrative().length() > FdaProse.MAX_LENGTH) {
+			List<String> errors = new ArrayList<>(vr.getErrors());
+			errors.add("Release fdaAssessmentNarrative exceeds the "
+					+ FdaProse.MAX_LENGTH + " character limit");
+			vr.setErrors(errors);
 		}
 		return vr;
 	}

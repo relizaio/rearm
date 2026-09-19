@@ -25,6 +25,9 @@ public final class WhoUpdated {
 	
 	@JsonProperty(CommonVariables.LAST_UPDATED_IP_ADDRESS_FIELD)
 	private String lastUpdatedIp;
+	/** the human behind a key-authenticated write (CLI browser login); null otherwise */
+	@JsonProperty(CommonVariables.LAST_UPDATED_ACTOR_FIELD)
+	private UUID actor;
 	
 	private WhoUpdated () {}
 	
@@ -50,6 +53,8 @@ public final class WhoUpdated {
 		recordData.put(CommonVariables.LAST_UPDATED_BY_FIELD, wu.getLastUpdatedBy());
 		recordData.put(CommonVariables.CREATED_TYPE_FIELD, wu.getCreatedType());
 		recordData.put(CommonVariables.LAST_UPDATED_IP_ADDRESS_FIELD, wu.getLastUpdatedIp());
+		if (wu.getActor() != null) recordData.put(CommonVariables.LAST_UPDATED_ACTOR_FIELD, wu.getActor());
+		else recordData.remove(CommonVariables.LAST_UPDATED_ACTOR_FIELD);
 	}
 	
 	public static WhoUpdated getWhoUpdated(ProgrammaticType pt, UUID userId, String ipAddr) {
@@ -74,6 +79,11 @@ public final class WhoUpdated {
 		wu.setLastUpdatedBy(apiKeyId);
 		wu.setLastUpdatedIp(ipAddr);
 		return wu;
+	}
+	/** Same, with the acting user recorded (CLI browser login through a key). */
+	public WhoUpdated withActor(UUID actorUser) {
+		this.actor = actorUser;
+		return this;
 	}
 	
 	public static WhoUpdated getTestWhoUpdated() {

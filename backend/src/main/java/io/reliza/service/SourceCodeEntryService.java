@@ -24,6 +24,10 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import io.reliza.common.TxUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import io.reliza.common.CommonVariables.TableName;
 
 import io.reliza.common.Utils;
@@ -53,6 +57,9 @@ public class SourceCodeEntryService {
 
 	@Autowired
 	private ReleaseRepository releaseRepository;
+
+	@Autowired
+	private ReleaseMetricsTouchService releaseMetricsTouchService;
 	
 	@Autowired
 	private AuditService auditService;
@@ -180,9 +187,10 @@ public class SourceCodeEntryService {
 		if (osce.isEmpty() && createIfMissing) {
 			log.debug("osce is empty creating new ...");
 			try {
-				// REQUIRES_NEW via the proxy — keeps a unique-violation from the
-				// V26 (vcs, commit) index from poisoning this routine's tx.
-				return Optional.of(self.createSourceCodeEntry(sceDto, wu));
+				// The create runs REQUIRES_NEW (createSourceCodeEntryTx via the
+				// proxy) -- keeps a unique-violation from the V26 (vcs, commit)
+				// index from poisoning this routine's tx.
+				return Optional.of(createSourceCodeEntry(sceDto, wu));
 			} catch (DataIntegrityViolationException dive) {
 				// Lost the race with a concurrent SCE create on the same (vcs, commit).
 				// Re-read the winner's row and fall through to the merge branch so the
@@ -256,23 +264,46 @@ public class SourceCodeEntryService {
 		SourceCodeEntry mergedSce = saveSourceCodeEntry(sce, recordData, wu);
 		// Mirror createSourceCodeEntry's post-save reverse-index update so
 		// the session's commit list picks up a merge-resolved attribution
-		// just like a fresh-create one would. Best-effort; failure does
-		// not roll back the merge.
+		// just like a fresh-create one would. Deferred to after this tx
+		// commits and run on its own connection, so it can neither hold
+		// the session row lock for the rest of the request nor mark this
+		// tx rollback-only if it fails.
 		if (mergeResolvedSession != null) {
-			try {
-				agentSessionService.recordCommit(mergeResolvedSession, mergedSce.getUuid(), wu);
-			} catch (Exception e) {
-				log.warn("Failed to record SCE {} on session {} (merge path): {}",
-						mergedSce.getUuid(), mergeResolvedSession, e.getMessage());
-			}
+			scheduleRecordCommit(mergeResolvedSession, mergedSce.getUuid(), wu);
 		}
 		return Optional.of(mergedSce);
 	}
 
-	// REQUIRES_NEW so a unique-violation on (vcs, commit) rolls back only this
-	// attempt's tx, letting the routine's catch-and-recover proceed.
-	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	/**
+	 * Create an SCE in its own committed transaction, then queue the
+	 * session reverse-index write. Deliberately NOT transactional: the
+	 * persist happens in {@link #createSourceCodeEntryTx} (REQUIRES_NEW,
+	 * via the proxy), and the reverse-index write is scheduled only once
+	 * that has returned, so it binds to the caller's transaction (the
+	 * request-wide one on the addrelease path) or runs inline when there
+	 * is none (direct GraphQL mutation). Scheduling it from inside the
+	 * REQUIRES_NEW tx would fire the hook while that tx's connection is
+	 * still bound, so one thread would hold three pooled connections at
+	 * once (caller + create + reverse-index) instead of two.
+	 */
 	public SourceCodeEntry createSourceCodeEntry (SceDto sceDto, WhoUpdated wu) throws RelizaException {
+		SourceCodeEntry saved = self.createSourceCodeEntryTx(sceDto, wu);
+		// Record the SCE on the session's reverse index outside the create
+		// tx. Failure there is logged but cannot roll back the SCE creation
+		// -- the forward pointer on the SCE row is the source of truth for
+		// the read path, the reverse index is an optimisation.
+		UUID resolvedSession = SourceCodeEntryData.dataFromRecord(saved).getAgentSession();
+		if (resolvedSession != null) {
+			scheduleRecordCommit(resolvedSession, saved.getUuid(), wu);
+		}
+		return saved;
+	}
+
+	// REQUIRES_NEW so a unique-violation on (vcs, commit) rolls back only this
+	// attempt's tx, letting the routine's catch-and-recover proceed. Callers
+	// go through createSourceCodeEntry, which adds the reverse-index write.
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public SourceCodeEntry createSourceCodeEntryTx (SceDto sceDto, WhoUpdated wu) throws RelizaException {
 		// Phase 2 follow-up to PR #217: the VCS row is now committed before this
 		// REQUIRES_NEW tx runs -- on the auto-VCS path by
 		// VcsRepositoryService.provisionVcsRepository, on the direct mutation path
@@ -310,25 +341,51 @@ public class SourceCodeEntryService {
 		// regardless of whether its agent attribution survives —
 		// untracked commits are still releaseable. See
 		// {@code ai-plans/agentic/README.md} §6-7 for the contract.
-		UUID resolvedSession = resolveAndAttributeTrailers(sced);
+		// The resolved session lands on the SCE row as the forward pointer;
+		// createSourceCodeEntry reads it back for the reverse index.
+		resolveAndAttributeTrailers(sced);
 
 		Map<String,Object> recordData = Utils.dataToRecord(sced);
-		SourceCodeEntry saved = saveSourceCodeEntry(sce, recordData, wu);
+		return saveSourceCodeEntry(sce, recordData, wu);
+	}
 
-		// Record the SCE on the session's reverse-index in a best-effort
-		// post-write step. Failure here is logged but does not roll back
-		// the SCE creation — the forward pointer on the SCE row is the
-		// source of truth for the read path, the reverse index is an
-		// optimisation.
-		if (resolvedSession != null) {
-			try {
-				agentSessionService.recordCommit(resolvedSession, saved.getUuid(), wu);
-			} catch (Exception e) {
-				log.warn("Failed to record SCE {} on session {}: {}",
-						saved.getUuid(), resolvedSession, e.getMessage());
-			}
+	/**
+	 * Push an SCE onto the session's reverse index without ever doing it
+	 * inside the caller's transaction. Same shape as
+	 * {@code SharedReleaseService.scheduleFindingChangeEventEmit}: with a
+	 * transaction active the write is registered as an {@code afterCommit}
+	 * synchronization, so it runs only once the SCE row is durable and the
+	 * caller's connection is the only one still bound; otherwise it runs
+	 * inline. Either way {@link AgentSessionService#recordCommit} is
+	 * REQUIRES_NEW (see its javadoc for the self-deadlock that motivates
+	 * this), and a failure is caught and logged, never propagated into the
+	 * caller's tx.
+	 */
+	private void scheduleRecordCommit(UUID sessionUuid, UUID sceUuid, WhoUpdated wu) {
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					recordCommitBestEffort(sessionUuid, sceUuid, wu);
+				}
+			});
+		} else {
+			recordCommitBestEffort(sessionUuid, sceUuid, wu);
 		}
-		return saved;
+	}
+
+	/**
+	 * Invokes the REQUIRES_NEW reverse-index write, swallowing any failure.
+	 * Logged with the stack trace: the original deadlock hid for weeks
+	 * behind a message-only line that did not say which statement had
+	 * timed out or from where.
+	 */
+	private void recordCommitBestEffort(UUID sessionUuid, UUID sceUuid, WhoUpdated wu) {
+		try {
+			agentSessionService.recordCommit(sessionUuid, sceUuid, wu);
+		} catch (Exception e) {
+			log.warn("Failed to record SCE {} on session {}", sceUuid, sessionUuid, e);
+		}
 	}
 
 	/**
@@ -497,8 +554,10 @@ public class SourceCodeEntryService {
 		// See DeliverableService.addArtifact: attaching an already-scanned artifact
 		// moves a release's rollup without touching the artifact's metrics or the
 		// release row, so the scan-time touch cannot fire. This replaces what the
-		// retired BY_SCE finder used to catch.
-		releaseRepository.touchReleasesByScannedSceArtifact(art.artifactUuid().toString());
+		// retired BY_SCE finder used to catch. After commit for the same reason as
+		// DeliverableService.addArtifact: the touch must postdate any compute that ran
+		// while this transaction was open.
+		TxUtils.afterCommitOrNow(() -> releaseMetricsTouchService.touchBySceArtifact(art.artifactUuid().toString()));
 		return true;
 	}
 

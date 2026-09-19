@@ -10,6 +10,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDate;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -21,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalState;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
@@ -146,6 +148,54 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		private boolean udiBearing;
 		/** Stable GUDID descriptors releases inherit and may override. */
 		private GudidDefaults gudidDefaults;
+		/**
+		 * The section 524B DEVICE SUPPORT WINDOW for this device model (D7).
+		 *
+		 * <p>Lives HERE, inside the profile that is present iff
+		 * {@code deviceClass != NONE}, so "only meaningful for a device" is a property of
+		 * the shape rather than a rule someone has to remember. Null means NOT DECLARED,
+		 * which is a fact in its own right and never an unknown to fill in.
+		 *
+		 * <p>NOT {@code ReleaseData.eos}/{@code eol}. Those predate this work and remain
+		 * release lifecycle for TEA/CLE. A device model ships many firmware versions over
+		 * its life, and a support commitment that changes with every build is not a
+		 * commitment -- see D7.
+		 */
+		private DeviceSupportWindow deviceSupportWindow;
+	}
+
+	/**
+	 * The manufacturer's declared section 524B support window for a device.
+	 *
+	 * <p>Declared on the product component (this class's home) and optionally overridden
+	 * per {@code ShippedProduct}; resolved for a unit by
+	 * {@code DeviceLifecycleHook}. Two dates and the provenance of the assertion --
+	 * the same {@code assertedBy}/{@code assessedAt} pairing the component attestations
+	 * use, for the same reason: a regulatory date without a recorded asserter and instant
+	 * is a claim nobody owns.
+	 *
+	 * <p>{@code endOfSupport} and {@code endOfLife} are SEPARATE FACTS and are never
+	 * merged. Under D5 end-of-life means END OF SALE, which is not a support horizon;
+	 * only end-of-support is. Either may be null independently.
+	 */
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class DeviceSupportWindow {
+		/** Section 524B end of support. The device horizon; null = not declared. */
+		private LocalDate eos;
+		/** End of SALE, per CycloneDX and D5 -- not a support horizon. Null = not declared. */
+		private LocalDate eol;
+		/** The user who asserted this window. */
+		private UUID assertedBy;
+		/** When the assertion was made, as a UTC RFC-3339 instant. Caller-supplied. */
+		private String assessedAt;
+		/** How it arrived: a human in the UI, an API caller, an automation. */
+		private ProgrammaticType source;
+
+		/** True when neither date is declared -- an object that asserts nothing. */
+		public boolean declaresNoDate() {
+			return null == eos && null == eol;
+		}
 	}
 
 	/**
@@ -214,7 +264,19 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		//   clientPayload / celClientPayload → markdown string appended
 		//     to the auto-generated body (additive, not replacement —
 		//     contrast with EXTERNAL_VALIDATION)
-		PR_COMMENT;
+		PR_COMMENT,
+		// LOCK raises a sticky refusal on the component or the branch, with the failing release
+		// and every unrecognized commit in it as causes. Unlike every other output event, its
+		// effect outlives the release that fired it: that is the point -- a rule about a commit
+		// is otherwise defeated by pushing another commit on top of it.
+		// Output event fields used:
+		//   lockScope                    -> COMPONENT or BRANCH
+		//   lockUnlockLevel              -> AGENT / HUMAN / ADMIN, who may release it
+		//   lockAttestationRequirement   -> NONE / ANY / HUMAN, what must be true first
+		//   lockReason                   -> shown verbatim in every refusal
+		// A rule that locks will usually also reject the release; the two are independent
+		// output events on the same input trigger, as everywhere else.
+		LOCK;
 	}
 	
 	public enum EventScope {
@@ -245,7 +307,15 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		NAME,
 		LIFECYCLE,
 		// reserved for follow-up work (CLE supersededBy event, etc.)
-		SUPERSEDED_BY
+		SUPERSEDED_BY,
+		/**
+		 * The section 524B device support window (D7). Recorded because it is a REGULATORY
+		 * COMMITMENT: a reviewer asking "when did you say this device was supported until,
+		 * and who said so" needs the change on the record, not just the current value. The
+		 * window's own assertedBy/assessedAt say who holds the CURRENT claim; this says how
+		 * it got there.
+		 */
+		DEVICE_SUPPORT_WINDOW
 	}
 
 	public enum ComponentUpdateAction {
@@ -380,6 +450,14 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		// many components has to opt every component's output event into the
 		// same unified name (e.g. `rearm/policy`).
 		private String checkName;
+		// LOCK: the lock this event raises. Scope says what it covers, the level and the
+		// requirement say how it gets released, the reason is what the refusal shows. Null
+		// defaults are the cautious ones -- BRANCH, HUMAN, ANY -- so a rule that only names the
+		// event locks the branch and needs a person, not the whole component and not nobody.
+		private ComponentLock.Scope lockScope;
+		private ComponentLock.UnlockLevel lockUnlockLevel;
+		private ComponentLock.AttestationRequirement lockAttestationRequirement;
+		private String lockReason;
 	}
 	
 	@JsonProperty
@@ -421,6 +499,22 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	/** Regulatory axis. Defaults to NONE for legacy rows. */
 	@JsonProperty
 	private DeviceClass deviceClass = DeviceClass.NONE;
+
+	/**
+	 * Locks raised on this component, active and recently released. A lock refuses the writes
+	 * that would build on an unresolved problem -- see {@link ComponentLock}. Bounded: the
+	 * durable record is the LOCK_RELEASE attestation, so only the last few released ones are
+	 * kept here, on a row that is read on every build.
+	 */
+	@JsonProperty
+	private List<ComponentLock> locks;
+	/**
+	 * Guards written on this component, the way release triggers are. They accumulate with any
+	 * the organization declares for a matching component name -- every applicable guard is
+	 * evaluated and any one of them can refuse.
+	 */
+	@JsonProperty
+	private List<ActionGuard> actionGuards;
 	/** Present iff deviceClass != NONE. */
 	@JsonProperty
 	private MedicalProfile medicalProfile;
@@ -470,6 +564,9 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private List<RearmIdentifier> identifiers = new LinkedList<>();
+	/** Last declarative apply that touched this row; null when never applied declaratively. */
+	@JsonProperty
+	private DeclarativeProvenance declarative;
 	
 	/**
 	 * Repository path for monorepo component disambiguation

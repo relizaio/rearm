@@ -176,25 +176,13 @@ public class ComponentDataFetcher {
 			return perspectiveComponents;
 		}
 
-		var combinedPermissions = organizationService.obtainCombinedUserOrgPermissions(oud.get(), orgUuid);
-		var orgPerm = combinedPermissions.getPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid);
-		boolean hasOrgReadOrHigher = orgPerm.isPresent()
-				&& orgPerm.get().getType().ordinal() >= io.reliza.model.UserPermission.PermissionType.READ_ONLY.ordinal();
-
 		Collection<ComponentData> resolvedComponents = componentService.listComponentDataByOrganization(orgUuid, componentType);
-
-		if (!hasOrgReadOrHigher) {
-			Set<UUID> allowedComponentUuids = combinedPermissions.getOrgPermissionsAsSet(orgUuid).stream()
-					.filter(p -> p.getScope() == PermissionScope.COMPONENT
-							&& p.getType().ordinal() >= io.reliza.model.UserPermission.PermissionType.READ_ONLY.ordinal())
-					.map(p -> p.getObject())
-					.collect(java.util.stream.Collectors.toSet());
-			if (allowedComponentUuids.isEmpty()) return List.of();
-			resolvedComponents = resolvedComponents.stream()
-					.filter(c -> allowedComponentUuids.contains(c.getUuid()))
-					.toList();
+		// the same cascade the runtime check applies: component grants, granted perspectives, read-level products
+		Set<UUID> readable = authorizationService.readableComponentUuids(oud.get(), orgUuid);
+		if (readable != null) {
+			if (readable.isEmpty()) return List.of();
+			resolvedComponents = resolvedComponents.stream().filter(c -> readable.contains(c.getUuid())).toList();
 		}
-
 		// Batched pre-compute of the synthetic Component.effectiveLifecycle sub-field —
 		// one SQL roundtrip across all components instead of N per-component release fetches.
 		// Field resolver below reads from the cache when present.
@@ -292,7 +280,7 @@ public class ComponentDataFetcher {
 		if (null != ro) {
 			// Existing component. Accept the historic key types (COMPONENT, ORGANIZATION_RW),
 			// or a FREEFORM key whose permissions cover this component.
-			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ro.getUuid(),
 						List.of(ro), CallType.WRITE);
@@ -312,7 +300,7 @@ public class ComponentDataFetcher {
 				throw new RelizaException("Cannot create component in a product-derived perspective");
 			}
 			OrganizationData od = getOrganizationService.getOrganizationData(authOrgUuid).get();
-			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid,
 						List.of(od, pd), CallType.WRITE);
@@ -330,7 +318,13 @@ public class ComponentDataFetcher {
 			// here to avoid NPE on the createcomponent path with FREEFORM keys.
 			if (authOrgUuid == null) throw new AccessDeniedException("Invalid authorization type");
 			ro = getOrganizationService.getOrganizationData(authOrgUuid).get();
-			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			if (ahp.isFederatedIdentity()) {
+				// a federated identity creates components only under the repository its token names
+				FreeformKeyVerification fkv = authorizationService.isFederatedKeyAuthorizedToCreateUnderVcs(
+						ahp, authOrgUuid, (String) getNewVersionInput.get("vcsUri"), List.of(ro));
+				ar = AuthorizationResponse.initialize(InitType.ALLOW);
+				ar.setWhoUpdated(fkv.whoUpdated());
+			} else if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, authOrgUuid,
 						List.of(ro), CallType.WRITE);
@@ -489,7 +483,18 @@ public class ComponentDataFetcher {
 
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		AuthorizationResponse ar;
-		if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+		if (ahp.isFederatedIdentity()) {
+			// a federated identity creates components only under the repository its token names
+			String requestedVcsUri = null;
+			if (cpd.getVcs() != null) {
+				requestedVcsUri = vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).map(v -> v.getUri()).orElse(null);
+			} else if (cpd.getVcsRepository() != null) {
+				requestedVcsUri = cpd.getVcsRepository().getUri();
+			}
+			FreeformKeyVerification fkv = authorizationService.isFederatedKeyAuthorizedToCreateUnderVcs(ahp, orgUuid, requestedVcsUri, ros);
+			ar = AuthorizationResponse.initialize(InitType.ALLOW);
+			ar.setWhoUpdated(fkv.whoUpdated());
+		} else if (ahp.isRbacKey()) {
 			FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 					ahp, PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid,
 					ros, CallType.WRITE);

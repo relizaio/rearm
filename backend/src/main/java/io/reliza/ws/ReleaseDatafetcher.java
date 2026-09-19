@@ -849,7 +849,7 @@ public class ReleaseDatafetcher {
 		UUID orgId = null;
 		if (ApiTypeEnum.COMPONENT == ahp.getType()) {
 			componentId = ahp.getObjUuid();
-		} else if (ApiTypeEnum.FREEFORM == ahp.getType()) {
+		} else if (ahp.isRbacKey()) {
 			// FREEFORM keys carry their org indirectly (resolved by
 			// authenticateProgrammaticWithOrg) and require an explicit
 			// componentId in the input.
@@ -875,7 +875,7 @@ public class ReleaseDatafetcher {
 		// a COMPONENT-scope READ permission on this product/component
 		// authorises the read; other key types stay on the legacy
 		// supportedApiTypes path.
-		if (ApiTypeEnum.FREEFORM == ahp.getType()) {
+		if (ahp.isRbacKey()) {
 			if (ro == null) throw new RelizaException("Component " + componentId + " not found");
 			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 					ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
@@ -897,7 +897,7 @@ public class ReleaseDatafetcher {
 	
 	@DgsData(parentType = "Query", field = "getReleaseByReleaseVersionProgrammatic")
 	public String getReleaseByReleaseVersion(DgsDataFetchingEnvironment dfe,
-			@InputArgument("version") String version, @InputArgument("componentId") UUID componentIdProvided) throws RelizaException {
+			@InputArgument("version") String version, @InputArgument("componentId") String componentReference) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
@@ -905,28 +905,15 @@ public class ReleaseDatafetcher {
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
 
 		UUID orgId = null;
-		UUID componentId = null;
-		if (ApiTypeEnum.COMPONENT == ahp.getType()) {
-			componentId = ahp.getObjUuid();
-			if (null != componentIdProvided && !componentId.equals(componentIdProvided)) throw new AccessDeniedException("Component ID mismatch");
-		} else if (ApiTypeEnum.FREEFORM == ahp.getType()) {
+		if (ahp.isRbacKey()) {
 			orgId = authCtx.orgUuid();
-			if (null == componentIdProvided) {
-				throw new RelizaException("Must provide component UUID as input when using a FREEFORM API key");
-			}
-			componentId = componentIdProvided;
-		} else {
-			try {
-				orgId = ahp.getObjUuid();
-				componentId = componentIdProvided;
-			} catch (NullPointerException e) {
-				throw new RelizaException("Must provide component UUID as input if using organization wide API access");
-			}
-		}
-
-		if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
+		} else if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
 			orgId = ahp.getObjUuid();
 		}
+		// uuid, or the unique name for org-scoped keys; component keys resolve to
+		// their own component and reject a mismatching uuid (see resolveComponentReference)
+		UUID componentId = componentService.resolveComponentReference(componentReference, ahp, orgId);
+		if (null == componentId) throw new RelizaException("Must provide component UUID or name as input");
 
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
 		if (ocd.isEmpty()) {
@@ -940,7 +927,7 @@ public class ReleaseDatafetcher {
 		// a COMPONENT-scope READ permission on this product/component
 		// authorises the read; other key types stay on the legacy
 		// supportedApiTypes path.
-		if (ApiTypeEnum.FREEFORM == ahp.getType()) {
+		if (ahp.isRbacKey()) {
 			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 					ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
 					ro.getUuid(), List.of(ro), CallType.READ);
@@ -955,9 +942,9 @@ public class ReleaseDatafetcher {
 		return releaseService.exportReleaseAsObom(ord.get().getUuid()).toString();
 	}
 	
-	public static record GetLatestReleaseInput (UUID component, UUID product, String branch,
+	public static record GetLatestReleaseInput (String component, UUID product, String branch,
 			TagRecord tags, ReleaseLifecycle lifecycle, InputConditionGroup conditions,
-			String vcsUri, String repoPath, String upToVersion) {}
+			String vcsUri, String repoPath, String upToVersion, String approvedEnvironment) {}
 
 	private BranchData resolveAddReleaseProgrammaticBranchData (final UUID componentId, final String suppliedBranchStr, WhoUpdated wu) throws RelizaException {
 		UUID branchUuid = null;
@@ -1129,7 +1116,7 @@ public class ReleaseDatafetcher {
 		if (null != ro) {
 			// Existing component. Accept the historic key types (COMPONENT, ORGANIZATION_RW),
 			// or a FREEFORM key whose permissions cover this component (org/perspective/component scope).
-			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ro.getUuid(),
 						List.of(ro), CallType.WRITE);
@@ -1149,7 +1136,7 @@ public class ReleaseDatafetcher {
 				throw new RelizaException("Cannot create component in a product-derived perspective");
 			}
 			OrganizationData od = getOrganizationService.getOrganizationData(authOrgUuid).get();
-			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid,
 						List.of(od, pd), CallType.WRITE);
@@ -1165,7 +1152,13 @@ public class ReleaseDatafetcher {
 			// Component doesn't exist yet, no perspective requested - authorize org-wide for creation.
 			if (authOrgUuid == null) throw new AccessDeniedException("Invalid authorization type");
 			ro = getOrganizationService.getOrganizationData(authOrgUuid).get();
-			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			if (ahp.isFederatedIdentity()) {
+				// a federated identity creates components only under the repository its token names
+				FreeformKeyVerification fkv = authorizationService.isFederatedKeyAuthorizedToCreateUnderVcs(
+						ahp, authOrgUuid, (String) progReleaseInput.get("vcsUri"), List.of(ro));
+				ar = AuthorizationResponse.initialize(InitType.ALLOW);
+				ar.setWhoUpdated(fkv.whoUpdated());
+			} else if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, authOrgUuid,
 						List.of(ro), CallType.WRITE);
@@ -1633,7 +1626,7 @@ public class ReleaseDatafetcher {
 		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		if (null != ro && ahp.getType() == ApiTypeEnum.FREEFORM) {
+		if (null != ro && ahp.isRbacKey()) {
 			// FREEFORM keys carry scope/function permission tuples; authorize a
 			// WRITE on the resolved component the same way PR upsert does --
 			// COMPONENT-scoped READ_WRITE on this component, a PERSPECTIVE
@@ -1711,7 +1704,7 @@ public class ReleaseDatafetcher {
 		// same shape addReleaseProgrammatic uses, so a key that can mint a
 		// release on this component can also finalize it. Other key types
 		// continue through the legacy supportedApiTypes path.
-		if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+		if (ahp.isRbacKey()) {
 			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 					ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
 					componentId, List.of(ro), CallType.WRITE);
@@ -2518,6 +2511,19 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return sharedReleaseService.listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit, componentType);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "latestReleasesOfComponent")
+	public List<ReleaseData> latestReleasesOfComponent(
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("limit") Integer limit) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.READ);
+		return sharedReleaseService.listLatestReleaseDataOfComponent(componentUuid, limit);
 	}
 
 	@PreAuthorize("isAuthenticated()")

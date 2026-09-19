@@ -83,16 +83,24 @@ class IntegrationTypeSchemaEnumSyncTest {
             }
             return out;
         }
-        throw new AssertionError("Did not find enum " + enumName + " in schema.graphqls");
+        throw new AssertionError("Did not find enum " + enumName + " in any of the schema files");
     }
 
+    /**
+     * The SDL is three files -- shared, user-facing and programmatic -- and which one a type sits
+     * in is a question about who consumes it, not about this enum. Read all three.
+     */
     private static String readSchema() {
-        try (InputStream in = IntegrationTypeSchemaEnumSyncTest.class.getResourceAsStream(
-                "/schema/schema.graphqls")) {
-            if (in == null) throw new IllegalStateException("schema.graphqls not on test classpath");
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (java.io.IOException e) {
-            throw new RuntimeException(e);
+        StringBuilder sb = new StringBuilder();
+        for (String resource : new String[] {"/schema/schema.graphqls", "/schema/user.graphqls",
+                "/schema/programmatic.graphqls"}) {
+            try (InputStream in = IntegrationTypeSchemaEnumSyncTest.class.getResourceAsStream(resource)) {
+                if (in == null) throw new IllegalStateException(resource + " not on test classpath");
+                sb.append(new String(in.readAllBytes(), StandardCharsets.UTF_8)).append('\n');
+            } catch (java.io.IOException e) {
+                throw new RuntimeException(e);
+            }
         }
+        return sb.toString();
     }
 }

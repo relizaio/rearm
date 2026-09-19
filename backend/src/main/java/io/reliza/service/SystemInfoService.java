@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.common.util.StringUtils;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import java.security.SecureRandom;
+import java.util.Base64;
 import io.reliza.model.SystemInfo;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.SystemInfoData.SmtpProps;
@@ -182,6 +184,28 @@ public class SystemInfoService {
 		sd.setSystemSealed(false);
 		saveSystemInfo(sysInfo, sd);
 		makeUserGlobalAdmin(ud.getUuid());
+	}
+
+	/**
+	 * The installation's API-token pepper, generated on first use.
+	 *
+	 * <p>Write-once through a conditional statement rather than read-then-write: two pods reaching
+	 * this at the same moment must not end up with different peppers, because a token signed by
+	 * one would then fail to verify on the other. The loser of the race reads the winner's value
+	 * back.
+	 */
+	@Transactional
+	public String getOrCreateApiTokenPepper() {
+		SystemInfoData sd = getSystemInfoData();
+		if (null != sd && StringUtils.isNotEmpty(sd.getApiTokenPepper())) return sd.getApiTokenPepper();
+		byte[] raw = new byte[32];
+		new SecureRandom().nextBytes(raw);
+		repository.setApiTokenPepperIfAbsent(Base64.getUrlEncoder().withoutPadding().encodeToString(raw));
+		String stored = getSystemInfoData().getApiTokenPepper();
+		if (StringUtils.isEmpty(stored)) {
+			throw new IllegalStateException("Could not establish the API token pepper on system_info");
+		}
+		return stored;
 	}
 
 	public SystemInfoData.EncProps getEncryption(){

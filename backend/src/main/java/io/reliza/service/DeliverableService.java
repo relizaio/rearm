@@ -25,6 +25,8 @@ import io.reliza.model.dto.CarryForwardTally;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.TxUtils;
+
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.Removable;
@@ -65,6 +67,9 @@ public class DeliverableService {
 
 	@Autowired
 	private ReleaseRepository releaseRepository;
+
+	@Autowired
+	private ReleaseMetricsTouchService releaseMetricsTouchService;
 	
 	@Autowired
     private BranchService branchService;
@@ -219,10 +224,54 @@ public class DeliverableService {
 				Deliverable d = createDeliverable(deliverableDto, wu);
 				deliverables.add(d.getUuid());
 			} else {
-				throw new RelizaException("A deliverable with this exact digest already belongs to another release, first in list = " + deliverablesByDigest.get(0).getUuid().toString());
+				// The digest is already recorded in this org. If it was recorded under the
+				// same component (any branch, any release) the deliverable is the same
+				// build, so reuse the row: it now belongs to several releases and the read
+				// side picks the right release per context. A different component owning
+				// the digest is a genuine conflict.
+				Optional<Deliverable> sameComponent = deliverablesByDigest.stream()
+						.filter(d -> cd.getUuid().equals(componentOfDeliverable(d)))
+						.findFirst();
+				if (sameComponent.isPresent()) {
+					Deliverable existing = sameComponent.get();
+					attachNewArtifacts(existing, artIds, wu);
+					if (!deliverables.contains(existing.getUuid())) deliverables.add(existing.getUuid());
+					log.info("Reusing deliverable {} for release {} of component {}: digest already recorded under this component",
+							existing.getUuid(), version, cd.getUuid());
+				} else {
+					Deliverable first = deliverablesByDigest.get(0);
+					UUID otherComponent = componentOfDeliverable(first);
+					String otherName = otherComponent == null ? "unknown component"
+							: getComponentService.getComponentData(otherComponent).map(ComponentData::getName).orElse(otherComponent.toString());
+					throw new RelizaException("A deliverable with this exact digest already belongs to another release in a different component ("
+							+ otherName + "), first in list = " + first.getUuid().toString());
+				}
 			}
 		}
 		return deliverables;
+	}
+
+	/** Component that owns a deliverable, resolved through its branch; null for external / branch-less rows. */
+	private UUID componentOfDeliverable(Deliverable d) {
+		DeliverableData dd = DeliverableData.dataFromRecord(d);
+		if (dd.getBranch() == null) return null;
+		return branchService.getBranchData(dd.getBranch()).map(BranchData::getComponent).orElse(null);
+	}
+
+	/** Attach artifacts uploaded for a reused deliverable that the row does not carry yet. */
+	private void attachNewArtifacts(Deliverable existing, List<UUID> artIds, WhoUpdated wu) {
+		if (artIds == null || artIds.isEmpty()) return;
+		DeliverableData exd = DeliverableData.dataFromRecord(existing);
+		List<UUID> merged = exd.getArtifacts();
+		List<UUID> added = new LinkedList<>();
+		for (UUID a : artIds) {
+			if (!merged.contains(a)) { merged.add(a); added.add(a); }
+		}
+		if (added.isEmpty()) return;
+		exd.setArtifacts(merged);
+		saveDeliverable(existing, Utils.dataToRecord(exd), wu);
+		// same reason as addArtifact: releases rolling this deliverable up must notice the new artifact
+		TxUtils.afterCommitOrNow(() -> added.forEach(a -> releaseMetricsTouchService.touchByDeliverableArtifact(a.toString())));
 	}
 
 	public Boolean archiveDeliverable(UUID deliverableId, WhoUpdated wu) {
@@ -252,7 +301,12 @@ public class DeliverableService {
 		// the release row itself is untouched (only the deliverable is saved). The
 		// retired BY_OUTBOUND_DELIVERABLES finder used to catch this by comparing
 		// artifact.lastScanned against release.lastScanned; this touch replaces it.
-		releaseRepository.touchReleasesByScannedDeliverableArtifact(artifactUuid.toString());
+		// After commit, not inside the transaction: a metrics compute that starts while this
+		// transaction is open stamps lastScanned without seeing the artifact, and a touch taken
+		// before the commit carries an earlier now() than that stamp, so the release would be
+		// fenced out with stale metrics. Taken after commit, the touch postdates any such compute
+		// and the query's own guard bumps the release back into the BY_UPDATE pool.
+		TxUtils.afterCommitOrNow(() -> releaseMetricsTouchService.touchByDeliverableArtifact(artifactUuid.toString()));
 		return true;
 	}
 	@Transactional

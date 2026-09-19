@@ -61,6 +61,7 @@ import com.github.packageurl.PackageURL;
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.HeapPressureGuard;
+import io.reliza.common.SchedulerGuard;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisResponse;
@@ -83,6 +84,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.service.ComponentLockService.LockedOperation;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.ChildComponent;
@@ -166,6 +168,9 @@ public class ReleaseService {
 	
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
+
+	@Autowired
+	private ComponentLockService componentLockService;
 	
 	@Autowired
 	private RebomService rebomService;
@@ -213,6 +218,9 @@ public class ReleaseService {
 
 	@Autowired
 	private VexImportService vexImportService;
+
+	@Autowired
+	private SupportInjectionService supportInjectionService;
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
@@ -806,7 +814,11 @@ public class ReleaseService {
 	 * @throws RelizaException if no SBOMs found or merge fails
 	 * @throws JacksonException if BOM JSON processing fails
 	 */
-	private UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
+	// Package-private, not private, solely so ReleaseServiceForgedSupportStripTest can
+	// substitute the merge without a database and a live rebom: the forged-provenance strip
+	// on the merged export is a security control, and the only test that proves it is the
+	// one that drives the real public egress end to end.
+	UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
 			ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu, 
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
@@ -837,8 +849,79 @@ public class ReleaseService {
 	private JsonNode getReleaseSbomAsJsonNode(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
 			ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu, 
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
+		JsonNode mergedBom = fetchMergedReleaseBom(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, org, wu, excludeCoverageTypes);
+		// The merged bom is assembled from component boms we did not write. A component bom
+		// uploaded with a reliza:support:* property carries it into this document unchanged,
+		// where SupportBomInjector's contract says every such property was written by us --
+		// so the forged one is served under our attribution. Stripping is UNCONDITIONAL and
+		// separate from injection: injection is a content choice an operator opts into, this
+		// is a security control, and tying them together would mean turning the feature off
+		// made spoofing easier.
+		//
+		// Strip always, inject conditionally: injectIfEnabledElseStrip is the single place
+		// that decision is made, and the disclosure marker follows it, so the merged export
+		// says which happened rather than leaving an absent property to be read as either.
+		//
+		// This is the JSON export's gate and ONLY the JSON export's. The VDR reads the merged
+		// bom through mergedBomForVdr, which sweeps and never injects (see there for why it
+		// cannot share this path). The CSV and EXCEL media types of this same export do not
+		// pass through here at all: rebom renders them from a fixed column list that carries
+		// no component properties, so nothing forged reaches them today -- but that is
+		// rebom's behaviour, not a control applied here; SupportBomInjector's class javadoc
+		// records the boundary.
+		//
+		// This closes t20260826-172851-10180 for this egress. Until now the merged export
+		// stripped but never injected, so an org at full attestation coverage exported a
+		// release SBOM carrying nothing -- while the single-artifact download beside it
+		// carried everything.
+		try {
+			supportInjectionService.injectIfEnabledElseStrip(mergedBom, org);
+		} catch (Exception stripEx) {
+			// Same posture as the download path: never fail a bom export over the add-on. But
+			// unlike injection this failure is a security-control failure, so it is logged as
+			// an error and the document is served WITHOUT our disclosure marker, which is the
+			// honest signal that we did not vouch for it.
+			log.error("Support strip/inject failed for release {} (org {}); serving unmarked: {}",
+					releaseUuid, org, stripEx.getMessage(), stripEx);
+		}
+		return mergedBom;
+	}
+
+	/**
+	 * The merged bom exactly as rebom assembled it: not swept, not injected. The one seam
+	 * both readers of the merged document share, so the merge itself cannot drift between
+	 * them -- and so that neither inherits the other's treatment of support facts.
+	 */
+	JsonNode fetchMergedReleaseBom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev,
+			ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu,
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
 		UUID releaseBomId = getReleaseBomId(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, wu, excludeCoverageTypes);
 		return rebomService.findBomByIdJson(releaseBomId, org);
+	}
+
+	/**
+	 * The merged bom as the VDR reads it: swept of the reserved namespaces and marked, NEVER
+	 * injected, whatever the org's export-injection setting says.
+	 *
+	 * <p>THE VDR IS NOT ONE OF THE GATED EGRESSES. Until this seam existed it read the merged
+	 * bom through the export's gate and then ran the sweep to undo the injection -- and the
+	 * sweep cannot undo it. inject() owns the standard cdx:lifecycle:milestone:* keys on a
+	 * component it attests: it deletes whatever the source bom declared there and writes the
+	 * attested dates, or nothing when the attestation carries none. The sweep removes only
+	 * the reliza:* namespaces. So on an org with injection ON the VDR's end-of-support dates
+	 * were the attestation's, and a date the source bom declared could vanish; with it OFF
+	 * they were the source's. A vulnerability disclosure report whose lifecycle dates track
+	 * a setting about BOM exports is exactly what the previous arrangement claimed to
+	 * prevent. Reading the un-injected bom is the only way to keep the two independent,
+	 * because the rewrite is lossy.
+	 *
+	 * <p>The sweep still runs: an uploader's forged reliza:support:* would otherwise flow
+	 * into VDR components, since cloneComponent copies properties wholesale.
+	 */
+	JsonNode mergedBomForVdr(UUID releaseUuid, UUID org, WhoUpdated wu) throws RelizaException, JacksonException {
+		JsonNode mergedBom = fetchMergedReleaseBom(releaseUuid, false, false, null, BomStructureType.FLAT, org, wu, null);
+		supportInjectionService.stripForgedProvenanceAndMark(mergedBom);
+		return mergedBom;
 	}
 	
 	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException{
@@ -847,6 +930,12 @@ public class ReleaseService {
 			JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, org, wu, excludeCoverageTypes);
 			mergedBom = mergedBomJsonNode.toString();
 		} else if (mediaType == BomMediaType.CSV) {
+			// Neither gated nor swept, and deliberately not pretending to be: rebom renders
+			// CSV and EXCEL from a fixed column list (name, version, purl, license, author)
+			// that carries no component properties, so nothing in the reserved namespaces
+			// can reach them. That is a property of rebom's renderer, not a control applied
+			// here -- a properties column added there reopens the hole with no change on
+			// this side. Closing it for real needs a payload-based renderer in rebom.
 			UUID releaseBomId = getReleaseBomId(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, wu, excludeCoverageTypes);
 			mergedBom = rebomService.findBomByIdCsv(releaseBomId, org);
 		} else if (mediaType == BomMediaType.EXCEL) {
@@ -1287,6 +1376,8 @@ public class ReleaseService {
 
 	public ReleaseData addInboundDeliverables(ReleaseData releaseData, List<Map<String, Object>> deliverableDtos,
 			WhoUpdated wu) throws RelizaException {
+		componentLockService.assertUnlocked(releaseData.getComponent(), releaseData.getBranch(),
+				LockedOperation.RELEASE_CONTENT);
 		List<UUID> currentDeliverables = releaseData.getInboundDeliverables();
 		boolean isAllowed = ReleaseLifecycle.isAssemblyAllowed(releaseData.getLifecycle());
 		if (!isAllowed) {
@@ -1335,6 +1426,8 @@ public class ReleaseService {
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
 		if (null != artifactUuid && rOpt.isPresent()) {
 			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
+			componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
+					LockedOperation.RELEASE_CONTENT);
 				List<UUID> artifacts = rd.getArtifacts();
 				artifacts.add(artifactUuid);
 				rd.setArtifacts(artifacts);
@@ -1705,6 +1798,9 @@ public class ReleaseService {
 
 	@Transactional
 	public Boolean replaceArtifact(UUID replaceArtifactUuid ,UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
+		sharedReleaseService.getReleaseData(releaseUuid).ifPresent(rd ->
+				componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
+						LockedOperation.RELEASE_CONTENT));
 		Boolean added = false;
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
 		if (null != artifactUuid && rOpt.isPresent()) {
@@ -2235,15 +2331,17 @@ public class ReleaseService {
 			// Atomic check-and-claim: with the parallel pass the set is shared
 			// across workers, and contains-then-add is a race window.
 			if (!dedupProcessedReleases.add(r.getUuid())) continue;
-			try {
+			// Throwable, not Exception. An Error thrown in here used to skip the fence below and
+			// leave the batch entirely, so the same release was re-picked at the head of every
+			// tick for ever -- which is what maxAttempts=2845 on one release was telling us.
+			boolean computed = SchedulerGuard.runIsolated("release metrics " + r.getUuid(), () -> {
 				boolean metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(r);
 				if (metricsChanged) ossReleaseService.processRelease(r.getUuid());
-			} catch (Exception e) {
-				log.error("Metrics compute failed for release {} — continuing with batch: {}",
-						r.getUuid(), e.getMessage(), e);
+			});
+			if (!computed) {
 				// Poison-pill fence: a throwing compute leaves no state change, so the
 				// same row is re-picked at the head of the finder order every tick —
-				// grinding the same exception and starving younger rows behind it.
+				// grinding the same failure and starving younger rows behind it.
 				// Escalating backoff (same schedule as incomplete computes; first
 				// attempts free) keeps it retrying without monopolizing the batch.
 				try {
@@ -3022,10 +3120,11 @@ public class ReleaseService {
 			// replaces. Covered by @vdr_export in rearm-integration-tests.
 			Map<String, Component> purlComponentMap = new HashMap<>();
 			try {
-				JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(
-					releaseData.getUuid(), false, false, null, BomStructureType.FLAT,
-					releaseData.getOrg(), WhoUpdated.getAutoWhoUpdated(), null
-				);
+				// Swept, never injected: the un-injected merged bom, so the VDR's lifecycle
+				// dates cannot depend on the org's BOM-export setting. mergedBomForVdr says
+				// why the sweep alone could not deliver that.
+				JsonNode mergedBomJsonNode = mergedBomForVdr(
+					releaseData.getUuid(), releaseData.getOrg(), WhoUpdated.getAutoWhoUpdated());
 
 				Bom mergedBom = new JsonParser().parse(
 						Utils.OM.writeValueAsBytes(mergedBomJsonNode));

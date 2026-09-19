@@ -33,7 +33,8 @@ import io.reliza.repositories.SourceCodeEntryRepository;
 /**
  * Mockito unit tests for {@link SourceCodeEntryService#createSourceCodeEntry}.
  *
- * <p>The method runs under {@code Propagation.REQUIRES_NEW}. Phase 2 (the
+ * <p>The persist half ({@code createSourceCodeEntryTx}) runs under
+ * {@code Propagation.REQUIRES_NEW}. Phase 2 (the
  * structural follow-up to PR #217) moved VCS provisioning into
  * {@link VcsRepositoryService#provisionVcsRepository}, a {@code REQUIRES_NEW}
  * transaction that commits the VCS row before this method runs. That makes it
@@ -75,6 +76,9 @@ class SourceCodeEntryServiceTest {
 		inject("agentSessionService", mock(AgentSessionService.class));
 		inject("acollectionService", mock(AcollectionService.class));
 		inject("auditService", mock(AuditService.class));
+		// createSourceCodeEntry delegates the persist to createSourceCodeEntryTx
+		// through the self proxy; no proxy here, so point it at the instance.
+		inject("self", service);
 	}
 
 	private void inject (String fieldName, Object value) throws Exception {

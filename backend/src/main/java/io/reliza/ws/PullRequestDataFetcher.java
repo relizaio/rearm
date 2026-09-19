@@ -275,7 +275,7 @@ public class PullRequestDataFetcher {
 	 */
 	private AuthorizationResponse authorizeProgrammatic(AuthHeaderParse ahp, RelizaObject ro, UUID orgUuid)
 			throws RelizaException {
-		if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+		if (ahp.isRbacKey()) {
 			FreeformKeyVerification fkv;
 			if (ro instanceof ComponentData) {
 				fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp,

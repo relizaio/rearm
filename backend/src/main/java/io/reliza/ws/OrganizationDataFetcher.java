@@ -45,6 +45,8 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.ResourceGroupData;
 import io.reliza.model.UserData;
 import io.reliza.model.UserData.OrgUserData;
+import io.reliza.model.ApiKey;
+import io.reliza.model.ApiKeyData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.ApiKeyForUserDto;
@@ -147,7 +149,16 @@ public class OrganizationDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject roUsers = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), CallType.ADMIN);
+		// A member may always read their own effective permissions: the profile page and the CLI login
+		// form show what a personal key may be given, and that answer must not itself need a level in
+		// the org -- a user holding only component-scoped grants has to see them too. Anyone else's
+		// permissions need org admin.
+		boolean self = userUuid.equals(oud.get().getUuid());
+		if (self) {
+			authorizationService.validateSystemOperational(CallType.ESSENTIAL_READ);
+		} else {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), CallType.ADMIN);
+		}
 		var targetUser = userService.getUserDataWithOrg(userUuid, orgUuid)
 				.orElseThrow(() -> new AccessDeniedException("User is not in organization"));
 		return organizationService.obtainCombinedUserOrgPermissions(targetUser, orgUuid);
@@ -222,16 +233,253 @@ public class OrganizationDataFetcher {
 		return retKey;
 	}
 	
+	/** Create an org-level key id with no secret; the first secret is minted separately via addApiKeySecret. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "createOrgApiKey")
+	public ApiKeyDto createOrgApiKey(
+			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("apiType") ApiTypeEnum keyType,
+			@InputArgument("notes") String notes
+		) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roSetKey = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSetKey), CallType.ADMIN);
+		if (keyType != ApiTypeEnum.FREEFORM && keyType != ApiTypeEnum.ORGANIZATION && keyType != ApiTypeEnum.ORGANIZATION_RW) {
+			throw new RelizaException("Unsupported Key type for this location");
+		}
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		String keyOrder = UUID.randomUUID().toString();
+		return ApiKeyDto.fromApiKey(apiKeyService.createObjectApiKey(od.get().getUuid(), keyType, od.get().getUuid(), keyOrder, notes, wu));
+	}
+
+	/**
+	 * Gate for key lifecycle mutations: the owner of a USER key may manage their own key;
+	 * anyone else needs the given permission level on the key's org.
+	 */
+	private WhoUpdated authorizeKeyOwnerOr(UUID apiKeyUuid, CallType ct) throws RelizaException {
+		return authorizeKeyOwnerOr(apiKeyUuid, ct, true);
+	}
+
+	/** True when the caller is the owner of a USER key or the holder of a FREEFORM key. */
+	private static boolean isOwnerOrHolder(UserData ud, ApiKey ak) {
+		if (ak.getObjectType() == ApiTypeEnum.USER) return ud.getUuid().equals(ak.getObjectUuid());
+		if (ak.getObjectType() == ApiTypeEnum.FREEFORM) {
+			UUID holder = ApiKeyData.dataFromRecord(ak).getHolder();
+			return holder != null && holder.equals(ud.getUuid());
+		}
+		return false;
+	}
+
+	private WhoUpdated authorizeKeyOwnerOr(UUID apiKeyUuid, CallType ct, boolean holderMayAct) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ApiKey> oak = apiKeyService.getApiKey(apiKeyUuid);
+		if (oak.isPresent() && isOwnerOrHolder(oud.get(), oak.get())
+				&& (holderMayAct || oak.get().getObjectType() == ApiTypeEnum.USER)) {
+			authorizationService.validateSystemOperational(CallType.WRITE);
+			return WhoUpdated.getWhoUpdated(oud.get());
+		}
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(apiKeyUuid);
+		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION,
+				ro != null ? ro.getOrg() : null, List.of(ro), ct);
+		return WhoUpdated.getWhoUpdated(oud.get());
+	}
+
+	/** Whether the caller passes the org-level gate for this key on their own account (as opposed to the owner / holder shortcut). */
+	private boolean hasOrgWriteOnKey(UUID apiKeyUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(apiKeyUuid);
+		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
+		try {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION,
+					ro != null ? ro.getOrg() : null, List.of(ro), CallType.WRITE);
+			return true;
+		} catch (org.springframework.security.access.AccessDeniedException e) {
+			return false;
+		}
+	}
+
+	/** Secret lifecycle mutations: owner of a USER key, holder of a FREEFORM key, or write access on the key's org. */
+	private WhoUpdated authorizeKeyAdmin(UUID apiKeyUuid) throws RelizaException {
+		return authorizeKeyOwnerOr(apiKeyUuid, CallType.WRITE);
+	}
+
+	/**
+	 * Minting returns cleartext, so on a held FREEFORM key only the holder may do it; admins keep
+	 * retire / delete / deactivate. Requests and denied keys cannot be minted at all.
+	 */
+	private WhoUpdated authorizeKeyMinter(UUID apiKeyUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		if (akd.getStatus() != ApiKeyData.ApiKeyStatus.ACTIVE && akd.getStatus() != ApiKeyData.ApiKeyStatus.INACTIVE) {
+			throw new RelizaException("This key is a request; it can be minted once an admin approves it");
+		}
+		if (ak.getObjectType() == ApiTypeEnum.FREEFORM && akd.getHolder() != null && !akd.getHolder().equals(oud.get().getUuid())) {
+			throw new RelizaException("Only the holder of this key may mint its secrets");
+		}
+		// a personal key acts as its owner and is attributed to them: nobody else, admins included, may hold a secret for it
+		if (ak.getObjectType() == ApiTypeEnum.USER && !oud.get().getUuid().equals(ak.getObjectUuid())) {
+			throw new RelizaException("Only the owner of a personal key may mint its secrets");
+		}
+		return authorizeKeyAdmin(apiKeyUuid);
+	}
+
+	private static ZonedDateTime futureOrNull(ZonedDateTime expiresDate) throws RelizaException {
+		if (expiresDate != null && !expiresDate.isAfter(ZonedDateTime.now())) throw new RelizaException("Expiry must be in the future");
+		return expiresDate;
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeySecretExpiry")
+	public ApiKeyDto setApiKeySecretExpiry(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("slot") Integer slot,
+			@InputArgument("expiresDate") ZonedDateTime expiresDate) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
+		return apiKeyService.setApiKeySecretExpiry(apiKeyUuid, slot, futureOrNull(expiresDate), wu);
+	}
+
+	/** Write users ask for a free-form key; admins see it as a pending request. */
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "requestFreeformApiKey")
+	public ApiKeyDto requestFreeformApiKey(
+			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("notes") String notes,
+			@InputArgument("permissionType") PermissionType permissionType,
+			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions
+		) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
+		if (!oud.get().isGlobalAdmin() && !oud.get().getOrganizations().contains(orgUuid)) {
+			throw new RelizaException("Not a member of this organization");
+		}
+		List<PermissionDto> convertedPermissions = permissions == null ? List.of() : permissions.stream()
+				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		for (PermissionDto p : convertedPermissions) {
+			if (null != p.approvals() && !p.approvals().isEmpty() && !Utils.isSanitizedApprovalsSent(p.approvals(), od.get())) {
+				throw new RuntimeException("Invalid approvals sent");
+			}
+		}
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		return ApiKeyDto.fromApiKey(apiKeyService.requestFreeformApiKey(oud.get().getUuid(), orgUuid, notes,
+				permissionType == null ? PermissionType.NONE : permissionType, convertedPermissions, wu));
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "resolveApiKeyRequest")
+	public ApiKeyDto resolveApiKeyRequest(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("approve") Boolean approve,
+			@InputArgument("reason") String reason) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
+		return apiKeyService.resolveApiKeyRequest(apiKeyUuid, Boolean.TRUE.equals(approve), reason, wu);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeyHolder")
+	public ApiKeyDto setApiKeyHolder(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("holder") String holderStr) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
+		UUID holder = StringUtils.isBlank(holderStr) ? null : UUID.fromString(holderStr);
+		if (holder != null) {
+			ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+			Optional<UserData> oh = userService.getUserData(holder);
+			if (oh.isEmpty() || !oh.get().getOrganizations().contains(ak.getOrg())) throw new RelizaException("Holder must be a member of the key's organization");
+		}
+		return apiKeyService.setApiKeyHolder(apiKeyUuid, holder, wu);
+	}
+
+	/** Personal key: an active member creates one for themselves, with no secret and no permissions yet (the ceiling starts empty). */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "createUserApiKey")
+	public ApiKeyDto createUserApiKey(@InputArgument("orgUuid") String orgUuidStr, @InputArgument("notes") String notes) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
+		if (!oud.get().isGlobalAdmin() && !oud.get().getOrganizations().contains(orgUuid)) {
+			throw new RelizaException("Not a member of this organization");
+		}
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		return ApiKeyDto.fromApiKey(apiKeyService.createObjectApiKey(oud.get().getUuid(), ApiTypeEnum.USER, orgUuid, UUID.randomUUID().toString(), notes, wu));
+	}
+
+	/** The calling user's own USER keys across organizations (metadata only). */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "myApiKeys")
+	public List<ApiKeyDto> myApiKeys() throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.validateSystemOperational(CallType.READ);
+		return apiKeyService.listUserKeyDtos(oud.get().getUuid());
+	}
+
+	private ApiKeyForUserDto keyForUser(UUID apiKeyUuid, String cleartext) {
+		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow();
+		String keyId = ApiKeyService.keyIdOf(ak);
+		return ApiKeyForUserDto.builder().apiKey(cleartext).id(keyId)
+				.authorizationHeader("Basic " + HttpHeaders.encodeBasicAuth(keyId, cleartext, StandardCharsets.UTF_8)).build();
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "addApiKeySecret")
+	public ApiKeyForUserDto addApiKeySecret(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("expiresDate") ZonedDateTime expiresDate) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyMinter(apiKeyUuid);
+		return keyForUser(apiKeyUuid, apiKeyService.addApiKeySecret(apiKeyUuid, futureOrNull(expiresDate), wu));
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "regenerateApiKeySecret")
+	public ApiKeyForUserDto regenerateApiKeySecret(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("slot") Integer slot,
+			@InputArgument("expiresDate") ZonedDateTime expiresDate) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyMinter(apiKeyUuid);
+		return keyForUser(apiKeyUuid, apiKeyService.regenerateApiKeySecret(apiKeyUuid, slot, futureOrNull(expiresDate), wu));
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeySecretActive")
+	public ApiKeyDto setApiKeySecretActive(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("slot") Integer slot,
+			@InputArgument("active") Boolean active) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
+		return apiKeyService.setApiKeySecretActive(apiKeyUuid, slot, Boolean.TRUE.equals(active), wu);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "deleteApiKeySecret")
+	public ApiKeyDto deleteApiKeySecret(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("slot") Integer slot) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
+		return apiKeyService.deleteApiKeySecret(apiKeyUuid, slot, wu);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeyStatus")
+	public ApiKeyDto setApiKeyStatus(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("status") ApiKeyData.ApiKeyStatus status) throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
+		return apiKeyService.setApiKeyStatus(apiKeyUuid, status, hasOrgWriteOnKey(apiKeyUuid), wu);
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "deleteApiKey")
 	public Boolean setOrgApiKey(@InputArgument("apiKeyUuid") String apiKeyUuidStr) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
-		var oakd = apiKeyService.getApiKeyData(apiKeyUuid);
-		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN);
 		apiKeyService.deleteApiKey(apiKeyUuid, wu);
 		return true;
 	}
@@ -400,11 +648,9 @@ public class OrganizationDataFetcher {
 			@InputArgument("permissionType") PermissionType permissionType,
 			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions
 		) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
 		var oakd = apiKeyService.getApiKeyData(apiKeyUuid);
-		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
+		boolean holderMayEdit = oakd.isPresent() && oakd.get().getStatus() == ApiKeyData.ApiKeyStatus.REQUESTED; // the requester shapes the proposal; admins own it once approved
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, holderMayEdit);
 		OrganizationData od = getOrganizationService.getOrganizationData(oakd.get().getOrg()).get();
 		List<PermissionDto> convertedPermissions = permissions.stream()
 				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
@@ -415,7 +661,13 @@ public class OrganizationDataFetcher {
 				}
 			}
 		}
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		Optional<ApiKey> oak = apiKeyService.getApiKey(apiKeyUuid);
+		if (oak.isPresent() && oak.get().getObjectType() == ApiTypeEnum.USER) {
+			// a personal key stores no more than its owner holds right now, whoever edits it; call time intersects again
+			UserData owner = userService.getUserData(oak.get().getObjectUuid()).orElseThrow(() -> new RelizaException("Key owner not found"));
+			AuthorizationService.ClampedPermissions clamped = authorizationService.clampToOwner(owner, oak.get().getOrg(), permissionType, convertedPermissions);
+			return apiKeyService.setPermissionsOnApiKey(apiKeyUuid, clamped.orgType(), clamped.permissions(), wu);
+		}
 		return apiKeyService.setPermissionsOnApiKey(apiKeyUuid, permissionType, convertedPermissions, wu);
 	}
 
@@ -433,13 +685,7 @@ public class OrganizationDataFetcher {
 			@InputArgument("apiKeyUuid") UUID apiKeyUuid,
 			@InputArgument("notes") String notes
 		) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		var oakd = apiKeyService.getApiKeyData(apiKeyUuid);
-		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN);
 		return apiKeyService.setNotesOnApiKey(apiKeyUuid, notes, wu);
 	}
 

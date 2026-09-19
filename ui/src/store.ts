@@ -2992,6 +2992,13 @@ const storeObject : any = {
                             lastActivityAt
                             artifacts
                             commits
+                            primaryModel {
+                                uuid
+                                name
+                                version
+                                publisher
+                            }
+                            modelAssertion
                             usageCompleteness
                             modelMismatch
                             usageTotals {

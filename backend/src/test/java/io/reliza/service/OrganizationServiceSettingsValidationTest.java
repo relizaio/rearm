@@ -4,6 +4,8 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.WhoUpdated;
 
 /**
@@ -55,6 +58,40 @@ public class OrganizationServiceSettingsValidationTest {
 		OrganizationData.Settings patch = new OrganizationData.Settings();
 		patch.setNotificationRetentionDays(days);
 		return patch;
+	}
+
+
+	/**
+	 * The export-injection patch, in the settings service that owns patch semantics.
+	 *
+	 * <p>These assert the SHAPE of the patch rather than a persisted result: this harness
+	 * leaves getOrganization unstubbed, so an in-bounds patch validates and then fails at the
+	 * entity lookup with a distinguishable message. What matters here is which failure you
+	 * get -- reaching the lookup means the field was accepted and applied, and a validation
+	 * error means it was rejected.
+	 */
+	@Test
+	void supportInjectionIsAcceptedInEitherState() {
+		for (SupportInjectionSetting state : SupportInjectionSetting.values()) {
+			OrganizationData.Settings patch = new OrganizationData.Settings();
+			patch.setSupportInjection(state);
+			Exception e = assertThrows(Exception.class,
+					() -> service.updateSettings(UUID.randomUUID(), patch, wu));
+			assertFalse(e.getMessage() != null && e.getMessage().contains("supportInjection"),
+					state + " must be a legal value, not a validation failure: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * OMITTING it must not disturb the stored value -- the same PATCH rule the prose slots
+	 * follow. A patch about retention has no business changing what exports carry.
+	 */
+	@Test
+	void omittingSupportInjectionLeavesItAlone() {
+		OrganizationData.Settings patch = retentionPatch(30);
+		assertNull(patch.getSupportInjection(),
+				"a patch that does not mention the field must carry null for it, which is what"
+						+ " the service reads as 'not part of this patch'");
 	}
 
 	@Test

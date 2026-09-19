@@ -39,12 +39,33 @@ public class UserPermission {
 	
 	public enum PermissionType {
 		// N.B. Enum order matters here! - P.S. 2025-03-01
-		NONE,
-		ESSENTIAL_READ,
-		READ_ONLY,
-		READ_WRITE,
-		ADMIN
+		NONE("none"),
+		ESSENTIAL_READ("essential read"),
+		READ_ONLY("read only"),
+		READ_WRITE("read and write"),
+		ADMIN("administrator")
 		;
+
+		private final String wireValue;
+
+		PermissionType(String wireValue) {
+			this.wireValue = wireValue;
+		}
+
+		/**
+		 * A reader-facing phrase for this role. Emit this, never {@link #name()}, in anything
+		 * that leaves the system.
+		 *
+		 * <p>Added because the support-attestation export names the attester's organization
+		 * role in a redistributable BOM (decision D4). {@code ADMIN} is an internal
+		 * authorization token; shipping it verbatim would put ReARM's permission vocabulary
+		 * into a regulated document handed to a third party, where it means nothing and dates
+		 * badly. Same reasoning, and the same shape, as {@code LevelOfSupport.getWireValue}.
+		 */
+		public String getWireValue() {
+			return wireValue;
+		}
+
 		
 		public static PermissionType mapFromCallType (CallType ct) {
 			PermissionType pt = NONE;
@@ -84,7 +105,6 @@ public class UserPermission {
 			return type != null && floor != null && type.ordinal() >= floor.ordinal();
 		}
 
-		private PermissionType () {}
 	}
 
 	/**
@@ -127,7 +147,13 @@ public class UserPermission {
 		// shipments, devices, device events) for non-admin users and
 		// FREEFORM keys, on top of the call-type tier. Org admins pass
 		// implicitly (org-scope ADMIN short-circuits function checks).
-		DISTRIBUTION
+		DISTRIBUTION,
+		// Gate the declarative configuration surface (export / apply of
+		// spec files on the programmatic endpoint) for non-admin users and
+		// FREEFORM keys, on top of the call-type tier. WRITE implies READ.
+		// Org admins pass implicitly.
+		CONFIGURATION_READ,
+		CONFIGURATION_WRITE
 		;
 
 		private PermissionFunction () {}

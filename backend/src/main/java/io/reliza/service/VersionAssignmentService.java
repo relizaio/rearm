@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.service.ComponentLockService.LockedOperation;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.ComponentData;
@@ -53,6 +54,9 @@ public class VersionAssignmentService {
 	
 	@Autowired
     private SharedReleaseService sharedReleaseService;
+
+	@Autowired
+	private ComponentLockService componentLockService;
 
 	/**
 	 * Self-injection so the non-transactional retry wrapper can call the
@@ -210,6 +214,10 @@ public class VersionAssignmentService {
 	 */
 	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier,
 			String metadata, VersionTypeEnum versionType, String commit, boolean rebuild) throws RelizaException {
+		// Every version assignment passes through here -- the manual mint as well as the CI one,
+		// which the programmatic path's own check does not cover. Fast fail is the whole point of
+		// gating version assignment, so the gate belongs at the point they share.
+		componentLockService.assertUnlocked(null, branchUuid, LockedOperation.VERSION_ASSIGNMENT);
 		Optional<VersionAssignment> va = Optional.empty();
 		int triesLeft = 3;
 		while (triesLeft > 0) {

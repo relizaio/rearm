@@ -50,9 +50,45 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		}
 	}
 
+	/**
+	 * UI views the dashboard and component pages can show. Mirrors the GraphQL
+	 * enum DashboardView; stored by name in the org settings JSONB.
+	 */
+	public enum DashboardView {
+		SECURITY,
+		DEVOPS
+	}
+
+	public enum DeclarativePruneMode {
+		LEAVE,
+		ARCHIVE
+	}
+
 	@Data
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class Settings {
+		/**
+		 * Org-wide default UI view for users with no per-browser choice.
+		 * Nullable so that settings patches can distinguish "leave unchanged" (null)
+		 * from "explicitly set"; treated as SECURITY when null.
+		 */
+		@JsonProperty
+		private DashboardView defaultView;
+		/**
+		 * Org-wide prune mode for declarative applies: rows absent from an authoritative
+		 * spec are archived (ARCHIVE) or only reported (LEAVE). Null is treated as LEAVE.
+		 * Deliberately not part of any spec: the file cannot widen its own blast radius.
+		 */
+		@JsonProperty
+		private DeclarativePruneMode declarativePrune;
+		/**
+		 * Guards declared once for the organization, each picking the components it applies to
+		 * by name pattern -- the same shape the organization's approval-policy rules use. They
+		 * accumulate with whatever a component declares for itself.
+		 */
+		@JsonProperty
+		private List<ActionGuard> actionGuards;
+
 		/**
 		 * Whether justification is mandatory for vulnerability analysis.
 		 * Nullable so that settings patches can distinguish "leave unchanged" (null) from
@@ -80,6 +116,19 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty
 		private VexComplianceFramework vexComplianceFramework;
 
+		/**
+		 * Whether this org's exports carry its support attestations (FDA-Readiness-1 7g).
+		 *
+		 * <p>NULL MEANS DISABLED, per decision D3 -- support properties do not appear unless
+		 * asked for. Read through {@link #getSupportInjectionOrDefault()} rather than
+		 * directly, so an unset org and an explicitly-disabled one cannot diverge.
+		 *
+		 * <p>It governs INJECTION only. The forged-provenance strip runs on every egress
+		 * whatever this says: a security control and a content choice are not the same switch.
+		 */
+		@JsonProperty
+		private SupportInjectionSetting supportInjection;
+
 		/** Null is treated as {@link SidPurlMode#DISABLED} at resolution time. */
 		@JsonProperty
 		private SidPurlMode sidPurlMode;
@@ -104,8 +153,59 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 */
 		@JsonProperty
 		private Integer notificationRetentionDays;
+		/**
+		 * How many of a branch's recent releases the {@code branch.*} rule variables look back
+		 * over. All lifecycles count -- a rejected release holds exactly the commits those rules
+		 * exist to catch.
+		 */
+		@JsonProperty
+		private Integer branchHistoryHorizon;
+
+		/**
+		 * FDA-Readiness-1 section 7f. Manufacturer-authored prose that the generated
+		 * submission documents render. Org-level because all four say something about how
+		 * THIS manufacturer assesses and supports, not about one device.
+		 *
+		 * <p>Nullable throughout, and null is a real state rather than a default to paper
+		 * over: a document with an empty required slot is BLOCKED rather than generated with
+		 * the section missing. On a submission a reviewer expects gaps, but on the
+		 * patient-facing Device Support Statement a silent gap is itself the misleading
+		 * thing under 502(a)(1).
+		 *
+		 * <p>There is deliberately NO product-shipped default text for any of them. These
+		 * are the manufacturer's own commitments; shipping wording they did not write and
+		 * then putting it over their name is the failure this feature exists to avoid.
+		 */
+		@JsonProperty
+		private String fdaAssessmentNarrative;
+
+		/** Statement that patches/updates may cease at end of support (labeling VI.A.2). */
+		@JsonProperty
+		private String fdaPatchesMayCeaseStatement;
+
+		/**
+		 * REFERENCE to the controlled risk-transfer process (labeling VI.A.3) -- an
+		 * identifier or URL, not the process itself. Plans and processes are
+		 * design-history-file records; pasting one into a generated artifact creates a
+		 * second, unversioned copy that drifts from the controlled original.
+		 */
+		@JsonProperty
+		private String fdaRiskTransferProcessRef;
+
+		/** Notice that end-user cybersecurity risk increases over time (labeling VI.A.4). */
+		@JsonProperty
+		private String fdaRiskIncreasesNotice;
 
 		public static final int NOTIFICATION_RETENTION_DAYS_DEFAULT = 90;
+		public static final int BRANCH_HISTORY_HORIZON_DEFAULT = 10;
+		/** Hard cap: the window is read per rule evaluation, so it is not an unbounded knob. */
+		public static final int BRANCH_HISTORY_HORIZON_MAX = 50;
+
+		public int getBranchHistoryHorizonOrDefault() {
+			if (branchHistoryHorizon == null || branchHistoryHorizon < 1) return BRANCH_HISTORY_HORIZON_DEFAULT;
+			return Math.min(branchHistoryHorizon, BRANCH_HISTORY_HORIZON_MAX);
+		}
+
 		public static final int NOTIFICATION_RETENTION_DAYS_MIN = 14;
 		public static final int NOTIFICATION_RETENTION_DAYS_MAX = 730;
 
@@ -219,6 +319,14 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 */
 		public VexComplianceFramework getVexComplianceFrameworkOrDefault() {
 			return vexComplianceFramework != null ? vexComplianceFramework : VexComplianceFramework.NONE;
+		}
+
+		/**
+		 * @return the configured injection setting, or {@link SupportInjectionSetting#DISABLED}
+		 *         if unset. Unset and explicitly-off are the same answer by design (D3).
+		 */
+		public SupportInjectionSetting getSupportInjectionOrDefault() {
+			return supportInjection != null ? supportInjection : SupportInjectionSetting.DISABLED;
 		}
 
 		/**
@@ -420,7 +528,6 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		}
 	}
 
-
 	@JsonProperty
 	private UUID uuid;
 	@JsonProperty(CommonVariables.NAME_FIELD)
@@ -461,7 +568,6 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private List<GlobalTeamAssignmentRule> globalTeamAssignmentRules = new LinkedList<>();
-
 
 	public void removeInvitee(String email, UUID whoInvited){
 		boolean found = false;

@@ -30,6 +30,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CarryForwardArm;
 import io.reliza.model.dto.CarryForwardPairing;
@@ -54,6 +55,14 @@ import tools.jackson.databind.JsonNode;
 @Service
 @Slf4j
 public class SharedArtifactService {
+
+	/**
+	 * Every artifact download here is access-controlled (a user login, an API key or a session
+	 * token), so shared caches must not keep the bytes: TEA requires {@code private} or
+	 * {@code no-store} on such responses and reserves {@code public ... immutable} for content
+	 * available without authorization. Nothing here sends a validator, so no-store is the honest form.
+	 */
+	public static final String ACCESS_CONTROLLED_CACHE = "private, no-store";
 	
 
 	@Autowired
@@ -234,6 +243,17 @@ public class SharedArtifactService {
 	}
 	
 	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad) throws Exception{
+		return downloadArtifact(ad, null);
+	}
+
+	/**
+	 * As {@link #downloadArtifact(ArtifactData)}, but weaves the per-component device-support-risk
+	 * verdict + device-anchor properties against {@code device} (the support window of the PRODUCT
+	 * release the download was launched from; {@code ReleaseData.eos}/{@code eol}). Null on a
+	 * non-PRODUCT release or when the caller has no unambiguous device release -- nothing
+	 * device-related is emitted, the rest of the support disclosure is unchanged.
+	 */
+	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad, DeviceLifecycle device) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
         log.info("download artifacts for ad: {}", ad);
 
@@ -241,23 +261,41 @@ public class SharedArtifactService {
 			byte[] byteArray;
 			// For SPDX, augmented BOM is the converted CycloneDX
 			if(ad.getBomFormat().equals(BomFormat.SPDX)){
-				String rebom;
+				JsonNode rebom;
 				// Support version parameter for SPDX augmented downloads
 				if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
 					try {
 						Integer version = Integer.parseInt(ad.getVersion());
-						rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
+						rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version);
 					} catch (NumberFormatException e) {
 						// Version is not numeric, fall back to latest converted CycloneDX
-						rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX);
 					}
 				} else {
 					// No version specified, return latest converted CycloneDX
-					rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX);
 				}
-				// Support injection into the SPDX-augmented (converted CycloneDX) download is a
-				// later slice; served as-is for now.
-				byteArray = rebom.getBytes();
+				// The SPDX-augmented (converted CycloneDX) download is gated like every other
+				// egress: it carries support facts when the org has injection on. The STRIP
+				// is not part of that slice and does not wait for it: an uploader-forged
+				// reliza:support:* property would otherwise be served here under the attribution
+				// SupportBomInjector's contract gives it. Strip always, inject conditionally --
+				// injectIfEnabledElseStrip is the one place that decision is made, and the
+				// disclosure marker follows it, so this document says which happened.
+				//
+				// The device argument IS in scope here -- it is a parameter of this method and
+				// is used on the native path below -- so it is passed. An earlier revision
+				// dropped it with a comment claiming the release context was unavailable,
+				// which was simply false, and the effect was that a PRODUCT release stamped
+				// deviceSupportRisk on the CycloneDX download of an artifact and not on the
+				// SPDX-augmented download of the SAME artifact.
+				try {
+					supportInjectionService.injectIfEnabledElseStrip(rebom, ad.getOrg(), device);
+				} catch (Exception stripEx) {
+					log.error("Support strip/inject failed for SPDX-augmented artifact {} (org {});"
+							+ " serving unmarked: {}", ad.getUuid(), ad.getOrg(), stripEx.getMessage(), stripEx);
+				}
+				byteArray = rebom.toString().getBytes(StandardCharsets.UTF_8);
 			} else {
 				// Native CycloneDX: fetch the BOM as a JsonNode, inject the CURRENT (derived,
 				// non-attested, current-state) per-component support facts, then serialize. The
@@ -275,16 +313,21 @@ public class SharedArtifactService {
 				} else {
 					bomNode = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg());
 				}
+				// Through the same seam as the other two egresses. This path used to inject
+				// unconditionally, which is how the three egresses drifted apart in the first
+				// place: one injected, two stripped, and nothing named the difference.
+				// The device argument survives -- a PRODUCT download still stamps the device
+				// verdict when injection is on.
 				try {
-					supportInjectionService.injectCurrentSupport(bomNode, ad.getOrg());
+					supportInjectionService.injectIfEnabledElseStrip(bomNode, ad.getOrg(), device);
 				} catch (Exception supportEx) {
 					// Support injection is an add-on -- never fail the core BOM download because
-					// of a support-resolution error (transient DB, unexpected node shape). Serve
-					// the un-injected BOM and alert (this path had no DB dependency before PR2a).
+					// of a support-resolution error. The strip fallback lives INSIDE
+					// injectIfEnabledElseStrip now, so a resolution outage is already served
+					// stripped and marked before this is reached; this catch remains for a
+					// failure of the seam itself.
 					log.error("Support injection failed for artifact {} (org {}); serving un-injected BOM: {}",
 							ad.getUuid(), ad.getOrg(), supportEx.getMessage(), supportEx);
-					// Still run the DB-free strip so an uploader-forged reliza:support:* cannot
-					// survive a resolution outage, and the disclosure marker is still stamped.
 					try {
 						supportInjectionService.stripForgedProvenanceAndMark(bomNode);
 					} catch (Exception stripEx) {
@@ -301,6 +344,7 @@ public class SharedArtifactService {
 				.orElse(ad.getUuid().toString() + ".json");
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok()
 				.header("Content-Disposition", "attachment; filename=\"" + bomFileName + "\"")
+				.header("Cache-Control", ACCESS_CONTROLLED_CACHE)
 				.body(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
 		}else {
@@ -377,6 +421,7 @@ public class SharedArtifactService {
 						return ResponseEntity.ok()
 								.contentType(MediaType.parseMediaType(mediaType))
 								.header("Content-Disposition", "attachment; filename=\"" + resolvedFileName + "\"")
+								.header("Cache-Control", ACCESS_CONTROLLED_CACHE)
 								.body(data);
 					});	
 	}
@@ -384,7 +429,7 @@ public class SharedArtifactService {
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
 
 		if(null != ad.getInternalBom()){
-			String rebom;
+			JsonNode rebom;
 			// For SPDX BOMs, pass the format to get original SPDX instead of converted CycloneDX
 			BomFormat format = ad.getBomFormat().equals(BomFormat.SPDX) ? BomFormat.SPDX : null;
 			log.info("downloadRawArtifact: bomFormat={}, format parameter={}, internalBomId={}, version={}", 
@@ -396,28 +441,34 @@ public class SharedArtifactService {
 					Integer version = Integer.parseInt(ad.getVersion());
 					log.info("Downloading version-specific raw BOM: version={}, format={}", version, ad.getBomFormat());
 					// Use findRawBomByVersion for both SPDX and CycloneDX when version is specified
-					rebom = rebomService.findRawBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
+					rebom = rebomService.findRawBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version);
 				} catch (NumberFormatException e) {
 					// Version is not numeric, fall back to latest with format
 					log.warn("Version is not numeric: {}, falling back to latest", ad.getVersion());
 					if (ad.getBomFormat().equals(BomFormat.SPDX)) {
-						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format).toString();
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format);
 					} else {
-						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg());
 					}
 				}
 			} else {
 				// No version specified - download latest
 				if (ad.getBomFormat().equals(BomFormat.SPDX)) {
 					log.info("Downloading latest raw SPDX BOM with format: {}", format);
-					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format).toString();
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format);
 				} else {
 					log.info("Downloading latest raw CycloneDX BOM");
-					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg());
 				}
 			}
 			
-			byte[] byteArray = rebom.getBytes();
+			// Raw means AS UPLOADED. This is the uploader's own document, served back without
+			// enrichment, injection, sweeping or marking. The anti-spoofing guarantee in
+			// SupportBomInjector is scoped to the documents ReARM PRODUCES (augmented, merged,
+			// injected), and TEA labels this URL "Raw Artifact as Uploaded" so a reader knows
+			// which kind of document they hold. A sweep was briefly added here by the
+			// FDA-Readiness-1 work and reversed on 2026-09-11.
+			byte[] byteArray = rebom.toString().getBytes(StandardCharsets.UTF_8);
 			String bomFileName = ad.getTags().stream()
 				.filter(t -> t.key().equals(CommonVariables.FILE_NAME_FIELD))
 				.map(t -> t.value())
@@ -425,6 +476,7 @@ public class SharedArtifactService {
 				.orElse(ad.getUuid().toString() + ".json");
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok()
 				.header("Content-Disposition", "attachment; filename=\"" + bomFileName + "\"")
+				.header("Cache-Control", ACCESS_CONTROLLED_CACHE)
 				.body(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
 		}else {
