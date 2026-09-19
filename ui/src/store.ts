@@ -2820,6 +2820,7 @@ const storeObject : any = {
                     costComplete
                     byModel {
                         model
+                        modelName
                         inputTokens
                         outputTokens
                         cacheReadTokens
@@ -2854,6 +2855,7 @@ const storeObject : any = {
                     costComplete
                     byModel {
                         model
+                        modelName
                         inputTokens
                         outputTokens
                         cacheReadTokens
@@ -3006,6 +3008,7 @@ const storeObject : any = {
                                 costComplete
                                 byModel {
                                     model
+                                    modelName
                                     inputTokens
                                     outputTokens
                                     cacheReadTokens

@@ -77,6 +77,7 @@ import {
     formatCostMicros,
     totalTokens,
     byModelRows,
+    modelDisplayName,
 } from '@/utils/agentUsage'
 
 const props = defineProps<{
@@ -170,7 +171,7 @@ const sessionRows = computed(() => accumulate(r => r.session))
 const costCell = (micros: number | null) => h('span', formatCostMicros(micros) ?? 'no price')
 
 const modelColumns = computed<DataTableColumns<any>>(() => [
-    { title: 'Model', key: 'model', render: (r: any) => r.model ?? '—' },
+    { title: 'Model', key: 'model', render: (r: any) => modelDisplayName(r) },
     { title: 'Requests', key: 'requests', render: (r: any) => r.requests ?? 0 },
     { title: 'Tokens', key: 'tokens', render: (r: any) => formatTokens(totalTokens(r)) },
     { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.derivedCostMicros ?? null) },

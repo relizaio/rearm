@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+    modelDisplayName,
     totalTokens,
     formatTokens,
     formatCostMicros,
@@ -143,5 +144,23 @@ describe('periodRange', () => {
         const { from, to } = periodRange(24, now)
         expect(to).toBe('2026-09-19T12:00:00.000Z')
         expect(from).toBe('2026-09-18T12:00:00.000Z')
+    })
+})
+
+describe('modelDisplayName', () => {
+    it('prefers the name the rollup carries', () => {
+        expect(modelDisplayName({ model: 'e639534d-1111-2222-3333-444444444444', modelName: 'claude-opus-5' }))
+            .toBe('claude-opus-5')
+    })
+
+    it('shortens a bare uuid rather than printing 36 characters', () => {
+        // Falling back to the full uuid let the id take over the column; a row whose model was
+        // deleted out from under its usage still has to render legibly.
+        expect(modelDisplayName({ model: 'e639534d-1111-2222-3333-444444444444' })).toBe('e639534d…')
+    })
+
+    it('renders an empty row as a dash', () => {
+        expect(modelDisplayName(null)).toBe('—')
+        expect(modelDisplayName({})).toBe('—')
     })
 })

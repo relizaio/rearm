@@ -25,6 +25,7 @@ export interface UsageTotals {
 
 export interface UsageByModel {
     model?: string | null
+    modelName?: string | null
     inputTokens?: number | null
     outputTokens?: number | null
     cacheReadTokens?: number | null
@@ -178,6 +179,19 @@ export function byModelRows (u?: UsageTotals | null): UsageByModel[] {
         if (ac != null && bc != null && ac !== bc) return bc - ac
         return totalTokens(b as UsageTotals) - totalTokens(a as UsageTotals)
     })
+}
+
+/**
+ * What to show for a model in a breakdown.
+ *
+ * The rollup carries the display name beside the uuid; falling back to a shortened uuid rather than
+ * the full one keeps an unnameable row (a model deleted out from under its usage) legible instead
+ * of letting a 36-character id take over the column.
+ */
+export function modelDisplayName (row?: UsageByModel | null): string {
+    if (row?.modelName) return row.modelName
+    if (row?.model) return String(row.model).slice(0, 8) + '…'
+    return '—'
 }
 
 /** Preset windows for the board and org period selectors. */

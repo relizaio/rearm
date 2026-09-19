@@ -68,6 +68,7 @@ import {
     usageBadges,
     byModelRows,
     formatCostMicros,
+    modelDisplayName,
 } from '@/utils/agentUsage'
 
 // One usage line, shared by the session, task and board views so the three
@@ -91,7 +92,7 @@ const costLabelText = computed(() => costLabel(props.usage))
 const modelRows = computed(() => byModelRows(props.usage))
 
 const modelColumns = computed<DataTableColumns<any>>(() => [
-    { title: 'Model', key: 'model', render: (r: any) => r.model ?? '—' },
+    { title: 'Model', key: 'model', render: (r: any) => modelDisplayName(r) },
     { title: 'Requests', key: 'requests', render: (r: any) => r.requests ?? 0 },
     { title: 'Turns', key: 'turns', render: (r: any) => r.turns ?? 0 },
     { title: 'Tokens', key: 'tokens', render: (r: any) => formatTokens(totalTokens(r)) },
