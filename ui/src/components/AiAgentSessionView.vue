@@ -200,9 +200,13 @@ const releaseRows = computed<any[]>(() => {
 const prRows = computed<any[]>(() => session.value?.pullRequests ?? [])
 
 // Model surfacing (v1a). The model is a property of the chat, recorded on
-// the session — see Session.primaryModel. modelAssertion is DECLARED today
-// (the agent self-reported the model string via the CLI); RUNTIME_OBSERVED
-// is reserved for host-side hooks that read the runtime's own record.
+// the session — see Session.primaryModel. modelAssertion starts at DECLARED
+// (the agent self-reported the model string via the CLI) and the server
+// upgrades it to RUNTIME_OBSERVED once usage reports arrive from a source
+// that is not the agent's own claim — a transcript, an OTEL collector or the
+// provider — and they resolve to the model the session declared. A
+// disagreement does not upgrade it; it sets modelMismatch instead, which the
+// usage card badges.
 const modelLabel = computed<string>(() => {
     const m = session.value?.primaryModel
     if (!m) return '—'
@@ -223,7 +227,7 @@ const ASSERTION_LABELS: Record<string, string> = {
 
 const ASSERTION_TIPS: Record<string, string> = {
     DECLARED: 'Declared: the agent self-reported this model via the CLI. ReARM trusts the agent\'s word; it is not independently verified, and does not carry the authority of the session\'s commit signatures.',
-    RUNTIME_OBSERVED: 'Observed: the model was read from the runtime\'s own record. This label does not carry the authority of the session\'s commit signatures.',
+    RUNTIME_OBSERVED: 'Observed: this model was seen in the session\'s own usage reports — from a transcript, a collector or the provider, never from the agent\'s own claim — and it agrees with what the session declared. This label does not carry the authority of the session\'s commit signatures.',
 }
 
 const assertionLabel = computed<string>(() =>
