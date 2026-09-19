@@ -146,6 +146,9 @@
             <n-tab-pane name="table" tab="Table">
                 <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
             </n-tab-pane>
+            <n-tab-pane name="usage" tab="Usage">
+                <AgentBoardUsagePanel :board-uuid="selectedBoard" :tasks="tasks" :agent-names="agentNames"/>
+            </n-tab-pane>
             </n-tabs>
 
             <AiAgentTaskDetailDrawer
@@ -530,6 +533,7 @@ import { QuestionCircle20Regular } from '@vicons/fluent'
 import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
+import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 
 const props = defineProps<{ orgUuid: string }>()

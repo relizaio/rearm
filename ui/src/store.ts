@@ -2641,8 +2641,9 @@ const storeObject : any = {
                             hold { level kind gateRole reason heldBy heldAt }
                             requireHumanReview
                             assignment { session agent role assignedAt promptVersion }
-                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy }
-                            returns { role agent session reason description returnedAt }
+                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+                            returns { role agent session reason description returnedAt usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+                            usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
                             parentTask
                             childTasks
                             sessions
@@ -2796,6 +2797,184 @@ const storeObject : any = {
             })
             return response.data.sessionsOfOrg
         },
+        // ---------- Agent usage ----------
+        // Board and org rollups are period queries, so they are actions rather
+        // than fields on an already-fetched object: the window is chosen in the
+        // UI and re-fetched when it changes.
+        async fetchAgentBoardUsage (context: any, payload: { boardUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardUsage($boardUuid: ID!, $from: DateTime!, $to: DateTime!) {
+                        agentBoardUsage(boardUuid: $boardUuid, from: $from, to: $to) {
+                    inputTokens
+                    outputTokens
+                    cacheReadTokens
+                    cacheWriteTokens
+                    requests
+                    turns
+                    toolCalls
+                    wallSeconds
+                    reports
+                    derivedCostMicros
+                    priceVersions
+                    costComplete
+                    byModel {
+                        model
+                        modelName
+                        inputTokens
+                        outputTokens
+                        cacheReadTokens
+                        cacheWriteTokens
+                        requests
+                        turns
+                        derivedCostMicros
+                    }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardUsage
+        },
+        async fetchOrganizationAgentUsage (context: any, payload: { orgUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query organizationAgentUsage($orgUuid: ID!, $from: DateTime!, $to: DateTime!) {
+                        organizationAgentUsage(orgUuid: $orgUuid, from: $from, to: $to) {
+                    inputTokens
+                    outputTokens
+                    cacheReadTokens
+                    cacheWriteTokens
+                    requests
+                    turns
+                    toolCalls
+                    wallSeconds
+                    reports
+                    derivedCostMicros
+                    priceVersions
+                    costComplete
+                    byModel {
+                        model
+                        modelName
+                        inputTokens
+                        outputTokens
+                        cacheReadTokens
+                        cacheWriteTokens
+                        requests
+                        turns
+                        derivedCostMicros
+                    }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.organizationAgentUsage
+        },
+
+        // ---------- Model catalogue ----------
+        async fetchModelOntologiesOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query modelOntologiesOfOrg($orgUuid: ID!) {
+                        modelOntologiesOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            org
+                            name
+                            version
+                            publisher
+                            description
+                            canonicalId
+                            aliases
+                            facts
+                            tier
+                            resolution
+                            modelCardSpecVersion
+                            notes
+                            createdDate
+                            pricing {
+                                uuid
+                                effectiveFrom
+                                effectiveTo
+                                currency
+                                unit
+                                inputMicros
+                                outputMicros
+                                cacheReadMicros
+                                cacheWriteMicros
+                                reasoningMicros
+                                appliesTo {
+                                    contextAboveTokens
+                                    contextVariant
+                                    serviceTier
+                                    hosting
+                                    reasoning
+                                }
+                                source
+                                note
+                            }
+                            mergeCandidates {
+                                uuid
+                                name
+                                version
+                                canonicalId
+                                resolution
+                            }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.modelOntologiesOfOrg
+        },
+        async addModelPricing (context: any, payload: { modelOntologyUuid: string, entry: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation addModelPricing($modelOntologyUuid: ID!, $entry: PricingEntryInput!) {
+                        addModelPricing(modelOntologyUuid: $modelOntologyUuid, entry: $entry) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.addModelPricing
+        },
+        async expireModelPricing (context: any, payload: { modelOntologyUuid: string, entryUuid: string, effectiveTo: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation expireModelPricing($modelOntologyUuid: ID!, $entryUuid: ID!, $effectiveTo: DateTime!) {
+                        expireModelPricing(modelOntologyUuid: $modelOntologyUuid, entryUuid: $entryUuid, effectiveTo: $effectiveTo) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.expireModelPricing
+        },
+        async applyModelCataloguePreset (context: any, payload: { orgUuid: string, canonicalId: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation applyModelCataloguePreset($orgUuid: ID!, $canonicalId: String!) {
+                        applyModelCataloguePreset(orgUuid: $orgUuid, canonicalId: $canonicalId) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.applyModelCataloguePreset
+        },
+        async mergeModelOntology (context: any, payload: { from: string, into: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation mergeModelOntology($from: ID!, $into: ID!) {
+                        mergeModelOntology(from: $from, into: $into) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.mergeModelOntology
+        },
         async fetchSession (context: any, uuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
@@ -2813,6 +2992,32 @@ const storeObject : any = {
                             lastActivityAt
                             artifacts
                             commits
+                            usageCompleteness
+                            modelMismatch
+                            usageTotals {
+                                inputTokens
+                                outputTokens
+                                cacheReadTokens
+                                cacheWriteTokens
+                                requests
+                                turns
+                                toolCalls
+                                wallSeconds
+                                reports
+                                derivedCostMicros
+                                costComplete
+                                byModel {
+                                    model
+                                    modelName
+                                    inputTokens
+                                    outputTokens
+                                    cacheReadTokens
+                                    cacheWriteTokens
+                                    requests
+                                    turns
+                                    derivedCostMicros
+                                }
+                            }
                             policyEvents {
                                 policyUuid
                                 policyName
