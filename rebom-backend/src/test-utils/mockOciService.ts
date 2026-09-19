@@ -74,7 +74,15 @@ export async function mockFetchFromOci(tag: string): Promise<Object> {
  */
 export async function mockPushToOci(tag: string, bom: any, repositoryNameOrTimestamp?: string | Date): Promise<OASResponse> {
     const transformedTag = transformTag(tag);
-    const digest = `sha256:${generateMockDigest(bom)}`;
+    // Two different things, and the mock used to return the same value for both.
+    // ociResponse.digest is the manifest digest and carries the algorithm
+    // prefix; fileSHA256Digest is the hash of the uploaded bytes and is bare
+    // hex, which is what the real service returns and what every stored
+    // originalFileDigest / processedFileDigest in production looks like. Code
+    // that compares a locally computed hash against a stored one only works if
+    // the mock agrees with production about the form.
+    const contentHash = generateMockDigest(bom);
+    const digest = `sha256:${contentHash}`;
     
     // Handle both repository name (string) and timestamp (Date) parameters
     let repoName: string;
@@ -109,7 +117,7 @@ export async function mockPushToOci(tag: string, bom: any, repositoryNameOrTimes
             size: String(JSON.stringify(bom).length),
             mediaType: 'application/json'
         },
-        fileSHA256Digest: digest,
+        fileSHA256Digest: contentHash,
         ociRepositoryName: repoName
     };
 }

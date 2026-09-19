@@ -74,7 +74,18 @@ export async function resolveAndFetchRawBom(
         } catch (error) {
             if (error instanceof DigestValidationError) {
                 // Raw copy is PRESENT here but its bytes are wrong -- that is
-                // the integrity failure this machinery exists to catch.
+                // the integrity failure this machinery exists to catch. Raw
+                // artifacts are never re-pushed, so unlike the processed side
+                // this cannot be a concurrent-write race: it is a failure at
+                // the moment it is seen, and this is where it gets logged
+                // (fetchFromOci no longer logs it, having no way to tell).
+                logger.error({
+                    bomUuid,
+                    tag: rawTag,
+                    repository: repo,
+                    expectedDigest: rawDigest,
+                    actualDigest: error.actualDigest
+                }, 'Raw BOM does not match its stored digest');
                 throw error;
             }
             if (error instanceof OciNotFoundError) {

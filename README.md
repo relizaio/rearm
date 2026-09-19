@@ -20,7 +20,9 @@
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
-View ReARM CE Demo made for SecTor 2025 Arsenal on [YouTube](https://www.youtube.com/watch?v=PNGxlvV-EsM) (23 minutes).
+## ReARM CE Demos
+- Demo for Black Hat 2026 USA Arsenal: [https://www.youtube.com/watch?v=PNGxlvV-EsM](https://www.youtube.com/watch?v=qjSyETchZa4) (28 minutes)
+- Demo for SecTor 2025 Arsenal: [https://www.youtube.com/watch?v=PNGxlvV-EsM](https://www.youtube.com/watch?v=PNGxlvV-EsM) (23 minutes)
 
 ## About
 ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a Release Governance Platform to manage lifecycle for product and component releases and organize release metadata, including SBOMs, xBOMs, other security artifacts, vulnerability, weakness, policy and license violation data. See [here](https://rearmhq.com/comparisons/) how ReARM compares with other tools
@@ -130,11 +132,13 @@ This part will be continued (TODO).
 
 ReARM Community Edition is licensed under the [GNU AGPL v3](./LICENSE).
 
+Contributions are accepted under the repository's license plus a grant that lets Reliza relicense them, including for ReARM Pro — see [Licensing of contributions](./CONTRIBUTING.md#licensing-of-contributions) before opening a pull request.
+
 The [`deploy`](./deploy) directory is an exception: everything in it - the Docker Compose stacks and the Helm charts - is licensed under the [MIT License](./deploy/LICENSE), so you can adapt and redistribute your deployment configuration without AGPL obligations. See [`deploy/README.md`](./deploy/README.md) for details.
 
 Third-party components redistributed in this repository keep their own licenses. In particular, the upstream [Dependency-Track Helm chart](https://github.com/DependencyTrack/helm-charts) vendored under `deploy/helm/dtrack5-helm/charts/` is Apache-2.0, with a copy of that license included alongside it.
 
 ## Contact Reliza
-Easiest way to contact us is through our [Discord Community](https://devopscommunity.org/) - find #rearm channel there and either post in this channel or send a direct message to maintainers.
+Easiest way to contact us is through our [Discord Community](https://discord.gg/UTxjBf9juQ) - find #rearm channel there and either post in this channel or send a direct message to maintainers.
 
 You can also send us an email to [info@reliza.io](mailto:info@reliza.io).

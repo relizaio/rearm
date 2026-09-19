@@ -22,6 +22,9 @@ import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
+
+/** Stamped on every enrichment entry so a bad ruleset can be found by its runs. */
+const ENRICHER_VERSION = process.env.REBOM_VERSION || require('../../../package.json').version;
 import * as fs from 'fs';
 
 // Enrichment timeout constant - used by both enrichCycloneDxBom and triggerEnrichment
@@ -801,34 +804,216 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
   // Check if enrichment actually changed the BOM
   const wasEnriched = result.enrichedBom !== bom;
   
+  // Reserve first. Without a sequence there is no tag to push to, and the only
+  // tag available without one is the bare uuid -- which is the in-place
+  // overwrite this whole change exists to remove. A run that cannot reserve
+  // does not run: it is marked FAILED and the next cycle retries it.
+  let sequence: number;
+  try {
+    sequence = await reserveEnrichmentRun(bomUuid, 'scheduler');
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ bomUuid, error: errorMessage }, 'Could not reserve an enrichment sequence; skipping the run');
+    await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED,
+      `Could not reserve an enrichment sequence: ${errorMessage}`);
+    return;
+  }
+
   if (wasEnriched) {
-    // Push enriched BOM to OCI (overwrites existing)
-    //use current month's repository
+    // A NEW tag every time. Overwriting the bytes at <uuid> is what let a
+    // reader validate fresh bytes against the digest it had already read.
     try {
       const repositoryName = getMonthlyRepositoryName();
-      
-      const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
-      
+      const tag = enrichmentTag(bomUuid, sequence);
+
+      const pushResult = await pushToOci(tag, result.enrichedBom, repositoryName);
+
       // Validate repository name was set
       validateOciPushResult(pushResult, 'enrichment', bomUuid);
-      
-      // Update database with new BOM reference, status, and repository name
-      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult, pushResult.ociRepositoryName);
-      
+
+      // Pointer and history move together, in one write: a crash between them
+      // would leave the row pointing at -e<n> while its entry still read
+      // RUNNING, breaking the invariant that the pointer is the last COMPLETED
+      // entry -- which is the thing retention will read.
+      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
+        pushResult.ociRepositoryName, tag, sequence);
+
       logger.info({ 
         bomUuid, 
         serialNumber: bom.serialNumber, 
+        tag,
         repositoryName: pushResult.ociRepositoryName
       }, 'Async BOM enrichment completed successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ bomUuid, error: errorMessage }, 'Failed to push enriched BOM to OCI');
       await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, errorMessage);
+      // A failed run closes its own entry and moves no pointer.
+      await closeEnrichmentRun(bomUuid, sequence, { status: 'FAILED', error: errorMessage });
     }
   } else {
     logger.info({ bomUuid, serialNumber: bom.serialNumber }, 'BOM enrichment skipped - no enrichment needed');
     await updateEnrichmentStatus(bomUuid, EnrichmentStatus.COMPLETED);
+    // Completed, pushed nothing: the entry has no tag, which is the difference
+    // between "ran and changed nothing" and "never ran". No pointer to move.
+    await closeEnrichmentRun(bomUuid, sequence, { status: 'COMPLETED', error: null });
   }
+}
+
+/**
+ * Reserve the next enrichment sequence for a row, appending its RUNNING entry.
+ *
+ * The sequence has to exist before the push, because it names the tag the bytes
+ * go to. Two schedulers reserving at once must not mint the same tag, so the
+ * number is read and written inside one UPDATE: postgres serialises the two
+ * statements on the row and the second sees the first's entry. A reservation
+ * that never completes stays as a RUNNING entry, which is the honest record of
+ * a run that died mid-flight.
+ *
+ * Legacy rows get entry 0 synthesised here from the fields they already carry,
+ * so the history explains every artifact the row has ever pointed at rather
+ * than starting mid-story.
+ */
+/** A run that has not reported back in this long is not coming back. */
+const ABANDON_RUNNING_AFTER = '6 hours';
+
+/**
+ * Mark runs that started and never reported back, across the table.
+ *
+ * Swept by the enrichment scheduler rather than at reservation time. Ageing at
+ * reservation only ever tidied rows that get ANOTHER run, which are the rows
+ * that need it least -- a row whose single run died never reserves again, and
+ * its entry would have stayed RUNNING for ever. It is also not the reservation's
+ * job: that statement's correctness argument is narrow enough without carrying
+ * housekeeping beside it.
+ *
+ * Bounded by LIMIT so one cycle cannot turn into a long write, and idempotent,
+ * so whatever is left over is picked up next time. Six hours rather than minutes
+ * because two schedulers working the same row at once is a legitimate state: a
+ * run is only abandoned when no plausible reading has it still alive.
+ */
+export async function abandonStaleEnrichmentRuns(limit = 200): Promise<number> {
+  const staleEntry = `
+    SELECT 1 FROM jsonb_array_elements(b.meta->'enrichments') e
+    WHERE e->>'status' = 'RUNNING'
+      AND (e->>'startedAt')::timestamptz < NOW() - INTERVAL '${ABANDON_RUNNING_AFTER}'`;
+  const queryText = `
+    WITH stale AS (
+      SELECT b.uuid
+      FROM rebom.boms b
+      WHERE jsonb_typeof(b.meta->'enrichments') = 'array'
+        AND EXISTS (${staleEntry})
+      LIMIT $1
+    )
+    UPDATE rebom.boms b
+    SET meta = jsonb_set(b.meta, '{enrichments}', (
+          SELECT jsonb_agg(
+            CASE WHEN e->>'status' = 'RUNNING'
+                  AND (e->>'startedAt')::timestamptz < NOW() - INTERVAL '${ABANDON_RUNNING_AFTER}'
+                 THEN e || jsonb_build_object('status', 'ABANDONED',
+                        'error', 'run did not report back within ${ABANDON_RUNNING_AFTER}')
+                 ELSE e END)
+          FROM jsonb_array_elements(b.meta->'enrichments') e)),
+        last_updated_date = NOW()
+    FROM stale
+    WHERE b.uuid = stale.uuid
+  `;
+  try {
+    const res = await runQuery(queryText, [limit]);
+    const count = res.rowCount || 0;
+    if (count) {
+      logger.warn({ rows: count },
+        'Marked enrichment runs abandoned: they started and never reported back');
+    }
+    return count;
+  } catch (error) {
+    logger.error({ error }, 'Could not age out stale enrichment runs');
+    return 0;
+  }
+}
+
+export async function reserveEnrichmentRun(
+  bomUuid: string,
+  source: 'scheduler' | 'on-upload' | 'manual'
+): Promise<number> {
+  // One statement, and every expression in it reads the TARGET row's own
+  // columns. That is what makes it safe under concurrency, and it is a narrow
+  // property worth stating: under READ COMMITTED, when a concurrent statement
+  // has updated the target row, Postgres re-evaluates the command against the
+  // NEW version of that row -- but only for the target. Rows pulled in by any
+  // other scan in the same statement, including a CTE or a self-join over this
+  // same table, keep the snapshot they were read with. An earlier version of
+  // this query computed the run list in a CTE for readability, which meant two
+  // schedulers reserving at once both read the pre-update list, both minted the
+  // same sequence, and the second write dropped the first's entry -- exactly
+  // the collision the reservation exists to prevent.
+  //
+  // So the CASE is inlined twice rather than named once. The duplication is the
+  // price of correctness here; do not refactor it into a CTE.
+  const runsExpr = `
+    CASE
+      WHEN jsonb_typeof(meta->'enrichments') = 'array' THEN meta->'enrichments'
+      ELSE jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+             'sequence', 0,
+             'tag', COALESCE(meta->>'processedTag', uuid::text),
+             'repository', bom->>'ociRepositoryName',
+             'digest', meta->>'processedFileDigest',
+             'size', meta->'processedFileSize',
+             'status', 'COMPLETED',
+             'source', 'on-upload')))
+    END`;
+  const queryText = `
+    UPDATE rebom.boms
+    SET meta = jsonb_set(meta, '{enrichments}',
+          (${runsExpr}) || jsonb_build_object(
+            'sequence', jsonb_array_length(${runsExpr}),
+            -- The tag is written NOW, not at close. A run that dies after its
+            -- push has still created an artifact, and if its name only appeared
+            -- on completion nothing would know that artifact exists -- which is
+            -- a hole in the one thing this history is for. Built from the same
+            -- length as the sequence so the two cannot disagree.
+            'tag', $1::text || '-e' || jsonb_array_length(${runsExpr})::text,
+            'status', 'RUNNING',
+            'startedAt', $2::text,
+            'source', $3::text,
+            'enricherVersion', $4::text)),
+        last_updated_date = NOW()
+    WHERE uuid = $1
+    RETURNING jsonb_array_length(meta->'enrichments') - 1 AS sequence
+  `;
+  const res = await runQuery(queryText, [bomUuid, new Date().toISOString(), source, ENRICHER_VERSION]);
+  const sequence = res.rows[0]?.sequence;
+  if (typeof sequence !== 'number') {
+    throw new BomStorageError('Enrichment sequence reservation returned no sequence', undefined,
+      { bomId: bomUuid, operation: 'reserveEnrichmentRun' });
+  }
+  return sequence;
+}
+
+/** Close the reserved entry, whatever happened, without touching the pointer. */
+async function closeEnrichmentRun(
+  bomUuid: string,
+  sequence: number,
+  fields: Record<string, unknown>
+): Promise<void> {
+  const queryText = `
+    UPDATE rebom.boms
+    SET meta = jsonb_set(meta, ARRAY['enrichments', $2::text],
+          COALESCE(meta->'enrichments'->$3::int, '{}'::jsonb) || $4::jsonb),
+        last_updated_date = NOW()
+    WHERE uuid = $1 AND jsonb_typeof(meta->'enrichments') = 'array'
+  `;
+  try {
+    await runQuery(queryText, [bomUuid, String(sequence), sequence,
+      JSON.stringify({ completedAt: new Date().toISOString(), ...fields })]);
+  } catch (error) {
+    logger.error({ bomUuid, sequence, error }, 'Failed to close the enrichment run entry');
+  }
+}
+
+/** The tag an enrichment run writes to. Never the bare uuid: that artifact is somebody's current. */
+function enrichmentTag(bomUuid: string, sequence: number): string {
+  return `${bomUuid}-e${sequence}`;
 }
 
 async function updateEnrichmentStatus(
@@ -994,20 +1179,41 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
       return;
     }
     
-    // Push only the final enriched BOM
-    // SIMPLIFIED: Always use current month's repository for better backup rotation
+    // Push only the final enriched BOM, to its own tag in the current month's
+    // repository. The artifact the row points at right now is left alone.
     const repositoryName = getMonthlyRepositoryName();
-    
-    const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
-    
+    // Same rule as the scheduler path: no sequence, no run. The catch below
+    // marks it FAILED -- it never falls back to overwriting the bare uuid.
+    const sequence = await reserveEnrichmentRun(bomUuid, 'manual');
+    const tag = enrichmentTag(bomUuid, sequence);
+
+    let pushResult;
+    try {
+      pushResult = await pushToOci(tag, result.enrichedBom, repositoryName);
+    } catch (error) {
+      await closeEnrichmentRun(bomUuid, sequence, {
+        status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+
     // Validate repository name was set
     if (!pushResult.ociRepositoryName) {
       throw new OciStorageError('Re-enrichment OCI push succeeded but repository name is missing', 'push', bomUuid);
     }
     
-    await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult, pushResult.ociRepositoryName);
+    // Pointer and history in one write; see the scheduler path. If it throws,
+    // the artifact exists and the row still points elsewhere: close the entry
+    // FAILED so the history says so, and let the outer catch mark the run.
+    try {
+      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
+        pushResult.ociRepositoryName, tag, sequence);
+    } catch (error) {
+      await closeEnrichmentRun(bomUuid, sequence, {
+        status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
     
-    logger.info({ bomUuid }, 'Forced re-enrichment completed successfully');
+    logger.info({ bomUuid, tag }, 'Forced re-enrichment completed successfully');
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1089,11 +1295,22 @@ async function reprocessSpdxBom(bomRecord: BomRecord, spdxUuid: string, org: str
   }
 }
 
-async function updateEnrichmentStatusWithBom(
+/**
+ * Move the row onto the artifact this run produced: pointer, digest, size,
+ * repository AND the run's history entry, in one statement.
+ *
+ * The history entry is closed here rather than in a following write because the
+ * two have to agree. A crash between them would leave processedTag at
+ * <uuid>-e<n> with that entry still RUNNING, and the invariant retention will
+ * read -- the pointer is the last COMPLETED entry -- would be quietly false.
+ */
+export async function updateEnrichmentStatusWithBom(
   bomUuid: string,
   status: EnrichmentStatus,
   oasResponse: any,
-  repositoryName?: string
+  repositoryName?: string,
+  processedTag?: string,
+  sequence?: number
 ): Promise<void> {
   try {
     // Update enrichment status in meta and repository name in bom field
@@ -1114,36 +1331,79 @@ async function updateEnrichmentStatusWithBom(
       SET 
         bom = $2,
         meta = jsonb_set(
-          jsonb_set(
-            jsonb_set(
-              jsonb_set(
-                jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
-                '{enrichmentTimestamp}', $4::jsonb
-              ),
-              '{enrichmentError}', $5::jsonb
-            ),
-            '{processedFileDigest}', $6::jsonb
-          ),
-          '{processedFileSize}', $7::jsonb
-        ),
+                 jsonb_set(
+                   jsonb_set(
+                     jsonb_set(
+                       jsonb_set(
+                         jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
+                         '{enrichmentTimestamp}', $4::jsonb),
+                       '{enrichmentError}', $5::jsonb),
+                     '{processedFileDigest}', $6::jsonb),
+                   '{processedFileSize}', $7::jsonb),
+                 '{processedTag}', $8::jsonb),
         last_updated_date = NOW()
       WHERE uuid = $1
     `;
-    
-    await runQuery(queryText, [
+    // With a sequence, the same statement also closes that run's entry, so the
+    // pointer and the history it summarises can never disagree.
+    const closingQueryText = `
+      UPDATE rebom.boms
+      SET 
+        bom = $2,
+        meta = jsonb_set(
+                 jsonb_set(
+                   jsonb_set(
+                     jsonb_set(
+                       jsonb_set(
+                         jsonb_set(
+                           jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
+                           '{enrichmentTimestamp}', $4::jsonb),
+                         '{enrichmentError}', $5::jsonb),
+                       '{processedFileDigest}', $6::jsonb),
+                     '{processedFileSize}', $7::jsonb),
+                   '{processedTag}', $8::jsonb),
+                 ARRAY['enrichments', $9::text],
+                 COALESCE(meta->'enrichments'->$10::int, '{}'::jsonb) || $11::jsonb),
+        last_updated_date = NOW()
+      WHERE uuid = $1 AND jsonb_typeof(meta->'enrichments') = 'array'
+    `;
+
+    const params: any[] = [
       bomUuid,
       updatedOasResponse,
       JSON.stringify(status),
       JSON.stringify(new Date().toISOString()),
       JSON.stringify(null),
       JSON.stringify(oasResponse.fileSHA256Digest || null),
-      JSON.stringify(oasResponse.originalSize || null)
-    ]);
+      JSON.stringify(oasResponse.originalSize || null),
+      JSON.stringify(processedTag || bomUuid)
+    ];
+    if (typeof sequence === 'number') {
+      params.push(String(sequence), sequence, JSON.stringify({
+        status: 'COMPLETED',
+        completedAt: new Date().toISOString(),
+        tag: processedTag || bomUuid,
+        repository: repositoryName || null,
+        digest: oasResponse.fileSHA256Digest || null,
+        size: oasResponse.originalSize || null,
+        error: null
+      }));
+      await runQuery(closingQueryText, params);
+    } else {
+      await runQuery(queryText, params);
+    }
     
     if (repositoryName) {
       logger.debug({ bomUuid, repositoryName }, 'Updated OCI repository name in bom field during enrichment');
     }
   } catch (error) {
+    // Rethrown, not swallowed. This write is what makes the pushed artifact the
+    // row's current one; if it fails, the artifact exists and nothing points at
+    // it. Swallowing meant the caller went on to log the run as completed
+    // successfully and to leave its history entry RUNNING for ever -- a false
+    // success and a stale record from one failed statement. The callers mark
+    // the run FAILED and close its entry.
     logger.error({ bomUuid, status, error }, 'Failed to update enrichment status with BOM');
+    throw error;
   }
 }

@@ -68,7 +68,8 @@ export class BomMapper {
             ignoreDev: record.meta.ignoreDev,
             enrichmentStatus: record.meta.enrichmentStatus,
             enrichmentTimestamp: record.meta.enrichmentTimestamp,
-            enrichmentError: record.meta.enrichmentError
+            enrichmentError: record.meta.enrichmentError,
+            enrichments: record.meta.enrichments
         };
     }
 

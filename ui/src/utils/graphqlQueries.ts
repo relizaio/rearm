@@ -53,6 +53,24 @@ const MULTI_RELEASE_GQL_DATA = `
             keyFingerprint
             verifiedAt
         }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            actorName
+            claimedAt
+            detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
+        }
     }
     branch
     branchDetails {
@@ -781,6 +799,24 @@ const singleReleaseDataNoParent = `
             keyFingerprint
             verifiedAt
         }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            actorName
+            claimedAt
+            detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
+        }
     }
     commitsDetails {
         uuid
@@ -798,6 +834,24 @@ const singleReleaseDataNoParent = `
             signedByOwnerUuid
             keyFingerprint
             verifiedAt
+        }
+        recognized
+        attestation {
+            state
+            actorType
+            actor
+            actorName
+            claimedAt
+            detail
+            claims {
+                uuid
+                verdict
+                actorType
+                actor
+                actorName
+                note
+                createdDate
+            }
         }
     }
     pullRequests {
@@ -920,6 +974,24 @@ const singleReleaseDataNoParent = `
                 signedByOwnerUuid
                 keyFingerprint
                 verifiedAt
+            }
+            recognized
+            attestation {
+                state
+                actorType
+                actor
+                actorName
+                claimedAt
+                detail
+                claims {
+                    uuid
+                    verdict
+                    actorType
+                    actor
+                    actorName
+                    note
+                    createdDate
+                }
             }
         }
     }
@@ -1050,11 +1122,16 @@ const COMPONENT_FULL_DATA = `
             clientPayload
             schedule
             celClientPayload
+            includeSuppressed
             snapshotApprovalEntry
             snapshotLifecycle
             approvedEnvironment
             checkName
             scope
+            lockScope
+            lockUnlockLevel
+            lockAttestationRequirement
+            lockReason
         }
     }
     outputTriggers {
@@ -1070,11 +1147,16 @@ const COMPONENT_FULL_DATA = `
         clientPayload
         schedule
         celClientPayload
+        includeSuppressed
         snapshotApprovalEntry
         snapshotLifecycle
         approvedEnvironment
         checkName
         scope
+        lockScope
+        lockUnlockLevel
+        lockAttestationRequirement
+        lockReason
     }
     releaseInputTriggers {
         uuid
@@ -1130,6 +1212,20 @@ const COMPONENT_FULL_DATA = `
 const BRANCH_GQL_DATA = `
     uuid
     name
+    locks {
+        uuid
+        status
+        reason
+        origin
+        effectiveLevel
+        attestationRequirement
+        droppedCauses
+        causes {
+            subjectType
+            subjectUuid
+            detail
+        }
+    }
     component
     componentDetails {
         uuid

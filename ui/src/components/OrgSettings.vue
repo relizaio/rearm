@@ -192,6 +192,51 @@
                                     <n-form-item v-if="globalOutputEvent.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
                                         <n-select v-model:value="globalOutputEvent.approvedEnvironment" filterable :options="environmentOptions" placeholder="Select an environment (e.g. UAT)" />
                                     </n-form-item>
+                                    <!-- LOCK. Unlike every other action, this one outlives the release that
+                                         fired it, which is why it asks who may clear it and on what terms. -->
+                                    <n-form-item v-if="globalOutputEvent.type === 'LOCK'" label="What to lock" path="lockScope">
+                                        <n-radio-group v-model:value="globalOutputEvent.lockScope">
+                                            <n-radio value="BRANCH">The branch the release is on</n-radio>
+                                            <n-radio value="COMPONENT">The whole component</n-radio>
+                                        </n-radio-group>
+                                        <template #feedback>
+                                            A lock refuses version assignment, release creation and release content
+                                            on what it covers, until somebody releases it. Reading, and moving
+                                            releases that already exist, are untouched.
+                                        </template>
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'LOCK'" label="Who may release it" path="lockUnlockLevel">
+                                        <n-radio-group v-model:value="globalOutputEvent.lockUnlockLevel">
+                                            <n-radio value="AGENT">Any recognized principal, including an agent through the API</n-radio>
+                                            <n-radio value="HUMAN">Any user, but not an agent</n-radio>
+                                            <n-radio value="ADMIN">An administrator</n-radio>
+                                        </n-radio-group>
+                                        <template #feedback>
+                                            A disowned or contested commit raises this to administrator on its own,
+                                            whatever is chosen here.
+                                        </template>
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'LOCK'" label="What must be true first" path="lockAttestationRequirement">
+                                        <n-radio-group v-model:value="globalOutputEvent.lockAttestationRequirement">
+                                            <n-radio value="NONE">Nothing — whoever holds the level above just releases it</n-radio>
+                                            <n-radio value="ANY">Every cause claimed by anyone</n-radio>
+                                            <n-radio value="HUMAN">Every cause claimed by a person</n-radio>
+                                        </n-radio-group>
+                                        <template #feedback>
+                                            The causes are the release that failed this rule and every commit in it
+                                            nobody is accountable for. With "claimed by anyone" the lock releases
+                                            itself the moment the last one is claimed — the shape that lets an agent
+                                            fix its own mistake and carry on.
+                                        </template>
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'LOCK'" label="Reason" path="lockReason">
+                                        <n-input v-model:value="globalOutputEvent.lockReason"
+                                            placeholder="e.g. a commit in this build is not recognized" />
+                                        <template #feedback>
+                                            Shown verbatim in every refusal, so write it for whoever hits it.
+                                            Defaults to this action's name.
+                                        </template>
+                                    </n-form-item>
                                     <n-button @click="addGlobalOutputEvent" type="success">Save</n-button>
                                 </n-space>
                             </n-form>
@@ -353,6 +398,13 @@
 
                     <n-tab-pane name="globalPolicyAssignment" tab="Global Policy Assignment" v-if="isOrgAdmin">
                         <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
+                    </n-tab-pane>
+                    <n-tab-pane name="actionGuards" tab="Action Guards" v-if="isOrgAdmin">
+                        <ActionGuards scope="ORG" :uuid="orgResolved" :is-writable="isWritable"/>
+                    </n-tab-pane>
+                    <n-tab-pane name="integrity" tab="Build Integrity"
+                        v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
+                        <IntegrityInbox :org-uuid="orgResolved"/>
                     </n-tab-pane>
                     </n-tabs>
                 </div>
@@ -752,6 +804,21 @@
                     <n-modal
                         preset="dialog"
                         :show-icon="false"
+                        v-model:show="showPerspectiveGuardsModal"
+                        style="width: 900px;">
+                        <n-card size="huge" :bordered="false" role="dialog" aria-modal="true"
+                            :title="'Action Guards of Perspective: ' + selectedPerspectiveName">
+                            <ActionGuards
+                                v-if="showPerspectiveGuardsModal"
+                                scope="PERSPECTIVE"
+                                :uuid="selectedPerspectiveUuid"
+                                :org-uuid="orgResolved"
+                                :is-writable="isOrgAdmin"/>
+                        </n-card>
+                    </n-modal>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
                         v-model:show="showPerspectiveComponentsModal"
                         style="width: 900px;">
                         <n-card size="huge" :bordered="false"
@@ -1135,7 +1202,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1161,6 +1228,8 @@ import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
+import ActionGuards from './ActionGuards.vue'
+import IntegrityInbox from './IntegrityInbox.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
@@ -2058,6 +2127,7 @@ const newPerspective: Ref<any> = ref({
     name: ''
 })
 const showPerspectiveComponentsModal = ref(false)
+const showPerspectiveGuardsModal: Ref<boolean> = ref(false)
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
 const selectedPerspectiveType: Ref<string> = ref('')
@@ -2204,6 +2274,23 @@ const perspectiveFields = [
                     () => h(Eye)
                 )
             ]
+
+            // Guards are readable on every real perspective; product-derived ones are not
+            // editable at all, so they carry none.
+            if (row.type !== 'PRODUCT') {
+                actions.push(
+                    h(
+                        NIcon,
+                        {
+                            title: 'Action Guards',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => showPerspectiveGuardsModalFn(row.uuid, row.name)
+                        },
+                        () => h(ShieldIcon)
+                    )
+                )
+            }
             
             // Add edit and delete icons only for admin users AND if not PRODUCT type
             if (isOrgAdmin.value && row.type !== 'PRODUCT') {
@@ -2308,6 +2395,12 @@ function resetCreatePerspective() {
         name: ''
     }
     showCreatePerspectiveModal.value = false
+}
+
+function showPerspectiveGuardsModalFn(perspectiveUuid: string, perspectiveName: string) {
+    selectedPerspectiveUuid.value = perspectiveUuid
+    selectedPerspectiveName.value = perspectiveName
+    showPerspectiveGuardsModal.value = true
 }
 
 async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspectiveName: string, perspectiveType: string = 'PERSPECTIVE') {
@@ -5066,7 +5159,11 @@ const globalOutputEvent = ref({
     snapshotApprovalEntry: null as string | null,
     snapshotLifecycle: null as string | null,
     approvedEnvironment: null as string | null,
-    checkName: null as string | null
+    checkName: null as string | null,
+    lockScope: 'BRANCH' as string,
+    lockUnlockLevel: 'HUMAN' as string,
+    lockAttestationRequirement: 'ANY' as string,
+    lockReason: '' as string
 })
 
 const globalSnapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
@@ -5089,7 +5186,12 @@ function resetGlobalOutputEvent () {
         snapshotApprovalEntry: null,
         snapshotLifecycle: null,
         approvedEnvironment: null,
-        checkName: null
+        checkName: null,
+        // Same cautious defaults the backend applies when a LOCK action leaves them unset.
+        lockScope: 'BRANCH',
+        lockUnlockLevel: 'HUMAN',
+        lockAttestationRequirement: 'ANY',
+        lockReason: ''
     }
     globalSnapshotMode.value = 'NONE'
 }
@@ -5151,7 +5253,8 @@ const outputTriggerTypeOptions = [
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'},
     {label: 'Validate Pull Request', value: 'VALIDATE_PR'},
     {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'},
-    {label: 'Pull Request Comment', value: 'PR_COMMENT'}
+    {label: 'Pull Request Comment', value: 'PR_COMMENT'},
+    {label: 'Lock', value: 'LOCK'}
 ]
 
 const externalValidationConclusionOptions = [
@@ -5276,10 +5379,15 @@ async function fetchApprovalPolicies () {
                         schedule
                         scope
                         celClientPayload
+                        includeSuppressed
                         snapshotApprovalEntry
                         snapshotLifecycle
                         approvedEnvironment
                         checkName
+                        lockScope
+                        lockUnlockLevel
+                        lockAttestationRequirement
+                        lockReason
                     }
                 }
             }`,
@@ -5455,6 +5563,17 @@ function openCreateActionFromRule (branch: 'true' | 'false') {
 }
 
 function addGlobalOutputEvent () {
+    // The four lock fields are only meaningful on a LOCK action, and the draft carries defaults
+    // for them the whole time a form is open. Sending them regardless would persist a scope, a
+    // level and a requirement on every rejection and notification -- noise in the stored JSONB
+    // that reads like configuration. The backend drops them too; this keeps the payload honest.
+    if (globalOutputEvent.value.type !== 'LOCK') {
+        globalOutputEvent.value.lockScope = undefined as any
+        globalOutputEvent.value.lockUnlockLevel = undefined as any
+        globalOutputEvent.value.lockAttestationRequirement = undefined as any
+        globalOutputEvent.value.lockReason = undefined as any
+    }
+
     const eventToPush = commonFunctions.deepCopy(globalOutputEvent.value)
     if (eventToPush.type === 'VDR_SNAPSHOT_ARTIFACT') {
         if (globalSnapshotMode.value === 'NONE') {
@@ -5515,6 +5634,12 @@ function addGlobalOutputEvent () {
 
 function editGlobalOutputEvent (event: any) {
     globalOutputEvent.value = commonFunctions.deepCopy(event)
+    // Show the defaults actually in force rather than an empty radio group that looks like a
+    // choice nobody made; the backend applies the same ones when these arrive null.
+    if (!globalOutputEvent.value.lockScope) globalOutputEvent.value.lockScope = 'BRANCH'
+    if (!globalOutputEvent.value.lockUnlockLevel) globalOutputEvent.value.lockUnlockLevel = 'HUMAN'
+    if (!globalOutputEvent.value.lockAttestationRequirement) globalOutputEvent.value.lockAttestationRequirement = 'ANY'
+    if (!globalOutputEvent.value.lockReason) globalOutputEvent.value.lockReason = ''
     if (globalOutputEvent.value.snapshotApprovalEntry) {
         globalSnapshotMode.value = 'APPROVAL'
     } else if (globalOutputEvent.value.snapshotLifecycle) {

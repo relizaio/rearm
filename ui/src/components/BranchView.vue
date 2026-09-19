@@ -1,6 +1,26 @@
 <template>
     <div class="branchView" v-if="modifiedBranch && branchData && modifiedBranch.name && branchData.name && branchData.componentDetails && words.branchFirstUpper">
-        <h5>{{ words.branchFirstUpper }}: {{ branchData.name }}</h5>
+        <h5>
+            {{ words.branchFirstUpper }}: {{ branchData.name }}
+            <n-tooltip v-if="activeLock" trigger="hover" style="max-width: 460px;">
+                <template #trigger>
+                    <n-tag type="error" size="small" :bordered="false" style="margin-left: 8px; vertical-align: middle;">
+                        <template #icon><n-icon><Lock/></n-icon></template>
+                        locked
+                    </n-tag>
+                </template>
+                <div>{{ activeLock.reason }}</div>
+                <div style="margin-top: 6px;">
+                    No version can be assigned and no release created on this
+                    {{ words.branch }} until it is released, which needs
+                    {{ activeLock.effectiveLevel === 'ADMIN' ? 'an admin'
+                        : activeLock.effectiveLevel === 'HUMAN' ? 'a person' : 'any recognized principal' }}.
+                </div>
+                <div v-if="lockCauseCount" style="margin-top: 6px;">
+                    Waiting on {{ lockCauseCount }} {{ lockCauseCount === 1 ? 'cause' : 'causes' }}.
+                </div>
+            </n-tooltip>
+        </h5>
         <div class="branchControls">
             <div class="mainControls">
                 <n-icon v-if="isWritable" @click="showCreateReleaseModal = true" class="clickable" title="Add Release" size="24" style="margin-left: 4px;">
@@ -8,6 +28,10 @@
                 </n-icon>
                 <n-icon @click="openBranchSettings" class="clickable" :title="words.branchFirstUpper + ' Settings'" size="24" style="margin-left: 4px;">
                     <Tool />
+                </n-icon>
+                <n-icon v-if="activeLock && isAdmin" @click="releaseLockModalOpen = true" class="clickable"
+                    title="Release lock" size="24" style="margin-left: 4px;">
+                    <LockOpen />
                 </n-icon>
                 <n-icon @click="openNextVersionModal" class="clickable" title='Set Next Version' size="24" style="margin-left: 4px;">
                     <ArrowForward />
@@ -20,6 +44,39 @@
                 </n-icon>
             </div>
         </div>
+        <n-modal
+            v-model:show="releaseLockModalOpen"
+            title="Release lock"
+            preset="dialog"
+            style="width: 620px;"
+            :show-icon="false">
+            <n-form label-placement="top">
+                <p class="text-muted" v-if="activeLock">{{ activeLock.reason }}</p>
+                <n-alert v-if="activeLock && activeLock.droppedCauses > 0" type="warning"
+                    style="margin-bottom: 0.75rem; font-size: 13px;">
+                    This lock had more causes than it keeps ({{ activeLock.droppedCauses }} dropped), so it
+                    will not release itself however many are claimed. If those commits are still
+                    unaccounted for, the rule will lock this {{ words.branch }} again on the next build.
+                </n-alert>
+                <n-form-item label="Reason" required>
+                    <n-input v-model:value="releaseLockDraft.reason" placeholder="e.g. commits claimed"/>
+                </n-form-item>
+                <n-form-item>
+                    <n-checkbox v-model:checked="releaseLockDraft.override">
+                        Override — release without the requirement being met
+                    </n-checkbox>
+                    <template #feedback>
+                        Recorded on the attestation that releases the lock, so an override is never
+                        silent.
+                    </template>
+                </n-form-item>
+                <n-space>
+                    <n-button type="primary" :disabled="!releaseLockDraft.reason"
+                        @click="releaseBranchLock">Release</n-button>
+                    <n-button @click="releaseLockModalOpen = false">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
         <n-modal
             v-model:show="showCreateReleaseModal"
             title="Add New Release"
@@ -181,8 +238,13 @@
                         @click="showAddComponentModal = true" title="Add Dependency" size="20" style="margin-left: 4px; vertical-align: middle;">
                         <CirclePlus />
                     </n-icon>
-                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable"
-                        @click="triggerAutoIntegrate" title="Trigger Auto Integrate" size="20" style="margin-left: 4px; vertical-align: middle;">
+                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED'" :class="autoIntegrateInFlight ? '' : 'clickable'"
+                        @click="triggerAutoIntegrate"
+                        :title="autoIntegrateInFlight ? 'Auto Integrate in progress...' : 'Trigger Auto Integrate'"
+                        size="20"
+                        :style="{ 'margin-left': '4px', 'vertical-align': 'middle',
+                                  opacity: autoIntegrateInFlight ? 0.5 : 1,
+                                  cursor: autoIntegrateInFlight ? 'not-allowed' : undefined }">
                         <TrendingUp />
                     </n-icon>
                 </p>
@@ -358,10 +420,10 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ComputedRef, computed, Ref, ref, h, watch, nextTick } from 'vue'
+import { ComputedRef, computed, Ref, reactive, ref, h, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
 import AddComponent from './AddComponent.vue'
 import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
@@ -372,7 +434,7 @@ import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
-import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh } from '@vicons/tabler'
+import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh, Lock, LockOpen } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
@@ -442,6 +504,7 @@ const selectNewVcsRepo = ref(false)
 
 
 const compareMode = ref(false)
+const autoIntegrateInFlight = ref(false)
 const comparisonCheckboxes: Ref<any> = ref({})
 const showReleaseComparisonModal = ref(false)
 
@@ -458,6 +521,42 @@ const originalBranch: Ref<any> = ref({})
 const customBranchVersionSchema = ref('')
 
 const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
+/**
+ * The active lock on this branch, if any. A branch lock refuses version assignment and release
+ * creation here while leaving the rest of the component working, so the page it applies to is the
+ * page that has to say so -- a build failing with "branch is locked" is otherwise the first anyone
+ * hears of it.
+ */
+const activeLock: ComputedRef<any> = computed((): any =>
+    (branchData.value?.locks || []).find((l: any) => l.status === 'ACTIVE') || null)
+
+const lockCauseCount: ComputedRef<number> = computed((): number => {
+    if (!activeLock.value) return 0
+    return (activeLock.value.causes || []).length + (activeLock.value.droppedCauses || 0)
+})
+
+const isAdmin: ComputedRef<boolean> = computed((): boolean =>
+    commonFunctions.isAdmin(orguuid, myUser))
+
+const releaseLockModalOpen = ref(false)
+const releaseLockDraft = reactive({ reason: '', override: false })
+
+const releaseBranchLock = async () => {
+    try {
+        await store.dispatch('releaseLock', {
+            orgUuid: branchData.value.org,
+            lockUuid: activeLock.value.uuid,
+            reason: releaseLockDraft.reason,
+            override: releaseLockDraft.override
+        })
+        notify('success', 'Released', 'Recorded as an attestation.')
+        releaseLockModalOpen.value = false
+        await store.dispatch('fetchBranch', branchUuid.value)
+    } catch (e: any) {
+        notify('error', 'Could not release', commonFunctions.extractGraphQLErrorMessage(e))
+    }
+}
 
 const isWritable : ComputedRef<boolean> = computed((): boolean => {
     if (commonFunctions.isWritable(orguuid, myUser, 'COMPONENT')) return true
@@ -578,24 +677,80 @@ const createFsFromRelease = async function(){
 }
 
 async function triggerAutoIntegrate () {
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-            mutation autoIntegrateFeatureSet($branchUuid: ID!) {
-                autoIntegrateFeatureSet(branchUuid: $branchUuid) {
-                    uuid
-                    version
-                }
-            }`,
-        variables: { branchUuid: branchUuid.value },
-        fetchPolicy: 'no-cache'
-    })
-    const release = (resp.data as any)?.autoIntegrateFeatureSet
-    await onCreated()
-    if (release && release.version) {
-        notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
-        showBranchSettingsModal.value = false
-    } else {
-        notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+    // The mutation is not idempotent: autoIntegrateFeatureSetOnDemand gathers each dependency's
+    // latest release, checks whether a matching product release already exists, and creates one if
+    // not. That check-then-act takes no lock server-side, so two in-flight calls can both find
+    // nothing and both create a product release. The button is a plain icon with no built-in
+    // disabled state, so without this a double-click sends two mutations.
+    //
+    // This guard closes the double-click, NOT the race. It is per component instance: two tabs on
+    // the same branch, two operators, or any API caller still get two concurrent mutations and two
+    // product releases. Closing it properly needs a lock or an idempotency key server-side; this
+    // only stops the client from being the one to cause it.
+    if (autoIntegrateInFlight.value) return
+    autoIntegrateInFlight.value = true
+    try {
+        let resp: any
+        try {
+            resp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation autoIntegrateFeatureSet($branchUuid: ID!) {
+                        autoIntegrateFeatureSet(branchUuid: $branchUuid) {
+                            uuid
+                            version
+                        }
+                    }`,
+                variables: { branchUuid: branchUuid.value },
+                fetchPolicy: 'no-cache'
+            })
+        } catch (e: any) {
+            notify('error', 'Auto Integrate Failed', commonFunctions.extractGraphQLErrorMessage(e))
+            // A failure does not mean nothing happened: the mutation is not idempotent, and a
+            // timeout after the release was committed is indistinguishable here from one before
+            // it. Refresh the RELEASE LIST so it is already correct when this modal closes, rather
+            // than staying stale until something else fetches.
+            //
+            // Deliberately not onCreated(): that reassigns modifiedBranch from branchData, i.e.
+            // resets this modal's edit form. On the error path the modal stays open, so that would
+            // silently discard unsaved settings edits -- the very loss handleBranchSettingsClose
+            // exists to make the operator confirm. fetchReleases feeds releasesOfBranch, which the
+            // list renders from, so this refreshes what needs refreshing and nothing else.
+            //
+            // Best-effort: this fetches too, so whatever broke the mutation has usually broken it
+            // as well, and its failure must not swallow the report above.
+            await store.dispatch('fetchReleases', { branch: branchUuid.value }).catch(() => {})
+            return
+        }
+        // Past here the mutation SUCCEEDED. Only its own failure may be reported as an
+        // auto-integrate failure: telling an operator it failed when the release exists is exactly
+        // what makes them click again and create a second one. So the refresh below is best-effort
+        // and the outcome is reported either way.
+        const release = (resp.data as any)?.autoIntegrateFeatureSet
+        if (release && release.version) {
+            // A release was created and this modal is about to close, so the full
+            // refresh is free: nothing the operator is still looking at gets reset.
+            await onCreated().catch(() => {})
+            notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
+            showBranchSettingsModal.value = false
+        } else {
+            // Succeeded and created nothing -- usually because a matching product
+            // release already exists. The modal STAYS OPEN here, so onCreated is
+            // the wrong refresh: it reassigns modifiedBranch from branchData and
+            // silently reverts whatever the operator had typed into the form they
+            // are still sitting in, with none of the confirmation that closing the
+            // modal on unsaved edits gives them (handleBranchSettingsClose).
+            // Verified on the sandbox before this line existed: an edit made in the
+            // settings form vanished on a null result.
+            //
+            // The list can still be stale -- a null result often means something
+            // else created that release moments ago -- so refresh the RELEASES and
+            // leave the form alone, the same split the error path above makes.
+            await store.dispatch('fetchReleases', { branch: branchUuid.value }).catch(() => {})
+            notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+        }
+    } finally {
+        // finally, not after the notify: a failed mutation must not leave the button dead.
+        autoIntegrateInFlight.value = false
     }
 }
 

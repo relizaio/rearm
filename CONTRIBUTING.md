@@ -8,6 +8,8 @@ Read our [Code of Conduct](./CODE_OF_CONDUCT.md) to keep our community approacha
 
 In this guide you will get an overview of the contribution workflow from opening an issue, creating a PR, reviewing, and merging the PR.
 
+Please read [Licensing of contributions](#licensing-of-contributions) before you open a pull request: submitting a contribution means you agree to those terms.
+
 ## New contributor guide
 
 To get an overview of the project, read the [README](../README.md) file. Here are some resources to help you get started with open source contributions:
@@ -41,6 +43,8 @@ If you find an issue to work on, you are welcome to open a PR with a fix.
 
 Commit the changes once you are happy with them.
 
+Make sure you have read and agree to the [Licensing of contributions](#licensing-of-contributions) terms below. Opening a pull request is how you tell us you do.
+
 ### Pull Request
 
 When you're finished with the changes, create a pull request, also known as a PR.
@@ -55,3 +59,19 @@ Once you submit your PR, a Docs team member will review your proposal. We may as
 Congratulations :tada::tada: The ReARM team thanks you :sparkles:.
 
 Once your PR is merged, your changes will be added to the next ReARM release based on TBD model.
+
+## Licensing of contributions
+
+ReARM Community Edition is licensed under the [GNU AGPL v3](./LICENSE) (the [`deploy`](./deploy) directory under the [MIT License](./deploy/LICENSE)). Reliza also builds and distributes **ReARM Pro**, a commercial edition that shares code with this repository, and may in future change the license this repository is distributed under. So that we can keep doing both, every contribution to this repository is accepted on the following terms.
+
+By submitting a contribution (a pull request, patch, or any other material you intentionally send to us for inclusion in this repository), you agree that:
+
+1. **You have the right to contribute it.** The contribution is your original work, or you otherwise have the right to submit it under these terms — including, where applicable, permission from your employer.
+2. **It is licensed to the project and to everyone under the repository's license.** Your contribution is licensed under the license that applies to the part of the repository it lands in: AGPL-3.0 for the code, MIT for the [`deploy`](./deploy) directory.
+3. **You additionally grant Reliza Incorporated the right to relicense it.** In addition to (2), you grant Reliza Incorporated a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, distribute, sublicense and otherwise exploit your contribution, with or without modification, **under any license terms, including proprietary ones** — for example as part of ReARM Pro, or under a different open-source license should the project's license change.
+4. **You keep your copyright.** Nothing here assigns your copyright to Reliza. You can use your own contribution for anything else you like.
+5. **No warranty.** Unless required by law or agreed in writing, you provide your contribution "as is", without warranties of any kind.
+
+If you cannot agree to these terms — for instance because your employer's policy does not allow it — please say so in the pull request before we spend time on review, and we will work out what is possible.
+
+These terms apply to contributions submitted after they were added to this file; they do not change the terms of anything contributed earlier.

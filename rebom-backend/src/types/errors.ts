@@ -122,6 +122,31 @@ export class DigestValidationError extends Error {
     }
 }
 
+/**
+ * An upload names a serialNumber that already exists at the same or a higher
+ * version, with different bytes.
+ *
+ * There used to be a "replacement" path for this: it re-pushed both the raw and
+ * the processed artifact at the existing uuid, mutating two stored artifacts and
+ * the bytes behind an artifact row ReARM had already recorded and scanned. The
+ * backend's own update path refuses the same upload; the create path a release
+ * rebuild takes did not, so the rule depended on which door you came through.
+ * Raw artifacts are immutable, so the answer is a refusal.
+ */
+export class BomVersionConflictError extends Error {
+    constructor(
+        message: string,
+        public serialNumber: string,
+        public storedVersion: string | number,
+        public newVersion: string | number,
+        public existingUuid: string
+    ) {
+        super(message);
+        this.name = 'BomVersionConflictError';
+        Error.captureStackTrace(this, this.constructor);
+    }
+}
+
 export class BomDataIntegrityError extends Error {
     constructor(
         message: string,
@@ -151,6 +176,7 @@ export const ERROR_CODES = {
     BOM_MERGE_ERROR: 'BOM_MERGE_ERROR',
     OCI_STORAGE_ERROR: 'OCI_STORAGE_ERROR',
     BOM_DATA_INTEGRITY_ERROR: 'BOM_DATA_INTEGRITY_ERROR',
+    BOM_VERSION_CONFLICT: 'BOM_VERSION_CONFLICT',
     INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 
@@ -238,6 +264,21 @@ export function toGraphQLError(error: Error): {
                     operation: error.operation,
                     uuid: error.uuid,
                     cause: error.cause?.message,
+                },
+            },
+        };
+    }
+
+    if (error instanceof BomVersionConflictError) {
+        return {
+            message: error.message,
+            extensions: {
+                code: ERROR_CODES.BOM_VERSION_CONFLICT,
+                details: {
+                    serialNumber: error.serialNumber,
+                    storedVersion: error.storedVersion,
+                    newVersion: error.newVersion,
+                    existingUuid: error.existingUuid,
                 },
             },
         };

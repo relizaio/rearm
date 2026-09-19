@@ -2,7 +2,7 @@ import { logger } from '../logger';
 import { EnrichmentStatus, IntegrationType } from '../types';
 import * as BomRepository from '../bomRepository';
 import { fetchProcessedBomWithRetry } from './oci';
-import { enrichBomAsync } from './bom/bomProcessingService';
+import { enrichBomAsync, abandonStaleEnrichmentRuns } from './bom/bomProcessingService';
 import { getBearCredentials } from './integrationService';
 import { runQuery } from '../utils';
 import { AdvisoryLockKey, tryAdvisoryLock, releaseAdvisoryLock } from './advisoryLock';
@@ -17,6 +17,13 @@ const ENRICHMENT_BATCH_LIMIT = 50;
 // Matches triggerEnrichment's timeout(30m)+grace(5m) so the scheduler never
 // races an enrich that is genuinely still in flight.
 const STALE_PENDING_THRESHOLD_MS = 35 * 60 * 1000;
+
+// How often to sweep enrichment runs that started and never reported back. The
+// sweep scans for RUNNING entries older than six hours, so running it every
+// cycle would repeat a table scan twelve times an hour to find, almost always,
+// nothing. Hourly is frequent enough for a six-hour threshold.
+const ABANDON_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+let lastAbandonSweep = 0;
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
@@ -107,6 +114,14 @@ async function runEnrichmentCycle(): Promise<void> {
   logger.info('Enrichment scheduler: Starting cycle');
   
   try {
+    // Housekeeping first, under the same advisory lock: one pod, one sweep, and
+    // it covers rows no future run would ever revisit -- a row whose only
+    // enrichment died is precisely the row that never reserves again.
+    if (Date.now() - lastAbandonSweep >= ABANDON_SWEEP_INTERVAL_MS) {
+      lastAbandonSweep = Date.now();
+      await abandonStaleEnrichmentRuns();
+    }
+
     const bomsToEnrich = await findBomsNeedingEnrichment();
     
     if (bomsToEnrich.length === 0) {

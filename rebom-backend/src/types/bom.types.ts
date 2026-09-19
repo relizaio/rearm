@@ -45,7 +45,8 @@ export type BomMetaDto = {
     ignoreDev?: boolean,
     enrichmentStatus?: EnrichmentStatus,
     enrichmentTimestamp?: string,
-    enrichmentError?: string
+    enrichmentError?: string,
+    enrichments?: EnrichmentRun[]
 }
 
 export type BomInput = {
@@ -69,6 +70,22 @@ export enum EnrichmentStatus {
     COMPLETED = 'COMPLETED',
     FAILED = 'FAILED',
     SKIPPED = 'SKIPPED'  // When BEAR env vars are not set
+}
+
+/** One enrichment run, or entry 0: the upload that created the row. */
+export type EnrichmentRun = {
+    sequence: number,            // the n in '<uuid>-e<n>'; 0 is the upload
+    tag?: string,                // null when the run pushed nothing
+    repository?: string,
+    digest?: string,
+    size?: number,
+    startedAt?: string,
+    completedAt?: string,
+    // ABANDONED: started and never reported back; aged out by a later run.
+    status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'ABANDONED',
+    error?: string | null,
+    source?: 'scheduler' | 'on-upload' | 'manual',
+    enricherVersion?: string
 }
 
 export type RebomOptions = {
@@ -109,10 +126,20 @@ export type RebomOptions = {
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate
     deduplicationTimestamp?: string,  // ISO timestamp when deduplication was detected
+    // Which artifact holds the processed BOM. Enrichment never overwrites in
+    // place: each run pushes '<uuid>-e<n>' and moves this pointer, so a reader
+    // holding an older row still finds the bytes its digest describes. Absent
+    // on rows written before that change, which resolve to the bare uuid.
+    processedTag?: string,
     // Enrichment metadata
     enrichmentStatus?: EnrichmentStatus,
     enrichmentTimestamp?: string,  // ISO timestamp when enrichment completed/failed
-    enrichmentError?: string  // Error message if enrichment failed
+    enrichmentError?: string,  // Error message if enrichment failed
+    // Append-only history of every processed artifact this row has pointed at,
+    // entry 0 being the upload itself. The scalars above are the summary of the
+    // last COMPLETED entry; a FAILED run appends an entry and moves nothing.
+    // Retention reads it to know which superseded tags are safe to remove.
+    enrichments?: EnrichmentRun[]
 }
 
 export type BomSearch = {

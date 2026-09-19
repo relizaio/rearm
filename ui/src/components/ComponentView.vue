@@ -749,6 +749,27 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
+                                    <n-tab-pane name="locks" tab="Locks" v-if="myUser.installationType !== 'OSS'">
+                                        <!-- Gated like the other Pro panels for now: locks are CE
+                                             in the backend design, but the CE schema has none of
+                                             these fields until the sync lands, so offering the tab
+                                             there would open onto a GraphQL error. -->
+                                        <ComponentLocks
+                                            :org-uuid="orguuid"
+                                            :component-uuid="componentUuid"
+                                            :is-writable="isAdmin"
+                                            :component-word="words.component"/>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
+                                        <!-- Shown to everyone: what a release is held to is worth
+                                             knowing whether or not you may change it. Editing
+                                             needs the component ADMIN the backend asks for. -->
+                                        <ActionGuards
+                                            scope="COMPONENT"
+                                            :uuid="componentUuid"
+                                            :is-writable="isAdmin"
+                                            :component-word="words.component"/>
+                                    </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
                                             <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
@@ -1021,6 +1042,51 @@
                                                     <n-form-item v-if="outputTrigger.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
                                                         <n-select v-model:value="outputTrigger.approvedEnvironment" filterable :options="environmentTypeOptions" placeholder="Select an environment (e.g. UAT)" />
                                                     </n-form-item>
+                                                    <!-- LOCK. Unlike every other action, this one outlives the release that
+                                                         fired it, which is why it asks who may clear it and on what terms. -->
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="What to lock" path="lockScope">
+                                                        <n-radio-group v-model:value="outputTrigger.lockScope">
+                                                            <n-radio value="BRANCH">The {{ words.branch }} the release is on</n-radio>
+                                                            <n-radio value="COMPONENT">The whole {{ words.component }}</n-radio>
+                                                        </n-radio-group>
+                                                        <template #feedback>
+                                                            A lock refuses version assignment, release creation and release
+                                                            content on what it covers, until somebody releases it. Reading,
+                                                            and moving releases that already exist, are untouched.
+                                                        </template>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="Who may release it" path="lockUnlockLevel">
+                                                        <n-radio-group v-model:value="outputTrigger.lockUnlockLevel">
+                                                            <n-radio value="AGENT">Any recognized principal, including an agent through the API</n-radio>
+                                                            <n-radio value="HUMAN">Any user, but not an agent</n-radio>
+                                                            <n-radio value="ADMIN">An administrator</n-radio>
+                                                        </n-radio-group>
+                                                        <template #feedback>
+                                                            A disowned or contested commit raises this to administrator on its
+                                                            own, whatever is chosen here.
+                                                        </template>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="What must be true first" path="lockAttestationRequirement">
+                                                        <n-radio-group v-model:value="outputTrigger.lockAttestationRequirement">
+                                                            <n-radio value="NONE">Nothing — whoever holds the level above just releases it</n-radio>
+                                                            <n-radio value="ANY">Every cause claimed by anyone</n-radio>
+                                                            <n-radio value="HUMAN">Every cause claimed by a person</n-radio>
+                                                        </n-radio-group>
+                                                        <template #feedback>
+                                                            The causes are the release that failed this rule and every commit in
+                                                            it nobody is accountable for. With "claimed by anyone" the lock
+                                                            releases itself the moment the last one is claimed — which is the
+                                                            shape that lets an agent fix its own mistake and carry on.
+                                                        </template>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'LOCK'" label="Reason" path="lockReason">
+                                                        <n-input v-model:value="outputTrigger.lockReason"
+                                                            placeholder="e.g. a commit in this build is not recognized" />
+                                                        <template #feedback>
+                                                            Shown verbatim in every refusal, so write it for whoever hits it.
+                                                            Defaults to this action's name.
+                                                        </template>
+                                                    </n-form-item>
                                                     <n-button @click="addOutputTrigger" type="success">
                                                         Save
                                                     </n-button>
@@ -1140,6 +1206,8 @@ import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerVal
 // picker behaves like the notification channel and team pickers.
 import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
+import ActionGuards from './ActionGuards.vue'
+import ComponentLocks from './ComponentLocks.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 
 const updatedComponent: Ref<any> = ref({})
@@ -1965,6 +2033,10 @@ const outputTrigger = ref({
     snapshotLifecycle: null as string | null,
     approvedEnvironment: null as string | null,
     checkName: null as string | null,
+    lockScope: 'BRANCH' as string,
+    lockUnlockLevel: 'HUMAN' as string,
+    lockAttestationRequirement: 'ANY' as string,
+    lockReason: '' as string,
 })
 const snapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
 
@@ -1987,6 +2059,12 @@ function resetOutputTrigger () {
         snapshotLifecycle: null,
         approvedEnvironment: null,
         checkName: null,
+        // Same cautious defaults the backend applies when a LOCK action leaves them unset:
+        // the branch rather than the whole component, a person rather than nobody.
+        lockScope: 'BRANCH',
+        lockUnlockLevel: 'HUMAN',
+        lockAttestationRequirement: 'ANY',
+        lockReason: '',
     }
     snapshotMode.value = 'NONE'
 }
@@ -2096,7 +2174,8 @@ const outputTriggerTypeOptions = [
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'},
     {label: 'Validate Pull Request', value: 'VALIDATE_PR'},
     {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'},
-    {label: 'Pull Request Comment', value: 'PR_COMMENT'}
+    {label: 'Pull Request Comment', value: 'PR_COMMENT'},
+    {label: 'Lock', value: 'LOCK'}
 ]
 
 const externalValidationConclusionOptions = [
@@ -3105,6 +3184,17 @@ function openCreateActionFromRule (branch: 'true' | 'false') {
 }
 
 async function addOutputTrigger () {
+    // The four lock fields are only meaningful on a LOCK action, and the draft carries defaults
+    // for them the whole time a form is open. Sending them regardless would persist a scope, a
+    // level and a requirement on every rejection and notification -- noise in the stored JSONB
+    // that reads like configuration. The backend drops them too; this keeps the payload honest.
+    if (outputTrigger.value.type !== 'LOCK') {
+        outputTrigger.value.lockScope = undefined as any
+        outputTrigger.value.lockUnlockLevel = undefined as any
+        outputTrigger.value.lockAttestationRequirement = undefined as any
+        outputTrigger.value.lockReason = undefined as any
+    }
+
     if (!updatedComponent.value.outputTriggers) {
         updatedComponent.value.outputTriggers = []
     }
@@ -3188,6 +3278,13 @@ async function addOutputTrigger () {
 
 function editOutputTrigger (trigger: any) {
     outputTrigger.value = commonFunctions.deepCopy(trigger)
+    // A LOCK action stored before these were set, or one whose defaults the backend applied,
+    // comes back with nulls; show the defaults that are actually in force rather than an
+    // empty radio group that looks like a choice nobody made.
+    if (!outputTrigger.value.lockScope) outputTrigger.value.lockScope = 'BRANCH'
+    if (!outputTrigger.value.lockUnlockLevel) outputTrigger.value.lockUnlockLevel = 'HUMAN'
+    if (!outputTrigger.value.lockAttestationRequirement) outputTrigger.value.lockAttestationRequirement = 'ANY'
+    if (!outputTrigger.value.lockReason) outputTrigger.value.lockReason = ''
     if (trigger.snapshotApprovalEntry) {
         snapshotMode.value = 'APPROVAL'
     } else if (trigger.snapshotLifecycle) {

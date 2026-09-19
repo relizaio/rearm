@@ -6,17 +6,20 @@ import sitemap from '@astrojs/sitemap';
 // previous Next.js landing_site (permalink + rendering preservation):
 //  - trailingSlash 'always' + directory build format reproduce the
 //    Next `trailingSlash: true` URL shape (/blog/<slug>/).
-//  - gfm/smartypants OFF: the old pipeline was react-markdown WITHOUT
-//    remark-gfm (CommonMark + raw HTML via rehype-raw). Astro defaults
-//    both ON, which would silently change rendering of tables,
-//    strikethrough, autolinks and quotes in existing posts.
+//  - smartypants OFF: the old pipeline was react-markdown WITHOUT
+//    remark-gfm (CommonMark + raw HTML via rehype-raw), and typographic
+//    quote substitution would silently change existing posts.
+//  - gfm ON (since 2026-09): posts use GFM tables, which CommonMark
+//    renders as literal pipes. Audited by building with gfm off/on and
+//    diffing every page: the only other effect is bare URLs and email
+//    addresses becoming links on three pages, which is wanted.
 export default defineConfig({
   integrations: [sitemap()],
   site: process.env.SITE_URL ?? 'https://rearmhq.com',
   trailingSlash: 'always',
   build: { format: 'directory' },
   markdown: {
-    gfm: false,
+    gfm: true,
     smartypants: false,
   },
 });
