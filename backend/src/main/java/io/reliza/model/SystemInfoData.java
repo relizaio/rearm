@@ -61,6 +61,22 @@ public class SystemInfoData extends RelizaDataParent{
 	private AzureCreds azureCredentials;
 	// vulncheckKevToken (instance-global) removed in V54 KEV per-org refactor;
 	// per-org VulnCheck tokens now live on VULNCHECK_KEV Integration rows.
+	/**
+	 * Per-installation random value mixed into the API-token signing key.
+	 *
+	 * <p>The signing key is derived from {@code relizaprops.encryption.password} and salt, and both
+	 * ship with defaults that are printed in this repository. An installation left on them derives
+	 * the same key as every other such installation, so a token from one verifies its signature on
+	 * another. This value makes the derived key unique per installation even then, and it is
+	 * generated once, on first use, rather than configured.
+	 *
+	 * <p>Stored in the clear on purpose. Encrypting it with the encryption password would protect
+	 * it from nobody: an attacker holding this row already holds the API key hashes that the
+	 * token's {@code fp} claim is derived from, so the database is the boundary either way. What
+	 * the pepper defends against is an attacker who has no database access at all and is relying
+	 * on published defaults.
+	 */
+	private String apiTokenPepper;
 	private String license;
 	private ZonedDateTime licenseStartDate;
 	private ZonedDateTime licenseEndDate;

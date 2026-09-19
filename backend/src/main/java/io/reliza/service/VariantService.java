@@ -28,6 +28,7 @@ import io.reliza.model.Variant;
 import io.reliza.model.VariantData;
 import io.reliza.model.VariantData.VariantType;
 import io.reliza.model.WhoUpdated;
+import io.reliza.service.ComponentLockService.LockedOperation;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
@@ -51,6 +52,14 @@ public class VariantService {
 	@Lazy
 	@Autowired
 	private SbomComponentService sbomComponentService;
+
+	@Lazy
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+
+	@Lazy
+	@Autowired
+	private ComponentLockService componentLockService;
 
 	private final VariantRepository repository;
 	
@@ -118,6 +127,14 @@ public class VariantService {
 		Optional<Variant> vOpt = getVariant(variantUuid);
 		if (vOpt.isPresent()) {
 			VariantData vd = VariantData.dataFromRecord(vOpt.get());
+			// Where both deliverable mutations converge, so this is where a lock has to refuse
+			// them: shipping a deliverable onto a locked release is exactly building on an
+			// unresolved problem.
+			if (null != vd.getRelease()) {
+				sharedReleaseService.getReleaseData(vd.getRelease()).ifPresent(rd ->
+					componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
+							LockedOperation.RELEASE_CONTENT));
+			}
 			Set<UUID> deliverables = vd.getOutboundDeliverables();
 			var delDiff = Utils.diffUuidLists(deliverables, deliverableUuids);
 			for (var du : deliverableUuids) {

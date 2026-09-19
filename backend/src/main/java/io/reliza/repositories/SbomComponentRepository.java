@@ -15,6 +15,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SupportAttestationFilter;
 
 public interface SbomComponentRepository extends CrudRepository<SbomComponent, UUID> {
 
@@ -217,6 +218,16 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 	 * them, and unbucketed means no bucket membership, content hash, or ref_map
 	 * knows them. Bounded per tick; self-cleans after any future sweep too.
 	 *
+	 * <p><b>A component carrying a support attestation is never collected</b>, even
+	 * when it is otherwise orphaned: deleting it would destroy the regulatory record
+	 * keyed on its uuid. That is a stay of execution and NOT a repair. The row became
+	 * orphaned because the canonical sweeper repointed its mappings elsewhere, so
+	 * pinning it converts a detectable orphan into permanent debris -- present in no
+	 * UI and no export, and now immortal. {@code sbom_component_support.canonical_purl}
+	 * is stored so a re-link pass can reunite the attestation with the live component,
+	 * but THAT PASS IS NOT WRITTEN YET. Until it is, this clause trades a silent
+	 * data-loss bug for a visible leak, which is the right way round but is not done.
+	 *
 	 * <p>Known cosmetic residue: parents jsonb edges on OTHER rows may hold this
 	 * row's uuid (display-only; the #340 sweep rewrites stale edges as it goes).
 	 */
@@ -229,9 +240,147 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			    WHERE s.synthetic_bucket_index IS NULL
 			      AND NOT EXISTS (SELECT 1 FROM rearm.artifact_sbom_components a
 			                      WHERE a.sbom_component_uuid = s.uuid)
+			      AND NOT EXISTS (SELECT 1 FROM rearm.sbom_component_support sup
+			                      WHERE sup.sbom_component_uuid = s.uuid)
 			    LIMIT :lim)
 			""", nativeQuery = true)
 	int deleteOrphanedUnbucketedComponents(@Param("lim") int lim);
+
+	String COUNT_NON_ROOT_HEAD = """
+			SELECT count(*) FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			""";
+
+	/**
+	 * One clause behind BOTH gauges and the page filter -- aliased to
+	 * {@link SbomComponentSupportRepository#NON_ROOT_CLAUSE} rather than restated.
+	 *
+	 * <p>It used to be a second copy of the same text, 350 lines from the first, under a
+	 * javadoc claiming a change could not reach one gauge and not the other. That claim was
+	 * false as written: there were two bodies, so a change to the definition of "root" would
+	 * have moved the coverage denominator and left the page's population behind, and the two
+	 * numbers sit next to each other in the UI.
+	 */
+	String NON_ROOT_PREDICATE = SbomComponentSupportRepository.NON_ROOT_CLAUSE;
+
+	/**
+	 * Shared WHERE body for the release component page and its count.
+	 *
+	 * <p>ONE body for both, because a page whose total is computed by a second predicate
+	 * reports "showing 1-50 of 312" over a different 312 than it is paging through.
+	 *
+	 * <p>The attestation test reuses
+	 * {@link SbomComponentSupportRepository#ATTESTED_PAYLOAD_PREDICATE} verbatim, once under
+	 * EXISTS and once under NOT EXISTS, so UNATTESTED is the exact complement of ATTESTED and
+	 * both agree with the coverage gauge by construction rather than by review. The text
+	 * appears twice in the statement but comes from one constant, so the halves cannot drift.
+	 *
+	 * <p>Root components are excluded here as they are from the gauge's denominator: a root
+	 * is the release's own artifact coordinate, it is never a third-party dependency to
+	 * disclose, and bulk attestation reports SKIPPED_ROOT for it. This is why the page is a
+	 * separate query from the unpaged graph list, which keeps the root node.
+	 *
+	 * <p>Ids arrive comma-joined and cast to uuid[] rather than as an IN list: a PRODUCT
+	 * unwind can reach thousands of components and the Postgres JDBC protocol caps a
+	 * statement at 65,535 bound parameters. Safe as text -- the values are UUIDs.
+	 */
+	String RELEASE_PAGE_WHERE = """
+			FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			AND sc.uuid = ANY(CAST(string_to_array(:componentUuids, ',') AS uuid[]))
+			"""
+			+ SbomComponentSupportRepository.NON_ROOT_CLAUSE
+			+ """
+			AND (CAST(:searchLike AS text) IS NULL
+			OR sc.canonical_purl ILIKE CAST(:searchLike AS text) ESCAPE '!')
+			"""
+			// Assembled with explicit concatenation rather than inside the text block: a
+			// text-block seam would put a newline INSIDE the quoted SQL literal, and
+			// 'ALL\n' never equals 'ALL'. That failure is silent -- every branch false,
+			// zero rows, no error.
+			+ "AND (CAST(:attestation AS text) = '" + SupportAttestationFilter.CODE_ALL + "'\n"
+			+ "OR (CAST(:attestation AS text) = '" + SupportAttestationFilter.CODE_ATTESTED
+			+ "' AND EXISTS (\n"
+			+ "SELECT 1 FROM rearm.sbom_component_support s WHERE s.sbom_component_uuid = sc.uuid\n"
+			+ SbomComponentSupportRepository.ATTESTED_PAYLOAD_PREDICATE
+			+ "))\n"
+			+ "OR (CAST(:attestation AS text) = '" + SupportAttestationFilter.CODE_UNATTESTED
+			+ "' AND NOT EXISTS (\n"
+			+ "SELECT 1 FROM rearm.sbom_component_support s WHERE s.sbom_component_uuid = sc.uuid\n"
+			+ SbomComponentSupportRepository.ATTESTED_PAYLOAD_PREDICATE
+			+ ")))\n";
+
+	/**
+	 * The keyset cursor clause. Deliberately NOT part of {@link #RELEASE_PAGE_WHERE}: the
+	 * count must describe the whole filtered population, not the tail after the cursor, or
+	 * the footer's total would shrink as the caller walks.
+	 *
+	 * <p>Row-value comparison against the SAME composite the ORDER BY uses, which is what
+	 * makes the cursor exact rather than approximate. Both columns are NOT NULL in the
+	 * schema, so the comparison cannot go three-valued and silently drop a row.
+	 */
+	String RELEASE_PAGE_AFTER = """
+			AND (CAST(:afterPurl AS text) IS NULL
+			OR (sc.canonical_purl, sc.uuid) > (CAST(:afterPurl AS text), CAST(:afterUuid AS uuid)))
+			""";
+
+	/**
+	 * One page of a release's non-root component ids, filtered, ordered and cursored in SQL.
+	 *
+	 * <p>Returns ids, not rows: the caller hydrates only the page. Filtering in Java is not
+	 * an option here -- the merged release row carries uuids and dependency edges and nothing
+	 * else, so purl and attestation state only exist once the two hydration loads have run,
+	 * which is exactly the cost pagination is meant to avoid paying for the whole BOM.
+	 *
+	 * <p>KEYSET, not OFFSET, and the reason is specific to this filter. UNATTESTED is a
+	 * predicate over MUTABLE state: attesting a page removes those rows from the set, so an
+	 * offset would index into a set that has shifted underneath it and skip exactly as many
+	 * components as were just written. A cursor anchored to (canonical_purl, uuid) is
+	 * unaffected by rows disappearing BEHIND it, so a "select all unattested" walk visits
+	 * every row exactly once with no client-side protocol to get wrong.
+	 *
+	 * <p>Ordered by canonical_purl with uuid as tiebreak -- the same composite the cursor
+	 * compares. An earlier revision justified the tiebreak by claiming canonical_purl is not
+	 * unique per org; that is false. sbom_components_org_canonical_purl_unique makes
+	 * (org, canonical_purl) unique (V28, restated in V37), and this query pins sc.org, so
+	 * within one result set the purl is already a total order and the tiebreak never fires.
+	 * It stays because the ORDER BY and the cursor comparison must use the SAME composite,
+	 * and pinning the primary key into both is what makes that true by construction rather
+	 * than by depending on a constraint in another file. Drop the unique constraint and this
+	 * query is still exact.
+	 *
+	 * <p>Fetches {@code lim} rows; the caller asks for one more than the page size to learn
+	 * whether another page exists without a second query.
+	 */
+	@Query(value = "SELECT sc.uuid " + RELEASE_PAGE_WHERE + RELEASE_PAGE_AFTER
+			+ " ORDER BY sc.canonical_purl ASC, sc.uuid ASC LIMIT :lim",
+			nativeQuery = true)
+	List<UUID> findReleaseComponentPage(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("componentUuids") String componentUuids,
+			@Param("searchLike") String searchLike,
+			@Param("attestation") String attestation,
+			@Param("validLevels") Collection<String> validLevels,
+			@Param("validParties") Collection<String> validParties,
+			@Param("validStates") Collection<String> validStates,
+			@Param("validSources") Collection<String> validSources,
+			@Param("validMilestoneTypes") Collection<String> validMilestoneTypes,
+			@Param("afterPurl") String afterPurl,
+			@Param("afterUuid") UUID afterUuid,
+			@Param("lim") int lim);
+
+	/** Total matching the same filter, for the page footer. Same body as the page. */
+	@Query(value = "SELECT count(*) " + RELEASE_PAGE_WHERE, nativeQuery = true)
+	long countReleaseComponentPage(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("componentUuids") String componentUuids,
+			@Param("searchLike") String searchLike,
+			@Param("attestation") String attestation,
+			@Param("validLevels") Collection<String> validLevels,
+			@Param("validParties") Collection<String> validParties,
+			@Param("validStates") Collection<String> validStates,
+			@Param("validSources") Collection<String> validSources,
+			@Param("validMilestoneTypes") Collection<String> validMilestoneTypes);
 
 	/**
 	 * Mark a component enrichment-terminal (see V75 / SbomComponentFlowControl).
@@ -349,44 +498,55 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			@Param("cutoff") java.time.ZonedDateTime cutoff);
 
 	/**
-	 * Cheap existence probe for the export-injection hot path: does the org have ANY component
-	 * carrying a support assertion? Lets a zero-support org skip the per-component resolution on
-	 * every BOM download (the injector still runs to strip forged props + stamp the marker).
-	 */
-	@Query(value = """
-			SELECT EXISTS(
-				SELECT 1 FROM rearm.sbom_components sc
-				WHERE sc.org = CAST(:orgUuidAsString AS uuid)
-				  AND sc.support_source IS NOT NULL)
-			""", nativeQuery = true)
-	boolean existsSupportByOrg(@Param("orgUuidAsString") String orgUuidAsString);
-
-	/**
 	 * Support-disclosure coverage denominator: the org's non-root components (roots
 	 * are the app itself, not third-party dependencies to attest).
 	 */
-	@Query(value = """
-			SELECT count(*) FROM rearm.sbom_components sc
-			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
-			  AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
-			""", nativeQuery = true)
+	@Query(value = COUNT_NON_ROOT_HEAD + NON_ROOT_PREDICATE, nativeQuery = true)
 	long countNonRootByOrg(@Param("orgUuidAsString") String orgUuidAsString);
 
 	/**
-	 * Coverage numerator: non-root components carrying a MANUFACTURER (MANUAL)
-	 * attestation. Deliberately NOT {@code support_source IS NOT NULL}: later slices
-	 * auto-stamp SUPPLIER (at reconcile) and ENRICHED (endoflife.date puller), which
-	 * are machine/vendor-sourced, not a manufacturer disclosure -- counting them
-	 * would silently inflate the pre-submission readiness signal toward 100%. A
-	 * MANUAL row with no dates still counts: an explicit "assessed, indeterminate"
-	 * attestation is a disclosure. Per-source breakdown fields can be added to the
-	 * coverage type additively if a caller later needs them.
+	 * Same denominator, restricted to a release's own components. The id set is resolved in
+	 * Java by {@code SbomComponentService.findReleaseComponentUuids} and passed in, rather
+	 * than joined here: the release-to-component path unwinds PRODUCT dependencies and is not
+	 * expressible as one join, so re-deriving it in SQL would let the gauge drift from the
+	 * component list it sits above.
+	 *
+	 * <p>The ids arrive as ONE comma-joined string cast to a {@code uuid[]}, not as an
+	 * {@code IN} list. A PRODUCT unwind over a large release can reach thousands of
+	 * components, and the Postgres JDBC protocol caps a statement at 65,535 bound parameters
+	 * -- an {@code IN} list binds one per element and would fail on exactly the large releases
+	 * this feature exists to serve. Safe to build as text because the values are UUIDs,
+	 * never user input.
+	 */
+	@Query(value = COUNT_NON_ROOT_HEAD
+			+ "  AND sc.uuid = ANY(CAST(string_to_array(:componentUuids, ',') AS uuid[]))\n"
+			+ NON_ROOT_PREDICATE, nativeQuery = true)
+	long countNonRootByOrgAndComponentUuidIn(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("componentUuids") String componentUuids);
+
+	/**
+	 * Load components by id, scoped to an org, with the id set passed as ONE comma-joined
+	 * string cast to a {@code uuid[]}.
+	 *
+	 * <p>Replaces a {@code findAllById} on the write path. Derived {@code IN} lists bind one
+	 * parameter per element and the Postgres JDBC protocol caps a statement at 65,535 of
+	 * them, so a large enough call fails outright -- on exactly the bulk attestation this
+	 * feature exists to serve. The same substitution was already made one method away in
+	 * {@link SbomComponentSupportRepository#findRawByComponentUuids} for the read side; this
+	 * is the write side of the same bug.
+	 *
+	 * <p>The org filter is IN THE QUERY rather than applied to the results afterwards. The
+	 * caller previously loaded every requested row and then dropped the foreign ones in Java,
+	 * which is a correct answer reached by reading rows it had no business reading. Safe to
+	 * build the id list as text because the values are UUIDs, parsed by the GraphQL layer
+	 * before they reach here, never free-form user input.
 	 */
 	@Query(value = """
-			SELECT count(*) FROM rearm.sbom_components sc
+			SELECT sc.* FROM rearm.sbom_components sc
 			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
-			  AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
-			  AND sc.support_source = 'MANUAL'
+			AND sc.uuid = ANY(CAST(string_to_array(:componentUuids, ',') AS uuid[]))
 			""", nativeQuery = true)
-	long countAttestedNonRootByOrg(@Param("orgUuidAsString") String orgUuidAsString);
+	List<SbomComponent> findByOrgAndUuidIn(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("componentUuids") String componentUuids);
+
 }

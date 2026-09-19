@@ -25,6 +25,7 @@ import io.reliza.model.ComponentData.ComponentOwner;
 import io.reliza.model.ComponentData.ComponentNature;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.DeviceClass;
+import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.MedicalProfile;
 import io.reliza.model.ComponentData.EventType;
 import io.reliza.model.ComponentData.FreeformContact;
@@ -32,6 +33,7 @@ import io.reliza.model.RearmIdentifier;
 import io.reliza.model.ComponentData.GlobalInputEventRef;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
+import io.reliza.model.ComponentLock;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -63,6 +65,12 @@ public class UpdateComponentDto {
 		private ReleaseLifecycle snapshotLifecycle;
 		private String approvedEnvironment;
 		private String checkName;
+		// LOCK only. Null means the cautious default the policy service applies: the branch
+		// rather than the whole component, a person rather than nobody.
+		private ComponentLock.Scope lockScope;
+		private ComponentLock.UnlockLevel lockUnlockLevel;
+		private ComponentLock.AttestationRequirement lockAttestationRequirement;
+		private String lockReason;
 	}
 	
 	@JsonProperty(CommonVariables.UUID_FIELD)
@@ -158,6 +166,16 @@ public class UpdateComponentDto {
 	/** Durable owner to set (RFC Phase 4b); validated server-side against the component's org. Null = unchanged. */
 	@JsonProperty
 	private ComponentOwner owner;
+	/**
+	 * The section 524B device support window (D7). PATCH: omitted leaves the stored value
+	 * alone. Carried HERE as well as on ComponentDto because updateComponent deserializes into
+	 * this DTO -- a field declared only on the schema and the inner DTO is accepted by graphql
+	 * and then silently dropped at this boundary, which is how the window ended up with no
+	 * working write path at all.
+	 */
+	private ComponentData.DeviceSupportWindow deviceSupportWindow;
+	/** Explicitly retract the declared window; see {@code ComponentDto.clearDeviceSupportWindow}. */
+	private Boolean clearDeviceSupportWindow;
 	/** Explicitly remove the stored owner; see {@code ComponentDto.clearOwner}. */
 	@JsonProperty
 	private Boolean clearOwner;
@@ -195,6 +213,24 @@ public class UpdateComponentDto {
 		}
 		if (StringUtils.isNotEmpty(roei.getCheckName())) {
 			builder.checkName(roei.getCheckName());
+		}
+		// Stored only on a LOCK action. The form carries defaults for these while a draft is open,
+		// so an action saved as a rejection or a notification would otherwise persist a scope, a
+		// level and a requirement it never reads -- noise for whoever opens the JSONB later, and
+		// worse, noise that looks like configuration.
+		if (EventType.LOCK == roei.getType()) {
+			if (roei.getLockScope() != null) {
+				builder.lockScope(roei.getLockScope());
+			}
+			if (roei.getLockUnlockLevel() != null) {
+				builder.lockUnlockLevel(roei.getLockUnlockLevel());
+			}
+			if (roei.getLockAttestationRequirement() != null) {
+				builder.lockAttestationRequirement(roei.getLockAttestationRequirement());
+			}
+			if (StringUtils.isNotEmpty(roei.getLockReason())) {
+				builder.lockReason(roei.getLockReason());
+			}
 		}
 		return builder.build();
 	}
@@ -238,6 +274,8 @@ public class UpdateComponentDto {
 								.contacts(ucd.getContacts())
 								.owner(ucd.getOwner())
 								.clearOwner(ucd.getClearOwner())
+								.deviceSupportWindow(ucd.getDeviceSupportWindow())
+								.clearDeviceSupportWindow(ucd.getClearDeviceSupportWindow())
 								.build();
 		return cdto;
 	}

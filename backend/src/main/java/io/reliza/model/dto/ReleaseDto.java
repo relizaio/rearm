@@ -71,12 +71,36 @@ public class ReleaseDto {
 	/** GUDID submission workflow state. */
 	@JsonProperty
 	private GudidStatus gudidStatus;
-	/** End-of-support date (cyber-device support window). */
+	/** Release lifecycle date: the CLE END_OF_SUPPORT projection. See {@code ReleaseData.eos}. */
 	@JsonProperty
 	private LocalDate eos;
-	/** End-of-life date (cyber-device support window). */
+	/** Release lifecycle date: the CLE END_OF_LIFE projection. See {@code ReleaseData.eol}. */
 	@JsonProperty
 	private LocalDate eol;
+	/**
+	 * Update-only: explicitly unset eos, distinct from omitting the field (which
+	 * leaves it unchanged). Wins over a concurrently-supplied {@code eos} value,
+	 * mirroring {@code UpdateComponentDto.clearOwner}.
+	 */
+	@JsonProperty
+	private Boolean clearEos;
+	/** Update-only: explicitly unset eol. See {@link #clearEos}. */
+	@JsonProperty
+	private Boolean clearEol;
+	/**
+	 * Per-release override of the org FDA assessment narrative. PATCH semantics, and NOT the
+	 * clearEos/clearEol shape: omitting the field leaves the stored value alone, and
+	 * supplying an EMPTY STRING is a deliberate clear that returns the release to inheriting
+	 * the org default.
+	 *
+	 * <p>A separate clear flag would be the wrong idiom here even though the neighbouring
+	 * dates use one. A date has no empty form -- "" is not a LocalDate -- so the flag exists
+	 * to express something the value cannot. Prose has one, and the org-level prose fields
+	 * already read blank as clear, so a flag would give the same concept two shapes in one
+	 * feature.
+	 */
+	@JsonProperty
+	private String fdaAssessmentNarrative;
 
 	/** System-controlled — set by the orchestrator on release create, immutable thereafter. */
 	@JsonProperty

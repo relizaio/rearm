@@ -35,6 +35,7 @@ import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
+import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ComponentData;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
@@ -176,6 +177,34 @@ public class BranchDataFetcher {
 		}
 	}
 	
+	/**
+	 * Clone a branch / feature set (ported from Reliza Hub): same component, source's
+	 * version schema unless overridden, auto-integrate, manual dependencies and
+	 * dependency patterns. Write access on the owning component is required.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "cloneBranch")
+	public BranchData cloneBranch(
+			@InputArgument("branchUuid") String branchUuidStr,
+			@InputArgument("name") String name,
+			@InputArgument("branchType") BranchType bt,
+			@InputArgument("versionSchema") String versionSchema) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID branchUuid = UUID.fromString(branchUuidStr);
+		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
+		if (obd.isEmpty()) throw new RelizaException("Branch not found");
+		Optional<ComponentData> ocd = getComponentService.getComponentData(obd.get().getComponent());
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
+				obd.get().getComponent(), List.of(obd.get(), ocd.orElseThrow()), CallType.WRITE);
+		if (StringUtils.isBlank(name)) throw new RelizaException("Name of the cloned branch is required");
+		if (branchService.findBranchByName(obd.get().getComponent(), name.trim()).isPresent()) {
+			throw new RelizaException("A branch named " + name.trim() + " already exists on this component");
+		}
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		return BranchData.branchDataFromDbRecord(branchService.cloneBranch(obd.get(), name.trim(), versionSchema, bt, wu));
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateBranch")
 	public BranchData updateBranch(DgsDataFetchingEnvironment dfe) throws RelizaException{
@@ -318,7 +347,7 @@ public class BranchDataFetcher {
 			// key whose permissions cover this component. Required for CI flows that
 			// drive the action with an org-wide FREEFORM key (init step calls syncbranches
 			// right after getversion creates the component).
-			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ro.getUuid(),
 						List.of(ro), CallType.WRITE);

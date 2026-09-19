@@ -40,4 +40,20 @@ public interface SignatureVerificationRepository extends CrudRepository<Signatur
 			nativeQuery = true)
 	Optional<SignatureVerification> findLatestBySubject(@Param("subjectType") String subjectType,
 			@Param("subjectUuidAsString") String subjectUuidAsString);
+
+	/**
+	 * Latest verdict for each of several subjects, in one round trip.
+	 *
+	 * <p>Recognition asks this per commit, and the branch-history variables ask it for every
+	 * commit of the last N releases -- one query per commit there is the difference between a
+	 * handful of queries and a hundred.
+	 */
+	@Query(value = "SELECT DISTINCT ON (v.record_data->>'subjectUuid') * "
+			+ "FROM rearm.signature_verifications v "
+			+ "WHERE v.record_data->>'subjectType' = :subjectType "
+			+ "AND v.record_data->>'subjectUuid' = ANY(:subjectUuidsAsString) "
+			+ "ORDER BY v.record_data->>'subjectUuid', v.created_date DESC",
+			nativeQuery = true)
+	List<SignatureVerification> findLatestBySubjects(@Param("subjectType") String subjectType,
+			@Param("subjectUuidsAsString") String[] subjectUuidsAsString);
 }

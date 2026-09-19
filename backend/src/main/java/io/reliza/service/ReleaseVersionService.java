@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import io.reliza.common.CommonVariables.VersionResponse;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.service.ComponentLockService.LockedOperation;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData;
@@ -60,6 +61,9 @@ public class ReleaseVersionService {
 	@Autowired
     private GetSourceCodeEntryService getSourceCodeEntryService;
 
+	@Autowired
+	private ComponentLockService componentLockService;
+
 	/**
 	 * Intentionally NOT @Transactional. The branch may be auto-created during
 	 * resolution (when getversion is called with a brand-new branch name), and
@@ -80,6 +84,11 @@ public class ReleaseVersionService {
 		ComponentData pd = opd.get();
 		BranchData bd = branchService.getBranchDataFromBranchString(getNewVersionDto.branch(), projectId, wu);
 		UUID branchUuid = bd.getUuid();
+
+		// Refused before the build spends its minutes. VersionAssignmentService gates the assignment
+		// itself, which covers the manual mint too; this earlier check exists so the programmatic
+		// caller fails before branch auto-creation rather than after it.
+		componentLockService.assertUnlocked(projectId, branchUuid, LockedOperation.VERSION_ASSIGNMENT);
 
 		// Check if source code entry commit is already attached to a release on this branch.
 		// rebuild=true → return the existing version idempotently (same as today).

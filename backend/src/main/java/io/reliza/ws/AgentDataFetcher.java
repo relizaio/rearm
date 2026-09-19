@@ -584,7 +584,7 @@ public class AgentDataFetcher {
 		var ahp = authCtx.ahp();
 		UUID orgUuid = authCtx.orgUuid();
 		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
-		if (ahp.getType() != ApiTypeEnum.FREEFORM) {
+		if (!ahp.isRbacKey()) {
 			throw new AccessDeniedException("Only FREEFORM API keys are supported for agent operations in v1");
 		}
 		if (orgUuid == null) throw new AccessDeniedException("Could not resolve org for key");
@@ -753,7 +753,7 @@ public class AgentDataFetcher {
 				requestData.getHeaders(), servletWebRequest);
 		var ahp = authCtx.ahp();
 		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
-		if (ahp.getType() != ApiTypeEnum.FREEFORM) {
+		if (!ahp.isRbacKey()) {
 			throw new AccessDeniedException("Only FREEFORM API keys are supported for agent operations in v1");
 		}
 		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)

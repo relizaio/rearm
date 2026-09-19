@@ -1,0 +1,41 @@
+-- FDA-Readiness-1: correlate the audit rows of one bulk attestation.
+--
+-- BEFORE CHANGING THIS FILE'S VERSION NUMBER, read the header of
+-- V83__fda_support_attestations.sql. `main` briefly carried a DIFFERENT V84
+-- (V84__sbom_component_support_milestones.sql) in the same 23-hour window as its
+-- different V83, so a database that ran `main` inside that window needs the manual
+-- flyway_schema_history repair V83 prescribes -- for row 84 as well as row 83.
+-- Renumbering this to 85 does not avoid the repair, it only changes the error from
+-- "checksum mismatch" to "detected applied migration not resolved locally".
+--
+-- Nothing in the record distinguished an 800-component sweep from 800 individual
+-- judgements. assessmentSource is MANUAL either way, and the audit table had no batch or
+-- action id, so an auditor could only INFER a sweep from identical justification text plus
+-- one user plus clustered timestamps. That inference is exactly what an audit trail is
+-- supposed to make unnecessary, and it fails on the case that matters: two sweeps run
+-- minutes apart with the same justification are indistinguishable from one.
+--
+-- Nullable, because every attestation written before this migration genuinely has no batch,
+-- and because a single-component attestation is not a batch. NULL means "not part of a
+-- sweep", which is a fact, not missing data.
+-- IF NOT EXISTS, for the reason V73 gives: an operator may have
+-- hand-applied this to unblock a sandbox. (V80 also uses IF NOT EXISTS but for a different
+-- case -- a half-built CONCURRENTLY index -- and argues it is insufficient there, which is
+-- why it adds an indisvalid check. That case does not arise here.) The hazard is not
+-- hypothetical here -- V83's header documents a by-hand flyway_schema_history repair on
+-- exactly the databases this migration reaches next, so the hand-editing habit is live.
+ALTER TABLE rearm.sbom_component_support_audit
+    ADD COLUMN IF NOT EXISTS batch_id uuid;
+
+-- NO INDEX on batch_id, deliberately.
+--
+-- The obvious next line is an index for "show me every row of batch X", and V83 says not to:
+-- the date indexes V82 and V901 created backed an approaching/past-EOS filter that no query
+-- in this codebase performs, and removing them is part of why V83 exists. Nothing in
+-- src/main queries by batch_id yet -- the repository finder has test callers only, and no
+-- GraphQL type exposes the audit table at all. An index is a one-line migration on the day a
+-- batch-history view is actually built; an unused index that has to stay correct is not free.
+--
+-- When that view lands it wants a PARTIAL index (WHERE batch_id IS NOT NULL): the
+-- single-component path leaves the column null and those rows will be the overwhelming
+-- majority, and no query will ever probe for them.

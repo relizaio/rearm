@@ -63,6 +63,20 @@ public class SignatureVerificationService {
 				.map(SignatureVerificationData::dataFromRecord);
 	}
 
+	/** Latest verdict per subject, in one query. See the repository method for why. */
+	public java.util.Map<UUID, SignatureVerificationData> findLatestBySubjects(
+			SignatureSubjectType subjectType, java.util.Collection<UUID> subjectUuids) {
+		java.util.Map<UUID, SignatureVerificationData> out = new java.util.HashMap<>();
+		if (subjectType == null || subjectUuids == null || subjectUuids.isEmpty()) return out;
+		String[] ids = subjectUuids.stream().filter(u -> u != null).map(UUID::toString).toArray(String[]::new);
+		if (ids.length == 0) return out;
+		for (var v : repository.findLatestBySubjects(subjectType.name(), ids)) {
+			SignatureVerificationData d = SignatureVerificationData.dataFromRecord(v);
+			out.put(d.getSubjectUuid(), d);
+		}
+		return out;
+	}
+
 	@Transactional
 	public SignatureVerificationData persistVerdict(SignatureVerificationData seed, WhoUpdated wu) throws RelizaException {
 		if (seed.getOrg() == null) throw new RelizaException("Verdict requires an org");

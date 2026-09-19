@@ -7,15 +7,37 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.repository.CrudRepository;
 
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import io.reliza.model.Component;
 
 public interface ComponentRepository extends CrudRepository<Component, UUID> {
 	
 	@Override
 	List<Component> findAll();
+
+	/**
+	 * Row-locked read, for the read-modify-write paths on the component's JSONB lists.
+	 *
+	 * <p>Added for locks: two concurrent releases of the same lock would otherwise both pass the
+	 * active check and each write a LOCK_RELEASE attestation.
+	 *
+	 * <p>Bounded wait, like BranchRepository's: Postgres waits forever by default, so one stuck
+	 * holder would block every component-scope lock mutation indefinitely rather than failing and
+	 * being retried.
+	 */
+	@Transactional
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
+	@Query(value = "SELECT c FROM Component c WHERE c.uuid = :uuid")
+	Optional<Component> findByIdWriteLocked(@Param("uuid") UUID uuid);
 	
 	@Query(
 			value = VariableQueries.FIND_COMPONENTS_BY_ORG_BY_TYPE,

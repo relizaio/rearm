@@ -39,6 +39,16 @@ public enum RearmIdentifierType {
 	SERIAL,
 	/** Batch / lot number (a shipment-level production identifier). */
 	LOT,
+	/**
+	 * The component IS a specification document of a well-known kind -- the design-stage
+	 * counterpart of {@link #COMPLIANCE_DOCUMENT}, following the same shape TEA settled on
+	 * for compliance documents (transparency-exchange-api#216): the identifier says what the
+	 * component is, and the value comes from a published vocabulary, here
+	 * {@link io.reliza.model.RearmSpecificationType}. Internal until TEA standardises a
+	 * document identifier of its own; if it does, this moves to the exportable block above
+	 * and starts crossing the boundary with no other change.
+	 */
+	SPECIFICATION,
 	// Remaining CDX 2.0 identity schemes (spec PR #936). CDX tokens are the
 	// lowercase-hyphenated enum names (PART_NUMBER <-> part-number) except
 	// serial-number <-> SERIAL; the rebom extractor owns that normalization.

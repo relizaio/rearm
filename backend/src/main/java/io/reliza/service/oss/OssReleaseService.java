@@ -921,6 +921,17 @@ public class OssReleaseService {
 		// 6. Update parent releases with new release
 		Set<ParentRelease> updatedReleases = replaceComponentRelease(dependencyReleasesOpt.get(), releaseToUse);
 		
+		// 6b. The swap above is the last point where this set is still ours to reject. A cycle is
+		// permanent, so it is refused HERE rather than left to the create below: the data needs an
+		// operator, not a retry on every trigger.
+		try {
+			sharedReleaseService.checkProposedParentsAcyclic(updatedReleases);
+		} catch (RelizaException re) {
+			log.error("Skipping auto-integration into feature set {} triggered by release {}: {}",
+					featureSet.getUuid(), triggeringRelease.getUuid(), re.getMessage(), re);
+			return;
+		}
+
 		// 7. Create the product release
 		createProductRelease(featureSet, triggeringRelease.getOrg(), updatedReleases);
 	}
@@ -1105,6 +1116,17 @@ public class OssReleaseService {
 	 * @param parentReleases The parent releases to include in the product
 	 */
 	public Optional<UUID> createProductRelease(BranchData featureSet, UUID orgUuid, Collection<ParentRelease> parentReleases) {
+		// Ahead of the version mint and of createRelease's own check: this path assembles parents
+		// automatically rather than from operator input, so a bad parent here is found by nobody.
+		// Refusing before the mint also keeps a cycle from burning versions on every trigger.
+		try {
+			sharedReleaseService.checkProposedParentsAcyclic(parentReleases);
+		} catch (RelizaException re) {
+			log.error("Refusing to create a product release for feature set {}: {}",
+					featureSet.getUuid(), re.getMessage(), re);
+			return Optional.empty();
+		}
+
 		// Determine version bump action
 		ActionEnum action = ActionEnum.BUMP;
 		try {
@@ -1514,6 +1536,16 @@ public class OssReleaseService {
 			}
 		}
 		if (null == releaseDto.getComponent()) throw new IllegalStateException("Component or Product is required on release creation");
+		// One rule on every door: parents are validated on create as well as on update. On a rebuild
+		// the dto carries the existing uuid and the check is the same one updateRelease runs; on a
+		// fresh release that uuid cannot be in anyone's ancestry yet, so what is checkable is the
+		// parents themselves. Both run before the version is minted, so a refusal does not burn one.
+		if (null != releaseDto.getParentReleases() && !releaseDto.getParentReleases().isEmpty()) {
+			if (null != releaseDto.getUuid()) {
+				sharedReleaseService.checkCircularDependency(releaseDto.getUuid(), releaseDto.getParentReleases());
+			}
+			sharedReleaseService.checkProposedParentsAcyclic(releaseDto.getParentReleases());
+		}
 		if (null == releaseDto.getStatus()) releaseDto.setStatus(ReleaseStatus.ACTIVE);
 		if (null == releaseDto.getLifecycle()) releaseDto.setLifecycle(ReleaseLifecycle.DRAFT);
 

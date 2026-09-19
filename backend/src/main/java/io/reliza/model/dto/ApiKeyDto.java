@@ -37,6 +37,12 @@ public class ApiKeyDto {
 	private String keyOrder;
 	private String registryRobotLogin;
 	private String notes;
+	private io.reliza.model.ApiKeyData.ApiKeyStatus status;
+	private java.util.List<io.reliza.model.ApiKeyData.ApiKeySecret> secrets;
+	private UUID holder;
+	private boolean adminDisabled;
+	private io.reliza.model.ApiKeyData.ApiKeyOrigin origin;
+	private io.reliza.model.FederatedIdentity federation;
 	private ZonedDateTime accessDate;
 	@JsonProperty(CommonVariables.LAST_UPDATED_BY_FIELD)
 	private UUID lastUpdatedBy;
@@ -59,6 +65,14 @@ public class ApiKeyDto {
 							.createdDate(ak.getCreatedDate())
 							// .registryRobotLogin(akData.getRegistryRobotLogin())
 							.notes(akData.getNotes())
+							.status(akData.getStatus())
+							.holder(akData.getHolder())
+							.adminDisabled(akData.isAdminDisabled())
+							.origin(akData.getOrigin())
+							.federation(akData.getFederation())
+							.secrets(akData.effectiveSecrets(ak.getApiKey()).stream()
+									.map(x -> new io.reliza.model.ApiKeyData.ApiKeySecret(x.getSlot(), null, x.isActive(), x.getCreatedDate(), x.getLastUsedDate(), x.getExpiresDate()))
+									.toList()) // hashes never leave the server
 							.build();
 	}
 }

@@ -26,6 +26,14 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query(value = "SELECT i FROM Release i where uuid = :uuid")
 	public Optional<Release> findByIdWriteLocked(UUID uuid);
+
+	/**
+	 * Commit ids of a branch's recent releases, projected. See
+	 * {@code VariableQueries.FIND_BRANCH_HISTORY_COMMIT_IDS} for why this is not a row read.
+	 * Each row is (sourceCodeEntry uuid as text, commits array as jsonb text).
+	 */
+	@Query(value = VariableQueries.FIND_BRANCH_HISTORY_COMMIT_IDS, nativeQuery = true)
+	List<Object[]> findBranchHistoryCommitIds(@Param("branch") String branch, @Param("horizon") int horizon);
 	
 	@Query(
 			value = VariableQueries.FIND_RELEASE_BY_ID_AND_ORG,
