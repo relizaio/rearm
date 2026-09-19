@@ -34,6 +34,14 @@
 
         <n-tabs type="segment" v-model:value="tab" animated>
             <n-tab-pane name="overview" tab="Overview">
+                <n-card size="small" title="Usage" style="margin-bottom: 14px;">
+                    <agent-usage-summary
+                        :usage="session.usageTotals"
+                        :completeness="session.usageCompleteness"
+                        :model-mismatch="session.modelMismatch"
+                        empty-hint=" — this agent is running without the usage hooks installed"
+                    />
+                </n-card>
                 <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="Status">
                         <n-tag :type="session.status === 'OPEN' ? 'info' : 'default'" size="small">{{ session.status }}</n-tag>
@@ -125,7 +133,8 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NSpace, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import AgentUsageSummary from './AgentUsageSummary.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
 import { PrismEditor } from 'vue-prism-editor'
 import 'vue-prism-editor/dist/prismeditor.min.css'
@@ -191,9 +200,13 @@ const releaseRows = computed<any[]>(() => {
 const prRows = computed<any[]>(() => session.value?.pullRequests ?? [])
 
 // Model surfacing (v1a). The model is a property of the chat, recorded on
-// the session — see Session.primaryModel. modelAssertion is DECLARED today
-// (the agent self-reported the model string via the CLI); RUNTIME_OBSERVED
-// is reserved for host-side hooks that read the runtime's own record.
+// the session — see Session.primaryModel. modelAssertion starts at DECLARED
+// (the agent self-reported the model string via the CLI) and the server
+// upgrades it to RUNTIME_OBSERVED once usage reports arrive from a source
+// that is not the agent's own claim — a transcript, an OTEL collector or the
+// provider — and they resolve to the model the session declared. A
+// disagreement does not upgrade it; it sets modelMismatch instead, which the
+// usage card badges.
 const modelLabel = computed<string>(() => {
     const m = session.value?.primaryModel
     if (!m) return '—'
@@ -214,7 +227,7 @@ const ASSERTION_LABELS: Record<string, string> = {
 
 const ASSERTION_TIPS: Record<string, string> = {
     DECLARED: 'Declared: the agent self-reported this model via the CLI. ReARM trusts the agent\'s word; it is not independently verified, and does not carry the authority of the session\'s commit signatures.',
-    RUNTIME_OBSERVED: 'Observed: the model was read from the runtime\'s own record. This label does not carry the authority of the session\'s commit signatures.',
+    RUNTIME_OBSERVED: 'Observed: this model was seen in the session\'s own usage reports — from a transcript, a collector or the provider, never from the agent\'s own claim — and it agrees with what the session declared. This label does not carry the authority of the session\'s commit signatures.',
 }
 
 const assertionLabel = computed<string>(() =>
