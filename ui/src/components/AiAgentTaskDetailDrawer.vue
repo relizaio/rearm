@@ -22,7 +22,7 @@
                 <n-alert v-if="task.hold" type="error"
                          :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review' : `On hold (${(task.hold.level ?? '').toLowerCase()})`">
                     {{ task.hold.reason }}
-                    <div class="holdmeta">held by {{ task.hold.heldBy }} · {{ ts(task.hold.heldAt) }}</div>
+                    <div class="holdmeta">held by {{ actorLabel(task.hold.heldBy) }} · {{ ts(task.hold.heldAt) }}</div>
                     <template v-if="task.hold.kind === 'HUMAN_GATE'">
                         <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
                                  style="margin-top: 8px"/>
@@ -181,7 +181,7 @@
                                 </n-tag>
                                 <span class="hist__role">{{ e.rec.role }}</span>
                                 <n-tag v-if="e.rec.reviewedBy" size="tiny" :bordered="false" type="info">human</n-tag>
-                                <span class="hist__agent">{{ e.rec.reviewedBy ?? agentName(e.rec.agent) }}</span>
+                                <span class="hist__agent">{{ actorLabel(e.rec.reviewedBy) || agentName(e.rec.agent) }}</span>
                                 <span class="hist__time">{{ ts(e.rec.signedOffAt) }}<template v-if="e.rec.assignedAt">
                                     · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</template></span>
                                 <code v-if="e.rec.promptVersion" class="hist__pv"
@@ -257,6 +257,7 @@ import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NDrawer, NDrawerContent, NInput, NSpace, NTag } from 'naive-ui'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
+import { actorLabel } from '@/utils/agentActors'
 import {
     DocumentRelease,
     Finding,
