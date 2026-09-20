@@ -762,7 +762,20 @@ const singleReleaseDataNoParent = `
         task
         session
         round
-        findings
+        findings {
+            kind
+            round
+            verdict
+            counts { passed failed skipped }
+            findings {
+                id
+                priority
+                status
+                title
+                location { path line ref }
+                resolvedBy
+            }
+        }
     }
     artifacts
     artifactDetails {
