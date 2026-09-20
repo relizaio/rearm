@@ -508,20 +508,22 @@ export function mintProcessedSerialNumber(bom: any, sourceLink?: string | null):
  * 
  * Use this when preparing a BOM for storage that should include full augmentation.
  *
- * The result is a distinct document from the one that came in, so it is given a
- * distinct identity: read `serialNumber` off the return value for the minted
- * serial, and see mintProcessedSerialNumber for why. Augmentation done to SERVE
- * a request rather than to store one does not go through here -- it calls
- * augmentBomWithComponentContext directly and mints nothing.
+ * Deliberately does NOT mint a serialNumber. Augmentation is not what makes a
+ * stored copy a different document from the producer's -- processing,
+ * deduplication and the dependency fixes upstream of it already did that -- so
+ * the identity is minted where the document is pushed (see
+ * mintProcessedSerialNumber and its callers), not here. Tying the two together
+ * would mean turning augmentation off silently republished a deduplicated
+ * document under the producer's serial.
  * 
  * @param bom - Processed BOM (already sanitized, deduplicated, validated)
  * @param componentDetails - Release/component metadata (name, version, group, etc.)
  * @param lastUpdatedDate - Optional timestamp for metadata
- * @returns Fully augmented BOM ready for storage, under its own serialNumber
+ * @returns Fully augmented BOM ready for storage
  */
 export function augmentBomForStorage(bom: any, componentDetails: RebomOptions, lastUpdatedDate?: string | Date): any {
   const augmentedBom = augmentBomWithComponentContext(bom, componentDetails, lastUpdatedDate);
-  return mintProcessedSerialNumber(attachRebomToolToBom(augmentedBom));
+  return attachRebomToolToBom(augmentedBom);
 }
 
 /**

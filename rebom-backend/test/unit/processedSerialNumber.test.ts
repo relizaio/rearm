@@ -26,9 +26,18 @@ vi.mock('../../src/services/oci', async (importOriginal) => {
         getMonthlyRepositoryName: () => 'rebom-artifacts-2026-09'
     };
 });
+// AUGMENT_ON_STORAGE is a module constant in bomAddService, so the only way to
+// exercise the augmentation-off world is to make augmentation a no-op here.
+const augmentation = { on: true };
 vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) => {
     const actual: any = await importOriginal();
-    return { ...actual, getInitialEnrichmentStatus: vi.fn(async () => 'SKIPPED'), enrichBomAsync: vi.fn(async () => undefined) };
+    return {
+        ...actual,
+        augmentBomForStorage: (bom: any, opts: any, date: any) =>
+            augmentation.on ? actual.augmentBomForStorage(bom, opts, date) : bom,
+        getInitialEnrichmentStatus: vi.fn(async () => 'SKIPPED'),
+        enrichBomAsync: vi.fn(async () => undefined),
+    };
 });
 
 import { addBom } from '../../src/services/bom/bomAddService';
@@ -133,10 +142,24 @@ describe('minting an identity for a document rebom is about to push', () => {
         expect(bomLink(undefined, 1)).toBeNull();
         expect(bomLink('', 1)).toBeNull();
     });
+
+    it('stays schema-valid at a spec that predates BOM-Link', async () => {
+        // The ingest case below runs at 1.5. BOM-Link is a 1.4 concept, so the
+        // reference is forward-looking on 1.2/1.3 -- but it has to remain
+        // LEGAL there, and it is: `bom` has been an external-reference type
+        // since 1.2 and `url` is an unconstrained string. Validated on a bare
+        // document on purpose: attachRebomToolToBom emits a tool with a `type`
+        // field, which the pre-1.5 tools[] shape rejects, and that is a
+        // separate pre-existing problem this test must not be coupled to.
+        const old: any = { ...producerBom(1), specVersion: '1.3' };
+        const minted = mintProcessedSerialNumber(old);
+        expect(minted.externalReferences).toContainEqual(producerRef(PRODUCER_SERIAL, 1));
+        await expect(validateBom(minted)).resolves.not.toThrow();
+    });
 });
 
 describe('an accepted CycloneDX upload', () => {
-    beforeEach(() => { vi.clearAllMocks(); pushed.length = 0; });
+    beforeEach(() => { vi.clearAllMocks(); pushed.length = 0; augmentation.on = true; });
 
     it('stores the producer bytes and a processed document under different identities', async () => {
         const raw = producerBom(3);
@@ -163,6 +186,22 @@ describe('an accepted CycloneDX upload', () => {
         await addBom({ bomInput: { format: 'CYCLONEDX', org: ORG, bom: producerBom(1), tags: [], rebomOptions: rebomOptions() } } as any);
         const processedPush = pushed.find(p => !p.tag.endsWith('-raw'))!;
         await expect(validateBom(processedPush.bom)).resolves.not.toThrow();
+    });
+
+    it('mints even when augmentation is off, because processing alone already changed the document', async () => {
+        // augmentBomForStorage is not what makes the stored copy different from
+        // the uploaded one -- sanitization, deduplication and the dependency
+        // repairs in processBomObj did that before it ran. If the mint were
+        // gated on augmentation, turning augmentation off would republish a
+        // deduplicated document under the producer's serialNumber.
+        augmentation.on = false;
+        await addBom({ bomInput: { format: 'CYCLONEDX', org: ORG, bom: producerBom(1), tags: [], rebomOptions: rebomOptions() } } as any);
+
+        const processedPush = pushed.find(p => !p.tag.endsWith('-raw'))!;
+        expect(processedPush.bom.serialNumber).toMatch(MINTED);
+        expect(processedPush.bom.serialNumber).not.toBe(PRODUCER_SERIAL);
+        expect(processedPush.bom.externalReferences).toContainEqual(producerRef(PRODUCER_SERIAL, 1));
+        expect((runQuery.mock.calls[0] as any)[1][1].processedSerialNumber).toBe(processedPush.bom.serialNumber);
     });
 
     it('keeps the producer serial as the row identity and records what it serves', async () => {

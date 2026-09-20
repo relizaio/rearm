@@ -141,7 +141,14 @@ function buildCandidateRepos(
 
 /** The processed BOM served in place of a missing raw copy -- validated with ITS
  * digest, via the race-tolerant fetch (a concurrent enrichment push must not
- * turn the substitute into a spurious digest failure either). */
+ * turn the substitute into a spurious digest failure either).
+ *
+ * Note that a raw request answered this way returns a document whose
+ * serialNumber is NOT the row's: processed documents carry their own identity
+ * (meta.processedSerialNumber), and its `type: bom` external reference points at
+ * the identity the caller asked for. That is the honest answer -- the
+ * producer's bytes are gone and this is a substitute, not a copy of them -- and
+ * it is exactly why the substitute is logged rather than served silently. */
 async function fetchProcessedSubstitute(
     bomRecord: BomRecord,
     recordedRepo: string | undefined,

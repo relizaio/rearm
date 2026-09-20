@@ -152,12 +152,22 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   if (AUGMENT_ON_STORAGE && processable) {
     logger.debug({ serialNumber: rebomOptions.serialNumber }, "Augmenting BOM with component context before storage");
     finalBom = augmentBomForStorage(processedBom, rebomOptions, new Date());
-    // The augmented copy is a different document from the one that was
-    // uploaded, so it carries a different serialNumber and a link back to the
-    // producer's. Recorded here: meta.serialNumber stays the producer's -- it
-    // is the row's identity and what every lookup keys on -- and this says
-    // which document the row currently serves. Left unset when there was no
-    // augmentation, because then there is only one document and one serial.
+  }
+
+  // Everything processable is a different document from the one uploaded by the
+  // time it gets here -- processBomObj has sanitized, deduplicated and repaired
+  // its dependencies, whether or not augmentation ran on top -- so it is pushed
+  // under an identity of its own, with a link back to the producer's. Gated on
+  // `processable` and not on AUGMENT_ON_STORAGE on purpose: tying it to
+  // augmentation would mean flipping that flag silently republished a
+  // deduplicated document under the producer's serialNumber.
+  //
+  // meta.serialNumber stays the producer's -- it is the row's identity and what
+  // every lookup keys on; this records which document the row currently serves.
+  // The non-processable path is left alone: that copy really is the uploaded
+  // bytes, verbatim, so it keeps the uploaded identity.
+  if (processable) {
+    finalBom = mintProcessedSerialNumber(finalBom);
     rebomOptions.processedSerialNumber = finalBom.serialNumber;
   }
   
