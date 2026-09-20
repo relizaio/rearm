@@ -181,10 +181,11 @@
                     <template #prefix><span class="flabel">documents repo</span></template>
                 </n-input>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">
-                    A git URI on any host. It must correspond to one of the sources above — that is
-                    what puts document writes under the coordinator's rogue-activity watch. A source
-                    written as <code>github:acme/docs</code> matches
-                    <code>https://github.com/acme/docs</code>.
+                    A git URI on any host, resolved once to a repository record — so a remote
+                    written as ssh on one machine and https on another is the same repository. It
+                    must correspond to one of the sources above, which is what puts document writes
+                    under the coordinator's rogue-activity watch; a source written as
+                    <code>github:acme/docs</code> matches <code>https://github.com/acme/docs</code>.
                 </n-text>
                 <div>
                     <div class="flabel" style="margin-bottom: 4px">document path templates</div>
@@ -1082,7 +1083,10 @@ async function refreshBoardContent () {
 
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
+    // documentsRepo comes back as the repository ROW; the editor works in uris, and the mutation
+    // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])],
+        documentsRepo: b.documentsRepo?.uri ?? '',
         documentPaths: { ...(b.documentPaths ?? {}) } }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {} }

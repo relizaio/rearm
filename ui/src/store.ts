@@ -2518,7 +2518,7 @@ const storeObject : any = {
                             description
                             status
                             sources
-                            documentsRepo
+                            documentsRepo { uuid uri }
                             documentPaths
                             coordinatorPrompt
                             missingCapabilities
@@ -2553,7 +2553,7 @@ const storeObject : any = {
                             priorityType
                             perAgentWipLimit
                             sources
-                            documentsRepo
+                            documentsRepo { uuid uri }
                             documentPaths
                             coordinatorPrompt
                             roles {
