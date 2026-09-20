@@ -753,6 +753,30 @@ const singleReleaseDataNoParent = `
     createdDate
     org
     hardware
+    document {
+        specification
+        path
+        digest
+        mediaType
+        indexPath
+        task
+        session
+        round
+        findings {
+            kind
+            round
+            verdict
+            counts { passed failed skipped }
+            findings {
+                id
+                priority
+                status
+                title
+                location { path line ref }
+                resolvedBy
+            }
+        }
+    }
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}
@@ -1068,7 +1092,11 @@ const SINGLE_RELEASE_GQL_DATA_LIGHT = `
         nature
         resourceGroup
     }
-    tags
+    tags {
+        key
+        value
+        removable
+    }
 `
 
 const COMPONENT_FULL_DATA = `

@@ -32,6 +32,7 @@
 const STRICT = process.argv.includes('--strict')
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname, join, relative } from 'path'
 import { buildSchema, parse, validate } from 'graphql'
@@ -42,8 +43,31 @@ const SRC = join(UI_ROOT, 'src')
 // Since the schema split, the shared types live in schema.graphqls and the root fields in
 // user.graphqls (browser) and programmatic.graphqls (API keys); a schema is the three together.
 const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
-const PRO_SCHEMA = join(UI_ROOT, '../../rearm-core/backend/src/main/resources/schema')
-const CE_SCHEMA = join(UI_ROOT, '../backend/src/main/resources/schema')
+// The Pro schema comes from a checkout NEXT DOOR, which is on whatever branch its owner
+// last left it on. That is a trap: a UI change written against an unmerged backend branch
+// validates against a DIFFERENT schema than the one it targets, and passes. `facts` went
+// from Object to ModelFacts on one branch while the co-located checkout sat on another,
+// so a bare `facts` selection -- invalid against the schema it would actually meet --
+// validated clean. REARM_PRO_SCHEMA points this at a directory holding the three files
+// for the branch (or the merge of branches) the UI is really targeting; whichever is used,
+// the run PRINTS what it read, so a green result can be checked rather than trusted.
+const PRO_SCHEMA = process.env.REARM_PRO_SCHEMA
+    || join(UI_ROOT, '../../rearm-core/backend/src/main/resources/schema')
+const CE_SCHEMA = process.env.REARM_CE_SCHEMA
+    || join(UI_ROOT, '../backend/src/main/resources/schema')
+
+/** Branch and short sha of the checkout a schema directory sits in, when it is one. */
+function schemaProvenance (dir) {
+    try {
+        const git = args => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+        const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+        const sha = git(['rev-parse', '--short', 'HEAD'])
+        const dirty = git(['status', '--porcelain', '--', '.']).length > 0 ? ' +uncommitted' : ''
+        return `${branch}@${sha}${dirty}`
+    } catch {
+        return 'not a git checkout'
+    }
+}
 
 function loadSchema (dir, label) {
     const present = SCHEMA_FILES.map(f => join(dir, f)).filter(existsSync)
@@ -73,16 +97,72 @@ function walk (dir) {
     return out
 }
 
-// Extract gql`...` template bodies. Skip any that interpolate (${...}) --
-// those are built dynamically and can't be statically parsed here.
-function extractGqlDocuments (source) {
+// Every `const NAME = `...`` template literal in the tree, by name. These are the
+// query FRAGMENTS the UI composes documents from -- SINGLE_RELEASE_GQL_DATA and its
+// kin -- and they are the reason this file resolves interpolations rather than
+// skipping them: a selection that only ever appears inside one of those was, until
+// this resolution existed, checked by nothing at all. The release fragment carrying
+// `document { ... }` is exactly such a case.
+//
+// Keyed by bare name, so `${graphqlQueries.SINGLE_RELEASE_GQL_DATA}` and a locally
+// imported `${SINGLE_RELEASE_GQL_DATA}` both resolve. Collisions across files are
+// possible in principle; in practice these names are unique, and a wrong expansion
+// would surface as a validation error rather than a silent pass.
+function collectFragmentConstants (files) {
+    const byName = new Map()
+    const re = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*`([\s\S]*?)`/g
+    const aliasRe = /^\s*([A-Za-z_$][\w$]*)\s*:\s*([A-Z][A-Z0-9_]*)\s*,?\s*$/gm
+    const sources = files.map(f => readFileSync(f, 'utf8'))
+    for (const source of sources) {
+        let m
+        while ((m = re.exec(source)) !== null) byName.set(m[1], m[2])
+    }
+    // graphqlQueries.ts exports its fragments through an object that RENAMES them --
+    // `UserData: USER_DATA` -- and callers interpolate the export name. Resolve the
+    // alias to the same body, or every `${graphqlQueries.Something}` stays unchecked.
+    for (const source of sources) {
+        let m
+        while ((m = aliasRe.exec(source)) !== null) {
+            if (byName.has(m[2]) && !byName.has(m[1])) byName.set(m[1], byName.get(m[2]))
+        }
+    }
+    return byName
+}
+
+// Substitute ${IDENT} / ${obj.IDENT} from the constant map, repeatedly, so fragments
+// that themselves interpolate fragments resolve. Returns null when something cannot
+// be resolved -- a computed operation name, a value spliced in at runtime -- which the
+// caller REPORTS rather than swallows.
+const MAX_EXPANSIONS = 10
+function expandInterpolations (body, constants) {
+    let out = body
+    for (let pass = 0; pass < MAX_EXPANSIONS && out.includes('${'); pass++) {
+        out = out.replace(/\$\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g, (whole, expr) => {
+            const name = expr.split('.').pop()
+            return constants.has(name) ? constants.get(name) : whole
+        })
+    }
+    return out.includes('${') ? null : out
+}
+
+// Extract gql`...` template bodies, resolving interpolations where the pieces are
+// static constants.
+function extractGqlDocuments (source, constants) {
     const docs = []
     const re = /gql`([\s\S]*?)`/g
     let m
     while ((m = re.exec(source)) !== null) {
-        const body = m[1]
-        if (body.includes('${')) continue
-        docs.push({ body, index: m.index })
+        const raw = m[1]
+        if (!raw.includes('${')) {
+            docs.push({ body: raw, index: m.index })
+            continue
+        }
+        const expanded = expandInterpolations(raw, constants)
+        if (expanded === null) {
+            docs.push({ body: null, index: m.index })  // reported as unresolved
+            continue
+        }
+        docs.push({ body: expanded, index: m.index })
     }
     return docs
 }
@@ -94,6 +174,9 @@ function lineOf (source, index) {
 const pro = loadSchema(PRO_SCHEMA, 'Pro')
 const ce = loadSchema(CE_SCHEMA, 'CE')
 
+if (pro) console.log(`[validate-graphql] Pro schema: ${PRO_SCHEMA} (${schemaProvenance(PRO_SCHEMA)})`)
+if (ce) console.log(`[validate-graphql] CE schema:  ${CE_SCHEMA} (${schemaProvenance(CE_SCHEMA)})`)
+
 // Report-only means never hard-exit on a missing schema. The Pro schema lives
 // in the sibling rearm-core checkout, which isn't present in this repo's own
 // CI -- so when it's absent we skip the Pro pass and (if available) still run
@@ -104,14 +187,45 @@ if (!pro && !ce) {
 }
 if (!pro) console.warn('[validate-graphql] Pro schema not found (rearm-core not co-located) -- running CE checks only.')
 
+/**
+ * Documents that do not validate against the Pro schema and did not start failing here:
+ * they call mutations the server has never defined under those names. They were invisible
+ * until this script learned to resolve interpolated documents, and they are listed rather
+ * than fixed because each one is a live UI control in an unrelated feature -- fixing them
+ * means deciding what the server call should now be, which is not this script's business.
+ *
+ * Keyed by operation name. An entry that STOPS failing is reported too: a stale allowlist
+ * is how a gate quietly turns into decoration.
+ */
+const KNOWN_BROKEN = new Map([
+    ['updateComponentResourceGroup', 'ComponentView resource-group dropdown; ComponentService has the method, the schema has no such mutation'],
+    ['setComponentVisibility', 'ComponentView visibility dropdown; same shape -- service method present, mutation absent'],
+    ['spawnInstance', 'CreateInstance ephemeral path; no mutation, no InstanceSpawnInput, and no Java behind it either'],
+])
+const knownBrokenSeen = new Set()
+
+let knownBrokenHits = 0
 let hardFailures = 0
 let ceWarnings = 0
 let checked = 0
 let skipped = 0
 
-for (const file of walk(SRC)) {
+const FILES = walk(SRC)
+const CONSTANTS = collectFragmentConstants(FILES)
+let unresolved = 0
+
+for (const file of FILES) {
     const source = readFileSync(file, 'utf8')
-    for (const { body, index } of extractGqlDocuments(source)) {
+    for (const { body, index } of extractGqlDocuments(source, CONSTANTS)) {
+        if (body === null) {
+            // Built from something only known at runtime (a computed operation name,
+            // a value spliced into the text). Counted and named, because an unchecked
+            // document is a blind spot and a silent one is worse than a loud one.
+            unresolved++
+            console.warn(`[validate-graphql] UNRESOLVED ${relative(UI_ROOT, file)}:${lineOf(source, index)}`
+                + ' -- interpolation could not be expanded; not validated')
+            continue
+        }
         let ast
         try {
             ast = parse(body)
@@ -129,11 +243,29 @@ for (const file of walk(SRC)) {
         checked++
         const where = `${relative(UI_ROOT, file)}:${lineOf(source, index)}`
 
+        const opNames = ast.definitions
+            .filter(d => d.kind === 'OperationDefinition' && d.name)
+            .map(d => d.name.value)
+        opNames.filter(n => KNOWN_BROKEN.has(n)).forEach(n => knownBrokenSeen.add(n))
+
         const proErrors = pro ? validate(pro, ast) : []
         if (proErrors.length > 0) {
+            const known = opNames.find(n => KNOWN_BROKEN.has(n))
+            if (known) {
+                knownBrokenHits++
+                console.warn(`\n[KNOWN-BROKEN] ${where} -- ${KNOWN_BROKEN.get(known)}`)
+                for (const e of proErrors) console.warn(`   - ${e.message}`)
+                continue
+            }
             hardFailures++
             console.error(`\n[FAIL] ${where} -- invalid against Pro schema:`)
             for (const e of proErrors) console.error(`   - ${e.message}`)
+            continue
+        }
+        if (opNames.some(n => KNOWN_BROKEN.has(n))) {
+            hardFailures++
+            console.error(`\n[FAIL] ${where} -- operation is in KNOWN_BROKEN but now validates.`
+                + ' Remove the entry rather than leaving the list to rot.')
             continue
         }
         if (ce) {
@@ -147,8 +279,17 @@ for (const file of walk(SRC)) {
     }
 }
 
-console.log(`\n[validate-graphql] checked ${checked} documents (${skipped} dynamic/non-operation skipped), ` +
-    `${hardFailures} Pro failure(s), ${ceWarnings} CE drift warning(s).`)
+for (const [name, reason] of KNOWN_BROKEN) {
+    if (!knownBrokenSeen.has(name)) {
+        console.warn(`[validate-graphql] STALE KNOWN_BROKEN entry "${name}" -- no such operation`
+            + ` in the tree any more (${reason}). Drop it.`)
+    }
+}
+
+console.log(`\n[validate-graphql] checked ${checked} documents (${skipped} non-operation skipped, ` +
+    `${unresolved} unresolved interpolation), ` +
+    `${hardFailures} Pro failure(s), ${knownBrokenHits} known-broken, ` +
+    `${ceWarnings} CE drift warning(s).`)
 
 if (hardFailures > 0 && STRICT) {
     console.error('[validate-graphql] FAILED (--strict): UI selects fields the Pro schema does not define.')
