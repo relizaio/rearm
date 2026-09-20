@@ -984,6 +984,21 @@
                         </n-space>
                     </n-form>
                 </div>
+                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                    <h5>Agent Findings</h5>
+                    <p class="text-muted">How many priority levels a review or test findings index may use.</p>
+                    <n-form>
+                        <n-form-item label="Priority levels">
+                            <n-input-number v-model:value="orgSettings.findingPriorityLevels"
+                                            :min="1" :max="10" style="width: 120px;"/>
+                            <span class="ml-2 text-muted">
+                                1 is highest. Validated when a document is published, so lowering
+                                this leaves older rounds carrying higher numbers — they are still
+                                shown rather than hidden.
+                            </span>
+                        </n-form-item>
+                    </n-form>
+                </div>
                 <div class="adminSettingsBlock mt-4">
                     <h5>Finding Analysis Settings</h5>
                     <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
@@ -1432,6 +1447,7 @@ type SidPurlMode = 'DISABLED' | 'ENABLED_STRICT' | 'ENABLED_FLEXIBLE'
 
 const orgSettings = reactive({
     justificationMandatory: false,
+    findingPriorityLevels: 3,
     branchSuffixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION',
     vexComplianceFramework: 'NONE' as 'NONE' | 'CISA',
     sidPurlMode: 'DISABLED' as SidPurlMode,
@@ -3581,6 +3597,7 @@ async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
+    orgSettings.findingPriorityLevels = s?.findingPriorityLevels ?? 3
     orgSettings.branchSuffixMode = (s?.branchSuffixMode && s.branchSuffixMode !== 'INHERIT') ? s.branchSuffixMode : 'APPEND'
     orgSettings.vexComplianceFramework = s?.vexComplianceFramework || 'NONE'
     orgSettings.sidPurlMode = (s?.sidPurlMode as SidPurlMode) || 'DISABLED'
@@ -3632,6 +3649,7 @@ async function saveOrgSettings() {
                 orgUuid: orgResolved.value,
                 settings: {
                     justificationMandatory: orgSettings.justificationMandatory,
+                    findingPriorityLevels: orgSettings.findingPriorityLevels,
                     branchSuffixMode: orgSettings.branchSuffixMode,
                     vexComplianceFramework: orgSettings.vexComplianceFramework,
                     sidPurlMode: orgSettings.sidPurlMode,

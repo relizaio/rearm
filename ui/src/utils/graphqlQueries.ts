@@ -753,6 +753,17 @@ const singleReleaseDataNoParent = `
     createdDate
     org
     hardware
+    document {
+        specification
+        path
+        digest
+        mediaType
+        indexPath
+        task
+        session
+        round
+        findings
+    }
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}

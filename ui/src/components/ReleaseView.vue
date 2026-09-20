@@ -1061,6 +1061,39 @@
                 </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
                     <div class="container">
+                        <div v-if="release?.document">
+                            <h3>Document</h3>
+                            <!-- This release IS a document version: it points at bytes in a
+                                 repository at the commit its source code entry pins, which is why
+                                 the commit and repository are not repeated here. -->
+                            <n-descriptions :column="1" bordered size="small" label-placement="left">
+                                <n-descriptions-item label="Type">
+                                    {{ (release.document.specification ?? '').toLowerCase().replace(/_/g, ' ') || '—' }}
+                                </n-descriptions-item>
+                                <n-descriptions-item label="Round" v-if="release.document.round">
+                                    {{ release.document.round }}
+                                </n-descriptions-item>
+                                <n-descriptions-item label="File">
+                                    <a v-if="documentFileUrl(release)" :href="documentFileUrl(release) ?? undefined"
+                                       target="_blank" rel="noopener">{{ release.document.path }}</a>
+                                    <code v-else>{{ release.document.path }}</code>
+                                </n-descriptions-item>
+                                <n-descriptions-item label="Digest">
+                                    <code style="font-size: 11px;">{{ release.document.digest }}</code>
+                                </n-descriptions-item>
+                                <n-descriptions-item label="Verdict" v-if="documentVerdict(release)">
+                                    <n-tag size="small" :type="verdictType(documentVerdict(release))">
+                                        {{ documentVerdict(release) }}
+                                    </n-tag>
+                                </n-descriptions-item>
+                            </n-descriptions>
+
+                            <template v-if="documentFindings.length">
+                                <h4 class="mt-3">Findings</h4>
+                                <n-data-table size="small" :columns="findingColumns" :data="documentFindings"
+                                              :pagination="false" :bordered="false"/>
+                            </template>
+                        </div>
                         <div>
                             <h3>Notes</h3>
                             <n-input type="textarea" v-if="isWritable"
@@ -1332,6 +1365,15 @@ export default {
 }
 </script>
 <script lang="ts" setup>
+import {
+    documentFileUrl,
+    documentVerdict,
+    findingLocation,
+    findingsOf,
+    sortFindings,
+    statusType,
+    verdictType,
+} from '@/utils/agentDocuments'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
@@ -1352,7 +1394,7 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NRadio, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NRadio, NCard, NCheckboxGroup, NDataTable, NDescriptions, NDescriptionsItem, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -1640,6 +1682,26 @@ const pullRequest: ComputedRef<any> = computed((): any => {
 
 const releaseUuid: Ref<string> = ref(props.uuidprop ?? route.params.uuid.toString())
 const release: Ref<any> = ref({})
+
+// Document releases: the findings index rendered as a table when this release carries one.
+const documentFindings = computed(() => sortFindings(findingsOf(release.value)))
+
+const findingColumns = computed<DataTableColumns<any>>(() => [
+    { title: 'ID', key: 'id', render: (f: any) => h('code', { style: 'font-size: 11px;' }, f.id ?? '') },
+    { title: 'P', key: 'priority', width: 50 },
+    {
+        title: 'Status',
+        key: 'status',
+        render: (f: any) => h(NTag, { size: 'small', type: statusType(f.status) },
+            { default: () => f.status ?? '' }),
+    },
+    { title: 'Title', key: 'title' },
+    {
+        title: 'Where',
+        key: 'location',
+        render: (f: any) => h('code', { style: 'font-size: 11px;' }, findingLocation(f)),
+    },
+])
 const updatedRelease: Ref<any> = ref({})
 
 const releaseVexProposals: Ref<any[]> = ref([])

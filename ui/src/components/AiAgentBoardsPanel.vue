@@ -176,6 +176,28 @@
                 </n-input-number>
                 <n-select v-model:value="editingBoard.priorityType" :options="priorityOptions"
                           placeholder="Priority enforcement"/>
+                <n-input v-model:value="editingBoard.documentsRepo"
+                         placeholder="Documents repository, e.g. https://github.com/acme/docs">
+                    <template #prefix><span class="flabel">documents repo</span></template>
+                </n-input>
+                <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">
+                    A git URI on any host. It must correspond to one of the sources above — that is
+                    what puts document writes under the coordinator's rogue-activity watch. A source
+                    written as <code>github:acme/docs</code> matches
+                    <code>https://github.com/acme/docs</code>.
+                </n-text>
+                <div>
+                    <div class="flabel" style="margin-bottom: 4px">document path templates</div>
+                    <n-input v-for="spec in TEMPLATE_TYPES" :key="spec"
+                             v-model:value="editingBoard.documentPaths[spec]"
+                             :placeholder="effectiveTemplate(spec, null)" style="margin-bottom: 4px;">
+                        <template #prefix><span class="flabel">{{ spec.toLowerCase().replace('_', ' ') }}</span></template>
+                    </n-input>
+                    <n-text depth="3" style="font-size: 11.5px;">
+                        Placeholders: <code>{task}</code> <code>{round}</code> <code>{type}</code>
+                        <code>{component}</code>. Blank uses the default shown.
+                    </n-text>
+                </div>
                 <n-checkbox v-if="editingBoardIsNew" v-model:checked="editingBoard.seedFromPresets">
                     seed roles from org presets (a preset named "coordinator" seeds the coordinator prompt)
                 </n-checkbox>
@@ -353,6 +375,18 @@
                     <n-select v-if="editingRole.kind !== 'HUMAN'" v-model:value="editingRole.requiredCapabilities" multiple
                               :options="capabilityOptions"
                               placeholder="Required capabilities (declared, unverified in v1)"/>
+                    <div v-if="editingRole.kind !== 'HUMAN'">
+                        <div class="flabel" style="margin-bottom: 4px">documents this role must publish</div>
+                        <n-select v-model:value="editingRole.producesOutputTypes" multiple
+                                  :options="outputTypeOptions"
+                                  placeholder="None — the role hands over a sign-off note only"/>
+                        <n-text depth="3" style="font-size: 11.5px;">
+                            Enforced at sign-off, not at assignment: the hop has to run before it
+                            can produce anything, so the refusal lands on the hop that can still fix
+                            it. A HUMAN role is exempt — a person reviewing here does not publish
+                            through the CLI.
+                        </n-text>
+                    </div>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">{{ editingRole.kind === 'HUMAN'
                             ? 'reviewer guidance (shown to the human in the UI)'
@@ -534,6 +568,14 @@ import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
+import { effectiveTemplate } from '@/utils/agentDocuments'
+
+/**
+ * Types the board editor offers a template for. The task-scoped pair, because those are the ones
+ * an agent publishes per round and therefore the ones whose layout an operator actually chooses;
+ * component-scoped documents share one shape and are rarely per-board.
+ */
+const TEMPLATE_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT']
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 
 const props = defineProps<{ orgUuid: string }>()
@@ -671,6 +713,17 @@ const editingPreset = ref<any>(null)
 const editingPresetIsNew = ref(false)
 
 const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
+
+/**
+ * Document types a role can be required to publish.
+ *
+ * The task-scoped pair only. A component-scoped document belongs to the thing rather than to a
+ * hop, so requiring one per hop would refuse a sign-off on the second task to touch it.
+ */
+const outputTypeOptions = [
+    { label: 'review findings', value: 'REVIEW_FINDINGS' },
+    { label: 'test report', value: 'TEST_REPORT' },
+]
     .map(c => ({ label: c, value: c }))
 
 const priorityOptions = [
@@ -989,7 +1042,8 @@ const roleColumns: DataTableColumns<any> = [
     { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
     {
         title: '', key: 'actions', width: 62,
-        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r } } }, { default: () => 'Edit' }),
+        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r,
+            producesOutputTypes: (r.producesOutputs ?? []).map((p: any) => p?.specification).filter(Boolean) } } }, { default: () => 'Edit' }),
     },
 ]
 
@@ -1028,8 +1082,10 @@ async function refreshBoardContent () {
 
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
-    editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])] }
-        : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2, priorityType: 'LAX', seedFromPresets: true }
+    editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])],
+        documentPaths: { ...(b.documentPaths ?? {}) } }
+        : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
+            priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {} }
 }
 
 async function saveBoard () {
@@ -1046,6 +1102,15 @@ async function saveBoard () {
             perAgentWipLimit: editingBoard.value.perAgentWipLimit ?? 2,
             priorityType: editingBoard.value.priorityType ?? 'LAX',
         }
+        // Sent only when set. The server applies documentsRepo AFTER the sources patch in the same
+        // call, so adding the repository to sources and naming it here works in one save.
+        if (editingBoard.value.documentsRepo) {
+            input.documentsRepo = editingBoard.value.documentsRepo.trim()
+        }
+        const paths = Object.fromEntries(
+            Object.entries(editingBoard.value.documentPaths ?? {})
+                .filter(([, v]) => !!(v as string)?.trim()))
+        if (Object.keys(paths).length) input.documentPaths = paths
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
             input.seedFromPresets = !!editingBoard.value.seedFromPresets
@@ -1072,7 +1137,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE' }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [] }
 }
 
 async function saveRole () {
@@ -1095,6 +1160,12 @@ async function saveRole () {
                 kind: editingRole.value.kind ?? 'AGENTIC',
                 necessity: editingRole.value.necessity ?? 'OPTIONAL',
                 humanGate: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.humanGate ?? 'NONE'),
+                // Always sent for an agentic role, including as an empty list: omitting it would
+                // leave a role's outputs unchanged, so an operator could never REMOVE one.
+                producesOutputs: editingRole.value.kind === 'HUMAN' ? null
+                    : (editingRole.value.producesOutputTypes ?? []).map((spec: string) => ({
+                        specification: spec, scope: 'TASK', required: true,
+                    })),
             },
         })
         notification.success({ content: `Role ${editingRole.value.name} saved`, duration: 3000 })

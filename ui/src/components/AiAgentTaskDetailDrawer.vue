@@ -129,6 +129,46 @@
                     <agent-usage-summary :usage="task.usage" :show-by-model="false" />
                 </div>
 
+                <div class="dsec" v-if="openFindingGroups.length">
+                    <div class="dsec__h">Open findings</div>
+                    <!-- From the NEWEST round of each indexed type. Every round carries forward
+                         what the previous one left open, so the newest is the current state;
+                         summing rounds would count one finding several times. -->
+                    <div v-for="g in openFindingGroups" :key="String(g.priority)" class="fgroup">
+                        <div class="fgroup__h">
+                            <n-tag size="tiny" :bordered="false"
+                                   :type="g.priority === 1 ? 'error' : 'warning'">
+                                P{{ g.priority ?? '?' }}
+                            </n-tag>
+                            <span class="fgroup__count">{{ g.findings.length }}</span>
+                        </div>
+                        <div v-for="f in g.findings" :key="f.id ?? ''" class="frow">
+                            <code class="frow__id">{{ f.id }}</code>
+                            <span class="frow__title">{{ f.title }}</span>
+                            <code v-if="findingLocation(f)" class="frow__loc">{{ findingLocation(f) }}</code>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dsec" v-if="taskDocuments.length">
+                    <div class="dsec__h">Documents</div>
+                    <div v-for="d in taskDocuments" :key="d.uuid ?? ''" class="drow">
+                        <span class="drow__label">{{ documentLabel(d) }}</span>
+                        <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
+                               :type="verdictType(documentVerdict(d))">{{ documentVerdict(d) }}</n-tag>
+                        <n-tag v-if="testCounts(d)" size="tiny" :bordered="false" type="info">
+                            {{ testCounts(d)?.failed }} failed / {{ testCounts(d)?.passed }} passed
+                        </n-tag>
+                        <!-- A link only where we can build one. A guessed URL that 404s reads as
+                             "the document is missing", so an unknown host shows the path instead. -->
+                        <a v-if="documentFileUrl(d)" :href="documentFileUrl(d) ?? undefined" target="_blank"
+                           rel="noopener" class="drow__path">{{ d.document?.path }}</a>
+                        <code v-else class="drow__path drow__path--plain">{{ d.document?.path }}</code>
+                        <code v-if="d.sourceCodeEntryDetails?.commit" class="drow__commit"
+                              title="Commit this document is pinned to">{{ d.sourceCodeEntryDetails.commit.slice(0, 8) }}</code>
+                    </div>
+                </div>
+
                 <div class="dsec">
                     <div class="dsec__h">History</div>
                     <div v-if="!history.length" class="empty">No hops recorded yet.</div>
@@ -148,6 +188,13 @@
                                       title="Served role-prompt version">{{ e.rec.promptVersion }}</code>
                                 <span v-if="hopHasUsage(e.rec)" class="hist__usage"
                                       :title="hopTitle(e.rec)">{{ hopLabel(e.rec) }}</span>
+                                <div v-if="hopOutputs(e.rec).length" class="hist__outputs">
+                                    <span v-for="o in hopOutputs(e.rec)" :key="o.uuid ?? ''" class="hist__output">
+                                        <a v-if="documentFileUrl(o)" :href="documentFileUrl(o) ?? undefined"
+                                           target="_blank" rel="noopener">{{ documentLabel(o) }}</a>
+                                        <span v-else>{{ documentLabel(o) }}</span>
+                                    </span>
+                                </div>
                                 <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                             </template>
                             <template v-else>
@@ -157,6 +204,13 @@
                                 <span class="hist__time">{{ ts(e.rec.returnedAt) }} · {{ e.rec.reason }}</span>
                                 <span v-if="hopHasUsage(e.rec)" class="hist__usage"
                                       :title="hopTitle(e.rec)">{{ hopLabel(e.rec) }}</span>
+                                <div v-if="hopOutputs(e.rec).length" class="hist__outputs">
+                                    <span v-for="o in hopOutputs(e.rec)" :key="o.uuid ?? ''" class="hist__output">
+                                        <a v-if="documentFileUrl(o)" :href="documentFileUrl(o) ?? undefined"
+                                           target="_blank" rel="noopener">{{ documentLabel(o) }}</a>
+                                        <span v-else>{{ documentLabel(o) }}</span>
+                                    </span>
+                                </div>
                                 <div v-if="e.rec.description" class="hist__note">{{ e.rec.description }}</div>
                             </template>
                         </div>
@@ -203,6 +257,18 @@ import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NDrawer, NDrawerContent, NInput, NSpace, NTag } from 'naive-ui'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
+import {
+    DocumentRelease,
+    Finding,
+    documentFileUrl,
+    documentLabel,
+    documentVerdict,
+    findingLocation,
+    groupByPriority,
+    outputsOfHop,
+    testCounts,
+    verdictType,
+} from '@/utils/agentDocuments'
 
 const props = defineProps<{
     task: any | null
@@ -220,6 +286,19 @@ const emit = defineEmits<{
 }>()
 
 const reviewNote = ref('')
+
+// Documents this task has produced, newest first as the server returns them.
+const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
+
+// Findings still open, grouped by priority. The server already restricts this to the newest round
+// of each indexed type; grouping is purely presentation.
+const openFindingGroups = computed(() => groupByPriority((props.task?.openFindings ?? []) as Finding[]))
+
+// The documents a hop recorded as its outputs. A hop stores uuids and the task carries the
+// releases, so they are resolved here rather than holding two shapes of the same thing.
+function hopOutputs (rec: any): DocumentRelease[] {
+    return outputsOfHop(rec?.outputs, taskDocuments.value)
+}
 
 // Per-hop cost, shown inline on the history row rather than in a column: a hop
 // that cost nothing to report is the common case, and an always-present column
@@ -340,6 +419,26 @@ function statusTone (s: string): string {
         margin-bottom: 6px;
     }
 }
+.fgroup {
+    margin-bottom: 8px;
+    &__h { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    &__count { font-size: 11px; color: #999; }
+}
+.frow {
+    display: flex; align-items: baseline; gap: 7px; font-size: 12.5px;
+    padding: 2px 0 2px 10px;
+    &__id { font-weight: 600; font-size: 11.5px; }
+    &__title { flex: 1; }
+    &__loc { font-size: 11px; color: #999; }
+}
+.drow {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; font-size: 12.5px;
+    padding: 3px 0;
+    &__label { font-weight: 600; }
+    &__path { font-size: 11.5px; }
+    &__path--plain { color: #777; }
+    &__commit { font-size: 11px; color: #999; }
+}
 .deprow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
 .deplab { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #999; min-width: 52px; }
 .depclick { cursor: pointer; }
@@ -362,6 +461,8 @@ function statusTone (s: string): string {
     // Pushed to the right so the hop reads role/agent/time first and cost last:
     // the money is the qualifier on the hop, not its headline.
     &__usage { margin-left: auto; font-size: 11.5px; color: #777; white-space: nowrap; }
+    &__outputs { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 2px; margin-top: 3px; }
+    &__output { font-size: 11.5px; color: #666; }
     &__note { width: 100%; color: #555; font-size: 12px; padding-left: 2px; }
 }
 .shist {

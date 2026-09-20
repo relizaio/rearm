@@ -529,6 +529,7 @@ const storeObject : any = {
                                 }
                                 settings {
                                     justificationMandatory
+                                    findingPriorityLevels
                                     branchSuffixMode
                                     vexComplianceFramework
                                     sidPurlMode
@@ -2517,6 +2518,8 @@ const storeObject : any = {
                             description
                             status
                             sources
+                            documentsRepo
+                            documentPaths
                             coordinatorPrompt
                             missingCapabilities
                             events { kind message actor eventAt }
@@ -2550,6 +2553,8 @@ const storeObject : any = {
                             priorityType
                             perAgentWipLimit
                             sources
+                            documentsRepo
+                            documentPaths
                             coordinatorPrompt
                             roles {
                                 name
@@ -2569,6 +2574,11 @@ const storeObject : any = {
                                     component
                                     minLifecycle
                                     resolution
+                                }
+                                producesOutputs {
+                                    specification
+                                    scope
+                                    required
                                 }
                             }
                         }
@@ -2641,9 +2651,29 @@ const storeObject : any = {
                             hold { level kind gateRole reason heldBy heldAt }
                             requireHumanReview
                             assignment { session agent role assignedAt promptVersion }
-                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
-                            returns { role agent session reason description returnedAt usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+                            returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
                             usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
+                            documents {
+                                uuid
+                                version
+                                lifecycle
+                                component
+                                createdDate
+                                sourceCodeEntryDetails { commit commitMessage vcsRepository { uri name } }
+                                document {
+                                    specification
+                                    path
+                                    digest
+                                    mediaType
+                                    indexPath
+                                    task
+                                    session
+                                    round
+                                    findings
+                                }
+                            }
+                            openFindings
                             parentTask
                             childTasks
                             sessions
