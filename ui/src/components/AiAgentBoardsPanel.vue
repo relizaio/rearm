@@ -713,6 +713,7 @@ const editingPreset = ref<any>(null)
 const editingPresetIsNew = ref(false)
 
 const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
+    .map(c => ({ label: c, value: c }))
 
 /**
  * Document types a role can be required to publish.
@@ -724,7 +725,6 @@ const outputTypeOptions = [
     { label: 'review findings', value: 'REVIEW_FINDINGS' },
     { label: 'test report', value: 'TEST_REPORT' },
 ]
-    .map(c => ({ label: c, value: c }))
 
 const priorityOptions = [
     { label: 'LAX — priority is advisory; workers may take any eligible task', value: 'LAX' },
