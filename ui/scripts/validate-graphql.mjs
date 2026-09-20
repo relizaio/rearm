@@ -32,6 +32,7 @@
 const STRICT = process.argv.includes('--strict')
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname, join, relative } from 'path'
 import { buildSchema, parse, validate } from 'graphql'
@@ -42,8 +43,31 @@ const SRC = join(UI_ROOT, 'src')
 // Since the schema split, the shared types live in schema.graphqls and the root fields in
 // user.graphqls (browser) and programmatic.graphqls (API keys); a schema is the three together.
 const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
-const PRO_SCHEMA = join(UI_ROOT, '../../rearm-core/backend/src/main/resources/schema')
-const CE_SCHEMA = join(UI_ROOT, '../backend/src/main/resources/schema')
+// The Pro schema comes from a checkout NEXT DOOR, which is on whatever branch its owner
+// last left it on. That is a trap: a UI change written against an unmerged backend branch
+// validates against a DIFFERENT schema than the one it targets, and passes. `facts` went
+// from Object to ModelFacts on one branch while the co-located checkout sat on another,
+// so a bare `facts` selection -- invalid against the schema it would actually meet --
+// validated clean. REARM_PRO_SCHEMA points this at a directory holding the three files
+// for the branch (or the merge of branches) the UI is really targeting; whichever is used,
+// the run PRINTS what it read, so a green result can be checked rather than trusted.
+const PRO_SCHEMA = process.env.REARM_PRO_SCHEMA
+    || join(UI_ROOT, '../../rearm-core/backend/src/main/resources/schema')
+const CE_SCHEMA = process.env.REARM_CE_SCHEMA
+    || join(UI_ROOT, '../backend/src/main/resources/schema')
+
+/** Branch and short sha of the checkout a schema directory sits in, when it is one. */
+function schemaProvenance (dir) {
+    try {
+        const git = args => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+        const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+        const sha = git(['rev-parse', '--short', 'HEAD'])
+        const dirty = git(['status', '--porcelain', '--', '.']).length > 0 ? ' +uncommitted' : ''
+        return `${branch}@${sha}${dirty}`
+    } catch {
+        return 'not a git checkout'
+    }
+}
 
 function loadSchema (dir, label) {
     const present = SCHEMA_FILES.map(f => join(dir, f)).filter(existsSync)
@@ -149,6 +173,9 @@ function lineOf (source, index) {
 
 const pro = loadSchema(PRO_SCHEMA, 'Pro')
 const ce = loadSchema(CE_SCHEMA, 'CE')
+
+if (pro) console.log(`[validate-graphql] Pro schema: ${PRO_SCHEMA} (${schemaProvenance(PRO_SCHEMA)})`)
+if (ce) console.log(`[validate-graphql] CE schema:  ${CE_SCHEMA} (${schemaProvenance(CE_SCHEMA)})`)
 
 // Report-only means never hard-exit on a missing schema. The Pro schema lives
 // in the sibling rearm-core checkout, which isn't present in this repo's own

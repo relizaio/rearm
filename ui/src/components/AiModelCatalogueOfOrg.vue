@@ -184,9 +184,37 @@ function modelLabel (m: any): string {
     return (m.name ?? '(unnamed)') + v
 }
 
+/**
+ * Declared rather than derived from the object's keys. facts stopped being a free-form
+ * map and became a typed record, so every model now carries all seven keys plus the
+ * __typename Apollo adds -- iterating the keys would print six "null" rows and a type
+ * name for a model that only knows its context window.
+ */
+const FACT_LABELS: [string, string][] = [
+    ['contextWindow', 'context window'],
+    ['maxOutputTokens', 'max output'],
+    ['modalities', 'modalities'],
+    ['hostingKind', 'hosting'],
+    ['releaseDate', 'released'],
+    ['deprecatedAt', 'deprecated'],
+    ['knowledgeCutoff', 'knowledge cutoff'],
+]
+
+function factValue (key: string, value: any): string {
+    if (Array.isArray(value)) return value.join(', ')
+    if (key === 'contextWindow' || key === 'maxOutputTokens') {
+        const n = Number(value)
+        return Number.isFinite(n) ? n.toLocaleString() : String(value)
+    }
+    return String(value)
+}
+
 function factPairs (m: any): string[] {
     const f = m.facts ?? {}
-    return Object.keys(f).map(k => `${k}: ${f[k]}`)
+    return FACT_LABELS
+        .filter(([k]) => f[k] !== null && f[k] !== undefined && f[k] !== ''
+            && !(Array.isArray(f[k]) && f[k].length === 0))
+        .map(([k, label]) => `${label}: ${factValue(k, f[k])}`)
 }
 
 const unresolvedCount = computed(() => models.value.filter(m => m.resolution === 'UNRESOLVED').length)

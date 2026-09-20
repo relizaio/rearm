@@ -2936,7 +2936,15 @@ const storeObject : any = {
                             description
                             canonicalId
                             aliases
-                            facts
+                            facts {
+                                contextWindow
+                                maxOutputTokens
+                                modalities
+                                hostingKind
+                                releaseDate
+                                deprecatedAt
+                                knowledgeCutoff
+                            }
                             tier
                             resolution
                             modelCardSpecVersion
