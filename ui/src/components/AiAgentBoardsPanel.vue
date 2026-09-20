@@ -31,6 +31,7 @@
             >
                 Board locked ({{ currentBoard.lock.level }}) — no new assignments.
                 <template v-if="currentBoard.lock.reason"> Reason: {{ currentBoard.lock.reason }}.</template>
+                <template v-if="actorLabel(currentBoard.lock.lockedBy)"> Held by {{ actorLabel(currentBoard.lock.lockedBy) }}.</template>
                 <n-button
                     v-if="currentBoard.lock.level === 'OPERATOR'"
                     size="tiny" style="margin-left: 10px"
@@ -87,7 +88,7 @@
                         <n-tag size="tiny" :bordered="false"
                                :type="e.kind === 'ALERT' ? 'error' : e.kind === 'LOCKED' ? 'warning' : 'default'">{{ e.kind }}</n-tag>
                         <span class="evmsg">{{ e.message }}</span>
-                        <span class="evmeta">{{ e.actor }} · {{ formatEventTime(e.eventAt) }}</span>
+                        <span class="evmeta">{{ actorLabel(e.actor) }} · {{ formatEventTime(e.eventAt) }}</span>
                     </div>
                 </n-collapse-item>
             </n-collapse>
@@ -569,6 +570,7 @@ import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
+import { actorLabel } from '@/utils/agentActors'
 import { effectiveTemplate } from '@/utils/agentDocuments'
 
 /**
@@ -980,7 +982,7 @@ const TaskCard = defineComponent({
                 p.t.signOffs.map((s: any, i: number) => h(NTooltip, { trigger: 'hover', key: i }, {
                     trigger: () => h('span', { class: ['passage', 'passage--' + (s.outcome || '').toLowerCase()] },
                         (s.reviewedBy ? '\u270b ' : '') + s.role),
-                    default: () => `${s.role}: ${s.outcome}${s.reviewedBy ? ' by ' + s.reviewedBy : ''}${s.note ? ' — ' + s.note : ''}`,
+                    default: () => `${s.role}: ${s.outcome}${s.reviewedBy ? ' by ' + actorLabel(s.reviewedBy) : ''}${s.note ? ' — ' + s.note : ''}`,
                 }))) : null,
         ] })
     },

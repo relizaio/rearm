@@ -2522,8 +2522,8 @@ const storeObject : any = {
                             documentPaths
                             coordinatorPrompt
                             missingCapabilities
-                            events { kind message actor eventAt }
-                            lock { level reason lockedBy lockedAt }
+                            events { kind message actor { kind uuid name } eventAt }
+                            lock { level reason lockedBy { kind uuid name } lockedAt }
                             coordinatorSeat { session agent claimedAt }
                             perAgentWipLimit
                             priorityType
@@ -2648,10 +2648,10 @@ const storeObject : any = {
                             role
                             orderIndex
                             dependsOn
-                            hold { level kind gateRole reason heldBy heldAt }
+                            hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
                             requireHumanReview
                             assignment { session agent role assignedAt promptVersion }
-                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
                             returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
                             usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
                             documents {
