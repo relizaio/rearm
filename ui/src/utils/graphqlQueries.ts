@@ -1092,7 +1092,11 @@ const SINGLE_RELEASE_GQL_DATA_LIGHT = `
         nature
         resourceGroup
     }
-    tags
+    tags {
+        key
+        value
+        removable
+    }
 `
 
 const COMPONENT_FULL_DATA = `
