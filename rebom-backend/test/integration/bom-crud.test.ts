@@ -62,9 +62,15 @@ describe('BOM CRUD Operations', () => {
         // Retrieve BOM by ID
         const retrieved = await BomService.findBomObjectById(created.uuid, TEST_ORG_UUID) as any;
 
-        // Verify retrieval
+        // Verify retrieval. The row keeps the producer's serialNumber; the
+        // processed document it serves is a different document and carries its
+        // own, with a BOM-Link back to the producer's.
         expect(retrieved).toBeDefined();
-        expect(retrieved.serialNumber).toBe(serialNumber);
+        expect(retrieved.serialNumber).not.toBe(serialNumber);
+        expect(retrieved.externalReferences).toContainEqual(expect.objectContaining({
+            type: 'bom',
+            url: `urn:cdx:${serialNumber.replace('urn:uuid:', '')}/1`
+        }));
         expect(retrieved.components).toBeDefined();
         expect(retrieved.components.length).toBeGreaterThanOrEqual(2); // lodash, express (may have more after dedup)
     });
@@ -134,11 +140,13 @@ describe('BOM CRUD Operations', () => {
             false // not raw
         ) as any;
 
-        // Verify
+        // Verify. Looked up by the producer's serialNumber -- the row's
+        // identity -- and served as the processed document, under its own.
         expect(retrieved).toBeDefined();
-        expect(retrieved.serialNumber).toBe(serialNumber);
+        expect(retrieved.serialNumber).not.toBe(serialNumber);
         // Note: version field is BOM version (1), not component version (2.0.0)
-        expect(retrieved.version).toBeDefined();
+        // It stays the producer's: rearm-core reads it back off this document.
+        expect(retrieved.version).toBe(1);
     });
 
     it('should retrieve BOM metadata by serial number', async () => {

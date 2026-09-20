@@ -130,7 +130,14 @@ describe('BOM Service - Unit Tests', () => {
             const retrieved = await BomService.findBomObjectById(created.uuid, TEST_ORG_UUID) as any;
 
             expect(retrieved).toBeDefined();
-            expect(retrieved.serialNumber).toBe(serialNumber);
+            // The processed copy is a different document from the one uploaded,
+            // so it has an identity of its own and points back at the producer's.
+            expect(retrieved.serialNumber).not.toBe(serialNumber);
+            expect(retrieved.serialNumber).toMatch(/^urn:uuid:[0-9a-f-]{36}$/);
+            expect(retrieved.externalReferences).toContainEqual(expect.objectContaining({
+                type: 'bom',
+                url: `urn:cdx:${serialNumber.replace('urn:uuid:', '')}/1`
+            }));
         });
 
         it('should throw error for non-existent BOM', async () => {
@@ -198,7 +205,10 @@ describe('BOM Service - Unit Tests', () => {
             ) as any;
 
             expect(retrieved).toBeDefined();
-            expect(retrieved.serialNumber).toBe(serialNumber);
+            // Looked up by the producer's serial -- the row's identity -- and
+            // served as the processed document, under its own.
+            expect(retrieved.serialNumber).not.toBe(serialNumber);
+            expect(retrieved.version).toBe(1);
         });
 
         it('should return raw BOM when raw=true', async () => {

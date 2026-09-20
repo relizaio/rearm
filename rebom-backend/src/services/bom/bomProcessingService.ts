@@ -22,6 +22,7 @@ import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 
 /** Stamped on every enrichment entry so a bad ruleset can be found by its runs. */
 const ENRICHER_VERSION = process.env.REBOM_VERSION || require('../../../package.json').version;
@@ -421,20 +422,106 @@ export function attachRebomToolToBom(finalBom: any): any {
 }
 
 /**
+ * Marks the external reference that points a processed document back at the
+ * document it was derived from. rebom writes it and rebom recognises it, so a
+ * refresh replaces the entry it finds instead of appending a second one.
+ */
+export const PRODUCER_BOM_REFERENCE_COMMENT = 'Source document as uploaded by the producer';
+
+function isProducerBomReference(ref: any): boolean {
+  return !!ref && ref.type === 'bom' && ref.comment === PRODUCER_BOM_REFERENCE_COMMENT;
+}
+
+/**
+ * A CycloneDX BOM-Link for one document: `urn:cdx:<serial>/<version>`.
+ *
+ * Returns null when there is no serial to point at. A link we cannot build
+ * honestly is a link we do not write.
+ */
+export function bomLink(serialNumber?: string | null, version?: unknown): string | null {
+  if (typeof serialNumber !== 'string' || !serialNumber) return null;
+  const uuid = serialNumber.replace(/^urn:uuid:/, '');
+  const parsed = parseInt(String(version ?? ''), 10);
+  // CycloneDX treats an absent version as 1, and BOM-Link has no form without one.
+  return `urn:cdx:${uuid}/${Number.isFinite(parsed) && parsed > 0 ? parsed : 1}`;
+}
+
+/** The producer link a document already carries, if rebom wrote one. */
+export function producerBomLink(bom: any): string | null {
+  const refs = bom?.externalReferences;
+  if (!Array.isArray(refs)) return null;
+  const ref = refs.find(isProducerBomReference);
+  return typeof ref?.url === 'string' ? ref.url : null;
+}
+
+/**
+ * Give a document rebom is about to push its own CycloneDX identity.
+ *
+ * serial + version is the identity of ONE CycloneDX document. rebom writes more
+ * than one document per upload -- the producer's bytes, the augmented copy, and
+ * a further copy for every enrichment run -- and until this existed they all
+ * claimed the producer's identity. A BOM-Link to that identity was ambiguous, a
+ * cached augmented copy was indistinguishable from a later enrichment of it, and
+ * a verifier checking the augmented download against the producer's signature
+ * failed on a document the producer never claimed.
+ *
+ * `version` is deliberately left alone: rearm-core reads the artifact's latest
+ * version out of the processed document body, so a processed copy cannot carry a
+ * version counter of its own. A fresh serial is spec-correct without one --
+ * version is only meaningful within a serial.
+ *
+ * @param bom document about to be pushed
+ * @param sourceLink BOM-Link of the document this one was derived from. Omit to
+ *        derive it: the link the document already carries, else the document's
+ *        own identity, which is the right answer on the first pass because the
+ *        document still carries the producer's serial. Pass null to write no
+ *        link, for a source that has no BOM-Link form (an SPDX upload).
+ * @returns a new document; its `serialNumber` is the minted serial
+ */
+export function mintProcessedSerialNumber(bom: any, sourceLink?: string | null): any {
+  if (!bom || typeof bom !== 'object') return bom;
+
+  const link = sourceLink === undefined
+    ? (producerBomLink(bom) ?? bomLink(bom.serialNumber, bom.version))
+    : sourceLink;
+
+  // Rebuilt rather than mutated: the caller's array may be shared with the raw
+  // document, which is never ours to touch.
+  const kept = Array.isArray(bom.externalReferences)
+    ? bom.externalReferences.filter((ref: any) => !isProducerBomReference(ref))
+    : [];
+  const externalReferences = link
+    ? [...kept, { type: 'bom', url: link, comment: PRODUCER_BOM_REFERENCE_COMMENT }]
+    : kept;
+
+  const minted: any = { ...bom, serialNumber: `urn:uuid:${uuidv4()}` };
+  if (externalReferences.length || Array.isArray(bom.externalReferences)) {
+    minted.externalReferences = externalReferences;
+  }
+  return minted;
+}
+
+/**
  * Fully augments a BOM with component context and rebom tool information.
  * This is a convenience function that combines augmentBomWithComponentContext
  * and attachRebomToolToBom in a single call.
  * 
  * Use this when preparing a BOM for storage that should include full augmentation.
+ *
+ * The result is a distinct document from the one that came in, so it is given a
+ * distinct identity: read `serialNumber` off the return value for the minted
+ * serial, and see mintProcessedSerialNumber for why. Augmentation done to SERVE
+ * a request rather than to store one does not go through here -- it calls
+ * augmentBomWithComponentContext directly and mints nothing.
  * 
  * @param bom - Processed BOM (already sanitized, deduplicated, validated)
  * @param componentDetails - Release/component metadata (name, version, group, etc.)
  * @param lastUpdatedDate - Optional timestamp for metadata
- * @returns Fully augmented BOM ready for storage
+ * @returns Fully augmented BOM ready for storage, under its own serialNumber
  */
 export function augmentBomForStorage(bom: any, componentDetails: RebomOptions, lastUpdatedDate?: string | Date): any {
   const augmentedBom = augmentBomWithComponentContext(bom, componentDetails, lastUpdatedDate);
-  return attachRebomToolToBom(augmentedBom);
+  return mintProcessedSerialNumber(attachRebomToolToBom(augmentedBom));
 }
 
 /**
@@ -766,6 +853,30 @@ export interface EnrichmentResult {
 }
 
 /**
+ * The producer's document identity for a row, as a BOM-Link.
+ *
+ * Read off the document when it already carries one -- every processed document
+ * rebom has written since serials diverged does. A legacy row's processed copy
+ * does not, but it still carries the producer's own serial, so for a CycloneDX
+ * upload that document IS the answer. An SPDX upload has no CycloneDX document
+ * to point at and gets no link rather than an invented one.
+ */
+export async function resolveProducerLink(bomUuid: string, bom: any): Promise<string | null> {
+  const carried = producerBomLink(bom);
+  if (carried) return carried;
+  try {
+    const row: any = (await BomRepository.bomById(bomUuid))?.[0];
+    if (!row) return null;
+    if (row.source_format === 'SPDX' || row.source_spdx_uuid) return null;
+    return bomLink(row.meta?.serialNumber, row.meta?.bomVersion);
+  } catch (error) {
+    logger.warn({ bomUuid, error },
+      'Could not resolve the producer BOM-Link; the enriched document will carry no source reference');
+    return null;
+  }
+}
+
+/**
  * Performs async BOM enrichment and updates the database record.
  * This function is meant to be called without await (fire-and-forget).
  * 
@@ -826,7 +937,14 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
       const repositoryName = getMonthlyRepositoryName();
       const tag = enrichmentTag(bomUuid, sequence);
 
-      const pushResult = await pushToOci(tag, result.enrichedBom, repositoryName);
+      // A new tag holds a new document, and a new document gets a new identity
+      // -- otherwise the second enrichment reintroduces the ambiguity the first
+      // one resolved. Resolved off the pre-enrichment document, which is what
+      // the row currently points at, so a BEAR run that drops the reference
+      // cannot lose the provenance.
+      const enrichedBom = mintProcessedSerialNumber(result.enrichedBom,
+        await resolveProducerLink(bomUuid, bom));
+      const pushResult = await pushToOci(tag, enrichedBom, repositoryName);
 
       // Validate repository name was set
       validateOciPushResult(pushResult, 'enrichment', bomUuid);
@@ -836,11 +954,12 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
       // RUNNING, breaking the invariant that the pointer is the last COMPLETED
       // entry -- which is the thing retention will read.
       await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
-        pushResult.ociRepositoryName, tag, sequence);
+        pushResult.ociRepositoryName, tag, sequence, enrichedBom.serialNumber);
 
       logger.info({ 
         bomUuid, 
-        serialNumber: bom.serialNumber, 
+        serialNumber: enrichedBom.serialNumber,
+        producerSerialNumber: bom.serialNumber,
         tag,
         repositoryName: pushResult.ociRepositoryName
       }, 'Async BOM enrichment completed successfully');
@@ -959,6 +1078,11 @@ export async function reserveEnrichmentRun(
              'repository', bom->>'ociRepositoryName',
              'digest', meta->>'processedFileDigest',
              'size', meta->'processedFileSize',
+             -- Absent on a row uploaded before processed documents carried
+             -- their own identity, and stripped rather than written as null:
+             -- on those rows the upload's serial is the producer's, and it is
+             -- already in meta.serialNumber.
+             'serialNumber', meta->>'processedSerialNumber',
              'status', 'COMPLETED',
              'source', 'on-upload')))
     END`;
@@ -1187,9 +1311,18 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
     const sequence = await reserveEnrichmentRun(bomUuid, 'manual');
     const tag = enrichmentTag(bomUuid, sequence);
 
+    // Its own identity, same as every other pushed document. The source link is
+    // taken from the row rather than derived: this path rebuilt the document
+    // from the raw artifact, and for an SPDX upload that artifact is SPDX --
+    // there is no CycloneDX document to link to.
+    const enrichedBom = mintProcessedSerialNumber(result.enrichedBom,
+      (sourceFormat === 'SPDX' || sourceSpdxUuid)
+        ? null
+        : bomLink(bomRecord.meta?.serialNumber, bomRecord.meta?.bomVersion));
+
     let pushResult;
     try {
-      pushResult = await pushToOci(tag, result.enrichedBom, repositoryName);
+      pushResult = await pushToOci(tag, enrichedBom, repositoryName);
     } catch (error) {
       await closeEnrichmentRun(bomUuid, sequence, {
         status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
@@ -1206,14 +1339,15 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
     // FAILED so the history says so, and let the outer catch mark the run.
     try {
       await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult,
-        pushResult.ociRepositoryName, tag, sequence);
+        pushResult.ociRepositoryName, tag, sequence, enrichedBom.serialNumber);
     } catch (error) {
       await closeEnrichmentRun(bomUuid, sequence, {
         status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
     
-    logger.info({ bomUuid, tag }, 'Forced re-enrichment completed successfully');
+    logger.info({ bomUuid, tag, serialNumber: enrichedBom.serialNumber },
+      'Forced re-enrichment completed successfully');
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1297,7 +1431,7 @@ async function reprocessSpdxBom(bomRecord: BomRecord, spdxUuid: string, org: str
 
 /**
  * Move the row onto the artifact this run produced: pointer, digest, size,
- * repository AND the run's history entry, in one statement.
+ * repository, serial AND the run's history entry, in one statement.
  *
  * The history entry is closed here rather than in a following write because the
  * two have to agree. A crash between them would leave processedTag at
@@ -1310,7 +1444,8 @@ export async function updateEnrichmentStatusWithBom(
   oasResponse: any,
   repositoryName?: string,
   processedTag?: string,
-  sequence?: number
+  sequence?: number,
+  processedSerialNumber?: string
 ): Promise<void> {
   try {
     // Update enrichment status in meta and repository name in bom field
@@ -1335,12 +1470,14 @@ export async function updateEnrichmentStatusWithBom(
                    jsonb_set(
                      jsonb_set(
                        jsonb_set(
-                         jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
-                         '{enrichmentTimestamp}', $4::jsonb),
-                       '{enrichmentError}', $5::jsonb),
-                     '{processedFileDigest}', $6::jsonb),
-                   '{processedFileSize}', $7::jsonb),
-                 '{processedTag}', $8::jsonb),
+                         jsonb_set(
+                           jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
+                           '{enrichmentTimestamp}', $4::jsonb),
+                         '{enrichmentError}', $5::jsonb),
+                       '{processedFileDigest}', $6::jsonb),
+                     '{processedFileSize}', $7::jsonb),
+                   '{processedTag}', $8::jsonb),
+                 '{processedSerialNumber}', $9::jsonb),
         last_updated_date = NOW()
       WHERE uuid = $1
     `;
@@ -1356,14 +1493,16 @@ export async function updateEnrichmentStatusWithBom(
                      jsonb_set(
                        jsonb_set(
                          jsonb_set(
-                           jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
-                           '{enrichmentTimestamp}', $4::jsonb),
-                         '{enrichmentError}', $5::jsonb),
-                       '{processedFileDigest}', $6::jsonb),
-                     '{processedFileSize}', $7::jsonb),
-                   '{processedTag}', $8::jsonb),
-                 ARRAY['enrichments', $9::text],
-                 COALESCE(meta->'enrichments'->$10::int, '{}'::jsonb) || $11::jsonb),
+                           jsonb_set(
+                             jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
+                             '{enrichmentTimestamp}', $4::jsonb),
+                           '{enrichmentError}', $5::jsonb),
+                         '{processedFileDigest}', $6::jsonb),
+                       '{processedFileSize}', $7::jsonb),
+                     '{processedTag}', $8::jsonb),
+                   '{processedSerialNumber}', $9::jsonb),
+                 ARRAY['enrichments', $10::text],
+                 COALESCE(meta->'enrichments'->$11::int, '{}'::jsonb) || $12::jsonb),
         last_updated_date = NOW()
       WHERE uuid = $1 AND jsonb_typeof(meta->'enrichments') = 'array'
     `;
@@ -1376,7 +1515,12 @@ export async function updateEnrichmentStatusWithBom(
       JSON.stringify(null),
       JSON.stringify(oasResponse.fileSHA256Digest || null),
       JSON.stringify(oasResponse.originalSize || null),
-      JSON.stringify(processedTag || bomUuid)
+      JSON.stringify(processedTag || bomUuid),
+      // The serial travels with the pointer for the same reason the digest
+      // does: it describes the bytes the row now points at, and a reader
+      // comparing the served document against the row has nothing else to
+      // check the identity against.
+      JSON.stringify(processedSerialNumber || null)
     ];
     if (typeof sequence === 'number') {
       params.push(String(sequence), sequence, JSON.stringify({
@@ -1386,6 +1530,7 @@ export async function updateEnrichmentStatusWithBom(
         repository: repositoryName || null,
         digest: oasResponse.fileSHA256Digest || null,
         size: oasResponse.originalSize || null,
+        serialNumber: processedSerialNumber || null,
         error: null
       }));
       await runQuery(closingQueryText, params);

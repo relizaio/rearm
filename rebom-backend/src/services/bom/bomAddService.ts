@@ -11,7 +11,7 @@ import {
   validateOciPushResult,
   extractRepositoryNameFromBom
 } from '../oci';
-import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom } from './bomProcessingService';
+import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom, mintProcessedSerialNumber } from './bomProcessingService';
 import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../cyclonedx/cdxSpecDowngrade';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
@@ -152,6 +152,13 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   if (AUGMENT_ON_STORAGE && processable) {
     logger.debug({ serialNumber: rebomOptions.serialNumber }, "Augmenting BOM with component context before storage");
     finalBom = augmentBomForStorage(processedBom, rebomOptions, new Date());
+    // The augmented copy is a different document from the one that was
+    // uploaded, so it carries a different serialNumber and a link back to the
+    // producer's. Recorded here: meta.serialNumber stays the producer's -- it
+    // is the row's identity and what every lookup keys on -- and this says
+    // which document the row currently serves. Left unset when there was no
+    // augmentation, because then there is only one document and one serial.
+    rebomOptions.processedSerialNumber = finalBom.serialNumber;
   }
   
   // Compute digest on the final BOM (augmented or processed, depending on config)
@@ -417,7 +424,12 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       logger.warn({ serialNumber }, "Generated fallback serial number - rearm-cli output missing serialNumber");
     }
     
-    const convertedBom = conversionResult.convertedBom;
+    // Converted, therefore a distinct document from the SPDX file that was
+    // uploaded, and given its own identity for the same reason the augmented
+    // CycloneDX copy is. No source reference: the document it came from is
+    // SPDX, and BOM-Link has no form for one -- better no link than an
+    // invented one.
+    const convertedBom = mintProcessedSerialNumber(conversionResult.convertedBom, null);
     const bomDigest = computeBomDigest(convertedBom);
     mergedOptions.bomDigest = bomDigest;
     mergedOptions.originalFileDigest = fileHash;
@@ -439,6 +451,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     mergedOptions.processedFileSize = cycloneDxPushResult.originalSize;
     // Same reason as the CycloneDX path: the pointer is explicit on every new row.
     mergedOptions.processedTag = convertedBomUuid;
+    mergedOptions.processedSerialNumber = convertedBom.serialNumber;
     
     // Repository name is already in cycloneDxPushResult.ociRepositoryName
 
