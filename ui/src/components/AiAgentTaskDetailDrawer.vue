@@ -181,7 +181,7 @@
                                 </n-tag>
                                 <span class="hist__role">{{ e.rec.role }}</span>
                                 <n-tag v-if="e.rec.reviewedBy" size="tiny" :bordered="false" type="info">human</n-tag>
-                                <span class="hist__agent">{{ e.rec.reviewedBy ?? agentName(e.rec.agent) }}</span>
+                                <span class="hist__agent">{{ actorLabel(e.rec.reviewedBy) || agentName(e.rec.agent) }}</span>
                                 <span class="hist__time">{{ ts(e.rec.signedOffAt) }}<template v-if="e.rec.assignedAt">
                                     · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</template></span>
                                 <code v-if="e.rec.promptVersion" class="hist__pv"

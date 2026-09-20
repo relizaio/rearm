@@ -34,8 +34,3 @@ export function actorLabel (actor: AgentActor | null | undefined): string {
     if (actor.uuid) return `${word} ${actor.uuid.slice(0, 8)}`
     return word
 }
-
-/** True when the actor is a human, which is what the sign-off list marks with a hand. */
-export function isHuman (actor: AgentActor | null | undefined): boolean {
-    return actor?.kind === 'USER'
-}
