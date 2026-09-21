@@ -47,16 +47,19 @@ describe('the device support statement is wired into the export modal', () => {
         expect(source).not.toMatch(/renderDeviceSupportStatementBlob/)
     })
 
-    // A format of the Support bom type since 2026-09-21, declared in supportExportFormats
-    // rather than as a radio literal, and PRODUCT-gated THERE -- one place, so a component
-    // release cannot be offered a document about a device.
-    it('offers it as a Support format, only where it can be produced', () => {
-        expect(source).toMatch(/value: 'DEVICE_STATEMENT', label: 'Device support statement \(PDF\)'/)
-        const formats = source.slice(source.indexOf('const supportExportFormats'))
-            .slice(0, source.slice(source.indexOf('const supportExportFormats')).indexOf('\n})'))
-        expect(formats).toContain('isProductReleaseForStatement')
-        expect(formats.indexOf('isProductReleaseForStatement'))
-            .toBeLessThan(formats.indexOf('DEVICE_STATEMENT'))
+    // A format of the Support bom type since 2026-09-21, and PRODUCT-gated inside
+    // utils/exportFormatSelection where the rule can be RUN. That the statement is offered on
+    // a product release and withheld on a component one is asserted by CALLING it, in
+    // exportFormatSelection.spec.ts -- an ordering check on two identifiers in this file's
+    // source would have passed just as happily on an inverted gate.
+    //
+    // What is left here is the only part that is genuinely about this component: that it
+    // delegates rather than keeping a second copy of the list.
+    it('takes its formats from the tested helper rather than a local list', () => {
+        expect(source).toMatch(
+            /import \{ supportExportFormats as supportExportFormatsFor, mediaTypeForBomType \} from '@\/utils\/exportFormatSelection'/)
+        expect(source).toMatch(/supportExportFormatsFor\(isProductReleaseForStatement\.value\)/)
+        expect(source).not.toMatch(/label: 'Device support statement/)
     })
 
     it('routes it through the Support export button', () => {
@@ -73,9 +76,14 @@ describe('the device support statement is wired into the export modal', () => {
     // because one predicate had to be repeated in five places.
     it('keeps the BOM-shaping controls out of the support form structurally', () => {
         expect(source).not.toContain('isFdaDocumentExport')
-        const supportForm = source.slice(
-            source.indexOf(`<n-form v-if="exportBomType === 'SUPPORT'">`),
-            source.indexOf(`<n-form v-if="exportBomType === 'CLE'">`))
+        const a = source.indexOf(`<n-form v-if="exportBomType === 'SUPPORT'">`)
+        const b = source.indexOf(`<n-form v-if="exportBomType === 'CLE'">`)
+        // The slice must EXIST before anything is asserted about what it lacks: every
+        // not.toContain below is vacuously true against an empty string, so a reordered form
+        // would quietly retire this guarantee rather than failing.
+        expect(a, 'no SUPPORT form in ReleaseView.vue').toBeGreaterThan(-1)
+        expect(b, 'CLE form does not follow SUPPORT').toBeGreaterThan(a)
+        const supportForm = source.slice(a, b)
         expect(supportForm).not.toContain('selectedBomStructureType')
         expect(supportForm).not.toContain('tldOnly')
         expect(supportForm).toContain('statementBlockedHere')

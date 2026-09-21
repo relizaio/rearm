@@ -123,7 +123,9 @@ describe('the release page carries release lifecycle dates and no device window'
 
     /** The release's own dates stay editable, under a heading that does not claim otherwise. */
     it('keeps the release lifecycle dates editable and separately labelled', () => {
-        expect(releaseView).toMatch(/<h3 class="mt-3">Release lifecycle dates<\/h3>/)
+        // The heading text, not the spacing class it happens to carry: a margin tweak is not
+        // a regression and must not red the suite.
+        expect(releaseView).toMatch(/<h3[^>]*>Release lifecycle dates<\/h3>/)
         expect(releaseView).toMatch(/v-model:formatted-value="deviceWindow\.eos"/)
         // The copy says what these dates are FOR, not merely what they are not: "not the
         // device commitment" alone reads as "ignore these".
@@ -151,9 +153,13 @@ describe('the release page carries release lifecycle dates and no device window'
         expect(meta.indexOf('<h3>Notes</h3>'))
             .toBeLessThan(meta.indexOf('Release lifecycle dates'))
 
-        const components = releaseView.slice(
-            releaseView.indexOf('<n-tab-pane name="components" tab="Components">'),
-            releaseView.indexOf('name="underlyingArtifacts"'))
+        const ca = releaseView.indexOf('<n-tab-pane name="components" tab="Components">')
+        const cb = releaseView.indexOf('name="underlyingArtifacts"')
+        // Same non-empty guard as the Meta slice above, and for the sharper reason: every
+        // assertion below is a not.toContain, which an empty slice satisfies in silence.
+        expect(ca, 'no Components pane').toBeGreaterThan(-1)
+        expect(cb, 'underlyingArtifacts does not follow Components').toBeGreaterThan(ca)
+        const components = releaseView.slice(ca, cb)
         expect(components).not.toContain('Release lifecycle dates')
         expect(components).not.toContain('deviceWindow')
         // The assessment justification moved to the Support tab in the same pass.

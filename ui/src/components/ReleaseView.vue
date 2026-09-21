@@ -87,7 +87,7 @@
                              stay in step, and the reason "Top Level Dependencies Only" was
                              once silently dropped on the floor for an addendum export.
                              Splitting the type makes that structural. -->
-                        <n-radio-button v-if="supportExportAvailable" value="SUPPORT">
+                        <n-radio-button v-if="supportExportFormats.length" value="SUPPORT">
                             <span style="display: inline-flex; align-items: center;">
                                 Support
                                 <n-tooltip trigger="hover" style="max-width: 360px;">
@@ -103,10 +103,11 @@
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
-                    <!-- Hidden for the addendum rather than left enabled and ignored. The
-                         addendum always walks the whole release scope, so an operator who
-                         ticked "Top Level Dependencies Only" and got a full-scope document
-                         would have no way to tell the control had been dropped on the floor. -->
+                    <!-- Everything below shapes the BOM, and every control here reaches the
+                         export that reads it. It used to carry a v-if naming the support
+                         documents, because those shared this form; they have their own now,
+                         so the "enabled and silently ignored" failure this guarded against
+                         cannot be reintroduced by forgetting a condition. -->
                     <n-form-item>
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
@@ -213,7 +214,11 @@
                                  preparing a submission needs to learn that the disclosure is
                                  available and switched off at the organization level; a
                                  control that simply is not there teaches them nothing. -->
-                            <div v-if="!orgSupportInjectionEnabled"
+                            <div v-if="!orgSupportInjectionSupported"
+                                style="color: #999; font-size: 12px; margin-top: 4px;">
+                                This server does not support the support-metadata disclosure.
+                            </div>
+                            <div v-else-if="!orgSupportInjectionEnabled"
                                 style="color: #999; font-size: 12px; margin-top: 4px;">
                                 Enable support metadata in Organization Settings.
                             </div>
@@ -1946,6 +1951,8 @@ import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from
 import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
 import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
+import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
+import type { SupportExportFormat } from '@/utils/exportFormatSelection'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
@@ -3071,52 +3078,12 @@ const isProductReleaseForStatement: ComputedRef<boolean> = computed((): boolean 
 /**
  * The support documents this release can actually produce, in modal order.
  *
- * ONE LIST, read by both the radio group and the "is there a Support type at all" test, so a
- * release that can produce nothing cannot end up offering an empty radio group behind a type
- * button -- the state the old arrangement reached by having the PRODUCT rule written out
- * separately in an alert, a computed and a disabled attribute.
- *
- * The addendum is release-scoped and is producible from a COMPONENT release; the device
- * statement is a statement about a DEVICE and is not.
+ * The rule itself lives in utils/exportFormatSelection so it can be RUN. Nothing in the unit
+ * suite mounts this component, so a rule kept inline here is only ever asserted by scanning
+ * this file's source -- which passes on a comment and on an inverted condition alike.
  */
-interface SupportExportFormat { value: string, label: string }
-const supportExportFormats: ComputedRef<SupportExportFormat[]> = computed((): SupportExportFormat[] => {
-    const formats: SupportExportFormat[] = [
-        { value: 'FDA_ADDENDUM', label: 'Support addendum (CSV)' },
-        { value: 'FDA_ADDENDUM_PDF', label: 'Support addendum (PDF)' }
-    ]
-    if (isProductReleaseForStatement.value) {
-        formats.push({ value: 'DEVICE_STATEMENT', label: 'Device support statement (PDF)' })
-    }
-    return formats
-})
-
-const supportExportAvailable: ComputedRef<boolean> = computed((): boolean =>
-    supportExportFormats.value.length > 0)
-
-/** The SBOM export's own formats, for the same reset. */
-const BOM_MEDIA_TYPES: readonly string[] = ['JSON', 'CSV', 'EXCEL']
-
-/**
- * Keep the format selection VALID FOR THE SELECTED TYPE.
- *
- * Both radio groups write selectedSbomMediaType -- one ref, because the Export button is one
- * handler and routing on the media type is what decides which document gets built. Without
- * this, picking Support and then going back to SBOM leaves 'FDA_ADDENDUM' selected under a
- * radio group that does not offer it: naive-ui renders no selection, and Export fires the
- * addendum while the form on screen says CycloneDX. The reset is on the TYPE change rather
- * than on the button, so the form never displays a pair it would not send.
- */
-watch(exportBomType, (bomType: string): void => {
-    if (bomType === 'SUPPORT') {
-        const valid = supportExportFormats.value.map((f: SupportExportFormat): string => f.value)
-        if (!valid.includes(selectedSbomMediaType.value)) {
-            selectedSbomMediaType.value = valid[0]
-        }
-    } else if (!BOM_MEDIA_TYPES.includes(selectedSbomMediaType.value)) {
-        selectedSbomMediaType.value = 'JSON'
-    }
-})
+const supportExportFormats: ComputedRef<SupportExportFormat[]> = computed(
+    (): SupportExportFormat[] => supportExportFormatsFor(isProductReleaseForStatement.value))
 
 /**
  * Whether this organization has support metadata turned on for exports.
@@ -3128,7 +3095,19 @@ watch(exportBomType, (bomType: string): void => {
  * produce.
  */
 const orgSupportInjectionEnabled: ComputedRef<boolean> = computed((): boolean =>
-    supportInjectionFromSettings(store.getters.myorg?.settings))
+    orgSupportInjectionSupported.value && supportInjectionFromSettings(store.getters.myorg?.settings))
+
+/**
+ * Whether this BACKEND declares the setting at all -- the third state, which the store already
+ * models and which "enabled vs disabled" cannot express.
+ *
+ * On a CE mirror inside the sync-lag window there is no such setting, and OrgSettings hides
+ * the whole support-disclosure block for exactly that reason. Reading only the value would
+ * have rendered "Enable support metadata in Organization Settings" pointing at a control that
+ * does not exist on that backend -- an instruction the operator cannot carry out.
+ */
+const orgSupportInjectionSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.supportInjectionSupported !== false)
 
 /**
  * Per-export metadata flags. Defaults are applied when the dialog OPENS, not once at setup:
@@ -3193,6 +3172,31 @@ const rebomTypes: ComputedRef<any[]> = computed((): any[] => {
     return types
 })
 const exportBomType: Ref<string> = ref('SBOM')
+
+/**
+ * Keep the format selection VALID FOR THE SELECTED TYPE.
+ *
+ * Both radio groups write selectedSbomMediaType -- one ref, because the Export button is one
+ * handler and routing on the media type is what decides which document gets built. Without
+ * this, picking Support and then going back to SBOM leaves 'FDA_ADDENDUM' selected under a
+ * radio group that does not offer it: naive-ui renders no selection, and Export fires the
+ * addendum while the form on screen says CycloneDX. The reset is on the TYPE change rather
+ * than on the button, so the form never displays a pair it would not send.
+ *
+ * BELOW the ref it watches, and that is load-bearing rather than tidy: watch() evaluates a
+ * bare-ref source EAGERLY, so declaring this above `exportBomType` throws
+ * "Cannot access 'exportBomType' before initialization" during setup and the WHOLE release
+ * page fails to render -- every tab, not just the modal. It shipped that way for one commit;
+ * vite build, 748 unit tests and eslint were all green, because none of them mounts the
+ * component. The file's other bare-ref watches already sit after their refs
+ * (`watch(vdrSnapshotType, ...)` below); the two that precede their source use the getter
+ * form instead.
+ */
+watch(exportBomType, (bomType: string): void => {
+    selectedSbomMediaType.value = mediaTypeForBomType(
+        bomType, selectedSbomMediaType.value, isProductReleaseForStatement.value)
+})
+
 const selectedRebomType: Ref<string> = ref('')
 const tldOnly: Ref<boolean> = ref(true)
 const ignoreDev: Ref<boolean> = ref(false)

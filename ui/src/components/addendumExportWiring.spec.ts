@@ -34,6 +34,23 @@ function handlerBody (): string {
     return source.slice(open, i + 1)
 }
 
+/**
+ * One form's markup, from its own v-if to the next form's.
+ *
+ * ASSERTS THE SLICE IS NON-EMPTY, which is the whole reason it is a function. Every
+ * `not.toContain` below is vacuously true against `''`, so a reordering that moved either
+ * boundary would silently turn four "structural" guarantees into nothing. The sibling spec
+ * found this the loud way -- an empty slice there broke a positive assertion -- and the
+ * negative ones next to it would not have said a word.
+ */
+function formSlice (src: string, from: string, to: string): string {
+    const a = src.indexOf(`<n-form v-if="exportBomType === '${from}'">`)
+    const b = src.indexOf(`<n-form v-if="exportBomType === '${to}'">`)
+    if (a < 0) throw new Error(`no ${from} form in ReleaseView.vue`)
+    if (b <= a) throw new Error(`${to} form does not follow ${from} in ReleaseView.vue`)
+    return src.slice(a, b)
+}
+
 describe('the FDA addendum export is wired into the export modal', () => {
     it.each([
         ['collectAddendumData', '@/utils/addendumData'],
@@ -53,22 +70,30 @@ describe('the FDA addendum export is wired into the export modal', () => {
 
     // Its own BOM TYPE since 2026-09-21, not a format of the SBOM: the addendum is a
     // different document that happens to share the modal, and the BOM-shaping options do not
-    // apply to it. The formats are now declared in supportExportFormats and rendered by
-    // v-for, so the assertion follows them there rather than looking for radio literals that
-    // no longer exist in the template.
-    it('offers BOTH addendum encodings under the Support bom type', () => {
-        expect(source).toMatch(/const supportExportFormats/)
-        expect(source).toMatch(/value: 'FDA_ADDENDUM', label: 'Support addendum \(CSV\)'/)
-        expect(source).toMatch(/value: 'FDA_ADDENDUM_PDF', label: 'Support addendum \(PDF\)'/)
-        expect(source).toContain('<n-radio-button v-if="supportExportAvailable" value="SUPPORT">')
+    // apply to it.
+    //
+    // WHICH documents are offered, and their labels, are asserted by CALLING the rule in
+    // utils/exportFormatSelection.spec.ts. What belongs here is only what is true of this
+    // component: that the Support type and its form exist, and that the type button is gated
+    // on the same list the radio group renders rather than on a separate predicate that could
+    // drift from it.
+    it('offers a Support bom type with its own form, gated on the format list', () => {
+        expect(source).toContain('<n-radio-button v-if="supportExportFormats.length" value="SUPPORT">')
+        expect(source).toContain('v-for="fmt in supportExportFormats"')
         expect(source).toMatch(/<n-form v-if="exportBomType === 'SUPPORT'">/)
         expect(source).not.toMatch(/n-switch[^>]*addendum/i)
     })
 
-    // The label no longer says FDA. The document is ordinary support disclosure that an FDA
-    // submission happens to want, and every radio carrying the agency's name made the whole
-    // modal look regulator-specific.
+    // The label no longer says FDA anywhere a user reads it. The document is ordinary support
+    // disclosure that an FDA submission happens to want, and every radio carrying the agency's
+    // name made the whole modal look regulator-specific. The labels themselves are pinned in
+    // exportFormatSelection.spec.ts; this pins that no copy of the old ones came back here.
     it('does not label the addendum with the agency name', () => {
+        // The two literals that used to be radio-button text. Scoped to those rather than to
+        // the phrase, because the handler's own javadoc still names the document by what it is
+        // FOR -- an FDA submission -- and that is not a label anyone reads in the UI. The
+        // positive form of this assertion (what the labels ARE) lives in
+        // exportFormatSelection.spec.ts, next to the code that produces them.
         expect(source).not.toContain('FDA support addendum (CSV)')
         expect(source).not.toContain('FDA support addendum (PDF)')
     })
@@ -130,24 +155,32 @@ describe('the FDA addendum export is wired into the export modal', () => {
     // of that mechanism, which is the only way the defect can come back.
     it('keeps the BOM-shaping controls structurally out of the support documents', () => {
         expect(source).not.toContain('isFdaDocumentExport')
-        const sbomForm = source.slice(
-            source.indexOf(`<n-form v-if="exportBomType === 'SBOM'">`),
-            source.indexOf(`<n-form v-if="exportBomType === 'OBOM'">`))
-        const supportForm = source.slice(
-            source.indexOf(`<n-form v-if="exportBomType === 'SUPPORT'">`),
-            source.indexOf(`<n-form v-if="exportBomType === 'CLE'">`))
+        const sbomForm = formSlice(source, 'SBOM', 'OBOM')
+        const supportForm = formSlice(source, 'SUPPORT', 'CLE')
         for (const control of ['tldOnly', 'ignoreDev', 'filterCoverageType', 'selectedRebomType']) {
             expect(sbomForm, `${control} belongs in the SBOM form`).toContain(control)
             expect(supportForm, `${control} must not reach the Support form`).not.toContain(control)
         }
     })
 
-    // Switching type must leave a format the CURRENT type offers. Without this the modal can
-    // display "CycloneDX 1.6 (JSON)" as unselected while Export fires the addendum.
-    it('resets the media type when the bom type changes', () => {
+    // Switching type must leave a format the CURRENT type offers. The RULE is asserted by
+    // running it, in utils/exportFormatSelection.spec.ts -- all this can honestly check is
+    // that the component still delegates to it rather than growing a second copy.
+    it('delegates the media-type reset to the tested helper', () => {
         expect(source).toMatch(/watch\(exportBomType/)
-        expect(source).toMatch(/selectedSbomMediaType\.value = valid\[0\]/)
-        expect(source).toMatch(/selectedSbomMediaType\.value = 'JSON'/)
+        expect(source).toMatch(/selectedSbomMediaType\.value = mediaTypeForBomType\(/)
+        expect(source).not.toMatch(/selectedSbomMediaType\.value = 'JSON'/)
+    })
+
+    // watch() evaluates a bare-ref source EAGERLY, so this watch must be declared BELOW the
+    // ref. It was not, for one commit, and the component threw during setup and rendered
+    // nothing while every assertion in this file stayed green.
+    it('declares the bom-type watch below the ref it watches', () => {
+        const decl = source.indexOf(`const exportBomType: Ref<string> = ref('SBOM')`)
+        const use = source.indexOf('watch(exportBomType')
+        expect(decl, 'exportBomType declaration not found').toBeGreaterThan(-1)
+        expect(use, 'watch(exportBomType) not found').toBeGreaterThan(-1)
+        expect(decl).toBeLessThan(use)
     })
 
     // The refusal must come BEFORE any rendering, and must not download anything.
