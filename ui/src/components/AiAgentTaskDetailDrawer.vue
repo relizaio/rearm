@@ -232,6 +232,7 @@
                             <span class="shist__time">{{ ts(c.at) }}</span>
                             <span class="shist__arrow">{{ (c.from ?? '·').toLowerCase().replace(/_/g, ' ') }} → {{ c.to.toLowerCase().replace(/_/g, ' ') }}</span>
                             <code class="shist__trig">{{ c.trigger }}</code>
+                            <span v-if="actorLabel(c.actor)" class="shist__by">by {{ actorLabel(c.actor) }}</span>
                             <span v-if="i > 0" class="shist__dur">+{{ dur(task.statusHistory[i-1].at, c.at) || '0m' }}</span>
                         </div>
                     </div>
@@ -472,6 +473,7 @@ function statusTone (s: string): string {
     &__time { color: #999; font-family: monospace; }
     &__arrow { color: #555; }
     &__trig { font-size: 10px; color: #888; background: rgba(128, 128, 128, 0.1); padding: 0 4px; border-radius: 4px; }
+    &__by { color: #777; font-size: 10.5px; }
     &__dur { color: #b0854a; font-size: 10.5px; }
 }
 .holdmeta { font-size: 11.5px; color: #888; margin-top: 4px; white-space: pre-wrap; }
