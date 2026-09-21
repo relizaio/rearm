@@ -189,9 +189,14 @@
                          markers out of it. Those are opposite settings on the same release,
                          which is why they are per EXPORT and not another organization switch.
 
-                         Both apply to the CSV and EXCEL encodings too: the flags travel with
-                         the request whatever the format, so the answer does not depend on
-                         which radio button is selected. -->
+                         The flags travel with the request whatever the format, so a request
+                         that asks for a disclosure the organization has disabled is refused
+                         for CSV exactly as it is for JSON. What they cannot do is CHANGE a
+                         CSV or EXCEL export: rebom renders those from a fixed column list
+                         carrying neither component properties nor document metadata, so there
+                         is nothing of ours in them to add or remove. The form says so rather
+                         than leaving two live-looking switches over a file they do not
+                         move. -->
                     <n-form-item>
                         <div style="width: 100%;">
                             <div style="display: inline-flex; align-items: center;">
@@ -238,6 +243,18 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="includeInternalMetadata"/>
                     </n-form-item>
+                    <div v-if="metadataFlagsInertForFormat"
+                        style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
+                        These two options do not change a CSV or EXCEL export: those encodings
+                        carry a fixed column list with no component properties and no document
+                        metadata, so there is nothing of ReARM's in them either way. Choose
+                        CycloneDX 1.6 (JSON) to use them.
+                    </div>
+                    <div v-if="exportMetadataArgsUnsupported"
+                        style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
+                        This server does not support the per-export metadata options, so exports
+                        use the organization default whatever these are set to.
+                    </div>
                     <n-form-item>
                         <span style="display: inline-flex; align-items: center;">
                             Ignore Optional Dependencies:
@@ -1953,6 +1970,7 @@ import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/rele
 import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { SupportExportFormat } from '@/utils/exportFormatSelection'
+import { exportWithMetadataFallback } from '@/utils/exportMetadataFallback'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
@@ -2867,7 +2885,12 @@ const activeTab: Ref<string> = ref('components')
  * a programmatic one, so the list would otherwise stay unloaded behind a tab that looked open.
  */
 async function goToSbomComponents () {
-    bomSubTab.value = isHardware.value ? 'hbomSub' : 'sbomSub'
+    // ALWAYS the SBOM sub-tab, never HBOM. isHardware is true for a product release that
+    // contains any hardware component, and the HBOM pane has no gauge, no attestation filter,
+    // no "Attest all shown" and no per-row attest -- all of those are on the SBOM list. Routing
+    // a hardware product release there would answer "12 of 300 components are disclosed" with a
+    // table that cannot attest anything, which is worse than not offering the link.
+    bomSubTab.value = 'sbomSub'
     activeTab.value = 'bomComponents'
     await handleTabSwitch('bomComponents')
 }
@@ -3026,6 +3049,22 @@ async function goToRelease (uuid: string) {
         isLoading.value = false
         loadingBar.finish()
     }
+    // THE TAB SET IS CONTROLLED NOW, so a release change can strand it in two ways that did
+    // not exist while it was uncontrolled.
+    //
+    // First, the Support pane is PRODUCT-gated: navigating from a product to a component
+    // release with it open leaves naive-ui holding a value with no matching pane, which renders
+    // as a blank tab strip rather than falling back to anything.
+    //
+    // Second, nothing fires update:value on a programmatic release change, so a tab whose data
+    // loads lazily on switch -- Support's coverage gauge, the BOM lists -- would sit on an
+    // empty pane indefinitely. The prev/next chevrons in the header make that a one-click
+    // journey, not a corner case.
+    if (activeTab.value === 'support' && !isProductRelease.value) {
+        activeTab.value = 'components'
+    } else {
+        await handleTabSwitch(activeTab.value)
+    }
     if (isEmbedded()) {
         // Embedded modal: the parent owns the URL (the branch view tracks the
         // ?release= param via history.replaceState, which Vue Router doesn't
@@ -3119,6 +3158,18 @@ const includeInternalMetadata: Ref<boolean> = ref(false)
 
 /** This server rejected the metadata arguments, so stop sending them. See exportReleaseSbom. */
 const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
+
+/**
+ * Whether the two metadata options can change the file the operator is about to get.
+ *
+ * They are still SENT and still validated for CSV and EXCEL -- asking for a disclosure the
+ * organization has disabled is the same caller error whatever the encoding -- but rebom renders
+ * those two from a fixed column list with no properties and no metadata, so neither switch has
+ * anything to add or remove. Saying that beside the switches is the alternative to leaving two
+ * live-looking controls over a file they do not move.
+ */
+const metadataFlagsInertForFormat: ComputedRef<boolean> = computed((): boolean =>
+    selectedSbomMediaType.value === 'CSV' || selectedSbomMediaType.value === 'EXCEL')
 
 function openExportModal () {
     // Support metadata follows the organization: an org that publishes attestations expects
@@ -5630,37 +5681,30 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
             mediaType: mediaType.toUpperCase(),
             excludeCoverageTypes: excludeCoverageTypes
         }
-        let gqlResp: any
-        if (exportMetadataArgsUnsupported.value) {
-            gqlResp = await runSbomExport(SBOM_EXPORT_CORE, baseVariables)
-        } else {
-            try {
-                gqlResp = await runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
-                    ...baseVariables,
-                    includeSupportMetadata: includeSupportMetadata.value,
-                    includeInternalMetadata: includeInternalMetadata.value
-                })
-            } catch (err: any) {
-                // A backend that does not declare the two arguments rejects the DOCUMENT, and
-                // it does so during VALIDATION -- before any resolver runs. So nothing was
-                // exported and no download was logged, and retrying without them is not a
-                // second write. That is what makes a retry safe HERE and not on mutations in
-                // general; a runtime failure re-raises below untouched.
-                //
-                // The CE backend reaches these arguments only at the deferred sync, and this
-                // is the shared UI. Without the retry the whole Export button would be dead
-                // on CE for the entire mirror-lag window.
-                if (!isSchemaDriftError(err)) throw err
-                exportMetadataArgsUnsupported.value = true
-                gqlResp = await runSbomExport(SBOM_EXPORT_CORE, baseVariables)
-                // SAID OUT LOUD, never silently. "Include internal metadata: off" and a file
-                // that carries the markers anyway is precisely the lie-by-omission this
-                // feature exists to remove.
-                notify('warning', 'Metadata options ignored',
-                    'This server does not support the per-export metadata options yet, so the'
-                    + ' export used the organization default.')
-            }
+        // The retry rule lives in utils/exportMetadataFallback so it can be RUN -- including
+        // the case that matters most, that the server's deliberate refusal is NOT retried
+        // into the flagless document the refusal exists to prevent.
+        const attempt = await exportWithMetadataFallback({
+            runFull: () => runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
+                ...baseVariables,
+                includeSupportMetadata: includeSupportMetadata.value,
+                includeInternalMetadata: includeInternalMetadata.value
+            }),
+            runCore: () => runSbomExport(SBOM_EXPORT_CORE, baseVariables),
+            flagsUnsupported: exportMetadataArgsUnsupported.value,
+            isDriftError: isSchemaDriftError
+        })
+        if (attempt.justDiscovered) {
+            // Latched only now that the flagless document has actually WORKED, and said out
+            // loud exactly once. Every later export is flagless too -- the form says so from
+            // here on, because repeating this toast per export is noise and leaving the
+            // switches looking live is the lie-by-omission the feature exists to remove.
+            exportMetadataArgsUnsupported.value = true
+            notify('warning', 'Metadata options ignored',
+                'This server does not support the per-export metadata options yet, so the'
+                + ' export used the organization default.')
         }
+        const gqlResp: any = attempt.data
         let blobType = mediaType === 'JSON' ? 'application/json' : mediaType === 'EXCEL' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'
         let exportContent = gqlResp.data.releaseSbomExport
         if (mediaType === 'JSON') {

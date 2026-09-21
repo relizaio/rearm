@@ -57,10 +57,16 @@ submission wants the support attestations and does not care that ReARM assembled
 handed to a customer should read as **your** content, with the tooling provenance out of it.
 
 The two switches beside **Top Level Dependencies Only** answer those questions per export rather
-than per organization. They apply to the `JSON`, `CSV` and `Excel` media types alike -- the
-request carries them whatever the encoding -- and they are also available on the API:
+than per organization. They are also available on the API:
 `releaseSbomExport(includeSupportMetadata:, includeInternalMetadata:)`, and as
 `?includeSupportMetadata=` / `?includeInternalMetadata=` on the artifact download endpoints.
+
+They change the **CycloneDX JSON** export. They are still *sent* and still *validated* for the
+`CSV` and `Excel` encodings -- asking for a disclosure your organization has disabled is refused
+whatever the format -- but they cannot change those two files: Rebom renders them from a fixed
+column list (name, version, purl, license, author) that carries neither component properties nor
+document metadata, so there is nothing of ReARM's in them either way. The export modal says so
+beside the switches when CSV or Excel is selected.
 
 **Omitting an argument is not the same as sending `false`.** An omitted argument means "behave as
 before": the organization setting decides the support disclosure, and ReARM's markers are kept.
@@ -103,9 +109,20 @@ What "ReARM's own markers" means, precisely:
 `declarations` block points at. Those are governed by the other switch, and when it is off they
 are already gone.
 
-The `CSV` and `Excel` encodings carry neither component properties nor document metadata, so
-neither switch changes their content. The switches are still validated for them, so the refusal
-above behaves the same whichever format is selected.
+**One ReARM property survives both switches being off:** `reliza:support:disclosure` on
+`metadata`, carrying `provenance-stripped-no-disclosure`. That property is the output of the
+[unconditional forged-provenance sweep](#uploaded-boms-cannot-forge-these), not a tooling
+marker, and it is what stops an absent support property being read as "we checked and there is
+nothing to report". A document with every other marker removed and no sweep marker is a
+document a reviewer can draw the wrong conclusion from, so it stays.
+
+### When a server does not support them
+
+These arguments reach a ReARM CE installation only at its next sync from Pro. Against a backend
+that does not declare them, the export modal falls back to a request without them, tells you once
+that the options were ignored, and then says so permanently beside the switches rather than
+leaving them looking live. **Omitting the arguments on the API has the same effect and is not an
+error** -- it is the pre-existing contract.
 
 ### The raw download is never affected
 
