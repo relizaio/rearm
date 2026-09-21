@@ -52,7 +52,7 @@ export const REQUIRED_PROSE_SLOTS: Array<{ key: keyof AddendumData, label: strin
 ]
 
 /** Where an operator goes to author them. Named in the block message so it is actionable. */
-export const PROSE_SETTINGS_LOCATION = 'Organization Settings -> FDA submission and labeling text'
+export const PROSE_SETTINGS_LOCATION = 'Organization Settings -> Submission and labeling text'
 
 /** The slots that are missing, by label, in the order the document would print them. */
 export function missingProseSlots (d: AddendumData): string[] {

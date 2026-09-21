@@ -16,7 +16,22 @@ All exports except BOV are server-generated. BOV is assembled client-side from t
 
 ## Accessing Exports
 
-Open any release and click the **download icon** in the release header. A modal opens with tabs for **SBOM**, **VDR**, **VEX**, and **OBOM**.
+Open any release and click the **download icon** in the release header. A modal opens with a
+**BOM Type** selector: **SBOM**, **OBOM**, **VDR**, **VEX**, **CLE** and **Support**.
+
+**Support** is not an encoding of the BOM -- it is a different set of documents, built from the
+release's support attestations and your organization's labeling text rather than from the
+component graph. Picking it replaces the format list with the support documents and hides the
+BOM-shaping options, which do not apply to them:
+
+| Support document | Contents |
+|---|---|
+| **Support addendum (CSV)** | Every component in the release with its level of support, the end-of-support date where one is attested and the justification where none is |
+| **Support addendum (PDF)** | The same document, typeset |
+| **Device support statement (PDF)** | A plain-language statement for patients, caregivers and biomedical engineers. Product releases only, and only once all three organization labeling statements have been authored |
+
+On a component release the device support statement is not offered: it is a statement about a
+device, and the product release that ships the component is where it is generated.
 
 ## SBOM Export
 
@@ -30,8 +45,72 @@ Exports the merged SBOM for the release. Options:
 | **Ignore Dev** | Exclude development dependencies |
 | **Exclude coverage types** | Exclude artifacts tagged as Dev, Test, or Build-Time coverage |
 | **Media Type** | `JSON`, `CSV`, or `Excel` |
+| **Include support metadata** | Whether this export carries the support attestations. See [Per-export metadata options](#per-export-metadata-options) |
+| **Include internal metadata** | Whether this export keeps ReARM's own markers. See [Per-export metadata options](#per-export-metadata-options) |
 
 Click **Export** to download the file.
+
+## Per-export metadata options
+
+One release is often the source of two documents with opposite requirements. An FDA premarket
+submission wants the support attestations and does not care that ReARM assembled the file; a BOM
+handed to a customer should read as **your** content, with the tooling provenance out of it.
+
+The two switches beside **Top Level Dependencies Only** answer those questions per export rather
+than per organization. They apply to the `JSON`, `CSV` and `Excel` media types alike -- the
+request carries them whatever the encoding -- and they are also available on the API:
+`releaseSbomExport(includeSupportMetadata:, includeInternalMetadata:)`, and as
+`?includeSupportMetadata=` / `?includeInternalMetadata=` on the artifact download endpoints.
+
+**Omitting an argument is not the same as sending `false`.** An omitted argument means "behave as
+before": the organization setting decides the support disclosure, and ReARM's markers are kept.
+Every caller written before these arguments existed -- including `rearm-cli` -- is unchanged.
+
+### Include support metadata
+
+Defaults to whatever the organization setting says, so an organization that publishes
+attestations does not have to switch them on for every export.
+
+| Setting | Effect |
+|---|---|
+| **On** | The export carries the support attestations described in [Support Attestations in Exports](#support-attestations-in-exports) |
+| **Off** | The export is served with the support namespaces stripped and marked `provenance-stripped-no-disclosure` -- the same document an organization with the setting disabled receives |
+
+When the organization setting is **disabled** the switch is off and cannot be turned on, and the
+form says where to change it. Asking for support metadata through the API on such an organization
+is **refused with an error** rather than quietly served without it: a document that silently came
+back without the disclosure is indistinguishable from one where nothing was attested.
+
+### Include internal metadata
+
+Defaults to **off**.
+
+| Setting | Effect |
+|---|---|
+| **On** | ReARM's own markers stay in the document |
+| **Off** | They are removed, leaving the manufacturer's own content |
+
+What "ReARM's own markers" means, precisely:
+
+| Removed when off | Note |
+|---|---|
+| `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
+| The `io.reliza` / `ReARM` entry under `metadata.tools` | Other producers' tool entries -- your scanner, your build system -- are your toolchain and are left alone |
+
+**Not removed**, because they are the disclosure rather than provenance about ReARM:
+`reliza:support:*`, `reliza:device:*` (the device's own 524B support window), and the
+`reliza:bomref:` / `reliza:claim:` / `reliza:evidence:` / `reliza:assessor:` identifiers that the
+`declarations` block points at. Those are governed by the other switch, and when it is off they
+are already gone.
+
+The `CSV` and `Excel` encodings carry neither component properties nor document metadata, so
+neither switch changes their content. The switches are still validated for them, so the refusal
+above behaves the same whichever format is selected.
+
+### The raw download is never affected
+
+The **raw artifact download** serves the bytes as uploaded, validated against the checksum ReARM
+advertises for that URL. Neither switch reaches it, and neither is accepted as a parameter on it.
 
 ## Support Attestations in Exports
 
@@ -46,8 +125,10 @@ default**.
 
 ### Turning it on
 
-**Organization Settings -> Carry support attestations in BOM exports.** While it is off, exports
-carry no support facts at all, whatever the coverage gauge on the release page says. The gauge
+**Organization Settings -> Support disclosure export.** This is the organization-wide default and
+the ceiling: while it is off, exports carry no support facts at all, whatever the coverage gauge on
+the release page says, and an individual export cannot opt back in (see
+[Per-export metadata options](#per-export-metadata-options)). The gauge
 states the setting beside the coverage figure for exactly this reason: full attestation coverage
 and an export that carries none of it are not a contradiction, they are the default.
 
@@ -222,6 +303,9 @@ Violations and Weaknesses are not included in the BOV — the spec covers only v
 The **Download Log** (accessible under **Organization Settings → Download Log**, visible to org admins only) records SBOM, VDR, and VEX download events in your organization. Each entry shows:
 
 - **Download type** (`SBOM_EXPORT`, `VDR_EXPORT`, `VEX_EXPORT`)
+- **Metadata options** -- the two per-export flags exactly as the caller sent them. An omitted
+  argument is recorded as absent rather than as `false`, so an auditor reconstructing what a
+  submitted document contained can tell "the default applied" from "the caller asked for less"
 - **Subject** — the release the export was generated from, linked to its release page
 - **Config details** — the export parameters used (structure, media type, snapshot options, etc.)
 - **Downloaded by** — the user who triggered the export

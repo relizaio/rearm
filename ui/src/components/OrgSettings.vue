@@ -945,7 +945,24 @@
                              wrote going out over their name is the failure the whole
                              feature exists to avoid. -->
                         <n-divider />
-                        <h6>FDA submission and labeling text</h6>
+                        <h6 style="display: inline-flex; align-items: center;">
+                            Submission and labeling text
+                            <!-- The heading no longer says FDA; the tooltip does. "FDA" on
+                                 the heading made a general-purpose settings section look
+                                 like a regulator-specific one to every operator who is not
+                                 preparing a submission, while the text itself -- support
+                                 commitments and risk statements -- is ordinary product
+                                 labeling. What it is FOR still has to be discoverable, so it
+                                 moved one hover away rather than disappearing. -->
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;">
+                                        <QuestionMark />
+                                    </n-icon>
+                                </template>
+                                Used in the documents ReARM generates for FDA premarket cybersecurity submissions and device labeling
+                            </n-tooltip>
+                        </h6>
                         <p class="text-muted" style="max-width: 760px;">
                             Written once here, rendered into every generated document. A
                             document whose required text is missing is <strong>not

@@ -78,6 +78,28 @@
                                 </n-tooltip>
                             </span>
                         </n-radio-button>
+                        <!-- A BOM TYPE, not a format of the SBOM. These are different
+                             DOCUMENTS assembled in the browser from the support attestations
+                             and the org prose: no component graph, no dependency structure,
+                             and none of the BOM-shaping options apply to them. They used to
+                             sit among the SBOM formats, which meant every control below had
+                             to carry a v-if naming them -- five separate places that had to
+                             stay in step, and the reason "Top Level Dependencies Only" was
+                             once silently dropped on the floor for an addendum export.
+                             Splitting the type makes that structural. -->
+                        <n-radio-button v-if="supportExportAvailable" value="SUPPORT">
+                            <span style="display: inline-flex; align-items: center;">
+                                Support
+                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    The support documents for this release: the addendum listing every component with its level of support and end-of-support date, and the plain-language device support statement. These are separate documents, not encodings of the BOM.
+                                </n-tooltip>
+                            </span>
+                        </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
@@ -85,7 +107,7 @@
                          addendum always walks the whole release scope, so an operator who
                          ticked "Top Level Dependencies Only" and got a full-scope document
                          would have no way to tell the control had been dropped on the floor. -->
-                    <n-form-item v-if="!isFdaDocumentExport">
+                    <n-form-item>
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
                                 Select SBOM configuration for export
@@ -116,40 +138,8 @@
                             <n-radio-button value="JSON">CycloneDX 1.6 (JSON)</n-radio-button>
                             <n-radio-button value="CSV">CSV</n-radio-button>
                             <n-radio-button value="EXCEL">EXCEL</n-radio-button>
-                            <!-- Its own export TYPE, not a toggle on the BOM export. The
-                                 addendum is a different document that happens to share this
-                                 modal: it is assembled in the browser from the support
-                                 attestations and the org prose, and the BOM-shaping options
-                                 below do not apply to it. A checkbox would imply it rides
-                                 along with whichever format was picked. -->
-                            <n-radio-button value="FDA_ADDENDUM">FDA support addendum (CSV)</n-radio-button>
-                            <n-radio-button value="FDA_ADDENDUM_PDF">FDA support addendum (PDF)</n-radio-button>
-                            <!-- A different DOCUMENT for a different reader: FDA L1591-1592
-                                 says the audience may include patients or caregivers with
-                                 limited technical knowledge, so it carries no component
-                                 inventory and no counts. PRODUCT releases only. -->
-                            <n-radio-button value="DEVICE_STATEMENT">Device support statement (PDF)</n-radio-button>
                         </n-radio-group>
                     </n-form-item>
-                    <n-alert v-if="selectedSbomMediaType === 'DEVICE_STATEMENT'" type="default"
-                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
-                        A plain-language statement for patients, caregivers and biomedical
-                        engineers: the device's support dates, and the manufacturer's own
-                        labeling text. Generated for PRODUCT releases only, and only once all
-                        three organization statements have been authored.
-                        <span v-if="!isProductReleaseForStatement" style="display:block; margin-top:6px;">
-                            <strong>This is a component release</strong>, so the statement
-                            cannot be generated here &mdash; open the product release that
-                            ships it.
-                        </span>
-                    </n-alert>
-                    <n-alert v-if="isAddendumExport" type="default"
-                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
-                        Every component in this release with its level of support, the end-of-support
-                        date where one is attested and the justification where none is, plus the
-                        device support window and the assessment justification. The counts come from
-                        the coverage gauge, so this document and the page always agree.
-                    </n-alert>
                     <n-form-item v-if="selectedSbomMediaType === 'JSON'">
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
@@ -175,7 +165,7 @@
                             />
                         </n-radio-group>
                     </n-form-item>
-                    <n-form-item v-if="!isFdaDocumentExport">
+                    <n-form-item>
                         <span style="display: inline-flex; align-items: center;">
                             Top Level Dependencies Only:
                             <n-tooltip trigger="hover">
@@ -189,7 +179,61 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
-                    <n-form-item v-if="!isFdaDocumentExport">
+                    <!-- WHAT OF OURS THE EXPORTED FILE CARRIES, as two questions rather than
+                         one, because they have different answers and different readers.
+
+                         An FDA premarket submission wants the support attestations and does
+                         not care that ReARM assembled the file. A BOM handed to a customer
+                         wants to read as the manufacturer's own content, with our tooling
+                         markers out of it. Those are opposite settings on the same release,
+                         which is why they are per EXPORT and not another organization switch.
+
+                         Both apply to the CSV and EXCEL encodings too: the flags travel with
+                         the request whatever the format, so the answer does not depend on
+                         which radio button is selected. -->
+                    <n-form-item>
+                        <div style="width: 100%;">
+                            <div style="display: inline-flex; align-items: center;">
+                                <span style="display: inline-flex; align-items: center;">
+                                    Include support metadata:
+                                    <n-tooltip trigger="hover" style="max-width: 380px;">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Adds the support attestations (status, party, dates, justification) to each component as reliza:support:* properties, for FDA premarket submissions.
+                                    </n-tooltip>
+                                </span>
+                                <n-switch style="margin-left: 5px;"
+                                    v-model:value="includeSupportMetadata"
+                                    :disabled="!orgSupportInjectionEnabled"/>
+                            </div>
+                            <!-- Disabled rather than absent, and it says why. An operator
+                                 preparing a submission needs to learn that the disclosure is
+                                 available and switched off at the organization level; a
+                                 control that simply is not there teaches them nothing. -->
+                            <div v-if="!orgSupportInjectionEnabled"
+                                style="color: #999; font-size: 12px; margin-top: 4px;">
+                                Enable support metadata in Organization Settings.
+                            </div>
+                        </div>
+                    </n-form-item>
+                    <n-form-item>
+                        <span style="display: inline-flex; align-items: center;">
+                            Include internal metadata:
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Keeps ReARM's own markers (reliza:* properties other than support, the rearm tool entry under metadata.tools) in the export. Off produces a BOM with only the manufacturer's own content.
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" v-model:value="includeInternalMetadata"/>
+                    </n-form-item>
+                    <n-form-item>
                         <span style="display: inline-flex; align-items: center;">
                             Ignore Optional Dependencies:
                             <n-tooltip trigger="hover">
@@ -210,7 +254,7 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
                     </n-form-item>
-                    <n-form-item v-if="!isFdaDocumentExport">
+                    <n-form-item>
                         <div style="width: 100%;">
                             <div style="display: inline-flex; align-items: center;">
                                 <span style="display: inline-flex; align-items: center;">
@@ -247,7 +291,7 @@
                     </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
-                            :disabled="bomExportPending || statementBlockedHere"
+                            :disabled="bomExportPending"
                             @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
                             <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
@@ -510,6 +554,46 @@
                         <n-button type="success"
                             :disabled="bomExportPending"
                             @click="exportReleaseVex()">
+                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                            <span v-else>Export</span>
+                        </n-button>
+                    </n-spin>
+                </n-form>
+                <n-form v-if="exportBomType === 'SUPPORT'">
+                    <n-form-item label="Format">
+                        <n-radio-group v-model:value="selectedSbomMediaType" name="supportDocType">
+                            <!-- Built from supportExportFormats so "which documents can this
+                                 release produce" is answered once. The device statement is
+                                 PRODUCT-only, and a radio for a document that cannot be made
+                                 is an invitation to press a button that refuses. -->
+                            <n-radio-button v-for="fmt in supportExportFormats" :key="fmt.value"
+                                :value="fmt.value">{{ fmt.label }}</n-radio-button>
+                        </n-radio-group>
+                    </n-form-item>
+                    <n-alert v-if="selectedSbomMediaType === 'DEVICE_STATEMENT'" type="default"
+                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
+                        A plain-language statement for patients, caregivers and biomedical
+                        engineers: the device's support dates, and the manufacturer's own
+                        labeling text. Generated for PRODUCT releases only, and only once all
+                        three organization statements have been authored.
+                    </n-alert>
+                    <n-alert v-if="isAddendumExport" type="default"
+                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
+                        Every component in this release with its level of support, the end-of-support
+                        date where one is attested and the justification where none is, plus the
+                        device support window and the assessment justification. The counts come from
+                        the coverage gauge, so this document and the page always agree.
+                    </n-alert>
+                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
+                        <!-- statementBlockedHere survives the split even though the radio it
+                             guards is no longer rendered on a component release. The release
+                             is fetched asynchronously behind an already-open modal, so the
+                             PRODUCT answer can change under the selection; the guard costs a
+                             boolean and the failure it prevents is a refusal dialog after a
+                             click that should never have been enabled. -->
+                        <n-button type="success"
+                            :disabled="bomExportPending || statementBlockedHere"
+                            @click="exportSupportDocument">
                             <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
                         </n-button>
@@ -1009,7 +1093,7 @@
                             @click="cloneReleaseToFs(releaseUuid, release.version)"
                             style="margin-left:10px;"
                         ><Copy /></n-icon>
-                        <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
+                        <Icon @click="openExportModal" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                     </n-gi>
                     <n-gi span="2">
                         <span
@@ -1063,136 +1147,8 @@
         </div>
 
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
-            <n-tabs style="padding-left:0.2%;" type="segment" @update:value="handleTabSwitch" animated>
+            <n-tabs style="padding-left:0.2%;" type="segment" v-model:value="activeTab" @update:value="handleTabSwitch" animated>
                 <n-tab-pane name="components" tab="Components">
-                    <!-- TWO DIFFERENT FACTS, SIDE BY SIDE AND NEVER MERGED (D7).
-                         The DEVICE window is declared on the product component and inherited by
-                         every release of it -- a device model ships many firmware versions over
-                         its life, and a support commitment that changes with each build is not a
-                         commitment. The RELEASE's own eos/eol are release lifecycle, consumed by
-                         TEA and CLE; they predate this feature and are not a labeling claim.
-                         They were edited through one control until 2026-09-10, which is exactly
-                         the conflation this separation removes. -->
-                    <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
-                        <h3>Device support window</h3>
-                        <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
-                            Shown separately and never merged: end of support and end of sale
-                            are different facts, and a reader of the Device Support Statement
-                            is entitled to both. Blank means <strong>not declared</strong>,
-                            which is a fact in its own right &mdash; not an unknown to fill in.
-                        </n-alert>
-                        <n-space align="center" style="margin-bottom: 6px;">
-                            <div>
-                                <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
-                                <div>{{ inheritedDeviceWindow.eos || 'not declared' }}</div>
-                            </div>
-                            <div style="margin-left: 24px;">
-                                <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
-                                <div>{{ inheritedDeviceWindow.eol || 'not declared' }}</div>
-                            </div>
-                        </n-space>
-                        <div class="text-muted" style="font-size: 12px; max-width: 720px;">
-                            Read-only here. Declared on
-                            <!-- ProductsOfOrg, not a 'ComponentView' route: ComponentView.vue is a
-                                 CHILD of the products/components page and has no route of its own.
-                                 The same link is built this way 180 lines above. A device window is
-                                 only ever on a PRODUCT, so this is the products surface. -->
-                            <router-link v-if="updatedRelease.componentDetails"
-                                :to="{ name: 'ProductsOfOrg', params: {
-                                    orguuid: updatedRelease.orgDetails?.uuid || updatedRelease.org,
-                                    compuuid: updatedRelease.componentDetails.uuid } }">
-                                {{ updatedRelease.componentDetails.name }}</router-link>
-                            <span v-else>the product component</span>
-                            and inherited by every release of it; a batch may override it on the
-                            shipment.
-                        </div>
-                    </div>
-
-                    <!-- The RELEASE's own lifecycle dates. Editable, and deliberately NOT
-                         labelled as a device window: these feed TEA and CLE. -->
-                    <div class="container">
-                        <h3>Release lifecycle dates</h3>
-                        <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
-                            When this <strong>version</strong> stops being supported and sold.
-                            Each date becomes a CLE lifecycle event for this release &mdash;
-                            <code>END_OF_SUPPORT</code> and <code>END_OF_LIFE</code> &mdash;
-                            served through the TEA endpoint and the CLE export, so a downstream
-                            consumer tracking your versions learns when this one lapses.
-                            <span style="display:block; margin-top:6px;">
-                                Separate from the <strong>device support window</strong> above,
-                                which is the section 524B commitment about the hardware. A device
-                                outlives many versions, so the two dates differ on purpose.
-                            </span>
-                        </n-alert>
-                        <n-space align="end" style="margin-bottom: 8px;">
-                            <div>
-                                <div class="text-muted" style="font-size: 12px;">Release end of support</div>
-                                <n-date-picker v-model:formatted-value="deviceWindow.eos"
-                                    value-format="yyyy-MM-dd" type="date" clearable
-                                    @update:formatted-value="deviceWindowError = null"
-                                    :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
-                            </div>
-                            <div>
-                                <div class="text-muted" style="font-size: 12px;">Release end of life / end of sale</div>
-                                <n-date-picker v-model:formatted-value="deviceWindow.eol"
-                                    value-format="yyyy-MM-dd" type="date" clearable
-                                    @update:formatted-value="deviceWindowError = null"
-                                    :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
-                            </div>
-                            <n-button v-if="isWritable" size="small" type="primary"
-                                :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
-                                @click="saveDeviceWindow">Save dates</n-button>
-                        </n-space>
-                        <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
-                            style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
-                            {{ deviceWindowError }}
-                        </n-alert>
-                    </div>
-                    <!-- The per-release FDA assessment narrative OVERRIDE. Beside the window
-                         because both are device-level facts an auditor reads together, and
-                         PRODUCT-gated for the same reason. The org default is shown
-                         read-only underneath so the author can see what they are replacing:
-                         without it, "override" is an instruction to write something without
-                         being told what it displaces. -->
-                    <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
-                        <h3>Assessment justification for this release</h3>
-                        <p class="text-muted" style="max-width: 760px;">
-                            Overrides the organization default below, for this release only.
-                            Leave it empty to inherit. Clearing a saved override returns this
-                            release to the default &mdash; it does not remove the
-                            justification from the generated documents.
-                        </p>
-                        <n-input v-model:value="releaseNarrative" type="textarea" :rows="5"
-                            style="max-width: 760px;"
-                            :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                            :disabled="!isWritable || savingReleaseNarrative"
-                            @update:value="releaseNarrativeError = null"
-                            placeholder="Leave empty to use the organization default." />
-                        <div style="margin-top: 8px;">
-                            <n-button v-if="isWritable" size="small" type="primary"
-                                :disabled="!releaseNarrativeDirty" :loading="savingReleaseNarrative"
-                                @click="saveReleaseNarrative">Save justification</n-button>
-                            <span v-if="!releaseNarrativeIsOverridden" class="text-muted"
-                                style="font-size: 12px; margin-left: 10px;">
-                                This release currently inherits the organization default.
-                            </span>
-                        </div>
-                        <n-alert v-if="releaseNarrativeError" type="error" :show-icon="true"
-                            style="font-size: 12px; max-width: 720px; margin-top: 10px;">
-                            {{ releaseNarrativeError }}
-                        </n-alert>
-                        <div style="margin-top: 14px;">
-                            <div class="text-muted" style="font-size: 12px;">
-                                Organization default (read-only, edited in Organization Settings)
-                            </div>
-                            <n-input v-if="orgNarrativeDefault" type="textarea" :rows="3"
-                                style="max-width: 760px;" readonly :value="orgNarrativeDefault" />
-                            <span v-else class="text-muted" style="font-size: 12px;">
-                                No organization default has been authored yet. With no override
-                                here either, generated documents carry no justification section.
-                            </span>
-                        </div>
-                    </div>
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Components
                             <Icon v-if="isWritable && isUpdatable"
@@ -1612,6 +1568,102 @@
                         />
                     </n-space>
                 </n-tab-pane>
+                <!-- SUPPORT: everything this release ASSERTS about support, in one place.
+                     Until now these controls were scattered down the Components tab, between
+                     the component table and the artifact list, where an operator preparing a
+                     submission had to know they were there. Components is the inventory of
+                     what this release IS; this tab is what we CLAIM about it, and the two
+                     were only ever adjacent by accident.
+
+                     PRODUCT-gated as a whole. A component release has no assessment narrative
+                     -- the org prose is a device-level statement -- and its disclosure gauge
+                     already sits above the SBOM list where the attesting happens, so a tab
+                     here would carry one number and nothing to do with it.
+
+                     ATTESTATION EDITING IS DELIBERATELY NOT HERE. "Attest all shown", the
+                     per-row action and the bulk sweep stay in BOM Components > SBOM, beside
+                     the list they act on: a control that writes a regulatory claim across
+                     five thousand components belongs next to the rows it will write, not next
+                     to a summary of them. This tab reports the number and links to them. -->
+                <n-tab-pane v-if="isProductRelease" name="support" tab="Support">
+                    <!-- The per-release assessment narrative OVERRIDE. The org default is
+                         shown read-only underneath so the author can see what they are
+                         replacing: without it, "override" is an instruction to write
+                         something without being told what it displaces.
+
+                         The PRODUCT gate is on the TAB, not here. It used to be on this div,
+                         next to an identical one on the device-window block and a third on
+                         the assessment block -- three copies of one fact, which is how they
+                         come to disagree. -->
+                    <div class="container">
+                        <h3>Assessment justification for this release</h3>
+                        <p class="text-muted" style="max-width: 760px;">
+                            Overrides the organization default below, for this release only.
+                            Leave it empty to inherit. Clearing a saved override returns this
+                            release to the default &mdash; it does not remove the
+                            justification from the generated documents.
+                        </p>
+                        <n-input v-model:value="releaseNarrative" type="textarea" :rows="5"
+                            style="max-width: 760px;"
+                            :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                            :disabled="!isWritable || savingReleaseNarrative"
+                            @update:value="releaseNarrativeError = null"
+                            placeholder="Leave empty to use the organization default." />
+                        <div style="margin-top: 8px;">
+                            <n-button v-if="isWritable" size="small" type="primary"
+                                :disabled="!releaseNarrativeDirty" :loading="savingReleaseNarrative"
+                                @click="saveReleaseNarrative">Save justification</n-button>
+                            <span v-if="!releaseNarrativeIsOverridden" class="text-muted"
+                                style="font-size: 12px; margin-left: 10px;">
+                                This release currently inherits the organization default.
+                            </span>
+                        </div>
+                        <n-alert v-if="releaseNarrativeError" type="error" :show-icon="true"
+                            style="font-size: 12px; max-width: 720px; margin-top: 10px;">
+                            {{ releaseNarrativeError }}
+                        </n-alert>
+                        <div style="margin-top: 14px;">
+                            <div class="text-muted" style="font-size: 12px;">
+                                Organization default (read-only, edited in Organization Settings)
+                            </div>
+                            <n-input v-if="orgNarrativeDefault" type="textarea" :rows="3"
+                                style="max-width: 760px;" readonly :value="orgNarrativeDefault" />
+                            <span v-else class="text-muted" style="font-size: 12px;">
+                                No organization default has been authored yet. With no override
+                                here either, generated documents carry no justification section.
+                            </span>
+                        </div>
+                    </div>
+                    <div class="container">
+                        <h3>Disclosure coverage</h3>
+                        <!-- THE SAME GAUGE AS THE ONE ABOVE THE SBOM LIST, from the same
+                             release-scoped source, and deliberately duplicated rather than
+                             moved. The copy above the list is what guides the attesting -- it
+                             is the number that moves as the operator works -- and removing it
+                             would leave that screen with no answer to "am I done yet". This
+                             copy is the one a submission author reads. Both render
+                             sbomCoverageDisplay, so they cannot disagree. -->
+                        <n-spin v-if="sbomCoverageLoading" size="small" />
+                        <n-alert v-else
+                            :type="sbomCoverageDisplay.tone"
+                            :show-icon="sbomCoverageDisplay.warn"
+                            style="margin-bottom: 10px; max-width: 720px;">
+                            <div style="font-size: 13px;">
+                                {{ sbomCoverageDisplay.headline }}
+                                <strong v-if="sbomCoverageDisplay.stateLabel">
+                                    &mdash; {{ sbomCoverageDisplay.stateLabel }}
+                                </strong>
+                            </div>
+                            <div v-if="sbomCoverageDisplay.exportNote"
+                                style="font-size: 12px; margin-top: 4px;">
+                                {{ sbomCoverageDisplay.exportNote }}
+                            </div>
+                        </n-alert>
+                        <n-button size="small" type="primary" ghost @click="goToSbomComponents">
+                            Attest components in BOM Components
+                        </n-button>
+                    </div>
+                </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
                     <div class="container">
                         <div>
@@ -1621,6 +1673,56 @@
                             <n-input type="textarea" v-else :value="updatedRelease.notes" rows="2" readonly />
                             <n-button v-if="isWritable" @click="save"
                                 v-show="release.notes !== updatedRelease.notes">Save Notes</n-button>
+                        </div>
+                        <!-- The RELEASE's own lifecycle dates. Metadata about this
+                             version, which is what this tab is for, and deliberately NOT a
+                             device window: these feed TEA and CLE.
+
+                             Here rather than on Components since 2026-09-21. On Components
+                             they sat under a read-only DEVICE support window, and the two
+                             headings a few pixels apart were read as one control often
+                             enough that the explainer had to open by saying they were not.
+                             The device window is declared on the product component and shown
+                             per shipment on Distribution; this release-level pair is
+                             metadata, so it lives with the metadata. -->
+                        <div>
+                            <h3 class="mt-3">Release lifecycle dates</h3>
+                            <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                                When this <strong>version</strong> stops being supported and sold.
+                                Each date becomes a CLE lifecycle event for this release &mdash;
+                                <code>END_OF_SUPPORT</code> and <code>END_OF_LIFE</code> &mdash;
+                                served through the TEA endpoint and the CLE export, so a downstream
+                                consumer tracking your versions learns when this one lapses.
+                                <span style="display:block; margin-top:6px;">
+                                    Separate from the <strong>device support window</strong>,
+                                    which is the section 524B commitment about the hardware and is
+                                    declared on the product component, not here. A device outlives
+                                    many versions, so the two dates differ on purpose.
+                                </span>
+                            </n-alert>
+                            <n-space align="end" style="margin-bottom: 8px;">
+                                <div>
+                                    <div class="text-muted" style="font-size: 12px;">Release end of support</div>
+                                    <n-date-picker v-model:formatted-value="deviceWindow.eos"
+                                        value-format="yyyy-MM-dd" type="date" clearable
+                                        @update:formatted-value="deviceWindowError = null"
+                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                </div>
+                                <div>
+                                    <div class="text-muted" style="font-size: 12px;">Release end of life / end of sale</div>
+                                    <n-date-picker v-model:formatted-value="deviceWindow.eol"
+                                        value-format="yyyy-MM-dd" type="date" clearable
+                                        @update:formatted-value="deviceWindowError = null"
+                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                </div>
+                                <n-button v-if="isWritable" size="small" type="primary"
+                                    :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
+                                    @click="saveDeviceWindow">Save dates</n-button>
+                            </n-space>
+                            <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
+                                style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
+                                {{ deviceWindowError }}
+                            </n-alert>
                         </div>
                         <div>
                             <h3 class="mt-3">Tags</h3>
@@ -1843,10 +1945,10 @@ import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
 import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
+import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
-import { loadComponentDeviceWindow } from '@/utils/componentDeviceWindow'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
@@ -1972,36 +2074,6 @@ async function loadAcollections() {
  * an ugly one.
  */
 /**
- * The DEVICE window, inherited read-only from the product component (D7).
- *
- * Separate state from `deviceWindow` below, which is this RELEASE's own lifecycle dates. They
- * were one control until 2026-09-10 and are two different facts: the device's commitment is a
- * labeling claim about the hardware, the release's dates are TEA/CLE metadata about a version.
- */
-const inheritedDeviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
-
-async function loadInheritedDeviceWindow () {
-    // componentDetails.uuid FIRST, and it is the only one that works on the surface this
-    // panel renders on: SINGLE_RELEASE_PRODUCT_GQL -- the query used for PRODUCT releases,
-    // which is where a device window is shown -- does not select the flat `component` field
-    // at all. Reading it there returned undefined and this function returned early every
-    // time, so the read-only window said "not declared" no matter what was declared. The
-    // flat field is kept as a fallback because SINGLE_RELEASE_GQL does select it.
-    const componentUuid = (updatedRelease.value as any)?.componentDetails?.uuid
-        || (updatedRelease.value as any)?.component
-    if (!componentUuid) return
-    try {
-        const r = await loadComponentDeviceWindow(graphqlClient as any, componentUuid)
-        inheritedDeviceWindow.eos = r.window.eos
-        inheritedDeviceWindow.eol = r.window.eol
-    } catch (e: any) {
-        // Left as "not declared". A read-only line that cannot be loaded must not claim dates.
-        inheritedDeviceWindow.eos = null
-        inheritedDeviceWindow.eol = null
-    }
-}
-
-/**
  * The device support window, edited independently of the release body.
  *
  * NARROW PARTIAL, not the whole release: the save sends { uuid, eos, eol, clearEos,
@@ -2041,8 +2113,6 @@ function seedDeviceWindow () {
     deviceWindowBaseline.eos = deviceWindow.eos
     deviceWindowBaseline.eol = deviceWindow.eol
     deviceWindowError.value = null
-    // The inherited device window comes from the product component, not from this release.
-    void loadInheritedDeviceWindow()
 }
 
 /**
@@ -2768,6 +2838,32 @@ function handleBomSubTabSwitch (subTab: string) {
     if (subTab === 'sbomSub') loadSbomComponents()
     else if (subTab === 'hbomSub') fetchHbomComponents(updatedRelease.value.uuid)
 }
+
+/**
+ * The outer tab set's selection, which only became state when the Support tab needed to send
+ * the operator somewhere.
+ *
+ * Defaults to the first pane, which is what an uncontrolled n-tabs already selected, so the
+ * landing tab is unchanged.
+ */
+const activeTab: Ref<string> = ref('components')
+
+/**
+ * From the Support tab's coverage number to the rows behind it.
+ *
+ * The gauge reports how much of the release is disclosed; the only thing an operator can DO
+ * about a number they do not like is attest components, and those controls live with the list
+ * they act on. Without this the tab would state a problem and leave finding the cure as an
+ * exercise.
+ *
+ * handleTabSwitch is invoked explicitly: n-tabs fires update:value for a user click, not for
+ * a programmatic one, so the list would otherwise stay unloaded behind a tab that looked open.
+ */
+async function goToSbomComponents () {
+    bomSubTab.value = isHardware.value ? 'hbomSub' : 'sbomSub'
+    activeTab.value = 'bomComponents'
+    await handleTabSwitch('bomComponents')
+}
 const isLoading: Ref<boolean> = ref(true)
 const isProductRelease: Ref<boolean> = ref(false)
 const productArtifactsLoaded: Ref<boolean> = ref(false)
@@ -2972,9 +3068,88 @@ const isAddendumExport: ComputedRef<boolean> = computed((): boolean =>
 const isProductReleaseForStatement: ComputedRef<boolean> = computed((): boolean =>
     updatedRelease.value?.componentDetails?.type === 'PRODUCT')
 
-/** Every FDA document, for the controls that apply to none of them. */
-const isFdaDocumentExport: ComputedRef<boolean> = computed((): boolean =>
-    isAddendumExport.value || selectedSbomMediaType.value === 'DEVICE_STATEMENT')
+/**
+ * The support documents this release can actually produce, in modal order.
+ *
+ * ONE LIST, read by both the radio group and the "is there a Support type at all" test, so a
+ * release that can produce nothing cannot end up offering an empty radio group behind a type
+ * button -- the state the old arrangement reached by having the PRODUCT rule written out
+ * separately in an alert, a computed and a disabled attribute.
+ *
+ * The addendum is release-scoped and is producible from a COMPONENT release; the device
+ * statement is a statement about a DEVICE and is not.
+ */
+interface SupportExportFormat { value: string, label: string }
+const supportExportFormats: ComputedRef<SupportExportFormat[]> = computed((): SupportExportFormat[] => {
+    const formats: SupportExportFormat[] = [
+        { value: 'FDA_ADDENDUM', label: 'Support addendum (CSV)' },
+        { value: 'FDA_ADDENDUM_PDF', label: 'Support addendum (PDF)' }
+    ]
+    if (isProductReleaseForStatement.value) {
+        formats.push({ value: 'DEVICE_STATEMENT', label: 'Device support statement (PDF)' })
+    }
+    return formats
+})
+
+const supportExportAvailable: ComputedRef<boolean> = computed((): boolean =>
+    supportExportFormats.value.length > 0)
+
+/** The SBOM export's own formats, for the same reset. */
+const BOM_MEDIA_TYPES: readonly string[] = ['JSON', 'CSV', 'EXCEL']
+
+/**
+ * Keep the format selection VALID FOR THE SELECTED TYPE.
+ *
+ * Both radio groups write selectedSbomMediaType -- one ref, because the Export button is one
+ * handler and routing on the media type is what decides which document gets built. Without
+ * this, picking Support and then going back to SBOM leaves 'FDA_ADDENDUM' selected under a
+ * radio group that does not offer it: naive-ui renders no selection, and Export fires the
+ * addendum while the form on screen says CycloneDX. The reset is on the TYPE change rather
+ * than on the button, so the form never displays a pair it would not send.
+ */
+watch(exportBomType, (bomType: string): void => {
+    if (bomType === 'SUPPORT') {
+        const valid = supportExportFormats.value.map((f: SupportExportFormat): string => f.value)
+        if (!valid.includes(selectedSbomMediaType.value)) {
+            selectedSbomMediaType.value = valid[0]
+        }
+    } else if (!BOM_MEDIA_TYPES.includes(selectedSbomMediaType.value)) {
+        selectedSbomMediaType.value = 'JSON'
+    }
+})
+
+/**
+ * Whether this organization has support metadata turned on for exports.
+ *
+ * Read through supportInjectionFromSettings, the same helper the organization settings screen
+ * reads its own toggle back with, so the two cannot disagree about what a missing or unknown
+ * value means. On a backend that does not declare the setting it reads false, which is the
+ * safe direction: the toggle disables rather than claiming a disclosure the server will not
+ * produce.
+ */
+const orgSupportInjectionEnabled: ComputedRef<boolean> = computed((): boolean =>
+    supportInjectionFromSettings(store.getters.myorg?.settings))
+
+/**
+ * Per-export metadata flags. Defaults are applied when the dialog OPENS, not once at setup:
+ * the organization arrives asynchronously, and a default computed before it landed would
+ * report "off, and your org has it disabled" on an org that has it enabled.
+ */
+const includeSupportMetadata: Ref<boolean> = ref(false)
+const includeInternalMetadata: Ref<boolean> = ref(false)
+
+/** This server rejected the metadata arguments, so stop sending them. See exportReleaseSbom. */
+const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
+
+function openExportModal () {
+    // Support metadata follows the organization: an org that publishes attestations expects
+    // its exports to carry them, and having to switch it on per export would be a trap.
+    includeSupportMetadata.value = orgSupportInjectionEnabled.value
+    // Internal metadata defaults OFF: it is provenance about ReARM, not about the product,
+    // and the reader of a BOM did not ask for it.
+    includeInternalMetadata.value = false
+    showExportSBOMModal.value = true
+}
 
 /**
  * The Device Support Statement cannot be produced from this release, and we already SAY so in
@@ -5396,31 +5571,92 @@ async function exportFdaAddendum (mediaType: string) {
     }
 }
 
+/**
+ * The Support documents' own export entry point.
+ *
+ * NOT exportReleaseSbom. Routing the support documents through that signature meant handing it
+ * tldOnly, ignoreDev, the structure and the rebom type -- four BOM-shaping arguments none of
+ * these documents reads -- and a reviewer had to follow the call two frames deep to learn they
+ * were discarded. That is the same "enabled and silently ignored" shape the controls
+ * themselves were hidden to avoid, moved into the call site.
+ *
+ * The media type still does the routing, because it is what the radio group writes.
+ */
+async function exportSupportDocument () {
+    if (selectedSbomMediaType.value === 'DEVICE_STATEMENT') return exportDeviceSupportStatement()
+    return exportFdaAddendum(selectedSbomMediaType.value)
+}
+
+/**
+ * The release BOM export, in two shapes.
+ *
+ * FULL carries the per-export metadata flags; CORE is the document every backend has always
+ * accepted. Written out as two constants rather than built by string concatenation so both
+ * are parsed at module load and validate-graphql.mjs can see them.
+ */
+const SBOM_EXPORT_WITH_METADATA_FLAGS = gql`
+    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType], $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean) {
+        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes, includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata)
+    }`
+
+const SBOM_EXPORT_CORE = gql`
+    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType]) {
+        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
+    }`
+
+function runSbomExport (mutation: any, variables: Record<string, any>): Promise<any> {
+    return graphqlClient.mutate({ mutation, variables, fetchPolicy: 'no-cache' })
+}
+
 async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
-    // Routed here rather than from the template so the button keeps one handler and the
-    // modal cannot end up with two spinners disagreeing about whether an export is running.
-    if (mediaType === 'FDA_ADDENDUM' || mediaType === 'FDA_ADDENDUM_PDF') return exportFdaAddendum(mediaType)
-    if (mediaType === 'DEVICE_STATEMENT') return exportDeviceSupportStatement()
+    // The two support-document redirects that used to open this function are GONE, not
+    // merely unused: the Support documents are their own bom type with their own form and
+    // their own handler (exportSupportDocument), so nothing can reach here asking for one.
+    // Keeping unreachable redirects would leave two entry points for one document and invite
+    // the next reader to add a third.
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
-        const gqlResp: any = await graphqlClient.mutate({
-            mutation: gql`
-                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType]) {
-                    releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
-                }
-            `,
-            variables: {
-                release: updatedRelease.value.uuid,
-                tldOnly: tldOnly,
-                ignoreDev: ignoreDev,
-                structure: selectedBomStructureType,
-                belongsTo: selectedRebomType ? selectedRebomType : null,
-                mediaType: mediaType.toUpperCase(),
-                excludeCoverageTypes: excludeCoverageTypes
-            },
-            fetchPolicy: 'no-cache'
-        })
+        const baseVariables: Record<string, any> = {
+            release: updatedRelease.value.uuid,
+            tldOnly: tldOnly,
+            ignoreDev: ignoreDev,
+            structure: selectedBomStructureType,
+            belongsTo: selectedRebomType ? selectedRebomType : null,
+            mediaType: mediaType.toUpperCase(),
+            excludeCoverageTypes: excludeCoverageTypes
+        }
+        let gqlResp: any
+        if (exportMetadataArgsUnsupported.value) {
+            gqlResp = await runSbomExport(SBOM_EXPORT_CORE, baseVariables)
+        } else {
+            try {
+                gqlResp = await runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
+                    ...baseVariables,
+                    includeSupportMetadata: includeSupportMetadata.value,
+                    includeInternalMetadata: includeInternalMetadata.value
+                })
+            } catch (err: any) {
+                // A backend that does not declare the two arguments rejects the DOCUMENT, and
+                // it does so during VALIDATION -- before any resolver runs. So nothing was
+                // exported and no download was logged, and retrying without them is not a
+                // second write. That is what makes a retry safe HERE and not on mutations in
+                // general; a runtime failure re-raises below untouched.
+                //
+                // The CE backend reaches these arguments only at the deferred sync, and this
+                // is the shared UI. Without the retry the whole Export button would be dead
+                // on CE for the entire mirror-lag window.
+                if (!isSchemaDriftError(err)) throw err
+                exportMetadataArgsUnsupported.value = true
+                gqlResp = await runSbomExport(SBOM_EXPORT_CORE, baseVariables)
+                // SAID OUT LOUD, never silently. "Include internal metadata: off" and a file
+                // that carries the markers anyway is precisely the lie-by-omission this
+                // feature exists to remove.
+                notify('warning', 'Metadata options ignored',
+                    'This server does not support the per-export metadata options yet, so the'
+                    + ' export used the organization default.')
+            }
+        }
         let blobType = mediaType === 'JSON' ? 'application/json' : mediaType === 'EXCEL' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'
         let exportContent = gqlResp.data.releaseSbomExport
         if (mediaType === 'JSON') {
@@ -7740,6 +7976,12 @@ async function handleTabSwitch(tabName: string) {
         await fetchInProducts()
     } else if (tabName === "vex") {
         await fetchReleaseVexProposals()
+    } else if (tabName === "support") {
+        // The gauge is release-scoped and is otherwise only fetched when the SBOM list loads,
+        // so a Support tab opened first would render an empty alert forever. Loading it here
+        // as well keeps the two copies of the gauge showing the same number whichever tab the
+        // operator reached first.
+        await loadSbomCoverage()
     }
 }
 

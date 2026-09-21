@@ -88,54 +88,76 @@ const releaseView = readFileSync(
     fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
 
 /**
- * The release page shows TWO DIFFERENT FACTS and never merges them (D7).
+ * The release page does not show the device window AT ALL, and shows the release's own
+ * lifecycle dates as metadata.
  *
- * Until 2026-09-10 one control edited `release.eos/eol` under the heading "Device support
- * window", which is the conflation the whole ruling removes: the device's commitment is a
- * labeling claim about hardware, the release's dates are TEA/CLE metadata about a version.
+ * TWO REVISIONS OF THE SAME RULING. Until 2026-09-10 one control edited `release.eos/eol`
+ * under the heading "Device support window" -- the conflation D7 removes. The fix split them
+ * into two adjacent panels on the Components tab, and the operator walkthrough found that two
+ * headings a few pixels apart were still read as one control, often enough that the explainer
+ * had to open by saying they were not the same thing.
+ *
+ * So on 2026-09-21 the read-only device window was REMOVED from the release page rather than
+ * relabelled. It is declared on the product component and resolved per shipment on
+ * Distribution -- both surfaces are asserted above and below -- and a third read-only copy on
+ * a page that cannot edit it bought nothing but the confusion. The release's own dates moved
+ * to the Meta tab, where the rest of this release's metadata lives.
+ *
+ * These assertions therefore pin an ABSENCE. That is deliberate: the failure mode is someone
+ * re-adding a device window to the release page, and a spec that only checked the Meta tab
+ * would not notice.
  */
-describe('the release page separates the device window from release lifecycle', () => {
-    it('renders the inherited device window read-only', () => {
-        expect(releaseView).toMatch(/\{\{ inheritedDeviceWindow\.eos \|\| 'not declared' \}\}/)
-        expect(releaseView).toMatch(/\{\{ inheritedDeviceWindow\.eol \|\| 'not declared' \}\}/)
+describe('the release page carries release lifecycle dates and no device window', () => {
+    it('does not render a device support window', () => {
+        expect(releaseView).not.toContain('Device support window</h3>')
+        expect(releaseView).not.toContain('inheritedDeviceWindow')
+        expect(releaseView).not.toContain('loadComponentDeviceWindow')
     })
 
-    /** No editor on the inherited value -- it is not this page's to change. */
-    it('does not bind the inherited window to an input', () => {
-        expect(releaseView).not.toMatch(/v-model[^\n]*inheritedDeviceWindow/)
-    })
-
-    /** A reader must be able to reach the place it IS editable. */
-    /**
-     * A link to a route that does not exist is worse than no link: it renders, it is clickable,
-     * and it goes nowhere. The first version of this test asserted `name: 'ComponentView'` --
-     * which is the options-API COMPONENT name, not a route -- so it was green on a dead link.
-     * It now pins a route name that router.ts actually declares.
-     */
-    it('links to the product component through a route that exists', () => {
-        const section = releaseView.slice(releaseView.indexOf('<h3>Device support window</h3>'))
-        expect(section.slice(0, 2500)).toMatch(/router-link/)
-        expect(section.slice(0, 2500)).toMatch(/name: 'ProductsOfOrg'/)
-
-        const router = readFileSync(
-            fileURLToPath(new URL('../router.ts', import.meta.url)), 'utf8')
-        expect(router).toMatch(/name: 'ProductsOfOrg'/)
+    /** The helper it used is still live for the surfaces that DO own the window. */
+    it('leaves the component-window loader in place for the surfaces that own it', () => {
+        const component = readFileSync(
+            fileURLToPath(new URL('./ComponentView.vue', import.meta.url)), 'utf8')
+        expect(component).toMatch(/loadComponentDeviceWindow\(/)
     })
 
     /** The release's own dates stay editable, under a heading that does not claim otherwise. */
     it('keeps the release lifecycle dates editable and separately labelled', () => {
-        expect(releaseView).toMatch(/<h3>Release lifecycle dates<\/h3>/)
+        expect(releaseView).toMatch(/<h3 class="mt-3">Release lifecycle dates<\/h3>/)
         expect(releaseView).toMatch(/v-model:formatted-value="deviceWindow\.eos"/)
         // The copy says what these dates are FOR, not merely what they are not: "not the
         // device commitment" alone reads as "ignore these".
         expect(releaseView).toMatch(/END_OF_SUPPORT/)
         expect(releaseView).toMatch(/CLE lifecycle event for this release/)
         expect(releaseView).toMatch(/Separate from the <strong>device support window<\/strong>/)
+        // It no longer says "above": there is nothing above it to point at, and a sentence
+        // that directs a reader to a panel that is not there is worse than no sentence.
+        expect(releaseView).not.toMatch(/device support window<\/strong> above/)
+        // It still says WHERE the device window lives, which is the half worth keeping.
+        expect(releaseView).toMatch(/declared on the product component, not here/)
     })
 
-    /** Loaded from the component, not from the release's own fields. */
-    it('sources the inherited window from the product component', () => {
-        expect(releaseView).toMatch(/loadComponentDeviceWindow\(graphqlClient as any, componentUuid/)
+    /** In the Meta tab, with the rest of this release's metadata -- not on Components. */
+    it('renders the lifecycle dates inside the Meta tab', () => {
+        // lastIndexOf: the BOM Components pane nests its own <n-tabs>, so the first
+        // closing tag in the file belongs to that inner set and slicing to it yields ''.
+        // An empty slice makes every toContain below fail loudly, which is how this was
+        // caught -- but a `not.toContain` in the same position would have passed silently.
+        const meta = releaseView.slice(
+            releaseView.indexOf('<n-tab-pane name="meta" tab="Meta">'),
+            releaseView.lastIndexOf('</n-tabs>'))
+        expect(meta).toContain('Release lifecycle dates')
+        expect(meta).toContain('v-model:formatted-value="deviceWindow.eos"')
+        expect(meta.indexOf('<h3>Notes</h3>'))
+            .toBeLessThan(meta.indexOf('Release lifecycle dates'))
+
+        const components = releaseView.slice(
+            releaseView.indexOf('<n-tab-pane name="components" tab="Components">'),
+            releaseView.indexOf('name="underlyingArtifacts"'))
+        expect(components).not.toContain('Release lifecycle dates')
+        expect(components).not.toContain('deviceWindow')
+        // The assessment justification moved to the Support tab in the same pass.
+        expect(components).not.toContain('releaseNarrative')
     })
 })
 
@@ -238,16 +260,15 @@ describe('the D7 UI surfaces can actually render and read', () => {
         expect(fn).toMatch(/loadDeviceWindow\(\)/)
     })
 
-    it('the release page reads the component uuid from a field its query selects', () => {
+    // The read this pinned is GONE: the release page no longer loads the inherited window, so
+    // the "which field does the query select" hazard has no reader left on that page. What
+    // survives is the half that still has one -- SINGLE_RELEASE_PRODUCT_GQL must select
+    // componentDetails, which the Support tab's PRODUCT gate and the export modal both read.
+    it('the product release query selects componentDetails for the surfaces that read it', () => {
         const release = readFileSync(
             fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
-        // SINGLE_RELEASE_PRODUCT_GQL -- the query used for PRODUCT releases, which is the
-        // only surface this panel renders on -- does not select the flat `component` field.
-        // Reading it there returned undefined, so the inherited window said "not declared"
-        // regardless of what was declared.
-        const fn = release.slice(release.indexOf('async function loadInheritedDeviceWindow'))
-            .slice(0, 900)
-        expect(fn).toMatch(/componentDetails\?\.uuid/)
+        expect(release).not.toContain('loadInheritedDeviceWindow')
+        expect(release).toMatch(/updatedRelease\.value\?\.componentDetails\?\.type === 'PRODUCT'/)
         const queries = readFileSync(
             fileURLToPath(new URL('../utils/graphqlQueries.ts', import.meta.url)), 'utf8')
         const product = queries.slice(queries.indexOf('const SINGLE_RELEASE_PRODUCT_GQL'))

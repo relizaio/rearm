@@ -47,19 +47,38 @@ describe('the device support statement is wired into the export modal', () => {
         expect(source).not.toMatch(/renderDeviceSupportStatementBlob/)
     })
 
-    it('offers it as its own export type', () => {
-        expect(source).toContain('<n-radio-button value="DEVICE_STATEMENT">')
+    // A format of the Support bom type since 2026-09-21, declared in supportExportFormats
+    // rather than as a radio literal, and PRODUCT-gated THERE -- one place, so a component
+    // release cannot be offered a document about a device.
+    it('offers it as a Support format, only where it can be produced', () => {
+        expect(source).toMatch(/value: 'DEVICE_STATEMENT', label: 'Device support statement \(PDF\)'/)
+        const formats = source.slice(source.indexOf('const supportExportFormats'))
+            .slice(0, source.slice(source.indexOf('const supportExportFormats')).indexOf('\n})'))
+        expect(formats).toContain('isProductReleaseForStatement')
+        expect(formats.indexOf('isProductReleaseForStatement'))
+            .toBeLessThan(formats.indexOf('DEVICE_STATEMENT'))
     })
 
-    it('routes it through the single export button', () => {
-        expect(source).toMatch(/if \(mediaType === 'DEVICE_STATEMENT'\) return exportDeviceSupportStatement\(\)/)
+    it('routes it through the Support export button', () => {
+        expect(source).toMatch(
+            /if \(selectedSbomMediaType\.value === 'DEVICE_STATEMENT'\) return exportDeviceSupportStatement\(\)/)
+        expect(source).toContain('@click="exportSupportDocument"')
+        // ONE entry point. The redirect that used to sit at the top of exportReleaseSbom is
+        // gone, not left unreachable: two ways in is how one of them drifts.
+        expect(source).not.toMatch(/if \(mediaType === 'DEVICE_STATEMENT'\)/)
     })
 
-    // The BOM-shaping options apply to no FDA document, so the gate covers all three types.
-    it('hides the BOM-shaping controls for every FDA document, not just the addendum', () => {
-        expect((source.match(/v-if="!isFdaDocumentExport"/g) || []).length).toBe(4)
-        expect(source).toMatch(/const isFdaDocumentExport\b/)
-        expect(source).toMatch(/selectedSbomMediaType\.value === 'DEVICE_STATEMENT'/)
+    // The BOM-shaping options apply to no support document, and that is now STRUCTURAL: they
+    // are in the SBOM form, these are in their own. The v-if count this replaces existed
+    // because one predicate had to be repeated in five places.
+    it('keeps the BOM-shaping controls out of the support form structurally', () => {
+        expect(source).not.toContain('isFdaDocumentExport')
+        const supportForm = source.slice(
+            source.indexOf(`<n-form v-if="exportBomType === 'SUPPORT'">`),
+            source.indexOf(`<n-form v-if="exportBomType === 'CLE'">`))
+        expect(supportForm).not.toContain('selectedBomStructureType')
+        expect(supportForm).not.toContain('tldOnly')
+        expect(supportForm).toContain('statementBlockedHere')
     })
 
     // Every refusal is checked BEFORE anything is built: a component release, an unauthored
