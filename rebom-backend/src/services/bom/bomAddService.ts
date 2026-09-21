@@ -456,6 +456,8 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     const convertedBom = mintProcessedSerialNumber(conversionResult.convertedBom, null);
     const bomDigest = computeBomDigest(convertedBom);
     mergedOptions.bomDigest = bomDigest;
+    // fileHash is sha256(JSON.stringify(spdxContent)) -- the parsed document, not the
+    // uploaded file. Same misnomer as the CycloneDX path; see the note on the field.
     mergedOptions.originalFileDigest = fileHash;
     mergedOptions.originalFileSize = JSON.stringify(spdxContent).length;
     mergedOptions.originalMediaType = 'application/spdx+json';
