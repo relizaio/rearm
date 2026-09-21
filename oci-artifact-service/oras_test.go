@@ -2,10 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -137,18 +143,113 @@ func TestTagIsPartOfWhatTheManifestDigestCovers(t *testing.T) {
 	}
 }
 
-// Guards the annotation itself: a value that is not RFC 3339 makes oras-go
-// return ErrInvalidDateTimeFormat rather than falling back to a timestamp, so
-// a typo here would fail every push rather than silently restore the old
-// behaviour -- but pin the intent anyway, since the constant is the fix.
-func TestCreatedAnnotationIsPinnedToTheEpoch(t *testing.T) {
-	if manifestCreatedAnnotationValue != "1970-01-01T00:00:00Z" {
-		t.Errorf("created annotation moved to %q; a non-fixed value reintroduces the orphaned-manifest bug",
-			manifestCreatedAnnotationValue)
+// fakeRegistry is the smallest OCI distribution surface oras.Copy needs, and
+// it keeps every manifest body it is handed so a test can assert on what was
+// actually pushed rather than on what a helper returned.
+type fakeRegistry struct {
+	mu        sync.Mutex
+	manifests map[string][]byte
+}
+
+func newFakeRegistry(t *testing.T) (*fakeRegistry, string) {
+	t.Helper()
+	reg := &fakeRegistry{manifests: map[string][]byte{}}
+	srv := httptest.NewServer(reg)
+	t.Cleanup(srv.Close)
+	return reg, strings.TrimPrefix(srv.URL, "http://")
+}
+
+func (r *fakeRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	path := req.URL.Path
+	switch {
+	case path == "/v2/" || path == "/v2":
+		w.WriteHeader(http.StatusOK)
+
+	case strings.Contains(path, "/blobs/uploads"):
+		// Start an upload, then accept whatever is sent to the session URL.
+		if req.Method == http.MethodPost {
+			w.Header().Set("Location", path+"session")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		io.Copy(io.Discard, req.Body)
+		w.Header().Set("Docker-Content-Digest", req.URL.Query().Get("digest"))
+		w.WriteHeader(http.StatusCreated)
+
+	case strings.Contains(path, "/blobs/"):
+		// Nothing is ever already present, so every blob gets uploaded.
+		w.WriteHeader(http.StatusNotFound)
+
+	case strings.Contains(path, "/manifests/"):
+		ref := path[strings.LastIndex(path, "/manifests/")+len("/manifests/"):]
+		if req.Method == http.MethodPut {
+			body, _ := io.ReadAll(req.Body)
+			r.mu.Lock()
+			r.manifests[ref] = body
+			r.mu.Unlock()
+			sum := sha256.Sum256(body)
+			w.Header().Set("Docker-Content-Digest", "sha256:"+hex.EncodeToString(sum[:]))
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func (r *fakeRegistry) manifestFor(t *testing.T, ref string) v1.Manifest {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	raw, ok := r.manifests[ref]
+	if !ok {
+		t.Fatalf("no manifest pushed for %q (have %d)", ref, len(r.manifests))
+	}
+	var m v1.Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal pushed manifest: %v", err)
+	}
+	return m
+}
+
+// The guard that covers the CALL SITE rather than the helper.
+//
+// Every other test here calls packArtifactManifest directly, so reverting
+// PushArtifact to an inline oras.PackManifest -- which is precisely the bug --
+// leaves them all green. Verified: it does. This one drives the real
+// PushArtifact against a registry and reads the manifest off the wire, so the
+// fix cannot be bypassed at the one place it has to apply.
+func TestPushArtifactSendsAFixedCreatedAnnotation(t *testing.T) {
+	reg, host := newFakeRegistry(t)
+	t.Setenv("REGISTRY_HOST", host)
+	t.Setenv("USE_PLAIN_HTTP", "true")
+	t.Setenv("REGISTRY_USERNAME", "")
+	t.Setenv("REGISTRY_TOKEN", "")
+
+	oc, err := NewOrasClient("testns/testrepo")
+	if err != nil {
+		t.Fatalf("oras client: %v", err)
 	}
 
-	desc := packTestDigest(t, []byte(testPayload), testTag)
-	if desc.Digest == "" {
-		t.Fatal("pack produced no digest")
+	path := filepath.Join(t.TempDir(), "payload.json")
+	if err := os.WriteFile(path, []byte(testPayload), 0o600); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open payload: %v", err)
+	}
+	defer f.Close()
+
+	if _, err := oc.PushArtifact(context.Background(), f, testTag, testMediaType, nil); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	got := reg.manifestFor(t, testTag).Annotations[v1.AnnotationCreated]
+	if got != manifestCreatedAnnotationValue {
+		t.Errorf("pushed manifest created annotation = %q, want the fixed %q -- PushArtifact is "+
+			"not going through packArtifactManifest", got, manifestCreatedAnnotationValue)
 	}
 }

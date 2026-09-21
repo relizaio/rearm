@@ -103,10 +103,12 @@ func NewOrasClient(repoName string) (*OrasClient, error) {
 //
 // It matters because callers store the MANIFEST digest and resolve it later
 // rather than re-deriving it: ReARM records it against an artifact and serves
-// that artifact's raw download from it. Our tags are content-addressed, so a
-// second push of the same bytes re-points the tag at a new manifest and leaves
-// the first one untagged while a live row still addresses it by digest. That
-// survives today only because the registry runs with garbage collection off.
+// that artifact's raw download from it. Our tags are stable per artifact --
+// a content hash for retained raw uploads, the artifact UUID for downloadable
+// ones -- so a second push under an existing tag re-points it at a new
+// manifest and leaves the first untagged while a live row still addresses it
+// by digest. That survives today only because the registry runs with garbage
+// collection off.
 //
 // The epoch is the reproducible-builds convention. Nothing is lost by it: the
 // annotation describes the manifest rather than the artifact, and callers
