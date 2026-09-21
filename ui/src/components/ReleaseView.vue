@@ -3037,6 +3037,13 @@ async function goToRelease (uuid: string) {
     sbomGraphLoaded.value = false
     sbomGraphByUuid.value = {}
     sbomGraphDirty.value = true
+    // The other two lazy caches, which were never reset here. Both of their loaders
+    // early-return while their flag is set, so navigating prev/next with "Part of Products" or
+    // the HBOM sub-tab open showed the PREVIOUS release's rows and never refreshed -- stale
+    // before, and now reachable through the tab reload below, which would otherwise call a
+    // loader that quietly does nothing. Reset beside the caches that already were.
+    inProductsLoaded.value = false
+    hbomLoaded.value = false
     isLoading.value = true
     loadingBar.start()
     try {
