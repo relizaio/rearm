@@ -63,6 +63,7 @@ export class BomMapper {
             notes: record.meta.notes,
             stripBom: record.meta.stripBom,
             serialNumber: record.meta.serialNumber,
+            processedSerialNumber: record.meta.processedSerialNumber,
             createdDate: record.created_date,
             lastUpdatedDate: record.last_updated_date,
             ignoreDev: record.meta.ignoreDev,

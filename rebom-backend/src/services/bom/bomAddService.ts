@@ -11,7 +11,7 @@ import {
   validateOciPushResult,
   extractRepositoryNameFromBom
 } from '../oci';
-import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom } from './bomProcessingService';
+import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom, mintProcessedSerialNumber } from './bomProcessingService';
 import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../cyclonedx/cdxSpecDowngrade';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
@@ -152,6 +152,23 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   if (AUGMENT_ON_STORAGE && processable) {
     logger.debug({ serialNumber: rebomOptions.serialNumber }, "Augmenting BOM with component context before storage");
     finalBom = augmentBomForStorage(processedBom, rebomOptions, new Date());
+  }
+
+  // Everything processable is a different document from the one uploaded by the
+  // time it gets here -- processBomObj has sanitized, deduplicated and repaired
+  // its dependencies, whether or not augmentation ran on top -- so it is pushed
+  // under an identity of its own, with a link back to the producer's. Gated on
+  // `processable` and not on AUGMENT_ON_STORAGE on purpose: tying it to
+  // augmentation would mean flipping that flag silently republished a
+  // deduplicated document under the producer's serialNumber.
+  //
+  // meta.serialNumber stays the producer's -- it is the row's identity and what
+  // every lookup keys on; this records which document the row currently serves.
+  // The non-processable path is left alone: that copy really is the uploaded
+  // bytes, verbatim, so it keeps the uploaded identity.
+  if (processable) {
+    finalBom = mintProcessedSerialNumber(finalBom);
+    rebomOptions.processedSerialNumber = finalBom.serialNumber;
   }
   
   // Compute digest on the final BOM (augmented or processed, depending on config)
@@ -417,7 +434,12 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       logger.warn({ serialNumber }, "Generated fallback serial number - rearm-cli output missing serialNumber");
     }
     
-    const convertedBom = conversionResult.convertedBom;
+    // Converted, therefore a distinct document from the SPDX file that was
+    // uploaded, and given its own identity for the same reason the augmented
+    // CycloneDX copy is. No source reference: the document it came from is
+    // SPDX, and BOM-Link has no form for one -- better no link than an
+    // invented one.
+    const convertedBom = mintProcessedSerialNumber(conversionResult.convertedBom, null);
     const bomDigest = computeBomDigest(convertedBom);
     mergedOptions.bomDigest = bomDigest;
     mergedOptions.originalFileDigest = fileHash;
@@ -439,6 +461,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     mergedOptions.processedFileSize = cycloneDxPushResult.originalSize;
     // Same reason as the CycloneDX path: the pointer is explicit on every new row.
     mergedOptions.processedTag = convertedBomUuid;
+    mergedOptions.processedSerialNumber = convertedBom.serialNumber;
     
     // Repository name is already in cycloneDxPushResult.ociRepositoryName
 
