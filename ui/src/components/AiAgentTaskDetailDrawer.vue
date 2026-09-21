@@ -342,14 +342,12 @@ watch(() => props.task?.uuid, () => { reviewNote.value = '' })
 const terminal = computed(() =>
     props.task?.status === 'COMPLETED' || props.task?.status === 'CANCELLED')
 
-// Task queued in a HUMAN-kind role: org admins sign off directly (no claim step).
-const humanStageRole = computed(() => {
 /**
  * The name of a role config, for the question stack.
  *
- * <p>Frames carry role uuids because a name is not an identity -- the same reason the hop records
- * carry one. A human reading "coder asked designer" does not want either uuid, so this resolves
- * from the roles already loaded and falls back to a short uuid when a role has been removed.
+ * Frames carry role uuids because a name is not an identity -- the same reason the hop records
+ * carry one. A human reading "coder asked designer" wants neither uuid, so this resolves from the
+ * roles already loaded and falls back to a short uuid when a role has been removed.
  */
 function roleName (uuid?: string | null): string {
     if (!uuid) return ''
@@ -357,6 +355,8 @@ function roleName (uuid?: string | null): string {
     return rc?.name ?? uuid.slice(0, 8)
 }
 
+// Task queued in a HUMAN-kind role: org admins sign off directly (no claim step).
+const humanStageRole = computed(() => {
     if (props.task?.status !== 'QUEUED') return null
     const rc = (props.roles ?? []).find(r => r.name === props.task.role)
     return rc?.kind === 'HUMAN' ? rc : null
