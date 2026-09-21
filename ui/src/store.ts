@@ -2699,6 +2699,12 @@ const storeObject : any = {
                             sessions
                             registeredBySession
                             statusHistory { from to at trigger actor { kind uuid name } }
+                            budgetMicros
+                            coordinatorEstimateMicros
+                            requiredStrength
+                            strengthSetBy { kind uuid name }
+                            strengthSetAt
+                            questionStack { askingRole askingSession askingAgent questionsRelease answeringRole askedAt }
                             prUrls
                             createdDate
                             completedAt
@@ -2946,6 +2952,7 @@ const storeObject : any = {
                                 knowledgeCutoff
                             }
                             tier
+                            strength
                             resolution
                             modelCardSpecVersion
                             notes

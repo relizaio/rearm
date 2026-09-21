@@ -225,6 +225,23 @@
                     </div>
                 </div>
 
+                <div v-if="task.questionStack?.length" class="dsec">
+                    <div class="dsec__h">Waiting on</div>
+                    <div class="qstack">
+                        <div v-for="(f, i) in task.questionStack" :key="i" class="qstack__row">
+                            <span class="qstack__depth">{{ i + 1 }}</span>
+                            <span>{{ roleName(f.askingRole) }} asked {{ roleName(f.answeringRole) || 'nobody yet' }}</span>
+                            <a v-if="f.questionsRelease" :href="`/release/${f.questionsRelease}`" class="qstack__link">questions</a>
+                            <span class="qstack__time">{{ ts(f.askedAt) }}</span>
+                        </div>
+                    </div>
+                    <div v-if="!task.questionStack[task.questionStack.length - 1].answeringRole"
+                         class="qstack__note">
+                        The board found no role that produces what the newest question is about, so
+                        it is with the coordinator to name one or escalate.
+                    </div>
+                </div>
+
                 <div v-if="task.statusHistory?.length" class="dsec">
                     <div class="dsec__h">Status history</div>
                     <div class="shist">
@@ -324,6 +341,19 @@ watch(() => props.task?.uuid, () => { reviewNote.value = '' })
 
 const terminal = computed(() =>
     props.task?.status === 'COMPLETED' || props.task?.status === 'CANCELLED')
+
+/**
+ * The name of a role config, for the question stack.
+ *
+ * Frames carry role uuids because a name is not an identity -- the same reason the hop records
+ * carry one. A human reading "coder asked designer" wants neither uuid, so this resolves from the
+ * roles already loaded and falls back to a short uuid when a role has been removed.
+ */
+function roleName (uuid?: string | null): string {
+    if (!uuid) return ''
+    const rc = (props.roles ?? []).find((r: any) => r.uuid === uuid)
+    return rc?.name ?? uuid.slice(0, 8)
+}
 
 // Task queued in a HUMAN-kind role: org admins sign off directly (no claim step).
 const humanStageRole = computed(() => {
@@ -466,6 +496,14 @@ function statusTone (s: string): string {
     &__outputs { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 2px; margin-top: 3px; }
     &__output { font-size: 11.5px; color: #666; }
     &__note { width: 100%; color: #555; font-size: 12px; padding-left: 2px; }
+}
+.qstack {
+    font-size: 11.5px;
+    &__row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; flex-wrap: wrap; }
+    &__depth { color: #999; font-family: monospace; }
+    &__link { font-size: 11px; }
+    &__time { color: #999; margin-left: auto; }
+    &__note { color: #b0854a; font-size: 11px; margin-top: 4px; }
 }
 .shist {
     font-size: 11.5px;

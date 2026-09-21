@@ -37,7 +37,13 @@
                         <n-descriptions-item label="Canonical id">
                             <code>{{ selected.canonicalId || '—' }}</code>
                         </n-descriptions-item>
-                        <n-descriptions-item label="Tier">{{ selected.tier || '—' }}</n-descriptions-item>
+                        <n-descriptions-item label="Provenance">{{ selected.tier || '—' }}</n-descriptions-item>
+                        <n-descriptions-item label="Strength">
+                            {{ selected.strength ?? '—' }}
+                            <span v-if="selected.strength == null" class="subtle">
+                                unrated: this model is eligible only for roles that ask for no floor
+                            </span>
+                        </n-descriptions-item>
                         <n-descriptions-item label="Resolution">{{ selected.resolution || '—' }}</n-descriptions-item>
                         <n-descriptions-item label="Publisher">{{ selected.publisher || '—' }}</n-descriptions-item>
                         <n-descriptions-item label="Aliases" :span="2">
@@ -357,7 +363,15 @@ function openPricing (row: any) {
 const columns = computed<DataTableColumns<any>>(() => [
     { title: 'Model', key: 'name', render: (r: any) => modelLabel(r) },
     { title: 'Canonical id', key: 'canonicalId', render: (r: any) => h('code', { style: 'font-size: 11px;' }, r.canonicalId ?? '—') },
-    { title: 'Tier', key: 'tier', render: (r: any) => r.tier ?? '—' },
+    { title: 'Provenance', key: 'tier', render: (r: any) => r.tier ?? '—' },
+    {
+        title: 'Strength',
+        key: 'strength',
+        // Capability, which is what a role's floor compares against. Blank is not weak, it is
+        // unrated -- and an unrated model is declined by any role that asks for a floor, so the
+        // column has to make the difference visible rather than showing a dash for both.
+        render: (r: any) => r.strength ?? '—',
+    },
     {
         title: 'Resolution',
         key: 'resolution',
