@@ -29,6 +29,11 @@ export interface BomMetaNested {
         sourceIds?: string[];
     };
     spdx?: {
+        // MISNAMED, kept for compatibility: the digest of the SPDX document rebom stored
+        // (sha256 of JSON.stringify of the parsed content), NOT of the file the publisher
+        // uploaded. ReARM parses the upload into a JsonNode before rebom is called, so the
+        // original bytes never reach this service. For the uploaded file's digest see the
+        // ReARM artifact's AS_UPLOADED scope.
         originalFileDigest?: string;
         originalFileSize?: number;
         originalMediaType?: string;

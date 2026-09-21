@@ -104,6 +104,10 @@ export type RebomOptions = {
     mod: string,
     storage: string,
     bomDigest?: string,
+    // MISNAMED: the digest of the document rebom stored, not of the uploaded file. ReARM
+    // parses the upload before calling rebom, so the publisher's bytes never arrive here;
+    // their digest is on the ReARM artifact under the AS_UPLOADED scope. Name retained
+    // because it is persisted and part of the input contract.
     originalFileDigest?: string,
     originalFileSize?: number,
     originalMediaType?: string,

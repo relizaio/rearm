@@ -105,11 +105,23 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // used by ReARM backend for SBOM-component parsing, cyclonedx-javascript-library
   // used here for validation) supports it yet. Deep-clone the raw BOM and
   // downgrade the clone's specVersion to 1.6 in place so all downstream sees
-  // a recognised spec. The original bytes are still stored verbatim under the
-  // `<uuid>-raw` OCI key below — once libraries catch up, that raw copy can
-  // be re-augmented at the new spec.
+  // a recognised spec. The UNDOWNGRADED document is what goes under the
+  // `<uuid>-raw` OCI key below, so once libraries catch up that copy can be
+  // re-augmented at the new spec.
+  //
+  // "raw" here means UNPROCESSED, not UNMODIFIED, and the distinction matters.
+  // What lands under that key is `JSON.stringify` of an object that arrived
+  // already parsed: ReARM reads the upload into a JsonNode before it ever calls
+  // rebom, so the publisher's actual bytes -- their whitespace, key order and
+  // number formatting -- do not exist on this side of the wire and never have.
+  // An earlier version of this comment claimed they were "stored verbatim",
+  // which sent a byte-fidelity investigation looking for them here. If you need
+  // the bytes as uploaded, they are retained by rearm-core and addressed by the
+  // artifact's AS_UPLOADED digest; `meta.originalFileDigest` below is the digest
+  // of THIS document, not of that file.
+  //
   // CDX 2.0+ (e.g. HBOM prototype) can't go through the 1.x processing/validation
-  // stack — store the raw bytes verbatim and skip processing/validation. The raw
+  // stack -- store the document unprocessed and skip processing/validation. That
   // copy is what gets stored under both keys below, so parseBom/parseHbom read the
   // real 2.0 content. Re-process once the libraries support the new spec.
   const processable = isProcessableCycloneDxSpec(rawBom?.specVersion);
@@ -243,7 +255,9 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   
   // Track raw BOM metadata for ReARM backend (use actual file digest from OCI)
   // Note: rawBomUuid is always `uuid + '-raw'` so ReARM backend can reconstruct it
-  rebomOptions.originalFileDigest = rawPushResult.fileSHA256Digest;  // Actual file digest from OCI
+  // Digest of the STORED document (this push's bytes), not of the file the publisher
+  // uploaded -- see addCycloneDxBom's note on what "raw" means here.
+  rebomOptions.originalFileDigest = rawPushResult.fileSHA256Digest;
   rebomOptions.originalFileSize = rawPushResult.originalSize;
   rebomOptions.originalMediaType = rawPushResult.originalMediaType;
   // Pin the raw copy's repository: enrichment later re-pushes the PROCESSED
@@ -442,6 +456,8 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     const convertedBom = mintProcessedSerialNumber(conversionResult.convertedBom, null);
     const bomDigest = computeBomDigest(convertedBom);
     mergedOptions.bomDigest = bomDigest;
+    // fileHash is sha256(JSON.stringify(spdxContent)) -- the parsed document, not the
+    // uploaded file. Same misnomer as the CycloneDX path; see the note on the field.
     mergedOptions.originalFileDigest = fileHash;
     mergedOptions.originalFileSize = JSON.stringify(spdxContent).length;
     mergedOptions.originalMediaType = 'application/spdx+json';

@@ -51,6 +51,8 @@ export async function resolveAndFetchRawBom(
     const rawTag = bomUuid + '-raw';
     const meta = bomRecord.meta || ({} as any);
     const recordedRepo = extractRepositoryNameFromBom(bomRecord);
+    // Digest of the STORED document, despite the name -- so this validates that the blob
+    // is the document rebom pushed, not that it is the file the publisher uploaded.
     const rawDigest = meta.originalFileDigest;
 
     if (meta.rawBomMissing) {

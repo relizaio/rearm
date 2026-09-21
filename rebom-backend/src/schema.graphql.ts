@@ -306,7 +306,12 @@ input RebomOptions {
     stripBom: String
     serialNumber: ID
     bomDigest: String
-    originalFileDigest: String  # SHA256 of original file (for SPDX)
+    # MISNAMED. Not the digest of the uploaded file -- ReARM parses the upload before
+    # calling rebom, so rebom never sees those bytes. This is the digest of the document
+    # rebom STORED (JSON.stringify of the parsed object). The uploaded file's own digest
+    # lives on the ReARM artifact under the AS_UPLOADED scope. Kept under this name
+    # because it is persisted on every existing row and sent by ReARM.
+    originalFileDigest: String
     originalFileSize: Int       # Size of original file in bytes (for SPDX)
     originalMediaType: String   # Media type of original file (for SPDX)
     purl: String
