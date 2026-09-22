@@ -37,9 +37,20 @@
                             </n-button>
                         </n-space>
                     </template>
+                    <template v-else-if="task.hold.kind === 'QUESTION'">
+                        <div class="holdmeta">
+                            A question on this task has nobody to answer it. Answer it below — the
+                            board routes your answer back to whoever asked.
+                        </div>
+                    </template>
                     <template v-else-if="task.hold.level === 'OPERATOR'">
+                        <n-input v-model:value="releaseNote" size="small"
+                                 placeholder="Note on release (optional)" style="margin-top: 8px"/>
                         <n-space style="margin-top: 8px">
-                            <n-button size="small" @click="emit('operator-release', task)">Operator release</n-button>
+                            <n-button size="small"
+                                      @click="emit('operator-release', { task, note: releaseNote })">
+                                Operator release
+                            </n-button>
                         </n-space>
                     </template>
                 </n-alert>
@@ -240,6 +251,37 @@
                         The board found no role that produces what the newest question is about, so
                         it is with the coordinator to name one or escalate.
                     </div>
+
+                    <!--
+                        Answering is a round of the QUESTIONS index, not a note: that is what the
+                        asking agent reads as a pinned input when the task comes back to it. A
+                        note would be prose it cannot pin, and the loop would ask again.
+                    -->
+                    <div v-if="answerable.length" class="qans">
+                        <div class="dsec__h" style="margin-top: 4px">Answer</div>
+                        <div v-for="f in answerable" :key="f.id" class="qans__row">
+                            <div class="qans__id">
+                                <span class="qans__tag">{{ f.id }}</span>
+                                <span class="qans__title">{{ f.title }}</span>
+                            </div>
+                            <n-input v-model:value="answers[f.id]" size="small" type="textarea"
+                                     :autosize="{ minRows: 1, maxRows: 4 }"
+                                     :placeholder="`Answer to ${f.id}`"/>
+                            <n-checkbox v-model:checked="withdrawn[f.id]" size="small">
+                                does not apply
+                            </n-checkbox>
+                        </div>
+                        <n-input v-model:value="answerAll" size="small" type="textarea"
+                                 :autosize="{ minRows: 1, maxRows: 4 }"
+                                 placeholder="Same answer to all of them"
+                                 style="margin-top: 8px"/>
+                        <n-space style="margin-top: 8px">
+                            <n-button size="small" type="primary" :disabled="!canAnswer"
+                                      @click="emit('answer', answerPayload)">
+                                {{ task.hold ? 'Answer and release' : 'Answer' }}
+                            </n-button>
+                        </n-space>
+                    </div>
                 </div>
 
                 <div v-if="task.statusHistory?.length" class="dsec">
@@ -300,11 +342,46 @@ const emit = defineEmits<{
     (e: 'open', task: any): void
     (e: 'human-review', p: { task: any, approve: boolean, note: string }): void
     (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
-    (e: 'operator-release', task: any): void
+    (e: 'operator-release', p: { task: any, note: string }): void
     (e: 'require-review', p: { task: any, value: boolean }): void
+    (e: 'answer', p: { task: any, answers: { id: string, status: string, resolution: string }[],
+        answerAll?: string }): void
 }>()
 
 const reviewNote = ref('')
+const releaseNote = ref('')
+const answers = ref<Record<string, string>>({})
+const withdrawn = ref<Record<string, boolean>>({})
+const answerAll = ref('')
+
+// The ids the newest question frame is still waiting on.
+//
+// openQuestions rather than openFindings: the latter flattens every indexed type into one list
+// with nothing saying which round an item came from, and it is the questions a human answers.
+const answerable = computed<Finding[]>(() => {
+    if (!props.task?.questionStack?.length) return []
+    return (props.task?.openQuestions ?? []) as Finding[]
+})
+
+// Either per-id answers or one text for all of them. Nothing else counts as an answer: a release
+// with neither only lifts the hold, which is what the server does with it.
+const answerPayload = computed(() => {
+    const per = answerable.value
+        .filter(f => (answers.value[f.id] ?? '').trim().length > 0)
+        .map(f => ({
+            id: f.id,
+            status: withdrawn.value[f.id] ? 'WITHDRAWN' : 'RESOLVED',
+            resolution: (answers.value[f.id] ?? '').trim(),
+        }))
+    return {
+        task: props.task,
+        answers: per,
+        answerAll: per.length ? undefined : (answerAll.value.trim() || undefined),
+    }
+})
+
+const canAnswer = computed(() =>
+    answerPayload.value.answers.length > 0 || !!answerPayload.value.answerAll)
 
 // Documents this task has produced, newest first as the server returns them.
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
@@ -515,6 +592,11 @@ function statusTone (s: string): string {
     &__dur { color: #b0854a; font-size: 10.5px; }
 }
 .holdmeta { font-size: 11.5px; color: #888; margin-top: 4px; white-space: pre-wrap; }
+.qans { margin-top: 10px; border-top: 1px solid #2a2a2a; padding-top: 8px; }
+.qans__row { margin-bottom: 8px; }
+.qans__id { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px; }
+.qans__tag { font-family: monospace; font-size: 11px; color: #9ab; }
+.qans__title { font-size: 12px; color: #bbb; }
 .prov { font-size: 12px; color: #777; div { margin-bottom: 3px; } }
 .sesschip { font-size: 10.5px; margin-right: 4px; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
 .prlink2 { font-size: 12.5px; }
