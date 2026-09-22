@@ -74,20 +74,24 @@ Every caller written before these arguments existed -- including `rearm-cli` -- 
 
 ### Include support metadata
 
-Defaults to whatever the organization setting says, so an organization that publishes
-attestations does not have to switch them on for every export.
+**Shown only when your organization publishes support attestations**, and **off by default**.
+The organization setting says the disclosure is *allowed*; it does not say every download wants
+it, so each export opts in. When the organization setting is off the switch is absent rather
+than greyed out -- the place to change that is Organization Settings, not the export dialog.
 
 | Setting | Effect |
 |---|---|
 | **On** | The export carries the support attestations described in [Support Attestations in Exports](#support-attestations-in-exports) |
-| **Off** | The export is served with the support namespaces stripped and marked `provenance-stripped-no-disclosure` -- the same document an organization with the setting disabled receives |
+| **Off** | The export is served with the support namespaces stripped, and carries no disclosure marker |
 
-When the organization setting is **disabled** the switch is off and cannot be turned on, and the
-form says where to change it. Asking for support metadata through the API on such an organization
-is **refused with an error** rather than quietly served without it: a document that silently came
+Asking for support metadata through the API on an organization that has the setting disabled is
+**refused with an error** rather than quietly served without it: a document that silently came
 back without the disclosure is indistinguishable from one where nothing was attested.
 
 ### Include internal metadata
+
+Always available, and independent of the organization's support setting -- it controls ReARM's
+own markers, not the disclosure.
 
 Defaults to **off**.
 
@@ -109,12 +113,22 @@ What "ReARM's own markers" means, precisely:
 `declarations` block points at. Those are governed by the other switch, and when it is off they
 are already gone.
 
-**One ReARM property survives both switches being off:** `reliza:support:disclosure` on
-`metadata`, carrying `provenance-stripped-no-disclosure`. That property is the output of the
-[unconditional forged-provenance sweep](#uploaded-boms-cannot-forge-these), not a tooling
-marker, and it is what stops an absent support property being read as "we checked and there is
-nothing to report". A document with every other marker removed and no sweep marker is a
-document a reviewer can draw the wrong conclusion from, so it stays.
+**With both switches off, nothing of ReARM's remains** -- not one `reliza:` property. That
+includes the `reliza:support:disclosure` marker, which is withheld when a caller sends
+`includeSupportMetadata: false`.
+
+That marker exists to disambiguate an *absent* support property: "we hold no attestation for
+this component" versus "this document asserts nothing about support". The ambiguity is only real
+in a document that is making a support statement, and a caller who declined the disclosure is
+not making one -- so there is nothing for the marker to qualify.
+
+**It is still stamped when the organization setting is off** and the caller said nothing. That
+document is the product of an organization-wide policy its reader had no part in choosing, and
+it is exactly where "why is there no support data here?" needs an answer. The distinction is
+between silence you asked for and silence that was decided for you.
+
+The strip itself never changes: an uploader's forged `reliza:support:*` is removed from every
+served document either way. Only the marker is withheld.
 
 ### When a server does not support them
 

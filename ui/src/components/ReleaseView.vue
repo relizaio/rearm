@@ -197,37 +197,23 @@
                          is nothing of ours in them to add or remove. The form says so rather
                          than leaving two live-looking switches over a file they do not
                          move. -->
-                    <n-form-item>
-                        <div style="width: 100%;">
-                            <div style="display: inline-flex; align-items: center;">
-                                <span style="display: inline-flex; align-items: center;">
-                                    Include support metadata:
-                                    <n-tooltip trigger="hover" style="max-width: 380px;">
-                                        <template #trigger>
-                                            <n-icon size="16" style="margin-left: 4px;">
-                                                <QuestionCircle20Regular />
-                                            </n-icon>
-                                        </template>
-                                        Adds the support attestations (status, party, dates, justification) to each component as reliza:support:* properties, for FDA premarket submissions.
-                                    </n-tooltip>
-                                </span>
-                                <n-switch style="margin-left: 5px;"
-                                    v-model:value="includeSupportMetadata"
-                                    :disabled="!orgSupportInjectionEnabled"/>
-                            </div>
-                            <!-- Disabled rather than absent, and it says why. An operator
-                                 preparing a submission needs to learn that the disclosure is
-                                 available and switched off at the organization level; a
-                                 control that simply is not there teaches them nothing. -->
-                            <div v-if="!orgSupportInjectionSupported"
-                                style="color: #999; font-size: 12px; margin-top: 4px;">
-                                This server does not support the support-metadata disclosure.
-                            </div>
-                            <div v-else-if="!orgSupportInjectionEnabled"
-                                style="color: #999; font-size: 12px; margin-top: 4px;">
-                                Enable support metadata in Organization Settings.
-                            </div>
-                        </div>
+                    <!-- ABSENT, not disabled, when the organization does not publish support
+                         attestations. A switch that cannot be moved is a question the operator
+                         has no way to answer; the organization setting is where that decision
+                         is made, and it is not made here. Operator decision 2026-09-22. -->
+                    <n-form-item v-if="orgSupportInjectionEnabled">
+                        <span style="display: inline-flex; align-items: center;">
+                            Include support metadata:
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Adds the support attestations (status, party, dates, justification) to each component as reliza:support:* properties, for FDA premarket submissions.
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"/>
                     </n-form-item>
                     <n-form-item>
                         <span style="display: inline-flex; align-items: center;">
@@ -3137,8 +3123,11 @@ const supportExportFormats: ComputedRef<SupportExportFormat[]> = computed(
  * Read through supportInjectionFromSettings, the same helper the organization settings screen
  * reads its own toggle back with, so the two cannot disagree about what a missing or unknown
  * value means. On a backend that does not declare the setting it reads false, which is the
- * safe direction: the toggle disables rather than claiming a disclosure the server will not
- * produce.
+ * safe direction: the switch is not offered rather than offering a disclosure the server will
+ * not produce.
+ *
+ * This is the ONLY gate on whether the support switch is rendered at all, and on whether the
+ * argument is sent. It is deliberately NOT the switch's default value -- see openExportModal.
  */
 const orgSupportInjectionEnabled: ComputedRef<boolean> = computed((): boolean =>
     orgSupportInjectionSupported.value && supportInjectionFromSettings(store.getters.myorg?.settings))
@@ -3148,9 +3137,9 @@ const orgSupportInjectionEnabled: ComputedRef<boolean> = computed((): boolean =>
  * models and which "enabled vs disabled" cannot express.
  *
  * On a CE mirror inside the sync-lag window there is no such setting, and OrgSettings hides
- * the whole support-disclosure block for exactly that reason. Reading only the value would
- * have rendered "Enable support metadata in Organization Settings" pointing at a control that
- * does not exist on that backend -- an instruction the operator cannot carry out.
+ * the whole support-disclosure block for exactly that reason. Folding it in here means the
+ * export switch is withheld on such a backend too, rather than offering a control whose
+ * argument that server would reject.
  */
 const orgSupportInjectionSupported: ComputedRef<boolean> = computed((): boolean =>
     store.state.supportInjectionSupported !== false)
@@ -3179,11 +3168,11 @@ const metadataFlagsInertForFormat: ComputedRef<boolean> = computed((): boolean =
     selectedSbomMediaType.value === 'CSV' || selectedSbomMediaType.value === 'EXCEL')
 
 function openExportModal () {
-    // Support metadata follows the organization: an org that publishes attestations expects
-    // its exports to carry them, and having to switch it on per export would be a trap.
-    includeSupportMetadata.value = orgSupportInjectionEnabled.value
-    // Internal metadata defaults OFF: it is provenance about ReARM, not about the product,
-    // and the reader of a BOM did not ask for it.
+    // BOTH default OFF (operator decision 2026-09-22). The organization setting says the
+    // disclosure is ALLOWED, not that every download wants it -- so each export opts in
+    // rather than opting out. Deliberately NOT seeded from the org setting: a switch showing
+    // OFF over a file that carries the attestations anyway would be the worst of both.
+    includeSupportMetadata.value = false
     includeInternalMetadata.value = false
     showExportSBOMModal.value = true
 }
@@ -5694,7 +5683,15 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         const attempt = await exportWithMetadataFallback({
             runFull: () => runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
                 ...baseVariables,
-                includeSupportMetadata: includeSupportMetadata.value,
+                // NULL, not false, when the switch was never shown. An organization that does
+                // not publish attestations has already decided; the operator declined nothing,
+                // so the export must not claim they did. Null is what every caller that says
+                // nothing sends, and the server treats the two identically -- which is also
+                // what keeps the "nothing was asserted" marker on that document, since the
+                // silence there was the organization's rather than this operator's.
+                includeSupportMetadata: orgSupportInjectionEnabled.value
+                    ? includeSupportMetadata.value
+                    : null,
                 includeInternalMetadata: includeInternalMetadata.value
             }),
             runCore: () => runSbomExport(SBOM_EXPORT_CORE, baseVariables),
