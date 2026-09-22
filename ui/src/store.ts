@@ -3094,6 +3094,12 @@ const storeObject : any = {
                             startedAt
                             closedAt
                             lastActivityAt
+                            providerSessions {
+                                provider
+                                id
+                                remoteId
+                                reportedAt
+                            }
                             artifacts
                             commits
                             primaryModel {
