@@ -156,7 +156,8 @@
                 :task="selectedTask" :tasks="tasks" :agent-names="agentNames" :roles="roles"
                 @close="selectedTask = null" @open="openTask"
                 @human-review="humanReview" @human-signoff="humanSignOff"
-                @operator-release="operatorRelease" @require-review="requireReview"/>
+                @operator-release="operatorRelease" @require-review="requireReview"
+                @answer="answerQuestions"/>
         </template>
 
         <!-- Board create / edit modal -->
@@ -201,12 +202,31 @@
                     </n-text>
                 </div>
                 <n-checkbox v-if="editingBoardIsNew" v-model:checked="editingBoard.seedFromPresets">
-                    seed roles from org presets (a preset named "coordinator" seeds the coordinator prompt)
+                    seed roles from org presets (the coordinator prompt comes from
+                    <code>{{ coordinatorPresetFor(editingBoard) }}</code>, by whether sources are wired)
                 </n-checkbox>
                 <div>
                     <div class="flabel" style="margin-bottom: 4px">coordinator prompt (implicit role — always present)</div>
                     <n-input v-model:value="editingBoard.coordinatorPrompt" type="textarea"
                              :autosize="{ minRows: 6, maxRows: 16 }"/>
+                    <!--
+                        Two prompts, and nothing switches automatically when a board gains or
+                        loses sources: the prompt is operator-curated text, and rewriting it
+                        under them because they wired a tracker would be the wrong kind of helpful.
+                    -->
+                    <n-space v-if="!editingBoardIsNew" align="center" style="margin-top: 6px">
+                        <n-text depth="3" style="font-size: 12px">
+                            reseed from a preset:
+                        </n-text>
+                        <n-button size="tiny" :loading="reseeding"
+                                  @click="reseedCoordinator(coordinatorPresetFor(editingBoard))">
+                            {{ coordinatorPresetFor(editingBoard) }}
+                        </n-button>
+                        <n-button size="tiny" quaternary :loading="reseeding"
+                                  @click="reseedCoordinator(otherCoordinatorPreset(editingBoard))">
+                            {{ otherCoordinatorPreset(editingBoard) }}
+                        </n-button>
+                    </n-space>
                 </div>
                 <n-space justify="end">
                     <n-button quaternary @click="editingBoard = null">Cancel</n-button>
@@ -797,14 +817,62 @@ async function humanSignOff (p: { task: any, outcome: string, note: string }) {
     }
 }
 
-async function operatorRelease (t: any) {
+async function operatorRelease (p: { task: any, note?: string } | any) {
+    // Tolerates the bare task the drawer used to emit, so a stale caller does not lose the release.
+    const t = p?.task ?? p
     try {
-        await store.dispatch('agentTaskOperatorHold', { taskUuid: t.uuid, hold: false })
+        await store.dispatch('agentTaskOperatorHold', {
+            taskUuid: t.uuid, hold: false, reason: p?.note || undefined })
         notification.success({ content: 'Hold released', duration: 3000 })
         selectedTask.value = null
         await refreshBoardContent()
     } catch (e: any) {
         notification.error({ content: `Release failed: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
+
+// Mirrors AgentBoardService.coordinatorPresetFor: by whether sources are wired, with no
+// fallback. Shown so an operator can see which preset a board will take its prompt from.
+function coordinatorPresetFor (b: any): string {
+    return (b?.sources?.length ?? 0) > 0 ? 'coordinator-tracker' : 'coordinator-board-truth'
+}
+
+function otherCoordinatorPreset (b: any): string {
+    return coordinatorPresetFor(b) === 'coordinator-tracker'
+        ? 'coordinator-board-truth'
+        : 'coordinator-tracker'
+}
+
+const reseeding = ref(false)
+
+async function reseedCoordinator (presetName: string) {
+    if (!editingBoard.value?.uuid) return
+    reseeding.value = true
+    try {
+        const res = await store.dispatch('agentBoardReseedCoordinatorPrompt', {
+            boardUuid: editingBoard.value.uuid, presetName })
+        editingBoard.value.coordinatorPrompt = res?.coordinatorPrompt ?? ''
+        notification.success({ content: `Coordinator prompt reseeded from ${presetName}`,
+            duration: 3000 })
+    } catch (e: any) {
+        notification.error({ content: `Reseed failed: ${e?.message ?? e}`, duration: 8000 })
+    } finally {
+        reseeding.value = false
+    }
+}
+
+async function answerQuestions (p: { task: any,
+        answers: { id: string, status: string, resolution: string }[], answerAll?: string }) {
+    try {
+        const res = await store.dispatch('agentTaskAnswer', {
+            taskUuid: p.task.uuid, answers: p.answers, answerAll: p.answerAll, releaseHold: true })
+        notification.success({
+            content: res?.role ? `Answered — back to ${res.role}` : 'Answered',
+            duration: 3000 })
+        selectedTask.value = null
+        await refreshBoardContent()
+    } catch (e: any) {
+        notification.error({ content: `Answer failed: ${e?.message ?? e}`, duration: 8000 })
     }
 }
 

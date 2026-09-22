@@ -2693,6 +2693,16 @@ const storeObject : any = {
                                 title
                                 location { path line ref }
                                 resolvedBy
+                                resolution
+                            }
+                            openQuestions {
+                                id
+                                priority
+                                status
+                                title
+                                location { path line ref }
+                                resolvedBy
+                                resolution
                             }
                             parentTask
                             childTasks
@@ -2793,6 +2803,35 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskHumanSignOff
+        },
+        async agentTaskAnswer (context: any, payload: { taskUuid: string,
+            answers?: { id: string, status: string, resolution: string }[], answerAll?: string,
+            releaseHold?: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskAnswer($taskUuid: ID!, $answers: [FindingAnswerInput!], $answerAll: String, $releaseHold: Boolean) {
+                        agentTaskAnswer(taskUuid: $taskUuid, answers: $answers, answerAll: $answerAll, releaseHold: $releaseHold) { uuid status role }
+                    }`,
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    answers: payload.answers?.length ? payload.answers : null,
+                    answerAll: payload.answerAll ?? null,
+                    releaseHold: payload.releaseHold ?? true
+                },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskAnswer
+        },
+        async agentBoardReseedCoordinatorPrompt (context: any, payload: { boardUuid: string, presetName: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardReseedCoordinatorPrompt($boardUuid: ID!, $presetName: String!) {
+                        agentBoardReseedCoordinatorPrompt(boardUuid: $boardUuid, presetName: $presetName) { uuid coordinatorPrompt }
+                    }`,
+                variables: { boardUuid: payload.boardUuid, presetName: payload.presetName },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardReseedCoordinatorPrompt
         },
         async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string }) {
             const response = await graphqlClient.mutate({
