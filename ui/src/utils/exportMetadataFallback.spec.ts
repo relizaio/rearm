@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { exportWithMetadataFallback } from './exportMetadataFallback'
+import { exportWithMetadataFallback, supportMetadataArg } from './exportMetadataFallback'
 
 const drift = (e: any) => e?.drift === true
 const ok = (v: any) => () => Promise.resolve(v)
@@ -51,5 +51,28 @@ describe('sending the metadata flags to a backend that may not take them', () =>
             runFull: full, runCore: ok('CORE'), flagsUnsupported: true, isDriftError: drift })
         expect(r).toEqual({ data: 'CORE', usedCore: true, justDiscovered: false })
         expect(full).not.toHaveBeenCalled()
+    })
+})
+
+// The switch is not the argument. Which of the three values goes on the wire depends on
+// whether the operator was ASKED, and the case with no switch is the one that is easy to send
+// backwards: `false` there would claim a decision nobody made and would strip the marker that
+// tells the reader why the document asserts nothing about support.
+describe('the support-metadata argument', () => {
+    it('sends the answer when the question was asked', () => {
+        expect(supportMetadataArg(true, true)).toBe(true)
+        expect(supportMetadataArg(true, false)).toBe(false)
+    })
+
+    // NULL, not false: the organization already decided, so this operator declined nothing.
+    it('sends null, never false, when the question was never asked', () => {
+        expect(supportMetadataArg(false, false)).toBeNull()
+    })
+
+    // A switch left on from a previous export on an org that then turned the setting off must
+    // not leak an opt-in the operator can no longer see, nor an explicit decline they did not
+    // make. Both collapse to "the organization decides".
+    it('ignores a stale switch value when the question was never asked', () => {
+        expect(supportMetadataArg(false, true)).toBeNull()
     })
 })

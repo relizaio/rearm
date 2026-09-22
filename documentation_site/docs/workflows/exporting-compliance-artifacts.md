@@ -134,8 +134,8 @@ served document either way. Only the marker is withheld.
 
 These arguments reach a ReARM CE installation only at its next sync from Pro. Against a backend
 that does not declare them, the export modal falls back to a request without them, tells you once
-that the options were ignored, and then says so permanently beside the switches rather than
-leaving them looking live. **Omitting the arguments on the API has the same effect and is not an
+that the options were ignored, and then says so permanently beside the metadata options rather
+than leaving them looking live. **Omitting the arguments on the API has the same effect and is not an
 error** -- it is the pre-existing contract.
 
 ### The raw download is never affected
@@ -200,16 +200,29 @@ assessor.
 
 ### The disclosure marker
 
-Every JSON BOM ReARM serves carries `reliza:support:disclosure` on `metadata`, with one of two
-values. **Read it before drawing a conclusion from an absent property:**
+A JSON BOM ReARM serves carries `reliza:support:disclosure` on `metadata` **unless whoever
+requested it declined the support disclosure**. When the marker is there it has one of two values.
+**Read it before drawing a conclusion from an absent property:**
 
 | Value | Meaning |
 |---|---|
 | `derived-non-attested-current-state` | Support facts were injected. A component with no support property has no attestation on file |
 | `provenance-stripped-no-disclosure` | **Nothing was asserted.** The document says nothing about support -- including about components that DO have an end-of-support date recorded |
+| *no marker at all* | The requester asked for a document without the support disclosure (`includeSupportMetadata: false`), so there is no support statement for a marker to qualify. Also the case for the raw download |
 
 Reading the second as the first is how a reviewer concludes a device has no out-of-support parts
-when it does. The values are deliberately distinct so that absence and silence cannot be confused.
+when it does, and reading the third as either is how they conclude the server made a claim it did
+not. The values are deliberately distinct so that absence and silence cannot be confused.
+
+The marker is about **who decided**, not about what the document contains. An export the
+*organization* excluded support from is marked, because its reader had no part in that policy and
+is owed the answer to "why is there no support data here?". An export whose own requester declined
+it is not, because the person holding the file is the one who asked for it that way. Both are
+stripped identically -- only the statement differs.
+
+Note that the export modal now defaults the support switch **off**, so a document downloaded from
+the UI without touching it is the declined case and carries no marker. Scripted callers that omit
+the argument are unaffected: omission means "the organization decides" and is marked as before.
 
 Support facts are **derived current state, not a frozen attestation**: they are computed when the
 document is served, so the same release exported on two dates can report different

@@ -68,3 +68,36 @@ export async function exportWithMetadataFallback (
         return { data, usedCore: true, justDiscovered: true }
     }
 }
+
+/**
+ * What the export sends for `includeSupportMetadata`.
+ *
+ * Three outcomes, not two, and the third is not a missing value: `null` means "the
+ * organization decides", which is what every caller written before the flag existed sends and
+ * what the server answers by consulting the org setting. A nullable boolean is the wire shape
+ * the GraphQL argument already has, so this names the domain rather than changing it.
+ */
+export type SupportMetadataArg = boolean | null
+
+/**
+ * Shape the support-metadata argument from what the operator was ASKED and what they ANSWERED.
+ *
+ * The three outcomes have different meanings to the server and one of them is easy to get
+ * backwards:
+ * <ul>
+ *   <li>offered and on -&gt; `true`: include the disclosure.</li>
+ *   <li>offered and off -&gt; `false`: an explicit decline. The server strips the support
+ *       properties AND withholds the `reliza:support:disclosure` marker, because the person
+ *       holding the file is the one who asked for it to be free of our content.</li>
+ *   <li>never offered -&gt; `null`: this operator declined NOTHING. The organization does not
+ *       publish attestations, so the silence is the organization's. The server keeps the
+ *       marker on that document, which is the whole difference from `false`.</li>
+ * </ul>
+ *
+ * Sending `false` in the third case would claim a decision the operator never made and would
+ * strip the one property that tells that document's reader why there is no support data in it.
+ * That is why this is a function with a test rather than a ternary in a variables literal.
+ */
+export function supportMetadataArg (offered: boolean, chosen: boolean): SupportMetadataArg {
+    return offered ? chosen : null
+}

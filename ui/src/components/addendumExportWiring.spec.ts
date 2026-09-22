@@ -203,6 +203,51 @@ describe('the FDA addendum export is wired into the export modal', () => {
     })
 })
 
+describe('the export modal states the support gate once, and sends it through the helper', () => {
+    // The gate is stated TWICE by necessity -- once to render the switch, once to shape the
+    // argument -- and nothing in the framework ties them together. These two assertions are
+    // what keep them saying the same thing. The three-case rule itself is asserted by RUNNING
+    // it, in utils/exportMetadataFallback.spec.ts.
+    it('renders the support switch only when the organization publishes attestations', () => {
+        expect(source).toContain('<n-form-item v-if="orgSupportInjectionEnabled">')
+        // Absent, not disabled. The old hint must not come back with it.
+        expect(source).not.toContain('Enable support metadata in Organization Settings')
+    })
+
+    // A bare ternary here is how `false` reaches the server in place of `null`, which claims a
+    // decision the operator never made and strips the marker that explains the document.
+    it('shapes the argument in the tested helper, not inline', () => {
+        expect(source).toMatch(
+            /includeSupportMetadata: supportMetadataArg\(\s*orgSupportInjectionEnabled\.value, includeSupportMetadata\.value\)/)
+        expect(source).toMatch(/import \{[^}]*\bsupportMetadataArg\b[^}]*\} from '@\/utils\/exportMetadataFallback'/)
+        expect(source).not.toMatch(/includeSupportMetadata: orgSupportInjectionEnabled\.value/)
+    })
+
+    // Both switches open OFF (operator decision 2026-09-22). Seeding the support one from the
+    // org setting is the behaviour this replaced, and it reads as an innocent one-liner.
+    it('opens both switches off, neither seeded from the org setting', () => {
+        const start = source.indexOf('function openExportModal (')
+        expect(start).toBeGreaterThan(-1)
+        const body = source.slice(start, source.indexOf('\n}', start))
+        expect(body).toContain('includeSupportMetadata.value = false')
+        expect(body).toContain('includeInternalMetadata.value = false')
+        expect(body).not.toMatch(/includeSupportMetadata\.value = orgSupportInjection/)
+    })
+
+    // The org-disabled case is deliberately unexplained -- the settings screen is reachable.
+    // A backend that does not declare the setting is not, so that case keeps its hint.
+    it('explains an absent switch only in the case the operator cannot go and change', () => {
+        expect(source).toContain('<div v-if="!orgSupportInjectionSupported"')
+        expect(source).toContain('gains it at its next sync')
+    })
+
+    // Wording that counts the switches goes wrong the moment one of them is conditional.
+    it('does not tell the operator how many metadata options there are', () => {
+        expect(source).not.toContain('These two options')
+        expect(source).toContain('The metadata options above do not change a CSV or EXCEL export')
+    })
+})
+
 describe('the addendum column set', () => {
     // Named here so a column added to the renderer without a matching header, or reordered
     // against the row builder, fails rather than shipping a shifted document.

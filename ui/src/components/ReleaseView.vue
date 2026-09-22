@@ -189,14 +189,16 @@
                          markers out of it. Those are opposite settings on the same release,
                          which is why they are per EXPORT and not another organization switch.
 
-                         The flags travel with the request whatever the format, so a request
-                         that asks for a disclosure the organization has disabled is refused
-                         for CSV exactly as it is for JSON. What they cannot do is CHANGE a
-                         CSV or EXCEL export: rebom renders those from a fixed column list
-                         carrying neither component properties nor document metadata, so there
-                         is nothing of ours in them to add or remove. The form says so rather
-                         than leaving two live-looking switches over a file they do not
-                         move. -->
+                         The flags travel with the request whatever the format. What they
+                         cannot do is CHANGE a CSV or EXCEL export: rebom renders those from a
+                         fixed column list carrying neither component properties nor document
+                         metadata, so there is nothing of ours in them to add or remove. The
+                         form says so rather than leaving live-looking switches over a file they
+                         do not move.
+
+                         HOW MANY SWITCHES SHOW IS NOT FIXED. Support is offered only when the
+                         organization publishes attestations, so this form shows one control or
+                         two and nothing below it may say "these two". -->
                     <!-- ABSENT, not disabled, when the organization does not publish support
                          attestations. A switch that cannot be moved is a question the operator
                          has no way to answer; the organization setting is where that decision
@@ -215,6 +217,19 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"/>
                     </n-form-item>
+                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one. The operator
+                         ruled that an organization which does not publish attestations gets no
+                         switch and no explanation -- the settings screen is where that is
+                         decided, and it is reachable. A backend that does not declare the
+                         setting at all is different: there is nothing the operator can go and
+                         change, so an unexplained missing control is just a missing control.
+                         This is the hint the "absent, not disabled" change removed without
+                         meaning to. -->
+                    <div v-if="!orgSupportInjectionSupported"
+                        style="color: #999; font-size: 12px; margin-bottom: 10px; max-width: 620px;">
+                        This server does not offer the support-metadata disclosure yet, so that
+                        option is not shown. A ReARM CE installation gains it at its next sync.
+                    </div>
                     <n-form-item>
                         <span style="display: inline-flex; align-items: center;">
                             Include internal metadata:
@@ -231,10 +246,10 @@
                     </n-form-item>
                     <div v-if="metadataFlagsInertForFormat"
                         style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
-                        These two options do not change a CSV or EXCEL export: those encodings
-                        carry a fixed column list with no component properties and no document
-                        metadata, so there is nothing of ReARM's in them either way. Choose
-                        CycloneDX 1.6 (JSON) to use them.
+                        The metadata options above do not change a CSV or EXCEL export: those
+                        encodings carry a fixed column list with no component properties and no
+                        document metadata, so there is nothing of ReARM's in them either way.
+                        Choose CycloneDX 1.6 (JSON) to use them.
                     </div>
                     <div v-if="exportMetadataArgsUnsupported"
                         style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
@@ -1956,7 +1971,7 @@ import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/rele
 import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { SupportExportFormat } from '@/utils/exportFormatSelection'
-import { exportWithMetadataFallback } from '@/utils/exportMetadataFallback'
+import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMetadataFallback'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
@@ -3158,11 +3173,17 @@ const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
 /**
  * Whether the two metadata options can change the file the operator is about to get.
  *
- * They are still SENT and still validated for CSV and EXCEL -- asking for a disclosure the
- * organization has disabled is the same caller error whatever the encoding -- but rebom renders
- * those two from a fixed column list with no properties and no metadata, so neither switch has
- * anything to add or remove. Saying that beside the switches is the alternative to leaving two
- * live-looking controls over a file they do not move.
+ * They are still SENT and still validated for CSV and EXCEL, but rebom renders those two from a
+ * fixed column list with no properties and no metadata, so neither switch has anything to add
+ * or remove. Saying that beside the switches is the alternative to leaving live-looking controls
+ * over a file they do not move.
+ *
+ * <p>The validation that goes with them is now an API-only path: this form cannot ask for a
+ * disclosure the organization has disabled, because the switch is not rendered on such an org
+ * and supportMetadataArg sends null rather than true. A script still can, and is still refused.
+ *
+ * <p>Named for the two options COLLECTIVELY and worded the same way, because how many of them
+ * render is not fixed -- see the support switch's v-if.
  */
 const metadataFlagsInertForFormat: ComputedRef<boolean> = computed((): boolean =>
     selectedSbomMediaType.value === 'CSV' || selectedSbomMediaType.value === 'EXCEL')
@@ -5683,15 +5704,11 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         const attempt = await exportWithMetadataFallback({
             runFull: () => runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
                 ...baseVariables,
-                // NULL, not false, when the switch was never shown. An organization that does
-                // not publish attestations has already decided; the operator declined nothing,
-                // so the export must not claim they did. Null is what every caller that says
-                // nothing sends, and the server treats the two identically -- which is also
-                // what keeps the "nothing was asserted" marker on that document, since the
-                // silence there was the organization's rather than this operator's.
-                includeSupportMetadata: orgSupportInjectionEnabled.value
-                    ? includeSupportMetadata.value
-                    : null,
+                // Three outcomes, and the no-switch one must be NULL rather than false --
+                // the rule and the reason live in utils/exportMetadataFallback so they can
+                // be run, because nothing in the unit suite mounts this component.
+                includeSupportMetadata: supportMetadataArg(
+                    orgSupportInjectionEnabled.value, includeSupportMetadata.value),
                 includeInternalMetadata: includeInternalMetadata.value
             }),
             runCore: () => runSbomExport(SBOM_EXPORT_CORE, baseVariables),
