@@ -48,6 +48,19 @@
                     </n-descriptions-item>
                     <n-descriptions-item label="Title">{{ session.title || '—' }}</n-descriptions-item>
                     <n-descriptions-item label="Client session ID"><code>{{ session.clientSessionId }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Provider sessions">
+                        <div v-if="session.providerSessions?.length" class="provider-sessions">
+                            <div v-for="ps in session.providerSessions" :key="ps.provider + ':' + ps.id" class="provider-session">
+                                <n-tag size="tiny" :bordered="false">{{ ps.provider }}</n-tag>
+                                <code class="copyable" title="Copy" @click="copyText(ps.id)">{{ ps.id }}</code>
+                                <template v-if="ps.remoteId">
+                                    <span class="dim">remote</span>
+                                    <code class="copyable" title="Copy" @click="copyText(ps.remoteId)">{{ ps.remoteId }}</code>
+                                </template>
+                            </div>
+                        </div>
+                        <span v-else class="dim">— not reported</span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Model">
                         <template v-if="session.primaryModel">
                             <span>{{ modelLabel }}</span>
@@ -146,6 +159,15 @@ const store = useStore()
 const route = useRoute()
 const router = useRouter()
 const notification = useNotification()
+
+async function copyText (text: string) {
+    try {
+        await navigator.clipboard.writeText(text)
+        notification.success({ content: 'Copied', duration: 1500 })
+    } catch (e: any) {
+        notification.error({ content: `Copy failed: ${e?.message ?? e}` })
+    }
+}
 
 const sessionUuid = computed(() => route.params.uuid as string)
 const session = ref<any>(null)
@@ -593,6 +615,9 @@ const policyColumns: DataTableColumns<any> = [
 .crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .dim { color: var(--n-text-color-3, #666); }
+.provider-sessions { display: flex; flex-direction: column; gap: 4px; }
+.provider-session { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.copyable { cursor: pointer; }
 .agent-id { font-family: monospace; font-size: 11px; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 .mt-1 { margin-top: 8px; font-size: 12px; }
