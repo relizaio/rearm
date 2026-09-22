@@ -268,7 +268,7 @@
                                      :autosize="{ minRows: 1, maxRows: 4 }"
                                      :placeholder="`Answer to ${f.id}`"/>
                             <n-checkbox v-model:checked="withdrawn[f.id]" size="small">
-                                does not apply
+                                does not apply (say why above)
                             </n-checkbox>
                         </div>
                         <n-input v-model:value="answerAll" size="small" type="textarea"
@@ -358,8 +358,13 @@ const answerAll = ref('')
 //
 // openQuestions rather than openFindings: the latter flattens every indexed type into one list
 // with nothing saying which round an item came from, and it is the questions a human answers.
+// Only while the task is parked or with the coordinator. A question can be open while the board
+// has the task QUEUED or ASSIGNED to the role that is meant to answer it, and answering then pops
+// the frame and re-queues the asker under an agent that is mid-hop -- whose sign-off would fail
+// because it no longer holds the task. The server refuses that; this stops the UI offering it.
 const answerable = computed<Finding[]>(() => {
     if (!props.task?.questionStack?.length) return []
+    if (props.task.status !== 'AWAITING_COORDINATOR' && props.task.status !== 'ON_HOLD') return []
     return (props.task?.openQuestions ?? []) as Finding[]
 })
 
