@@ -61,6 +61,51 @@
                         </div>
                         <span v-else class="dim">— not reported</span>
                     </n-descriptions-item>
+                    <n-descriptions-item label="Signed in via">
+                        <template v-if="origin">
+                            <span>{{ authMethodLabel }}</span>
+                            <template v-if="origin.federation">
+                                <span class="dim"> · </span>
+                                <code>{{ origin.federation.repository }}</code>
+                                <span v-if="origin.federation.ref" class="dim"> @ {{ origin.federation.ref }}</span>
+                                <span v-if="origin.federation.runId" class="dim"> · run {{ origin.federation.runId }}</span>
+                                <span v-if="origin.federation.actor" class="dim"> · by {{ origin.federation.actor }}</span>
+                            </template>
+                        </template>
+                        <span v-else class="dim">— not recorded (session predates it)</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="origin" label="Owner">
+                        <template v-if="origin.ownerUser">
+                            <span>{{ ownerName }}</span>
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-tag size="tiny" :bordered="false" class="model-assert-tag">{{ ownerSourceLabel }}</n-tag>
+                                </template>
+                                {{ ownerSourceTip }}
+                            </n-tooltip>
+                        </template>
+                        <span v-else class="dim">— no one: {{ noOwnerReason }}</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="origin" label="Device">
+                        <div class="provider-sessions">
+                            <div v-for="row in deviceRows" :key="row.label" class="provider-session">
+                                <n-tag size="tiny" :bordered="false">{{ row.label }}</n-tag>
+                                <code v-if="row.device.hostname">{{ row.device.hostname }}</code>
+                                <span v-else-if="origin.restricted" class="dim">host hidden</span>
+                                <span class="dim">{{ [row.device.os, row.device.timeZone, row.device.client].filter(Boolean).join(' · ') }}</span>
+                                <span v-if="row.device.observedIp" class="dim">seen from <code>{{ row.device.observedIp }}</code></span>
+                            </div>
+                            <span v-if="!deviceRows.length" class="dim">— not reported</span>
+                        </div>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="origin" label="Seen from">
+                        <code v-if="origin.observedIp">{{ origin.observedIp }}</code>
+                        <span v-else-if="origin.restricted" class="dim">hidden</span>
+                        <span v-else class="dim">—</span>
+                        <div v-if="origin.restricted" class="dim restricted-note">
+                            Hostnames and addresses are visible to org admins and the session's owner.
+                        </div>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Model">
                         <template v-if="session.primaryModel">
                             <span>{{ modelLabel }}</span>
@@ -229,6 +274,50 @@ const prRows = computed<any[]>(() => session.value?.pullRequests ?? [])
 // provider — and they resolve to the model the session declared. A
 // disagreement does not upgrade it; it sets modelMismatch instead, which the
 // usage card badges.
+const orgUsers = ref<any[]>([])
+const origin = computed<any>(() => session.value?.origin ?? null)
+
+const AUTH_METHOD_LABELS: Record<string, string> = {
+    KEY_SECRET: 'API key secret',
+    CLI_LOGIN: 'CLI login',
+    FEDERATED: 'Federated identity'
+}
+const authMethodLabel = computed<string>(() => {
+    const o = origin.value
+    if (!o) return ''
+    const base = AUTH_METHOD_LABELS[o.authMethod] ?? o.authMethod
+    return o.authMethod === 'FEDERATED' && o.federation?.provider ? `${base} (${o.federation.provider})` : base
+})
+
+const ownerName = computed<string>(() => {
+    const uuid = origin.value?.ownerUser
+    const u = orgUsers.value.find((x: any) => x.uuid === uuid)
+    return u ? (u.name || u.email || uuid) : uuid
+})
+// The three sources make different claims, and the wording has to keep them apart: a holder
+// answers for a secret, not for who was at the keyboard.
+const OWNER_SOURCE: Record<string, { label: string, tip: string }> = {
+    CLI_LOGIN: { label: 'signed in', tip: 'This person approved the CLI login the session was opened through.' },
+    USER_KEY: { label: 'personal key', tip: 'The session was opened with this person\'s personal API key.' },
+    KEY_HOLDER: { label: 'key holder', tip: 'This person holds the Free Form key the session used. They answer for the secret; anyone they gave it to could have opened the session.' }
+}
+const ownerSourceLabel = computed<string>(() => OWNER_SOURCE[origin.value?.ownerSource]?.label ?? '')
+const ownerSourceTip = computed<string>(() => OWNER_SOURCE[origin.value?.ownerSource]?.tip ?? '')
+const noOwnerReason = computed<string>(() => {
+    const m = origin.value?.authMethod
+    if (m === 'FEDERATED') return 'a federated identity, not a person'
+    return 'a shared key names the key, not who used it'
+})
+
+const deviceRows = computed<{ label: string, device: any }[]>(() => {
+    const o = origin.value
+    if (!o) return []
+    const rows: { label: string, device: any }[] = []
+    if (o.reportedDevice) rows.push({ label: 'reported', device: o.reportedDevice })
+    if (o.loginDevice) rows.push({ label: 'at login', device: o.loginDevice })
+    return rows
+})
+
 const modelLabel = computed<string>(() => {
     const m = session.value?.primaryModel
     if (!m) return '—'
@@ -264,6 +353,10 @@ async function load () {
     session.value = await store.dispatch('fetchSession', sessionUuid.value)
     if (session.value?.agent) {
         agent.value = await store.dispatch('fetchAgent', session.value.agent).catch(() => null)
+    }
+    if (session.value?.origin?.ownerUser && session.value?.org) {
+        // A reader who cannot list the org's users still sees the owner, as a uuid.
+        orgUsers.value = await store.dispatch('fetchUsers', session.value.org).catch(() => []) ?? []
     }
     const commitUuids: string[] = session.value?.commits ?? []
     const artifactUuids: string[] = session.value?.artifacts ?? []
@@ -618,6 +711,7 @@ const policyColumns: DataTableColumns<any> = [
 .provider-sessions { display: flex; flex-direction: column; gap: 4px; }
 .provider-session { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .copyable { cursor: pointer; }
+.restricted-note { font-size: 12px; margin-top: 2px; }
 .agent-id { font-family: monospace; font-size: 11px; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 .mt-1 { margin-top: 8px; font-size: 12px; }
