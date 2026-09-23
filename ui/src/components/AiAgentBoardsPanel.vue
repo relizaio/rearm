@@ -409,6 +409,8 @@
                             through the CLI.
                         </n-text>
                     </div>
+                    <RoleStrengthEditor v-if="editingRole.kind !== 'HUMAN'" v-model:strength="editingRole.strength"
+                                        :models="models"/>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">{{ editingRole.kind === 'HUMAN'
                             ? 'reviewer guidance (shown to the human in the UI)'
@@ -565,6 +567,8 @@
                     <n-checkbox v-else v-model:checked="editingPreset.active">active</n-checkbox>
                     <n-select v-if="editingPreset.kind !== 'HUMAN'" v-model:value="editingPreset.requiredCapabilities" multiple
                               :options="capabilityOptions" placeholder="Required capabilities"/>
+                    <RoleStrengthEditor v-if="editingPreset.kind !== 'HUMAN'" v-model:strength="editingPreset.strength"
+                                        :models="models"/>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">prompt</div>
                         <n-input v-model:value="editingPreset.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 20 }"/>
@@ -600,6 +604,8 @@ import { effectiveTemplate } from '@/utils/agentDocuments'
  */
 const TEMPLATE_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT']
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
+import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
+import { strengthDraft, strengthInput, strengthSummary } from '@/utils/roleStrength'
 
 const props = defineProps<{ orgUuid: string }>()
 
@@ -733,6 +739,9 @@ function openTask (t: any) {
 const showPresets = ref(false)
 const presets = ref<any[]>([])
 const editingPreset = ref<any>(null)
+// The org's model catalogue, for picking per-model strength overrides. Loaded with the board
+// content; an operator who cannot read it gets an empty picker, not a broken editor.
+const models = ref<any[]>([])
 const editingPresetIsNew = ref(false)
 
 const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
@@ -1102,6 +1111,7 @@ const roleColumns: DataTableColumns<any> = [
     { title: 'Order', key: 'orderIndex', width: 62 },
     { title: 'Role', key: 'name', width: 120 },
     { title: 'WIP', key: 'wipLimit', width: 52, render: (r: any) => r.wipLimit ?? '—' },
+    { title: 'Strength', key: 'strength', width: 150, render: (r: any) => r.kind === 'HUMAN' ? '—' : strengthSummary(r) },
     ...governanceColumns(),
     {
         title: 'Flags', key: 'flags', width: 120,
@@ -1114,7 +1124,8 @@ const roleColumns: DataTableColumns<any> = [
     {
         title: '', key: 'actions', width: 62,
         render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r,
-            producesOutputTypes: (r.producesOutputs ?? []).map((p: any) => p?.specification).filter(Boolean) } } }, { default: () => 'Edit' }),
+            producesOutputTypes: (r.producesOutputs ?? []).map((p: any) => p?.specification).filter(Boolean),
+            strength: strengthDraft(r) } } }, { default: () => 'Edit' }),
     },
 ]
 
@@ -1145,6 +1156,7 @@ async function refreshBoardContent () {
     roles.value = r ?? []
     // agent uuid -> display name map for timeline/table/drawer; loaded
     // lazily once per panel life, refreshed with board content
+    models.value = await store.dispatch('fetchModelOntologiesOfOrg', props.orgUuid).catch(() => []) ?? []
     const agents = await store.dispatch('fetchAgentsOfOrg', props.orgUuid) ?? []
     const m: Record<string, string> = {}
     for (const a of agents) m[a.uuid] = a.effectiveDisplayName || a.name || a.uuid.slice(0, 8)
@@ -1211,7 +1223,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [] }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
 }
 
 async function saveRole () {
@@ -1240,6 +1252,8 @@ async function saveRole () {
                     : (editingRole.value.producesOutputTypes ?? []).map((spec: string) => ({
                         specification: spec, scope: 'TASK', required: true,
                     })),
+                // A HUMAN role has no model; leaving the fields out leaves nothing to refuse.
+                ...(editingRole.value.kind === 'HUMAN' ? {} : strengthInput(editingRole.value.strength)),
             },
         })
         notification.success({ content: `Role ${editingRole.value.name} saved`, duration: 3000 })
@@ -1263,7 +1277,7 @@ const presetColumns: DataTableColumns<any> = [
     { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
     {
         title: '', key: 'actions', width: 70,
-        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingPresetIsNew.value = false; editingPreset.value = { ...r } } }, { default: () => 'Edit' }),
+        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingPresetIsNew.value = false; editingPreset.value = { ...r, strength: strengthDraft(r) } } }, { default: () => 'Edit' }),
     },
 ]
 
@@ -1275,7 +1289,7 @@ async function openPresets () {
 function startAddPreset () {
     editingPresetIsNew.value = true
     const maxOrder = Math.max(0, ...presets.value.map(r => r.orderIndex ?? 0))
-    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE' }
+    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', strength: strengthDraft(null) }
 }
 
 async function savePreset () {
@@ -1298,6 +1312,7 @@ async function savePreset () {
                 kind: editingPreset.value.kind ?? 'AGENTIC',
                 necessity: editingPreset.value.necessity ?? 'OPTIONAL',
                 humanGate: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.humanGate ?? 'NONE'),
+                ...(editingPreset.value.kind === 'HUMAN' ? {} : strengthInput(editingPreset.value.strength)),
             },
         })
         notification.success({ content: `Preset ${editingPreset.value.name} saved`, duration: 3000 })
