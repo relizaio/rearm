@@ -38,11 +38,28 @@
                             <code>{{ selected.canonicalId || '—' }}</code>
                         </n-descriptions-item>
                         <n-descriptions-item label="Provenance">{{ selected.tier || '—' }}</n-descriptions-item>
-                        <n-descriptions-item label="Strength">
-                            {{ selected.strength ?? '—' }}
-                            <span v-if="selected.strength == null" class="subtle">
-                                unrated: this model is eligible only for roles that ask for no floor
-                            </span>
+                        <n-descriptions-item label="Strength" :span="2">
+                            <n-space vertical :size="6">
+                                <n-space :size="8" align="center" wrap>
+                                    <n-input-number v-model:value="strengthDraft.base" :min="0" :precision="2" :step="0.25"
+                                                    clearable placeholder="unrated" style="width: 150px">
+                                        <template #prefix><span class="subtle">base</span></template>
+                                    </n-input-number>
+                                    <n-input-number v-for="c in ROLE_CATEGORIES" :key="c"
+                                                    v-model:value="strengthDraft.byRole[c]" :min="0" :precision="2" :step="0.25"
+                                                    clearable placeholder="= base" style="width: 170px">
+                                        <template #prefix><span class="subtle">{{ c.toLowerCase() }}</span></template>
+                                    </n-input-number>
+                                    <n-button size="small" type="primary" :loading="saving" @click="saveStrength">Save strength</n-button>
+                                </n-space>
+                                <span v-if="selected.strength == null" class="subtle">
+                                    unrated: this model is eligible only for roles that ask for no floor
+                                </span>
+                                <span class="subtle">
+                                    Two decimals. A per-category value overrides the base for roles that read that category;
+                                    a board role can override it again for this model.
+                                </span>
+                            </n-space>
                         </n-descriptions-item>
                         <n-descriptions-item label="Resolution">{{ selected.resolution || '—' }}</n-descriptions-item>
                         <n-descriptions-item label="Publisher">{{ selected.publisher || '—' }}</n-descriptions-item>
@@ -172,6 +189,38 @@ const loading = ref(false)
 const saving = ref(false)
 const showPricing = ref(false)
 const selected = ref<any>(null)
+
+// The strength editor's draft for the selected model: its base and one slot per category, empty
+// where the category falls back to the base.
+const ROLE_CATEGORIES = ['ARCHITECT', 'CODER', 'QA', 'REVIEWER']
+const strengthDraft = ref<{ base: number | null, byRole: Record<string, number | null> }>({ base: null, byRole: {} })
+function draftStrength (m: any) {
+    const byRole: Record<string, number | null> = {}
+    for (const c of ROLE_CATEGORIES) byRole[c] = m?.strengthByRole?.find((r: any) => r.category === c)?.strength ?? null
+    strengthDraft.value = { base: m?.strength ?? null, byRole }
+}
+
+async function saveStrength () {
+    if (!selected.value) return
+    saving.value = true
+    try {
+        await store.dispatch('updateModelOntologyStrength', {
+            uuid: selected.value.uuid,
+            strength: strengthDraft.value.base,
+            strengthByRole: ROLE_CATEGORIES
+                .filter(c => strengthDraft.value.byRole[c] != null)
+                .map(c => ({ category: c, strength: strengthDraft.value.byRole[c] as number })),
+        })
+        notification.success({ title: 'Strength saved', duration: 3000 })
+        await load()
+        selected.value = models.value.find(m => m.uuid === selected.value.uuid) ?? selected.value
+        draftStrength(selected.value)
+    } catch (e: any) {
+        notification.error({ title: 'Could not save the strength', content: e?.message, duration: 6000 })
+    } finally {
+        saving.value = false
+    }
+}
 const showMerge = ref(false)
 const mergeSource = ref<any>(null)
 const mergeTarget = ref<string | null>(null)
@@ -352,6 +401,7 @@ async function doMerge () {
 
 function openPricing (row: any) {
     selected.value = row
+    draftStrength(row)
     draft.value = {
         effectiveFrom: Date.now(),
         input: null, output: null, cacheRead: null, cacheWrite: null,
@@ -370,7 +420,8 @@ const columns = computed<DataTableColumns<any>>(() => [
         // Capability, which is what a role's floor compares against. Blank is not weak, it is
         // unrated -- and an unrated model is declined by any role that asks for a floor, so the
         // column has to make the difference visible rather than showing a dash for both.
-        render: (r: any) => r.strength ?? '—',
+        render: (r: any) => r.strength == null ? '—'
+            : r.strength + (r.strengthByRole?.length ? ` (+${r.strengthByRole.length} per role)` : ''),
     },
     {
         title: 'Resolution',

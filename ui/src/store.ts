@@ -2741,6 +2741,11 @@ const storeObject : any = {
                             kind
                             necessity
                             humanGate
+                            producesOutputs { specification scope required }
+                            requiredStrength
+                            strengthHeadroom
+                            strengthCategory
+                            modelStrengths { model strength }
                         }
                     }`,
                 variables: { boardUuid },
@@ -2764,6 +2769,10 @@ const storeObject : any = {
                             kind
                             necessity
                             humanGate
+                            requiredStrength
+                            strengthHeadroom
+                            strengthCategory
+                            modelStrengths { model strength }
                         }
                     }`,
                 variables: { orgUuid },
@@ -2992,6 +3001,7 @@ const storeObject : any = {
                             }
                             tier
                             strength
+                            strengthByRole { category strength }
                             resolution
                             modelCardSpecVersion
                             notes
@@ -3066,6 +3076,22 @@ const storeObject : any = {
                 variables: payload
             })
             return response.data.applyModelCataloguePreset
+        },
+        async updateModelOntologyStrength (context: any, input: { uuid: string, strength: number | null,
+            strengthByRole: { category: string, strength: number }[] }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateModelOntologyStrength($input: ModelOntologyUpdateInput!) {
+                        updateModelOntology(input: $input) {
+                            uuid
+                            strength
+                            strengthByRole { category strength }
+                        }
+                    }`,
+                variables: { input },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.updateModelOntology
         },
         async mergeModelOntology (context: any, payload: { from: string, into: string }) {
             const response = await graphqlClient.mutate({
