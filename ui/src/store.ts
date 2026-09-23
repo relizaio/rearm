@@ -3100,6 +3100,18 @@ const storeObject : any = {
                                 remoteId
                                 reportedAt
                             }
+                            origin {
+                                authMethod
+                                cliSession
+                                ownerUser
+                                ownerSource
+                                observedIp
+                                capturedAt
+                                restricted
+                                loginDevice { hostname os timeZone client observedIp }
+                                reportedDevice { hostname os timeZone client }
+                                federation { provider repository ref sha workflowRef event environment actor runId }
+                            }
                             artifacts
                             commits
                             primaryModel {
