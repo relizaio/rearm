@@ -78,9 +78,36 @@
                                 </n-tooltip>
                             </span>
                         </n-radio-button>
+                        <!-- A BOM TYPE, not a format of the SBOM. These are different
+                             DOCUMENTS assembled in the browser from the support attestations
+                             and the org prose: no component graph, no dependency structure,
+                             and none of the BOM-shaping options apply to them. They used to
+                             sit among the SBOM formats, which meant every control below had
+                             to carry a v-if naming them -- five separate places that had to
+                             stay in step, and the reason "Top Level Dependencies Only" was
+                             once silently dropped on the floor for an addendum export.
+                             Splitting the type makes that structural. -->
+                        <n-radio-button v-if="supportExportFormats.length" value="SUPPORT">
+                            <span style="display: inline-flex; align-items: center;">
+                                Support
+                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    The support documents for this release: the addendum listing every component with its level of support and end-of-support date, and the plain-language device support statement. These are separate documents, not encodings of the BOM.
+                                </n-tooltip>
+                            </span>
+                        </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
+                    <!-- Everything below shapes the BOM, and every control here reaches the
+                         export that reads it. It used to carry a v-if naming the support
+                         documents, because those shared this form; they have their own now,
+                         so the "enabled and silently ignored" failure this guarded against
+                         cannot be reintroduced by forgetting a condition. -->
                     <n-form-item>
                         <template #label>
                             <span style="display: inline-flex; align-items: center;">
@@ -153,6 +180,82 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
+                    <!-- WHAT OF OURS THE EXPORTED FILE CARRIES, as two questions rather than
+                         one, because they have different answers and different readers.
+
+                         An FDA premarket submission wants the support attestations and does
+                         not care that ReARM assembled the file. A BOM handed to a customer
+                         wants to read as the manufacturer's own content, with our tooling
+                         markers out of it. Those are opposite settings on the same release,
+                         which is why they are per EXPORT and not another organization switch.
+
+                         The flags travel with the request whatever the format. What they
+                         cannot do is CHANGE a CSV or EXCEL export: rebom renders those from a
+                         fixed column list carrying neither component properties nor document
+                         metadata, so there is nothing of ours in them to add or remove. The
+                         form says so rather than leaving live-looking switches over a file they
+                         do not move.
+
+                         HOW MANY SWITCHES SHOW IS NOT FIXED. Support is offered only when the
+                         organization publishes attestations, so this form shows one control or
+                         two and nothing below it may say "these two". -->
+                    <!-- ABSENT, not disabled, when the organization does not publish support
+                         attestations. A switch that cannot be moved is a question the operator
+                         has no way to answer; the organization setting is where that decision
+                         is made, and it is not made here. Operator decision 2026-09-22. -->
+                    <n-form-item v-if="orgSupportInjectionEnabled">
+                        <span style="display: inline-flex; align-items: center;">
+                            Include support metadata:
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Adds the support attestations (status, party, dates, justification) to each component as reliza:support:* properties, for FDA premarket submissions.
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"/>
+                    </n-form-item>
+                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one. The operator
+                         ruled that an organization which does not publish attestations gets no
+                         switch and no explanation -- the settings screen is where that is
+                         decided, and it is reachable. A backend that does not declare the
+                         setting at all is different: there is nothing the operator can go and
+                         change, so an unexplained missing control is just a missing control.
+                         This is the hint the "absent, not disabled" change removed without
+                         meaning to. -->
+                    <div v-if="!orgSupportInjectionSupported"
+                        style="color: #999; font-size: 12px; margin-bottom: 10px; max-width: 620px;">
+                        This server does not offer the support-metadata disclosure yet, so that
+                        option is not shown. A ReARM CE installation gains it at its next sync.
+                    </div>
+                    <n-form-item>
+                        <span style="display: inline-flex; align-items: center;">
+                            Include internal metadata:
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Keeps ReARM's own markers (reliza:* properties other than support, the rearm tool entry under metadata.tools) in the export. Off produces a BOM with only the manufacturer's own content.
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" v-model:value="includeInternalMetadata"/>
+                    </n-form-item>
+                    <div v-if="metadataFlagsInertForFormat"
+                        style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
+                        The metadata options above do not change a CSV or EXCEL export: those
+                        encodings carry a fixed column list with no component properties and no
+                        document metadata, so there is nothing of ReARM's in them either way.
+                        Choose CycloneDX 1.6 (JSON) to use them.
+                    </div>
+                    <div v-if="exportMetadataArgsUnsupported"
+                        style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
+                        This server does not support the per-export metadata options, so exports
+                        use the organization default whatever these are set to.
+                    </div>
                     <n-form-item>
                         <span style="display: inline-flex; align-items: center;">
                             Ignore Optional Dependencies:
@@ -479,6 +582,46 @@
                         </n-button>
                     </n-spin>
                 </n-form>
+                <n-form v-if="exportBomType === 'SUPPORT'">
+                    <n-form-item label="Format">
+                        <n-radio-group v-model:value="selectedSbomMediaType" name="supportDocType">
+                            <!-- Built from supportExportFormats so "which documents can this
+                                 release produce" is answered once. The device statement is
+                                 PRODUCT-only, and a radio for a document that cannot be made
+                                 is an invitation to press a button that refuses. -->
+                            <n-radio-button v-for="fmt in supportExportFormats" :key="fmt.value"
+                                :value="fmt.value">{{ fmt.label }}</n-radio-button>
+                        </n-radio-group>
+                    </n-form-item>
+                    <n-alert v-if="selectedSbomMediaType === 'DEVICE_STATEMENT'" type="default"
+                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
+                        A plain-language statement for patients, caregivers and biomedical
+                        engineers: the device's support dates, and the manufacturer's own
+                        labeling text. Generated for PRODUCT releases only, and only once all
+                        three organization statements have been authored.
+                    </n-alert>
+                    <n-alert v-if="isAddendumExport" type="default"
+                        :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
+                        Every component in this release with its level of support, the end-of-support
+                        date where one is attested and the justification where none is, plus the
+                        device support window and the assessment justification. The counts come from
+                        the coverage gauge, so this document and the page always agree.
+                    </n-alert>
+                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
+                        <!-- statementBlockedHere survives the split even though the radio it
+                             guards is no longer rendered on a component release. The release
+                             is fetched asynchronously behind an already-open modal, so the
+                             PRODUCT answer can change under the selection; the guard costs a
+                             boolean and the failure it prevents is a refusal dialog after a
+                             click that should never have been enabled. -->
+                        <n-button type="success"
+                            :disabled="bomExportPending || statementBlockedHere"
+                            @click="exportSupportDocument">
+                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                            <span v-else>Export</span>
+                        </n-button>
+                    </n-spin>
+                </n-form>
                 <n-form v-if="exportBomType === 'CLE'">
                     <!-- Deliberately NOT labelled "CLE 1.0.0". That is a conformance claim on a
                          file a customer may hand to a regulator, and we do not currently meet it:
@@ -494,6 +637,333 @@
                         <span v-else>Export</span>
                     </n-button>
                 </n-form>
+            </n-modal>
+            <n-modal
+                v-model:show="bulkModalOpen"
+                preset="card"
+                style="width: 720px;"
+                :mask-closable="!bulk.submitting.value"
+                :closable="!bulk.submitting.value"
+                :close-on-esc="!bulk.submitting.value"
+                title="Attest every component matching this filter">
+                <!-- COMPOSE -->
+                <div v-if="bulkStage === 'compose'">
+                    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
+                        This writes the same attestation to every component matching the
+                        current filter. There is no bulk undo: correcting it means
+                        withdrawing each component individually, and a withdrawn claim stays
+                        on the record.
+                    </n-alert>
+                    <!-- Frozen during the walk: the collect is awaited over many round
+                         trips while this stage stays mounted, so an edit made after the
+                         click would be written by a confirmation the operator already
+                         approved against different values. -->
+                    <n-form label-placement="top" :disabled="bulk.collecting.value">
+                        <n-form-item label="Level of support">
+                            <n-select v-model:value="bulkForm.levelOfSupport"
+                                :options="LEVEL_OPTIONS" placeholder="Not stated" />
+                        </n-form-item>
+                        <n-form-item label="Who the claim is about">
+                            <n-select v-model:value="bulkForm.party"
+                                :options="PARTY_OPTIONS" placeholder="Unknown" />
+                        </n-form-item>
+                        <n-form-item label="Justification (exported, customer-visible)">
+                            <n-input v-model:value="bulkForm.justification" type="textarea"
+                                :rows="3"
+                                placeholder="Must be true of EVERY component in the selection." />
+                        </n-form-item>
+                        <n-form-item label="End of support (optional)">
+                            <n-date-picker v-model:formatted-value="bulkForm.endOfSupportDate"
+                                value-format="yyyy-MM-dd" type="date" clearable
+                                style="width: 100%;" />
+                        </n-form-item>
+                        <n-alert v-if="bulkForm.endOfSupportDate" type="warning"
+                            :show-icon="false" style="font-size: 12px; margin-bottom: 12px;">
+                            This one date will be published as a manufacturer-stated
+                            end-of-support fact for every component in the selection, and it
+                            drives each component's derived support status and device-risk
+                            verdict. Only set it if it is true of all of them.
+                        </n-alert>
+                        <n-form-item label="Reason for this sweep (audit only, never exported)">
+                            <n-input v-model:value="bulkForm.reason"
+                                placeholder="Why this batch is being written." />
+                        </n-form-item>
+                    </n-form>
+                    <n-alert v-for="e in bulkErrors" :key="e" type="error" :show-icon="false"
+                        style="margin-top: 8px; font-size: 12px;">{{ e }}</n-alert>
+                    <n-alert v-if="bulk.error.value" type="error" :show-icon="true"
+                        style="margin-top: 8px;">{{ bulk.error.value }}</n-alert>
+                </div>
+
+                <!-- CONFIRM: the count alone cannot catch a filter that silently reset -->
+                <div v-else-if="bulkStage === 'confirm'">
+                    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
+                        <div style="font-size: 14px; font-weight: 600;">
+                            {{ bulkCollected.ids.length }} of {{ bulkCollected.backlogTotal }}
+                            components will be attested.
+                        </div>
+                        <div style="font-size: 12px; margin-top: 6px;">
+                            Filter <strong>{{ bulkAppliedLabel }}</strong><span
+                                v-if="bulkCollected.search">, search
+                                <strong>"{{ bulkCollected.search }}"</strong></span>.
+                            There is no bulk undo.
+                        </div>
+                    </n-alert>
+                    <div style="font-size: 12px; margin-bottom: 6px;">Including:</div>
+                    <ul style="font-size: 12px; margin: 0 0 12px 18px;">
+                        <li v-for="c in bulkCollected.sample" :key="c.uuid">
+                            {{ c.name }} {{ c.version }}
+                        </li>
+                        <li v-if="bulkCollected.ids.length > bulkCollected.sample.length">
+                            and {{ bulkCollected.ids.length - bulkCollected.sample.length }} more
+                        </li>
+                    </ul>
+                    <n-alert type="default" :show-icon="false" style="font-size: 12px;">
+                        Writing: level
+                        <strong>{{ bulkForm.levelOfSupport || 'not stated' }}</strong>;
+                        justification <strong>"{{ bulkForm.justification || '(none)' }}"</strong>;
+                        claim is about
+                        <strong>{{ partyLabel(bulkForm.party) }}</strong>
+                        <span v-if="bulkForm.endOfSupportDate">; end of support
+                            <strong>{{ bulkForm.endOfSupportDate }}</strong></span>.
+                        <div style="margin-top: 4px;">
+                            Audit reason (not exported):
+                            <strong>"{{ bulkForm.reason }}"</strong>
+                        </div>
+                    </n-alert>
+                    <div v-if="bulk.submitting.value" style="margin-top: 12px;">
+                        <n-progress type="line" :percentage="bulkPercent" />
+                        <div style="font-size: 12px;">
+                            {{ bulk.progress.value }} of {{ bulkCollected.ids.length }} sent.
+                            Everything already sent has been written and cannot be recalled.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DONE: grouped by what the operator must DO about it -->
+                <div v-else-if="bulkStage === 'done' && bulkResult">
+                    <n-alert
+                        :type="bulkResult.failed || bulkResult.aborted ? 'warning' : 'success'"
+                        :show-icon="true">
+                        {{ bulkResult.applied }} attested.
+                        <span v-if="bulkResult.skippedRoot">
+                            {{ bulkResult.skippedRoot }} skipped as the release's own
+                            component.</span>
+                        <span v-if="bulkResult.failed"> {{ bulkResult.failed }} failed.</span>
+                    </n-alert>
+                    <!-- Not hidden: on a fresh UNATTESTED walk this should be zero, so a
+                         non-zero count means a colleague attested one of these between the
+                         walk and the write. -->
+                    <n-alert v-if="bulkResult.concurrentWriteDetected" type="warning"
+                        :show-icon="true" style="margin-top: 8px; font-size: 12px;">
+                        {{ bulkResult.skippedAttested }} were skipped because they had already
+                        been attested. They were undisclosed when this sweep started, so
+                        somebody else recorded them while it ran. Their attestations were left
+                        untouched.
+                    </n-alert>
+                    <n-alert v-if="bulkResult.stoppedEarly" type="warning" :show-icon="true"
+                        style="margin-top: 8px; font-size: 12px;">
+                        Stopped after the batch in flight. Re-running the same sweep is safe:
+                        components already attested are skipped, not rewritten.
+                    </n-alert>
+                    <n-alert v-if="bulkResult.error" type="error" :show-icon="true"
+                        style="margin-top: 8px; font-size: 12px;">
+                        {{ bulkResult.error }}
+                        <span v-if="bulkResult.retryable">Re-running the same sweep is safe
+                            and completes the remainder.</span>
+                    </n-alert>
+                    <!-- The counters stopped summing: the server returned an outcome this
+                         build does not know. Reported, because the alternative is "0
+                         attested" over components that were in fact written. -->
+                    <n-alert v-if="bulkResult.unknownOutcomes" type="warning" :show-icon="true"
+                        style="margin-top: 8px; font-size: 12px;">
+                        Some components came back with a result this version cannot
+                        interpret ({{ bulkResult.unknownOutcomes }} of them), so they are
+                        counted in none of the totals above. Check those components before
+                        relying on this sweep.
+                    </n-alert>
+                    <div v-if="bulkResult.failed" style="margin-top: 10px;">
+                        <div style="font-size: 12px; font-weight: 600;">Failures</div>
+                        <ul style="font-size: 12px; margin: 4px 0 0 18px;">
+                            <li v-for="(count, message) in bulkFailureGroups" :key="message">
+                                {{ message }} &times; {{ count }}
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <template #footer>
+                    <n-space justify="end">
+                        <n-button size="small" :disabled="bulk.submitting.value"
+                            @click="bulkModalOpen = false">
+                            {{ bulkStage === 'done' ? 'Close' : 'Cancel' }}
+                        </n-button>
+                        <n-button v-if="bulkStage === 'compose'" size="small" type="primary"
+                            :disabled="bulkErrors.length > 0 || bulk.collecting.value"
+                            :loading="bulk.collecting.value"
+                            @click="collectBulkTargets">Review selection</n-button>
+                        <n-button v-if="bulkStage === 'confirm' && !bulk.submitting.value"
+                            size="small" @click="bulkBackToCompose">Back</n-button>
+                        <n-button v-if="bulkStage === 'confirm'" size="small" type="error"
+                            :disabled="bulk.submitting.value || !bulkCollected.ids.length
+                                || bulkErrors.length > 0"
+                            :loading="bulk.submitting.value"
+                            @click="runBulkAttest">
+                            Attest {{ bulkCollected.ids.length }} components
+                        </n-button>
+                        <n-button v-if="bulkStage === 'confirm' && bulk.submitting.value"
+                            size="small" @click="bulk.requestCancel()">Stop after this batch</n-button>
+                    </n-space>
+                </template>
+            </n-modal>
+            <n-modal
+                v-model:show="attestModalOpen"
+                preset="card"
+                style="width: 640px;"
+                title="Record support attestation">
+                <div v-if="attestLoading"><n-spin size="small" /> Loading current attestation...</div>
+                <div v-else>
+                    <n-alert v-if="attestForm.isUnRetract()" type="warning" :show-icon="true"
+                        style="margin-bottom: 12px;">
+                        This attestation was withdrawn. Saving re-asserts it, so a reason is
+                        required -- the audit row is the only record that the withdrawal was
+                        reversed.
+                    </n-alert>
+
+                    <n-form-item label="Level of support">
+                        <!-- Not clearable: the mutation has no way to remove a recorded
+                             level, so an x here would be a gesture the system cannot
+                             perform -- it emptied the box, sent nothing, and reported
+                             success. -->
+                        <n-select v-model:value="attestForm.form.levelOfSupport"
+                            :options="LEVEL_OPTIONS" placeholder="Not stated" />
+                    </n-form-item>
+                    <n-form-item label="Who the claim is about">
+                        <n-select v-model:value="attestForm.form.party"
+                            :options="PARTY_OPTIONS" placeholder="Unknown" />
+                    </n-form-item>
+                    <n-form-item label="Justification (basis for the claim -- exported)">
+                        <n-input v-model:value="attestForm.form.justification" type="textarea"
+                            :rows="3"
+                            placeholder="What you checked and what you found." />
+                    </n-form-item>
+
+                    <!-- Notes live WITH their date, because that is where the server stores
+                         them: supportNotes is written onto the milestones being staged, and
+                         a milestone's notes are the evidence for that date. A single
+                         component-level box was a lie about the storage model -- a
+                         notes-only edit went nowhere, and notes saved with one date landed
+                         on that milestone alone. -->
+                    <n-form-item v-for="m in MILESTONE_FIELDS" :key="m.type" :label="m.label">
+                        <n-space vertical style="width: 100%;">
+                            <n-date-picker
+                                v-model:formatted-value="attestForm.form[m.field]"
+                                value-format="yyyy-MM-dd" type="date" clearable
+                                style="width: 100%;" :placeholder="'YYYY-MM-DD'" />
+                            <n-input v-model:value="attestForm.form.milestoneNotes[m.type]"
+                                type="textarea" :rows="2"
+                                :placeholder="'What you checked for this date (internal, never exported)'" />
+                        </n-space>
+                    </n-form-item>
+
+                    <!-- Confirm-or-revise. The stored basis was written for the dates that
+                         were there at the time; moving one leaves it vouching for a claim it
+                         was never about. -->
+                    <n-alert v-if="attestForm.needsJustificationDecision()" type="warning"
+                        :show-icon="true" style="margin-bottom: 12px;">
+                        A date changed. Does the recorded basis still hold?
+                        <n-button size="tiny" style="margin-left: 8px;"
+                            @click="attestForm.confirmJustification()">
+                            It still holds
+                        </n-button>
+                        <span style="margin-left: 8px; font-size: 12px;">
+                            or edit the justification above to revise it.
+                        </span>
+                    </n-alert>
+
+                    <n-form-item v-if="attestForm.isUnRetract()
+                        || attestForm.form.clearJustification
+                        || attestForm.form.clearMilestones.length"
+                        label="Reason for this edit (audit only, never exported)">
+                        <n-input v-model:value="attestForm.form.reason"
+                            placeholder="Why this change is being made." />
+                    </n-form-item>
+
+                    <!-- SEPARATE REGION, and deliberately far from the clear controls below.
+                         This RECORDS a basis and nothing else; clearing REMOVES one. They
+                         look alike in the data and are opposites in meaning. -->
+                    <n-card size="small" title="Assessed, nothing published"
+                        style="margin-top: 16px;">
+                        <div style="font-size: 12px; margin-bottom: 8px;">
+                            Use when you asked and the supplier would not state a level. This
+                            records your basis alone -- no level, no dates -- which is a
+                            complete disclosure of what you actually know.
+                        </div>
+                        <!-- Only offered where it can honour that promise. A recorded level
+                             cannot be removed at all, and blanking a field here means
+                             "leave it alone", so on an attested row this would publish the
+                             old level against a basis written to mean the opposite. -->
+                        <n-alert v-if="!attestForm.canUseNothingPublished()" type="warning"
+                            :show-icon="false" style="font-size: 12px;">
+                            Not available here: this component already has a recorded level or
+                            dates, and those cannot be removed by this action. Change the
+                            level above, or use "Remove recorded values" for the dates.
+                        </n-alert>
+                        <n-input-group>
+                            <n-input v-model:value="attestNothingPublishedText"
+                                :disabled="!attestForm.canUseNothingPublished()"
+                                placeholder="e.g. supplier declined to state a support level" />
+                            <n-button
+                                :disabled="!attestNothingPublishedText.trim()
+                                    || !attestForm.canUseNothingPublished()"
+                                @click="applyNothingPublished">Replace form with this</n-button>
+                        </n-input-group>
+                    </n-card>
+
+                    <n-card size="small" title="Remove recorded values"
+                        style="margin-top: 24px;">
+                        <div style="font-size: 12px; margin-bottom: 8px;">
+                            Removing is destructive and needs a reason above.
+                        </div>
+                        <n-checkbox v-model:checked="attestForm.form.clearJustification">
+                            Clear the justification
+                        </n-checkbox>
+                        <n-form-item label="Clear dates" style="margin-top: 8px;">
+                            <n-select v-model:value="attestForm.form.clearMilestones"
+                                multiple clearable :options="MILESTONE_CLEAR_OPTIONS"
+                                placeholder="None" />
+                        </n-form-item>
+                    </n-card>
+
+                </div>
+                <template #footer>
+                    <!-- WHY SAVE IS DISABLED, AT THE BUTTON.
+                         MOVED here from the end of the modal BODY, not added: errors() has
+                         always been rendered, as n-alerts after the last card. The body
+                         scrolls and the footer does not, so on a form this long they sat
+                         below the fold -- an operator met a dead Save with the explanation
+                         off screen. In the walkthrough two gates were unmet at once (the
+                         mandatory re-assert reason, and the unacknowledged "does the recorded
+                         basis still hold?" prompt), so filling only the first left Save just
+                         as dead with no visible reason. Board t20260909-061338-23148.
+                         A requirement stated only where the operator is not looking is not
+                         stated -- but stating it TWICE is its own confusion, so there is one
+                         renderer and it is this one. -->
+                    <div v-if="!attestLoading && !attestSaving && attestForm.errors().length"
+                        style="margin-bottom: 8px; font-size: 12px; color: #d03050;
+                               text-align: left; max-width: 560px;">
+                        <div v-for="e in attestForm.errors()" :key="e"
+                            style="margin-bottom: 2px;">{{ e }}</div>
+                    </div>
+                    <n-space justify="end">
+                        <n-button size="small" @click="cancelAttest">Cancel</n-button>
+                        <n-button size="small" type="primary"
+                            :disabled="attestLoading || attestSaving
+                                || !attestForm.canSubmit()"
+                            :loading="attestSaving"
+                            @click="saveAttestation">Save</n-button>
+                    </n-space>
+                </template>
             </n-modal>
             <n-modal
                 v-model:show="showDownloadArtifactModal"
@@ -646,7 +1116,7 @@
                             @click="cloneReleaseToFs(releaseUuid, release.version)"
                             style="margin-left:10px;"
                         ><Copy /></n-icon>
-                        <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
+                        <Icon @click="openExportModal" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                     </n-gi>
                     <n-gi span="2">
                         <span
@@ -700,7 +1170,7 @@
         </div>
 
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
-            <n-tabs style="padding-left:0.2%;" type="segment" @update:value="handleTabSwitch" animated>
+            <n-tabs style="padding-left:0.2%;" type="segment" v-model:value="activeTab" @update:value="handleTabSwitch" animated>
                 <n-tab-pane name="components" tab="Components">
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Components
@@ -922,17 +1392,61 @@
                 </n-tab-pane>
                 <n-tab-pane name="bomComponents" tab="BOM Components">
                     <n-tabs type="line" v-model:value="bomSubTab" @update:value="handleBomSubTabSwitch" animated>
-                        <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomComponents.length ? ' · ' + sbomComponents.length : ''}`">
+                        <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomFilteredTotal ? ' \u00b7 ' + sbomFilteredTotal : ''}`">
                     <div class="container">
+                        <!-- Release-scoped disclosure gauge. Rendered ABOVE the list and
+                             sourced from sbomComponentSupportCoverage, never from the list's
+                             own total -- the two agree for the unfiltered case, which is
+                             what makes conflating them tempting and wrong. -->
+                        <n-alert
+                            v-if="sbomViewMode === 'list' && sbomComponentsLoaded
+                                && !sbomCoverageLoading"
+                            :type="sbomCoverageDisplay.tone"
+                            :show-icon="sbomCoverageDisplay.warn"
+                            style="margin-bottom: 10px;">
+                            <div style="font-size: 13px;">
+                                {{ sbomCoverageDisplay.headline }}
+                                <!-- The export state, ALWAYS stated when known, beside the
+                                     coverage number rather than inferred from whether a
+                                     warning happens to be showing. Decision D3 makes this a
+                                     build requirement: with injection defaulting off, a full
+                                     coverage figure next to an export carrying nothing is a
+                                     lie by omission. UNKNOWN renders as "could not be read",
+                                     never as OFF -- that would state a choice nobody made. -->
+                                <strong v-if="sbomCoverageDisplay.stateLabel">
+                                    &mdash; {{ sbomCoverageDisplay.stateLabel }}
+                                </strong>
+                            </div>
+                            <div v-if="sbomCoverageDisplay.exportNote"
+                                style="font-size: 12px; margin-top: 4px;">
+                                {{ sbomCoverageDisplay.exportNote }}
+                            </div>
+                        </n-alert>
                         <n-space style="margin-bottom: 8px;" align="center">
                             <n-input
                                 v-if="sbomViewMode === 'list'"
                                 v-model:value="sbomSearchQueryInput"
-                                placeholder="Search SBOM components (name, version, group, type, purl)"
+                                @update:value="onSbomSearchInput"
+                                placeholder="Search by canonical purl"
                                 clearable
                                 size="small"
-                                style="width: 420px;"
+                                style="width: 320px;"
                             />
+                            <n-select
+                                v-if="sbomViewMode === 'list'"
+                                v-model:value="sbomAttestationFilter"
+                                @update:value="onSbomFilterChange"
+                                size="small"
+                                style="width: 260px;"
+                                :options="sbomAttestationFilterOptions"
+                            />
+                            <n-button
+                                v-if="sbomViewMode === 'list' && isWritable
+                                    && sbomAppliedFilter === 'UNATTESTED'"
+                                size="small" type="primary" ghost
+                                @click="openBulkAttest">
+                                Attest all shown
+                            </n-button>
                             <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
                                 <n-radio-button value="list" label="List" />
                                 <n-radio-button value="tree" label="Tree" />
@@ -966,16 +1480,46 @@
                             <n-spin size="medium" />
                             <p>Loading SBOM components...</p>
                         </div>
-                        <div v-else-if="sbomComponentsLoaded && sbomComponents.length === 0">
-                            <p>No SBOM components recorded for this release.</p>
+                        <!-- Scoped to the LIST view. A filtered-empty result used to sit
+                             ahead of the tree branch in this chain and swallow it, and the
+                             search and filter controls are list-only, so the operator was
+                             left staring at "no components match" with nothing on screen
+                             able to clear the filter. -->
+                        <div v-else-if="sbomComponentsLoaded && sbomComponents.length === 0
+                            && sbomViewMode === 'list'">
+                            <!-- "the filter matched nothing" and "the release has no
+                                 components" are different facts, and the second one is a
+                                 claim about the SBOM. Saying it while a filter is active
+                                 would report an empty inventory for a release that has one. -->
+                            <p v-if="sbomFilterIsActive">
+                                No components match this filter.
+                                <template v-if="sbomAppliedFilter === 'UNATTESTED'">
+                                    Every component in this release has a support disclosure.
+                                </template>
+                            </p>
+                            <p v-else>No SBOM components recorded for this release.</p>
                         </div>
                         <div v-else-if="sbomComponentsLoaded && sbomViewMode === 'list'">
                             <n-data-table
-                                :data="filteredSbomComponents"
+                                :data="sbomComponents"
                                 :columns="sbomComponentsTableFields"
                                 :row-key="(row: any) => row.uuid"
-                                :pagination="{ pageSize: 15 }"
                             />
+                            <n-space align="center" style="margin-top: 8px;">
+                                <span style="font-size: 12px; color: #999;">
+                                    Showing {{ sbomComponents.length }} of {{ sbomFilteredTotal }}
+                                    <template v-if="sbomFilterIsActive">matching</template>
+                                    <template v-else>components</template>
+                                </span>
+                                <n-button
+                                    v-if="sbomHasMore"
+                                    size="small"
+                                    @click="loadMoreSbomComponents"
+                                    :loading="sbomPageLoading"
+                                    :disabled="sbomPageLoading">
+                                    Load more
+                                </n-button>
+                            </n-space>
                         </div>
                         <div v-else-if="sbomComponentsLoaded && sbomViewMode === 'tree'">
                             <div v-if="sbomGraphLoading && !sbomGraphLoaded">
@@ -1059,6 +1603,102 @@
                         />
                     </n-space>
                 </n-tab-pane>
+                <!-- SUPPORT: everything this release ASSERTS about support, in one place.
+                     Until now these controls were scattered down the Components tab, between
+                     the component table and the artifact list, where an operator preparing a
+                     submission had to know they were there. Components is the inventory of
+                     what this release IS; this tab is what we CLAIM about it, and the two
+                     were only ever adjacent by accident.
+
+                     PRODUCT-gated as a whole. A component release has no assessment narrative
+                     -- the org prose is a device-level statement -- and its disclosure gauge
+                     already sits above the SBOM list where the attesting happens, so a tab
+                     here would carry one number and nothing to do with it.
+
+                     ATTESTATION EDITING IS DELIBERATELY NOT HERE. "Attest all shown", the
+                     per-row action and the bulk sweep stay in BOM Components > SBOM, beside
+                     the list they act on: a control that writes a regulatory claim across
+                     five thousand components belongs next to the rows it will write, not next
+                     to a summary of them. This tab reports the number and links to them. -->
+                <n-tab-pane v-if="isProductRelease" name="support" tab="Support">
+                    <!-- The per-release assessment narrative OVERRIDE. The org default is
+                         shown read-only underneath so the author can see what they are
+                         replacing: without it, "override" is an instruction to write
+                         something without being told what it displaces.
+
+                         The PRODUCT gate is on the TAB, not here. It used to be on this div,
+                         next to an identical one on the device-window block and a third on
+                         the assessment block -- three copies of one fact, which is how they
+                         come to disagree. -->
+                    <div class="container">
+                        <h3>Assessment justification for this release</h3>
+                        <p class="text-muted" style="max-width: 760px;">
+                            Overrides the organization default below, for this release only.
+                            Leave it empty to inherit. Clearing a saved override returns this
+                            release to the default &mdash; it does not remove the
+                            justification from the generated documents.
+                        </p>
+                        <n-input v-model:value="releaseNarrative" type="textarea" :rows="5"
+                            style="max-width: 760px;"
+                            :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                            :disabled="!isWritable || savingReleaseNarrative"
+                            @update:value="releaseNarrativeError = null"
+                            placeholder="Leave empty to use the organization default." />
+                        <div style="margin-top: 8px;">
+                            <n-button v-if="isWritable" size="small" type="primary"
+                                :disabled="!releaseNarrativeDirty" :loading="savingReleaseNarrative"
+                                @click="saveReleaseNarrative">Save justification</n-button>
+                            <span v-if="!releaseNarrativeIsOverridden" class="text-muted"
+                                style="font-size: 12px; margin-left: 10px;">
+                                This release currently inherits the organization default.
+                            </span>
+                        </div>
+                        <n-alert v-if="releaseNarrativeError" type="error" :show-icon="true"
+                            style="font-size: 12px; max-width: 720px; margin-top: 10px;">
+                            {{ releaseNarrativeError }}
+                        </n-alert>
+                        <div style="margin-top: 14px;">
+                            <div class="text-muted" style="font-size: 12px;">
+                                Organization default (read-only, edited in Organization Settings)
+                            </div>
+                            <n-input v-if="orgNarrativeDefault" type="textarea" :rows="3"
+                                style="max-width: 760px;" readonly :value="orgNarrativeDefault" />
+                            <span v-else class="text-muted" style="font-size: 12px;">
+                                No organization default has been authored yet. With no override
+                                here either, generated documents carry no justification section.
+                            </span>
+                        </div>
+                    </div>
+                    <div class="container">
+                        <h3>Disclosure coverage</h3>
+                        <!-- THE SAME GAUGE AS THE ONE ABOVE THE SBOM LIST, from the same
+                             release-scoped source, and deliberately duplicated rather than
+                             moved. The copy above the list is what guides the attesting -- it
+                             is the number that moves as the operator works -- and removing it
+                             would leave that screen with no answer to "am I done yet". This
+                             copy is the one a submission author reads. Both render
+                             sbomCoverageDisplay, so they cannot disagree. -->
+                        <n-spin v-if="sbomCoverageLoading" size="small" />
+                        <n-alert v-else
+                            :type="sbomCoverageDisplay.tone"
+                            :show-icon="sbomCoverageDisplay.warn"
+                            style="margin-bottom: 10px; max-width: 720px;">
+                            <div style="font-size: 13px;">
+                                {{ sbomCoverageDisplay.headline }}
+                                <strong v-if="sbomCoverageDisplay.stateLabel">
+                                    &mdash; {{ sbomCoverageDisplay.stateLabel }}
+                                </strong>
+                            </div>
+                            <div v-if="sbomCoverageDisplay.exportNote"
+                                style="font-size: 12px; margin-top: 4px;">
+                                {{ sbomCoverageDisplay.exportNote }}
+                            </div>
+                        </n-alert>
+                        <n-button size="small" type="primary" ghost @click="goToSbomComponents">
+                            Attest components in BOM Components
+                        </n-button>
+                    </div>
+                </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
                     <div class="container">
                         <div>
@@ -1068,6 +1708,56 @@
                             <n-input type="textarea" v-else :value="updatedRelease.notes" rows="2" readonly />
                             <n-button v-if="isWritable" @click="save"
                                 v-show="release.notes !== updatedRelease.notes">Save Notes</n-button>
+                        </div>
+                        <!-- The RELEASE's own lifecycle dates. Metadata about this
+                             version, which is what this tab is for, and deliberately NOT a
+                             device window: these feed TEA and CLE.
+
+                             Here rather than on Components since 2026-09-21. On Components
+                             they sat under a read-only DEVICE support window, and the two
+                             headings a few pixels apart were read as one control often
+                             enough that the explainer had to open by saying they were not.
+                             The device window is declared on the product component and shown
+                             per shipment on Distribution; this release-level pair is
+                             metadata, so it lives with the metadata. -->
+                        <div>
+                            <h3 class="mt-3">Release lifecycle dates</h3>
+                            <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                                When this <strong>version</strong> stops being supported and sold.
+                                Each date becomes a CLE lifecycle event for this release &mdash;
+                                <code>END_OF_SUPPORT</code> and <code>END_OF_LIFE</code> &mdash;
+                                served through the TEA endpoint and the CLE export, so a downstream
+                                consumer tracking your versions learns when this one lapses.
+                                <span style="display:block; margin-top:6px;">
+                                    Separate from the <strong>device support window</strong>,
+                                    which is the section 524B commitment about the hardware and is
+                                    declared on the product component, not here. A device outlives
+                                    many versions, so the two dates differ on purpose.
+                                </span>
+                            </n-alert>
+                            <n-space align="end" style="margin-bottom: 8px;">
+                                <div>
+                                    <div class="text-muted" style="font-size: 12px;">Release end of support</div>
+                                    <n-date-picker v-model:formatted-value="deviceWindow.eos"
+                                        value-format="yyyy-MM-dd" type="date" clearable
+                                        @update:formatted-value="deviceWindowError = null"
+                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                </div>
+                                <div>
+                                    <div class="text-muted" style="font-size: 12px;">Release end of life / end of sale</div>
+                                    <n-date-picker v-model:formatted-value="deviceWindow.eol"
+                                        value-format="yyyy-MM-dd" type="date" clearable
+                                        @update:formatted-value="deviceWindowError = null"
+                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                </div>
+                                <n-button v-if="isWritable" size="small" type="primary"
+                                    :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
+                                    @click="saveDeviceWindow">Save dates</n-button>
+                            </n-space>
+                            <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
+                                style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
+                                {{ deviceWindowError }}
+                            </n-alert>
                         </div>
                         <div>
                             <h3 class="mt-3">Tags</h3>
@@ -1266,26 +1956,26 @@
             </div>
     </div>
         <n-modal
-            v-model:show="attestModalOpen"
+            v-model:show="commitClaimModalOpen"
             title="Claim this commit"
             preset="dialog"
             style="width: 620px;"
             :show-icon="false">
             <n-form label-placement="top">
-                <p class="text-muted" v-if="attestSubject">
-                    {{ attestSubject.commit }}<span v-if="!attestSubject.recognized && !attestClaims.length">
+                <p class="text-muted" v-if="commitClaimSubject">
+                    {{ commitClaimSubject.commit }}<span v-if="!commitClaimSubject.recognized && !commitClaimClaims.length">
                     — nobody is accountable for it yet</span>.
                 </p>
                 <!-- Where everybody stands, and the way out of a contested commit: whoever should
                      not have claimed it withdraws their statement. The log keeps the withdrawal;
                      the standing claims are what recognition is computed from. -->
-                <n-alert v-if="attestClaims.length" :type="attestSubject?.attestation?.state === 'CONFLICT' ? 'error' : 'default'"
+                <n-alert v-if="commitClaimClaims.length" :type="commitClaimSubject?.attestation?.state === 'CONFLICT' ? 'error' : 'default'"
                     :show-icon="false" style="margin-bottom: 0.9rem; font-size: 13px;">
-                    <div v-if="attestSubject?.attestation?.state === 'CONFLICT'" style="margin-bottom: 6px;">
+                    <div v-if="commitClaimSubject?.attestation?.state === 'CONFLICT'" style="margin-bottom: 6px;">
                         Two principals each say this commit is theirs. It stays contested until one
                         of them withdraws.
                     </div>
-                    <div v-for="c in attestClaims" :key="c.uuid"
+                    <div v-for="c in commitClaimClaims" :key="c.uuid"
                         style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
                         <n-tag size="tiny" :type="c.verdict === 'MINE' ? 'success' : 'warning'" :bordered="false">
                             {{ c.verdict === 'MINE' ? 'claims it' : 'disowns it' }}
@@ -1298,7 +1988,7 @@
                     </div>
                 </n-alert>
                 <n-form-item label="Statement" required>
-                    <n-radio-group v-model:value="attestDraft.verdict">
+                    <n-radio-group v-model:value="commitClaimDraft.verdict">
                         <n-radio value="MINE">This is mine</n-radio>
                         <n-radio value="NOT_MINE">This is not mine</n-radio>
                     </n-radio-group>
@@ -1310,7 +2000,7 @@
                     </template>
                 </n-form-item>
                 <n-form-item label="Note">
-                    <n-input v-model:value="attestDraft.note" type="textarea" :rows="2"
+                    <n-input v-model:value="commitClaimDraft.note" type="textarea" :rows="2"
                         placeholder="e.g. malformed trailer, corrected in the next commit"/>
                     <template #feedback>
                         Whether the claim means "fixed later" or "fine as it is" belongs here. There is no
@@ -1319,8 +2009,8 @@
                     </template>
                 </n-form-item>
                 <n-space>
-                    <n-button type="primary" @click="submitAttest">Record</n-button>
-                    <n-button @click="attestModalOpen = false">Cancel</n-button>
+                    <n-button type="primary" @click="submitCommitClaim">Record</n-button>
+                    <n-button @click="commitClaimModalOpen = false">Cancel</n-button>
                 </n-space>
             </n-form>
         </n-modal>
@@ -1344,15 +2034,41 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import { collectAddendumData } from '@/utils/addendumData'
+import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
+import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
+import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
+import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
+import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
+import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
+import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
+import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMetadataFallback'
+import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
+import { formatNarrativeChange } from '@/utils/narrativeHistory'
+import { formatSupportWindow } from '@/utils/supportWindowDisplay'
+import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
+import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
-import { loadSbomComponentsForRelease } from '@/utils/sbomComponentsQuery'
+import { coverageDisplay } from '@/utils/supportCoverageDisplay'
+import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
+import { useBulkAttest, validateBulkInput, emptyBulkForm } from '@/utils/useBulkAttest'
+import type { BulkAttestInput, BulkCollectResult, BulkOutcome } from '@/utils/useBulkAttest'
+import { useAttestationForm } from '@/utils/useAttestationForm'
+import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
+import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
+import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
+import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
+import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
+import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NRadio, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, isWithdrawnAttestation, supportTag,
+    WITHDRAWN_TAG } from '@/utils/supportStatusTag'
+import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadio, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -1447,6 +2163,206 @@ async function loadAcollections() {
         buildCombinedHistory()
     } catch (e) {
         console.error('Failed to fetch acollections:', e)
+    }
+}
+
+/**
+ * Renders the backend's compact support-window string ("eos=2030-06-30, eol=null") as
+ * something a person reads. Kept lenient: an unrecognised shape is shown verbatim rather
+ * than dropped, because a history row that silently omits what it recorded is worse than
+ * an ugly one.
+ */
+/**
+ * The device support window, edited independently of the release body.
+ *
+ * NARROW PARTIAL, not the whole release: the save sends { uuid, eos, eol, clearEos,
+ * clearEol } and nothing else. That matters beyond tidiness -- updateRelease treats a null
+ * list as "no change" (Utils.diffUuidLists), so omitting artifacts and commits leaves them
+ * attached, whereas posting a whole stale release object could detach them.
+ *
+ * It also sidesteps the DRAFT gate in save(), correctly. That gate protects a release's
+ * CONTENTS once assembled; a support window is the opposite kind of fact -- declared after
+ * assembly and revised as the device ages.
+ *
+ * There IS a server-side lifecycle gate -- the resolver calls the 2-arg updateRelease
+ * overload, which is UpdateReleaseStrength.DRAFT_ONLY. It does not fire here only because
+ * ReleaseDto.isAssemblyRequested trips on parentReleases / sourceCodeEntry / commits /
+ * inbound / outboundDeliverables, none of which this narrow payload sends. That is the
+ * load-bearing reason to keep the payload narrow: WIDENING IT ARMS THE GATE and an
+ * assembled release stops accepting window edits.
+ */
+const deviceWindow = reactive({ eos: null as string | null, eol: null as string | null })
+const deviceWindowBaseline = reactive({ eos: null as string | null, eol: null as string | null })
+const savingDeviceWindow: Ref<boolean> = ref(false)
+const deviceWindowError: Ref<string | null> = ref(null)
+
+const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
+    deviceWindow.eos !== deviceWindowBaseline.eos || deviceWindow.eol !== deviceWindowBaseline.eol)
+
+function seedDeviceWindow () {
+    // UNDEFINED means the query did not ask for the field; NULL means the server says it is
+    // not declared. Coercing the first to the second blanks a stored window and greys out
+    // Save, so the editor looks permanently broken while the value sits safely in the
+    // database. Both release queries select eos/eol now, so this should be unreachable --
+    // it is here because it was NOT unreachable an hour ago, and a third query would
+    // reintroduce it silently.
+    const r: any = updatedRelease.value
+    if (r?.eos !== undefined) deviceWindow.eos = r.eos || null
+    if (r?.eol !== undefined) deviceWindow.eol = r.eol || null
+    deviceWindowBaseline.eos = deviceWindow.eos
+    deviceWindowBaseline.eol = deviceWindow.eol
+    deviceWindowError.value = null
+}
+
+/**
+ * The per-release FDA assessment narrative override.
+ *
+ * NULL MEANS INHERIT, not empty, which is why the form distinguishes "no override" from "an
+ * override that happens to be blank" -- the latter cannot exist, because a supplied empty
+ * string is how the server is told to clear.
+ */
+const releaseNarrative: Ref<string> = ref('')
+/**
+ * What the server last confirmed. Refreshed from the MUTATION RESPONSE, never only from a
+ * follow-up read: on the org prose form that mistake meant a failed re-read reported a
+ * committed save as failed AND left the baseline stale, so the operator's next clear was
+ * silently omitted while the server kept the text.
+ */
+const releaseNarrativeBaseline: Ref<string> = ref('')
+const savingReleaseNarrative: Ref<boolean> = ref(false)
+const releaseNarrativeError: Ref<string | null> = ref(null)
+
+const releaseNarrativeDirty: ComputedRef<boolean> = computed((): boolean =>
+    releaseNarrativeDiffers(releaseNarrative.value, releaseNarrativeBaseline.value))
+
+/** Whether this release currently overrides, as opposed to inheriting. */
+const releaseNarrativeIsOverridden: ComputedRef<boolean> = computed((): boolean =>
+    !!(releaseNarrativeBaseline.value || '').trim())
+
+/** The org-level default, shown read-only so the author sees what an override replaces. */
+const orgNarrativeDefault: ComputedRef<string> = computed((): string =>
+    (store.getters.myorg?.settings?.fdaAssessmentNarrative) || '')
+
+function seedReleaseNarrative () {
+    // UNDEFINED means the query did not ask; NULL means the server says there is no
+    // override. Same distinction the device window needs, and for the same reason: coercing
+    // the first to the second blanks a stored value and greys out Save. Both release queries
+    // select the field now, and the drift spec asserts the pairing.
+    const r: any = updatedRelease.value
+    if (r?.fdaAssessmentNarrative !== undefined) {
+        releaseNarrative.value = r.fdaAssessmentNarrative || ''
+    }
+    releaseNarrativeBaseline.value = releaseNarrative.value
+    releaseNarrativeError.value = null
+}
+
+async function saveReleaseNarrative () {
+    savingReleaseNarrative.value = true
+    releaseNarrativeError.value = null
+    try {
+        const vars = releaseNarrativeVariables(
+            updatedRelease.value.uuid,
+            updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid,
+            releaseNarrative.value, releaseNarrativeBaseline.value)
+        // Null means the form is not dirty. Firing a mutation anyway would append nothing on
+        // the server (it diffs too) but would still cost a round trip and a toast claiming
+        // something happened.
+        if (!vars) return
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateReleaseNarrative($release: ReleaseInput!) {
+                    updateRelease(release: $release) { uuid fdaAssessmentNarrative }
+                }`,
+            variables: { release: vars }
+        })
+        // From the mutation's OWN response, before anything that can throw. The write has
+        // committed; this is the truth and it is already in hand.
+        const saved = (resp?.data as any)?.updateRelease
+        if (saved) {
+            releaseNarrative.value = saved.fdaAssessmentNarrative || ''
+            releaseNarrativeBaseline.value = releaseNarrative.value
+            // INSIDE the guard, and worded from the REFRESHED baseline. Outside it, an empty
+            // response left the baseline at its pre-save value, so authoring a narrative
+            // reported "cleared" and clearing one reported "updated" -- a confident sentence
+            // stating the opposite of what the operator had just done. OrgSettings gets this
+            // right with the same else-branch.
+            notify('success', 'Saved', releaseNarrativeBaseline.value
+                ? 'Release justification updated.'
+                : 'Release justification cleared; this release now inherits the organization default.')
+        } else {
+            notify('warning', 'Save Warning', 'Save completed but no response received.')
+        }
+    } catch (err: any) {
+        releaseNarrativeError.value = commonFunctions.extractGraphQLErrorMessage(err)
+    } finally {
+        savingReleaseNarrative.value = false
+    }
+
+    // Outside the try: a refetch keeps the rest of the page in step, but the save has already
+    // been reported from the mutation response, so a refetch failure must not be dressed up
+    // as a failed save.
+    try {
+        await fetchRelease()
+    } catch (e) {
+        // The justification itself is correct on screen; the surrounding page may be stale.
+    }
+}
+
+async function saveDeviceWindow () {
+    savingDeviceWindow.value = true
+    deviceWindowError.value = null
+    try {
+        // Baseline diff, same shape as the prose form. A date that did not change is
+        // omitted; one that was SET and is now empty sends its clear flag, because null on
+        // this path means "keep" -- the backend reads clearEos/clearEol as the explicit
+        // signal and nothing else can express it.
+        // org is ID! on ReleaseInput, so even the narrowest partial must carry it -- a
+        // {uuid, eos} payload is rejected at GraphQL validation before the resolver is
+        // reached. Everything else is still omitted, which is what keeps artifacts and
+        // commits attached (updateRelease treats a null list as no change).
+        const vars = deviceWindowVariables(
+            updatedRelease.value.uuid,
+            updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid,
+            deviceWindow, deviceWindowBaseline)
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateDeviceSupportWindow($release: ReleaseInput!) {
+                    updateRelease(release: $release) { uuid eos eol }
+                }`,
+            variables: { release: vars }
+        })
+        // From the mutation's OWN response, BEFORE anything that can throw. The write has
+        // committed; this is now the truth, and it is already in hand. Refreshing via the
+        // refetch instead meant a refetch failure left the baseline stale on a committed
+        // write -- and the user could then not even clear the date they had just set,
+        // because dirty was false and Save was disabled with nothing explaining why.
+        const saved = (resp?.data as any)?.updateRelease
+        if (saved) {
+            deviceWindow.eos = saved.eos || null
+            deviceWindow.eol = saved.eol || null
+            deviceWindowBaseline.eos = deviceWindow.eos
+            deviceWindowBaseline.eol = deviceWindow.eol
+        }
+        notify('success', 'Saved', 'Device support window updated.')
+    } catch (err: any) {
+        // The SERVER's message, verbatim. The coherence rule (eos must not be after eol)
+        // is enforced for every writer, not just this form, so pre-validating here would
+        // invent a SECOND wording that could drift from the enforced one. Note the server
+        // already has two: this inline guard, and validateReleaseData, which prefixes
+        // "Release ". Only the inline path is reachable from this form, so no operator sees
+        // both -- but do not read this as there being one canonical message.
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(err)
+    } finally {
+        savingDeviceWindow.value = false
+    }
+
+    // Deliberately outside the try: a refetch keeps the rest of the page in step, but the
+    // save above has already been reported from the mutation's own response, so a refetch
+    // failure must not be dressed up as a failed save.
+    try {
+        await fetchRelease()
+    } catch (e) {
+        // The window itself is correct on screen; the surrounding page may be stale.
     }
 }
 
@@ -1620,6 +2536,11 @@ onMounted(async () => {
     loadingBar.start()
     isProductRelease.value = await detectIsProduct()
     await fetchRelease()
+    // AFTER fetchRelease, never before: the baseline has to reflect what the server holds,
+    // and seeding against an empty release would show a declared window as blank and then
+    // treat re-typing it as a change.
+    seedDeviceWindow()
+    seedReleaseNarrative()
     await fetchReleaseKeys()
     await loadDtrackConfigured()
     if (hasPendingStatuses()) ensureStatusPolling()
@@ -1627,8 +2548,26 @@ onMounted(async () => {
     loadingBar.finish()
 })
 
+/**
+ * A bulk sweep writes a regulatory claim across thousands of components in batches, with no
+ * bulk undo and no way to abort a batch already sent. Leaving mid-sweep discards the outcome
+ * report -- which components failed, whether a colleague raced the walk -- for writes that
+ * have already landed. The browser only allows a generic prompt here; that is enough.
+ */
+function warnOnLeaveDuringSweep (e: BeforeUnloadEvent) {
+    if (!bulk.submitting.value) return
+    e.preventDefault()
+    e.returnValue = ''
+}
+
+onMounted(() => window.addEventListener('beforeunload', warnOnLeaveDuringSweep))
+
 onUnmounted(() => {
+    // Cancels the search debounce and fences in-flight responses, so a trailing keystroke
+    // cannot fire a query, or notify an error toast, against a component that is gone.
+    sbomPaging.dispose()
     stopStatusPolling()
+    window.removeEventListener('beforeunload', warnOnLeaveDuringSweep)
 })
 
 const pullRequest: ComputedRef<any> = computed((): any => {
@@ -1998,6 +2937,37 @@ function handleBomSubTabSwitch (subTab: string) {
     if (subTab === 'sbomSub') loadSbomComponents()
     else if (subTab === 'hbomSub') fetchHbomComponents(updatedRelease.value.uuid)
 }
+
+/**
+ * The outer tab set's selection, which only became state when the Support tab needed to send
+ * the operator somewhere.
+ *
+ * Defaults to the first pane, which is what an uncontrolled n-tabs already selected, so the
+ * landing tab is unchanged.
+ */
+const activeTab: Ref<string> = ref('components')
+
+/**
+ * From the Support tab's coverage number to the rows behind it.
+ *
+ * The gauge reports how much of the release is disclosed; the only thing an operator can DO
+ * about a number they do not like is attest components, and those controls live with the list
+ * they act on. Without this the tab would state a problem and leave finding the cure as an
+ * exercise.
+ *
+ * handleTabSwitch is invoked explicitly: n-tabs fires update:value for a user click, not for
+ * a programmatic one, so the list would otherwise stay unloaded behind a tab that looked open.
+ */
+async function goToSbomComponents () {
+    // ALWAYS the SBOM sub-tab, never HBOM. isHardware is true for a product release that
+    // contains any hardware component, and the HBOM pane has no gauge, no attestation filter,
+    // no "Attest all shown" and no per-row attest -- all of those are on the SBOM list. Routing
+    // a hardware product release there would answer "12 of 300 components are disclosed" with a
+    // table that cannot attest anything, which is worse than not offering the link.
+    bomSubTab.value = 'sbomSub'
+    activeTab.value = 'bomComponents'
+    await handleTabSwitch('bomComponents')
+}
 const isLoading: Ref<boolean> = ref(true)
 const isProductRelease: Ref<boolean> = ref(false)
 const productArtifactsLoaded: Ref<boolean> = ref(false)
@@ -2129,16 +3099,32 @@ async function goToRelease (uuid: string) {
     // so without this the next release renders the previous one's components. That was
     // merely stale before; now the device-risk summary would state "N outlived by this
     // device" about a device whose SBOM we are not showing.
-    sbomComponentsLoaded.value = false
-    sbomComponents.value = []
+    // reset() clears items, total, cursor, hasMore and loaded together, and bumps the
+    // request fence so a response for the PREVIOUS release cannot land here. Clearing them
+    // piecemeal is how the tab label kept showing the old release's count over an empty
+    // pane, and how a trailing debounce could re-mark the list loaded with A's rows.
+    sbomPaging.reset()
+    // The gauge belongs to the release that was showing, and has its own fence for the same
+    // reason: a coverage response for the previous release would caption this one with the
+    // old disclosure count. Clearing the ref alone only handles the synchronous case.
+    sbomCoverageState.reset()
     sbomGraphLoaded.value = false
     sbomGraphByUuid.value = {}
     sbomGraphDirty.value = true
+    // The other two lazy caches, which were never reset here. Both of their loaders
+    // early-return while their flag is set, so navigating prev/next with "Part of Products" or
+    // the HBOM sub-tab open showed the PREVIOUS release's rows and never refreshed -- stale
+    // before, and now reachable through the tab reload below, which would otherwise call a
+    // loader that quietly does nothing. Reset beside the caches that already were.
+    inProductsLoaded.value = false
+    hbomLoaded.value = false
     isLoading.value = true
     loadingBar.start()
     try {
         isProductRelease.value = await detectIsProduct()
         await fetchRelease()
+        seedDeviceWindow()
+        seedReleaseNarrative()
         await fetchReleaseKeys()
     } finally {
         isLoading.value = false
@@ -2148,9 +3134,38 @@ async function goToRelease (uuid: string) {
         // Embedded modal: the parent owns the URL (the branch view tracks the
         // ?release= param via history.replaceState, which Vue Router doesn't
         // see), so delegate URL/selection syncing to it rather than navigating.
+        //
+        // THE TAB SET IS CONTROLLED NOW, and THIS is the path where it can strand, because the
+        // component PERSISTS across the release change. Nothing fires update:value on a
+        // programmatic release change, so a tab whose data loads lazily on switch -- Support's
+        // coverage gauge, the BOM lists -- would sit on an empty pane indefinitely. Re-drive it
+        // by hand.
+        //
+        // The product-gated Support pane is guarded first: holding a value with no matching pane
+        // renders as a blank tab strip rather than falling back to anything. That is not
+        // reachable today, because this modal navigates within ONE branch and so cannot cross
+        // from a product release to a component one -- it is here because the cost is one
+        // comparison and the failure is a blank page.
+        if (activeTab.value === 'support' && !isProductRelease.value) {
+            activeTab.value = 'components'
+        } else {
+            await handleTabSwitch(activeTab.value)
+        }
         emit('navigate', uuid)
     } else {
         // Routed full page: keep the path param in sync (deep link + back button).
+        //
+        // NO TAB WORK ON THIS PATH, deliberately. The router-view is keyed on $route.path
+        // (LeftNavBar.vue) and the uuid is IN that path, so this push REMOUNTS the component:
+        // activeTab returns to its default and onMounted re-runs the whole load. Re-driving the
+        // tab here is discarded, and depending on which tab was open it is not free either --
+        // from BOM Components, or from Support on a product release, handleTabSwitch fires the
+        // paged SBOM or coverage queries for the new release immediately before the teardown
+        // that throws them away. From the default Components tab it is merely a no-op.
+        //
+        // The rest of this function is ALSO discarded by that remount, so a full-page chevron
+        // click still fetches the release twice. Early-returning to just the push would fix
+        // that, but it is a wider change than moving one block and belongs on its own.
         router.push({ name: 'ReleaseView', params: { uuid } })
     }
 }
@@ -2173,6 +3188,118 @@ watch(() => props.uuidprop, (newUuid) => {
 
 // Media type for SBOM export
 const selectedSbomMediaType = ref('JSON')
+/**
+ * Both addendum encodings, as one condition.
+ *
+ * The addendum is a different DOCUMENT that happens to share this modal, so the BOM-shaping
+ * options do not apply to either encoding of it. Asking the question once means adding a
+ * third encoding later cannot leave one control wired to the old two-value test.
+ */
+const isAddendumExport: ComputedRef<boolean> = computed((): boolean =>
+    selectedSbomMediaType.value === 'FDA_ADDENDUM' || selectedSbomMediaType.value === 'FDA_ADDENDUM_PDF')
+
+/**
+ * Whether the release on screen can carry a device support statement.
+ *
+ * Read from the release already in hand, so the modal says so BEFORE an export attempt walks
+ * the whole component list only to refuse. The renderer still refuses independently -- this
+ * is a courtesy, not the guard.
+ */
+const isProductReleaseForStatement: ComputedRef<boolean> = computed((): boolean =>
+    updatedRelease.value?.componentDetails?.type === 'PRODUCT')
+
+/**
+ * The support documents this release can actually produce, in modal order.
+ *
+ * The rule itself lives in utils/exportFormatSelection so it can be RUN. Nothing in the unit
+ * suite mounts this component, so a rule kept inline here is only ever asserted by scanning
+ * this file's source -- which passes on a comment and on an inverted condition alike.
+ */
+const supportExportFormats: ComputedRef<SupportExportFormat[]> = computed(
+    (): SupportExportFormat[] => supportExportFormatsFor(isProductReleaseForStatement.value))
+
+/**
+ * Whether this organization has support metadata turned on for exports.
+ *
+ * Read through supportInjectionFromSettings, the same helper the organization settings screen
+ * reads its own toggle back with, so the two cannot disagree about what a missing or unknown
+ * value means. On a backend that does not declare the setting it reads false, which is the
+ * safe direction: the switch is not offered rather than offering a disclosure the server will
+ * not produce.
+ *
+ * This is the ONLY gate on whether the support switch is rendered at all, and on whether the
+ * argument is sent. It is deliberately NOT the switch's default value -- see openExportModal.
+ */
+const orgSupportInjectionEnabled: ComputedRef<boolean> = computed((): boolean =>
+    orgSupportInjectionSupported.value && supportInjectionFromSettings(store.getters.myorg?.settings))
+
+/**
+ * Whether this BACKEND declares the setting at all -- the third state, which the store already
+ * models and which "enabled vs disabled" cannot express.
+ *
+ * On a CE mirror inside the sync-lag window there is no such setting, and OrgSettings hides
+ * the whole support-disclosure block for exactly that reason. Folding it in here means the
+ * export switch is withheld on such a backend too, rather than offering a control whose
+ * argument that server would reject.
+ */
+const orgSupportInjectionSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.supportInjectionSupported !== false)
+
+/**
+ * Per-export metadata flags. Defaults are applied when the dialog OPENS, not once at setup:
+ * the organization arrives asynchronously, and a default computed before it landed would
+ * report "off, and your org has it disabled" on an org that has it enabled.
+ */
+const includeSupportMetadata: Ref<boolean> = ref(false)
+const includeInternalMetadata: Ref<boolean> = ref(false)
+
+/** This server rejected the metadata arguments, so stop sending them. See exportReleaseSbom. */
+const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
+
+/**
+ * Whether the two metadata options can change the file the operator is about to get.
+ *
+ * They are still SENT and still validated for CSV and EXCEL, but rebom renders those two from a
+ * fixed column list with no properties and no metadata, so neither switch has anything to add
+ * or remove. Saying that beside the switches is the alternative to leaving live-looking controls
+ * over a file they do not move.
+ *
+ * <p>The validation that goes with them is now an API-only path: this form cannot ask for a
+ * disclosure the organization has disabled, because the switch is not rendered on such an org
+ * and supportMetadataArg sends null rather than true. A script still can, and is still refused.
+ *
+ * <p>Named for the two options COLLECTIVELY and worded the same way, because how many of them
+ * render is not fixed -- see the support switch's v-if.
+ */
+const metadataFlagsInertForFormat: ComputedRef<boolean> = computed((): boolean =>
+    selectedSbomMediaType.value === 'CSV' || selectedSbomMediaType.value === 'EXCEL')
+
+function openExportModal () {
+    // BOTH default OFF (operator decision 2026-09-22). The organization setting says the
+    // disclosure is ALLOWED, not that every download wants it -- so each export opts in
+    // rather than opting out. Deliberately NOT seeded from the org setting: a switch showing
+    // OFF over a file that carries the attestations anyway would be the worst of both.
+    includeSupportMetadata.value = false
+    includeInternalMetadata.value = false
+    showExportSBOMModal.value = true
+}
+
+/**
+ * The Device Support Statement cannot be produced from this release, and we already SAY so in
+ * the panel above the button.
+ *
+ * Leaving Export enabled under that text invited the operator to click it and then answered
+ * with a modal repeating what the panel had just told them. A refusal that is knowable before
+ * the click belongs on the control, not in a dialog after it. Reported from the operator
+ * walkthrough, board t20260909-061338-23148 step 6d.
+ *
+ * ONLY the PRODUCT gate, deliberately. The other refusals inside
+ * exportDeviceSupportStatement -- an unresolvable org, a failed collect, an unauthored prose
+ * slot -- are not knowable until the data is fetched, so those keep their modal. Disabling the
+ * button for a reason we have not checked yet would be a worse lie than the redundant dialog.
+ */
+const statementBlockedHere: ComputedRef<boolean> = computed((): boolean =>
+    selectedSbomMediaType.value === 'DEVICE_STATEMENT' && !isProductReleaseForStatement.value)
 
 //getAggregatedChangelog
 const showExportSBOMModal: Ref<boolean> = ref(false)
@@ -2198,7 +3325,32 @@ const rebomTypes: ComputedRef<any[]> = computed((): any[] => {
     )
     return types
 })
-const exportBomType: Ref<string> = ref('SBOM')
+const exportBomType: Ref<ExportBomType> = ref('SBOM')
+
+/**
+ * Keep the format selection VALID FOR THE SELECTED TYPE.
+ *
+ * Both radio groups write selectedSbomMediaType -- one ref, because the Export button is one
+ * handler and routing on the media type is what decides which document gets built. Without
+ * this, picking Support and then going back to SBOM leaves 'FDA_ADDENDUM' selected under a
+ * radio group that does not offer it: naive-ui renders no selection, and Export fires the
+ * addendum while the form on screen says CycloneDX. The reset is on the TYPE change rather
+ * than on the button, so the form never displays a pair it would not send.
+ *
+ * BELOW the ref it watches, and that is load-bearing rather than tidy: watch() evaluates a
+ * bare-ref source EAGERLY, so declaring this above `exportBomType` throws
+ * "Cannot access 'exportBomType' before initialization" during setup and the WHOLE release
+ * page fails to render -- every tab, not just the modal. It shipped that way for one commit;
+ * vite build, 748 unit tests and eslint were all green, because none of them mounts the
+ * component. The file's other bare-ref watches already sit after their refs
+ * (`watch(vdrSnapshotType, ...)` below); the two that precede their source use the getter
+ * form instead.
+ */
+watch(exportBomType, (bomType: string): void => {
+    selectedSbomMediaType.value = mediaTypeForBomType(
+        bomType, selectedSbomMediaType.value, isProductReleaseForStatement.value)
+})
+
 const selectedRebomType: Ref<string> = ref('')
 const tldOnly: Ref<boolean> = ref(true)
 const ignoreDev: Ref<boolean> = ref(false)
@@ -2956,9 +4108,7 @@ async function reconcileSbomFromTab () {
 // Release SBOM Components tab — list view query (cheap: no dependencies/dependedOnBy).
 // The detail modal (ReleaseSbomComponentGraph) loads the deeper graph on demand;
 // both queries hit Apollo cache-first so the tree view and the modal share results.
-const sbomComponents: Ref<any[]> = ref([])
-const sbomComponentsLoading: Ref<boolean> = ref(false)
-const sbomComponentsLoaded: Ref<boolean> = ref(false)
+// sbomComponents / loading / loaded now come from useSbomComponentsPaging below.
 const sbomGraphLoading: Ref<boolean> = ref(false)
 const sbomGraphLoaded: Ref<boolean> = ref(false)
 const sbomGraphByUuid: Ref<Record<string, any>> = ref({})
@@ -2967,39 +4117,386 @@ const sbomGraphByUuid: Ref<Record<string, any>> = ref({})
 // after reconcile changes.
 const sbomGraphDirty: Ref<boolean> = ref(false)
 
-// Client-side filter for the list view. Matches against any of name, version,
-// group, type, or canonical purl (case-insensitive substring).
-const sbomSearchQueryInput: Ref<string> = ref('')
-const filteredSbomComponents: ComputedRef<any[]> = computed((): any[] => {
-    const q = (sbomSearchQueryInput.value || '').trim().toLowerCase()
-    return sbomComponents.value.filter((row: any) => {
-        const c = row.component || {}
-        if (q) {
-            const haystack = [c.name, c.version, c.group, c.type, c.canonicalPurl].filter(Boolean).join(' ').toLowerCase()
-            if (!haystack.includes(q)) return false
-        }
-        return true
-    })
+// Server-side filter and paging for the list view.
+//
+// The search used to be a client-side computed over the whole loaded release, and the
+// support filter did not exist here at all. Both moved to the server, and the search move
+// is a consequence of the filter move rather than an optimisation: ATTESTED/UNATTESTED are
+// evaluated with the SAME predicate the release-scoped coverage gauge counts with, so a
+// client-side filter over a partially-loaded release could disagree with that number. One
+// filter, evaluated once, server-side. (The gauge itself lands in the next step of this
+// series; the constraint is on the filter regardless of what is rendered beside it today.)
+//
+// Note the search semantics changed with the move: the server matches the CANONICAL PURL
+// only, where the old client filter also matched name/version/group/type. The purl contains
+// group, name and version for every ecosystem we ingest, so this is narrower in form rather
+// than in practice; the placeholder says so.
+//
+// The state and the loaders live in useSbomComponentsPaging, not here. Review found three
+// ordering bugs in the inline version -- a load-more landing after a filter change, two
+// searches resolving out of order, and a trailing debounce firing after navigation, which
+// left release B showing release A's components permanently. All three need a request fence,
+// and a fence is only trustworthy if every assignment goes through it, which is not
+// reviewable spread through a 6,000-line component. See useSbomComponentsPaging.spec.ts.
+const sbomPaging = useSbomComponentsPaging({
+    client: graphqlClient as any,
+    releaseUuid: () => updatedRelease.value?.uuid,
+    onError: (msg: string) => notify('error', 'Error', commonFunctions.parseGraphQLError(msg)),
+    // Only a genuine data reload should invalidate the dependency-graph cache. A filter or
+    // search change alters the QUERY, not the rows, and forcing a full graph re-fetch on
+    // every settled keystroke was the previous behaviour.
+    onDataReplaced: () => { if (sbomForceRefreshPending) { invalidateSbomGraph(); sbomForceRefreshPending = false } }
 })
+const sbomComponents = sbomPaging.items
+const sbomComponentsLoading = sbomPaging.loading
+const sbomComponentsLoaded = sbomPaging.loaded
+const sbomFilteredTotal = sbomPaging.totalCount
+const sbomHasMore = sbomPaging.hasMore
+const sbomPageLoading = sbomPaging.loadingMore
+const sbomSearchQueryInput = sbomPaging.searchInput
+const sbomAttestationFilter = sbomPaging.filter
+const sbomAppliedFilter = sbomPaging.appliedFilter
+const sbomAppliedSearch = sbomPaging.appliedSearch
+
+// Labels key off the APPLIED filter, never the control: during the debounce and any
+// in-flight request they differ, and "3 matching" over unfiltered rows is a claim about the
+// data that is not true yet.
+const sbomFilterIsActive: ComputedRef<boolean> = computed(
+    (): boolean => sbomAppliedFilter.value !== 'ALL' || !!sbomAppliedSearch.value)
+
+// Labels say what the filter MEANS for disclosure, not just the enum name: "Not disclosed"
+// is the operator's word for UNATTESTED, and it is the same population the coverage gauge
+// counts as missing. Typed against the union so a typo cannot ship an option the server
+// rejects -- the adjacent SUPPORT_TAG map learned that lesson already.
+const sbomAttestationFilterOptions: Array<{ label: string, value: SupportAttestationFilter }> = [
+    { label: 'All components', value: 'ALL' },
+    { label: 'Support disclosed', value: 'ATTESTED' },
+    { label: 'Not disclosed', value: 'UNATTESTED' }
+]
+
+let sbomForceRefreshPending = false
+
+function invalidateSbomGraph () {
+    sbomGraphLoaded.value = false
+    sbomGraphByUuid.value = {}
+    sbomGraphDirty.value = true
+}
+
+function onSbomFilterChange () { sbomPaging.onFilterChange() }
+function onSbomSearchInput () { sbomPaging.onSearchInput() }
+function loadMoreSbomComponents () { sbomPaging.loadMore() }
 
 async function loadSbomComponents (forceRefresh: boolean = false) {
-    if (!updatedRelease.value?.uuid) return
-    if (sbomComponentsLoaded.value && !forceRefresh) return
-    sbomComponentsLoading.value = true
-    try {
-        sbomComponents.value = await loadSbomComponentsForRelease(graphqlClient as any, updatedRelease.value.uuid)
-        sbomComponentsLoaded.value = true
-        // Refresh invalidates the deeper graph too — rows may have changed.
-        if (forceRefresh) {
-            sbomGraphLoaded.value = false
-            sbomGraphByUuid.value = {}
-            sbomGraphDirty.value = true
-        }
-    } catch (err: any) {
-        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
-    } finally {
-        sbomComponentsLoading.value = false
+    if (forceRefresh) sbomForceRefreshPending = true
+    await sbomPaging.load(forceRefresh)
+    // The gauge loads with the list, and ONLY with the list. Not from loadMore, and not from
+    // a filter or search change: coverage is release-scoped, so paging and filtering move
+    // the rows on screen without moving the number above them. Wiring it to those would make
+    // the gauge flicker on every keystroke while reporting the same value.
+    await loadSbomCoverage()
+}
+
+// Bulk attestation over the current filter (FDA-Readiness-1 PR5.4).
+//
+// The walk and the writes live in useBulkAttest; this is selection, confirmation and
+// reporting. The confirmation is the load-bearing part: a sweep writes a regulatory claim
+// across up to five thousand components on one click, and there is no bulk undo.
+const bulk = useBulkAttest()
+const bulkModalOpen: Ref<boolean> = ref(false)
+const bulkStage: Ref<'compose' | 'confirm' | 'done'> = ref('compose')
+const bulkForm: BulkAttestInput = reactive(emptyBulkForm())
+/**
+ * A collected selection carries the filter and search it was walked under. Kept WITH the
+ * ids rather than read live at confirm and submit time: the search debounce can reassign
+ * the applied filter behind the open modal. Reading
+ * it live would let the confirmation describe one set while writing another, and would
+ * evaluate the concurrent-write check against a filter the walk never used.
+ */
+interface BulkSelection extends Omit<BulkCollectResult, 'refused'> {
+    filter: SupportAttestationFilter
+    search: string
+}
+
+const emptyBulkSelection = (): BulkSelection =>
+    ({ ids: [], backlogTotal: 0, sample: [], filter: 'UNATTESTED', search: '' })
+
+const bulkCollected: Ref<BulkSelection> = ref(emptyBulkSelection())
+const bulkResult: Ref<BulkOutcome | null> = ref(null)
+const bulkAppliedLabel: ComputedRef<string> = computed(
+    (): string => filterLabel(bulkCollected.value.filter))
+const bulkAssessedAt: Ref<string> = ref('')
+
+/** Failures grouped by message: 800 identical validation errors are one line, not 800. */
+const bulkFailureGroups: ComputedRef<Record<string, number>> = computed(() => {
+    const out: Record<string, number> = {}
+    for (const r of bulkResult.value?.results ?? []) {
+        if (r.outcome !== 'FAILED') continue
+        const key = r.message || 'no reason given'
+        out[key] = (out[key] ?? 0) + 1
     }
+    return out
+})
+
+const bulkPercent: ComputedRef<number> = computed((): number =>
+    Math.round(100 * bulk.progress.value / Math.max(bulkCollected.value.ids.length, 1)))
+
+/** The operator's word for a filter value, never the raw wire enum. */
+function filterLabel (value: string): string {
+    return sbomAttestationFilterOptions.find(o => o.value === value)?.label ?? value
+}
+
+/** Same for the party, which the confirmation must show: it is exported on the BOM. */
+function partyLabel (value: SupportParty | null): string {
+    if (!value) return 'not stated'
+    return PARTY_OPTIONS.find(o => o.value === value)?.label ?? value
+}
+
+const bulkErrors: ComputedRef<string[]> = computed(
+    (): string[] => validateBulkInput(bulkForm))
+
+function bulkBackToCompose () { bulkStage.value = 'compose' }
+
+function openBulkAttest () {
+    // Invalidates any walk still running from a previous open.
+    bulkGen += 1
+    // A refusal from the previous open ("7412 components, more than the 5000 a browser
+    // sweep will attempt") lives on the composable, not here, and is cleared only inside
+    // collect/submit -- so without this the operator narrows their filter and is met by a
+    // fresh empty form still carrying the old refusal.
+    bulk.error.value = null
+    // "Stop after this batch" tells the operator re-running is safe and completes the
+    // remainder, but the only way back in is through here. Wiping the form would make them
+    // retype level, party, justification, date and reason from memory, so the second half
+    // of one sweep could carry a different justification than the first. Keep it after a
+    // deliberate stop; clear it otherwise.
+    const resuming = bulkResult.value?.stoppedEarly === true
+    bulkStage.value = 'compose'
+    bulkResult.value = null
+    bulkCollected.value = emptyBulkSelection()
+    if (!resuming) Object.assign(bulkForm, emptyBulkForm())
+    bulkModalOpen.value = true
+}
+
+/**
+ * Walk the CURRENTLY APPLIED filter and collect ids. Writes nothing.
+ *
+ * Uses the applied filter and search, never the live inputs: during the search debounce
+ * those differ, and sweeping what the box says rather than what the list shows is exactly
+ * how an operator attests the wrong set.
+ */
+let bulkGen = 0
+
+async function collectBulkTargets () {
+    if (!updatedRelease.value?.uuid) return
+    // Generation guard, same as attestGen below and for the same reason -- which I had
+    // already fixed once in this file and did not carry across. The walk is awaited and the
+    // modal stays closable while it runs, so closing and reopening lets a late collect land
+    // on the reopened form: it jumps to confirm holding the PREVIOUS search's ids while the
+    // screen renders the CURRENT filter beside them. A confirmation describing a different
+    // set than it will write is the one failure this stage exists to prevent.
+    const gen = ++bulkGen
+    const res = await bulk.collect(graphqlClient as any, updatedRelease.value.uuid,
+        sbomAppliedFilter.value, sbomAppliedSearch.value)
+    if (gen !== bulkGen) return
+    if (res.refused) return
+    // Pinned alongside the ids: the confirmation must describe -- and the write must use --
+    // the filter the walk actually ran under, not whatever the list is showing by the time
+    // the operator reads it.
+    bulkCollected.value = {
+        ids: res.ids, backlogTotal: res.backlogTotal, sample: res.sample,
+        filter: sbomAppliedFilter.value, search: sbomAppliedSearch.value
+    }
+    bulkStage.value = 'confirm'
+}
+
+async function runBulkAttest () {
+    // Re-checked at the moment of the write, not only at the moment of the click that led
+    // here. The compose stage stays mounted through the walk, so the values validated
+    // before "Review selection" are not necessarily the values about to be sent -- and
+    // reason is a UI-only requirement the server will not enforce for us.
+    if (bulkErrors.value.length) { bulkStage.value = 'compose'; return }
+    // One instant for the whole sweep, captured HERE -- at the moment the operator confirms,
+    // not per write. The sweep is one act of assessment.
+    bulkAssessedAt.value = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+    bulkResult.value = await bulk.submit(graphqlClient as any, bulkCollected.value.ids,
+        { ...bulkForm, assessedAt: bulkAssessedAt.value }, bulkCollected.value.filter)
+    bulkStage.value = 'done'
+    // The gauge and the list both moved. Reported separately from the write, same as the
+    // per-component path below: a stale list after 800 successful attestations is not a
+    // failed sweep, and a bare red "Error" over "800 attested." leaves the operator unable
+    // to tell which half went wrong.
+    try {
+        await loadSbomComponents(true)
+    } catch (err: any) {
+        notify('warning', 'Attested, but the list did not refresh',
+            'The attestations were written. The list and coverage above may be stale until'
+            + ' you reload: ' + commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+// Per-component attestation form (FDA-Readiness-1 PR5.3).
+//
+// The rules about when a save is allowed live in useAttestationForm, outside this file, so
+// they can be tested; what follows is opening, saving and refreshing.
+const attestForm = useAttestationForm()
+const attestModalOpen: Ref<boolean> = ref(false)
+const attestRow: Ref<any> = ref(null)
+const attestLoading: Ref<boolean> = ref(false)
+const attestSaving: Ref<boolean> = ref(false)
+const attestNothingPublishedText: Ref<string> = ref('')
+
+const LEVEL_OPTIONS: Array<{ label: string, value: LevelOfSupport }> = [
+    { label: 'Actively maintained', value: 'ACTIVELY_MAINTAINED' },
+    { label: 'No longer maintained', value: 'NO_LONGER_MAINTAINED' },
+    { label: 'Abandoned', value: 'ABANDONED' }
+]
+// The party is an attribute OF the attestation -- who the claim is about, first party or
+// third -- so it belongs inside the form rather than beside it as its own control.
+// Typed against the union so a value the backend does not declare is a COMPILE error. The
+// first version of this array invented two, and they failed only at request time -- wearing
+// the costume of an out-of-date server.
+const PARTY_OPTIONS: Array<{ label: string, value: SupportParty }> = [
+    { label: 'First party (our own component)', value: 'FIRST_PARTY' },
+    { label: 'Third party (someone else\'s project)', value: 'THIRD_PARTY' }
+]
+// One row per milestone: its date and the notes that justify it.
+const MILESTONE_FIELDS: Array<{ type: SupportMilestoneType, field: string, label: string }> = [
+    { type: 'END_OF_GUARANTEED_SUPPORT', field: 'endOfGuaranteedSupportDate',
+        label: 'End of guaranteed support' },
+    { type: 'END_OF_SUPPORT', field: 'endOfSupportDate', label: 'End of support' },
+    { type: 'END_OF_LIFE', field: 'endOfLifeDate', label: 'End of life (end of sale)' }
+]
+
+const MILESTONE_CLEAR_OPTIONS: Array<{ label: string, value: SupportMilestoneType }> = [
+    { label: 'End of guaranteed support', value: 'END_OF_GUARANTEED_SUPPORT' },
+    { label: 'End of support', value: 'END_OF_SUPPORT' },
+    { label: 'End of life', value: 'END_OF_LIFE' }
+]
+
+let attestGen = 0
+
+async function openAttestForm (row: any) {
+    // Generation guard. attestRow is set synchronously but the seed load is awaited, so
+    // cancelling and opening a different component can land A's attestation in a form whose
+    // row is B -- and the save then diffs A's baseline and writes the result to B's uuid.
+    // An attestation recorded against the wrong component is silent and near-undetectable.
+    const gen = ++attestGen
+    attestRow.value = row
+    attestNothingPublishedText.value = ''
+    attestModalOpen.value = true
+    attestLoading.value = true
+    try {
+        const res = await loadSbomComponentSupportDetail(
+            graphqlClient as any, updatedRelease.value.uuid,
+            row.component?.uuid || row.sbomComponentUuid)
+        if (gen !== attestGen) return
+        attestForm.open(res.attestation)
+    } catch (err: any) {
+        if (gen !== attestGen) return
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        attestModalOpen.value = false
+    } finally {
+        if (gen === attestGen) attestLoading.value = false
+    }
+}
+
+/** Closing invalidates any in-flight seed, so a late response cannot reopen or reseed. */
+function cancelAttest () {
+    attestGen += 1
+    attestLoading.value = false
+    attestModalOpen.value = false
+}
+
+function applyNothingPublished () {
+    attestForm.assessedNothingPublished(attestNothingPublishedText.value)
+    attestNothingPublishedText.value = ''
+}
+
+async function saveAttestation () {
+    // Guarded here as well as by the disabled button: a double-click on OK is the classic
+    // way a modal fires twice, and the second write would bump the audit revision again.
+    if (attestSaving.value || !attestForm.canSubmit()) return
+    attestSaving.value = true
+    let saved = false
+    const done: Array<Record<string, unknown>> = []
+    let attestFailedTotal = 0
+    try {
+        // SERIALISED: the mutation takes one supportNotes argument, so notes for two
+        // milestones in one call would land on both. One call per edited milestone, each
+        // its own audit revision -- honest rather than clever. Sequential, not parallel:
+        // they touch the same optimistic-locked row.
+        const componentUuid = attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid
+        const sets = attestForm.variableSets(componentUuid)
+        attestFailedTotal = sets.length
+        try {
+            for (const vars of sets) {
+                await setSbomComponentSupportVars(graphqlClient as any, vars)
+                done.push(vars)
+            }
+            attestModalOpen.value = false
+        } finally {
+            // PARTIAL SUCCESS IS REAL on a serialised save, and reporting it as a plain
+            // failure is worse than useless: the operator resubmits, and the milestone that
+            // already landed is written a second time -- re-stamping its lastAssessed for an
+            // assessment that happened once. Fold what landed into the baseline so a retry
+            // sends only the remainder.
+            if (done.length) attestForm.markSaved(done)
+        }
+        saved = true
+    } catch (err: any) {
+        if (done.length) {
+            notify('warning', `Saved ${done.length} of ${attestFailedTotal} changes`,
+                'The rest could not be saved: '
+                + commonFunctions.parseGraphQLError(err.message)
+                + ' What already saved has been kept; pressing Save again sends only the'
+                + ' remainder.')
+            // Still refresh: part of the record moved, so the list and gauge are stale.
+            saved = true
+        } else {
+            notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        }
+    } finally {
+        attestSaving.value = false
+    }
+    if (!saved) return
+    // Refreshed OUTSIDE the write's try, and reported separately.
+    //
+    // forceRefresh, because the gauge only re-reads with the list and an attestation is
+    // exactly what moves the number above the table -- without it the write succeeds and the
+    // gauge stays stale, which reads as a failure.
+    //
+    // But a refresh failure is NOT a write failure. Inside the same try it would produce
+    // "Saved" followed by "Error" for a write that landed perfectly, leaving the operator
+    // unable to tell whether to redo it -- which is the exact ambiguity this screen exists to
+    // remove. Say which half failed.
+    try {
+        await loadSbomComponents(true)
+        notify('success', 'Saved', 'Support attestation recorded.')
+    } catch (err: any) {
+        notify('warning', 'Saved, but not refreshed',
+            'The attestation was recorded. The component list could not be reloaded, so the'
+            + ' coverage figure above may be out of date until you refresh.')
+    }
+}
+
+// Release-scoped support-disclosure gauge (FDA-Readiness-1).
+//
+// Sourced from sbomComponentSupportCoverage(orgUuid, releaseUuid) and NOTHING ELSE. In
+// particular NOT from the component list's totalCount: the two are equal for the ALL filter
+// by construction, which is exactly what makes deriving one from the other tempting and
+// wrong. The gauge answers "how much of this release is disclosed"; the list total answers
+// "how many rows match your current filter", and it moves when the operator touches a
+// control. A gauge that shifted when someone typed in a search box would be reporting the
+// filter, not the release.
+const sbomCoverageState = useReleaseSupportCoverage(graphqlClient as any)
+const sbomCoverage = sbomCoverageState.coverage
+const sbomCoverageLoading = sbomCoverageState.loading
+const sbomCoverageDisplay: ComputedRef<CoverageDisplay> = computed(
+    (): CoverageDisplay => coverageDisplay(sbomCoverage.value, sbomCoverageState.error.value))
+
+async function loadSbomCoverage () {
+    await sbomCoverageState.load(
+        updatedRelease.value?.orgDetails?.uuid, updatedRelease.value?.uuid)
 }
 
 async function ensureSbomGraphLoaded (forceRefresh: boolean = false) {
@@ -3087,6 +4584,27 @@ function openSbomComponentGraphByPurl (purl: string) {
     window.open(href, '_blank')
 }
 
+/**
+ * The support badge for a component, or null when it is not flagged.
+ *
+ * The mapping, the fail-loud path for an unrecognised status, and the flagged-verdict set
+ * all live in utils/supportStatusTag.ts so they can be tested -- see
+ * supportStatusTag.spec.ts. The rendering stays here because it needs naive-ui.
+ */
+function deviceRiskBadge (c: any): any {
+    if (!isDeviceRiskFlagged(c.deviceSupportRisk)) return null
+    return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+        trigger: () => h(NTag, { size: 'small', type: 'error', round: true, bordered: true },
+            () => DEVICE_RISK_LABEL[c.deviceSupportRisk]),
+        default: () => h('div', { style: 'font-size: 12px;' }, [
+            h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 'Outlived by this device'),
+            h('div', DEVICE_RISK_DETAIL[c.deviceSupportRisk]),
+            h('div', { style: 'margin-top: 4px;' },
+                'Disclose and address it, or plan a replacement before the device ships.')
+        ])
+    })
+}
+
 const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'name',
@@ -3121,6 +4639,45 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
         render: (row: any) => h('span', { style: 'word-break: break-all; font-family: monospace; font-size: 12px;' }, row.component?.canonicalPurl || '')
     },
     {
+        key: 'support',
+        title: 'Support',
+        sorter: (a: any, b: any) => (a.component?.supportStatus || '').localeCompare(b.component?.supportStatus || ''),
+        render: (row: any) => {
+            const c = row.component || {}
+            // Un-attested components have no supportSource -> a neutral dash, not UNKNOWN.
+            // The distinction is the point of this column: "nobody has recorded anything" and
+            // "somebody recorded that it is unknown" are different disclosures.
+            if (!c.supportSource) {
+                // A component can carry dates (hence a device verdict) without a source once a
+                // non-MANUAL writer exists, so the marker rides along here too -- see
+                // deviceRiskBadge. Today this is unreachable and costs one null check.
+                const unattestedRisk = deviceRiskBadge(c)
+                // Escaped, not a literal em-dash: the source stays plain ASCII per
+                // coding_principles, and the rendered output is identical.
+                return h('div', [h('span', { style: 'color: #999;' }, '\u2014'),
+                    unattestedRisk ? h('div', { style: 'margin-top: 3px;' }, [unattestedRisk]) : null])
+            }
+            // A withdrawn attestation is neither a live status nor an unassessed component.
+            // Its dates stay on the row -- withdrawal supersedes, it does not erase -- so the
+            // EOS suffix is suppressed with the status: printing "EOS 2025-12-31" beside
+            // "Withdrawn" would put the retracted date back on screen as if it still stood.
+            const withdrawn = isWithdrawnAttestation(c.attestationState)
+            const tag = withdrawn ? WITHDRAWN_TAG : supportTag(c.supportStatus)
+            const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
+            if (c.endOfSupportDate && !withdrawn) {
+                els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
+            }
+            // The device check is a second, independent verdict -- see DEVICE_RISK_LABEL. The
+            // backend only ever returns a flagged value on a PRODUCT (device) release, so this
+            // needs no release-type gate of its own.
+            const risk = deviceRiskBadge(c)
+            if (risk) {
+                els.push(h('div', { style: 'margin-top: 3px;' }, [risk]))
+            }
+            return h('div', els)
+        }
+    },
+    {
         key: 'artifacts',
         title: 'Artifacts',
         render: (row: any) => {
@@ -3146,6 +4703,13 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
         title: 'Actions',
         render: (row: any) => {
             const els: any[] = [h(NButton, { size: 'small', onClick: () => openSbomComponentGraph(row) }, () => 'View graph')]
+            // Root components are the release's own coordinate, never a third-party
+            // dependency to disclose -- the server skips them and the gauge excludes them,
+            // so offering the action would be offering a no-op.
+            if (isWritable.value && !row.component?.isRoot) {
+                els.push(h(NButton, { size: 'small', type: 'primary', ghost: true,
+                    onClick: () => openAttestForm(row) }, () => 'Attest'))
+            }
             return h('div', { style: 'display: flex; gap: 6px;' }, els)
         }
     }
@@ -4147,27 +5711,203 @@ async function uploadNewBomVersion (art: any) {
     
 }
 
+/**
+ * The Device Support Statement (FDA labeling VI.A), for a patient, caregiver or biomed reader.
+ *
+ * Same collector as the addendum, so the two documents cannot disagree about the device's
+ * dates -- but a different reader, so it carries no inventory, no purls and no counts.
+ *
+ * BLOCKED rather than degraded when it cannot be generated honestly. A component release is
+ * not a device; an unauthored prose slot would leave an empty section, and on a patient-facing
+ * document a silent gap is itself the misleading thing. The block names what is missing and
+ * where to fix it.
+ */
+async function exportDeviceSupportStatement () {
+    try {
+        bomExportPending.value = true
+        const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
+        if (!orgUuid) {
+            Swal.fire('Statement not generated',
+                'This release did not carry an organization, so the required text cannot be'
+                + ' resolved. Reload the page and try again.', 'error')
+            return
+        }
+        // Collect, refuse, render, download -- all four in the shared helper, which the
+        // shipment entry point on the Distribution page calls too (plan 7h). A FAILED
+        // outcome is "something went wrong"; a BLOCKED one is "this document must not exist
+        // yet", and the two have always been shown differently here.
+        const outcome = await generateDeviceSupportStatement(graphqlClient as any, {
+            releaseUuid: updatedRelease.value.uuid, orgUuid
+        })
+        if (!outcome.ok) {
+            Swal.fire('Statement not generated', outcome.message, outcome.kind === 'BLOCKED' ? 'warning' : 'error')
+            return
+        }
+        notify('success', 'Statement exported', 'Device support statement downloaded.')
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')
+    } finally {
+        bomExportPending.value = false
+    }
+}
+
+/**
+ * The FDA support addendum (FDA-Readiness-1 7g): a DIFFERENT DOCUMENT that shares the
+ * export modal.
+ *
+ * Assembled client-side by collectAddendumData, which is deliberately document-agnostic --
+ * the PDF and the Device Support Statement consume the same collector unchanged. A
+ * server-rendered CSV would have been a second source of truth for the same document.
+ *
+ * REFUSES rather than downloading a partial. A truncated addendum is the dangerous output:
+ * a regulatory document that looks complete while under-reporting how many components have
+ * no support attestation, which is the one number a reviewer is looking for. The collector
+ * returns no data at all on any refusal, so there is nothing here to accidentally save.
+ */
+async function exportFdaAddendum (mediaType: string) {
+    try {
+        bomExportPending.value = true
+        const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
+        if (!orgUuid) {
+            // Refused in the same voice as every other refusal. Without this the operator
+            // gets a raw GraphQL variable-coercion message about $orgUuid, which reads as a
+            // server fault rather than as "this release did not carry its org".
+            Swal.fire('Addendum not generated',
+                'This release did not carry an organization, so the labeling statements'
+                + ' cannot be resolved. Reload the page and try again.', 'error')
+            return
+        }
+        const result = await collectAddendumData(
+            graphqlClient as any, updatedRelease.value.uuid, orgUuid)
+        if (!result.ok) {
+            Swal.fire('Addendum not generated', result.error, 'error')
+            return
+        }
+        // The collection is identical for both encodings -- only the rendering differs -- so
+        // the branch is here rather than at the top. That keeps ONE refusal path: a partial
+        // document must be impossible in both formats, not in whichever one was written first.
+        const asPdf = mediaType === 'FDA_ADDENDUM_PDF'
+        // Refused BEFORE rendering, in the same voice as every other addendum refusal.
+        // pdfmake ships Roboto only and silently DROPS a character it cannot draw, so a
+        // component named in Japanese would leave a blank cell in a document meant to be
+        // complete -- while the CSV for the same release shows the text.
+        const unrenderable = asPdf ? findUnrenderableText(result.data) : null
+        if (unrenderable) {
+            Swal.fire('Addendum not generated', unrenderable, 'error')
+            return
+        }
+        const blob = asPdf
+            ? await renderAddendumPdfBlob(result.data)
+            : new Blob([renderAddendumCsv(result.data)], { type: 'text/csv;charset=utf-8' })
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = asPdf ? addendumPdfFileName(result.data) : addendumFileName(result.data)
+        // append -> click -> remove -> revoke, following utils/bovExport.ts rather than the
+        // older exports in this file: revoking the URL of a DETACHED anchor races the
+        // browser's own fetch of it in some engines, and a silently empty download is a
+        // particularly bad failure for a document someone is about to file.
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(link.href)
+        notify('success', 'Addendum exported',
+            `${asPdf ? 'PDF' : 'CSV'}: ${result.data.totalComponents} components,`
+            + ` ${result.data.unassessedComponents} with no attestation.`)
+    } catch (err: any) {
+        // extractGraphQLErrorMessage, not the parseGraphQLError(err.message) its neighbours
+        // use: this catch only fires on throws collectAddendumData did NOT convert into a
+        // refusal, so err may be anything -- and parseGraphQLError calls startsWith on its
+        // argument, throwing a TypeError out of the catch itself when there is no string
+        // message. That exact defect was found on the previous PR in this feature.
+        Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')
+    } finally {
+        bomExportPending.value = false
+    }
+}
+
+/**
+ * The Support documents' own export entry point.
+ *
+ * NOT exportReleaseSbom. Routing the support documents through that signature meant handing it
+ * tldOnly, ignoreDev, the structure and the rebom type -- four BOM-shaping arguments none of
+ * these documents reads -- and a reviewer had to follow the call two frames deep to learn they
+ * were discarded. That is the same "enabled and silently ignored" shape the controls
+ * themselves were hidden to avoid, moved into the call site.
+ *
+ * The media type still does the routing, because it is what the radio group writes.
+ */
+async function exportSupportDocument () {
+    if (selectedSbomMediaType.value === 'DEVICE_STATEMENT') return exportDeviceSupportStatement()
+    return exportFdaAddendum(selectedSbomMediaType.value)
+}
+
+/**
+ * The release BOM export, in two shapes.
+ *
+ * FULL carries the per-export metadata flags; CORE is the document every backend has always
+ * accepted. Written out as two constants rather than built by string concatenation so both
+ * are parsed at module load and validate-graphql.mjs can see them.
+ */
+const SBOM_EXPORT_WITH_METADATA_FLAGS = gql`
+    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType], $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean) {
+        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes, includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata)
+    }`
+
+const SBOM_EXPORT_CORE = gql`
+    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType]) {
+        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
+    }`
+
+function runSbomExport (mutation: any, variables: Record<string, any>): Promise<any> {
+    return graphqlClient.mutate({ mutation, variables, fetchPolicy: 'no-cache' })
+}
+
 async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
+    // The two support-document redirects that used to open this function are GONE, not
+    // merely unused: the Support documents are their own bom type with their own form and
+    // their own handler (exportSupportDocument), so nothing can reach here asking for one.
+    // Keeping unreachable redirects would leave two entry points for one document and invite
+    // the next reader to add a third.
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
-        const gqlResp: any = await graphqlClient.mutate({
-            mutation: gql`
-                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType]) {
-                    releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
-                }
-            `,
-            variables: {
-                release: updatedRelease.value.uuid,
-                tldOnly: tldOnly,
-                ignoreDev: ignoreDev,
-                structure: selectedBomStructureType,
-                belongsTo: selectedRebomType ? selectedRebomType : null,
-                mediaType: mediaType.toUpperCase(),
-                excludeCoverageTypes: excludeCoverageTypes
-            },
-            fetchPolicy: 'no-cache'
+        const baseVariables: Record<string, any> = {
+            release: updatedRelease.value.uuid,
+            tldOnly: tldOnly,
+            ignoreDev: ignoreDev,
+            structure: selectedBomStructureType,
+            belongsTo: selectedRebomType ? selectedRebomType : null,
+            mediaType: mediaType.toUpperCase(),
+            excludeCoverageTypes: excludeCoverageTypes
+        }
+        // The retry rule lives in utils/exportMetadataFallback so it can be RUN -- including
+        // the case that matters most, that the server's deliberate refusal is NOT retried
+        // into the flagless document the refusal exists to prevent.
+        const attempt = await exportWithMetadataFallback({
+            runFull: () => runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
+                ...baseVariables,
+                // Three outcomes, and the no-switch one must be NULL rather than false --
+                // the rule and the reason live in utils/exportMetadataFallback so they can
+                // be run, because nothing in the unit suite mounts this component.
+                includeSupportMetadata: supportMetadataArg(
+                    orgSupportInjectionEnabled.value, includeSupportMetadata.value),
+                includeInternalMetadata: includeInternalMetadata.value
+            }),
+            runCore: () => runSbomExport(SBOM_EXPORT_CORE, baseVariables),
+            flagsUnsupported: exportMetadataArgsUnsupported.value,
+            isDriftError: isSchemaDriftError
         })
+        if (attempt.justDiscovered) {
+            // Latched only now that the flagless document has actually WORKED, and said out
+            // loud exactly once. Every later export is flagless too -- the form says so from
+            // here on, because repeating this toast per export is noise and leaving the
+            // switches looking live is the lie-by-omission the feature exists to remove.
+            exportMetadataArgsUnsupported.value = true
+            notify('warning', 'Metadata options ignored',
+                'This server does not support the per-export metadata options yet, so the'
+                + ' export used the organization default.')
+        }
+        const gqlResp: any = attempt.data
         let blobType = mediaType === 'JSON' ? 'application/json' : mediaType === 'EXCEL' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'
         let exportContent = gqlResp.data.releaseSbomExport
         if (mediaType === 'JSON') {
@@ -4961,6 +6701,28 @@ const releaseHistoryFields = computed(() => [
             }
             if (row.rus === 'LIFECYCLE') {
                 const txt = `${resolveLifecycleLabel(row.oldValue)} -> ${resolveLifecycleLabel(row.newValue)}`
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
+            }
+            // A SUPPORT_WINDOW event carries old/new values and NO objectId, so without
+            // this branch it falls through to `return row.objectId` and the row renders
+            // blank -- a Scope column saying the window changed, next to nothing saying
+            // what it changed to. That line is what a Device Support Statement is defended
+            // with, so it has to read.
+            if (row.rus === 'SUPPORT_WINDOW') {
+                const txt = `${formatSupportWindow(row.oldValue)} -> ${formatSupportWindow(row.newValue)}`
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
+            }
+            // Same shape as SUPPORT_WINDOW: a FDA_NARRATIVE event carries old/new values and
+            // no objectId, so without this branch the row falls through to `return
+            // row.objectId` and renders BLANK -- a Scope column saying the justification
+            // changed, beside nothing saying anything about it.
+            //
+            // Lengths, never the text. The stored values are 200-character EXCERPTS, so
+            // rendering them would show a sentence stopping mid-word; and this table is a
+            // dense list of every change to the release, where paragraphs of regulatory prose
+            // make the surrounding rows unreadable. The full current text is one panel away.
+            if (row.rus === 'FDA_NARRATIVE') {
+                const txt = formatNarrativeChange(row.oldValue, row.newValue)
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             // For artifact events from acollections, show type with info icon
@@ -6030,18 +7792,18 @@ function renderRecognitionBadge (row: any) {
     if (isWritable.value && row.uuid) {
         children.push(h(NButton, {
             size: 'tiny', quaternary: true, style: 'margin-left: 4px;',
-            onClick: () => openAttest(row)
+            onClick: () => openCommitClaim(row)
         }, { default: () => claim === 'CONFLICT' ? 'resolve' : 'claim' }))
     }
     return h('div', { style: 'display: flex; align-items: center;' }, children)
 }
 
-const attestModalOpen = ref(false)
-const attestSubject = ref<any>(null)
-const attestDraft = reactive({ verdict: 'MINE', note: '' })
+const commitClaimModalOpen = ref(false)
+const commitClaimSubject = ref<any>(null)
+const commitClaimDraft = reactive({ verdict: 'MINE', note: '' })
 
-const attestClaims: ComputedRef<any[]> = computed((): any[] =>
-    (attestSubject.value?.attestation?.claims || []).filter((c: any) => !!c))
+const commitClaimClaims: ComputedRef<any[]> = computed((): any[] =>
+    (commitClaimSubject.value?.attestation?.claims || []).filter((c: any) => !!c))
 
 /**
  * Withdraw one standing statement. This is what resolves a contested commit: the claim that
@@ -6055,33 +7817,33 @@ async function withdrawClaim (claim: any) {
             reason: 'withdrawn from the release page'
         })
         notify('success', 'Withdrawn', 'The statement is revoked and kept on the record.')
-        attestModalOpen.value = false
+        commitClaimModalOpen.value = false
         await fetchRelease()
     } catch (error: any) {
         notify('error', 'Error', commonFunctions.extractGraphQLErrorMessage(error))
     }
 }
 
-function openAttest (row: any) {
-    attestSubject.value = row
-    attestDraft.verdict = 'MINE'
-    attestDraft.note = ''
-    attestModalOpen.value = true
+function openCommitClaim (row: any) {
+    commitClaimSubject.value = row
+    commitClaimDraft.verdict = 'MINE'
+    commitClaimDraft.note = ''
+    commitClaimModalOpen.value = true
 }
 
-async function submitAttest () {
+async function submitCommitClaim () {
     try {
         await store.dispatch('attest', {
             subjectType: 'SCE',
-            subjectUuid: attestSubject.value.uuid,
-            verdict: attestDraft.verdict,
-            note: attestDraft.note
+            subjectUuid: commitClaimSubject.value.uuid,
+            verdict: commitClaimDraft.verdict,
+            note: commitClaimDraft.note
         })
         notify('success', 'Recorded',
-            attestDraft.verdict === 'MINE'
+            commitClaimDraft.verdict === 'MINE'
                 ? 'The commit is now accountable. Any lock waiting only on it can be released.'
                 : 'Recorded as disowned. Locks waiting on it now need an admin.')
-        attestModalOpen.value = false
+        commitClaimModalOpen.value = false
         await fetchRelease()
     } catch (error: any) {
         notify('error', 'Error', commonFunctions.extractGraphQLErrorMessage(error))
@@ -6602,6 +8364,12 @@ async function handleTabSwitch(tabName: string) {
         await fetchInProducts()
     } else if (tabName === "vex") {
         await fetchReleaseVexProposals()
+    } else if (tabName === "support") {
+        // The gauge is release-scoped and is otherwise only fetched when the SBOM list loads,
+        // so a Support tab opened first would render an empty alert forever. Loading it here
+        // as well keeps the two copies of the gauge showing the same number whichever tab the
+        // operator reached first.
+        await loadSbomCoverage()
     }
 }
 

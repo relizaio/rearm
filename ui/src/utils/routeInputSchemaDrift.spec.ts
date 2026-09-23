@@ -161,11 +161,24 @@ describe('Pro-only BOOLEAN route fields (notifyComponentOwner)', () => {
             buildNotificationRouteInput(ownerRoute))).toEqual([])
     })
 
-    it('CE lacks the field, and the off-state payload still coerces there', () => {
+    /**
+     * CE HAS the field now -- the backend sync that brought the FDA support surface carried
+     * notifyComponentOwner with it, closing board gap t20260802-061733-4375. This used to
+     * assert the opposite.
+     *
+     * The builder still omits the flag when it is off and still strips it from the _raw
+     * passthrough, and that is deliberately NOT changed here: this is the notifications
+     * feature, not the FDA one, and the omission is also what keeps an off-state payload
+     * minimal. Whether the stripping is still wanted now that CE accepts the field is a
+     * question for that feature's owner -- noted on the board rather than decided here.
+     */
+    it('CE now accepts the field, and the off-state payload still coerces there', () => {
         if (!ceSchema) return
         expect(coerceErrors(ceSchema, 'NotificationRouteInput',
-            { channels: ['ch-1'], notifyComponentOwner: true }).join(' '))
-            .toMatch(/notifyComponentOwner/)
+            { channels: ['ch-1'], notifyComponentOwner: true }),
+        'CE rejected notifyComponentOwner -- if the sync no longer carries it, the builder'
+            + ' must go back to stripping it for a reason, not just out of habit')
+            .toEqual([])
         expect(coerceErrors(ceSchema, 'NotificationRouteInput',
             buildNotificationRouteInput({ ...ownerRoute, notifyComponentOwner: false, channels: ['ch-1'] })))
             .toEqual([])
