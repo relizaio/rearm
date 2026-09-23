@@ -605,7 +605,7 @@ import { effectiveTemplate } from '@/utils/agentDocuments'
 const TEMPLATE_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT']
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
-import { strengthDraft, strengthInput, strengthSummary } from '@/utils/roleStrength'
+import { mergeOutputs, strengthDraft, strengthInput, strengthSummary } from '@/utils/roleStrength'
 
 const props = defineProps<{ orgUuid: string }>()
 
@@ -1249,9 +1249,7 @@ async function saveRole () {
                 // Always sent for an agentic role, including as an empty list: omitting it would
                 // leave a role's outputs unchanged, so an operator could never REMOVE one.
                 producesOutputs: editingRole.value.kind === 'HUMAN' ? null
-                    : (editingRole.value.producesOutputTypes ?? []).map((spec: string) => ({
-                        specification: spec, scope: 'TASK', required: true,
-                    })),
+                    : mergeOutputs(editingRole.value.producesOutputs, editingRole.value.producesOutputTypes ?? []),
                 // A HUMAN role has no model; leaving the fields out leaves nothing to refuse.
                 ...(editingRole.value.kind === 'HUMAN' ? {} : strengthInput(editingRole.value.strength)),
             },

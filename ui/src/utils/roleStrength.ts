@@ -42,3 +42,19 @@ export function strengthSummary (r: any): string {
     if (n) parts.push(`${n} override${n === 1 ? '' : 's'}`)
     return parts.join(' · ') || '—'
 }
+
+/**
+ * The outputs to save for a role, given what it had and which types the editor now selects.
+ * The editor only picks types, so an output the role already had keeps its scope and whether it
+ * is required -- rewriting every one as TASK-scoped and required would turn an optional output
+ * into one the role cannot sign off without. Defaults apply to newly added types only.
+ */
+export function mergeOutputs (existing: any[] | null | undefined, selected: string[]) {
+    const bySpec = new Map((existing ?? []).map((o: any) => [o?.specification, o]))
+    return selected.map(spec => {
+        const had = bySpec.get(spec)
+        return had
+            ? { specification: spec, scope: had.scope ?? 'TASK', required: had.required !== false }
+            : { specification: spec, scope: 'TASK', required: true }
+    })
+}

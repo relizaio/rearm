@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { strengthDraft, strengthInput, strengthSummary } from './roleStrength'
+import { mergeOutputs, strengthDraft, strengthInput, strengthSummary } from './roleStrength'
 
 describe('roleStrength', () => {
     it('drafts an empty role as no floor, zero headroom and no overrides', () => {
@@ -27,5 +27,15 @@ describe('roleStrength', () => {
         expect(strengthSummary({ requiredStrength: 3.5, strengthHeadroom: 0.5, strengthCategory: 'QA',
             modelStrengths: [{ model: 'a', strength: 1 }] })).toBe('≥ 3.5 (+0.5) · QA · 1 override')
         expect(strengthSummary({})).toBe('—')
+    })
+
+    it('keeps an existing output as it was and defaults only the new ones', () => {
+        const existing = [{ specification: 'DESIGN', scope: 'COMPONENT', required: false }]
+        expect(mergeOutputs(existing, ['DESIGN', 'TEST_REPORT'])).toEqual([
+            { specification: 'DESIGN', scope: 'COMPONENT', required: false },
+            { specification: 'TEST_REPORT', scope: 'TASK', required: true },
+        ])
+        expect(mergeOutputs(existing, [])).toEqual([])
+        expect(mergeOutputs(undefined, ['DESIGN'])).toEqual([{ specification: 'DESIGN', scope: 'TASK', required: true }])
     })
 })
