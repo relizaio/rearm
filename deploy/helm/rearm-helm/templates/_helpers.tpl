@@ -97,9 +97,11 @@ bundled registry while the other still reads the external
 oci-registry-secrets (which the chart stops creating when the bundled
 registry is on) leaves it authenticating with nothing.
 
-The external-registry secret is optional, as it has always been for the
-artifact service: the chart creates it by default, and a deployment that
-manages it outside the chart should not be blocked from starting.
+The external-registry secret is REQUIRED. It used to be optional, on the
+reasoning that a deployment managing it outside the chart should not be
+blocked from starting -- but the artifact service has no anonymous mode,
+so "starts without credentials" is not a working state, only a slower
+failure. See the note on the refs below before making it optional again.
 */}}
 {{- define "rearm.ociRegistryEnv" -}}
 {{- $br := .Values.ociArtifactService.bundledRegistry -}}
@@ -118,6 +120,22 @@ manages it outside the chart should not be blocked from starting.
       name: {{ $zotSecret }}
       key: REGISTRY_TOKEN
 {{- else }}
+{{- /* NOT optional. The oci-artifact service has no anonymous mode: healthCheck
+     (main.go, wired at r.GET("/health")) calls Fatal when REGISTRY_USERNAME,
+     REGISTRY_TOKEN or REGISTRY_HOST is empty, logging "REGISTRY_USERNAME or
+     REGISTRY_TOKEN or REGISTRY_HOST not set". Note it dies on the first health
+     PROBE rather than at startup -- the process comes up, the liveness probe hits
+     /health, and it exits -- so there is no configuration in which an absent secret
+     is survivable, only one in which the failure looks briefly like a healthy boot.
+
+     With optional: true, a missing oci-registry-secrets does not stop the pod starting:
+     it starts with empty credentials and dies, and keeps dying. Observed in a live
+     deployment at 1560 restarts, showing only CrashLoopBackOff, with the actual cause
+     (create_secret_in_chart false and no externally-managed secret) visible nowhere
+     except the container log.
+
+     Required instead, so kubernetes reports the real fault on the pod:
+     CreateContainerConfigError, secret "oci-registry-secrets" not found. */}}
 - name: REGISTRY_HOST
   value: {{ .Values.ociArtifactService.registryHost }}
 - name: REGISTRY_USERNAME
@@ -125,13 +143,11 @@ manages it outside the chart should not be blocked from starting.
     secretKeyRef:
       name: oci-registry-secrets
       key: REGISTRY_USERNAME
-      optional: true
 - name: REGISTRY_TOKEN
   valueFrom:
     secretKeyRef:
       name: oci-registry-secrets
       key: REGISTRY_TOKEN
-      optional: true
 {{- end }}
 {{- end -}}
 
