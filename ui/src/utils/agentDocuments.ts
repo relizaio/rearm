@@ -37,6 +37,11 @@ export interface Finding {
     title?: string | null
     location?: { path?: string | null, line?: number | null, ref?: string | null } | null
     resolvedBy?: string | null
+    resolution?: string | null
+    /** Who last decided it -- a person or an agent session. Written by the server. */
+    decidedBy?: { kind?: string | null, uuid?: string | null, name?: string | null } | null
+    decidedIn?: string | null
+    decidedAt?: string | null
 }
 
 /** Types whose releases carry a findings index. */
@@ -117,6 +122,40 @@ export function documentLabel (release?: DocumentRelease | null): string {
 export function findingsOf (release?: DocumentRelease | null): Finding[] {
     const f = release?.document?.findings?.findings
     return Array.isArray(f) ? f as Finding[] : []
+}
+
+/** Lifecycles in which a round is not a round yet, or no longer one: a reservation mid-cut or abandoned. */
+const UNSETTLED = ['PENDING', 'CANCELLED', 'REJECTED']
+
+/**
+ * The newest round of one indexed type among a task's documents, which the server returns newest
+ * first. The newest round is the current state: each one carries forward what the last left open.
+ */
+export function latestRound (documents: DocumentRelease[] | null | undefined, spec: string): DocumentRelease | null {
+    return (documents ?? []).find(d => d?.document?.specification === spec && !!d?.document?.findings
+        && !UNSETTLED.includes(d?.lifecycle ?? '')) ?? null
+}
+
+/** Task states in which a person may decide findings; on a hold the server also refuses a new blocking item. */
+export const DECIDABLE_STATUSES = ['QUEUED', 'AWAITING_COORDINATOR', 'ON_HOLD']
+
+/**
+ * The open findings that stop a person completing a task: over the newest REVIEW_FINDINGS and
+ * TEST_REPORT rounds, at or above the board's completion priority (1 is highest, so at or above
+ * means a number no greater than it). A null threshold, or a finding with no priority, counts every
+ * open item. Mirrors the server's check so the complete dialog can offer to decide them first.
+ */
+export function completionBlockers (documents: DocumentRelease[] | null | undefined,
+    completionPriority?: number | null): { specification: string, finding: Finding }[] {
+    const out: { specification: string, finding: Finding }[] = []
+    for (const spec of INDEXED_TYPES) {
+        for (const f of sortFindings(openFindingsOf(latestRound(documents, spec)))) {
+            if (completionPriority == null || typeof f.priority !== 'number' || f.priority <= completionPriority) {
+                out.push({ specification: spec, finding: f })
+            }
+        }
+    }
+    return out
 }
 
 /** Open findings only. */

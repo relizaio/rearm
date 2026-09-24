@@ -10,6 +10,8 @@
                     size="small"
                     style="min-width: 220px"
                 />
+                <n-button size="small" quaternary @click="registering = { title: '', externalRef: '', sourceUrl: '' }"
+                          v-if="currentBoard">+ New task</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
@@ -154,10 +156,32 @@
 
             <AiAgentTaskDetailDrawer
                 :task="selectedTask" :tasks="tasks" :agent-names="agentNames" :roles="roles"
+                :board="currentBoard" :priority-levels="priorityLevels"
                 @close="selectedTask = null" @open="openTask"
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
-                @answer="answerQuestions"/>
+                @answer="answerQuestions" @authorize="authorizeTask" @order="orderTask"
+                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"/>
+
+            <!-- A person registers a task directly; on a board with sources it names the issue, so
+                 the coordinator's intake of the same issue finds it rather than duplicating it. -->
+            <n-modal :show="registering !== null" preset="card" title="New task" style="max-width: 520px"
+                     @update:show="(v: boolean) => { if (!v) registering = null }">
+                <n-space vertical :size="10" v-if="registering">
+                    <n-input v-model:value="registering.title" placeholder="Title"/>
+                    <n-input v-model:value="registering.externalRef"
+                             :placeholder="(currentBoard.sources?.length ?? 0) > 0
+                                 ? 'Tracker issue, e.g. github:owner/repo#42 (required)'
+                                 : 'Tracker issue (optional)'"/>
+                    <n-input v-model:value="registering.sourceUrl" placeholder="Link (optional)"/>
+                    <n-space justify="end">
+                        <n-button size="small" @click="registering = null">Cancel</n-button>
+                        <n-button size="small" type="primary" :disabled="!canRegister" @click="registerTask">
+                            Register
+                        </n-button>
+                    </n-space>
+                </n-space>
+            </n-modal>
         </template>
 
         <!-- Board create / edit modal -->
@@ -804,10 +828,13 @@ function missingRequired (t: any): string[] {
         })
 }
 
-async function humanReview (p: { task: any, approve: boolean, note: string }) {
+async function humanReview (p: { task: any, approve: boolean, note: string, findings?: any[],
+        about?: { specification: string } | null }) {
     try {
-        await store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve, note: p.note || undefined })
-        notification.success({ content: `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass — returned to the coordinator`, duration: 3000 })
+        const res = await store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve,
+            note: p.note || undefined, findings: p.findings, about: p.about })
+        notification.success({ content: `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass`
+            + (res?.status === 'QUEUED' && res?.role ? ` — back to ${res.role}` : ''), duration: 3000 })
         selectedTask.value = null
         await refreshBoardContent()
     } catch (e: any) {
@@ -883,6 +910,80 @@ async function answerQuestions (p: { task: any,
     } catch (e: any) {
         notification.error({ content: `Answer failed: ${e?.message ?? e}`, duration: 8000 })
     }
+}
+
+// ---------- operator actions: people run a board without a coordinator ----------
+
+const priorityLevels = computed(() =>
+    store.getters.orgById(props.orgUuid)?.settings?.findingPriorityLevels ?? 3)
+
+const registering = ref<{ title: string, externalRef: string, sourceUrl: string } | null>(null)
+const canRegister = computed(() => !!registering.value?.title.trim()
+    && ((currentBoard.value?.sources?.length ?? 0) === 0 || !!registering.value?.externalRef.trim()))
+
+async function registerTask () {
+    if (!registering.value || !currentBoard.value) return
+    try {
+        await store.dispatch('agentTaskRegister', {
+            boardUuid: currentBoard.value.uuid,
+            input: {
+                title: registering.value.title.trim(),
+                externalRef: registering.value.externalRef.trim() || null,
+                sourceUrl: registering.value.sourceUrl.trim() || null,
+            },
+        })
+        notification.success({ content: 'Task registered — pending intake', duration: 3000 })
+        registering.value = null
+        await refreshBoardContent()
+    } catch (e: any) {
+        notification.error({ content: `Register failed: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
+
+/** Run an action on a task, refresh the board and keep the drawer on the same task. */
+async function taskAction (t: any, run: () => Promise<any>, done: (res: any) => string, failed: string) {
+    try {
+        const res = await run()
+        notification.success({ content: done(res), duration: 3000 })
+        await refreshBoardContent()
+        selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? null
+    } catch (e: any) {
+        notification.error({ content: `${failed}: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
+
+function authorizeTask (p: { task: any, role: string, orderIndex?: number | null }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskAuthorize', { taskUuid: p.task.uuid, role: p.role, orderIndex: p.orderIndex }),
+        () => `Authorized for ${p.role}`, 'Authorize failed')
+}
+
+function orderTask (p: { task: any, orderIndex: number }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskOrder', { taskUuid: p.task.uuid, orderIndex: p.orderIndex }),
+        () => `Order set to ${p.orderIndex}`, 'Reorder failed')
+}
+
+function completeTask (p: { task: any, note: string, skipRequiredRoles: boolean }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskComplete', { taskUuid: p.task.uuid, note: p.note,
+            skipRequiredRoles: p.skipRequiredRoles }),
+        () => 'Task completed', 'Complete failed')
+}
+
+function cancelTask (p: { task: any, note: string }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskCancel', { taskUuid: p.task.uuid, note: p.note }),
+        () => 'Task cancelled', 'Cancel failed')
+}
+
+function decideFindings (p: { task: any, specification: string, decisions: any[],
+        about?: { specification: string } | null }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskDecideFindings', { taskUuid: p.task.uuid, specification: p.specification,
+            decisions: p.decisions, about: p.about }),
+        (res: any) => res?.status === 'QUEUED' && res?.role !== p.task.role
+            ? `Decided — back to ${res.role}` : 'Decided', 'Decision failed')
 }
 
 async function requireReview (p: { task: any, value: boolean }) {
