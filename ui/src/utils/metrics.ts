@@ -5,6 +5,7 @@ import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 import { resolveKevCveId } from '@/utils/kevService'
+import { osvUrlFor } from '@/utils/findingUtils'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -172,6 +173,9 @@ export function buildVulnerabilityColumns(
     // Opens the CISA KEV details modal for a KEV-flagged CVE (Pro only —
     // rows only carry knownExploited when the caller annotated them)
     onKevClick?: (cveId: string) => void
+    // Opens the in-app vulnerability details panel for a Vulnerability row.
+    // When provided, the id is an in-app link instead of an osv.dev link.
+    onVulnClick?: (row: any) => void
     initialSeverityFilter?: string
     initialTypeFilter?: string | string[]
     data?: any[]
@@ -312,7 +316,18 @@ export function buildVulnerabilityColumns(
       render: (row: any) => {
         const id = String(row.id || '')
         if (!id) return ''
-        const idLink = createVulnerabilityLink(h, id)
+        // href stays the osv.dev page so copy-link / open-in-new-tab still
+        // work; the plain click opens the in-app panel instead.
+        const idLink = (row.type === 'Vulnerability' && options?.onVulnClick)
+          ? h('a', {
+            href: osvUrlFor(id),
+            title: 'Show vulnerability details',
+            onClick: (e: Event) => {
+              e.preventDefault()
+              options.onVulnClick?.(row)
+            }
+          }, id)
+          : createVulnerabilityLink(h, id)
         if (!row.knownExploited) return idLink
         const kevTag = h(NTag, {
           type: 'error',
