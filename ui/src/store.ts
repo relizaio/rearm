@@ -2533,6 +2533,7 @@ const storeObject : any = {
                             defaultInputResolution
                             blockingPriority
                             completionPriority
+                            declarative { specHash appliedAt source { repo path commit } }
                         }
                     }`,
                 variables: { orgUuid },
@@ -2820,6 +2821,36 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskHumanReview
+        },
+        // Declarative boards: apply a board or presets file (declarative-boards brief §6). The spec is
+        // sent as parsed -- a null clears a field, an absent one leaves it -- so it is never reshaped.
+        async agentBoardApplySpec (context: any, payload: { orgUuid: string, spec: any, dryRun: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardApplySpec($orgUuid: ID!, $spec: BoardSpecInput!, $dryRun: Boolean) {
+                        agentBoardApplySpec(orgUuid: $orgUuid, spec: $spec, dryRun: $dryRun) {
+                            kind dryRun specHash created updated unchanged archived errors
+                            changes { kind name action fields message warnings }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardApplySpec
+        },
+        async agentRolePresetsApplySpec (context: any, payload: { orgUuid: string, spec: any, dryRun: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentRolePresetsApplySpec($orgUuid: ID!, $spec: RolePresetsSpecInput!, $dryRun: Boolean) {
+                        agentRolePresetsApplySpec(orgUuid: $orgUuid, spec: $spec, dryRun: $dryRun) {
+                            kind dryRun specHash created updated unchanged archived errors
+                            changes { kind name action fields message warnings }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentRolePresetsApplySpec
         },
         // Operator actions: people run a board without a coordinator (operator-actions brief §2).
         async agentTaskRegister (context: any, payload: { boardUuid: string, input: { title: string,

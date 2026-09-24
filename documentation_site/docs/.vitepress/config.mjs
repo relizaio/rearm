@@ -18,6 +18,7 @@ function sidebar() {
         {text: 'Concepts', link: '/concepts/'},        
         {text: 'Workflows', link: '/workflows/', items: [
           {text: 'Bootstrap an AI Agent', link: '/workflows/agentic'},
+          {text: 'Task Boards as Files', link: '/workflows/agent-boards-as-files'},
           {text: 'Bundling & Auto-Integrate', link: '/workflows/bundling'},
           {text: 'Monorepos', link: '/workflows/monorepos'},
           {text: 'Self-Registering Components', link: '/workflows/self-registration'},

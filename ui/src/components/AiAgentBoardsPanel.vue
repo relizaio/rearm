@@ -15,6 +15,7 @@
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
+                <n-button size="small" quaternary @click="applyKinds = ['BOARD']" v-if="canApplySpec">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
             </n-space>
@@ -41,6 +42,14 @@
                 >Operator unlock</n-button>
             </n-alert>
             <div class="boardmeta">
+                <n-tooltip v-if="currentBoard.declarative" trigger="hover">
+                    <template #trigger>
+                        <span class="srcchip">applied from {{ provenanceLabel(currentBoard.declarative) }}</span>
+                    </template>
+                    Last configured from a board file, {{ formatEventTime(currentBoard.declarative.appliedAt) }}
+                    (spec {{ (currentBoard.declarative.specHash ?? '').slice(0, 12) }}). Edits made here since
+                    show in the next export, and the file wins for every field it declares when applied again.
+                </n-tooltip>
                 <span v-for="s in currentBoard.sources ?? []" :key="s" class="srcchip">{{ s }}</span>
                 <n-tag size="tiny" :bordered="false" :type="currentBoard.coordinatorSeat ? 'success' : 'default'">
                     {{ currentBoard.coordinatorSeat ? 'coordinator connected' : 'no coordinator' }}
@@ -454,11 +463,16 @@
                  @update:show="(v: boolean) => showPresets = v">
             <p class="hint">
                 Operator-curated library copied onto new boards (copy semantics — edits here do not
-                ripple to existing boards). A preset named "coordinator" seeds a new board's
-                coordinator prompt.
+                ripple to existing boards). The presets named "coordinator-tracker" and
+                "coordinator-board-truth" seed a new board's coordinator prompt, by whether it has sources.
             </p>
             <n-data-table :columns="presetColumns" :data="sortedPresets" :row-key="(r: any) => r.uuid ?? r.name" size="small"/>
-            <n-button class="addbtn" size="small" dashed @click="startAddPreset">+ Add preset</n-button>
+            <n-space class="addbtn" :size="8">
+                <n-button size="small" dashed @click="startAddPreset">+ Add preset</n-button>
+                <n-button v-if="canApplySpec" size="small" dashed @click="applyKinds = ['ROLE_PRESETS']">
+                    Apply presets file
+                </n-button>
+            </n-space>
 
             <n-modal :show="editingPreset !== null" preset="card"
                      :title="editingPresetIsNew ? 'New preset' : `Edit preset: ${editingPreset?.name}`"
@@ -604,6 +618,8 @@
                 </n-space>
             </n-modal>
         </n-modal>
+        <DeclarativeApplyModal :show="applyKinds !== null" :org-uuid="props.orgUuid" :kinds="applyKinds ?? ['BOARD']"
+                               @close="applyKinds = null" @applied="onSpecApplied"/>
     </div>
 </template>
 
@@ -628,6 +644,8 @@ import { effectiveTemplate } from '@/utils/agentDocuments'
  */
 const TEMPLATE_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT']
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
+import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
+import type { SpecKind } from '@/utils/declarativeSpec'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
 import { mergeOutputs, strengthDraft, strengthInput, strengthSummary } from '@/utils/roleStrength'
 
@@ -1235,6 +1253,38 @@ watch(selectedBoard, async () => {
     syncQuery()
     await refreshBoardContent()
 })
+
+// ---------- declarative boards: apply a board or presets file ----------
+
+// Who may apply a file: the org's admin, or a permission carrying CONFIGURATION_WRITE at write level
+// (declarative-boards D10). The server decides; this only keeps the button from inviting a refusal.
+const canApplySpec = computed<boolean>(() => {
+    const perms = store.getters.myuser?.permissions?.permissions ?? []
+    return perms.some((p: any) => p.org === props.orgUuid && ((p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
+        || ((p.functions ?? []).includes('CONFIGURATION_WRITE') && (p.type === 'READ_WRITE' || p.type === 'ADMIN'))))
+})
+
+const applyKinds = ref<SpecKind[] | null>(null)
+
+function provenanceLabel (d: any): string {
+    const src = d?.source
+    if (!src?.repo && !src?.path) return 'a file'
+    return `${src.repo ?? ''}${src.commit ? '@' + String(src.commit).slice(0, 8) : ''}${src.path ? ' ' + src.path : ''}`.trim()
+}
+
+async function onSpecApplied (p: { kind: SpecKind, name?: string }) {
+    if (p.kind === 'ROLE_PRESETS') {
+        presets.value = await store.dispatch('fetchAgentTaskRolePresetsOfOrg', props.orgUuid) ?? []
+        return
+    }
+    await refreshBoards()
+    const applied = boards.value.find(b => b.name === p.name)
+    if (applied && applied.uuid !== selectedBoard.value) {
+        selectedBoard.value = applied.uuid
+        syncQuery()
+        await refreshBoardContent()
+    }
+}
 
 async function refreshBoards () {
     boards.value = await store.dispatch('fetchAgentBoardsOfOrg', props.orgUuid) ?? []
