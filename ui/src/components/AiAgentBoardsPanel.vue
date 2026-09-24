@@ -852,7 +852,8 @@ async function humanReview (p: { task: any, approve: boolean, note: string, find
         const res = await store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve,
             note: p.note || undefined, findings: p.findings, about: p.about })
         notification.success({ content: `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass`
-            + (res?.status === 'QUEUED' && res?.role ? ` — back to ${res.role}` : ''), duration: 3000 })
+            + (p.findings?.length && p.approve ? ' with a correction' : '')
+            + (res?.status === 'QUEUED' && res?.role ? ` — ${p.approve ? 'on' : 'back'} to ${res.role}` : ''), duration: 3000 })
         selectedTask.value = null
         await refreshBoardContent()
     } catch (e: any) {

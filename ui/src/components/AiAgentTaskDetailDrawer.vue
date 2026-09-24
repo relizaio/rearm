@@ -27,21 +27,22 @@
                         <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
                                  style="margin-top: 8px"/>
                         <!-- A rejection with a finding attached routes like a reviewer's: to whoever
-                             produces what it is about. Without one it goes to the coordinator. -->
+                             produces what it is about. Without one it goes to the coordinator. An
+                             approval with one files it as a correction and hands the work over; the
+                             server refuses a correction at the blocking priority as a rejection. -->
                         <n-space :size="6" style="margin-top: 8px" align="center">
                             <n-input v-model:value="gateFindingTitle" size="small"
-                                     placeholder="Finding to reject with (optional)" style="width: 230px"/>
+                                     placeholder="Finding or correction (optional)" style="width: 230px"/>
                             <n-select v-model:value="gateFindingPriority" :options="priorityOptions" size="small"
                                       style="width: 72px"/>
                             <n-select v-model:value="gateAbout" :options="aboutOptions" size="small" clearable
                                       placeholder="about" style="width: 150px"/>
                         </n-space>
                         <n-space style="margin-top: 8px">
-                            <n-button size="small" type="primary"
-                                      @click="emit('human-review', { task, approve: true, note: reviewNote })">
-                                Approve {{ task.hold.gateRole }} pass
+                            <n-button size="small" type="primary" @click="reviewAtGate(true)">
+                                {{ gateFindingTitle.trim() ? 'Approve with correction' : `Approve ${task.hold.gateRole} pass` }}
                             </n-button>
-                            <n-button size="small" type="error" ghost @click="rejectAtGate">
+                            <n-button size="small" type="error" ghost @click="reviewAtGate(false)">
                                 Reject{{ gateFindingTitle.trim() ? ' with finding' : '' }}
                             </n-button>
                         </n-space>
@@ -602,11 +603,12 @@ function fileFinding () {
     fileTitle.value = ''
 }
 
-function rejectAtGate () {
+/** Either verdict may carry the typed finding: a rejection's reason, or an approval's correction. */
+function reviewAtGate (approve: boolean) {
     const title = gateFindingTitle.value.trim()
     emit('human-review', {
         task: props.task,
-        approve: false,
+        approve,
         note: reviewNote.value,
         findings: title ? [{ action: 'FILE', title, priority: gateFindingPriority.value }] : undefined,
         about: title && gateAbout.value ? { specification: gateAbout.value } : null,
