@@ -2531,6 +2531,8 @@ const storeObject : any = {
                             targetDetails { uuid name type }
                             defaultTaskLevel
                             defaultInputResolution
+                            blockingPriority
+                            completionPriority
                         }
                     }`,
                 variables: { orgUuid },
@@ -2682,7 +2684,12 @@ const storeObject : any = {
                                             title
                                             location { path line ref }
                                             resolvedBy
+                                            resolution
+                                            decidedBy { kind uuid name }
+                                            decidedIn
+                                            decidedAt
                                         }
+                                        about { specification release }
                                     }
                                 }
                             }
@@ -2694,6 +2701,8 @@ const storeObject : any = {
                                 location { path line ref }
                                 resolvedBy
                                 resolution
+                                decidedBy { kind uuid name }
+                                decidedAt
                             }
                             openQuestions {
                                 id
@@ -2708,7 +2717,10 @@ const storeObject : any = {
                             childTasks
                             sessions
                             registeredBySession
-                            statusHistory { from to at trigger actor { kind uuid name } }
+                            statusHistory { from to at trigger actor { kind uuid name } note }
+                            orderSetBy { kind uuid name }
+                            orderSetAt
+                            requiredRolesSkipped
                             budgetMicros
                             coordinatorEstimateMicros
                             requiredStrength
@@ -2791,16 +2803,101 @@ const storeObject : any = {
             })
             return response.data.agentTaskRolePresetSet
         },
-        async agentTaskHumanReview (context: any, payload: { taskUuid: string, approve: boolean, note?: string }) {
+        async agentTaskHumanReview (context: any, payload: { taskUuid: string, approve: boolean, note?: string,
+            findings?: any[], about?: { specification: string, release?: string } | null }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation agentTaskHumanReview($taskUuid: ID!, $approve: Boolean!, $note: String) {
-                        agentTaskHumanReview(taskUuid: $taskUuid, approve: $approve, note: $note) { uuid status }
+                    mutation agentTaskHumanReview($taskUuid: ID!, $approve: Boolean!, $note: String, $findings: [FindingDecisionInput!], $about: FindingsAboutInput) {
+                        agentTaskHumanReview(taskUuid: $taskUuid, approve: $approve, note: $note, findings: $findings, about: $about) { uuid status role }
                     }`,
-                variables: { taskUuid: payload.taskUuid, approve: payload.approve, note: payload.note ?? null },
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    approve: payload.approve,
+                    note: payload.note ?? null,
+                    findings: payload.findings?.length ? payload.findings : null,
+                    about: payload.about ?? null
+                },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskHumanReview
+        },
+        // Operator actions: people run a board without a coordinator (operator-actions brief §2).
+        async agentTaskRegister (context: any, payload: { boardUuid: string, input: { title: string,
+            externalRef?: string | null, sourceUrl?: string | null } }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRegister($boardUuid: ID!, $input: AgentTaskUserRegisterInput!) {
+                        agentTaskRegister(boardUuid: $boardUuid, input: $input) { uuid status }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRegister
+        },
+        async agentTaskAuthorize (context: any, payload: { taskUuid: string, role: string, orderIndex?: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskAuthorize($taskUuid: ID!, $role: String!, $orderIndex: Int) {
+                        agentTaskAuthorize(taskUuid: $taskUuid, role: $role, orderIndex: $orderIndex) { uuid status role }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, role: payload.role, orderIndex: payload.orderIndex ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskAuthorize
+        },
+        async agentTaskOrder (context: any, payload: { taskUuid: string, orderIndex: number }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskOrder($taskUuid: ID!, $orderIndex: Int!) {
+                        agentTaskOrder(taskUuid: $taskUuid, orderIndex: $orderIndex) { uuid orderIndex }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskOrder
+        },
+        async agentTaskComplete (context: any, payload: { taskUuid: string, note?: string, skipRequiredRoles?: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskComplete($taskUuid: ID!, $note: String, $skipRequiredRoles: Boolean) {
+                        agentTaskComplete(taskUuid: $taskUuid, note: $note, skipRequiredRoles: $skipRequiredRoles) { uuid status }
+                    }`,
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    note: payload.note || null,
+                    skipRequiredRoles: payload.skipRequiredRoles ?? false
+                },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskComplete
+        },
+        async agentTaskCancel (context: any, payload: { taskUuid: string, note?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskCancel($taskUuid: ID!, $note: String) {
+                        agentTaskCancel(taskUuid: $taskUuid, note: $note) { uuid status }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, note: payload.note || null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskCancel
+        },
+        async agentTaskDecideFindings (context: any, payload: { taskUuid: string, specification: string,
+            decisions: any[], about?: { specification: string, release?: string } | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskDecideFindings($taskUuid: ID!, $specification: SpecificationType!, $decisions: [FindingDecisionInput!]!, $about: FindingsAboutInput) {
+                        agentTaskDecideFindings(taskUuid: $taskUuid, specification: $specification, decisions: $decisions, about: $about) { uuid status role }
+                    }`,
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    specification: payload.specification,
+                    decisions: payload.decisions,
+                    about: payload.about ?? null
+                },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskDecideFindings
         },
         async agentTaskHumanSignOff (context: any, payload: { taskUuid: string, outcome: string, note?: string }) {
             const response = await graphqlClient.mutate({

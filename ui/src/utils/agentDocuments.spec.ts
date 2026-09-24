@@ -6,7 +6,9 @@ import {
     effectiveTemplate,
     findingLocation,
     findingsOf,
+    completionBlockers,
     groupByPriority,
+    latestRound,
     openFindingsOf,
     outputsOfHop,
     sortFindings,
@@ -169,5 +171,51 @@ describe('effectiveTemplate', () => {
         expect(effectiveTemplate('TEST_REPORT', null)).toBe('tests/{task}/run-{round}.md')
         // A component-scoped type has no per-type default and uses the shared shape.
         expect(effectiveTemplate('ARCHITECTURE', null)).toBe('docs/{type}/{component}.md')
+    })
+})
+
+describe('latestRound', () => {
+    const doc = (uuid: string, spec: string, lifecycle: string, findings: any[] = []) => ({
+        uuid, lifecycle, document: { specification: spec, findings: { kind: spec, findings } },
+    })
+
+    it('takes the newest settled round of the type, the list being newest first', () => {
+        const docs = [
+            doc('pending', 'REVIEW_FINDINGS', 'PENDING'),
+            doc('tr', 'TEST_REPORT', 'ASSEMBLED'),
+            doc('new', 'REVIEW_FINDINGS', 'ASSEMBLED'),
+            doc('old', 'REVIEW_FINDINGS', 'ASSEMBLED'),
+        ]
+        expect(latestRound(docs, 'REVIEW_FINDINGS')?.uuid).toBe('new')
+        expect(latestRound(docs, 'TEST_REPORT')?.uuid).toBe('tr')
+        expect(latestRound(docs, 'QUESTIONS')).toBeNull()
+    })
+
+    it('counts a draft as a round: an agent round is a draft until its hop signs off', () => {
+        expect(latestRound([doc('d', 'REVIEW_FINDINGS', 'DRAFT')], 'REVIEW_FINDINGS')?.uuid).toBe('d')
+    })
+})
+
+describe('completionBlockers', () => {
+    const docs = [
+        { uuid: 'r', lifecycle: 'ASSEMBLED', document: { specification: 'REVIEW_FINDINGS', findings: { findings: [
+            { id: 'F-2', priority: 2, status: 'OPEN' },
+            { id: 'F-1', priority: 1, status: 'OPEN' },
+            { id: 'F-3', priority: 1, status: 'ACCEPTED' },
+        ] } } },
+        { uuid: 't', lifecycle: 'ASSEMBLED', document: { specification: 'TEST_REPORT', findings: { findings: [
+            { id: 'T-1', priority: 3, status: 'OPEN' },
+        ] } } },
+    ]
+
+    it('lists open items at or above the completion priority, highest first', () => {
+        expect(completionBlockers(docs, 1).map(b => b.finding.id)).toEqual(['F-1'])
+        expect(completionBlockers(docs, 2).map(b => b.finding.id)).toEqual(['F-1', 'F-2'])
+    })
+
+    it('counts every open item when the board sets no threshold, and names the index', () => {
+        const all = completionBlockers(docs, null)
+        expect(all.map(b => b.finding.id)).toEqual(['F-1', 'F-2', 'T-1'])
+        expect(all[2].specification).toBe('TEST_REPORT')
     })
 })

@@ -26,14 +26,23 @@
                     <template v-if="task.hold.kind === 'HUMAN_GATE'">
                         <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
                                  style="margin-top: 8px"/>
+                        <!-- A rejection with a finding attached routes like a reviewer's: to whoever
+                             produces what it is about. Without one it goes to the coordinator. -->
+                        <n-space :size="6" style="margin-top: 8px" align="center">
+                            <n-input v-model:value="gateFindingTitle" size="small"
+                                     placeholder="Finding to reject with (optional)" style="width: 230px"/>
+                            <n-select v-model:value="gateFindingPriority" :options="priorityOptions" size="small"
+                                      style="width: 72px"/>
+                            <n-select v-model:value="gateAbout" :options="aboutOptions" size="small" clearable
+                                      placeholder="about" style="width: 150px"/>
+                        </n-space>
                         <n-space style="margin-top: 8px">
                             <n-button size="small" type="primary"
                                       @click="emit('human-review', { task, approve: true, note: reviewNote })">
                                 Approve {{ task.hold.gateRole }} pass
                             </n-button>
-                            <n-button size="small" type="error" ghost
-                                      @click="emit('human-review', { task, approve: false, note: reviewNote })">
-                                Reject
+                            <n-button size="small" type="error" ghost @click="rejectAtGate">
+                                Reject{{ gateFindingTitle.trim() ? ' with finding' : '' }}
                             </n-button>
                         </n-space>
                     </template>
@@ -84,6 +93,40 @@
                         <n-tag v-for="m in missingRequired" :key="m" size="small" :bordered="false" type="error">
                             required: {{ m }} ✗
                         </n-tag>
+                    </div>
+                </div>
+
+                <div v-if="!terminal" class="dsec">
+                    <div class="dsec__h">Task actions</div>
+                    <div v-if="authorizable" class="deprow">
+                        <n-select v-model:value="authorizeRole" :options="roleOptions" size="small"
+                                  placeholder="role" style="width: 170px"/>
+                        <n-button size="small" :disabled="!authorizeRole"
+                                  @click="emit('authorize', { task, role: authorizeRole, orderIndex: orderDraft })">
+                            Authorize
+                        </n-button>
+                    </div>
+                    <div class="deprow">
+                        <n-input-number v-model:value="orderDraft" size="small" :min="0" style="width: 130px">
+                            <template #prefix><span class="deplab" style="min-width: 0">order</span></template>
+                        </n-input-number>
+                        <n-button size="small" :disabled="orderDraft == null || orderDraft === task.orderIndex"
+                                  @click="emit('order', { task, orderIndex: orderDraft })">Set order</n-button>
+                        <span v-if="task.orderSetBy" class="holdmeta" style="margin-top: 0">
+                            set by {{ actorLabel(task.orderSetBy) }} · {{ ts(task.orderSetAt) }}
+                        </span>
+                    </div>
+                    <div class="deprow">
+                        <n-button size="small" type="primary" ghost :disabled="!completable"
+                                  @click="showComplete = true">Complete…</n-button>
+                        <n-input v-model:value="cancelNote" size="small" placeholder="Why cancel (optional)"
+                                 style="width: 220px"/>
+                        <n-popconfirm @positive-click="emit('cancel', { task, note: cancelNote })">
+                            <template #trigger>
+                                <n-button size="small" type="error" ghost>Cancel task</n-button>
+                            </template>
+                            Cancelling is final. An agent working it finds it gone at its next call.
+                        </n-popconfirm>
                     </div>
                 </div>
 
@@ -140,23 +183,81 @@
                     <agent-usage-summary :usage="task.usage" :show-by-model="false" />
                 </div>
 
-                <div class="dsec" v-if="openFindingGroups.length">
-                    <div class="dsec__h">Open findings</div>
-                    <!-- From the NEWEST round of each indexed type. Every round carries forward
-                         what the previous one left open, so the newest is the current state;
-                         summing rounds would count one finding several times. -->
-                    <div v-for="g in openFindingGroups" :key="String(g.priority)" class="fgroup">
-                        <div class="fgroup__h">
-                            <n-tag size="tiny" :bordered="false"
-                                   :type="g.priority === 1 ? 'error' : 'warning'">
-                                P{{ g.priority ?? '?' }}
-                            </n-tag>
-                            <span class="fgroup__count">{{ g.findings.length }}</span>
+                <!-- The NEWEST round of each indexed type. Every round carries forward what the
+                     previous one left open, so the newest is the current state; summing rounds would
+                     count one finding several times. A decision is a new round, never an edit. -->
+                <div class="dsec" v-for="r in findingRounds" :key="r.spec">
+                    <div class="dsec__h">
+                        {{ r.spec === 'TEST_REPORT' ? 'Test findings' : 'Review findings' }}
+                        <template v-if="r.release.document?.round"> · round {{ r.release.document.round }}</template>
+                        <n-tag v-if="documentVerdict(r.release)" size="tiny" :bordered="false"
+                               :type="verdictType(documentVerdict(r.release))" style="margin-left: 6px">
+                            {{ documentVerdict(r.release) }}
+                        </n-tag>
+                    </div>
+                    <div v-for="f in r.findings" :key="f.id ?? ''" class="frow"
+                         :class="{ 'frow--closed': f.status !== 'OPEN' }">
+                        <code class="frow__id">{{ f.id }}</code>
+                        <n-tag size="tiny" :bordered="false" :type="f.priority === 1 ? 'error' : 'warning'">
+                            P{{ f.priority ?? '?' }}
+                        </n-tag>
+                        <n-tag v-if="f.status !== 'OPEN'" size="tiny" :bordered="false"
+                               :type="statusType(f.status)">{{ f.status }}</n-tag>
+                        <span class="frow__title">{{ f.title }}</span>
+                        <code v-if="findingLocation(f)" class="frow__loc">{{ findingLocation(f) }}</code>
+                        <span v-if="f.decidedBy" class="frow__dec" :title="f.resolution ?? ''">
+                            {{ f.decidedBy.kind === 'USER' ? 'decided by' : 'agent decided' }}
+                            {{ actorLabel(f.decidedBy) }}<template v-if="f.decidedAt"> · {{ ts(f.decidedAt) }}</template>
+                        </span>
+                        <n-button v-if="canDecide && f.status === 'OPEN'" size="tiny" quaternary
+                                  @click="toggleDecide(r.spec, f)">decide</n-button>
+                        <div v-if="deciding === r.spec + '/' + f.id" class="fedit">
+                            <n-input v-model:value="decisionWords" size="small"
+                                     placeholder="Why (needed to accept or dismiss)"/>
+                            <n-space :size="6" style="margin-top: 6px" align="center">
+                                <n-button size="tiny" type="warning" :disabled="!decisionWords.trim()"
+                                          @click="decideOne(r.spec, { action: 'ACCEPT', findingId: f.id, resolution: decisionWords.trim() })">
+                                    Accept the risk
+                                </n-button>
+                                <n-button size="tiny" :disabled="!decisionWords.trim()"
+                                          @click="decideOne(r.spec, { action: 'DISMISS', findingId: f.id, resolution: decisionWords.trim() })">
+                                    Dismiss
+                                </n-button>
+                                <n-select v-model:value="decisionPriority" :options="priorityOptions" size="tiny"
+                                          style="width: 72px"/>
+                                <n-button size="tiny" :disabled="decisionPriority == null || decisionPriority === f.priority"
+                                          @click="decideOne(r.spec, { action: 'SET_PRIORITY', findingId: f.id, priority: decisionPriority })">
+                                    Set priority
+                                </n-button>
+                            </n-space>
                         </div>
+                    </div>
+                </div>
+
+                <div v-if="canDecide" class="dsec">
+                    <div class="dsec__h">File a finding</div>
+                    <n-space :size="6" align="center">
+                        <n-select v-model:value="fileSpec" :options="fileSpecOptions" size="small" style="width: 130px"/>
+                        <n-input v-model:value="fileTitle" size="small" placeholder="What is wrong" style="width: 200px"/>
+                        <n-select v-model:value="filePriority" :options="priorityOptions" size="small" style="width: 72px"/>
+                        <n-select v-if="!aboutOf(fileSpec)" v-model:value="fileAbout" :options="aboutOptions" size="small"
+                                  clearable placeholder="about" style="width: 150px"/>
+                        <n-button size="small" :disabled="!fileTitle.trim() || filePriority == null" @click="fileFinding">
+                            File
+                        </n-button>
+                    </n-space>
+                    <div class="holdmeta">
+                        A blocking finding sends the task to the role that produces what it is about, or to
+                        the coordinator when it names nothing.
+                    </div>
+                </div>
+
+                <div class="dsec" v-if="openQuestionGroups.length && !answerable.length">
+                    <div class="dsec__h">Open questions</div>
+                    <div v-for="g in openQuestionGroups" :key="String(g.priority)" class="fgroup">
                         <div v-for="f in g.findings" :key="f.id ?? ''" class="frow">
                             <code class="frow__id">{{ f.id }}</code>
                             <span class="frow__title">{{ f.title }}</span>
-                            <code v-if="findingLocation(f)" class="frow__loc">{{ findingLocation(f) }}</code>
                         </div>
                     </div>
                 </div>
@@ -292,6 +393,7 @@
                             <span class="shist__arrow">{{ (c.from ?? '·').toLowerCase().replace(/_/g, ' ') }} → {{ c.to.toLowerCase().replace(/_/g, ' ') }}</span>
                             <code class="shist__trig">{{ c.trigger }}</code>
                             <span v-if="actorLabel(c.actor)" class="shist__by">by {{ actorLabel(c.actor) }}</span>
+                            <span v-if="c.note" class="shist__note">“{{ c.note }}”</span>
                             <span v-if="i > 0" class="shist__dur">+{{ dur(task.statusHistory[i-1].at, c.at) || '0m' }}</span>
                         </div>
                     </div>
@@ -308,25 +410,85 @@
                     </div>
                 </div>
             </n-space>
+
+            <!-- A person's complete: findings that block completion are decided one by one, never
+                 skipped; required roles that have not passed may be skipped, with a note. -->
+            <n-modal :show="showComplete" preset="card" title="Complete task" style="max-width: 560px"
+                     @update:show="(v: boolean) => { showComplete = v }">
+                <n-space vertical :size="12">
+                    <div v-if="blockers.length">
+                        <div class="dsec__h">Findings that block completion</div>
+                        <div v-for="b in blockers" :key="b.specification + b.finding.id" class="frow">
+                            <code class="frow__id">{{ b.finding.id }}</code>
+                            <n-tag size="tiny" :bordered="false" type="error">P{{ b.finding.priority ?? '?' }}</n-tag>
+                            <span class="frow__title">{{ b.finding.title }}</span>
+                            <div class="fedit">
+                                <n-input v-model:value="blockerWords[b.finding.id ?? '']" size="small"
+                                         placeholder="Why"/>
+                                <n-space :size="6" style="margin-top: 6px">
+                                    <n-button size="tiny" type="warning"
+                                              :disabled="!(blockerWords[b.finding.id ?? ''] ?? '').trim()"
+                                              @click="decideOne(b.specification, { action: 'ACCEPT', findingId: b.finding.id, resolution: blockerWords[b.finding.id ?? ''].trim() })">
+                                        Accept the risk
+                                    </n-button>
+                                    <n-button size="tiny"
+                                              :disabled="!(blockerWords[b.finding.id ?? ''] ?? '').trim()"
+                                              @click="decideOne(b.specification, { action: 'DISMISS', findingId: b.finding.id, resolution: blockerWords[b.finding.id ?? ''].trim() })">
+                                        Dismiss
+                                    </n-button>
+                                </n-space>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="missingRequired.length">
+                        <div class="dsec__h">Required roles without a pass</div>
+                        <n-tag v-for="m in missingRequired" :key="m" size="small" :bordered="false" type="error"
+                               style="margin-right: 6px">{{ m }}</n-tag>
+                        <div class="holdmeta">
+                            A role whose rejection you have decided over counts as passed. Otherwise, skip
+                            it and say why.
+                        </div>
+                        <n-checkbox v-model:checked="skipRequired" style="margin-top: 6px">
+                            complete without them
+                        </n-checkbox>
+                    </div>
+                    <n-input v-model:value="completeNote" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }"
+                             :placeholder="skipRequired ? 'Why (required when skipping roles)' : 'Note (optional)'"/>
+                    <n-space justify="end">
+                        <n-button size="small" @click="showComplete = false">Back</n-button>
+                        <n-button size="small" type="primary"
+                                  :disabled="blockers.length > 0 || (skipRequired && !completeNote.trim())"
+                                  @click="emit('complete', { task, note: completeNote, skipRequiredRoles: skipRequired })">
+                            Complete
+                        </n-button>
+                    </n-space>
+                </n-space>
+            </n-modal>
         </n-drawer-content>
     </n-drawer>
 </template>
 
 <script lang="ts" setup>
 import { computed, ref, watch } from 'vue'
-import { NAlert, NButton, NDrawer, NDrawerContent, NInput, NSpace, NTag } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
 import {
+    DECIDABLE_STATUSES,
     DocumentRelease,
     Finding,
+    INDEXED_TYPES,
+    completionBlockers,
     documentFileUrl,
     documentLabel,
     documentVerdict,
     findingLocation,
     groupByPriority,
+    latestRound,
     outputsOfHop,
+    sortFindings,
+    statusType,
     testCounts,
     verdictType,
 } from '@/utils/agentDocuments'
@@ -336,17 +498,135 @@ const props = defineProps<{
     tasks: any[]
     agentNames: Record<string, string>
     roles?: any[]
+    board?: any
+    priorityLevels?: number
 }>()
 const emit = defineEmits<{
     (e: 'close'): void
     (e: 'open', task: any): void
-    (e: 'human-review', p: { task: any, approve: boolean, note: string }): void
+    (e: 'human-review', p: { task: any, approve: boolean, note: string, findings?: any[],
+        about?: { specification: string } | null }): void
     (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
     (e: 'operator-release', p: { task: any, note: string }): void
     (e: 'require-review', p: { task: any, value: boolean }): void
     (e: 'answer', p: { task: any, answers: { id: string, status: string, resolution: string }[],
         answerAll?: string }): void
+    (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
+    (e: 'order', p: { task: any, orderIndex: number }): void
+    (e: 'complete', p: { task: any, note: string, skipRequiredRoles: boolean }): void
+    (e: 'cancel', p: { task: any, note: string }): void
+    (e: 'decide', p: { task: any, specification: string, decisions: any[],
+        about?: { specification: string } | null }): void
 }>()
+
+// ---------- operator actions ----------
+
+const authorizeRole = ref<string | null>(null)
+const orderDraft = ref<number | null>(null)
+const cancelNote = ref('')
+const showComplete = ref(false)
+const completeNote = ref('')
+const skipRequired = ref(false)
+const blockerWords = ref<Record<string, string>>({})
+const deciding = ref<string | null>(null)
+const decisionWords = ref('')
+const decisionPriority = ref<number | null>(null)
+const fileSpec = ref('REVIEW_FINDINGS')
+const fileTitle = ref('')
+const filePriority = ref<number | null>(null)
+const fileAbout = ref<string | null>(null)
+const gateFindingTitle = ref('')
+const gateFindingPriority = ref<number | null>(1)
+const gateAbout = ref<string | null>(null)
+
+const authorizable = computed(() =>
+    props.task?.status === 'PENDING_INTAKE' || props.task?.status === 'AWAITING_COORDINATOR')
+const completable = computed(() =>
+    ['AWAITING_COORDINATOR', 'PENDING_INTAKE', 'QUEUED', 'ON_HOLD'].includes(props.task?.status))
+const canDecide = computed(() => DECIDABLE_STATUSES.includes(props.task?.status))
+
+const roleOptions = computed(() => (props.roles ?? [])
+    .filter((r: any) => r.active)
+    .map((r: any) => ({ label: r.name, value: r.name })))
+const priorityOptions = computed(() => Array.from({ length: props.priorityLevels ?? 3 },
+    (_, i) => ({ label: `P${i + 1}`, value: i + 1 })))
+const fileSpecOptions = INDEXED_TYPES.map(s => ({ label: s === 'TEST_REPORT' ? 'test report' : 'review', value: s }))
+// What a finding may be about: the types some active role produces, which is where it will route.
+const aboutOptions = computed(() => {
+    const specs = new Set<string>()
+    for (const r of props.roles ?? []) {
+        if (!r.active) continue
+        for (const o of r.producesOutputs ?? []) if (o?.specification) specs.add(o.specification)
+    }
+    return [...specs].sort().map(s => ({ label: s.toLowerCase().replace(/_/g, ' '), value: s }))
+})
+
+// The newest round of each findings type, open items first.
+const findingRounds = computed(() => INDEXED_TYPES
+    .map(spec => ({ spec, release: latestRound(taskDocuments.value, spec) }))
+    .filter(r => r.release !== null)
+    .map(r => {
+        const all = sortFindings(((r.release as DocumentRelease).document?.findings?.findings ?? []) as Finding[])
+        return {
+            spec: r.spec,
+            release: r.release as DocumentRelease,
+            findings: [...all.filter(f => f.status === 'OPEN'), ...all.filter(f => f.status !== 'OPEN')],
+        }
+    }))
+
+const blockers = computed(() => completionBlockers(taskDocuments.value, props.board?.completionPriority ?? null))
+
+function aboutOf (spec: string): string | null {
+    return latestRound(taskDocuments.value, spec)?.document?.findings?.about?.specification ?? null
+}
+
+function toggleDecide (spec: string, f: Finding) {
+    const key = spec + '/' + f.id
+    deciding.value = deciding.value === key ? null : key
+    decisionWords.value = ''
+    decisionPriority.value = f.priority ?? null
+}
+
+function decideOne (spec: string, decision: any) {
+    emit('decide', { task: props.task, specification: spec, decisions: [decision] })
+    deciding.value = null
+}
+
+function fileFinding () {
+    emit('decide', {
+        task: props.task,
+        specification: fileSpec.value,
+        decisions: [{ action: 'FILE', title: fileTitle.value.trim(), priority: filePriority.value }],
+        about: fileAbout.value ? { specification: fileAbout.value } : null,
+    })
+    fileTitle.value = ''
+}
+
+function rejectAtGate () {
+    const title = gateFindingTitle.value.trim()
+    emit('human-review', {
+        task: props.task,
+        approve: false,
+        note: reviewNote.value,
+        findings: title ? [{ action: 'FILE', title, priority: gateFindingPriority.value }] : undefined,
+        about: title && gateAbout.value ? { specification: gateAbout.value } : null,
+    })
+}
+
+watch(() => props.task?.uuid, () => {
+    authorizeRole.value = props.task?.role ?? null
+    orderDraft.value = props.task?.orderIndex ?? null
+    cancelNote.value = ''
+    showComplete.value = false
+    completeNote.value = ''
+    skipRequired.value = false
+    blockerWords.value = {}
+    deciding.value = null
+    fileTitle.value = ''
+    fileAbout.value = null
+    gateFindingTitle.value = ''
+    gateAbout.value = null
+}, { immediate: true })
 
 const reviewNote = ref('')
 const releaseNote = ref('')
@@ -391,9 +671,9 @@ const canAnswer = computed(() =>
 // Documents this task has produced, newest first as the server returns them.
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
 
-// Findings still open, grouped by priority. The server already restricts this to the newest round
-// of each indexed type; grouping is purely presentation.
-const openFindingGroups = computed(() => groupByPriority((props.task?.openFindings ?? []) as Finding[]))
+// Open questions, when there is no answer form showing them: the task is with the role meant to
+// answer, and a reader still wants to see what it is waiting on.
+const openQuestionGroups = computed(() => groupByPriority((props.task?.openQuestions ?? []) as Finding[]))
 
 // The documents a hop recorded as its outputs. A hop stores uuids and the task carries the
 // releases, so they are resolved here rather than holding two shapes of the same thing.
@@ -539,12 +819,15 @@ function statusTone (s: string): string {
     &__count { font-size: 11px; color: #999; }
 }
 .frow {
-    display: flex; align-items: baseline; gap: 7px; font-size: 12.5px;
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; font-size: 12.5px;
     padding: 2px 0 2px 10px;
     &__id { font-weight: 600; font-size: 11.5px; }
     &__title { flex: 1; }
     &__loc { font-size: 11px; color: #999; }
+    &__dec { font-size: 10.5px; color: #8a8; }
+    &--closed { opacity: 0.6; }
 }
+.fedit { width: 100%; padding: 4px 0 6px 10px; }
 .drow {
     display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; font-size: 12.5px;
     padding: 3px 0;
@@ -594,6 +877,7 @@ function statusTone (s: string): string {
     &__arrow { color: #555; }
     &__trig { font-size: 10px; color: #888; background: rgba(128, 128, 128, 0.1); padding: 0 4px; border-radius: 4px; }
     &__by { color: #777; font-size: 10.5px; }
+    &__note { color: #666; font-size: 10.5px; font-style: italic; }
     &__dur { color: #b0854a; font-size: 10.5px; }
 }
 .holdmeta { font-size: 11.5px; color: #888; margin-top: 4px; white-space: pre-wrap; }
