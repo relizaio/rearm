@@ -324,6 +324,8 @@
                         </n-button>
                     </n-space>
                 </div>
+                <AiAgentRevisionHistory v-if="canReadHistory && !editingBoardIsNew && editingBoard.uuid" kind="board"
+                                        :uuid="editingBoard.uuid" :current="boards.find(b => b.uuid === editingBoard.uuid)"/>
                 <n-space justify="end">
                     <n-button quaternary @click="editingBoard = null">Cancel</n-button>
                     <n-button type="primary" :loading="saving" @click="saveBoard">Save</n-button>
@@ -524,6 +526,8 @@
                             : 'role prompt (served to the assuming agent)' }}</div>
                         <n-input v-model:value="editingRole.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 20 }"/>
                     </div>
+                    <AiAgentRevisionHistory v-if="canReadHistory && !editingRoleIsNew && editingRole.uuid" kind="role"
+                                            :uuid="editingRole.uuid" :current="roles.find(r => r.uuid === editingRole.uuid)"/>
                     <n-space justify="end">
                         <n-button quaternary @click="editingRole = null">Cancel</n-button>
                         <n-button type="primary" :loading="saving" @click="saveRole">Save</n-button>
@@ -690,6 +694,8 @@
                         <div class="flabel" style="margin-bottom: 4px">prompt</div>
                         <n-input v-model:value="editingPreset.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 20 }"/>
                     </div>
+                    <AiAgentRevisionHistory v-if="canReadHistory && !editingPresetIsNew && editingPreset.uuid" kind="role"
+                                            :uuid="editingPreset.uuid" :current="presets.find(p => p.uuid === editingPreset.uuid)"/>
                     <n-space justify="end">
                         <n-button quaternary @click="editingPreset = null">Cancel</n-button>
                         <n-button type="primary" :loading="saving" @click="savePreset">Save</n-button>
@@ -734,6 +740,7 @@ const templateTypeRows = computed(() => templateRows(
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskPagePath } from '@/utils/agentTaskFormat'
+import AiAgentRevisionHistory from '@/components/AiAgentRevisionHistory.vue'
 import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
@@ -1292,6 +1299,8 @@ const canApplySpec = computed<boolean>(() => {
 const boardHasSources = computed<boolean>(() => (currentBoard.value?.sources?.length ?? 0) > 0)
 // Reopening a completed task is an org admin's (agentTaskReopen); the server decides.
 const canReopen = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
+// The history reads are org admin on the server (22ddc644); nobody else is offered the section.
+const canReadHistory = canReopen
 
 const applyKinds = ref<SpecKind[] | null>(null)
 

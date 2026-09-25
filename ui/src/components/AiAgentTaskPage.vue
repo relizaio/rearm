@@ -24,6 +24,7 @@
                     <task-documents :task="task" :focus="elementFocus"/>
                     <task-hops :task="task" :agent-names="agentNames"/>
                     <task-history :task="task"/>
+                    <AiAgentRevisionHistory v-if="canReadHistory && task.uuid" kind="task" :uuid="task.uuid" :current="task"/>
                 </div>
                 <div class="tpage__side tsecs">
                     <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels"
@@ -54,6 +55,7 @@ import { NAlert, NBreadcrumb, NBreadcrumbItem, NSpin } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
 import TaskAssignment from './task/TaskAssignment.vue'
 import TaskDependencies from './task/TaskDependencies.vue'
+import AiAgentRevisionHistory from './AiAgentRevisionHistory.vue'
 import TaskDocuments from './task/TaskDocuments.vue'
 import TaskFindings from './task/TaskFindings.vue'
 import TaskHeader from './task/TaskHeader.vue'
@@ -85,6 +87,8 @@ const priorityLevels = computed<number>(() =>
     store.getters?.orgById?.(task.value?.org)?.settings?.findingPriorityLevels ?? 3)
 const canReopen = computed<boolean>(() =>
     !!task.value?.org && isOrgAdmin(store.getters?.myuser?.permissions?.permissions, task.value.org))
+// The revisions read (agentTaskHistory) is org admin too (22ddc644).
+const canReadHistory = canReopen
 
 async function load () {
     loading.value = true
