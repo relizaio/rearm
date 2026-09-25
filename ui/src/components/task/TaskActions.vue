@@ -19,6 +19,21 @@
                 set by {{ actorLabel(task.orderSetBy) }} · {{ ts(task.orderSetAt) }}
             </span>
         </div>
+        <!-- What this task may spend, on top of the board's limit (task 6f1b348d). Blank and set
+             clears it. A raise does not release a budget hold: release the hold to resume. -->
+        <div class="deprow budrow">
+            <n-input-number v-model:value="budgetDraft" size="small" :min="0" :precision="2"
+                            placeholder="no budget" style="width: 150px">
+                <template #prefix><span class="deplab" style="min-width: 0">budget $</span></template>
+            </n-input-number>
+            <n-button size="small" :disabled="!budgetChanged(task.budgetMicros, budgetDraft)"
+                      @click="emit('set-budget', { task, budgetMicros: dollarsToMicros(budgetDraft) })">
+                {{ budgetDraft == null && task.budgetMicros != null ? 'Clear budget' : 'Set budget' }}
+            </n-button>
+            <span v-if="task.budgetSetBy" class="holdmeta" style="margin-top: 0">
+                set by {{ actorLabel(task.budgetSetBy) }} · {{ ts(task.budgetSetAt) }}
+            </span>
+        </div>
         <div class="deprow">
             <n-button size="small" type="primary" ghost :disabled="!completable"
                       @click="showComplete = true">Complete…</n-button>
@@ -122,6 +137,7 @@ import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { roleOptionsOf } from '@/utils/agentTaskOptions'
+import { budgetChanged, dollarsToMicros, microsToDollars } from '@/utils/agentBudget'
 
 const props = defineProps<{
     task: any
@@ -133,6 +149,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
     (e: 'order', p: { task: any, orderIndex: number }): void
+    (e: 'set-budget', p: { task: any, budgetMicros: number | null }): void
     (e: 'complete', p: { task: any, note: string, skipRequiredRoles: boolean }): void
     (e: 'cancel', p: { task: any, note: string }): void
     (e: 'reopen', p: { task: any, role: string, reason: string }): void
@@ -142,6 +159,7 @@ const emit = defineEmits<{
 
 const authorizeRole = ref<string | null>(null)
 const orderDraft = ref<number | null>(null)
+const budgetDraft = ref<number | null>(null)
 const cancelNote = ref('')
 const reopenRole = ref<string | null>(null)
 const reopenReason = ref('')
@@ -176,6 +194,7 @@ watch(() => props.task?.uuid, () => { reopenRole.value = null; reopenReason.valu
 watch(() => props.task?.uuid, () => {
     authorizeRole.value = props.task?.role ?? null
     orderDraft.value = props.task?.orderIndex ?? null
+    budgetDraft.value = microsToDollars(props.task?.budgetMicros)
     cancelNote.value = ''
     showComplete.value = false
     completeNote.value = ''

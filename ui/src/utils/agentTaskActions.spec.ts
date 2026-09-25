@@ -28,6 +28,7 @@ const TABLE: [string, any, string, any, boolean][] = [
     ['decideFindings', { task, specification: 'REVIEW_FINDINGS', decisions: [{ action: 'ACCEPT' }], about: null },
         'agentTaskDecideFindings', { taskUuid: 't1', specification: 'REVIEW_FINDINGS', decisions: [{ action: 'ACCEPT' }], about: null }, true],
     ['requireReview', { task, value: true }, 'agentTaskRequireHumanReview', { taskUuid: 't1', value: true }, true],
+    ['setBudget', { task, budgetMicros: 2_500_000 }, 'agentTaskSetBudget', { taskUuid: 't1', budgetMicros: 2_500_000 }, true],
 ]
 
 describe('useAgentTaskActions', () => {
