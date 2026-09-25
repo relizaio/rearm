@@ -1,0 +1,89 @@
+// Section styles shared by the task page, the task drawer and the section components. Each
+// component @uses this inside its own scoped style block, so the rules stay scoped per component.
+.dsec {
+    &__h {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #999;
+        margin-bottom: 6px;
+    }
+}
+.fgroup {
+    margin-bottom: 8px;
+    &__h { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    &__count { font-size: 11px; color: #999; }
+}
+.frow {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; font-size: 12.5px;
+    padding: 2px 0 2px 10px;
+    &__id { font-weight: 600; font-size: 11.5px; }
+    &__title { flex: 1; }
+    &__loc { font-size: 11px; color: #999; }
+    &__dec { font-size: 10.5px; color: #8a8; }
+    &--closed { opacity: 0.6; }
+}
+.fedit { width: 100%; padding: 4px 0 6px 10px; }
+.drow {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; font-size: 12.5px;
+    padding: 3px 0;
+    &__label { font-weight: 600; }
+    &__path { font-size: 11.5px; }
+    &__path--plain { color: #777; }
+    &__commit { font-size: 11px; color: #999; }
+}
+.deprow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.deplab { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #999; min-width: 52px; }
+.depclick { cursor: pointer; }
+.hist {
+    &__row {
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+        font-size: 12.5px;
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 7px;
+        &--active { border-left: 3px solid #d9a24a; padding-left: 8px; }
+        &:last-child { border-bottom: none; }
+    }
+    &__role { font-weight: 600; }
+    &__agent { color: #666; }
+    &__time { color: #999; font-size: 11.5px; }
+    &__pv { font-size: 10.5px; color: #999; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
+    // Pushed to the right so the hop reads role/agent/time first and cost last:
+    // the money is the qualifier on the hop, not its headline.
+    &__usage { margin-left: auto; font-size: 11.5px; color: #777; white-space: nowrap; }
+    &__outputs { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 2px; margin-top: 3px; }
+    &__output { font-size: 11.5px; color: #666; }
+    &__note { width: 100%; color: #555; font-size: 12px; padding-left: 2px; }
+}
+.qstack {
+    font-size: 11.5px;
+    &__row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; flex-wrap: wrap; }
+    &__depth { color: #999; font-family: monospace; }
+    &__link { font-size: 11px; }
+    &__time { color: #999; margin-left: auto; }
+    &__note { color: #b0854a; font-size: 11px; margin-top: 4px; }
+}
+.shist {
+    font-size: 11.5px;
+    &__row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; flex-wrap: wrap; }
+    &__time { color: #999; font-family: monospace; }
+    &__arrow { color: #555; }
+    &__trig { font-size: 10px; color: #888; background: rgba(128, 128, 128, 0.1); padding: 0 4px; border-radius: 4px; }
+    &__by { color: #777; font-size: 10.5px; }
+    &__note { color: #666; font-size: 10.5px; font-style: italic; }
+    &__dur { color: #b0854a; font-size: 10.5px; }
+}
+.holdmeta { font-size: 11.5px; color: #888; margin-top: 4px; white-space: pre-wrap; }
+.qans { margin-top: 10px; border-top: 1px solid #2a2a2a; padding-top: 8px; }
+.qans__row { margin-bottom: 8px; }
+.qans__id { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px; }
+.qans__tag { font-family: monospace; font-size: 11px; color: #9ab; }
+.qans__title { font-size: 12px; color: #bbb; }
+.prov { font-size: 12px; color: #777; div { margin-bottom: 3px; } }
+.sesschip { font-size: 10.5px; margin-right: 4px; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
+.prlink2 { font-size: 12.5px; }
+.empty { color: #888; font-size: 12.5px; }
