@@ -14,6 +14,11 @@
 
         <n-card size="small" title="Total" style="margin-bottom: 14px;">
             <agent-usage-summary :usage="usage" :show-by-model="false"/>
+            <!-- The window above is a period; the budget is the board's whole life (task 40f270be). -->
+            <div v-if="budgetLine" class="budgetline" data-testid="budget-line">
+                <n-tag size="small" :bordered="false" :type="budgetLine.type">{{ budgetLine.label }}</n-tag>
+                <n-text depth="3" style="font-size: 12px;">since the board was created</n-text>
+            </div>
         </n-card>
 
         <n-grid :cols="2" :x-gap="14" responsive="screen" item-responsive>
@@ -67,7 +72,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, h } from 'vue'
 import { useStore } from 'vuex'
-import { NCard, NDataTable, NGrid, NGridItem, NSelect, NSpace, NSpin, NText, DataTableColumns } from 'naive-ui'
+import { NCard, NDataTable, NGrid, NGridItem, NSelect, NSpace, NSpin, NTag, NText, DataTableColumns } from 'naive-ui'
+import { budgetChip } from '@/utils/agentBudget'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import {
     UsageTotals,
@@ -81,6 +87,10 @@ import {
 } from '@/utils/agentUsage'
 
 const props = defineProps<{
+    /** The board's budget and what it has spent since it was created; the budget line shows when both are known. */
+    budgetMicros?: number | null
+    lifetimeSpentMicros?: number | null
+    softAlertPercent?: number | null
     boardUuid: string | null,
     tasks: any[],
     agentNames: Record<string, string>,
@@ -92,6 +102,10 @@ const loading = ref(false)
 const periodHours = ref<number>(USAGE_PERIODS[1].hours)
 
 const periodOptions = USAGE_PERIODS.map(p => ({ label: p.label, value: p.hours }))
+
+const budgetLine = computed(() => props.budgetMicros === null || props.budgetMicros === undefined
+    || props.lifetimeSpentMicros === null || props.lifetimeSpentMicros === undefined
+    ? null : budgetChip(props.lifetimeSpentMicros, props.budgetMicros, props.softAlertPercent))
 
 const windowLabel = computed(() => {
     const { from, to } = periodRange(periodHours.value)
@@ -197,3 +211,7 @@ const sessionColumns = computed<DataTableColumns<any>>(() => [
     { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.cost) },
 ])
 </script>
+
+<style scoped>
+.budgetline { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+</style>

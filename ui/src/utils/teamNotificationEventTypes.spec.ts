@@ -156,3 +156,17 @@ describe('buildOwnedComponentNotificationsInput vs the Pro schema', () => {
             .toBeGreaterThan(0)
     })
 })
+
+describe('board events are not team events (82880ea6)', () => {
+    it('never offers a board event type to an ownership-scoped subscription', async () => {
+        const { ownedComponentEventTypes } = await import('./teamNotificationEventTypes')
+        const offered = ownedComponentEventTypes([
+            { label: 'Board alert', value: 'AGENT_BOARD_ALERT' },
+            { label: 'Board task needs a person', value: 'AGENT_TASK_NEEDS_PERSON' },
+            { label: 'Board task returned', value: 'AGENT_TASK_RETURNED' },
+            { label: 'Board task waiting', value: 'AGENT_TASK_QUEUE_AGE' },
+            { label: 'Release created', value: 'RELEASE_CREATED' },
+        ]).map(o => o.value)
+        expect(offered).toEqual(['RELEASE_CREATED'])
+    })
+})

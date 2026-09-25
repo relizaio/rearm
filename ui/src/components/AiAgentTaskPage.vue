@@ -19,7 +19,7 @@
                 <div class="tpage__main tsecs">
                     <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels"
                                    @decide="decideFindings" @open-element="openElement"/>
-                    <task-open-questions :task="task"/>
+                    <task-open-questions :task="task" :roles="roles"/>
                     <task-questions :task="task" :roles="roles" @answer="answerQuestions"/>
                     <task-documents :task="task" :focus="elementFocus"/>
                     <task-hops :task="task" :agent-names="agentNames"/>
@@ -32,7 +32,7 @@
                     <task-actions :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                                   @authorize="authorizeTask" @order="orderTask" @complete="completeTask"
                                   @cancel="cancelTask" @reopen="reopenTask" @decide="decideFindings"
-                                  @set-strength="setStrength" @operator-hold="operatorHold"/>
+                                  @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames"/>
                     <task-usage :task="task"/>
@@ -124,7 +124,7 @@ watch(taskUuid, load, { immediate: true })
 // The page stays on its task after any action, including a verdict that hands the task on.
 const {
     humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold,
+    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
 } = useAgentTaskActions(async () => { await load() })
 
 // A finding's element chip opens the element under its document (elements.md §8).

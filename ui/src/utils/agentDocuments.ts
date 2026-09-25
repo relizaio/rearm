@@ -113,9 +113,14 @@ export function testCounts (release?: DocumentRelease | null): { passed: number,
 export function documentLabel (release?: DocumentRelease | null): string {
     const spec = release?.document?.specification
     if (!spec) return '—'
-    const pretty = spec.toLowerCase().replace(/_/g, ' ')
+    const pretty = (s: string) => s.toLowerCase().replace(/_/g, ' ')
+    // A round filed under one kind with another kind's index inside: before task bc7fc25a the board
+    // unwound a tester's or reviewer's findings frame into a QUESTIONS-filed round. It is named by
+    // what it holds, as the board's round, and not given a questions round number it never was.
+    const kind = (release?.document?.findings as any)?.kind
+    if (kind && kind !== spec) return `${pretty(kind)} · board round (filed as ${pretty(spec)})`
     const round = release?.document?.round
-    return round ? `${pretty} · round ${round}` : pretty
+    return round ? `${pretty(spec)} · round ${round}` : pretty(spec)
 }
 
 /**
@@ -265,4 +270,18 @@ export function templateRows (roles: any[] | null | undefined,
         .filter(Boolean) as string[]
     return [...new Set([...INDEX_DOCUMENT_TYPES, ...produced])]
         .map(spec => ({ spec, placeholder: effective?.[spec] ?? 'the default for its scope' }))
+}
+
+/**
+ * What a board document's lifecycle means (operator-actions D13-D15, task 0192a587): written,
+ * handed over by its producer's sign-off, or reviewed by a reviewer's pass or a person at a gate.
+ * Later stages are people's, and read as themselves.
+ */
+export function documentLifecycleLabel (release?: DocumentRelease | null): { label: string, type: 'default' | 'info' | 'success' } | null {
+    const lc = release?.lifecycle
+    if (!lc) return null
+    if (lc === 'DRAFT') return { label: 'draft', type: 'default' }
+    if (lc === 'ASSEMBLED') return { label: 'handed over', type: 'info' }
+    if (lc === 'READY_TO_SHIP') return { label: 'reviewed', type: 'success' }
+    return { label: lc.toLowerCase().replace(/_/g, ' '), type: 'default' }
 }

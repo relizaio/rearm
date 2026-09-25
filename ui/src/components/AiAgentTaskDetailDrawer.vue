@@ -20,7 +20,8 @@
                               @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
-                              @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"/>
+                              @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
+                              @set-budget="p => emit('set-budget', p)"/>
                 <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
                               @open="t => emit('open', t)"/>
             </div>
@@ -57,6 +58,7 @@ const emit = defineEmits<{
     (e: 'require-review', p: { task: any, value: boolean }): void
     (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
     (e: 'order', p: { task: any, orderIndex: number }): void
+    (e: 'set-budget', p: { task: any, budgetMicros: number | null }): void
     (e: 'complete', p: { task: any, note: string, skipRequiredRoles: boolean }): void
     (e: 'cancel', p: { task: any, note: string }): void
     (e: 'reopen', p: { task: any, role: string, reason: string }): void

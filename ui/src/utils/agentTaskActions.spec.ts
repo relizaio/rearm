@@ -31,6 +31,7 @@ const TABLE: [string, any, string, any, boolean][] = [
     ['setStrength', { task, requiredStrength: 4.5 }, 'agentTaskSetStrength', { taskUuid: 't1', requiredStrength: 4.5 }, true],
     ['operatorHold', { task, reason: 'waiting on legal' }, 'agentTaskOperatorHold',
         { taskUuid: 't1', hold: true, reason: 'waiting on legal' }, true],
+    ['setBudget', { task, budgetMicros: 2_500_000 }, 'agentTaskSetBudget', { taskUuid: 't1', budgetMicros: 2_500_000 }, true],
 ]
 
 describe('useAgentTaskActions', () => {
@@ -51,6 +52,13 @@ describe('useAgentTaskActions', () => {
             expect(after).toHaveBeenCalledWith(task, keepOpen)
         })
     }
+
+    it('a release carries the role the person picked (4c566d0d)', async () => {
+        dispatch.mockResolvedValue({ status: 'QUEUED', role: 'coder' })
+        await useAgentTaskActions(async () => {}).operatorRelease({ task, note: 'go', role: 'coder' })
+        expect(dispatch).toHaveBeenCalledWith('agentTaskOperatorHold', { taskUuid: 't1', hold: false, reason: 'go', role: 'coder' })
+        expect(success).toHaveBeenCalledWith(expect.objectContaining({ content: 'Hold released to coder' }))
+    })
 
     it('a failure says so and reloads nothing', async () => {
         dispatch.mockRejectedValue(new Error('Not authorized'))

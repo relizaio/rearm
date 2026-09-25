@@ -11,9 +11,9 @@
             </template>
             <span v-else class="tsum__none">none open</span>
         </div>
-        <div v-if="summary.openQuestions" class="deprow">
+        <div v-if="summary.questions" class="deprow">
             <span class="deplab">questions</span>
-            <span>{{ summary.openQuestions }} open<template v-if="summary.askedBy">, asked by {{ summary.askedBy }}</template></span>
+            <span>{{ summary.questions }}</span>
         </div>
         <div v-if="summary.latestDocuments.length" class="deprow">
             <span class="deplab">documents</span>

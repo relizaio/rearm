@@ -54,12 +54,16 @@ export function useAgentTaskActions (after: AfterAction) {
             () => `Signed off ${p.outcome} — returned to the coordinator`, 'Sign-off failed')
     }
 
-    function operatorRelease (p: { task: any, note?: string } | any) {
+    function operatorRelease (p: { task: any, note?: string, role?: string } | any) {
         // Tolerates the bare task the drawer used to emit, so a stale caller does not lose the release.
         const t = p?.task ?? p
+        // A role only from a release payload: a bare task carries its own role field, which is not
+        // where the person asked to send it.
+        const role: string | undefined = p?.task ? (p.role || undefined) : undefined
         return handedOn(t,
-            () => store.dispatch('agentTaskOperatorHold', { taskUuid: t.uuid, hold: false, reason: p?.note || undefined }),
-            () => 'Hold released', 'Release failed')
+            () => store.dispatch('agentTaskOperatorHold', { taskUuid: t.uuid, hold: false, reason: p?.note || undefined,
+                ...(role ? { role } : {}) }),
+            () => role ? `Hold released to ${role}` : 'Hold released', 'Release failed')
     }
 
     function answerQuestions (p: { task: any,
@@ -74,6 +78,17 @@ export function useAgentTaskActions (after: AfterAction) {
         return kept(p.task,
             () => store.dispatch('agentTaskAuthorize', { taskUuid: p.task.uuid, role: p.role, orderIndex: p.orderIndex }),
             () => `Authorized for ${p.role}`, 'Authorize failed')
+    }
+
+    /**
+     * A task's budget; null clears it (task 6f1b348d). A raise does not release a budget hold, so a
+     * held task's confirmation says to release it.
+     */
+    function setBudget (p: { task: any, budgetMicros: number | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskSetBudget', { taskUuid: p.task.uuid, budgetMicros: p.budgetMicros }),
+            (res: any) => (p.budgetMicros === null ? 'Task budget cleared' : 'Task budget set')
+                + (res?.status === 'ON_HOLD' ? '; release the hold to resume' : ''), 'Setting the budget failed')
     }
 
     function orderTask (p: { task: any, orderIndex: number }) {
@@ -134,6 +149,6 @@ export function useAgentTaskActions (after: AfterAction) {
 
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold,
+        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
     }
 }
