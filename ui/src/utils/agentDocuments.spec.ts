@@ -5,6 +5,7 @@ import {
     documentVerdict,
     templateRows,
     findingLocation,
+    findingLocationFull,
     findingsOf,
     completionBlockers,
     groupByPriority,
@@ -133,6 +134,14 @@ describe('display helpers', () => {
     it('renders a location for code and for a document reference', () => {
         expect(findingLocation({ location: { path: 'a/B.java', line: 412 } })).toBe('a/B.java:412')
         expect(findingLocation({ location: { path: 'a/B.java' } })).toBe('a/B.java')
+    })
+
+    it('the tooltip has the whole location: the path is not lost behind a ref (9a118a2a T-2)', () => {
+        expect(findingLocationFull({ location: { path: 'a/B.java', line: 412, ref: 'REQ-F-012 §2' } })).toBe('a/B.java:412 — REQ-F-012 §2')
+        expect(findingLocation({ location: { path: 'a/B.java', line: 412, ref: 'REQ-F-012 §2' } })).toBe('REQ-F-012 §2')
+        expect(findingLocationFull({ location: { ref: 'only a ref' } })).toBe('only a ref')
+        expect(findingLocationFull({ location: { path: 'a/B.java' } })).toBe('a/B.java')
+        expect(findingLocationFull({ location: null })).toBe('')
         expect(findingLocation({ location: { ref: 'REQ-14' } })).toBe('REQ-14')
         expect(findingLocation({})).toBe('')
     })

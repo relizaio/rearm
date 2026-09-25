@@ -9,15 +9,15 @@ const dir = fileURLToPath(new URL('.', import.meta.url))
 const template = (file: string) => parseSfc(readFileSync(dir + file, 'utf8')).descriptor.template?.content ?? ''
 
 describe('release links on the agent board components', () => {
-    it('the task drawer links the question stack to the release page, in-app', () => {
-        const link = template('AiAgentTaskDetailDrawer.vue').split('\n').find(l => l.includes('qstack__link')) ?? ''
+    it('the question stack links to the release page, in-app', () => {
+        const link = template('task/TaskQuestions.vue').split('\n').find(l => l.includes('qstack__link')) ?? ''
         expect(link).toContain('<router-link')
         expect(link).toContain(':to="`/release/show/${f.questionsRelease}`"')
     })
 
-    it('no AiAgent*.vue builds a /release/${...} path without show/', () => {
-        const bare = readdirSync(dir)
-            .filter(f => /^AiAgent.*\.vue$/.test(f))
+    it('no AiAgent*.vue or task/*.vue builds a /release/${...} path without show/', () => {
+        const bare = [...readdirSync(dir).filter(f => /^AiAgent.*\.vue$/.test(f)),
+            ...readdirSync(dir + 'task').filter(f => f.endsWith('.vue')).map(f => 'task/' + f)]
             .flatMap(f => readFileSync(dir + f, 'utf8').split('\n').map((l, i) => ({ at: `${f}:${i + 1}`, l })))
             .filter(({ l }) => l.includes('/release/${'))
             .map(({ at }) => at)
