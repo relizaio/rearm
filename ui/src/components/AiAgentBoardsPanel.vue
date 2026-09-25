@@ -143,6 +143,10 @@
                     <div class="col__head col__head--hold">On hold</div>
                     <TaskCard v-for="t in byStatus('ON_HOLD')" :key="t.uuid" :t="t"/>
                 </div>
+                <div class="col" v-if="byStatus('DELIVERING').length">
+                    <div class="col__head">Delivering</div>
+                    <TaskCard v-for="t in byStatus('DELIVERING')" :key="t.uuid" :t="t"/>
+                </div>
                 <div class="col col--done">
                     <div class="col__head">Completed</div>
                     <TaskCard v-for="t in byStatus('COMPLETED')" :key="t.uuid" :t="t"/>
@@ -640,6 +644,7 @@ import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
 import { templateRows } from '@/utils/agentDocuments'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { prChips } from '@/utils/agentDelivery'
 
 /**
  * Types the board editor offers a template for. The task-scoped pair, because those are the ones
@@ -1170,8 +1175,12 @@ const TaskCard = defineComponent({
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => `${p.t.returns.length} return${p.t.returns.length > 1 ? 's' : ''}` }),
                     default: () => p.t.returns.map((r: any) => `${r.role ?? '?'}: ${r.reason}${r.description ? ' — ' + r.description : ''}`).join(' | '),
                 }) : null,
-                ...(p.t.prUrls ?? []).map((pr: string) => h(NTag, { size: 'tiny', bordered: false, type: 'success' },
-                    { default: () => h('a', { href: pr, target: '_blank', rel: 'noopener', class: 'prlink' }, 'PR') })),
+                ...prChips(p.t).map((c) => h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: c.type },
+                        { default: () => h('a', { href: c.url, target: '_blank', rel: 'noopener', class: 'prlink' },
+                            c.state === 'linked' ? 'PR' : `PR ${c.state}`) }),
+                    default: () => `${c.label}: ${c.title}`,
+                })),
             ]),
             p.t.dependsOn?.length ? h('div', { class: 'tcard__deps' }, [
                 h('span', { class: 'deplabel' }, 'after'),
