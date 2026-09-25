@@ -44,7 +44,8 @@ export function questionRounds (task: any, roles?: any[] | null): QuestionRound[
     const documents: DocumentRelease[] = task?.documents ?? []
     const byUuid = new Map<string, DocumentRelease>()
     for (const d of documents) if (d?.uuid) byUuid.set(d.uuid, d)
-    const rounds = documents.filter(d => d?.document?.specification === 'QUESTIONS' && !!d?.document?.findings && !!d?.uuid)
+    const rounds = documents.filter(d => d?.document?.specification === 'QUESTIONS' && !!d?.document?.findings && !!d?.uuid
+        && isOfItsKind(d))
     const frames: any[] = task?.questionStack ?? []
     const signOffs: any[] = task?.signOffs ?? []
 
@@ -121,6 +122,36 @@ export function questionRounds (task: any, roles?: any[] | null): QuestionRound[
         if (askedBy) previousAsker = askedBy
     }
     return out.reverse()
+}
+
+/**
+ * Whether a QUESTIONS-filed round really is one. Before task bc7fc25a the board filed its unwind of a
+ * tester's or reviewer's findings frame under QUESTIONS with the findings index inside; those
+ * rounds are the record, not questions. A round without a kind counts as what it is filed under.
+ */
+function isOfItsKind (d: DocumentRelease): boolean {
+    const kind = (d?.document?.findings as any)?.kind
+    return !kind || kind === d?.document?.specification
+}
+
+/**
+ * What a frame waits on: a questions round, or a findings round -- a tester's or reviewer's round
+ * routed back to the maker, which pops when the maker passes and the reviewer's next round closes
+ * or re-raises its ids (task bc7fc25a). Null when the frame's round is not on the task's read.
+ */
+export function frameKind (task: any, frame: any): 'questions' | 'findings' | null {
+    const d = (task?.documents ?? []).find((x: any) => x?.uuid && x.uuid === frame?.questionsRelease)
+    const spec = d?.document?.specification
+    if (!spec) return null
+    return spec === 'QUESTIONS' ? 'questions' : 'findings'
+}
+
+/** "tester waits on coder to resolve 2 finding(s)": a findings frame's row. */
+export function findingsFrameLabel (task: any, frame: any, name: (uuid: string | null | undefined) => string): string {
+    const d = (task?.documents ?? []).find((x: any) => x?.uuid && x.uuid === frame?.questionsRelease)
+    const open = ((d?.document?.findings?.findings ?? []) as Finding[]).filter(f => f.status === 'OPEN').length
+    return `${name(frame?.askingRole) || 'a role'} waits on ${name(frame?.answeringRole) || 'nobody yet'} to resolve `
+        + `${open} finding${open === 1 ? '' : 's'}`
 }
 
 export function latestQuestionRound (task: any, roles?: any[] | null): QuestionRound | null {

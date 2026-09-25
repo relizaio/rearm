@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { aboutLabel, answeredByLabel, latestQuestionRound, questionRoundLabel, questionRoundOf, questionRounds,
-    questionStateLabel, questionStateType } from './agentQuestionRounds'
+import { aboutLabel, answeredByLabel, findingsFrameLabel, frameKind, latestQuestionRound, questionRoundLabel, questionRoundOf,
+    questionRounds, questionStateLabel, questionStateType } from './agentQuestionRounds'
 
 const roles = [{ uuid: 'rc-coder', name: 'coder' }, { uuid: 'rc-arch', name: 'architect' }]
 
@@ -128,6 +128,29 @@ describe('question rounds', () => {
             ABOUT_A1), a2, a1] }, roles)!
         expect(mixed.state).toBe('answered')
         expect(mixed.answeredBy).toEqual([{ specification: 'ARCHITECTURE', round: 2, release: 'a2' }])
+    })
+
+    it('skips a QUESTIONS-filed round with a findings index inside (bc7fc25a)', () => {
+        const legacy = doc('u1', 'QUESTIONS', 2, [item('T-1', 'RESOLVED', { resolvedBy: 'n1' })], ABOUT_A1)
+        ;(legacy.document.findings as any).kind = 'TEST_REPORT'
+        const real = doc('q1', 'QUESTIONS', 1, [item('q1', 'OPEN')], ABOUT_A1)
+        expect(questionRounds({ documents: [legacy, real, a1] }, roles).map(r => r.release)).toEqual(['q1'])
+        // a round without a kind predates the field and still counts
+        const kindless = doc('q0', 'QUESTIONS', 1, [item('q9', 'OPEN')])
+        ;(kindless.document.findings as any).kind = undefined
+        expect(questionRounds({ documents: [kindless] }, roles).map(r => r.release)).toEqual(['q0'])
+    })
+
+    it('tells a findings frame from a questions frame, and words the former', () => {
+        const run = doc('tr1', 'TEST_REPORT', 1, [item('T-1', 'OPEN'), item('T-2', 'OPEN'), item('T-3', 'RESOLVED')])
+        const q = doc('q1', 'QUESTIONS', 1, [item('q1', 'OPEN')])
+        const task = { documents: [run, q] }
+        const findings = { askingRole: 'rc-arch', answeringRole: 'rc-coder', questionsRelease: 'tr1' }
+        expect(frameKind(task, findings)).toBe('findings')
+        expect(frameKind(task, { questionsRelease: 'q1' })).toBe('questions')
+        expect(frameKind(task, { questionsRelease: 'elsewhere' })).toBeNull()
+        const name = (u: string | null | undefined) => roles.find(r => r.uuid === u)?.name ?? ''
+        expect(findingsFrameLabel(task, findings, name)).toBe('architect waits on coder to resolve 2 findings')
     })
 
     it('finds the round a frame points at, and nothing for none', () => {

@@ -87,6 +87,29 @@ describe('question rounds on the task page', () => {
         expect(w.find('.qstack__row').text()).toContain('coder asked nobody yet · questions round 1 · about ARCHITECTURE round 1')
     })
 
+    it('words a findings frame as the reviewer waiting on the maker, not as a question (bc7fc25a)', () => {
+        const run = questionsRound('tr-1', 1, [fixtureFinding('T-1', 2, 'OPEN', 'red'), fixtureFinding('T-2', 2, 'OPEN', 'red too')])
+        run.document.specification = 'TEST_REPORT'
+        ;(run.document.findings as any).kind = 'TEST_REPORT'
+        const task = questionsTask({ questionStack: [{ askingRole: 'rc-rev', answeringRole: 'rc-coder', questionsRelease: 'tr-1',
+            askedAt: null }], documents: [run, ...richDocuments()] })
+        const w = mount(TaskQuestions, { props: { task, roles: fixtureRoles }, global: { stubs } })
+        expect(w.find('.qstack__findings').text()).toBe('reviewer waits on coder to resolve 2 findings')
+        expect(w.find('.qstack__link').text()).toBe('findings')
+        expect(w.find('.qstack__row').text()).not.toContain(' asked ')
+    })
+
+    it('lists a legacy findings round in Documents as what it holds, with no question state (bc7fc25a T-1)', () => {
+        const legacy = questionsRound('u-1', 1, [fixtureFinding('T-1', 2, 'RESOLVED', 'red', { resolvedBy: 'n-1' })])
+        ;(legacy.document.findings as any).kind = 'TEST_REPORT'
+        const w = mount(TaskDocuments, { props: { task: questionsTask({ documents: [legacy, ...richDocuments()] }) },
+            global: { stubs } })
+        const row = w.findAll('.drow').find(r => r.text().includes('board round'))!
+        expect(row.find('.drow__label').text()).toBe('test report · board round (filed as questions)')
+        expect(row.find('.drow__qstate').exists()).toBe(false)
+        expect(w.findAll('.drow__label').map(l => l.text())).not.toContain('questions · round 1')
+    })
+
     it('puts the open questions on one line in the preview', () => {
         const w = mount(TaskSummary, { props: { task: questionsTask(), tasks: [], roles: fixtureRoles, agentNames: {} },
             global: { stubs } })
