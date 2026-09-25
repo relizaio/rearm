@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { taskSummary } from './agentTaskSummary'
-import { fixtureRoles, fixtureTasks, richTask } from '../components/task/taskFixtures'
+import { fixtureRoles, fixtureTasks, questionsTask, richTask } from '../components/task/taskFixtures'
 
 describe('taskSummary', () => {
     it('counts the open findings of the newest rounds by priority', () => {
@@ -9,11 +9,14 @@ describe('taskSummary', () => {
         expect(s.openFindings).toEqual([{ priority: 2, count: 1 }, { priority: 3, count: 1 }])
     })
 
-    it('names who asked the newest open question', () => {
-        const s = taskSummary(richTask(), [], fixtureRoles, {})
+    it('says how many questions are open, who asked, in which round and about what', () => {
+        const s = taskSummary(questionsTask(), [], fixtureRoles, {})
         expect(s.openQuestions).toBe(1)
-        expect(s.askedBy).toBe('coder')
-        expect(taskSummary(richTask({ questionStack: [] }), [], fixtureRoles, {}).askedBy).toBeNull()
+        expect(s.questions).toBe('1 open question from coder (round 1, about ARCHITECTURE round 1)')
+        // No QUESTIONS round on the read: the frame still names the asker.
+        expect(taskSummary(richTask(), [], fixtureRoles, {}).questions).toBe('1 open question from coder')
+        expect(taskSummary(richTask({ questionStack: [] }), [], fixtureRoles, {}).questions).toBe('1 open question')
+        expect(taskSummary(richTask({ openQuestions: [] }), [], fixtureRoles, {}).questions).toBeNull()
     })
 
     it('keeps the latest document of each type only', () => {
@@ -40,7 +43,7 @@ describe('taskSummary', () => {
 
     it('reads an empty task as nothing to show', () => {
         const s = taskSummary({ uuid: 'x' }, [], [], {})
-        expect(s).toEqual({ openFindings: [], openQuestions: 0, askedBy: null, latestDocuments: [],
+        expect(s).toEqual({ openFindings: [], openQuestions: 0, questions: null, latestDocuments: [],
             dependencies: { done: 0, pending: 0, blocks: 0 }, assignment: null, usage: null })
     })
 })

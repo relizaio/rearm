@@ -19,7 +19,7 @@
                 <div class="tpage__main tsecs">
                     <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels"
                                    @decide="decideFindings" @open-element="openElement"/>
-                    <task-open-questions :task="task"/>
+                    <task-open-questions :task="task" :roles="roles"/>
                     <task-questions :task="task" :roles="roles" @answer="answerQuestions"/>
                     <task-documents :task="task" :focus="elementFocus"/>
                     <task-hops :task="task" :agent-names="agentNames"/>
