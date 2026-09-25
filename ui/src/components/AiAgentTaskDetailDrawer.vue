@@ -372,7 +372,7 @@
                         <div v-for="(f, i) in task.questionStack" :key="i" class="qstack__row">
                             <span class="qstack__depth">{{ i + 1 }}</span>
                             <span>{{ roleName(f.askingRole) }} asked {{ roleName(f.answeringRole) || 'nobody yet' }}</span>
-                            <a v-if="f.questionsRelease" :href="`/release/${f.questionsRelease}`" class="qstack__link">questions</a>
+                            <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">questions</router-link>
                             <span class="qstack__time">{{ ts(f.askedAt) }}</span>
                         </div>
                     </div>
