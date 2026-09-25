@@ -9,6 +9,14 @@
             <n-tag :type="session.status === 'OPEN' ? 'info' : 'default'" size="small">
                 {{ session.status }}
             </n-tag>
+            <!-- A stuck session (an agent that died holding tasks) is otherwise released only by the
+                 idle autoclose. Org admin, as the server requires. -->
+            <n-popconfirm v-if="canForceClose(session, isAdmin)" @positive-click="forceClose">
+                <template #trigger>
+                    <n-button size="tiny" type="error" ghost class="forceclose" :loading="closing">Force close</n-button>
+                </template>
+                Releases every task this session holds back to the coordinator and closes the session.
+            </n-popconfirm>
             <code class="dim">{{ session.uuid }}</code>
             <span class="dim">·</span>
             <a v-if="agent" @click.prevent="openAgent" href="#">
@@ -191,7 +199,9 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import { canForceClose } from '@/utils/agentTaskAdmin'
+import { isOrgAdmin } from '@/utils/agentReopen'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
 import { PrismEditor } from 'vue-prism-editor'
@@ -348,6 +358,21 @@ const assertionTip = computed<string>(() =>
     ASSERTION_TIPS[session.value?.modelAssertion] ?? 'The provenance of this model attribution is unknown.')
 
 onMounted(load)
+
+const isAdmin = computed(() => isOrgAdmin(store.getters?.myuser?.permissions?.permissions, session.value?.org))
+const closing = ref(false)
+async function forceClose () {
+    closing.value = true
+    try {
+        await store.dispatch('forceCloseAgentSession', session.value.uuid)
+        notification.success({ content: 'Session closed; its tasks went back to the coordinator', duration: 4000 })
+        await load()
+    } catch (e: any) {
+        notification.error({ content: `Force close failed: ${e?.message ?? e}`, duration: 8000 })
+    } finally {
+        closing.value = false
+    }
+}
 
 async function load () {
     session.value = await store.dispatch('fetchSession', sessionUuid.value)
