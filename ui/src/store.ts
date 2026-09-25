@@ -37,6 +37,11 @@ const AGENT_BOARD_SELECTION = `
     defaultInputResolution
     blockingPriority
     completionPriority
+    budgetMicros
+    softAlertPercent
+    cycleCap
+    noProgressRepeatsToStop
+    createdDate
     declarative { specHash appliedAt source { repo path commit } }
 `
 
@@ -2877,6 +2882,7 @@ const storeObject : any = {
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
+                            hopBudgetMicros
                             modelStrengths { model strength }
                         }
                     }`,
@@ -2905,6 +2911,7 @@ const storeObject : any = {
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
+                            hopBudgetMicros
                             modelStrengths { model strength }
                         }
                     }`,
