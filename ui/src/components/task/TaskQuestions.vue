@@ -4,10 +4,12 @@
         <div class="qstack">
             <div v-for="(f, i) in task.questionStack" :key="i" class="qstack__row">
                 <span class="qstack__depth">{{ i + 1 }}</span>
-                <span>{{ roleName(roles, f.askingRole) }} asked {{ roleName(roles, f.answeringRole) || 'nobody yet' }}<template
+                <span v-if="frameKind(task, f) === 'findings'" class="qstack__findings">{{ findingsFrameLabel(task, f, u => roleName(roles, u)) }}</span>
+                <span v-else>{{ roleName(roles, f.askingRole) }} asked {{ roleName(roles, f.answeringRole) || 'nobody yet' }}<template
                     v-if="frameRound(f)"> · questions round {{ frameRound(f)?.round ?? '?' }}<template
                     v-if="aboutLabel(frameRound(f))"> · {{ aboutLabel(frameRound(f)) }}</template></template></span>
-                <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">questions</router-link>
+                <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">{{
+                    frameKind(task, f) === 'findings' ? 'findings' : 'questions' }}</router-link>
                 <span class="qstack__time">{{ ts(f.askedAt) }}</span>
             </div>
         </div>
@@ -56,7 +58,7 @@ import { computed, ref } from 'vue'
 import { NButton, NCheckbox, NInput, NSpace } from 'naive-ui'
 import { roleName, ts } from '@/utils/agentTaskFormat'
 import { AnswerPayload, answerPayloadOf, answerableQuestions } from '@/utils/agentTaskQuestions'
-import { aboutLabel, questionRounds } from '@/utils/agentQuestionRounds'
+import { aboutLabel, findingsFrameLabel, frameKind, questionRounds } from '@/utils/agentQuestionRounds'
 
 const props = defineProps<{ task: any, roles?: any[] }>()
 const emit = defineEmits<{ (e: 'answer', p: AnswerPayload): void }>()
