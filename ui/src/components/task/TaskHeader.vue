@@ -34,12 +34,19 @@
             </div>
         </template>
         <template v-else-if="task.hold.level === 'OPERATOR'">
+            <!-- A loop stop is released past that stop once: to the role routing would pick, or to
+                 the one named here (task 4c566d0d). The cycle is still counted. -->
+            <div v-if="loopStop" class="holdmeta relstop">
+                Releasing routes past this stop once, to the role routing picks or the one you name.
+            </div>
             <n-input v-model:value="releaseNote" size="small"
                      placeholder="Note on release (optional)" style="margin-top: 8px"/>
-            <n-space style="margin-top: 8px">
-                <n-button size="small"
-                          @click="emit('operator-release', { task, note: releaseNote })">
-                    Operator release
+            <n-space style="margin-top: 8px" align="center">
+                <n-select v-if="loopStop" v-model:value="releaseRole" :options="roleOptions" size="small"
+                          clearable placeholder="role routing picks" style="width: 190px" class="relrole"/>
+                <n-button size="small" class="relbtn"
+                          @click="emit('operator-release', releasePayload(task, releaseNote, loopStop ? releaseRole : null))">
+                    {{ releaseLabel(loopStop, loopStop ? releaseRole : null) }}
                 </n-button>
             </n-space>
         </template>
@@ -93,6 +100,7 @@ import { actorLabel } from '@/utils/agentActors'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
 import { subtaskProgress } from '@/utils/agentTaskLabels'
+import { isLoopStopHold, releaseLabel, releasePayload, releaseRoleOptions } from '@/utils/agentHoldRelease'
 
 const props = defineProps<{
     task: any
@@ -107,12 +115,15 @@ const emit = defineEmits<{
     (e: 'human-review', p: { task: any, approve: boolean, note: string, findings?: any[],
         about?: { specification: string } | null }): void
     (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
-    (e: 'operator-release', p: { task: any, note: string }): void
+    (e: 'operator-release', p: { task: any, note: string, role?: string }): void
     (e: 'require-review', p: { task: any, value: boolean }): void
 }>()
 
 const reviewNote = ref('')
 const releaseNote = ref('')
+const releaseRole = ref<string | null>(null)
+const loopStop = computed(() => isLoopStopHold(props.task?.hold))
+const roleOptions = computed(() => releaseRoleOptions(props.roles))
 const gateFindingTitle = ref('')
 const gateFindingPriority = ref<number | null>(1)
 const gateAbout = ref<string | null>(null)
@@ -145,6 +156,8 @@ function reviewAtGate (approve: boolean) {
 
 watch(() => props.task?.uuid, () => {
     reviewNote.value = ''
+    releaseNote.value = ''
+    releaseRole.value = null
     gateFindingTitle.value = ''
     gateAbout.value = null
 })

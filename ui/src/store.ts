@@ -3124,13 +3124,14 @@ const storeObject : any = {
             })
             return response.data.agentBoardReseedCoordinatorPrompt
         },
-        async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string }) {
+        async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string, role?: string }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation agentTaskOperatorHold($taskUuid: ID!, $hold: Boolean!, $reason: String) {
-                        agentTaskOperatorHold(taskUuid: $taskUuid, hold: $hold, reason: $reason) { uuid status }
+                    mutation agentTaskOperatorHold($taskUuid: ID!, $hold: Boolean!, $reason: String, $role: String) {
+                        agentTaskOperatorHold(taskUuid: $taskUuid, hold: $hold, reason: $reason, role: $role) { uuid status role }
                     }`,
-                variables: { taskUuid: payload.taskUuid, hold: payload.hold, reason: payload.reason ?? null },
+                variables: { taskUuid: payload.taskUuid, hold: payload.hold, reason: payload.reason ?? null,
+                    role: payload.role ?? null },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskOperatorHold

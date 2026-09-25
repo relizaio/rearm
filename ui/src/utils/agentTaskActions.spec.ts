@@ -50,6 +50,13 @@ describe('useAgentTaskActions', () => {
         })
     }
 
+    it('a release carries the role the person picked (4c566d0d)', async () => {
+        dispatch.mockResolvedValue({ status: 'QUEUED', role: 'coder' })
+        await useAgentTaskActions(async () => {}).operatorRelease({ task, note: 'go', role: 'coder' })
+        expect(dispatch).toHaveBeenCalledWith('agentTaskOperatorHold', { taskUuid: 't1', hold: false, reason: 'go', role: 'coder' })
+        expect(success).toHaveBeenCalledWith(expect.objectContaining({ content: 'Hold released to coder' }))
+    })
+
     it('a failure says so and reloads nothing', async () => {
         dispatch.mockRejectedValue(new Error('Not authorized'))
         const after = vi.fn(async () => {})
