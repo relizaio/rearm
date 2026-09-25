@@ -42,6 +42,8 @@ const AGENT_BOARD_SELECTION = `
     cycleCap
     noProgressRepeatsToStop
     coordinatorStopRelease
+    deliveryPolicy { mode attest }
+    effectiveDeliveryPolicy { mode attest }
     effectiveCoordinatorStopRelease
     eventRetentionDays
     createdDate
@@ -144,7 +146,9 @@ const AGENT_TASK_SELECTION = `
     requiredRolesSkipped
     reopenedAt
     reopenCount
-    pullRequests { url state targetBranch mergedDate registered }
+    pullRequests { url state targetBranch mergedDate registered
+        attestation { unit commit outcome by { kind uuid name } at note } }
+    deliveries { unit commit outcome by { kind uuid name } at note }
     budgetMicros
     budgetSetBy { kind uuid name }
     budgetSetAt

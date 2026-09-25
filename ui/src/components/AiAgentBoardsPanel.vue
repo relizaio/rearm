@@ -273,6 +273,16 @@
                     are deleted daily; 0 keeps everything, and the log then grows without bound. Unchecked, every stop is the
                     operator's; budget stops always are.
                 </n-text>
+                <!-- task 18c5c293: how a task on this board proves it was delivered. -->
+                <div class="flabel">delivery</div>
+                <n-space :size="8" align="center" data-testid="board-delivery">
+                    <n-select v-model:value="editingBoard.deliveryMode" :options="deliveryModeOptions" clearable
+                              placeholder="PRs registered here (default)" size="small" style="width: 260px"/>
+                    <n-checkbox v-if="editingBoard.deliveryMode === 'NONE'" v-model:checked="editingBoard.deliveryAttest">
+                        wait for a push or release to be attested
+                    </n-checkbox>
+                </n-space>
+                <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">{{ deliveryModeHelp }}</n-text>
                 <!-- What the coordinator seat does itself, e.g. merging once the last required role
                      has passed. The tracker verbs are always the coordinator's, so they are not offered. -->
                 <n-select v-model:value="editingBoard.coordinatorCapabilities" multiple
@@ -731,7 +741,7 @@ import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agent
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { templateRows } from '@/utils/agentDocuments'
 import { isOrgAdmin } from '@/utils/agentReopen'
-import { prChips } from '@/utils/agentDelivery'
+import { DELIVERY_MODE_OPTIONS, deliveryPolicyPatch, prChips } from '@/utils/agentDelivery'
 
 /**
  * Types the board editor offers a template for. The task-scoped pair, because those are the ones
@@ -878,6 +888,9 @@ async function copySpec () {
     }
 }
 const editingBoard = ref<any>(null)
+const deliveryModeOptions = DELIVERY_MODE_OPTIONS.map(o => ({ label: o.label, value: o.value }))
+const deliveryModeHelp = computed(() => (DELIVERY_MODE_OPTIONS.find(o => o.value === (editingBoard.value?.deliveryMode ?? 'PR_ROWS'))
+    ?? DELIVERY_MODE_OPTIONS[0]).help)
 const editingBoardIsNew = ref(false)
 const editingRole = ref<any>(null)
 const editingRoleIsNew = ref(false)
@@ -1366,7 +1379,8 @@ function startEditBoard (b: any | null) {
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])], budgetDollars: microsToDollars(b.budgetMicros),
         documentsRepo: b.documentsRepo?.uri ?? '',
         documentPaths: { ...(b.documentPaths ?? {}) },
-        coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])] }
+        coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])],
+        deliveryMode: b.deliveryPolicy?.mode ?? null, deliveryAttest: !!b.deliveryPolicy?.attest }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
             coordinatorCapabilities: [] }
@@ -1434,6 +1448,9 @@ async function saveBoard () {
             coordinatorStopRelease: editingBoard.value.coordinatorStopRelease ?? null,
         })
         if (settings) input.settings = settings
+        // Only when changed; cleared restores the default, PR_ROWS (task 18c5c293).
+        const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest)
+        if (delivery.changed) input.deliveryPolicy = delivery.value
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
             input.seedFromPresets = !!editingBoard.value.seedFromPresets
