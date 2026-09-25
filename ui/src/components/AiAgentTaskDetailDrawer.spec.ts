@@ -51,7 +51,7 @@ describe('AiAgentTaskDetailDrawer', () => {
         const text = w.find('.tsum').text()
         expect(text).toContain('1 open P2')
         expect(text).toContain('1 open P3')
-        expect(text).toContain('1 open, asked by coder')
+        expect(text).toContain('1 open question from coder')
         expect(text).toContain('after 1 done')
         expect(text).toMatch(/after 1 done\s*· blocks 1/)
         expect(text).toContain('coder · Arch · since')

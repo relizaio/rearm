@@ -4,7 +4,9 @@
         <div class="qstack">
             <div v-for="(f, i) in task.questionStack" :key="i" class="qstack__row">
                 <span class="qstack__depth">{{ i + 1 }}</span>
-                <span>{{ roleName(roles, f.askingRole) }} asked {{ roleName(roles, f.answeringRole) || 'nobody yet' }}</span>
+                <span>{{ roleName(roles, f.askingRole) }} asked {{ roleName(roles, f.answeringRole) || 'nobody yet' }}<template
+                    v-if="frameRound(f)"> · questions round {{ frameRound(f)?.round ?? '?' }}<template
+                    v-if="aboutLabel(frameRound(f))"> · {{ aboutLabel(frameRound(f)) }}</template></template></span>
                 <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">questions</router-link>
                 <span class="qstack__time">{{ ts(f.askedAt) }}</span>
             </div>
@@ -54,6 +56,7 @@ import { computed, ref } from 'vue'
 import { NButton, NCheckbox, NInput, NSpace } from 'naive-ui'
 import { roleName, ts } from '@/utils/agentTaskFormat'
 import { AnswerPayload, answerPayloadOf, answerableQuestions } from '@/utils/agentTaskQuestions'
+import { aboutLabel, questionRounds } from '@/utils/agentQuestionRounds'
 
 const props = defineProps<{ task: any, roles?: any[] }>()
 const emit = defineEmits<{ (e: 'answer', p: AnswerPayload): void }>()
@@ -63,6 +66,10 @@ const withdrawn = ref<Record<string, boolean>>({})
 const answerAll = ref('')
 
 const answerable = computed(() => answerableQuestions(props.task))
+const rounds = computed(() => questionRounds(props.task, props.roles))
+function frameRound (f: any) {
+    return f?.questionsRelease ? rounds.value.find(r => r.release === f.questionsRelease) ?? null : null
+}
 const answerPayload = computed(() => answerPayloadOf(props.task, answerable.value, answers.value,
     withdrawn.value, answerAll.value))
 const canAnswer = computed(() =>

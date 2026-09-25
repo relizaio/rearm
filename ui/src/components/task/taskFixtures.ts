@@ -39,6 +39,23 @@ export function richDocuments () {
 const usage = { inputTokens: 1200, outputTokens: 300, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 3, turns: 2,
     reports: 1, derivedCostMicros: 420000, costComplete: true }
 
+/**
+ * A QUESTIONS round (gaps §1.27): the coder's questions about ARCHITECTURE round 1, the release
+ * richTask's question frame points at. The asking hop's verdict is REJECTED, as the server writes it.
+ */
+export function questionsRound (uuid = 'q-rel', n = 1, items: any[] = [finding('q1', 1, 'OPEN', 'Which branch does the page link to?')]) {
+    const r = round(uuid, 'QUESTIONS', n, 'REJECTED', items)
+    r.document.findings.about = { specification: 'ARCHITECTURE', release: 'a1' } as any
+    return r
+}
+
+/** richTask with its question frame's QUESTIONS round among the documents. */
+export function questionsTask (over: Record<string, any> = {}) {
+    return richTask({ documents: [questionsRound(), ...richDocuments()], ...over })
+}
+
+export { finding as fixtureFinding }
+
 export function richTask (over: Record<string, any> = {}) {
     return {
         uuid: 't1', board: 'b1', org: 'o1', externalRef: 'github:relizaio/rearm#42', title: 'Task page per task',
