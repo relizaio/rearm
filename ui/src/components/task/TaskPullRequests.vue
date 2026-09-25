@@ -8,6 +8,10 @@
             <n-tag size="small" :bordered="false" :type="c.type">{{ c.state }}</n-tag>
             <a :href="c.url" target="_blank" rel="noopener" class="prlink2">{{ c.label }}</a>
             <span class="holdmeta" style="margin-top: 0">{{ c.title }}</span>
+            <!-- The head that passed against the PR's head now (task 3b97ccfd). -->
+            <n-tag v-if="c.heads" size="small" :bordered="false" class="prheads" :type="c.moved ? 'error' : 'default'">
+                {{ c.heads }}
+            </n-tag>
         </div>
     </div>
 </template>

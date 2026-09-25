@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { prChips, shortPr } from './agentDelivery'
+import { headLine, prChips, prKey, shortPr } from './agentDelivery'
 
 describe('prChips', () => {
     it('colours each linked PR by what CI reported', () => {
@@ -19,6 +19,39 @@ describe('prChips', () => {
     it('falls back to the linked URLs when the read has no resolved PRs', () => {
         expect(prChips({ prUrls: ['https://github.com/acme/app/pull/9'] }).map(c => c.state)).toEqual(['linked'])
         expect(prChips({})).toEqual([])
+    })
+})
+
+describe('tested heads (task 3b97ccfd)', () => {
+    const A = 'aaaaaaa1111111111111111111111111111111aa'
+    const B = 'bbbbbbb2222222222222222222222222222222bb'
+
+    it('shows the tested head against the PR head, and flags a PR past it', () => {
+        const chips = prChips({
+            testedHeads: [{ pr: 'https://github.com/acme/app/pull/1/', head: 'aaaaaaa1' },
+                { pr: 'https://GitHub.com/acme/app/pull/2', head: 'aaaaaaa1' }],
+            pullRequests: [
+                { url: 'https://github.com/acme/app/pull/1', state: 'OPEN', registered: true, head: A },
+                { url: 'https://github.com/acme/app/pull/2', state: 'OPEN', registered: true, head: B },
+                { url: 'https://github.com/acme/app/pull/3', state: 'OPEN', registered: true, head: B }
+            ]
+        })
+        expect(chips[0]).toMatchObject({ heads: 'tested aaaaaaa · the PR is at it', moved: false })
+        expect(chips[1]).toMatchObject({ heads: 'tested aaaaaaa · now bbbbbbb: moved past the tested head', moved: true })
+        expect(chips[2].heads).toBe('head bbbbbbb · no passing review or test names a head')
+        expect(chips[0].state).toBe('open')
+    })
+
+    it('says nothing about heads on a read that carries none', () => {
+        const chip = prChips({ pullRequests: [{ url: 'https://github.com/acme/app/pull/1', state: 'OPEN', registered: true }] })[0]
+        expect(chip.heads).toBeUndefined()
+        expect(headLine(undefined, undefined)).toEqual({})
+        expect(headLine('aaaaaaa1', undefined)).toEqual({ heads: 'tested aaaaaaa' })
+    })
+
+    it('matches a PR URL as the board does', () => {
+        expect(prKey('https://GitHub.com/acme/app.git/')).toBe(prKey('https://github.com/acme/app'))
+        expect(prKey('https://github.com/acme/app/pull/1?x=1#y')).toBe('https://github.com/acme/app/pull/1')
     })
 })
 
