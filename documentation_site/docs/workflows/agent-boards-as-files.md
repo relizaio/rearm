@@ -43,7 +43,7 @@ roles:
         specification: ARCHITECTURE
         scope: TASK
         minLifecycle: ASSEMBLED
-    hopBudgetMicros: 2000000
+    hopBudgetMicros: 2000000     # allowance per hop, USD micros: flagged when exceeded, not enforced
     strength:
       requiredStrength: 0.75
       strengthCategory: REVIEWER
