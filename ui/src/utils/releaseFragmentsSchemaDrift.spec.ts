@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, parse } from 'graphql'
+import { validate, parse } from 'graphql'
+import { CE_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
 import graphqlQueries from './graphqlQueries'
 
 // These release selection sets are interpolated into `gql` templates at
@@ -16,12 +15,11 @@ import graphqlQueries from './graphqlQueries'
 // always resolves and there is nothing to skip; the Pro schema lives in a
 // separate repository that is not available here. CE is expected to match
 // Pro (it may lag on updates), so a field valid on CE is valid on Pro.
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
+const CE_SCHEMA_PATH = CE_SCHEMA_DIR
 
 // Read eagerly: a missing schema is a broken checkout, and should fail the
 // suite rather than quietly skip every assertion below.
-const ceSchema = buildSchema(readFileSync(CE_SCHEMA_PATH, 'utf8'))
+const ceSchema = loadSchemaDir(CE_SCHEMA_PATH)!
 
 // Every fragment here is a selection set on Release, so each one is checked in
 // the operation shape the UI actually sends it in.
