@@ -306,7 +306,7 @@
 
                 <div class="dsec" v-if="taskDocuments.length">
                     <div class="dsec__h">Documents</div>
-                    <template v-for="d in taskDocuments" :key="d.uuid ?? ''">
+                    <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
                     <div class="drow">
                         <span class="drow__label">{{ documentLabel(d) }}</span>
                         <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
@@ -326,6 +326,7 @@
                             {{ elementsOf(d).length }} element{{ elementsOf(d).length === 1 ? '' : 's' }}
                         </n-button>
                     </div>
+                    <AiAgentCheckReport v-if="d.document?.elements" :release="d" :documents="taskDocuments"/>
                     <AiAgentDocumentElements v-if="expandedDoc === d.uuid" :release="d" :documents="taskDocuments"
                                              :board-uuid="board?.uuid" :task-uuid="task?.uuid"
                                              :task-status="task?.status" :focus="focusedElement"/>
@@ -527,6 +528,7 @@
 import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag, NTooltip } from 'naive-ui'
 import AgentUsageSummary from './AgentUsageSummary.vue'
+import AiAgentCheckReport from './AiAgentCheckReport.vue'
 import AiAgentDocumentElements from './AiAgentDocumentElements.vue'
 import { documentDefining, elementsOf, findingElement } from '@/utils/agentElements'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
@@ -745,6 +747,8 @@ const canAnswer = computed(() =>
 
 // Documents this task has produced, newest first as the server returns them.
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
+// The rows of the Documents list: a CHECK_REPORT round is read under the document it is about.
+const listedDocuments = computed(() => taskDocuments.value.filter(d => d?.document?.specification !== 'CHECK_REPORT'))
 
 // The document whose element list is open, and the element to open in it (elements.md §8).
 const expandedDoc = ref<string | null>(null)

@@ -17,6 +17,8 @@ export interface DocumentRef {
     findings?: Record<string, any> | null
     /** The element index of a prose document (gaps §2.A); see agentElements.ts. */
     elements?: Record<string, any> | null
+    /** On a CHECK_REPORT round: the element checks' report; see agentChecks.ts. */
+    checks?: Record<string, any> | null
 }
 
 export interface DocumentRelease {
