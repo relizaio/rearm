@@ -4,6 +4,8 @@
         <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
         <div class="drow">
             <span class="drow__label">{{ documentLabel(d) }}</span>
+            <n-tag v-if="documentLifecycleLabel(d)" size="tiny" :bordered="false"
+                   :type="documentLifecycleLabel(d)?.type" :title="d.lifecycle ?? undefined">{{ documentLifecycleLabel(d)?.label }}</n-tag>
             <!-- A QUESTIONS round's verdict is the asking hop's REJECTED; it reads as if the
                  questions were rejected, so the round says whether it is open or answered. -->
             <n-tag v-if="documentVerdict(d) && d.document?.specification !== 'QUESTIONS'" size="tiny" :bordered="false"
@@ -43,7 +45,7 @@ import { computed, ref, watch } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 import AiAgentCheckReport from '../AiAgentCheckReport.vue'
 import AiAgentDocumentElements from '../AiAgentDocumentElements.vue'
-import { DocumentRelease, documentFileUrl, documentLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
+import { DocumentRelease, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
 import { documentDefining, elementsOf } from '@/utils/agentElements'
 import { answeredByLabel, questionRounds, questionStateLabel, questionStateType } from '@/utils/agentQuestionRounds'
 

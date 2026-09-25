@@ -89,6 +89,19 @@
                                 </n-form-item>
                                 <div class="field-hint">One-click filters for common instance-deployment setups (e.g. fully-converged only, or failures only). Adjust anything afterward.</div>
                             </template>
+                            <template v-if="hasBoardEventType">
+                                <n-form-item label="Agent-board templates" :show-feedback="false">
+                                    <n-select
+                                        v-model:value="selectedBoardPreset"
+                                        :options="boardPresetOptions"
+                                        placeholder="Optional: one-click setup for a common case"
+                                        clearable
+                                        @update:value="onBoardPresetPick"
+                                        data-testid="board-preset"
+                                    />
+                                </n-form-item>
+                                <div class="field-hint">To follow one board only, filter on <code>event.board == "&lt;board uuid&gt;"</code>; <code>event.kind</code> and <code>event.holdKind</code> narrow further.</div>
+                            </template>
                         </div>
 
                         <!-- ===== Section: when to deliver (filter) ===== -->
@@ -374,6 +387,9 @@ import {
     hasUneditableMultiRoute,
     instanceDeploymentPresets,
     instanceSubscriptionPrefillForUri,
+    agentBoardPresets,
+    boardSubscriptionPrefill,
+    AGENT_BOARD_EVENT_TYPES,
     type InstanceSubscriptionPrefill,
     type SubscriptionTestOutcome
 } from '@/utils/notificationsCommon'
@@ -549,6 +565,20 @@ const advancedFilter = computed<boolean>({
     get: () => subForm.value.filterMode === 'ADVANCED',
     set: (on: boolean) => { subForm.value.filterMode = on ? 'ADVANCED' : 'PRESET' },
 })
+const boardPresetOptions = agentBoardPresets.map(p => ({ label: p.label, value: p.key }))
+const selectedBoardPreset = ref<string | null>(null)
+const hasBoardEventType = computed(() =>
+    (subForm.value.eventTypes || []).some(t => AGENT_BOARD_EVENT_TYPES.includes(t)))
+function onBoardPresetPick (key: string | null): void {
+    const preset = agentBoardPresets.find(p => p.key === key)
+    if (preset) {
+        subForm.value.eventTypes = [...preset.prefill.eventTypes]
+        subForm.value.filterMode = preset.prefill.filterMode
+        subForm.value.celExpression = preset.prefill.celExpression
+    }
+    selectedBoardPreset.value = null
+}
+
 function onInstancePresetPick (key: string | null): void {
     const preset = instanceDeploymentPresets.find(p => p.key === key)
     if (preset) {
@@ -1309,6 +1339,15 @@ onMounted(async () => {
     // Instance-page "Subscribe" deep-link: ?newInstanceSub=<uri> opens the
     // create modal pre-filled to notify on this instance's deployments. Pro-only
     // (instance events don't exist on CE) and writable-only (create needs it).
+    // Board panel "Subscribe" deep-link: ?newBoardSub=<board uuid> opens the create modal
+    // pre-filled with every board event type, narrowed to that board. Pro-only, writable-only.
+    const board = route.query.newBoardSub
+    if (typeof board === 'string' && board && isPro.value && props.isWritable) {
+        openCreateSubscriptionPrefilled(boardSubscriptionPrefill(board))
+        const q = { ...route.query }
+        delete q.newBoardSub
+        router.replace({ path: route.path, query: q })
+    }
     const uri = route.query.newInstanceSub
     if (typeof uri === 'string' && uri && isPro.value && props.isWritable) {
         openCreateSubscriptionPrefilled(instanceSubscriptionPrefillForUri(uri))

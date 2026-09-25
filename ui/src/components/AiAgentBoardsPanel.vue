@@ -15,6 +15,10 @@
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
+                <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
+                          title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
+                    Subscribe
+                </n-button>
                 <n-button size="small" quaternary @click="applyKinds = ['BOARD']" v-if="canApplySpec">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
@@ -438,6 +442,13 @@
                     </div>
                     <n-space :size="18" v-if="editingRole.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingRole.requireDistinctAgent">require distinct agent</n-checkbox>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-checkbox v-model:checked="editingRole.blindReview">blind review</n-checkbox>
+                            </template>
+                            The session in this role reads its task without the earlier hops' notes, sessions and
+                            agents: it reviews the work, not the worker's account of it.
+                        </n-tooltip>
                         <n-checkbox v-model:checked="editingRole.active">active</n-checkbox>
                     </n-space>
                     <n-checkbox v-else v-model:checked="editingRole.active">active</n-checkbox>
@@ -614,6 +625,7 @@
                     </div>
                     <n-space :size="18" v-if="editingPreset.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingPreset.requireDistinctAgent">require distinct agent</n-checkbox>
+                        <n-checkbox v-model:checked="editingPreset.blindReview">blind review</n-checkbox>
                         <n-checkbox v-model:checked="editingPreset.active">active</n-checkbox>
                     </n-space>
                     <n-checkbox v-else v-model:checked="editingPreset.active">active</n-checkbox>
@@ -765,6 +777,16 @@ const specText: ComputedRef<string> = computed(() => {
     const clean = stripNulls(specRaw.value)
     return specFormat.value === 'json' ? JSON.stringify(clean, null, 2) : toYaml(clean)
 })
+
+/** Opens the org's subscriptions with a new subscription pre-filled for this board (82880ea6). */
+function subscribeToBoard () {
+    if (!currentBoard.value) return
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: props.orgUuid },
+        query: { tab: 'integrations', integrationsTab: 'subscriptions', newBoardSub: currentBoard.value.uuid },
+    })
+}
 
 async function openSpec () {
     if (!currentBoard.value) return
@@ -1183,6 +1205,7 @@ const roleColumns: DataTableColumns<any> = [
         title: 'Flags', key: 'flags', width: 120,
         render: (r: any) => h('span', {}, [
             r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'distinct agent' }) : null,
+            r.blindReview ? h(NTag, { size: 'tiny', bordered: false, type: 'info', style: 'margin-left:4px' }, { default: () => 'blind' }) : null,
             !r.active ? h(NTag, { size: 'tiny', bordered: false, style: 'margin-left:4px' }, { default: () => 'inactive' }) : null,
         ]),
     },
@@ -1330,7 +1353,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
 }
 
 async function saveRole () {
@@ -1347,6 +1370,7 @@ async function saveRole () {
                 prompt: editingRole.value.prompt ?? '',
                 orderIndex: editingRole.value.orderIndex ?? 0,
                 requireDistinctAgent: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.requireDistinctAgent,
+                blindReview: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.blindReview,
                 active: !!editingRole.value.active,
                 requiredCapabilities: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.requiredCapabilities ?? []),
                 wipLimit: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.wipLimit ?? 0),
@@ -1394,7 +1418,7 @@ async function openPresets () {
 function startAddPreset () {
     editingPresetIsNew.value = true
     const maxOrder = Math.max(0, ...presets.value.map(r => r.orderIndex ?? 0))
-    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', strength: strengthDraft(null) }
+    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', strength: strengthDraft(null) }
 }
 
 async function savePreset () {
@@ -1412,6 +1436,7 @@ async function savePreset () {
                 orderIndex: editingPreset.value.orderIndex ?? 0,
                 wipLimit: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.wipLimit ?? 0),
                 requireDistinctAgent: editingPreset.value.kind === 'HUMAN' ? null : !!editingPreset.value.requireDistinctAgent,
+                blindReview: editingPreset.value.kind === 'HUMAN' ? null : !!editingPreset.value.blindReview,
                 active: !!editingPreset.value.active,
                 requiredCapabilities: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.requiredCapabilities ?? []),
                 kind: editingPreset.value.kind ?? 'AGENTIC',
