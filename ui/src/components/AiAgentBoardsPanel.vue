@@ -283,6 +283,24 @@
                     </n-checkbox>
                 </n-space>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">{{ deliveryModeHelp }}</n-text>
+                <!-- task 71a3dd22: who merges and how; blank fields take the defaults the placeholders name. -->
+                <n-space :size="8" align="center" data-testid="board-merge">
+                    <n-select v-model:value="editingBoard.merge.by" :options="mergeByOptions" clearable size="small"
+                              :placeholder="'merged by: ' + effectiveMergeBy" style="width: 230px"/>
+                    <n-input v-if="editingBoard.merge.by === 'ROLE'" v-model:value="editingBoard.merge.byRole"
+                             placeholder="role name" size="small" style="width: 140px"/>
+                    <n-select v-model:value="editingBoard.merge.method" :options="mergeMethodOptions" clearable
+                              placeholder="merge commit (default)" size="small" style="width: 190px"/>
+                    <n-select v-model:value="editingBoard.merge.order" :options="mergeOrderOptions" clearable
+                              placeholder="as the notes say (default)" size="small" style="width: 210px"/>
+                    <n-checkbox v-model:checked="editingBoard.merge.atTestedHead">only at the tested head</n-checkbox>
+                    <n-checkbox :checked="editingBoard.deliveryMode === 'ATTESTED' || editingBoard.merge.requireAttestation"
+                                :disabled="editingBoard.deliveryMode === 'ATTESTED'"
+                                @update:checked="(v: boolean) => { editingBoard.merge.requireAttestation = v }">
+                        attest every merge
+                    </n-checkbox>
+                </n-space>
+                <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">{{ mergeByHelp }}</n-text>
                 <!-- What the coordinator seat does itself, e.g. merging once the last required role
                      has passed. The tracker verbs are always the coordinator's, so they are not offered. -->
                 <n-select v-model:value="editingBoard.coordinatorCapabilities" multiple
@@ -741,7 +759,8 @@ import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agent
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { templateRows } from '@/utils/agentDocuments'
 import { isOrgAdmin } from '@/utils/agentReopen'
-import { DELIVERY_MODE_OPTIONS, deliveryPolicyPatch, prChips } from '@/utils/agentDelivery'
+import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
+    prChips } from '@/utils/agentDelivery'
 
 /**
  * Types the board editor offers a template for. The task-scoped pair, because those are the ones
@@ -891,6 +910,16 @@ const editingBoard = ref<any>(null)
 const deliveryModeOptions = DELIVERY_MODE_OPTIONS.map(o => ({ label: o.label, value: o.value }))
 const deliveryModeHelp = computed(() => (DELIVERY_MODE_OPTIONS.find(o => o.value === (editingBoard.value?.deliveryMode ?? 'PR_ROWS'))
     ?? DELIVERY_MODE_OPTIONS[0]).help)
+const mergeByOptions = MERGE_BY_OPTIONS.map(o => ({ label: o.label, value: o.value }))
+const mergeMethodOptions = MERGE_METHOD_OPTIONS
+const mergeOrderOptions = MERGE_ORDER_OPTIONS
+/** Who merges when the form leaves it blank: the board's resolved default, or the coordinator's rule for a new one. */
+const effectiveMergeBy = computed(() => {
+    const by = boards.value.find(x => x.uuid === editingBoard.value?.uuid)?.effectiveDeliveryPolicy?.merge?.by
+    return by ? String(by).toLowerCase().replace('role:', 'role ') : 'default'
+})
+const mergeByHelp = computed(() => MERGE_BY_OPTIONS.find(o => o.value === editingBoard.value?.merge?.by)?.help
+    ?? 'Blank: the coordinator when it covers PR_MERGE, else the role that carries it, else a person.')
 const editingBoardIsNew = ref(false)
 const editingRole = ref<any>(null)
 const editingRoleIsNew = ref(false)
@@ -1380,10 +1409,11 @@ function startEditBoard (b: any | null) {
         documentsRepo: b.documentsRepo?.uri ?? '',
         documentPaths: { ...(b.documentPaths ?? {}) },
         coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])],
-        deliveryMode: b.deliveryPolicy?.mode ?? null, deliveryAttest: !!b.deliveryPolicy?.attest }
+        deliveryMode: b.deliveryPolicy?.mode ?? null, deliveryAttest: !!b.deliveryPolicy?.attest,
+        merge: mergeDraftOf(b.deliveryPolicy) }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
-            coordinatorCapabilities: [] }
+            coordinatorCapabilities: [], merge: mergeDraftOf(null) }
 }
 
 /** hopBudgetMicros for the role input: set, removed (null), or left out when never set and still blank. */
@@ -1449,7 +1479,8 @@ async function saveBoard () {
         })
         if (settings) input.settings = settings
         // Only when changed; cleared restores the default, PR_ROWS (task 18c5c293).
-        const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest)
+        const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest,
+            editingBoard.value.merge)
         if (delivery.changed) input.deliveryPolicy = delivery.value
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()

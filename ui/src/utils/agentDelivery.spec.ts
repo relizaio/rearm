@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { DELIVERY_MODE_OPTIONS, deliveryPolicyPatch, headLine, prChips, prKey, shortPr } from './agentDelivery'
+import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, headLine,
+    mergeDraftOf, mergeOf, prChips, prKey, shortPr } from './agentDelivery'
 
 describe('prChips', () => {
     it('colours each linked PR by what CI reported', () => {
@@ -103,5 +104,46 @@ describe('delivery modes and attestations (task 18c5c293)', () => {
         expect(deliveryPolicyPatch({ deliveryPolicy: { mode: 'ATTESTED' } }, null, false))
             .toEqual({ changed: true, value: null })
         expect(deliveryPolicyPatch(null, 'PR_ROWS', false)).toEqual({ changed: true, value: { mode: 'PR_ROWS', attest: false } })
+    })
+})
+
+describe('the merge procedure (task 71a3dd22)', () => {
+    it('offers who merges, the method and the order, with help for who', () => {
+        expect(MERGE_BY_OPTIONS.map(o => o.value)).toEqual(['COORDINATOR', 'ROLE', 'PERSON'])
+        expect(MERGE_BY_OPTIONS.every(o => o.help.length > 20)).toBe(true)
+        expect(MERGE_BY_OPTIONS[0].help).toContain('PR_MERGE')
+        expect(MERGE_METHOD_OPTIONS.map(o => o.value)).toEqual(['MERGE', 'SQUASH', 'REBASE', 'FAST_FORWARD'])
+        expect(MERGE_ORDER_OPTIONS.map(o => o.value)).toEqual(['NOTE_ORDER', 'OLDEST_PASS_FIRST'])
+    })
+
+    it('reads a declared procedure into the form and sends only what differs from the defaults', () => {
+        const defaults = mergeDraftOf(null)
+        expect(defaults).toEqual({ by: null, byRole: '', method: null, atTestedHead: true, requireAttestation: false, order: null })
+        expect(mergeOf(defaults, 'PR_ROWS')).toBeNull()
+        const declared = mergeDraftOf({ merge: { by: 'ROLE:releaser', method: 'SQUASH', atTestedHead: false,
+            requireAttestation: true, order: 'OLDEST_PASS_FIRST' } })
+        expect(declared).toEqual({ by: 'ROLE', byRole: 'releaser', method: 'SQUASH', atTestedHead: false,
+            requireAttestation: true, order: 'OLDEST_PASS_FIRST' })
+        expect(mergeOf(declared, 'PR_ROWS')).toEqual({ by: 'ROLE:releaser', method: 'SQUASH', atTestedHead: false,
+            requireAttestation: true, order: 'OLDEST_PASS_FIRST' })
+        expect(mergeOf(declared, 'ATTESTED')!.requireAttestation).toBeNull()
+        expect(mergeOf({ ...defaults, by: 'ROLE', byRole: '  ' }, null)).toBeNull()
+        expect(mergeOf({ ...defaults, by: 'PERSON' }, null)).toEqual({ by: 'PERSON', method: null, atTestedHead: null,
+            requireAttestation: null, order: null })
+    })
+
+    it('patches deliveryPolicy with the procedure, and keeps the board\'s when the form has none', () => {
+        const squash = { ...mergeDraftOf(null), by: 'COORDINATOR', method: 'SQUASH' }
+        expect(deliveryPolicyPatch({ deliveryPolicy: null }, null, false, squash)).toEqual({ changed: true,
+            value: { mode: null, attest: false, merge: { by: 'COORDINATOR', method: 'SQUASH', atTestedHead: null,
+                requireAttestation: null, order: null } } })
+        const board = { deliveryPolicy: { mode: 'PR_ROWS', attest: false,
+            merge: { by: 'COORDINATOR', method: 'SQUASH', atTestedHead: true, requireAttestation: false, order: null } } }
+        expect(deliveryPolicyPatch(board, 'PR_ROWS', false, mergeDraftOf(board.deliveryPolicy)).changed).toBe(false)
+        expect(deliveryPolicyPatch(board, 'PR_ROWS', false, mergeDraftOf(null))).toEqual({ changed: true,
+            value: { mode: 'PR_ROWS', attest: false } })
+        expect(deliveryPolicyPatch(board, 'ATTESTED', false).value!.merge).toEqual({ by: 'COORDINATOR', method: 'SQUASH',
+            atTestedHead: null, requireAttestation: null, order: null })
+        expect(deliveryPolicyPatch(board, null, false, mergeDraftOf(null))).toEqual({ changed: true, value: null })
     })
 })
