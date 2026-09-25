@@ -2723,6 +2723,8 @@ const storeObject : any = {
                             orderSetBy { kind uuid name }
                             orderSetAt
                             requiredRolesSkipped
+                            reopenedAt
+                            reopenCount
                             budgetMicros
                             coordinatorEstimateMicros
                             requiredStrength
@@ -2913,6 +2915,17 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskCancel
+        },
+        async agentTaskReopen (context: any, payload: { taskUuid: string, role: string, reason: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskReopen($taskUuid: ID!, $role: String!, $reason: String!) {
+                        agentTaskReopen(taskUuid: $taskUuid, role: $role, reason: $reason) { uuid status role }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskReopen
         },
         async agentTaskDecideFindings (context: any, payload: { taskUuid: string, specification: string,
             decisions: any[], about?: { specification: string, release?: string } | null }) {
