@@ -233,3 +233,15 @@ describe('completionBlockers', () => {
         expect(all[2].specification).toBe('TEST_REPORT')
     })
 })
+
+describe('documentLifecycleLabel', () => {
+    it('says what a board document lifecycle means', async () => {
+        const { documentLifecycleLabel } = await import('./agentDocuments')
+        expect(documentLifecycleLabel({ lifecycle: 'DRAFT' } as any)).toEqual({ label: 'draft', type: 'default' })
+        expect(documentLifecycleLabel({ lifecycle: 'ASSEMBLED' } as any)).toEqual({ label: 'handed over', type: 'info' })
+        expect(documentLifecycleLabel({ lifecycle: 'READY_TO_SHIP' } as any)).toEqual({ label: 'reviewed', type: 'success' })
+        expect(documentLifecycleLabel({ lifecycle: 'GENERAL_AVAILABILITY' } as any)?.label).toBe('general availability')
+        expect(documentLifecycleLabel({} as any)).toBeNull()
+        expect(documentLifecycleLabel(null)).toBeNull()
+    })
+})

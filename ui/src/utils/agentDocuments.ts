@@ -249,3 +249,17 @@ export function templateRows (roles: any[] | null | undefined,
     return [...new Set([...INDEX_DOCUMENT_TYPES, ...produced])]
         .map(spec => ({ spec, placeholder: effective?.[spec] ?? 'the default for its scope' }))
 }
+
+/**
+ * What a board document's lifecycle means (operator-actions D13-D15, task 0192a587): written,
+ * handed over by its producer's sign-off, or reviewed by a reviewer's pass or a person at a gate.
+ * Later stages are people's, and read as themselves.
+ */
+export function documentLifecycleLabel (release?: DocumentRelease | null): { label: string, type: 'default' | 'info' | 'success' } | null {
+    const lc = release?.lifecycle
+    if (!lc) return null
+    if (lc === 'DRAFT') return { label: 'draft', type: 'default' }
+    if (lc === 'ASSEMBLED') return { label: 'handed over', type: 'info' }
+    if (lc === 'READY_TO_SHIP') return { label: 'reviewed', type: 'success' }
+    return { label: lc.toLowerCase().replace(/_/g, ' '), type: 'default' }
+}

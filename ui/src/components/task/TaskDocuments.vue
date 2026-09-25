@@ -3,6 +3,8 @@
         <div class="dsec__h">Documents</div>
         <div v-for="d in taskDocuments" :key="d.uuid ?? ''" class="drow">
             <span class="drow__label">{{ documentLabel(d) }}</span>
+            <n-tag v-if="documentLifecycleLabel(d)" size="tiny" :bordered="false"
+                   :type="documentLifecycleLabel(d)?.type" :title="d.lifecycle ?? undefined">{{ documentLifecycleLabel(d)?.label }}</n-tag>
             <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
                    :type="verdictType(documentVerdict(d))">{{ documentVerdict(d) }}</n-tag>
             <n-tag v-if="testCounts(d)" size="tiny" :bordered="false" type="info">
@@ -23,7 +25,7 @@
 // Documents this task has produced, newest first as the server returns them.
 import { computed } from 'vue'
 import { NTag } from 'naive-ui'
-import { DocumentRelease, documentFileUrl, documentLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
+import { DocumentRelease, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
 
 const props = defineProps<{ task: any }>()
 

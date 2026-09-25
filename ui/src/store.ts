@@ -2671,6 +2671,7 @@ const storeObject : any = {
                                 orderIndex
                                 wipLimit
                                 requireDistinctAgent
+                                blindReview
                                 active
                                 kind
                                 necessity
@@ -2794,6 +2795,7 @@ const storeObject : any = {
                             orderIndex
                             wipLimit
                             requireDistinctAgent
+                            blindReview
                             active
                             requiredCapabilities
                             kind
@@ -2822,6 +2824,7 @@ const storeObject : any = {
                             orderIndex
                             wipLimit
                             requireDistinctAgent
+                            blindReview
                             active
                             requiredCapabilities
                             kind
