@@ -43,6 +43,7 @@ const AGENT_BOARD_SELECTION = `
     noProgressRepeatsToStop
     coordinatorStopRelease
     effectiveCoordinatorStopRelease
+    eventRetentionDays
     createdDate
     declarative { specHash appliedAt source { repo path commit } }
 `

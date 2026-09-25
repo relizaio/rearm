@@ -36,7 +36,7 @@ export function budgetChip (spentMicros: number | null | undefined, budgetMicros
 
 /** The board settings the form edits, in the order it shows them. */
 export const BOARD_SETTING_KEYS = ['budgetMicros', 'softAlertPercent', 'cycleCap', 'noProgressRepeatsToStop',
-    'blockingPriority', 'completionPriority', 'coordinatorStopRelease'] as const
+    'blockingPriority', 'completionPriority', 'eventRetentionDays', 'coordinatorStopRelease'] as const
 export type BoardSettingKey = typeof BOARD_SETTING_KEYS[number]
 
 /**

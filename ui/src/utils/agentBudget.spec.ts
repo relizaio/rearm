@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { budgetChip, dollarsToMicros, hopBudgetInput, microsToDollars, settingsPatch } from './agentBudget'
+import { BOARD_SETTING_KEYS, budgetChip, dollarsToMicros, hopBudgetInput, microsToDollars, settingsPatch } from './agentBudget'
 
 describe('agentBudget', () => {
     it('converts dollars and micros both ways', () => {
@@ -41,6 +41,16 @@ describe('agentBudget', () => {
         expect(settingsPatch(unset, { ...unset, coordinatorStopRelease: false })).toEqual({ coordinatorStopRelease: false })
         const off = { cycleCap: 3, coordinatorStopRelease: false }
         expect(settingsPatch(off, { ...off, coordinatorStopRelease: true })).toEqual({ coordinatorStopRelease: true })
+    })
+
+    it('sends the event retention as set, 0 included, and an emptied one as null (task 04dedcc5)', () => {
+        expect(BOARD_SETTING_KEYS).toContain('eventRetentionDays')
+        const unset = { cycleCap: 3, eventRetentionDays: null }
+        expect(settingsPatch(unset, { ...unset })).toBeNull()
+        expect(settingsPatch(unset, { ...unset, eventRetentionDays: 0 })).toEqual({ eventRetentionDays: 0 })
+        const thirty = { cycleCap: 3, eventRetentionDays: 30 }
+        expect(settingsPatch(thirty, { ...thirty, eventRetentionDays: null })).toEqual({ eventRetentionDays: null })
+        expect(settingsPatch(thirty, { ...thirty, eventRetentionDays: 7 })).toEqual({ eventRetentionDays: 7 })
     })
 
     it('leaves a never-set allowance out, and removes an emptied one', () => {

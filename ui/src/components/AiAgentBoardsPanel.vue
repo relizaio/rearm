@@ -255,6 +255,11 @@
                                     style="width: 160px">
                         <template #prefix><span class="flabel">completion P≤</span></template>
                     </n-input-number>
+                    <!-- task 04dedcc5: how long the event log keeps an event; 0 keeps everything. -->
+                    <n-input-number v-model:value="editingBoard.eventRetentionDays" :min="0" placeholder="15"
+                                    style="width: 170px" data-testid="board-event-retention">
+                        <template #prefix><span class="flabel">keep events, days</span></template>
+                    </n-input-number>
                 </n-space>
                 <!-- task c0a2134c: on (the default, null) a no-progress or cycle-cap stop parks for the
                      coordinator first, which may release it once per stop kind per task or escalate it. -->
@@ -264,7 +269,8 @@
                 </n-checkbox>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">
                     Blank budget: no board limit. Blank priorities: strict, every open item counts. The
-                    placeholders are the defaults a blank field takes. Unchecked, every stop is the
+                    placeholders are the defaults a blank field takes. Events older than the days kept
+                    are deleted daily; 0 keeps everything, and the log then grows without bound. Unchecked, every stop is the
                     operator's; budget stops always are.
                 </n-text>
                 <!-- What the coordinator seat does itself, e.g. merging once the last required role
@@ -1424,6 +1430,7 @@ async function saveBoard () {
             noProgressRepeatsToStop: editingBoard.value.noProgressRepeatsToStop ?? null,
             blockingPriority: editingBoard.value.blockingPriority ?? null,
             completionPriority: editingBoard.value.completionPriority ?? null,
+            eventRetentionDays: editingBoard.value.eventRetentionDays ?? null,
             coordinatorStopRelease: editingBoard.value.coordinatorStopRelease ?? null,
         })
         if (settings) input.settings = settings
