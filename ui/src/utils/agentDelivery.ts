@@ -94,17 +94,87 @@ export const DELIVERY_MODE_OPTIONS: { value: string, label: string, help: string
         help: 'The task completes at its last pass; with attest, once a push or release is attested.' }
 ]
 
+/** Who merges a board's PRs (task 71a3dd22): the form's options, one line of help each. */
+export const MERGE_BY_OPTIONS: { value: string, label: string, help: string }[] = [
+    { value: 'COORDINATOR', label: 'the coordinator',
+        help: 'The coordinator merges; the board has to list PR_MERGE among what the coordinator covers.' },
+    { value: 'ROLE', label: 'a role',
+        help: 'The named role merges; it has to be active and carry PR_MERGE.' },
+    { value: 'PERSON', label: 'a person',
+        help: 'A person merges; agents leave passed tasks in DELIVERING and say when one waits.' }
+]
+
+export const MERGE_METHOD_OPTIONS: { value: string, label: string }[] = [
+    { value: 'MERGE', label: 'merge commit (default)' },
+    { value: 'SQUASH', label: 'squash' },
+    { value: 'REBASE', label: 'rebase' },
+    { value: 'FAST_FORWARD', label: 'fast-forward' }
+]
+
+export const MERGE_ORDER_OPTIONS: { value: string, label: string }[] = [
+    { value: 'NOTE_ORDER', label: 'as the notes say (default)' },
+    { value: 'OLDEST_PASS_FIRST', label: 'oldest pass first' }
+]
+
+/** The form's merge fields: `by` is COORDINATOR, ROLE or PERSON, the role's name apart. */
+export interface MergeDraft {
+    by: string | null
+    byRole: string
+    method: string | null
+    atTestedHead: boolean
+    requireAttestation: boolean
+    order: string | null
+}
+
+/** A board's declared merge procedure as the form edits it; nothing declared is every default. */
+export function mergeDraftOf (policy: any): MergeDraft {
+    const m = policy?.merge ?? null
+    const by: string | null = m?.by ?? null
+    const isRole = typeof by === 'string' && by.trim().toUpperCase().startsWith('ROLE:')
+    return {
+        by: isRole ? 'ROLE' : by,
+        byRole: isRole ? by!.trim().slice(5).trim() : '',
+        method: m?.method ?? null,
+        atTestedHead: m?.atTestedHead !== false,
+        requireAttestation: !!m?.requireAttestation,
+        order: m?.order ?? null
+    }
+}
+
+/**
+ * The merge procedure the form sends: only what differs from the defaults, null when nothing does.
+ * A role without a name is not sent; attestation is not sent on an ATTESTED board, which attests
+ * every merge and refuses false.
+ */
+export function mergeOf (draft: MergeDraft, mode: string | null | undefined): Record<string, any> | null {
+    const by = draft.by === 'ROLE' ? (draft.byRole.trim() ? 'ROLE:' + draft.byRole.trim() : null) : draft.by
+    const merge = {
+        by,
+        method: draft.method,
+        atTestedHead: draft.atTestedHead ? null : false,
+        requireAttestation: mode === 'ATTESTED' || !draft.requireAttestation ? null : true,
+        order: draft.order
+    }
+    return Object.values(merge).every(v => v === null) ? null : merge
+}
+
 /**
  * What the form sends as deliveryPolicy: nothing when the draft matches the board, null to restore
- * the default, else the policy. Attest only means something on NONE, so it is sent only there.
+ * the default, else the policy. Attest only means something on NONE, so it is sent only there. The
+ * merge procedure (task 71a3dd22) travels with it; without a draft the board's own is kept.
  */
-export function deliveryPolicyPatch (original: any, mode: string | null | undefined, attest: boolean):
-    { changed: boolean, value: { mode: string, attest: boolean } | null } {
+export function deliveryPolicyPatch (original: any, mode: string | null | undefined, attest: boolean, draft?: MergeDraft):
+    { changed: boolean, value: { mode: string | null, attest: boolean, merge?: Record<string, any> } | null } {
     const before = original?.deliveryPolicy ?? null
     const m = mode || null
-    const value = m ? { mode: m, attest: m === 'NONE' && !!attest } : null
+    const merge = draft ? mergeOf(draft, m) : (before?.merge ? mergeOf(mergeDraftOf(before), m) : null)
+    const value = m || merge
+        ? { mode: m, attest: m === 'NONE' && !!attest, ...(merge ? { merge } : {}) }
+        : null
+    const beforeMerge = before?.merge ? mergeOf(mergeDraftOf(before), before.mode ?? null) : null
     const same = (before === null && value === null) ||
-        (before !== null && value !== null && before.mode === value.mode && !!before.attest === value.attest)
+        (before !== null && value !== null && (before.mode ?? null) === value.mode && !!before.attest === value.attest &&
+            JSON.stringify(beforeMerge) === JSON.stringify(merge))
     return { changed: !same, value }
 }
 
