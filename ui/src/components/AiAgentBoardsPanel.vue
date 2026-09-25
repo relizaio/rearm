@@ -174,7 +174,7 @@
                 @close="selectedTask = null" @open="openTask"
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
-                @answer="answerQuestions" @authorize="authorizeTask" @order="orderTask"
+                @authorize="authorizeTask" @order="orderTask"
                 @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
@@ -639,7 +639,7 @@
 <script lang="ts" setup>
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
@@ -665,6 +665,7 @@ const templateTypeRows = computed(() => templateRows(
     editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
+import { taskPagePath } from '@/utils/agentTaskFormat'
 import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
@@ -903,7 +904,7 @@ async function reseedCoordinator (presetName: string) {
 // A person's verbs on a task, shared with the task page. A verdict that hands the task on closes
 // the drawer; any other action reloads and keeps the drawer on the same task.
 const {
-    humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
+    humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
@@ -1036,7 +1037,12 @@ const TaskCard = defineComponent({
             p.t.status === 'COMPLETED' ? 'tcard--done' : '',
             workRank(p.t) === 1 ? 'tcard--ready' : '',
             workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
-            h('div', { class: 'tcard__title' }, p.t.title),
+            h('div', { class: 'tcard__title' }, [
+                p.t.title,
+                // The page, without opening the drawer on the way.
+                h(RouterLink, { to: taskPagePath(p.t.uuid), class: 'tcard__open', title: 'Open task page',
+                    onClick: (e: Event) => e.stopPropagation() }, { default: () => '↗' }),
+            ]),
             h('div', { class: 'tcard__ref' }, p.t.sourceUrl
                 ? h('a', { href: p.t.sourceUrl, target: '_blank', rel: 'noopener' },
                     (p.t.externalRef ?? 'draft').replace(/^github:/, ''))
@@ -1520,6 +1526,7 @@ async function operatorLock (lock: boolean) {
         &--stuck { opacity: 0.72; }
         &--done { opacity: 0.85; border-left: 3px solid #4a9d6e; }
         .tcard__title { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+        .tcard__open { margin-left: 6px; font-size: 12px; text-decoration: none; opacity: 0.7; }
         .tcard__ref { font-size: 12px; margin-bottom: 6px; word-break: break-all; }
         .tcard__meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
         .tcard__passages { display: flex; flex-wrap: wrap; gap: 4px; }

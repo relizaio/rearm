@@ -29,7 +29,7 @@
         </template>
         <template v-else-if="task.hold.kind === 'QUESTION'">
             <div class="holdmeta">
-                A question on this task has nobody to answer it. Answer it below — the
+                A question on this task has nobody to answer it. Answer it {{ answerWhere }} — the
                 board routes your answer back to whoever asked.
             </div>
         </template>
@@ -92,6 +92,8 @@ const props = defineProps<{
     task: any
     roles?: any[]
     priorityLevels?: number
+    /** The answer form is on the task page, not beside this banner (the drawer's preview). */
+    questionsOnPage?: boolean
 }>()
 const emit = defineEmits<{
     (e: 'human-review', p: { task: any, approve: boolean, note: string, findings?: any[],
@@ -110,6 +112,7 @@ const gateAbout = ref<string | null>(null)
 const priorityOptions = computed(() => priorityOptionsOf(props.priorityLevels))
 const aboutOptions = computed(() => aboutOptionsOf(props.roles))
 const terminal = computed(() => isTerminal(props.task))
+const answerWhere = computed(() => props.questionsOnPage ? 'on the task page' : 'under Waiting on')
 const missingRequired = computed(() => missingRequiredRoles(props.task, props.roles))
 
 // Task queued in a HUMAN-kind role: org admins sign off directly (no claim step).

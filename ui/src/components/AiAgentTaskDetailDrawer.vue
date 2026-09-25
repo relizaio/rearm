@@ -6,10 +6,12 @@
                 <task-title :task="task"/>
             </template>
 
-            <!-- The sections are the task page's components (components/task/*), so a verb offered
-                 in both places is implemented once. -->
+            <!-- A preview (gaps §1.26): what a person needs to decide whether to open the task,
+                 and the verbs that must stay one click away -- a gate verdict, a release, the
+                 task actions. Findings rounds, questions, documents and history are on the page. -->
             <div class="tsecs">
-                <task-header :task="task" :roles="roles" :priority-levels="priorityLevels"
+                <router-link :to="taskPagePath(task.uuid)" class="openpage">Open task page →</router-link>
+                <task-header :task="task" :roles="roles" :priority-levels="priorityLevels" questions-on-page
                              @human-review="p => emit('human-review', p)"
                              @human-signoff="p => emit('human-signoff', p)"
                              @operator-release="p => emit('operator-release', p)"
@@ -18,37 +20,21 @@
                               @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"/>
-                <task-dependencies :task="task" :tasks="tasks" @open="t => emit('open', t)"/>
-                <task-assignment :task="task" :agent-names="agentNames"/>
-                <task-usage :task="task"/>
-                <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels"
-                               @decide="p => emit('decide', p)"/>
-                <task-open-questions :task="task"/>
-                <task-documents :task="task"/>
-                <task-hops :task="task" :agent-names="agentNames"/>
-                <task-pull-requests :task="task"/>
-                <task-questions :task="task" :roles="roles" @answer="p => emit('answer', p)"/>
-                <task-history :task="task"/>
+                <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
+                              @open="t => emit('open', t)"/>
             </div>
         </n-drawer-content>
     </n-drawer>
 </template>
 
 <script lang="ts" setup>
+import { RouterLink } from 'vue-router'
 import { NDrawer, NDrawerContent } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
-import TaskAssignment from './task/TaskAssignment.vue'
-import TaskDependencies from './task/TaskDependencies.vue'
-import TaskDocuments from './task/TaskDocuments.vue'
-import TaskFindings from './task/TaskFindings.vue'
 import TaskHeader from './task/TaskHeader.vue'
-import TaskHistory from './task/TaskHistory.vue'
-import TaskHops from './task/TaskHops.vue'
-import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
-import TaskPullRequests from './task/TaskPullRequests.vue'
-import TaskQuestions from './task/TaskQuestions.vue'
+import TaskSummary from './task/TaskSummary.vue'
 import TaskTitle from './task/TaskTitle.vue'
-import TaskUsage from './task/TaskUsage.vue'
+import { taskPagePath } from '@/utils/agentTaskFormat'
 
 defineProps<{
     task: any | null
@@ -68,8 +54,6 @@ const emit = defineEmits<{
     (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
     (e: 'operator-release', p: { task: any, note: string }): void
     (e: 'require-review', p: { task: any, value: boolean }): void
-    (e: 'answer', p: { task: any, answers: { id: string, status: string, resolution: string }[],
-        answerAll?: string }): void
     (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
     (e: 'order', p: { task: any, orderIndex: number }): void
     (e: 'complete', p: { task: any, note: string, skipRequiredRoles: boolean }): void
@@ -81,7 +65,6 @@ const emit = defineEmits<{
 </script>
 
 <style scoped lang="scss">
-// The vertical rhythm n-space gave the drawer's sections, kept now that each component renders
-// its own sections as siblings.
 .tsecs { display: flex; flex-direction: column; gap: 16px; }
+.openpage { align-self: flex-start; font-weight: 600; font-size: 13px; }
 </style>
