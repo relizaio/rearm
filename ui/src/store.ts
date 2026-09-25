@@ -2676,6 +2676,13 @@ const storeObject : any = {
                                     task
                                     session
                                     round
+                                    elements { digest elements { id line } }
+                                    checks {
+                                        catalogueVersion
+                                        digest
+                                        scope { checked releases { release specification elementsDigest lifecycle } }
+                                        results { check result blocking reason offences { elementId release message } }
+                                    }
                                     findings {
                                         kind
                                         round
@@ -2743,6 +2750,39 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTasksOfBoard
+        },
+        /** The element check catalogue (elements.md §7): what each check means, for the report view. */
+        async fetchCheckCatalogue () {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query checkCatalogue { checkCatalogue { name description skipsWhen } }`,
+            })
+            return response.data.checkCatalogue ?? []
+        },
+        /** Re-run a document's element checks in its current scope; the report's release comes back. */
+        async runAgentChecks (context: any, releaseUuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentCheckRun($releaseUuid: ID!) {
+                        agentCheckRun(releaseUuid: $releaseUuid) {
+                            uuid
+                            lifecycle
+                            document {
+                                specification
+                                round
+                                checks {
+                                    catalogueVersion
+                                    digest
+                                    scope { checked releases { release specification elementsDigest lifecycle } }
+                                    results { check result blocking reason offences { elementId release message } }
+                                }
+                            }
+                        }
+                    }`,
+                variables: { releaseUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentCheckRun
         },
         async fetchAgentTaskRoleConfigsOfBoard (context: any, boardUuid: string) {
             const response = await graphqlClient.query({

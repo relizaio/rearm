@@ -303,7 +303,8 @@
 
                 <div class="dsec" v-if="taskDocuments.length">
                     <div class="dsec__h">Documents</div>
-                    <div v-for="d in taskDocuments" :key="d.uuid ?? ''" class="drow">
+                    <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
+                    <div class="drow">
                         <span class="drow__label">{{ documentLabel(d) }}</span>
                         <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
                                :type="verdictType(documentVerdict(d))">{{ documentVerdict(d) }}</n-tag>
@@ -318,6 +319,8 @@
                         <code v-if="d.sourceCodeEntryDetails?.commit" class="drow__commit"
                               title="Commit this document is pinned to">{{ d.sourceCodeEntryDetails.commit.slice(0, 8) }}</code>
                     </div>
+                    <AiAgentCheckReport v-if="d.document?.elements" :release="d" :documents="taskDocuments"/>
+                    </template>
                 </div>
 
                 <div class="dsec">
@@ -515,6 +518,7 @@
 import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag, NTooltip } from 'naive-ui'
 import AgentUsageSummary from './AgentUsageSummary.vue'
+import AiAgentCheckReport from './AiAgentCheckReport.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress } from '@/utils/agentTaskLabels'
@@ -731,6 +735,8 @@ const canAnswer = computed(() =>
 
 // Documents this task has produced, newest first as the server returns them.
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
+// The rows of the Documents list: a CHECK_REPORT round is read under the document it is about.
+const listedDocuments = computed(() => taskDocuments.value.filter(d => d?.document?.specification !== 'CHECK_REPORT'))
 
 // Open questions, when there is no answer form showing them: the task is with the role meant to
 // answer, and a reader still wants to see what it is waiting on.
