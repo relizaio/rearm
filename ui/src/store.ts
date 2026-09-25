@@ -2883,6 +2883,109 @@ const storeObject : any = {
             })
             return response.data.agentTaskRoleConfigsOfBoard
         },
+        /**
+         * Earlier revisions of a task, board or role config, newest first (22ddc644; org admin).
+         * The selections keep to what a snapshot holds: computed fields such as a task's documents
+         * or usage would be read against today's data, not the revision's.
+         */
+        async fetchAgentRevisions (context: any, payload: { kind: 'task' | 'board' | 'role', uuid: string, limit?: number, offset?: number }) {
+            const queries = {
+                task: gql`
+                    query agentTaskHistory($uuid: ID!, $limit: Int, $offset: Int) {
+                        agentTaskHistory(taskUuid: $uuid, limit: $limit, offset: $offset) {
+                            revision
+                            at
+                            task {
+                                uuid
+                                title
+                                status
+                                role
+                                orderIndex
+                                dependsOn
+                                hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
+                                requireHumanReview
+                                assignment { session agent role assignedAt promptVersion }
+                                signOffs { role agent session signedOffAt outcome note }
+                                returns { role session reason description returnedAt }
+                                statusHistory { from to at trigger actor { kind uuid name } note }
+                                orderSetBy { kind uuid name }
+                                orderSetAt
+                                budgetMicros
+                                coordinatorEstimateMicros
+                                requiredStrength
+                                strengthSetBy { kind uuid name }
+                                prUrls
+                                reopenCount
+                                completedAt
+                            }
+                        }
+                    }`,
+                board: gql`
+                    query agentBoardHistory($uuid: ID!, $limit: Int, $offset: Int) {
+                        agentBoardHistory(boardUuid: $uuid, limit: $limit, offset: $offset) {
+                            revision
+                            at
+                            board {
+                                uuid
+                                name
+                                description
+                                status
+                                sources
+                                documentPaths
+                                coordinatorPrompt
+                                coordinatorCapabilities
+                                lock { level reason lockedBy { kind uuid name } lockedAt }
+                                perAgentWipLimit
+                                budgetMicros
+                                softAlertPercent
+                                cycleCap
+                                noProgressRepeatsToStop
+                                blockingPriority
+                                completionPriority
+                                priorityType
+                                target
+                                defaultTaskLevel
+                                defaultInputResolution
+                                declarative { specHash appliedAt source { repo path commit } }
+                            }
+                        }
+                    }`,
+                role: gql`
+                    query agentRoleConfigHistory($uuid: ID!, $limit: Int, $offset: Int) {
+                        agentRoleConfigHistory(roleConfigUuid: $uuid, limit: $limit, offset: $offset) {
+                            revision
+                            at
+                            roleConfig {
+                                uuid
+                                name
+                                prompt
+                                orderIndex
+                                wipLimit
+                                requireDistinctAgent
+                                blindReview
+                                active
+                                requiredCapabilities
+                                kind
+                                necessity
+                                humanGate
+                                hopBudgetMicros
+                                requiredStrength
+                                strengthHeadroom
+                                strengthCategory
+                                producesOutputs { specification scope required }
+                                requiredInputs { kind specification scope component minLifecycle resolution }
+                            }
+                        }
+                    }`,
+            }
+            const field = { task: 'agentTaskHistory', board: 'agentBoardHistory', role: 'agentRoleConfigHistory' }[payload.kind]
+            const response = await graphqlClient.query({
+                query: queries[payload.kind],
+                variables: { uuid: payload.uuid, limit: payload.limit ?? 20, offset: payload.offset ?? 0 },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data[field] ?? []
+        },
         async fetchAgentTaskRolePresetsOfOrg (context: any, orgUuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
