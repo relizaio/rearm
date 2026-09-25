@@ -643,6 +643,7 @@ import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
+import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { templateRows } from '@/utils/agentDocuments'
 
 /**
@@ -798,10 +799,9 @@ const editingPreset = ref<any>(null)
 const models = ref<any[]>([])
 const editingPresetIsNew = ref(false)
 
-const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
+const capabilityOptions = toOptions(CAPABILITIES)
 // The coordinator always has the tracker verbs, and the server refuses them here.
-const coordinatorCapabilityOptions = ['CODE_PUSH', 'PR_MERGE'].map(c => ({ label: c, value: c }))
-    .map(c => ({ label: c, value: c }))
+const coordinatorCapabilityOptions = toOptions(COORDINATOR_CAPABILITIES)
 
 /**
  * Document types a role can be required to publish.
