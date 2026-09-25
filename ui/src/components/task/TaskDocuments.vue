@@ -1,7 +1,7 @@
 <template>
     <div class="dsec" v-if="taskDocuments.length">
         <div class="dsec__h">Documents</div>
-        <template v-for="d in taskDocuments" :key="d.uuid ?? ''">
+        <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
         <div class="drow">
             <span class="drow__label">{{ documentLabel(d) }}</span>
             <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
@@ -21,6 +21,7 @@
                 {{ elementsOf(d).length }} element{{ elementsOf(d).length === 1 ? '' : 's' }}
             </n-button>
         </div>
+        <AiAgentCheckReport v-if="d.document?.elements" :release="d" :documents="taskDocuments"/>
         <AiAgentDocumentElements v-if="expandedDoc === d.uuid" :release="d" :documents="taskDocuments"
                                  :board-uuid="task?.board" :task-uuid="task?.uuid"
                                  :task-status="task?.status" :focus="focusedElement"/>
@@ -32,6 +33,7 @@
 // Documents this task has produced, newest first as the server returns them.
 import { computed, ref, watch } from 'vue'
 import { NButton, NTag } from 'naive-ui'
+import AiAgentCheckReport from '../AiAgentCheckReport.vue'
 import AiAgentDocumentElements from '../AiAgentDocumentElements.vue'
 import { DocumentRelease, documentFileUrl, documentLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
 import { documentDefining, elementsOf } from '@/utils/agentElements'
@@ -43,6 +45,8 @@ const props = defineProps<{
 }>()
 
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
+// The rows of the Documents list: a CHECK_REPORT round is read under the document it is about.
+const listedDocuments = computed(() => taskDocuments.value.filter(d => d?.document?.specification !== 'CHECK_REPORT'))
 
 // The document whose element list is open, and the element to open in it (elements.md §8).
 const expandedDoc = ref<string | null>(null)
