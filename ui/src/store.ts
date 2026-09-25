@@ -2822,6 +2822,8 @@ const storeObject : any = {
                     query agentTask($uuid: ID!) {
                         agentTask(uuid: $uuid) {
                             ${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }
                         }
                     }`,
                 variables: { uuid },
