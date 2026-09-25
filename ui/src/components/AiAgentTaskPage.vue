@@ -18,10 +18,10 @@
             <div class="tpage">
                 <div class="tpage__main tsecs">
                     <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels"
-                                   @decide="decideFindings"/>
+                                   @decide="decideFindings" @open-element="openElement"/>
                     <task-open-questions :task="task"/>
                     <task-questions :task="task" :roles="roles" @answer="answerQuestions"/>
-                    <task-documents :task="task"/>
+                    <task-documents :task="task" :focus="elementFocus"/>
                     <task-hops :task="task" :agent-names="agentNames"/>
                     <task-history :task="task"/>
                 </div>
@@ -125,6 +125,12 @@ const {
     humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview,
 } = useAgentTaskActions(async () => { await load() })
+
+// A finding's element chip opens the element under its document (elements.md §8).
+const elementFocus = ref<{ id: string, n: number } | null>(null)
+function openElement (id: string) {
+    if (id) elementFocus.value = { id, n: (elementFocus.value?.n ?? 0) + 1 }
+}
 
 function openTask (t: any) {
     router.push(taskPagePath(t.uuid))
