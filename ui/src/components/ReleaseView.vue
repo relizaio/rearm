@@ -2034,6 +2034,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import { hasLostStoredBom, artifactBelongsToForRow } from '@/utils/artifactNewVersion'
 import { collectAddendumData } from '@/utils/addendumData'
 import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
@@ -5663,7 +5664,10 @@ async function uploadNewBomVersion (art: any) {
     
     const isBomArtifact = commonFunctions.isCycloneDXBomArtifact(art)
     let questionText = ''
-    if(isBomArtifact){
+    if (hasLostStoredBom(art, isBomArtifact)) {
+        // No serial number or version to show or query; uploading a file is how it is repaired.
+        questionText = `This Artifact has no stored BOM (no serial number is recorded), so it cannot be downloaded. \nUploading a file will restore it as this Artifact's BOM.`
+    } else if (isBomArtifact && art.internalBom) {
         const releasesSharingThisArtifact = await findReleasesSharedByArtifact(art.uuid)
    
         const latestBomVersion: string = await getBomVersion(art.uuid)
@@ -5699,7 +5703,10 @@ async function uploadNewBomVersion (art: any) {
     if (swalResult.isConfirmed) {
         showAddNewBomVersionModal.value = true
         artifactToUpdate.value = art
+        // A lost BOM no longer carries belongsTo in its internalBom; take it from the row, so the
+        // repair upload gets the deliverable's or source code entry's context, not the release's.
         addNewBomBelongsTo.value = art?.internalBom?.belongsTo
+            ?? (hasLostStoredBom(art, isBomArtifact) ? artifactBelongsToForRow(art.belongsTo) : undefined)
         deliverableAddArtifactSceId.value = art.belongsToUUID
     }else{
         Swal.fire(
