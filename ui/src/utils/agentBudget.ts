@@ -34,18 +34,18 @@ export function budgetChip (spentMicros: number | null | undefined, budgetMicros
     return { label: `spent ${spent} of ${budget} (${percent}%)`, type, percent }
 }
 
-/** The six board settings the form edits, in the order it shows them. */
+/** The board settings the form edits, in the order it shows them. */
 export const BOARD_SETTING_KEYS = ['budgetMicros', 'softAlertPercent', 'cycleCap', 'noProgressRepeatsToStop',
-    'blockingPriority', 'completionPriority'] as const
+    'blockingPriority', 'completionPriority', 'coordinatorStopRelease'] as const
 export type BoardSettingKey = typeof BOARD_SETTING_KEYS[number]
 
 /**
  * What the form sends as AgentBoardInput.settings: only what changed. A value the person emptied is
  * sent as null, which clears it; one left alone is left out, which keeps it. Null when nothing changed.
  */
-export function settingsPatch (original: Partial<Record<BoardSettingKey, number | null>> | null | undefined,
-    draft: Partial<Record<BoardSettingKey, number | null>>): Record<string, number | null> | null {
-    const patch: Record<string, number | null> = {}
+export function settingsPatch (original: Partial<Record<BoardSettingKey, number | boolean | null>> | null | undefined,
+    draft: Partial<Record<BoardSettingKey, number | boolean | null>>): Record<string, number | boolean | null> | null {
+    const patch: Record<string, number | boolean | null> = {}
     for (const k of BOARD_SETTING_KEYS) {
         const before = original?.[k] ?? null
         const after = draft[k] ?? null

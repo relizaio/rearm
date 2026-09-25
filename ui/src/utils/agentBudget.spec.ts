@@ -35,6 +35,14 @@ describe('agentBudget', () => {
         )
     })
 
+    it('sends the coordinator stop release only when the person changed it (task c0a2134c)', () => {
+        const unset = { cycleCap: 3, coordinatorStopRelease: null }
+        expect(settingsPatch(unset, { ...unset })).toBeNull()
+        expect(settingsPatch(unset, { ...unset, coordinatorStopRelease: false })).toEqual({ coordinatorStopRelease: false })
+        const off = { cycleCap: 3, coordinatorStopRelease: false }
+        expect(settingsPatch(off, { ...off, coordinatorStopRelease: true })).toEqual({ coordinatorStopRelease: true })
+    })
+
     it('leaves a never-set allowance out, and removes an emptied one', () => {
         expect(hopBudgetInput(null, 1.5)).toBe(1_500_000)
         expect(hopBudgetInput(undefined, null)).toBeUndefined()

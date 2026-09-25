@@ -2,7 +2,10 @@
     <n-alert v-if="task.hold" type="error"
              :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review' : `On hold (${(task.hold.level ?? '').toLowerCase()})`">
         {{ task.hold.reason }}
-        <div class="holdmeta">held by {{ actorLabel(task.hold.heldBy) }} · {{ ts(task.hold.heldAt) }}</div>
+        <div class="holdmeta">held by {{ actorLabel(task.hold.heldBy) }} · {{ ts(task.hold.heldAt) }}
+            <n-tag v-if="holdWho" size="small" :bordered="false" class="holdwho"
+                   :type="task.hold.level === 'OPERATOR' ? 'error' : 'info'">{{ holdWho }}</n-tag>
+        </div>
         <template v-if="task.hold.kind === 'HUMAN_GATE'">
             <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
                      style="margin-top: 8px"/>
@@ -33,11 +36,17 @@
                 board routes your answer back to whoever asked.
             </div>
         </template>
-        <template v-else-if="task.hold.level === 'OPERATOR'">
+        <template v-else-if="personMayRelease(task.hold)">
             <!-- A loop stop is released past that stop once: to the role routing would pick, or to
-                 the one named here (task 4c566d0d). The cycle is still counted. -->
+                 the one named here (task 4c566d0d). The cycle is still counted. The first stop of a
+                 kind is the coordinator's to release once, and a person may release it too; either
+                 is the task's one release of that kind (task c0a2134c). -->
             <div v-if="loopStop" class="holdmeta relstop">
                 Releasing routes past this stop once, to the role routing picks or the one you name.
+                <template v-if="task.hold.level === 'COORDINATOR'">
+                    The coordinator may release it; a release by you counts as the one release of this
+                    stop kind, and the next is the operator's.
+                </template>
             </div>
             <n-input v-model:value="releaseNote" size="small"
                      placeholder="Note on release (optional)" style="margin-top: 8px"/>
@@ -100,7 +109,7 @@ import { actorLabel } from '@/utils/agentActors'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
 import { subtaskProgress } from '@/utils/agentTaskLabels'
-import { isLoopStopHold, releaseLabel, releasePayload, releaseRoleOptions } from '@/utils/agentHoldRelease'
+import { holdReleaseNote, isLoopStopHold, personMayRelease, releaseLabel, releasePayload, releaseRoleOptions } from '@/utils/agentHoldRelease'
 
 const props = defineProps<{
     task: any
@@ -123,6 +132,7 @@ const reviewNote = ref('')
 const releaseNote = ref('')
 const releaseRole = ref<string | null>(null)
 const loopStop = computed(() => isLoopStopHold(props.task?.hold))
+const holdWho = computed(() => holdReleaseNote(props.task?.hold))
 const roleOptions = computed(() => releaseRoleOptions(props.roles))
 const gateFindingTitle = ref('')
 const gateFindingPriority = ref<number | null>(1)

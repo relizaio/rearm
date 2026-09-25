@@ -255,9 +255,16 @@
                         <template #prefix><span class="flabel">completion P≤</span></template>
                     </n-input-number>
                 </n-space>
+                <!-- task c0a2134c: on (the default, null) a no-progress or cycle-cap stop parks for the
+                     coordinator first, which may release it once per stop kind per task or escalate it. -->
+                <n-checkbox :checked="editingBoard.coordinatorStopRelease !== false" data-testid="board-stop-release"
+                            @update:checked="(v: boolean) => { editingBoard.coordinatorStopRelease = v }">
+                    the coordinator may release a no-progress or cycle-cap stop once per task
+                </n-checkbox>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">
                     Blank budget: no board limit. Blank priorities: strict, every open item counts. The
-                    placeholders are the defaults a blank field takes.
+                    placeholders are the defaults a blank field takes. Unchecked, every stop is the
+                    operator's; budget stops always are.
                 </n-text>
                 <!-- What the coordinator seat does itself, e.g. merging once the last required role
                      has passed. The tracker verbs are always the coordinator's, so they are not offered. -->
@@ -1407,6 +1414,7 @@ async function saveBoard () {
             noProgressRepeatsToStop: editingBoard.value.noProgressRepeatsToStop ?? null,
             blockingPriority: editingBoard.value.blockingPriority ?? null,
             completionPriority: editingBoard.value.completionPriority ?? null,
+            coordinatorStopRelease: editingBoard.value.coordinatorStopRelease ?? null,
         })
         if (settings) input.settings = settings
         if (editingBoardIsNew.value) {
