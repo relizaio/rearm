@@ -10,7 +10,7 @@
         <n-alert v-else-if="loadError" type="error" :title="loadError"/>
 
         <template v-if="task">
-            <task-title :task="task"/>
+            <task-title :task="task" :board="board"/>
 
             <!-- Two columns above 1200px: the record on the left (what was found, asked, produced
                  and done), the person's controls and the task's place on the board on the right.
@@ -26,7 +26,7 @@
                     <task-history :task="task"/>
                 </div>
                 <div class="tpage__side tsecs">
-                    <task-header :task="task" :roles="roles" :priority-levels="priorityLevels"
+                    <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels"
                                  @human-review="humanReview" @human-signoff="humanSignOff"
                                  @operator-release="operatorRelease" @require-review="requireReview"/>
                     <task-actions :task="task" :roles="roles" :board="board" :can-reopen="canReopen"

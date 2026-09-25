@@ -45,6 +45,11 @@
         </template>
     </n-alert>
 
+    <n-alert v-if="task.status === 'AWAITING_COORDINATOR' && subtasks.total && subtasks.done < subtasks.total"
+             type="info" title="Waiting on its subtasks">
+        {{ subtasks.done }} of {{ subtasks.total }} done; the board completes it when they finish.
+    </n-alert>
+
     <n-alert v-if="humanStageRole" type="info" :title="`Human stage: ${humanStageRole.name}`">
         <div v-if="humanStageRole.prompt" class="holdmeta">{{ humanStageRole.prompt }}</div>
         <n-input v-model:value="reviewNote" size="small" placeholder="Sign-off note (optional)"
@@ -87,9 +92,12 @@ import { NAlert, NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
 import { actorLabel } from '@/utils/agentActors'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
+import { subtaskProgress } from '@/utils/agentTaskLabels'
 
 const props = defineProps<{
     task: any
+    /** The board's tasks, for a split parent's subtask progress. */
+    tasks?: any[]
     roles?: any[]
     priorityLevels?: number
     /** The answer form is on the task page, not beside this banner (the drawer's preview). */
@@ -112,6 +120,7 @@ const gateAbout = ref<string | null>(null)
 const priorityOptions = computed(() => priorityOptionsOf(props.priorityLevels))
 const aboutOptions = computed(() => aboutOptionsOf(props.roles))
 const terminal = computed(() => isTerminal(props.task))
+const subtasks = computed(() => subtaskProgress(props.task, props.tasks ?? []))
 const answerWhere = computed(() => props.questionsOnPage ? 'on the task page' : 'under Waiting on')
 const missingRequired = computed(() => missingRequiredRoles(props.task, props.roles))
 

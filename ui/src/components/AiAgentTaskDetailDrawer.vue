@@ -3,7 +3,7 @@
               @update:show="(v: boolean) => { if (!v) emit('close') }">
         <n-drawer-content v-if="task" closable>
             <template #header>
-                <task-title :task="task"/>
+                <task-title :task="task" :board="board"/>
             </template>
 
             <!-- A preview (gaps §1.26): what a person needs to decide whether to open the task,
@@ -11,7 +11,7 @@
                  task actions. Findings rounds, questions, documents and history are on the page. -->
             <div class="tsecs">
                 <router-link :to="taskPagePath(task.uuid)" class="openpage">Open task page →</router-link>
-                <task-header :task="task" :roles="roles" :priority-levels="priorityLevels" questions-on-page
+                <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels" questions-on-page
                              @human-review="p => emit('human-review', p)"
                              @human-signoff="p => emit('human-signoff', p)"
                              @operator-release="p => emit('operator-release', p)"

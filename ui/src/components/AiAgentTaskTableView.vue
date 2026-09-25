@@ -22,10 +22,13 @@ import { computed, h, ref } from 'vue'
 import { NDataTable, NInput, NSelect, NSpace, NTag, DataTableColumns } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 import { taskPagePath } from '@/utils/agentTaskFormat'
+import { roleTagFor, shortRef } from '@/utils/agentTaskLabels'
 
 const props = defineProps<{
     tasks: any[]
     agentNames: Record<string, string>
+    /** A board without sources has no tracker refs, so no task on it is a "draft". */
+    boardHasSources?: boolean
 }>()
 const emit = defineEmits<{ (e: 'open', task: any): void }>()
 
@@ -45,7 +48,7 @@ const filtered = computed(() => {
 })
 
 function refOf (t: any): string {
-    return t.externalRef?.includes('#') ? '#' + t.externalRef.split('#').pop() : 'draft'
+    return shortRef(t, props.boardHasSources ?? true)
 }
 
 function ageOf (t: any): string {
@@ -91,7 +94,7 @@ const columns: DataTableColumns<any> = [
                 { default: () => 'blocked' }) : null,
         ]),
     },
-    { title: 'Role', key: 'role', width: 90, sorter: (a, b) => String(a.role ?? '').localeCompare(String(b.role ?? '')), render: (t: any) => t.role ?? '—' },
+    { title: 'Role', key: 'role', width: 90, sorter: (a, b) => String(a.role ?? '').localeCompare(String(b.role ?? '')), render: (t: any) => roleTagFor(t)?.text ?? '—' },
     { title: 'Order', key: 'orderIndex', width: 70, sorter: (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0) },
     {
         title: 'Agent', key: 'agent', width: 140,
