@@ -38,7 +38,8 @@ describe('AiAgentTaskDetailDrawer', () => {
 
     it('keeps the controls a person acts from', () => {
         const held = mountDrawer(richTask())
-        expect(held.text()).toContain('Operator release')
+        // the fixture's hold is routing's no-progress stop, released past the stop (4c566d0d)
+        expect(held.text()).toContain('Release past the stop')
         expect(held.findAll('.dsec__h').map(h => h.text())).toEqual(['Human review', 'Task actions', 'Summary'])
         const gate = mountDrawer(fixtureVariants().humanGate)
         expect(gate.text()).toContain('Approve reviewer pass')

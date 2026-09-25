@@ -54,12 +54,16 @@ export function useAgentTaskActions (after: AfterAction) {
             () => `Signed off ${p.outcome} — returned to the coordinator`, 'Sign-off failed')
     }
 
-    function operatorRelease (p: { task: any, note?: string } | any) {
+    function operatorRelease (p: { task: any, note?: string, role?: string } | any) {
         // Tolerates the bare task the drawer used to emit, so a stale caller does not lose the release.
         const t = p?.task ?? p
+        // A role only from a release payload: a bare task carries its own role field, which is not
+        // where the person asked to send it.
+        const role: string | undefined = p?.task ? (p.role || undefined) : undefined
         return handedOn(t,
-            () => store.dispatch('agentTaskOperatorHold', { taskUuid: t.uuid, hold: false, reason: p?.note || undefined }),
-            () => 'Hold released', 'Release failed')
+            () => store.dispatch('agentTaskOperatorHold', { taskUuid: t.uuid, hold: false, reason: p?.note || undefined,
+                ...(role ? { role } : {}) }),
+            () => role ? `Hold released to ${role}` : 'Hold released', 'Release failed')
     }
 
     function answerQuestions (p: { task: any,
