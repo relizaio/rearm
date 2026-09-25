@@ -21,10 +21,12 @@
     &__id { font-weight: 600; font-size: 11.5px; }
     // The title takes the room and may shrink; the location gives it up first. Without min-width 0
     // the title's minimum was its longest word, and a long path squeezed it to one word per line.
+    // The location is as wide as its text up to 38% of the row, not 38% always: a short ref
+    // reserving a third of the row pushed itself and the decide button onto a second line.
     &__title { flex: 1 1 auto; min-width: 0; }
     &__loc {
         font-size: 11px; color: #999;
-        flex: 0 1 38%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        flex: 0 1 auto; max-width: 38%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     &__dec { font-size: 10.5px; color: #8a8; }
     &--closed { opacity: 0.6; }

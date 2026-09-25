@@ -29,7 +29,7 @@
                 after {{ summary.dependencies.done }} done<template v-if="summary.dependencies.pending">,
                     {{ summary.dependencies.pending }} pending</template>
             </span>
-            <span v-if="summary.dependencies.blocks">blocks {{ summary.dependencies.blocks }}</span>
+            <span v-if="summary.dependencies.blocks"><template v-if="task.dependsOn?.length">· </template>blocks {{ summary.dependencies.blocks }}</span>
             <n-tag v-for="d in pendingDeps" :key="d.uuid" size="small" :bordered="false" type="warning"
                    class="depclick" @click="emit('open', d)">{{ taskLabel(d) }}</n-tag>
         </div>

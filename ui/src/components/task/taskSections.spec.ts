@@ -30,7 +30,8 @@ describe('taskSections.scss', () => {
         expect(d['text-overflow']).toBe('ellipsis')
         expect(d.overflow).toBe('hidden')
         expect(d['min-width']).toBe('0')
-        expect(d.flex).toBe('0 1 38%')
+        expect(d.flex).toBe('0 1 auto')
+        expect(d['max-width']).toBe('38%')
     })
 
     it('every component that renders finding rows uses the shared styles', () => {
