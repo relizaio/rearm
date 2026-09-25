@@ -246,11 +246,11 @@
                                     style="width: 170px">
                         <template #prefix><span class="flabel">no-progress stop</span></template>
                     </n-input-number>
-                    <n-input-number v-model:value="editingBoard.blockingPriority" :min="1" placeholder="strict"
+                    <n-input-number v-model:value="editingBoard.blockingPriority" :min="1" :max="priorityLevels" placeholder="strict"
                                     style="width: 150px">
                         <template #prefix><span class="flabel">blocking P≤</span></template>
                     </n-input-number>
-                    <n-input-number v-model:value="editingBoard.completionPriority" :min="1" placeholder="strict"
+                    <n-input-number v-model:value="editingBoard.completionPriority" :min="1" :max="priorityLevels" placeholder="strict"
                                     style="width: 160px">
                         <template #prefix><span class="flabel">completion P≤</span></template>
                     </n-input-number>
