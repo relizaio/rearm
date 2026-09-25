@@ -83,8 +83,9 @@
                 <n-button v-if="!isLocked" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
             </div>
             <n-alert v-if="currentBoard.missingCapabilities?.length" type="warning" class="lockbanner">
-                Delivery loop incomplete: no active role covers
-                {{ currentBoard.missingCapabilities.join(', ') }} — this board cannot ship until a role carries them.
+                Delivery loop incomplete: no active role or the coordinator covers
+                {{ currentBoard.missingCapabilities.join(', ') }} — give a role the capability, or declare
+                that the coordinator covers it in the board's settings.
             </n-alert>
             <n-alert v-if="awaitingHumanReview.length" type="error" class="lockbanner">
                 {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting your review:
@@ -212,6 +213,11 @@
                 </n-input-number>
                 <n-select v-model:value="editingBoard.priorityType" :options="priorityOptions"
                           placeholder="Priority enforcement"/>
+                <!-- What the coordinator seat does itself, e.g. merging once the last required role
+                     has passed. The tracker verbs are always the coordinator's, so they are not offered. -->
+                <n-select v-model:value="editingBoard.coordinatorCapabilities" multiple
+                          :options="coordinatorCapabilityOptions"
+                          placeholder="Coordinator covers (e.g. PR_MERGE when it merges)"/>
                 <n-input v-model:value="editingBoard.documentsRepo"
                          placeholder="Documents repository, e.g. https://github.com/acme/docs">
                     <template #prefix><span class="flabel">documents repo</span></template>
@@ -638,6 +644,7 @@ import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
+import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { templateRows } from '@/utils/agentDocuments'
 import { isOrgAdmin } from '@/utils/agentReopen'
 
@@ -794,8 +801,9 @@ const editingPreset = ref<any>(null)
 const models = ref<any[]>([])
 const editingPresetIsNew = ref(false)
 
-const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
-    .map(c => ({ label: c, value: c }))
+const capabilityOptions = toOptions(CAPABILITIES)
+// The coordinator always has the tracker verbs, and the server refuses them here.
+const coordinatorCapabilityOptions = toOptions(COORDINATOR_CAPABILITIES)
 
 /**
  * Document types a role can be required to publish.
@@ -1338,9 +1346,11 @@ function startEditBoard (b: any | null) {
     // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])],
         documentsRepo: b.documentsRepo?.uri ?? '',
-        documentPaths: { ...(b.documentPaths ?? {}) } }
+        documentPaths: { ...(b.documentPaths ?? {}) },
+        coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])] }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
-            priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {} }
+            priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
+            coordinatorCapabilities: [] }
 }
 
 async function saveBoard () {
@@ -1366,6 +1376,8 @@ async function saveBoard () {
             Object.entries(editingBoard.value.documentPaths ?? {})
                 .filter(([, v]) => !!(v as string)?.trim()))
         if (Object.keys(paths).length) input.documentPaths = paths
+        // Always sent: the form shows the current list, so an emptied one clears it ([]).
+        input.coordinatorCapabilities = editingBoard.value.coordinatorCapabilities ?? []
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
             input.seedFromPresets = !!editingBoard.value.seedFromPresets

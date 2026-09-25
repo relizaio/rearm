@@ -2513,6 +2513,7 @@ const storeObject : any = {
                 query: gql`
                     query agentBoardsOfOrg($orgUuid: ID!) {
                         agentBoardsOfOrg(orgUuid: $orgUuid) {
+                            coordinatorCapabilities
                             effectiveDocumentPaths
                             uuid
                             name
@@ -2560,6 +2561,7 @@ const storeObject : any = {
                             documentsRepo
                             documentPaths
                             coordinatorPrompt
+                            coordinatorCapabilities
                             roles {
                                 name
                                 prompt
