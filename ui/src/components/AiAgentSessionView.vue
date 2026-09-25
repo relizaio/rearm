@@ -294,6 +294,11 @@ async function viewArtifact (a: any) {
     showReportModal.value = true
     try {
         const resp = await fetchWithAuth(`/api/manual/v1/artifact/${a.uuid}/rawdownload`)
+        // A refused or failed fetch has a body too (the edge's HTML error page); show the error
+        // through the catch below instead of rendering that page as the report.
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
+        }
         const text = await resp.text()
         try {
             reportContent.value = JSON.stringify(JSON.parse(text), null, 2)
