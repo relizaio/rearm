@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -25,11 +26,13 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -72,13 +75,17 @@ import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.VulnerabilityRecordData.CweEntry;
 import io.reliza.model.VulnerabilityRecordData.Fetcher;
 import io.reliza.model.VulnerabilityRecordData.UpstreamSource;
+import io.reliza.model.VulnerabilityRecordData.VulnScore;
+import io.reliza.model.VulnerabilityRecordData.VulnScoreType;
 import io.reliza.model.VulnerabilityRecordData.VulnSourceSnapshot;
+import io.reliza.model.VulnerabilityRecordData.VulnSubScoreType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.IntegrationWebDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.SeveritySourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationType;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasType;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
@@ -87,6 +94,7 @@ import io.reliza.model.dto.TriggerIntegrationInputDto;
 import io.reliza.model.OrganizationData;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.IntegrationRepository;
+import io.reliza.service.VulnerabilityRecordService.UpsertOrigin;
 import lombok.Data;
 
 @Service
@@ -693,9 +701,13 @@ public class IntegrationService {
 			VulnerabilitySeverity severity,
 			List<DtrackComponentRaw> components, List<DtrackAliasRaw> aliases,
 			String description, List<DtrackCweRaw> cwes, String references,
+			Double cvssV2BaseScore, String cvssV2Vector,
+			Double cvssV2ImpactSubScore, Double cvssV2ExploitabilitySubScore,
 			Double cvssV3BaseScore, String cvssV3Vector,
 			Double cvssV3ImpactSubScore, Double cvssV3ExploitabilitySubScore,
 			Double cvssV4Score, String cvssV4Vector,
+			Double owaspRRLikelihoodScore, Double owaspRRTechnicalImpactScore,
+			Double owaspRRBusinessImpactScore, String owaspRRVector,
 			Double epssScore, Double epssPercentile,
 			String uuid, Date published, Date updated) {}
 
@@ -814,7 +826,10 @@ public class IntegrationService {
 	private record DtrackFindingVulnRaw(String vulnId, String source, String title,
 			VulnerabilitySeverity severity, List<DtrackAliasRaw> aliases,
 			String description, List<DtrackCweRaw> cwes, String references,
+			Double cvssV2BaseScore, String cvssV2Vector,
 			Double cvssV3BaseScore, String cvssV3Vector, Double cvssV4Score, String cvssV4Vector,
+			Double owaspLikelihoodScore, Double owaspTechnicalImpactScore,
+			Double owaspBusinessImpactScore, String owaspRRVector,
 			Double epssScore, Double epssPercentile, String uuid, Date published) {}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -925,12 +940,19 @@ public class IntegrationService {
 		s.setTitle(v.title());
 		s.setDescription(v.description());
 		s.setSeverity(v.severity());
-		s.setCvssV3BaseScore(v.cvssV3BaseScore());
-		s.setCvssV3Vector(v.cvssV3Vector());
-		s.setCvssV4Score(v.cvssV4Score());
-		s.setCvssV4Vector(v.cvssV4Vector());
-		s.setEpssScore(v.epssScore());
-		s.setEpssPercentile(v.epssPercentile());
+		// The V5 finding row names the OWASP fields without the RR infix
+		// (the vulnerability endpoint keeps it) and carries no CVSS v2 / v3
+		// sub-scores; those entries simply have none.
+		s.setScores(List.of(
+				VulnScore.of(VulnScoreType.CVSS_V2, v.cvssV2BaseScore(), v.cvssV2Vector()),
+				VulnScore.of(VulnScoreType.CVSS_V3, v.cvssV3BaseScore(), v.cvssV3Vector()),
+				VulnScore.of(VulnScoreType.CVSS_V4, v.cvssV4Score(), v.cvssV4Vector()),
+				VulnScore.of(VulnScoreType.EPSS, v.epssScore(), null)
+						.withSubScore(VulnSubScoreType.PERCENTILE, v.epssPercentile()),
+				VulnScore.of(VulnScoreType.OWASP_RR, null, v.owaspRRVector())
+						.withSubScore(VulnSubScoreType.LIKELIHOOD, v.owaspLikelihoodScore())
+						.withSubScore(VulnSubScoreType.TECHNICAL_IMPACT, v.owaspTechnicalImpactScore())
+						.withSubScore(VulnSubScoreType.BUSINESS_IMPACT, v.owaspBusinessImpactScore())));
 		s.setReferences(v.references());
 		if (v.published() != null) s.setPublished(v.published().toInstant().atZone(ZoneOffset.UTC));
 		List<CweEntry> cwes = new ArrayList<>();
@@ -982,6 +1004,230 @@ public class IntegrationService {
 		}
 	}
 
+	/** Ids we accept for a single-vulnerability fetch; also keeps the id safe as a URL path segment. */
+	private static final Pattern SINGLE_VULN_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
+
+	/** Whether {@code vulnId} (already stripped) is an id a single-vulnerability fetch accepts. */
+	public static boolean isValidSingleVulnId(String vulnId) {
+		return vulnId != null && SINGLE_VULN_ID.matcher(vulnId).matches();
+	}
+
+	private static final Duration SINGLE_VULN_FETCH_TIMEOUT = Duration.ofSeconds(10);
+
+	/** Upper bound on DT round-trips for one refresh (each 404 is a round-trip). */
+	private static final int MAX_SINGLE_VULN_FETCHES = 6;
+
+	/** DT keys a vulnerability by (source, id): GitHub rows by GHSA, OSV rows by ecosystem id. */
+	private record DtrackVulnKey(UpstreamSource source, String vulnId) {}
+
+	/** How a round of single-vulnerability fetches ended, apart from the rows it found. */
+	enum DtrackFetchOutcome {
+		/** Every key answered 200 or 404. */
+		CLEAN,
+		/** At least one key failed with something other than a 404; the rest were still tried. */
+		FAILED,
+		/** DT refused the API key (401 / 403); the round stopped, since every key would be refused. */
+		AUTH_REJECTED
+	}
+
+	/**
+	 * Fetch one vulnerability from the org's Dependency-Track and upsert it into
+	 * {@code vulnerability_records}. Serves the "Refresh from Dependency-Track"
+	 * action for findings whose record is missing (the drain only records vulns
+	 * attributed on the day of the scan) or stale. Callers must make sure the id
+	 * is a finding of the org: a record's existence is read elsewhere as "this
+	 * vulnerability affects the org" (KEV fan-out, first-insert notifications).
+	 *
+	 * <p>What is fetched:
+	 * <ol>
+	 *   <li>when the org already has a record for the id, each of its snapshots
+	 *       by that snapshot's own (source, upstream id) -- the exact DT keys;</li>
+	 *   <li>the requested id under the sources its prefix suggests
+	 *       ({@link #dtrackSourcesForVulnId});</li>
+	 *   <li>one more round for GHSA / CVE aliases the fetched rows name, so a
+	 *       CVE refresh also picks up the GitHub advisory the merger ranks
+	 *       first.</li>
+	 * </ol>
+	 * Every 200 becomes a snapshot; 404s are skipped; any other failure is logged
+	 * and the next key is tried. The upsert uses
+	 * {@link UpsertOrigin#MANUAL_REFRESH} and is seeded with the existing
+	 * record's aliases so it lands on the same row. The endpoint and payload are
+	 * the same on DT 4 and 5.
+	 *
+	 * @return the merged record after the upsert
+	 * @throws RelizaException with a user-facing message when the id is
+	 *         invalid, the org has no DT integration, DT refuses the API key,
+	 *         or no key returned the vulnerability
+	 */
+	public VulnerabilityRecordData fetchSingleVulnerabilityFromDtrack(UUID orgUuid, String vulnId, WhoUpdated wu)
+			throws RelizaException {
+		String id = vulnId == null ? "" : vulnId.strip();
+		if (!isValidSingleVulnId(id)) {
+			throw new RelizaException("Invalid vulnerability id");
+		}
+		IntegrationData dtrackIntegration = getIntegrationDataByOrgTypeIdentifier(orgUuid,
+				IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER)
+				.orElseThrow(() -> new RelizaException(
+						"No Dependency-Track integration is configured for this organization"));
+		String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+		String fetcherEndpoint = dtrackIntegration.getUri().toString();
+
+		Set<String> aliases = new LinkedHashSet<>();
+		Set<DtrackVulnKey> keys = new LinkedHashSet<>();
+		Optional<VulnerabilityRecordData> existing = vulnerabilityRecordService.getByAlias(orgUuid, id);
+		if (existing.isPresent()) {
+			VulnerabilityRecordData record = existing.get();
+			aliases.add(record.getPrimaryVulnId());
+			if (record.getAliases() != null) aliases.addAll(record.getAliases());
+			if (record.getSources() != null) {
+				for (VulnSourceSnapshot snap : record.getSources()) {
+					if (snap != null) addFetchableKey(keys, snap.getUpstreamSource(), snap.getUpstreamVulnId());
+				}
+			}
+		}
+		for (UpstreamSource source : dtrackSourcesForVulnId(id)) addFetchableKey(keys, source, id);
+
+		Set<DtrackVulnKey> attempted = new LinkedHashSet<>();
+		List<DtrackVulnRaw> found = new ArrayList<>();
+		DtrackFetchOutcome outcome = fetchDtrackVulnKeys(keys, attempted, found, fetcherEndpoint, apiToken, orgUuid);
+		if (outcome == DtrackFetchOutcome.AUTH_REJECTED) {
+			throw new RelizaException("Dependency-Track rejected this organization's API key;"
+					+ " check the Dependency-Track integration");
+		}
+
+		Set<DtrackVulnKey> aliasKeys = new LinkedHashSet<>();
+		for (DtrackVulnRaw dvr : found) {
+			if (dvr.aliases() == null) continue;
+			for (DtrackAliasRaw a : dvr.aliases()) {
+				if (a == null) continue;
+				addFetchableKey(aliasKeys, UpstreamSource.GITHUB, a.ghsaId());
+				addFetchableKey(aliasKeys, UpstreamSource.NVD, a.cveId());
+			}
+		}
+		DtrackFetchOutcome aliasOutcome = fetchDtrackVulnKeys(aliasKeys, attempted, found, fetcherEndpoint,
+				apiToken, orgUuid);
+		boolean failed = outcome == DtrackFetchOutcome.FAILED || aliasOutcome != DtrackFetchOutcome.CLEAN;
+
+		List<VulnSourceSnapshot> snapshots = new ArrayList<>();
+		for (DtrackVulnRaw dvr : found) {
+			VulnSourceSnapshot snap = toSnapshot(dvr, fetcherEndpoint);
+			if (snap == null) continue;
+			snapshots.add(snap);
+			aliases.addAll(dtrackAliasStrings(dvr));
+		}
+		if (snapshots.isEmpty()) {
+			String searched = attempted.stream().map(k -> k.source().name()).distinct()
+					.collect(Collectors.joining(", "));
+			throw new RelizaException(failed
+					? "Failed to fetch vulnerability " + id + " from Dependency-Track"
+					: "Vulnerability " + id + " was not found in Dependency-Track (searched " + searched + ")");
+		}
+		// Concurrent refreshes / drains of the same record are serialised by
+		// the per-record lock inside the upsert.
+		return vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu,
+				UpsertOrigin.MANUAL_REFRESH);
+	}
+
+	private static void addFetchableKey(Set<DtrackVulnKey> keys, UpstreamSource source, String vulnId) {
+		if (source == null || toDtrackSource(source) == null || vulnId == null) return;
+		String id = vulnId.strip();
+		if (SINGLE_VULN_ID.matcher(id).matches()) keys.add(new DtrackVulnKey(source, id));
+	}
+
+	/**
+	 * GET each not-yet-attempted key whose source has no row yet, up to
+	 * {@link #MAX_SINGLE_VULN_FETCHES} attempts in total, adding every 200 to
+	 * {@code found}. A 404 is the
+	 * normal "not under this source" answer. A 401 / 403 stops the round:
+	 * the key is refused for every source, so trying the rest would only
+	 * repeat the error. Other 4xx are logged without a stack trace (DT
+	 * answered, the request was wrong); 5xx, timeouts and transport or parse
+	 * errors keep theirs.
+	 */
+	private DtrackFetchOutcome fetchDtrackVulnKeys(Set<DtrackVulnKey> keys, Set<DtrackVulnKey> attempted,
+			List<DtrackVulnRaw> found, String fetcherEndpoint, String apiToken, UUID orgUuid) {
+		DtrackFetchOutcome outcome = DtrackFetchOutcome.CLEAN;
+		for (DtrackVulnKey key : keys) {
+			if (attempted.size() >= MAX_SINGLE_VULN_FETCHES) break;
+			// One row per source: the record keeps one snapshot per (source,
+			// fetcher), so a second row for the same source would overwrite the
+			// first. Keys are ordered existing-snapshot first, so the record's
+			// own key wins and the next drain does not flip it back.
+			if (found.stream().anyMatch(f -> mapUpstreamSource(f.source()) == key.source())) continue;
+			if (!attempted.add(key)) continue;
+			URI uri = URI.create(fetcherEndpoint + "/api/v1/vulnerability/source/" + toDtrackSource(key.source())
+					+ "/vuln/" + URLEncoder.encode(key.vulnId(), StandardCharsets.UTF_8));
+			try {
+				var resp = dtrackWebClient
+						.get()
+						.uri(uri)
+						.header("X-API-Key", apiToken)
+						.retrieve()
+						.toEntity(String.class)
+						.block(SINGLE_VULN_FETCH_TIMEOUT);
+				if (resp != null && resp.getBody() != null) {
+					found.add(Utils.OM.readValue(resp.getBody(), DtrackVulnRaw.class));
+				}
+			} catch (WebClientResponseException wcre) {
+				HttpStatusCode status = wcre.getStatusCode();
+				if (status.isSameCodeAs(HttpStatus.NOT_FOUND)) continue;
+				if (status.isSameCodeAs(HttpStatus.UNAUTHORIZED) || status.isSameCodeAs(HttpStatus.FORBIDDEN)) {
+					log.error("Dependency-Track refused the API key ({}) fetching vulnerability {} for org {}",
+							status.value(), key.vulnId(), orgUuid);
+					return DtrackFetchOutcome.AUTH_REJECTED;
+				}
+				outcome = DtrackFetchOutcome.FAILED;
+				if (status.is4xxClientError()) {
+					log.error("Dependency-Track returned {} fetching vulnerability {} (source {}) for org {}: {}",
+							status.value(), key.vulnId(), key.source(), orgUuid, wcre.getMessage());
+				} else {
+					log.error("Dependency-Track returned {} fetching vulnerability {} (source {}) for org {}",
+							status.value(), key.vulnId(), key.source(), orgUuid, wcre);
+				}
+			} catch (Exception e) {
+				outcome = DtrackFetchOutcome.FAILED;
+				log.error("Error fetching vulnerability {} (source {}) from Dependency-Track for org {}",
+						key.vulnId(), key.source(), orgUuid, e);
+			}
+		}
+		return outcome;
+	}
+
+	/**
+	 * Dependency-Track sources to try, in order, for a vulnerability id when
+	 * nothing better is known. Ecosystem ids live under OSV; GHSA under GITHUB
+	 * (OSV as a fallback for instances mirroring GHSA through OSV); a CVE under
+	 * NVD first, as its authoritative home (GitHub and OSV rows are usually
+	 * keyed by their own ids, which the alias round then reaches); anything
+	 * else tries OSV first.
+	 */
+	static List<UpstreamSource> dtrackSourcesForVulnId(String vulnId) {
+		String upper = vulnId.toUpperCase(Locale.ROOT);
+		// OSV's Debian tracker ids (DEBIAN-CVE-*) have no VulnerabilityAliasType;
+		// like the ecosystem ids they are published under OSV only.
+		if (upper.startsWith("DEBIAN-")) return List.of(UpstreamSource.OSV);
+		return switch (ReleaseMetricsDto.detectAliasType(upper)) {
+			case GHSA -> List.of(UpstreamSource.GITHUB, UpstreamSource.OSV);
+			case PYSEC, RUST, GO, ALPINE -> List.of(UpstreamSource.OSV);
+			case CVE -> List.of(UpstreamSource.NVD, UpstreamSource.GITHUB, UpstreamSource.OSV);
+			default -> List.of(UpstreamSource.OSV, UpstreamSource.GITHUB, UpstreamSource.NVD);
+		};
+	}
+
+	/** The row's own id plus its CVE / GHSA aliases, as the drain collects them. */
+	private static Set<String> dtrackAliasStrings(DtrackVulnRaw dvr) {
+		Set<String> out = new LinkedHashSet<>();
+		if (dvr.vulnId() != null) out.add(dvr.vulnId());
+		if (dvr.aliases() != null) {
+			for (DtrackAliasRaw a : dvr.aliases()) {
+				if (a == null) continue;
+				if (a.cveId() != null && !a.cveId().isBlank()) out.add(a.cveId());
+				if (a.ghsaId() != null && !a.ghsaId().isBlank()) out.add(a.ghsaId());
+			}
+		}
+		return out;
+	}
+
 	/**
 	 * Convert one DTrack row into a per-source snapshot. Returns null if
 	 * the row is missing the bits we need to identify the source (e.g.
@@ -999,14 +1245,21 @@ public class IntegrationService {
 		s.setTitle(dvr.title());
 		s.setDescription(dvr.description());
 		s.setSeverity(dvr.severity());
-		s.setCvssV3BaseScore(dvr.cvssV3BaseScore());
-		s.setCvssV3Vector(dvr.cvssV3Vector());
-		s.setCvssV3ImpactSubScore(dvr.cvssV3ImpactSubScore());
-		s.setCvssV3ExploitabilitySubScore(dvr.cvssV3ExploitabilitySubScore());
-		s.setCvssV4Score(dvr.cvssV4Score());
-		s.setCvssV4Vector(dvr.cvssV4Vector());
-		s.setEpssScore(dvr.epssScore());
-		s.setEpssPercentile(dvr.epssPercentile());
+		// Types the row has nothing for are dropped by setScores.
+		s.setScores(List.of(
+				VulnScore.of(VulnScoreType.CVSS_V2, dvr.cvssV2BaseScore(), dvr.cvssV2Vector())
+						.withSubScore(VulnSubScoreType.IMPACT, dvr.cvssV2ImpactSubScore())
+						.withSubScore(VulnSubScoreType.EXPLOITABILITY, dvr.cvssV2ExploitabilitySubScore()),
+				VulnScore.of(VulnScoreType.CVSS_V3, dvr.cvssV3BaseScore(), dvr.cvssV3Vector())
+						.withSubScore(VulnSubScoreType.IMPACT, dvr.cvssV3ImpactSubScore())
+						.withSubScore(VulnSubScoreType.EXPLOITABILITY, dvr.cvssV3ExploitabilitySubScore()),
+				VulnScore.of(VulnScoreType.CVSS_V4, dvr.cvssV4Score(), dvr.cvssV4Vector()),
+				VulnScore.of(VulnScoreType.EPSS, dvr.epssScore(), null)
+						.withSubScore(VulnSubScoreType.PERCENTILE, dvr.epssPercentile()),
+				VulnScore.of(VulnScoreType.OWASP_RR, null, dvr.owaspRRVector())
+						.withSubScore(VulnSubScoreType.LIKELIHOOD, dvr.owaspRRLikelihoodScore())
+						.withSubScore(VulnSubScoreType.TECHNICAL_IMPACT, dvr.owaspRRTechnicalImpactScore())
+						.withSubScore(VulnSubScoreType.BUSINESS_IMPACT, dvr.owaspRRBusinessImpactScore())));
 		s.setReferences(dvr.references());
 		if (dvr.published() != null) s.setPublished(dvr.published().toInstant().atZone(ZoneOffset.UTC));
 		if (dvr.updated() != null) s.setUpdated(dvr.updated().toInstant().atZone(ZoneOffset.UTC));
@@ -1031,6 +1284,21 @@ public class IntegrationService {
 	 * {@link UpstreamSource#OTHER} so a future DTrack version that adds
 	 * a new feed doesn't drop the snapshot on the floor.
 	 */
+	/**
+	 * Inverse of {@link #mapUpstreamSource}: the DT source name for a
+	 * {@code /vulnerability/source/{source}/...} path. Null for OTHER, which
+	 * has no DT counterpart.
+	 */
+	private static String toDtrackSource(UpstreamSource source) {
+		return switch (source) {
+			case GITHUB -> "GITHUB";
+			case OSV -> "OSV";
+			case NVD -> "NVD";
+			case VULNDB -> "VULNDB";
+			case OTHER -> null;
+		};
+	}
+
 	private static UpstreamSource mapUpstreamSource(String dtrackSource) {
 		if (dtrackSource == null) return UpstreamSource.OTHER;
 		switch (dtrackSource.toUpperCase()) {

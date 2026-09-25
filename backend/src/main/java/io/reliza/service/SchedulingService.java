@@ -94,6 +94,9 @@ public class SchedulingService {
     @Autowired
     KevCatalogSyncService kevCatalogSyncService;
 
+    @Autowired
+    VulnerabilityRecordService vulnerabilityRecordService;
+
 
     // Gates the every-3h legacy per-artifact DTrack project phase-out
     // (deletes phased-out legacy projects on DTrack).
@@ -275,11 +278,13 @@ public class SchedulingService {
 					// post-sweep stripped-era leftovers that otherwise occupy the
 					// enrichment window and stall counts forever with no pull path
 					// able to reach them. Bounded; steady state deletes nothing.
-					try {
-						int gcd = sbomComponentService.gcOrphanedComponents(500);
-						if (gcd > 0) log.info("Orphaned-component GC removed {} unreferenced unbucketed canonical component(s)", gcd);
-					} catch (Exception e) {
-						log.error("gcOrphanedComponents failed", e);
+					if (orphanedComponentGcEnabled) {
+						try {
+							int gcd = sbomComponentService.gcOrphanedComponents(500);
+							if (gcd > 0) log.info("Orphaned-component GC removed {} unreferenced unbucketed canonical component(s)", gcd);
+						} catch (Exception e) {
+							log.error("gcOrphanedComponents failed", e);
+						}
 					}
 
 					// Repoint component mappings written under the old
@@ -616,6 +621,37 @@ public class SchedulingService {
         }
     }
 
+    /** Default recompute sweep schedule -- 04:55 daily. */
+    private static final String DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON = "0 55 4 * * *";
+
+    /**
+     * Daily recompute sweep for {@code vulnerability_records} rows still in
+     * the shape written before the merged scores list existed: converts them,
+     * and in the same recompute fills a CVSS score from a vector where no
+     * source published one. Shared, not {@code saas/}: records are shared
+     * code, so CE converts too.
+     *
+     * <p>Daily at 04:55 by default ({@code relizaprops.recomputeVulnerabilityRecordsCron}),
+     * in the quiet-hour band with the other daily housekeeping, not hourly:
+     * the finder reads every row's JSONB (no index covers the predicate),
+     * about 1 GB of detoast at 100k rows, and the job is one-shot -- the
+     * first run converts the backlog and every write since stores the new
+     * shape, so later runs select zero rows.
+     */
+    @Scheduled(cron = "${relizaprops.recomputeVulnerabilityRecordsCron:" + DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON + "}")
+    public void recomputeVulnerabilityRecords() {
+        SchedulerGuard.runIsolated("recomputeVulnerabilityRecords", () -> {
+            Boolean lock = getLock(AdvisoryLockKey.RECOMPUTE_VULNERABILITY_RECORDS);
+            if (lock) {
+                try {
+                    vulnerabilityRecordService.convertLegacyScoreRecords();
+                } finally {
+                    releaseLock(AdvisoryLockKey.RECOMPUTE_VULNERABILITY_RECORDS);
+                }
+            }
+        });
+    }
+
     // =====================================================================
     // Notification pipeline + finding-change v3 drains. These drive shared
     // services (NotificationFanOutService, NotificationDeliveryWorker,
@@ -780,6 +816,16 @@ public class SchedulingService {
      */
     @Value("${relizaprops.autoIntegrateDrainEnabled:true}")
     private boolean autoIntegrateDrainEnabled;
+
+    /**
+     * Kill switch for the orphaned-component GC on the same tick. Disabled in the surefire run
+     * ({@code relizaprops.orphanedComponentGcEnabled=false}): a test that saves an sbom component
+     * and attests it in a later transaction leaves a window in which the component is unbucketed,
+     * unmapped and unsupported -- exactly what the GC deletes -- and the assertions then read a
+     * component that is gone. Direct calls to gcOrphanedComponents are unaffected.
+     */
+    @Value("${relizaprops.orphanedComponentGcEnabled:true}")
+    private boolean orphanedComponentGcEnabled;
 
     @Value("${relizaprops.findingChangeV3BackfillDrainEnabled:true}")
     private boolean findingChangeV3BackfillDrainEnabled;

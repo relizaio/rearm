@@ -90,6 +90,7 @@ import io.reliza.model.changelog.entry.FindingChangeScope;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CveSearchResultDto;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
@@ -124,6 +125,7 @@ import io.reliza.service.OpenVexService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.SupportInjectionService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
@@ -179,6 +181,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	private SharedArtifactService sharedArtifactService;
+
+	@Autowired
+	private SupportInjectionService supportInjectionService;
 	
 	@Autowired
 	private GetComponentService getComponentService;
@@ -323,7 +328,9 @@ public class ReleaseDatafetcher {
 			@InputArgument("structure") BomStructureType structure,
 			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
 			@InputArgument("mediaType") BomMediaType mediaType,
-			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes
+			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
+			@InputArgument("includeSupportMetadata") Boolean includeSupportMetadata,
+			@InputArgument("includeInternalMetadata") Boolean includeInternalMetadata
 			) throws RelizaException, JacksonException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -343,6 +350,15 @@ public class ReleaseDatafetcher {
 			mediaType = BomMediaType.JSON;
 		}
 		log.debug("mediaType: {}", mediaType);
+		// Parsed ONCE, here at the boundary; nothing below this line sees a nullable Boolean.
+		// Both arguments absent is the pre-existing contract and must stay byte-identical --
+		// the CLI and every API consumer written before these arguments existed land here.
+		ExportMetadataOptions exportMetadata = ExportMetadataOptions
+				.fromCallerInput(includeSupportMetadata, includeInternalMetadata);
+		// Refused BEFORE the merge runs, and never silently downgraded to a stripped document:
+		// a caller who named the support disclosure and received an export without it cannot
+		// tell that from an export where nothing was attested.
+		supportInjectionService.assertExportMetadataRequestable(rd.getOrg(), exportMetadata);
 		DownloadConfig sbomConfig = DownloadConfig.builder()
 				.releaseUuid(releaseUuid)
 				.tldOnly(tldOnly)
@@ -352,10 +368,16 @@ public class ReleaseDatafetcher {
 				.mediaType(mediaType.name())
 				.excludeCoverageTypes(excludeCoverageTypes != null
 						? excludeCoverageTypes.stream().map(Enum::name).toList() : null)
+				// Through the enum's own wire form, not the raw arguments beside it: the
+				// three-state choice is the parsed value this export actually ran under, and
+				// two independent renderings of one fact is how a log stops matching the
+				// document it describes.
+				.includeSupportMetadata(exportMetadata.supportMetadata().toCallerInput())
+				.includeInternalMetadata(exportMetadata.internalMetadata().toCallerInput())
 				.build();
 		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.SBOM_EXPORT,
 				DownloadSubjectType.RELEASE, releaseUuid, wu, sbomConfig);
-		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes);
+		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes, exportMetadata);
 	}
 	
 	/**

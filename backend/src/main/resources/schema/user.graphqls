@@ -478,6 +478,13 @@ type Query {
 	# authorization only. Returns null when the CVE is not KEV-listed.
 	kevRecordDetails(orgUuid: ID!, cveId: String!): KevRecordDetails
 
+	# In-app details of one vulnerability from the org's vulnerability
+	# record (description, CVSS, EPSS, CWEs, references, per-source
+	# provenance). vulnId may be the canonical id or any alias (a GHSA id
+	# finds the CVE-keyed record). Null when the org has no record for it;
+	# refreshVulnerabilityRecord can fetch one.
+	vulnerabilityRecordDetails(orgUuid: ID!, vulnId: String!): VulnerabilityRecordDetails
+
 	# Paged, filtered view of the SAME release component set, for the support
 	# attestation table. Separate from the unpaged query above rather than
 	# replacing it: the graph view needs every node and the release's own root
@@ -845,7 +852,7 @@ type Mutation {
 	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
-	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType]): String
+	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType], includeSupportMetadata: Boolean, includeInternalMetadata: Boolean): String
 	releaseVdrExport(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
 	releaseVdrExportWithApproval(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
 	"""
@@ -985,6 +992,12 @@ type Mutation {
 	# Admin-only force re-upload: re-submit every synthetic bucket to DTrack
 	# (existing project or a new one), triggering full re-analysis + re-ingest.
 	forceReuploadDtrackData(orgUuid: ID!): Boolean
+	# Fetch one vulnerability from the org's Dependency-Track by id and store
+	# it as the org's vulnerability record; returns the merged details.
+	# Requires WRITE on the organization. Fails with a message when the org
+	# has no Dependency-Track integration or Dependency-Track does not know
+	# the id.
+	refreshVulnerabilityRecord(orgUuid: ID!, vulnId: String!): VulnerabilityRecordDetails
 
 	# Instances
 	createInstance(orgUuid: ID!, name: String, instanceType: InstanceType, namespace: String, uri: String!, environment: String, clusterId: ID): Instance
@@ -2647,6 +2660,111 @@ type KevSourceAssertion {
 	ransomwareCampaigns: [KevRansomwareCampaign!]
 	notes: String
 	cwes: [String!]
+}
+
+# Merged view of one vulnerability across its upstream sources. Descriptive
+# fields come from the highest-priority source that has them (GitHub, then
+# OSV, then NVD); cwes, aliases and references are unions.
+type VulnerabilityRecordDetails {
+	primaryVulnId: String!
+	aliases: [String!]!
+	title: String
+	description: String
+	severity: VulnerabilitySeverity
+	cwes: [String!]!
+	# Merged scores: at most one entry per VulnScoreType, in VulnScoreType
+	# declaration order. Each is taken from the highest-priority source (GitHub,
+	# then OSV, then NVD) that published one; for CVSS a published score from any
+	# source beats one computed from a vector.
+	scores: [VulnScore!]!
+	published: DateTime
+	updated: DateTime
+	references: [VulnerabilityReference!]!
+	sources: [VulnerabilitySourceSnapshot!]!
+	firstSeenDate: DateTime
+	lastUpdatedDate: DateTime
+}
+
+# One score of one type (CVSS v2 / v3 / v4, EPSS, OWASP Risk Rating).
+# - score: the primary number (CVSS base score, EPSS probability 0..1); null
+#   for OWASP_RR, which has only sub-scores. A CVSS v4 score computed from a
+#   vector (scoreSource COMPUTED_FROM_VECTOR) scores the whole vector as given,
+#   so any threat / environmental metrics in it count.
+# - subScores: CVSS v2 / v3 IMPACT and EXPLOITABILITY, EPSS PERCENTILE, OWASP_RR
+#   LIKELIHOOD / TECHNICAL_IMPACT / BUSINESS_IMPACT. On Dependency-Track 5 the
+#   CVSS entries carry no IMPACT / EXPLOITABILITY sub-scores.
+# - upstreamSource and scoreSource describe merged entries only and are always
+#   null on per-source entries. On a merged entry they can also be null when
+#   the record was stored before scores were tracked per source.
+type VulnScore {
+	type: VulnScoreType!
+	score: Float
+	vector: String
+	subScores: [VulnSubScore!]!
+	upstreamSource: UpstreamSource
+	scoreSource: ScoreSource
+}
+
+# One named secondary number of a VulnScore.
+type VulnSubScore {
+	type: VulnSubScoreType!
+	value: Float!
+}
+
+# Kind of score. Lists are returned in this declaration order.
+enum VulnScoreType {
+	CVSS_V2
+	CVSS_V3
+	CVSS_V4
+	EPSS
+	OWASP_RR
+}
+
+# Name of a VulnSubScore; which score types carry which is listed on VulnScore.
+enum VulnSubScoreType {
+	IMPACT
+	EXPLOITABILITY
+	PERCENTILE
+	LIKELIHOOD
+	TECHNICAL_IMPACT
+	BUSINESS_IMPACT
+}
+
+# Whether a merged score was published by the upstream feed or computed by
+# ReARM from the vector the feed published without a score.
+enum ScoreSource {
+	UPSTREAM
+	COMPUTED_FROM_VECTOR
+}
+
+# One advisory link; label is the link text when the source supplied one.
+type VulnerabilityReference {
+	url: String!
+	label: String
+}
+
+# One upstream feed's view of the vulnerability, as last fetched.
+type VulnerabilitySourceSnapshot {
+	upstreamSource: UpstreamSource
+	upstreamVulnId: String
+	severity: VulnerabilitySeverity
+	# What this feed published. Today this also holds at most one entry per
+	# type, but unlike the merged list that is not part of the contract: a feed
+	# may later carry, for example, a primary and a secondary score of the same
+	# type, so clients must not key per-source entries by type alone.
+	scores: [VulnScore!]!
+	lastFetchedDate: DateTime
+	lastModifiedDate: DateTime
+}
+
+# Advisory feed a vulnerability snapshot came from. OTHER is any feed without
+# its own value here.
+enum UpstreamSource {
+	GITHUB
+	OSV
+	NVD
+	VULNDB
+	OTHER
 }
 
 # The manufacturer's ATTESTED claim about what a component's upstream maintainer is

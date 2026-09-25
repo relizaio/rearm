@@ -69,6 +69,13 @@ public class DownloadLogData extends RelizaDataParent implements RelizaObject {
 		// VEX-specific: whether IN_TRIAGE statements are included in the exported VEX document.
 		private Boolean includeInTriage;
 
+		// SBOM_EXPORT / ARTIFACT_DOWNLOAD: the per-export metadata flags, recorded EXACTLY as
+		// the caller sent them -- null means the argument was omitted and today's behaviour
+		// applied, which is a different fact from an explicit false and the one an auditor
+		// reconstructing what a submitted document contained needs to be able to tell apart.
+		private Boolean includeSupportMetadata;
+		private Boolean includeInternalMetadata;
+
 	}
 
 	private UUID uuid;
