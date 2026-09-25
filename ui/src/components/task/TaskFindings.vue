@@ -20,7 +20,10 @@
             <n-tag v-if="f.status !== 'OPEN'" size="tiny" :bordered="false"
                    :type="statusType(f.status)">{{ f.status }}</n-tag>
             <span class="frow__title">{{ f.title }}</span>
-            <code v-if="findingLocation(f)" class="frow__loc" :title="findingLocation(f)">{{ findingLocation(f) }}</code>
+            <n-tag v-if="findingElement(f)" size="tiny" :bordered="false" type="info" class="frow__el"
+                   title="The element this finding is about: open it under its document"
+                   @click="emit('open-element', findingElement(f) ?? '')">{{ findingElement(f) }}</n-tag>
+            <code v-if="findingLocation(f)" class="frow__loc" :title="findingLocationFull(f)">{{ findingLocation(f) }}</code>
             <span v-if="f.decidedBy" class="frow__dec" :title="f.resolution ?? ''">
                 {{ f.decidedBy.kind === 'USER' ? 'decided by' : 'agent decided' }}
                 {{ actorLabel(f.decidedBy) }}<template v-if="f.decidedAt"> · {{ ts(f.decidedAt) }}</template>
@@ -75,6 +78,7 @@
 import { computed, ref, watch } from 'vue'
 import { NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
 import { actorLabel } from '@/utils/agentActors'
+import { findingElement } from '@/utils/agentElements'
 import {
     DECIDABLE_STATUSES,
     DocumentRelease,
@@ -82,6 +86,7 @@ import {
     INDEXED_TYPES,
     documentVerdict,
     findingLocation,
+    findingLocationFull,
     latestRound,
     sortFindings,
     statusType,
@@ -96,6 +101,7 @@ const props = defineProps<{
     priorityLevels?: number
 }>()
 const emit = defineEmits<{
+    (e: 'open-element', id: string): void
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
 }>()

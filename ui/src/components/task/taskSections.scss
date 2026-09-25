@@ -24,6 +24,7 @@
     // The location is as wide as its text up to 38% of the row, not 38% always: a short ref
     // reserving a third of the row pushed itself and the decide button onto a second line.
     &__title { flex: 1 1 auto; min-width: 0; }
+    &__el { cursor: pointer; }
     &__loc {
         font-size: 11px; color: #999;
         flex: 0 1 auto; max-width: 38%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

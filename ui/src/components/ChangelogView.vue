@@ -319,7 +319,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import { Ref, ref, watch, computed } from 'vue'
-import { NTabs, NTabPane, NButton, useNotification } from 'naive-ui'
+import { NTabs, NTabPane, NButton, useNotification, NTag } from 'naive-ui'
 import { useStore } from 'vuex'
 import {
     FindingChangesDisplay,

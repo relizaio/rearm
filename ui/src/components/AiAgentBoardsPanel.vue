@@ -161,7 +161,8 @@
                 <AiAgentTaskTimelineView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="table" tab="Table">
-                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
+                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" :board-has-sources="boardHasSources"
+                                      @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="usage" tab="Usage">
                 <AgentBoardUsagePanel :board-uuid="selectedBoard" :tasks="tasks" :agent-names="agentNames"/>
@@ -649,13 +650,14 @@ import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification, NText } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
+import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { templateRows } from '@/utils/agentDocuments'
 import { isOrgAdmin } from '@/utils/agentReopen'
@@ -1051,13 +1053,17 @@ const TaskCard = defineComponent({
                 h(RouterLink, { to: taskPagePath(p.t.uuid), class: 'tcard__open', title: 'Open task page',
                     onClick: (e: Event) => e.stopPropagation() }, { default: () => '↗' }),
             ]),
-            h('div', { class: 'tcard__ref' }, p.t.sourceUrl
-                ? h('a', { href: p.t.sourceUrl, target: '_blank', rel: 'noopener' },
-                    (p.t.externalRef ?? 'draft').replace(/^github:/, ''))
-                : ((p.t.externalRef ?? 'draft (no tracker ref yet)').replace(/^github:/, ''))),
+            p.t.sourceUrl
+                ? h('div', { class: 'tcard__ref' }, h('a', { href: p.t.sourceUrl, target: '_blank', rel: 'noopener' },
+                    refLabel(p.t, boardHasSources.value) ?? 'link'))
+                : (refLabel(p.t, boardHasSources.value) ? h('div', { class: 'tcard__ref' }, refLabel(p.t, boardHasSources.value)) : null),
             h('div', { class: 'tcard__meta' }, [
                 p.t.status === 'QUEUED' ? h(NTag, { size: 'tiny', bordered: false }, { default: () => `queued #${p.t.orderIndex}` }) : null,
                 p.t.status === 'ASSIGNED' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'assigned' }) : null,
+                roleTagFor(p.t)?.kind === 'history' ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tag--history' }, { default: () => roleTagFor(p.t)?.text }),
+                    default: () => roleTagFor(p.t)?.tooltip,
+                }) : null,
                 p.t.status === 'ON_HOLD' ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, {
                         default: () => p.t.hold?.kind === 'HUMAN_GATE' ? '\u270b human review' : 'on hold',
@@ -1087,7 +1093,15 @@ const TaskCard = defineComponent({
                     default: () => `Role ${p.t.role} is at its WIP limit — assignable as soon as a slot frees.`,
                 }) : null,
                 p.t.parentTask ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'subtask' }) : null,
-                p.t.childTasks?.length ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => `${p.t.childTasks.length} subtasks` }) : null,
+                subtaskTag(p.t, tasks.value) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: subtaskTag(p.t, tasks.value)?.type },
+                        { default: () => subtaskTag(p.t, tasks.value)?.text }),
+                    default: () => subtaskProgress(p.t, tasks.value).open.length
+                        ? 'Open: ' + subtaskProgress(p.t, tasks.value).open
+                            .map((c: any) => `${depLabel(c)} (${String(c.status ?? '').toLowerCase().replace(/_/g, ' ')})`).join(', ')
+                        + '. The board completes this task when they finish.'
+                        : 'Every subtask is done.',
+                }) : null,
                 p.t.returns?.length ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => `${p.t.returns.length} return${p.t.returns.length > 1 ? 's' : ''}` }),
                     default: () => p.t.returns.map((r: any) => `${r.role ?? '?'}: ${r.reason}${r.description ? ' — ' + r.description : ''}`).join(' | '),
@@ -1206,6 +1220,8 @@ const canApplySpec = computed<boolean>(() => {
         || ((p.functions ?? []).includes('CONFIGURATION_WRITE') && (p.type === 'READ_WRITE' || p.type === 'ADMIN'))))
 })
 
+// A board without sources is its own tracker: no task has a ref there, and none is a "draft".
+const boardHasSources = computed<boolean>(() => (currentBoard.value?.sources?.length ?? 0) > 0)
 // Reopening a completed task is an org admin's (agentTaskReopen); the server decides.
 const canReopen = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
 
@@ -1575,5 +1591,25 @@ async function operatorLock (lock: boolean) {
         &--blocks { background: rgba(128, 128, 128, 0.12); color: #666; }
     }
     .prlink { color: inherit; text-decoration: none; }
+}
+
+/* A role tag that names the last hop, not where the task is now (task 562ac668). Top level: the
+   drawer is teleported out of the panel. */
+.tag--history { opacity: 0.75; font-style: italic; }
+
+/* Top level, not under .boardsPanel: n-modal teleports its card to <body>, so a nested rule never
+   reaches the "Board as a spec" modal. The block scrolls, not the page; long lines scroll sideways
+   instead of painting past the card. white-space stays pre: the spec is YAML/JSON, and Copy gives
+   specText, never what is on screen. */
+.specBlock {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 65vh;
+    overflow: auto;
+    white-space: pre;
+    font-size: 12px;
+    line-height: 1.45;
+    background: var(--n-color-modal, #fafafa);
+    border-radius: 4px;
 }
 </style>

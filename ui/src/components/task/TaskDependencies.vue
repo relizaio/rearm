@@ -25,6 +25,9 @@
             <n-tag size="small" :bordered="false" type="info" class="depclick"
                    @click="emit('open', parentTask)">{{ taskLabel(parentTask) }}</n-tag>
         </div>
+        <div v-if="subtasks.total" class="holdmeta" style="margin: 0 0 4px">
+            {{ subtasks.done }} of {{ subtasks.total }} subtasks done
+        </div>
         <div class="deprow" v-if="childTasksResolved.length">
             <span class="deplab">subtasks</span>
             <n-tag v-for="c in childTasksResolved" :key="c.uuid" size="small" :bordered="false"
@@ -39,6 +42,7 @@
 import { computed } from 'vue'
 import { NTag } from 'naive-ui'
 import { taskLabel } from '@/utils/agentTaskFormat'
+import { subtaskProgress } from '@/utils/agentTaskLabels'
 
 const props = defineProps<{ task: any, tasks: any[] }>()
 const emit = defineEmits<{ (e: 'open', task: any): void }>()
@@ -49,6 +53,7 @@ const dependents = computed(() => props.task
     ? props.tasks.filter(t => (t.dependsOn ?? []).includes(props.task.uuid)) : [])
 const parentTask = computed(() => props.task?.parentTask
     ? props.tasks.find(t => t.uuid === props.task.parentTask) ?? null : null)
+const subtasks = computed(() => subtaskProgress(props.task, props.tasks))
 const childTasksResolved = computed(() => (props.task?.childTasks ?? [])
     .map((c: string) => props.tasks.find(t => t.uuid === c)).filter(Boolean))
 </script>

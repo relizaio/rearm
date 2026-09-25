@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskActions from './TaskActions.vue'
 import TaskDependencies from './TaskDependencies.vue'
+import TaskDocuments from './TaskDocuments.vue'
 import TaskFindings from './TaskFindings.vue'
 import TaskHeader from './TaskHeader.vue'
 import TaskQuestions from './TaskQuestions.vue'
@@ -29,7 +30,7 @@ const EMITTERS: [any, string, string[]][] = [
     [TaskActions, 'TaskActions', ['authorize', 'order', 'complete', 'cancel', 'reopen', 'decide']],
     [TaskDependencies, 'TaskDependencies', ['open']],
     [TaskSummary, 'TaskSummary', ['open']],
-    [TaskFindings, 'TaskFindings', ['decide']],
+    [TaskFindings, 'TaskFindings', ['decide', 'open-element']],
     [TaskQuestions, 'TaskQuestions', ['answer']],
 ]
 
@@ -99,6 +100,13 @@ describe('task section events', () => {
                 if (e === 'open') {
                     section.vm.$emit('open', { uuid: 't0' })
                     expect(push).toHaveBeenLastCalledWith('/aiAgentTask/t0')
+                    continue
+                }
+                if (e === 'open-element') {
+                    // stays on the page: the documents section opens the element under its document
+                    section.vm.$emit('open-element', 'REQ-1')
+                    await flushPromises()
+                    expect(w.findComponent(TaskDocuments).props('focus')?.id, `${name} → ${e}`).toBe('REQ-1')
                     continue
                 }
                 section.vm.$emit(e, { task, role: 'coder', value: true, orderIndex: 1, note: '', reason: 'r',

@@ -73,6 +73,12 @@ const AGENT_TASK_SELECTION = `
             task
             session
             round
+            elements {
+                grammarVersion
+                digest
+                elements { id family title parent level traces { verb target } assumes speculative contentDigest line }
+                warnings { code elementId message }
+            }
             findings {
                 kind
                 round
@@ -83,7 +89,7 @@ const AGENT_TASK_SELECTION = `
                     priority
                     status
                     title
-                    location { path line ref }
+                    location { path line ref element }
                     resolvedBy
                     resolution
                     decidedBy { kind uuid name }
@@ -99,7 +105,7 @@ const AGENT_TASK_SELECTION = `
         priority
         status
         title
-        location { path line ref }
+        location { path line ref element }
         resolvedBy
         resolution
         decidedBy { kind uuid name }
@@ -110,7 +116,7 @@ const AGENT_TASK_SELECTION = `
         priority
         status
         title
-        location { path line ref }
+        location { path line ref element }
         resolvedBy
         resolution
     }
@@ -2783,6 +2789,33 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentBoard
+        },
+        /**
+         * What only the server knows about an element of a task (elements.md §8): what depends on it
+         * across the board, and which rounds changed it. One task, through agentTask (rearm-saas#607),
+         * which the task page already reads by; boardUuid and status are no longer needed.
+         */
+        async fetchAgentTaskElementView (context: any, payload: { boardUuid?: string, taskUuid: string, status?: string, element: string, depth?: number }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskElementView($taskUuid: ID!, $element: String!, $depth: Int) {
+                        agentTask(uuid: $taskUuid) {
+                            uuid
+                            dependentsOf(element: $element, depth: $depth) {
+                                element found count truncated
+                                dependents {
+                                    distance
+                                    via { from to kind }
+                                    element { id family title release specification line }
+                                }
+                            }
+                            elementHistory(element: $element) { release round specification contentDigest line changed }
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, element: payload.element, depth: payload.depth },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask ?? null
         },
         async fetchAgentTaskRoleConfigsOfBoard (context: any, boardUuid: string) {
             const response = await graphqlClient.query({
