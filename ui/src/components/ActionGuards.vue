@@ -48,7 +48,12 @@
                 </n-form-item>
                 <n-form-item label="Guarded action" required>
                     <n-select v-model:value="draft.action" :options="actionOptions"/>
-                    <template #feedback>
+                    <template v-if="draft.action === 'RELEASE_APPROVAL'" #feedback>
+                        Checked on every approval, from a person in the UI or a key through the API, before
+                        anything is recorded. <code>action.approvals</code> lists the entries being set;
+                        <code>action.actor.kind</code> says whether a person, a key or the system is acting.
+                    </template>
+                    <template v-else #feedback>
                         <strong>Every</strong> forward lifecycle move up to Shipped is checked — Draft to
                         Assembled, Assembled to Ready to Ship, Ready to Ship to Shipped — not just the
                         last one. In Block mode any of those moves is refused while the condition is
@@ -130,6 +135,7 @@
 
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from 'vue'
+import { GUARD_VARIABLE_DOCS, GUARDED_ACTION_OPTIONS, guardedActionLabel } from '@/utils/actionGuardActions'
 import { useStore } from 'vuex'
 import {
     NAlert, NButton, NDataTable, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NRadio,
@@ -188,20 +194,8 @@ const headings = computed(() => {
     }
 })
 
-const actionOptions = [
-    { label: 'Release promotion — moving a release forward through its lifecycle', value: 'RELEASE_PROMOTION' }
-]
-
-// action.* exists only where a guard is being written, so it is passed in rather
-// than living in the shared variable list the release rules also use.
-const guardVariableDocs = [
-    {
-        name: 'action.targetLifecycle',
-        snippet: 'action.targetLifecycle == "READY_TO_SHIP"',
-        display: 'action.targetLifecycle',
-        desc: 'string — the lifecycle being moved to. release.lifecycle is still the one being left, which is what lets a guard govern one transition and leave the rest alone.'
-    }
-]
+const actionOptions = GUARDED_ACTION_OPTIONS
+const guardVariableDocs = GUARD_VARIABLE_DOCS
 
 // Ranks shown in the help tooltip, using the lifecycle names the rest of the UI uses. Kept next
 // to the samples because every sample that says ">= n" is really saying "at least this lifecycle".
@@ -269,6 +263,25 @@ const samples = [
         help: 'Lifecycle equality rather than a rank, for the case where one exact state is the rule.'
             + ' A test plan that has moved on to Shipped fails this, which is the point — but it is'
             + ' also why a rank is the better default for most rules.'
+    },
+    {
+        label: 'Only a person moves a release to Ready to Ship or beyond',
+        cel: 'action.targetLifecycle in ["READY_TO_SHIP", "GENERAL_AVAILABILITY"] ? action.actor.kind == "USER" : true',
+        help: 'A release promotion guard. An API key, a trigger or the scheduler may still move a release to'
+            + ' Assembled; Ready to Ship and Shipped need a signed-in person. action.actor.kind is USER,'
+            + ' API_KEY or SYSTEM.'
+    },
+    {
+        label: 'No key approves a baseline entry',
+        cel: '!action.approvals.exists(a, a.entry == "baseline") || action.actor.kind == "USER"',
+        help: 'A release approval guard: set Guarded action to Release approval. An approval call that'
+            + ' sets the entry named baseline must come from a person; keys may still approve other entries.'
+    },
+    {
+        label: 'A FREEFORM key may move a release to Assembled and nothing further',
+        cel: 'action.actor.keyType != "FREEFORM" || action.targetLifecycle == "ASSEMBLED"',
+        help: 'A release promotion guard on what agents\' keys may do: people, other kinds of key and the'
+            + ' system are not affected.'
     },
     {
         label: 'Nothing promotes with an open critical or known-exploited finding',
@@ -379,7 +392,7 @@ const persist = async (next: any[], successMsg: string) => {
 const columns = computed(() => {
     const cols: any[] = [
         { title: 'Name', key: 'name' },
-        { title: 'Action', key: 'action', width: 180, render: (row: any) => row.action === 'RELEASE_PROMOTION' ? 'Release promotion' : row.action },
+        { title: 'Action', key: 'action', width: 180, render: (row: any) => guardedActionLabel(row.action) },
         {
             title: 'Mode',
             key: 'mode',
