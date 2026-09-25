@@ -7,13 +7,19 @@
                     <div class="dhead__title">{{ task.title }}</div>
                     <div class="dhead__sub">
                         <a v-if="task.sourceUrl" :href="task.sourceUrl" target="_blank" rel="noopener">
-                            {{ (task.externalRef ?? 'draft').replace(/^github:/, '') }}
+                            {{ refLabel(task, boardHasSources) ?? 'link' }}
                         </a>
-                        <span v-else>{{ (task.externalRef ?? 'draft — no tracker ref yet').replace(/^github:/, '') }}</span>
+                        <span v-else-if="refLabel(task, boardHasSources)">{{ refLabel(task, boardHasSources) }}</span>
                         <n-tag size="small" :bordered="false" :type="statusTone(task.status)">
                             {{ task.status.replace(/_/g, ' ') }}
                         </n-tag>
-                        <n-tag v-if="task.role" size="small" :bordered="false">{{ task.role }} · #{{ task.orderIndex }}</n-tag>
+                        <n-tooltip v-if="roleTag" trigger="hover" :disabled="!roleTag.tooltip">
+                            <template #trigger>
+                                <n-tag size="small" :bordered="false" :type="roleTag.kind === 'current' && task.status === 'ASSIGNED' ? 'primary' : 'default'"
+                                       :class="{ 'tag--history': roleTag.kind === 'history' }">{{ roleTag.text }}</n-tag>
+                            </template>
+                            {{ roleTag.tooltip }}
+                        </n-tooltip>
                     </div>
                 </div>
             </template>
@@ -63,6 +69,11 @@
                             </n-button>
                         </n-space>
                     </template>
+                </n-alert>
+
+                <n-alert v-if="task.status === 'AWAITING_COORDINATOR' && subtasks.total && subtasks.done < subtasks.total"
+                         type="info" title="Waiting on its subtasks">
+                    {{ subtasks.done }} of {{ subtasks.total }} done; the board completes it when they finish.
                 </n-alert>
 
                 <n-alert v-if="humanStageRole" type="info" :title="`Human stage: ${humanStageRole.name}`">
@@ -181,6 +192,9 @@
                         <n-tag size="small" :bordered="false" type="info" class="depclick"
                                @click="emit('open', parentTask)">{{ label(parentTask) }}</n-tag>
                     </div>
+                    <div v-if="subtasks.total" class="holdmeta" style="margin: 0 0 4px">
+                        {{ subtasks.done }} of {{ subtasks.total }} subtasks done
+                    </div>
                     <div class="deprow" v-if="childTasksResolved.length">
                         <span class="deplab">subtasks</span>
                         <n-tag v-for="c in childTasksResolved" :key="c.uuid" size="small" :bordered="false"
@@ -229,6 +243,9 @@
                         <n-tag v-if="f.status !== 'OPEN'" size="tiny" :bordered="false"
                                :type="statusType(f.status)">{{ f.status }}</n-tag>
                         <span class="frow__title">{{ f.title }}</span>
+                        <n-tag v-if="findingElement(f)" size="tiny" :bordered="false" type="info" class="frow__el"
+                               title="The element this finding is about: open it under its document"
+                               @click="openElement(findingElement(f) ?? '')">{{ findingElement(f) }}</n-tag>
                         <code v-if="findingLocation(f)" class="frow__loc">{{ findingLocation(f) }}</code>
                         <span v-if="f.decidedBy" class="frow__dec" :title="f.resolution ?? ''">
                             {{ f.decidedBy.kind === 'USER' ? 'decided by' : 'agent decided' }}
@@ -289,7 +306,8 @@
 
                 <div class="dsec" v-if="taskDocuments.length">
                     <div class="dsec__h">Documents</div>
-                    <div v-for="d in taskDocuments" :key="d.uuid ?? ''" class="drow">
+                    <template v-for="d in taskDocuments" :key="d.uuid ?? ''">
+                    <div class="drow">
                         <span class="drow__label">{{ documentLabel(d) }}</span>
                         <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
                                :type="verdictType(documentVerdict(d))">{{ documentVerdict(d) }}</n-tag>
@@ -303,7 +321,15 @@
                         <code v-else class="drow__path drow__path--plain">{{ d.document?.path }}</code>
                         <code v-if="d.sourceCodeEntryDetails?.commit" class="drow__commit"
                               title="Commit this document is pinned to">{{ d.sourceCodeEntryDetails.commit.slice(0, 8) }}</code>
+                        <n-button v-if="elementsOf(d).length" size="tiny" quaternary
+                                  @click="expandedDoc = expandedDoc === d.uuid ? null : (d.uuid ?? null)">
+                            {{ elementsOf(d).length }} element{{ elementsOf(d).length === 1 ? '' : 's' }}
+                        </n-button>
                     </div>
+                    <AiAgentDocumentElements v-if="expandedDoc === d.uuid" :release="d" :documents="taskDocuments"
+                                             :board-uuid="board?.uuid" :task-uuid="task?.uuid"
+                                             :task-status="task?.status" :focus="focusedElement"/>
+                    </template>
                 </div>
 
                 <div class="dsec">
@@ -499,10 +525,13 @@
 
 <script lang="ts" setup>
 import { computed, ref, watch } from 'vue'
-import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag, NTooltip } from 'naive-ui'
 import AgentUsageSummary from './AgentUsageSummary.vue'
+import AiAgentDocumentElements from './AiAgentDocumentElements.vue'
+import { documentDefining, elementsOf, findingElement } from '@/utils/agentElements'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
+import { refLabel, roleTagFor, subtaskProgress } from '@/utils/agentTaskLabels'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { prChips } from '@/utils/agentDelivery'
 import {
@@ -717,6 +746,24 @@ const canAnswer = computed(() =>
 // Documents this task has produced, newest first as the server returns them.
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
 
+// The document whose element list is open, and the element to open in it (elements.md §8).
+const expandedDoc = ref<string | null>(null)
+const focusedElement = ref<string | null>(null)
+watch(() => props.task?.uuid, () => {
+    expandedDoc.value = null
+    focusedElement.value = null
+})
+
+/** From a finding's element chip: open the document that defines the element, at the element. */
+function openElement (id: string) {
+    const d = documentDefining(taskDocuments.value, id)
+    if (!d?.uuid) return
+    expandedDoc.value = d.uuid
+    // cleared first, so naming the same element again still opens it
+    focusedElement.value = null
+    setTimeout(() => { focusedElement.value = id })
+}
+
 // Open questions, when there is no answer form showing them: the task is with the role meant to
 // answer, and a reader still wants to see what it is waiting on.
 const openQuestionGroups = computed(() => groupByPriority((props.task?.openQuestions ?? []) as Finding[]))
@@ -746,6 +793,10 @@ function hopTitle (rec: any): string {
         (u.costComplete === false ? '\nSome rows had no applicable price: the cost is a lower bound.' : '')
 }
 watch(() => props.task?.uuid, () => { reviewNote.value = '' })
+
+const boardHasSources = computed(() => (props.board?.sources?.length ?? 0) > 0)
+const roleTag = computed(() => roleTagFor(props.task))
+const subtasks = computed(() => subtaskProgress(props.task, props.tasks))
 
 const terminal = computed(() =>
     props.task?.status === 'COMPLETED' || props.task?.status === 'CANCELLED')
@@ -871,6 +922,7 @@ function statusTone (s: string): string {
     &__id { font-weight: 600; font-size: 11.5px; }
     &__title { flex: 1; }
     &__loc { font-size: 11px; color: #999; }
+    &__el { cursor: pointer; }
     &__dec { font-size: 10.5px; color: #8a8; }
     &--closed { opacity: 0.6; }
 }
@@ -937,4 +989,8 @@ function statusTone (s: string): string {
 .sesschip { font-size: 10.5px; margin-right: 4px; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
 .prlink2 { font-size: 12.5px; }
 .empty { color: #888; font-size: 12.5px; }
+
+/* A role tag that names the last hop, not where the task is now (task 562ac668). Top level: the
+   drawer is teleported out of the panel. */
+.tag--history { opacity: 0.75; font-style: italic; }
 </style>

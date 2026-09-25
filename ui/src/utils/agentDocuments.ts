@@ -15,6 +15,8 @@ export interface DocumentRef {
     session?: string | null
     round?: number | null
     findings?: Record<string, any> | null
+    /** The element index of a prose document (gaps §2.A); see agentElements.ts. */
+    elements?: Record<string, any> | null
 }
 
 export interface DocumentRelease {
@@ -35,7 +37,7 @@ export interface Finding {
     priority?: number | null
     status?: string | null
     title?: string | null
-    location?: { path?: string | null, line?: number | null, ref?: string | null } | null
+    location?: { path?: string | null, line?: number | null, ref?: string | null, element?: string | null } | null
     resolvedBy?: string | null
     resolution?: string | null
     /** Who last decided it -- a person or an agent session. Written by the server. */
