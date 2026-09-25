@@ -96,15 +96,38 @@ describe('question rounds', () => {
         expect(first.waitingOn).toBeNull()
     })
 
-    it('says a person answered, in the round that closed the item', () => {
+    it('says a person answered, in their answer round, as the server stamps it', () => {
+        // A person's answer is a QUESTIONS round whose closed items point at that round itself
+        // (stampSelfPointer), not at a document that answered them.
         const q1 = doc('q1', 'QUESTIONS', 1, [item('Q-1', 'OPEN'), item('Q-2', 'OPEN')], ABOUT_A1)
-        const q3 = doc('q3', 'QUESTIONS', 3, [item('Q-1', 'RESOLVED', { resolution: 'use main' }),
-            item('Q-2', 'RESOLVED', { resolution: 'yes' })], ABOUT_A1)
+        const q3 = doc('q3', 'QUESTIONS', 3, [item('Q-1', 'RESOLVED', { resolution: 'use main', resolvedBy: 'q3' }),
+            item('Q-2', 'RESOLVED', { resolution: 'yes', resolvedBy: 'q3' })], ABOUT_A1)
+        const [answer, first] = questionRounds({ documents: [q3, q1, a1] }, roles)
+        for (const r of [first, answer]) {
+            expect(r.answeredBy).toEqual([{ person: true, round: 3 }])
+            expect(answeredByLabel(r.answeredBy[0])).toBe('answered by a person in questions round 3')
+        }
+    })
+
+    it('reads an older row with no resolvedBy as a person, in the round that closed it', () => {
+        const q1 = doc('q1', 'QUESTIONS', 1, [item('Q-1', 'OPEN')], ABOUT_A1)
+        const q3 = doc('q3', 'QUESTIONS', 3, [item('Q-1', 'RESOLVED', { resolution: 'use main' })], ABOUT_A1)
         const [, first] = questionRounds({ documents: [q3, q1, a1] }, roles)
         expect(first.answeredBy).toEqual([{ person: true, round: 3 }])
-        expect(answeredByLabel(first.answeredBy[0])).toBe('answered by a person in questions round 3')
         expect(answeredByLabel({ person: true, round: null })).toBe('answered by a person')
         expect(answeredByLabel({ specification: null, round: null, release: 'x' })).toBe('answered by a document')
+    })
+
+    it('names nothing for withdrawn questions: a withdrawn round, and the withdrawn part of a mix', () => {
+        const withdrawn = latestQuestionRound({ documents: [doc('q2', 'QUESTIONS', 2,
+            [item('Q-1', 'WITHDRAWN', { resolution: 'not needed', resolvedBy: 'q2' })], ABOUT_A1), a1] }, roles)!
+        expect(withdrawn.state).toBe('withdrawn')
+        expect(withdrawn.answeredBy).toEqual([])
+        const mixed = latestQuestionRound({ documents: [doc('q2', 'QUESTIONS', 2,
+            [item('Q-1', 'RESOLVED', { resolvedBy: 'a2' }), item('Q-2', 'WITHDRAWN', { resolvedBy: 'q2', resolution: 'n/a' })],
+            ABOUT_A1), a2, a1] }, roles)!
+        expect(mixed.state).toBe('answered')
+        expect(mixed.answeredBy).toEqual([{ specification: 'ARCHITECTURE', round: 2, release: 'a2' }])
     })
 
     it('finds the round a frame points at, and nothing for none', () => {

@@ -84,21 +84,24 @@ export function questionRounds (task: any, roles?: any[] | null): QuestionRound[
         const state: QuestionRound['state'] = counts.open > 0 ? 'open'
             : items.length > 0 && counts.withdrawn === items.length ? 'withdrawn' : 'answered'
 
+        // What answered the round: its answered items only. A withdrawn question was not answered,
+        // so it names nothing, and a withdrawn round says only that (design 3.2).
         const answeredBy: AnsweredBy[] = []
         for (const f of items) {
-            if (f.status === 'OPEN') continue
-            if (f.resolvedBy) {
-                if (answeredBy.some(a => 'release' in a && a.release === f.resolvedBy)) continue
-                const by = byUuid.get(f.resolvedBy)
-                answeredBy.push({ specification: by?.document?.specification ?? null,
-                    round: by?.document?.round ?? null, release: f.resolvedBy })
-            } else if (f.resolution) {
-                // A person's answer round: the first round, from this one on, where the item is
-                // no longer open.
-                const closing = newer.find(r => itemsOf(r).some(x => x.id === f.id && x.status !== 'OPEN'))
+            if (f.status === 'OPEN' || f.status === 'WITHDRAWN') continue
+            const by = f.resolvedBy ? byUuid.get(f.resolvedBy) : undefined
+            if (by?.document?.specification === 'QUESTIONS' || (!f.resolvedBy && f.resolution)) {
+                // A person's answer is a QUESTIONS round the server points the items it closed at
+                // (stampSelfPointer). Older rows left resolvedBy empty: then the answer round is the
+                // first round, from this one on, where the item is no longer open.
+                const closing = by ?? newer.find(r => itemsOf(r).some(x => x.id === f.id && x.status !== 'OPEN'))
                 const round = closing?.document?.round ?? null
                 if (answeredBy.some(a => 'person' in a && a.round === round)) continue
                 answeredBy.push({ person: true, round })
+            } else if (f.resolvedBy) {
+                if (answeredBy.some(a => 'release' in a && a.release === f.resolvedBy)) continue
+                answeredBy.push({ specification: by?.document?.specification ?? null,
+                    round: by?.document?.round ?? null, release: f.resolvedBy })
             }
         }
 

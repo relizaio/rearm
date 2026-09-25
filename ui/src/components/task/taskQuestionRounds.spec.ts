@@ -58,6 +58,30 @@ describe('question rounds on the task page', () => {
         expect(answered.text()).toContain('REJECTED')
     })
 
+    it('says a person answered, and a withdrawn round names nothing', () => {
+        const asked = questionsRound('q-rel', 1, [fixtureFinding('Q-1', 2, 'OPEN', 'which branch?'),
+            fixtureFinding('Q-2', 2, 'OPEN', 'which port?')])
+        // The person's answer round, as the server writes it: its items point at the round itself.
+        const answer = questionsRound('q-2', 2, [
+            fixtureFinding('Q-1', 2, 'RESOLVED', 'which branch?', { resolution: 'main', resolvedBy: 'q-2' }),
+            fixtureFinding('Q-2', 2, 'WITHDRAWN', 'which port?', { resolution: 'not needed', resolvedBy: 'q-2' })])
+        const task = questionsTask({ questionStack: [], openQuestions: [], documents: [answer, asked, ...richDocuments()] })
+        const w = mount(TaskDocuments, { props: { task }, global: { stubs } })
+        const rows = w.findAll('.drow').filter(r => r.text().includes('questions-'))
+        for (const r of rows) {
+            expect(r.find('.drow__qstate').text()).toBe('answered')
+            expect(r.findAll('.drow__answered').map(a => a.text())).toEqual(['answered by a person in questions round 2'])
+            expect(r.text()).not.toContain('answered by QUESTIONS')
+        }
+
+        const allWithdrawn = questionsRound('q-3', 3, [fixtureFinding('Q-9', 2, 'WITHDRAWN', 'moot', { resolution: 'moot', resolvedBy: 'q-3' })])
+        const w2 = mount(TaskDocuments, { props: { task: questionsTask({ documents: [allWithdrawn, ...richDocuments()] }) },
+            global: { stubs } })
+        const row = w2.findAll('.drow').find(r => r.text().includes('questions-3.md'))!
+        expect(row.find('.drow__qstate').text()).toBe('withdrawn')
+        expect(row.find('.drow__answered').exists()).toBe(false)
+    })
+
     it('says which round each waiting-on row is and what it is about', () => {
         const w = mount(TaskQuestions, { props: { task: questionsTask(), roles: fixtureRoles }, global: { stubs } })
         expect(w.find('.qstack__row').text()).toContain('coder asked nobody yet · questions round 1 · about ARCHITECTURE round 1')
