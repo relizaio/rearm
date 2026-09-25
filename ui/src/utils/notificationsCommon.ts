@@ -173,7 +173,16 @@ export const eventTypeOptions = [
     // so it can be actionable/immediate; see ai-plans/instance-event-notifications.md.
     { label: 'Instance deployment changed', value: 'INSTANCE_DEPLOYMENT_CHANGED', proOnly: true },
     { label: 'Instance deployment failed', value: 'INSTANCE_DEPLOYMENT_FAILED', proOnly: true },
+    // Agent-board events (Pro): what on a board needs a person. Org-scoped; a subscription narrows
+    // to one board with the filter (event.board == "<uuid>").
+    { label: 'Board alert', value: 'AGENT_BOARD_ALERT', proOnly: true },
+    { label: 'Board task needs a person', value: 'AGENT_TASK_NEEDS_PERSON', proOnly: true },
+    { label: 'Board task returned', value: 'AGENT_TASK_RETURNED', proOnly: true },
+    { label: 'Board task waiting on a person too long', value: 'AGENT_TASK_QUEUE_AGE', proOnly: true },
 ]
+
+export const AGENT_BOARD_EVENT_TYPES = ['AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_RETURNED',
+    'AGENT_TASK_QUEUE_AGE']
 
 // Mirrors SyntheticEventTemplates.Template in rearm-core (backend/src/main/
 // java/io/reliza/service/SyntheticEventTemplates.java). Only the event types
@@ -220,10 +229,11 @@ export const severityOptions = [
  *
  * <p>Instance-deployment events carry a computed severity (extractEventSeverity
  * reads the payload: ERROR->HIGH, terminal->MEDIUM, churn->LOW), so a severity
- * gate is meaningful for them too.
+ * gate is meaningful for them too. Board events carry a fixed one: HIGH when a
+ * person is being waited on, MEDIUM for an alert or a return.
  */
 export const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED',
-    'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED']
+    'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', ...AGENT_BOARD_EVENT_TYPES]
 
 /** True when a minimum-severity gate can ever match, given these event types. */
 export function severityAppliesTo (eventTypes: string[] | null | undefined): boolean {
@@ -803,4 +813,46 @@ export function routeCount (routesJson: string | null | undefined): number {
  */
 export function hasUneditableMultiRoute (routesJson: string | null | undefined): boolean {
     return routeCount(routesJson) > 1
+}
+
+/**
+ * Quick-start presets for agent-board notifications (Pro-only): who is waiting on a person, every
+ * board alert, or everything a board says a person should see.
+ */
+export const agentBoardPresets: Array<{
+    key: string
+    label: string
+    description: string
+    prefill: InstanceSubscriptionPrefill
+}> = [
+    {
+        key: 'NEEDS_A_PERSON',
+        label: 'A person is needed',
+        description: 'A gate, an operator hold or an unanswerable question, and tasks left waiting too long.',
+        prefill: { eventTypes: ['AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_QUEUE_AGE'], filterMode: 'PRESET', celExpression: '' },
+    },
+    {
+        key: 'BOARD_ALERTS',
+        label: 'Board alerts',
+        description: 'Every ALERT a board posts, and a board being locked.',
+        prefill: { eventTypes: ['AGENT_BOARD_ALERT'], filterMode: 'PRESET', celExpression: '' },
+    },
+    {
+        key: 'EVERYTHING_ON_BOARDS',
+        label: 'Everything that needs a person',
+        description: 'Alerts, holds for a person, returns and queue age on every board.',
+        prefill: { eventTypes: [...AGENT_BOARD_EVENT_TYPES], filterMode: 'PRESET', celExpression: '' },
+    },
+]
+
+/**
+ * Prefill for the board panel's "Subscribe" link: every board event type, narrowed to one board.
+ * The uuid is embedded as a CEL string literal via JSON.stringify so it cannot break out of it.
+ */
+export function boardSubscriptionPrefill (boardUuid: string): InstanceSubscriptionPrefill {
+    return {
+        eventTypes: [...AGENT_BOARD_EVENT_TYPES],
+        filterMode: 'ADVANCED',
+        celExpression: `event.board == ${JSON.stringify(boardUuid || '')}`,
+    }
 }
