@@ -52,10 +52,50 @@ export function historyEntries (kind: RevisionKind, revisions: Revision[], curre
     return out
 }
 
+const IGNORED = new Set(['__typename'])
+
+/**
+ * A value as sorted JSON without the client's `__typename` at any depth (T-1, run 1): Apollo adds
+ * it to every nested object, so it is neither a change nor something a person should read.
+ */
 function canonical (v: any): string {
     return JSON.stringify(v, (_k, val) => (val && typeof val === 'object' && !Array.isArray(val))
-        ? Object.keys(val).sort().reduce((acc: any, k) => { acc[k] = val[k]; return acc }, {})
+        ? Object.keys(val).filter(k => !IGNORED.has(k)).sort().reduce((acc: any, k) => { acc[k] = val[k]; return acc }, {})
         : val)
+}
+
+const short = (id: any): string => (typeof id === 'string' ? id.slice(0, 8) : '')
+
+/** Who did something, as the board's actors read: the name, else the kind and a short id. */
+function actorText (a: any): string {
+    if (a.name) return String(a.name)
+    return [String(a.kind ?? '').toLowerCase(), short(a.uuid)].filter(Boolean).join(' ')
+}
+
+function clip (s: string): string {
+    return s.length > 120 ? s.slice(0, 117) + '...' : s
+}
+
+/**
+ * The objects a snapshot carries, in a person's words rather than as JSON (T-1, run 1). Null when
+ * the key is not one of them, or the value does not look like it.
+ */
+function summarise (key: string | undefined, v: any): string | null {
+    if (key === 'assignment' && (v.role || v.session)) {
+        return [v.role, v.session ? `session ${short(v.session)}` : null].filter(Boolean).join(' · ')
+    }
+    if (key === 'hold' && (v.level || v.kind)) {
+        const what = [v.level, v.kind].filter(Boolean).map((x: string) => x.toLowerCase().replace(/_/g, ' ')).join(' ')
+        return v.reason ? `${what}: ${v.reason}` : what
+    }
+    if (key === 'lock' && v.level) {
+        return v.reason ? `${String(v.level).toLowerCase()}: ${v.reason}` : String(v.level).toLowerCase()
+    }
+    if (key === 'coordinatorSeat' && v.session) return `session ${short(v.session)}`
+    // An actor on its own -- orderSetBy, budgetSetBy, lastUpdatedActor and the like.
+    const keys = Object.keys(v).filter(k => !IGNORED.has(k))
+    if (keys.length && keys.every(k => ['kind', 'uuid', 'name'].includes(k)) && v.kind) return actorText(v)
+    return null
 }
 
 const LONG_TEXT = 80
@@ -64,19 +104,16 @@ function isLong (v: any): boolean {
     return typeof v === 'string' && (v.length > LONG_TEXT || v.includes('\n'))
 }
 
-/** A value in one short line: arrays by length, objects as compact JSON, nothing as a dash. */
-export function describeValue (v: any): string {
+/**
+ * A value in one short line: arrays by length, known objects (by their field's key) in words,
+ * other objects as compact JSON without `__typename`, nothing as a dash.
+ */
+export function describeValue (v: any, key?: string): string {
     if (v === null || v === undefined || v === '') return '—'
     if (Array.isArray(v)) return `${v.length} item${v.length === 1 ? '' : 's'}`
-    if (typeof v === 'object') {
-        const s = canonical(v)
-        return s.length > 120 ? s.slice(0, 117) + '...' : s
-    }
-    const s = String(v)
-    return s.length > 120 ? s.slice(0, 117) + '...' : s
+    if (typeof v === 'object') return clip(summarise(key, v) ?? canonical(v))
+    return clip(String(v))
 }
-
-const IGNORED = new Set(['__typename'])
 
 /**
  * What changed from `before` to `after`, top-level fields in `after`'s order. A field only one
@@ -97,8 +134,8 @@ export function diffSnapshots (before: any, after: any): FieldChange[] {
         if (canonical(a) === canonical(b)) continue
         const emptyA = a === null || a === ''
         const emptyB = b === null || b === ''
-        const beforeText = describeValue(a)
-        let afterText = describeValue(b)
+        const beforeText = describeValue(a, key)
+        let afterText = describeValue(b, key)
         if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) afterText += ' (changed)'
         out.push({
             key,

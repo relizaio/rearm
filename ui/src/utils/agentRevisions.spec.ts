@@ -24,7 +24,7 @@ describe('agent revisions', () => {
         expect(d.map(c => [c.key, c.change])).toEqual([['status', 'changed'], ['role', 'added'], ['hold', 'removed']])
         expect(d[0].before).toBe('QUEUED')
         expect(d[0].after).toBe('ASSIGNED')
-        expect(d[2].before).toBe('{"kind":"MANUAL","reason":"r"}')
+        expect(d[2].before).toBe('manual: r') // a hold reads in words (T-1, run 1)
         expect(d[2].after).toBe('—')
     })
 
@@ -62,6 +62,34 @@ describe('agent revisions', () => {
         expect(describeValue([1, 2])).toBe('2 items')
         expect(describeValue(false)).toBe('false')
         expect(describeValue('x'.repeat(200)).length).toBe(120)
+    })
+
+    it('never shows or compares the client __typename, at any depth (T-1, run 1)', () => {
+        const before = { __typename: 'AgentTask', meta: { __typename: 'Meta', a: 1 } }
+        const after = { __typename: 'AgentTask', meta: { __typename: 'Other', a: 1 } }
+        expect(diffSnapshots(before, after)).toEqual([])
+        const changed = diffSnapshots({ meta: { __typename: 'Meta', a: 1 } }, { meta: { __typename: 'Meta', a: 2 } })
+        expect(changed).toHaveLength(1)
+        expect(changed[0].before).toBe('{"a":1}')
+        expect(changed[0].after).toBe('{"a":2}')
+        expect(describeValue({ __typename: 'X', deep: { __typename: 'Y', v: [{ __typename: 'Z', w: 1 }] } }))
+            .toBe('{"deep":{"v":[{"w":1}]}}')
+    })
+
+    it('says the objects a snapshot carries in words (T-1, run 1)', () => {
+        const assignment = { __typename: 'AgentTaskWorkAssignment', agent: '46f1e594-aaaa', role: 'coder',
+            session: '83922fa1-307e-41c5', assignedAt: '2026-09-25T12:07:47Z', promptVersion: 'abc' }
+        const handedOver = diffSnapshots({ assignment }, { assignment: null })
+        expect(handedOver[0]).toMatchObject({ key: 'assignment', change: 'removed', before: 'coder · session 83922fa1', after: '—' })
+        expect(describeValue({ __typename: 'AgentTaskHold', level: 'OPERATOR', kind: 'HUMAN_GATE', reason: 'review the pass' }, 'hold'))
+            .toBe('operator human gate: review the pass')
+        expect(describeValue({ level: 'COORDINATOR', reason: 'intake paused' }, 'lock')).toBe('coordinator: intake paused')
+        expect(describeValue({ session: '83922fa1-307e-41c5', agent: 'x' }, 'coordinatorSeat')).toBe('session 83922fa1')
+        expect(describeValue({ __typename: 'AgentActor', kind: 'USER', uuid: 'cdd0c98c-cd0b', name: 'pavel@reliza.io' }, 'orderSetBy'))
+            .toBe('pavel@reliza.io')
+        expect(describeValue({ kind: 'SESSION', uuid: 'ebb928c9-6202', name: null }, 'budgetSetBy')).toBe('session ebb928c9')
+        // an object nobody summarises stays compact JSON, still without __typename
+        expect(describeValue({ __typename: 'Q', b: 2, a: 1 }, 'something')).toBe('{"a":1,"b":2}')
     })
 
     it('summarises a snapshot per kind', () => {
