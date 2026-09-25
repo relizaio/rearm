@@ -64,3 +64,8 @@ export function hopBudgetInput (originalMicros: number | null | undefined, draft
     if (micros !== null) return micros
     return originalMicros !== null && originalMicros !== undefined ? null : undefined
 }
+
+/** Whether the drawer's budget field differs from the task's budget (task 6f1b348d); blank against none is no change. */
+export function budgetChanged (budgetMicros: number | null | undefined, draftDollars: number | null | undefined): boolean {
+    return (budgetMicros ?? null) !== dollarsToMicros(draftDollars)
+}

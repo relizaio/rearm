@@ -180,7 +180,7 @@
                 @close="selectedTask = null" @open="openTask"
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
-                @answer="answerQuestions" @authorize="authorizeTask" @order="orderTask"
+                @answer="answerQuestions" @authorize="authorizeTask" @order="orderTask" @set-budget="setTaskBudget"
                 @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
@@ -1044,6 +1044,13 @@ function authorizeTask (p: { task: any, role: string, orderIndex?: number | null
     return taskAction(p.task,
         () => store.dispatch('agentTaskAuthorize', { taskUuid: p.task.uuid, role: p.role, orderIndex: p.orderIndex }),
         () => `Authorized for ${p.role}`, 'Authorize failed')
+}
+
+function setTaskBudget (p: { task: any, budgetMicros: number | null }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskSetBudget', { taskUuid: p.task.uuid, budgetMicros: p.budgetMicros }),
+        (res: any) => (p.budgetMicros === null ? 'Task budget cleared' : 'Task budget set')
+            + (res?.status === 'ON_HOLD' ? '; release the hold to resume' : ''), 'Setting the budget failed')
 }
 
 function orderTask (p: { task: any, orderIndex: number }) {

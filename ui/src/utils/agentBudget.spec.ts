@@ -42,4 +42,14 @@ describe('agentBudget', () => {
         expect(hopBudgetInput(2_000_000, null)).toBeNull()
         expect(hopBudgetInput(2_000_000, 2)).toBe(2_000_000)
     })
+
+    it('tells the drawer when the task budget field changed (6f1b348d)', async () => {
+        const { budgetChanged } = await import('./agentBudget')
+        expect(budgetChanged(null, null)).toBe(false)
+        expect(budgetChanged(undefined, null)).toBe(false)
+        expect(budgetChanged(2_500_000, 2.5)).toBe(false)
+        expect(budgetChanged(2_500_000, 3)).toBe(true)
+        expect(budgetChanged(2_500_000, null)).toBe(true)
+        expect(budgetChanged(null, 1)).toBe(true)
+    })
 })
