@@ -156,7 +156,8 @@
                 <AiAgentTaskTimelineView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="table" tab="Table">
-                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
+                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" :board-has-sources="boardHasSources"
+                                      @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="usage" tab="Usage">
                 <AgentBoardUsagePanel :board-uuid="selectedBoard" :tasks="tasks" :agent-names="agentNames"/>
@@ -637,6 +638,7 @@ import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
+import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
 import { templateRows } from '@/utils/agentDocuments'
 
 /**
@@ -1120,13 +1122,17 @@ const TaskCard = defineComponent({
             workRank(p.t) === 1 ? 'tcard--ready' : '',
             workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
             h('div', { class: 'tcard__title' }, p.t.title),
-            h('div', { class: 'tcard__ref' }, p.t.sourceUrl
-                ? h('a', { href: p.t.sourceUrl, target: '_blank', rel: 'noopener' },
-                    (p.t.externalRef ?? 'draft').replace(/^github:/, ''))
-                : ((p.t.externalRef ?? 'draft (no tracker ref yet)').replace(/^github:/, ''))),
+            p.t.sourceUrl
+                ? h('div', { class: 'tcard__ref' }, h('a', { href: p.t.sourceUrl, target: '_blank', rel: 'noopener' },
+                    refLabel(p.t, boardHasSources.value) ?? 'link'))
+                : (refLabel(p.t, boardHasSources.value) ? h('div', { class: 'tcard__ref' }, refLabel(p.t, boardHasSources.value)) : null),
             h('div', { class: 'tcard__meta' }, [
                 p.t.status === 'QUEUED' ? h(NTag, { size: 'tiny', bordered: false }, { default: () => `queued #${p.t.orderIndex}` }) : null,
                 p.t.status === 'ASSIGNED' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'assigned' }) : null,
+                roleTagFor(p.t)?.kind === 'history' ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tag--history' }, { default: () => roleTagFor(p.t)?.text }),
+                    default: () => roleTagFor(p.t)?.tooltip,
+                }) : null,
                 p.t.status === 'ON_HOLD' ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, {
                         default: () => p.t.hold?.kind === 'HUMAN_GATE' ? '\u270b human review' : 'on hold',
@@ -1156,7 +1162,15 @@ const TaskCard = defineComponent({
                     default: () => `Role ${p.t.role} is at its WIP limit — assignable as soon as a slot frees.`,
                 }) : null,
                 p.t.parentTask ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'subtask' }) : null,
-                p.t.childTasks?.length ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => `${p.t.childTasks.length} subtasks` }) : null,
+                subtaskTag(p.t, tasks.value) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: subtaskTag(p.t, tasks.value)?.type },
+                        { default: () => subtaskTag(p.t, tasks.value)?.text }),
+                    default: () => subtaskProgress(p.t, tasks.value).open.length
+                        ? 'Open: ' + subtaskProgress(p.t, tasks.value).open
+                            .map((c: any) => `${depLabel(c)} (${String(c.status ?? '').toLowerCase().replace(/_/g, ' ')})`).join(', ')
+                        + '. The board completes this task when they finish.'
+                        : 'Every subtask is done.',
+                }) : null,
                 p.t.returns?.length ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => `${p.t.returns.length} return${p.t.returns.length > 1 ? 's' : ''}` }),
                     default: () => p.t.returns.map((r: any) => `${r.role ?? '?'}: ${r.reason}${r.description ? ' — ' + r.description : ''}`).join(' | '),
@@ -1269,6 +1283,9 @@ const canApplySpec = computed<boolean>(() => {
     return perms.some((p: any) => p.org === props.orgUuid && ((p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
         || ((p.functions ?? []).includes('CONFIGURATION_WRITE') && (p.type === 'READ_WRITE' || p.type === 'ADMIN'))))
 })
+
+// A board without sources is its own tracker: no task has a ref there, and none is a "draft".
+const boardHasSources = computed<boolean>(() => (currentBoard.value?.sources?.length ?? 0) > 0)
 
 const applyKinds = ref<SpecKind[] | null>(null)
 
@@ -1630,4 +1647,8 @@ async function operatorLock (lock: boolean) {
     }
     .prlink { color: inherit; text-decoration: none; }
 }
+
+/* A role tag that names the last hop, not where the task is now (task 562ac668). Top level: the
+   drawer is teleported out of the panel. */
+.tag--history { opacity: 0.75; font-style: italic; }
 </style>

@@ -7,13 +7,19 @@
                     <div class="dhead__title">{{ task.title }}</div>
                     <div class="dhead__sub">
                         <a v-if="task.sourceUrl" :href="task.sourceUrl" target="_blank" rel="noopener">
-                            {{ (task.externalRef ?? 'draft').replace(/^github:/, '') }}
+                            {{ refLabel(task, boardHasSources) ?? 'link' }}
                         </a>
-                        <span v-else>{{ (task.externalRef ?? 'draft — no tracker ref yet').replace(/^github:/, '') }}</span>
+                        <span v-else-if="refLabel(task, boardHasSources)">{{ refLabel(task, boardHasSources) }}</span>
                         <n-tag size="small" :bordered="false" :type="statusTone(task.status)">
                             {{ task.status.replace(/_/g, ' ') }}
                         </n-tag>
-                        <n-tag v-if="task.role" size="small" :bordered="false">{{ task.role }} · #{{ task.orderIndex }}</n-tag>
+                        <n-tooltip v-if="roleTag" trigger="hover" :disabled="!roleTag.tooltip">
+                            <template #trigger>
+                                <n-tag size="small" :bordered="false" :type="roleTag.kind === 'current' && task.status === 'ASSIGNED' ? 'primary' : 'default'"
+                                       :class="{ 'tag--history': roleTag.kind === 'history' }">{{ roleTag.text }}</n-tag>
+                            </template>
+                            {{ roleTag.tooltip }}
+                        </n-tooltip>
                     </div>
                 </div>
             </template>
@@ -62,6 +68,11 @@
                             </n-button>
                         </n-space>
                     </template>
+                </n-alert>
+
+                <n-alert v-if="task.status === 'AWAITING_COORDINATOR' && subtasks.total && subtasks.done < subtasks.total"
+                         type="info" title="Waiting on its subtasks">
+                    {{ subtasks.done }} of {{ subtasks.total }} done; the board completes it when they finish.
                 </n-alert>
 
                 <n-alert v-if="humanStageRole" type="info" :title="`Human stage: ${humanStageRole.name}`">
@@ -155,6 +166,9 @@
                         <span class="deplab">parent</span>
                         <n-tag size="small" :bordered="false" type="info" class="depclick"
                                @click="emit('open', parentTask)">{{ label(parentTask) }}</n-tag>
+                    </div>
+                    <div v-if="subtasks.total" class="holdmeta" style="margin: 0 0 4px">
+                        {{ subtasks.done }} of {{ subtasks.total }} subtasks done
                     </div>
                     <div class="deprow" v-if="childTasksResolved.length">
                         <span class="deplab">subtasks</span>
@@ -474,6 +488,7 @@ import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumb
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
+import { refLabel, roleTagFor, subtaskProgress } from '@/utils/agentTaskLabels'
 import {
     DECIDABLE_STATUSES,
     DocumentRelease,
@@ -701,6 +716,10 @@ function hopTitle (rec: any): string {
 }
 watch(() => props.task?.uuid, () => { reviewNote.value = '' })
 
+const boardHasSources = computed(() => (props.board?.sources?.length ?? 0) > 0)
+const roleTag = computed(() => roleTagFor(props.task))
+const subtasks = computed(() => subtaskProgress(props.task, props.tasks))
+
 const terminal = computed(() =>
     props.task?.status === 'COMPLETED' || props.task?.status === 'CANCELLED')
 
@@ -890,4 +909,8 @@ function statusTone (s: string): string {
 .sesschip { font-size: 10.5px; margin-right: 4px; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
 .prlink2 { font-size: 12.5px; }
 .empty { color: #888; font-size: 12.5px; }
+
+/* A role tag that names the last hop, not where the task is now (task 562ac668). Top level: the
+   drawer is teleported out of the panel. */
+.tag--history { opacity: 0.75; font-style: italic; }
 </style>
