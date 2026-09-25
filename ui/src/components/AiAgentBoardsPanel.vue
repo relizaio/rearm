@@ -15,6 +15,10 @@
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
+                <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
+                          title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
+                    Subscribe
+                </n-button>
                 <n-button size="small" quaternary @click="applyKinds = ['BOARD']" v-if="canApplySpec">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
@@ -53,6 +57,9 @@
                 <span v-for="s in currentBoard.sources ?? []" :key="s" class="srcchip">{{ s }}</span>
                 <n-tag size="tiny" :bordered="false" :type="currentBoard.coordinatorSeat ? 'success' : 'default'">
                     {{ currentBoard.coordinatorSeat ? 'coordinator connected' : 'no coordinator' }}
+                </n-tag>
+                <n-tag v-if="spendChip" size="tiny" :bordered="false" :type="spendChip.type" data-testid="spend-chip">
+                    {{ spendChip.label }}
                 </n-tag>
                 <n-tooltip trigger="hover">
                     <template #trigger>
@@ -165,7 +172,9 @@
                                       @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="usage" tab="Usage">
-                <AgentBoardUsagePanel :board-uuid="selectedBoard" :tasks="tasks" :agent-names="agentNames"/>
+                <AgentBoardUsagePanel :board-uuid="selectedBoard" :tasks="tasks" :agent-names="agentNames"
+                                      :budget-micros="currentBoard?.budgetMicros" :lifetime-spent-micros="lifetimeSpentMicros"
+                                      :soft-alert-percent="currentBoard?.softAlertPercent"/>
             </n-tab-pane>
             </n-tabs>
 
@@ -176,7 +185,7 @@
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
                 @authorize="authorizeTask" @order="orderTask"
-                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
+                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings" @set-budget="setBudget"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
@@ -218,6 +227,45 @@
                 </n-input-number>
                 <n-select v-model:value="editingBoard.priorityType" :options="priorityOptions"
                           placeholder="Priority enforcement"/>
+                <!-- Budget and stops (task 40f270be): the board file's settings, checked as a file's are.
+                     A value emptied here is cleared; one left alone is not sent. -->
+                <div class="flabel">budget and stops</div>
+                <n-space :size="8" data-testid="board-settings">
+                    <n-input-number v-model:value="editingBoard.budgetDollars" :min="0" :step="1" :precision="2"
+                                    placeholder="no budget" style="width: 170px">
+                        <template #prefix><span class="flabel">budget $</span></template>
+                    </n-input-number>
+                    <n-input-number v-model:value="editingBoard.softAlertPercent" :min="1" :max="100"
+                                    placeholder="80" style="width: 150px">
+                        <template #prefix><span class="flabel">alert %</span></template>
+                    </n-input-number>
+                    <n-input-number v-model:value="editingBoard.cycleCap" :min="1" placeholder="3" style="width: 140px">
+                        <template #prefix><span class="flabel">cycle cap</span></template>
+                    </n-input-number>
+                    <n-input-number v-model:value="editingBoard.noProgressRepeatsToStop" :min="1" placeholder="1"
+                                    style="width: 170px">
+                        <template #prefix><span class="flabel">no-progress stop</span></template>
+                    </n-input-number>
+                    <n-input-number v-model:value="editingBoard.blockingPriority" :min="1" :max="priorityLevels" placeholder="strict"
+                                    style="width: 150px">
+                        <template #prefix><span class="flabel">blocking P≤</span></template>
+                    </n-input-number>
+                    <n-input-number v-model:value="editingBoard.completionPriority" :min="1" :max="priorityLevels" placeholder="strict"
+                                    style="width: 160px">
+                        <template #prefix><span class="flabel">completion P≤</span></template>
+                    </n-input-number>
+                </n-space>
+                <!-- task c0a2134c: on (the default, null) a no-progress or cycle-cap stop parks for the
+                     coordinator first, which may release it once per stop kind per task or escalate it. -->
+                <n-checkbox :checked="editingBoard.coordinatorStopRelease !== false" data-testid="board-stop-release"
+                            @update:checked="(v: boolean) => { editingBoard.coordinatorStopRelease = v }">
+                    the coordinator may release a no-progress or cycle-cap stop once per task
+                </n-checkbox>
+                <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">
+                    Blank budget: no board limit. Blank priorities: strict, every open item counts. The
+                    placeholders are the defaults a blank field takes. Unchecked, every stop is the
+                    operator's; budget stops always are.
+                </n-text>
                 <!-- What the coordinator seat does itself, e.g. merging once the last required role
                      has passed. The tracker verbs are always the coordinator's, so they are not offered. -->
                 <n-select v-model:value="editingBoard.coordinatorCapabilities" multiple
@@ -328,6 +376,10 @@
                     <n-input-number v-if="editingRole.kind !== 'HUMAN'" v-model:value="editingRole.wipLimit"
                                     :min="0" placeholder="0 = uncapped">
                         <template #prefix><span class="flabel">role WIP limit</span></template>
+                    </n-input-number>
+                    <n-input-number v-if="editingRole.kind !== 'HUMAN'" v-model:value="editingRole.hopDollars"
+                                    :min="0" :precision="2" placeholder="no allowance">
+                        <template #prefix><span class="flabel">hop allowance $</span></template>
                     </n-input-number>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">worked by</div>
@@ -440,6 +492,13 @@
                     </div>
                     <n-space :size="18" v-if="editingRole.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingRole.requireDistinctAgent">require distinct agent</n-checkbox>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-checkbox v-model:checked="editingRole.blindReview">blind review</n-checkbox>
+                            </template>
+                            The session in this role reads its task without the earlier hops' notes, sessions and
+                            agents: it reviews the work, not the worker's account of it.
+                        </n-tooltip>
                         <n-checkbox v-model:checked="editingRole.active">active</n-checkbox>
                     </n-space>
                     <n-checkbox v-else v-model:checked="editingRole.active">active</n-checkbox>
@@ -506,6 +565,10 @@
                     <n-input-number v-if="editingPreset.kind !== 'HUMAN'" v-model:value="editingPreset.wipLimit"
                                     :min="0" placeholder="0 = uncapped">
                         <template #prefix><span class="flabel">role WIP limit</span></template>
+                    </n-input-number>
+                    <n-input-number v-if="editingPreset.kind !== 'HUMAN'" v-model:value="editingPreset.hopDollars"
+                                    :min="0" :precision="2" placeholder="no allowance">
+                        <template #prefix><span class="flabel">hop allowance $</span></template>
                     </n-input-number>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">worked by</div>
@@ -618,6 +681,7 @@
                     </div>
                     <n-space :size="18" v-if="editingPreset.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingPreset.requireDistinctAgent">require distinct agent</n-checkbox>
+                        <n-checkbox v-model:checked="editingPreset.blindReview">blind review</n-checkbox>
                         <n-checkbox v-model:checked="editingPreset.active">active</n-checkbox>
                     </n-space>
                     <n-checkbox v-else v-model:checked="editingPreset.active">active</n-checkbox>
@@ -654,6 +718,7 @@ import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
+import { budgetChip, dollarsToMicros, hopBudgetInput, microsToDollars, settingsPatch } from '@/utils/agentBudget'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
@@ -772,6 +837,16 @@ const specText: ComputedRef<string> = computed(() => {
     const clean = stripNulls(specRaw.value)
     return specFormat.value === 'json' ? JSON.stringify(clean, null, 2) : toYaml(clean)
 })
+
+/** Opens the org's subscriptions with a new subscription pre-filled for this board (82880ea6). */
+function subscribeToBoard () {
+    if (!currentBoard.value) return
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: props.orgUuid },
+        query: { tab: 'integrations', integrationsTab: 'subscriptions', newBoardSub: currentBoard.value.uuid },
+    })
+}
 
 async function openSpec () {
     if (!currentBoard.value) return
@@ -914,7 +989,7 @@ async function reseedCoordinator (presetName: string) {
 // the drawer; any other action reloads and keeps the drawer on the same task.
 const {
     humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
-    completeTask, cancelTask, reopenTask, decideFindings, requireReview,
+    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setBudget,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
     await refreshBoardContent()
@@ -1190,13 +1265,14 @@ const roleColumns: DataTableColumns<any> = [
         title: 'Flags', key: 'flags', width: 120,
         render: (r: any) => h('span', {}, [
             r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'distinct agent' }) : null,
+            r.blindReview ? h(NTag, { size: 'tiny', bordered: false, type: 'info', style: 'margin-left:4px' }, { default: () => 'blind' }) : null,
             !r.active ? h(NTag, { size: 'tiny', bordered: false, style: 'margin-left:4px' }, { default: () => 'inactive' }) : null,
         ]),
     },
     { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
     {
         title: '', key: 'actions', width: 62,
-        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r,
+        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r, hopDollars: microsToDollars(r.hopBudgetMicros),
             producesOutputTypes: (r.producesOutputs ?? []).map((p: any) => p?.specification).filter(Boolean),
             strength: strengthDraft(r) } } }, { default: () => 'Edit' }),
     },
@@ -1266,6 +1342,7 @@ async function refreshBoardContent () {
     ])
     tasks.value = t ?? []
     roles.value = r ?? []
+    await loadLifetimeSpend()
     // agent uuid -> display name map for timeline/table/drawer; loaded
     // lazily once per panel life, refreshed with board content
     models.value = await store.dispatch('fetchModelOntologiesOfOrg', props.orgUuid).catch(() => []) ?? []
@@ -1279,7 +1356,7 @@ function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
     // documentsRepo comes back as the repository ROW; the editor works in uris, and the mutation
     // takes one and resolves it. Flattened here so the input binds to a string.
-    editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])],
+    editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])], budgetDollars: microsToDollars(b.budgetMicros),
         documentsRepo: b.documentsRepo?.uri ?? '',
         documentPaths: { ...(b.documentPaths ?? {}) },
         coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])] }
@@ -1287,6 +1364,30 @@ function startEditBoard (b: any | null) {
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
             coordinatorCapabilities: [] }
 }
+
+/** hopBudgetMicros for the role input: set, removed (null), or left out when never set and still blank. */
+function hopBudgetField (draft: any): Record<string, number | null> {
+    if (draft?.kind === 'HUMAN') return {}
+    const hop = hopBudgetInput(draft?.hopBudgetMicros, draft?.hopDollars)
+    return hop === undefined ? {} : { hopBudgetMicros: hop }
+}
+
+// Everything the board has spent since it was created, against its budget (task 40f270be).
+const lifetimeSpentMicros = ref<number | null>(null)
+async function loadLifetimeSpend () {
+    lifetimeSpentMicros.value = null
+    if (!selectedBoard.value) return
+    try {
+        const u = await store.dispatch('fetchAgentBoardUsage', { boardUuid: selectedBoard.value,
+            from: currentBoard.value?.createdDate ?? '1970-01-01T00:00:00Z', to: new Date().toISOString() })
+        lifetimeSpentMicros.value = u?.derivedCostMicros ?? 0
+    } catch {
+        // usage is an overlay on the board, never a precondition for using it
+        lifetimeSpentMicros.value = null
+    }
+}
+const spendChip = computed(() => null === lifetimeSpentMicros.value ? null
+    : budgetChip(lifetimeSpentMicros.value, currentBoard.value?.budgetMicros, currentBoard.value?.softAlertPercent))
 
 async function saveBoard () {
     if (!editingBoard.value?.name?.trim()) {
@@ -1313,6 +1414,18 @@ async function saveBoard () {
         if (Object.keys(paths).length) input.documentPaths = paths
         // Always sent: the form shows the current list, so an emptied one clears it ([]).
         input.coordinatorCapabilities = editingBoard.value.coordinatorCapabilities ?? []
+        // Only what changed: an emptied setting clears, one left alone is not sent (task 40f270be).
+        const original = editingBoardIsNew.value ? null : boards.value.find(x => x.uuid === editingBoard.value.uuid)
+        const settings = settingsPatch(original, {
+            budgetMicros: dollarsToMicros(editingBoard.value.budgetDollars),
+            softAlertPercent: editingBoard.value.softAlertPercent ?? null,
+            cycleCap: editingBoard.value.cycleCap ?? null,
+            noProgressRepeatsToStop: editingBoard.value.noProgressRepeatsToStop ?? null,
+            blockingPriority: editingBoard.value.blockingPriority ?? null,
+            completionPriority: editingBoard.value.completionPriority ?? null,
+            coordinatorStopRelease: editingBoard.value.coordinatorStopRelease ?? null,
+        })
+        if (settings) input.settings = settings
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
             input.seedFromPresets = !!editingBoard.value.seedFromPresets
@@ -1339,7 +1452,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
 }
 
 async function saveRole () {
@@ -1356,9 +1469,11 @@ async function saveRole () {
                 prompt: editingRole.value.prompt ?? '',
                 orderIndex: editingRole.value.orderIndex ?? 0,
                 requireDistinctAgent: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.requireDistinctAgent,
+                blindReview: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.blindReview,
                 active: !!editingRole.value.active,
                 requiredCapabilities: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.requiredCapabilities ?? []),
                 wipLimit: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.wipLimit ?? 0),
+                ...hopBudgetField(editingRole.value),
                 kind: editingRole.value.kind ?? 'AGENTIC',
                 necessity: editingRole.value.necessity ?? 'OPTIONAL',
                 humanGate: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.humanGate ?? 'NONE'),
@@ -1391,7 +1506,7 @@ const presetColumns: DataTableColumns<any> = [
     { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
     {
         title: '', key: 'actions', width: 70,
-        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingPresetIsNew.value = false; editingPreset.value = { ...r, strength: strengthDraft(r) } } }, { default: () => 'Edit' }),
+        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingPresetIsNew.value = false; editingPreset.value = { ...r, hopDollars: microsToDollars(r.hopBudgetMicros), strength: strengthDraft(r) } } }, { default: () => 'Edit' }),
     },
 ]
 
@@ -1403,7 +1518,7 @@ async function openPresets () {
 function startAddPreset () {
     editingPresetIsNew.value = true
     const maxOrder = Math.max(0, ...presets.value.map(r => r.orderIndex ?? 0))
-    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', strength: strengthDraft(null) }
+    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', strength: strengthDraft(null) }
 }
 
 async function savePreset () {
@@ -1420,7 +1535,9 @@ async function savePreset () {
                 prompt: editingPreset.value.prompt ?? '',
                 orderIndex: editingPreset.value.orderIndex ?? 0,
                 wipLimit: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.wipLimit ?? 0),
+                ...hopBudgetField(editingPreset.value),
                 requireDistinctAgent: editingPreset.value.kind === 'HUMAN' ? null : !!editingPreset.value.requireDistinctAgent,
+                blindReview: editingPreset.value.kind === 'HUMAN' ? null : !!editingPreset.value.blindReview,
                 active: !!editingPreset.value.active,
                 requiredCapabilities: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.requiredCapabilities ?? []),
                 kind: editingPreset.value.kind ?? 'AGENTIC',

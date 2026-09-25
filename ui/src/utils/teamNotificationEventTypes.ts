@@ -27,6 +27,8 @@
  */
 export const EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS = new Set([
     'VEX_STATE_CHANGED', 'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED',
+    // agent-board events are about a board and a task, never a component
+    'AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_RETURNED', 'AGENT_TASK_QUEUE_AGE',
 ])
 
 export function ownedComponentEventTypes (

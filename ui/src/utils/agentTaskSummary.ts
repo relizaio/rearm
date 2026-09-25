@@ -4,18 +4,34 @@
 import { DocumentRelease, Finding, INDEXED_TYPES, latestRound } from './agentDocuments'
 import { costLabel, formatTokens, totalTokens } from './agentUsage'
 import { agentName, dur, roleName, ts } from './agentTaskFormat'
+import { aboutLabel, latestQuestionRound } from './agentQuestionRounds'
 
 export type TaskSummary = {
     /** Open findings of the newest round of each indexed type, counted by priority, P1 first. */
     openFindings: { priority: number | null, count: number }[]
     openQuestions: number
-    /** The role that asked the newest open question, when the task is waiting on one. */
-    askedBy: string | null
+    /**
+     * The open questions in one line: how many, who asked, in which round, about what (gaps
+     * §1.27). Null when none is open.
+     */
+    questions: string | null
     /** The newest release of each document type, in the order they were first produced. */
     latestDocuments: DocumentRelease[]
     dependencies: { done: number, pending: number, blocks: number }
     assignment: string | null
     usage: string | null
+}
+
+function openQuestionsLine (task: any, roles: any[] | null | undefined, stack: any[]): string | null {
+    const n = (task?.openQuestions ?? []).length
+    if (!n) return null
+    const latest = latestQuestionRound(task, roles)
+    // No QUESTIONS round on the read (an older task): the newest frame still says who asked.
+    const asker = latest?.askedBy?.roleName
+        ?? (stack.length ? roleName(roles, stack[stack.length - 1].askingRole) || null : null)
+    const detail = [latest?.round != null ? `round ${latest.round}` : '', aboutLabel(latest)].filter(Boolean)
+    return `${n} open question${n === 1 ? '' : 's'}${asker ? ` from ${asker}` : ''}`
+        + (detail.length ? ` (${detail.join(', ')})` : '')
 }
 
 export function taskSummary (task: any, tasks: any[], roles: any[] | null | undefined,
@@ -55,7 +71,7 @@ export function taskSummary (task: any, tasks: any[], roles: any[] | null | unde
     return {
         openFindings,
         openQuestions: (task?.openQuestions ?? []).length,
-        askedBy: stack.length ? roleName(roles, stack[stack.length - 1].askingRole) || null : null,
+        questions: openQuestionsLine(task, roles, stack),
         latestDocuments,
         dependencies: {
             done,

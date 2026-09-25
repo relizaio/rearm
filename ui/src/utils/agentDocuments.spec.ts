@@ -124,6 +124,17 @@ describe('display helpers', () => {
         expect(documentLabel(null)).toBe('—')
     })
 
+    it('names a round filed as questions with a findings index inside by what it holds (bc7fc25a)', () => {
+        const legacy = { uuid: 'u1', document: { specification: 'QUESTIONS', round: 1,
+            findings: { kind: 'TEST_REPORT', verdict: 'REJECTED', findings: [] } } } as any
+        expect(documentLabel(legacy)).toBe('test report · board round (filed as questions)')
+        const real = { uuid: 'q1', document: { specification: 'QUESTIONS', round: 1,
+            findings: { kind: 'QUESTIONS', verdict: 'REJECTED', findings: [] } } } as any
+        expect(documentLabel(real)).toBe('questions · round 1')
+        const kindless = { uuid: 'q0', document: { specification: 'QUESTIONS', round: 2, findings: { findings: [] } } } as any
+        expect(documentLabel(kindless)).toBe('questions · round 2')
+    })
+
     it('reads the verdict and test counts', () => {
         expect(documentVerdict(release())).toBe('REJECTED')
         expect(testCounts(release())).toBeNull()
@@ -240,5 +251,17 @@ describe('completionBlockers', () => {
         const all = completionBlockers(docs, null)
         expect(all.map(b => b.finding.id)).toEqual(['F-1', 'F-2', 'T-1'])
         expect(all[2].specification).toBe('TEST_REPORT')
+    })
+})
+
+describe('documentLifecycleLabel', () => {
+    it('says what a board document lifecycle means', async () => {
+        const { documentLifecycleLabel } = await import('./agentDocuments')
+        expect(documentLifecycleLabel({ lifecycle: 'DRAFT' } as any)).toEqual({ label: 'draft', type: 'default' })
+        expect(documentLifecycleLabel({ lifecycle: 'ASSEMBLED' } as any)).toEqual({ label: 'handed over', type: 'info' })
+        expect(documentLifecycleLabel({ lifecycle: 'READY_TO_SHIP' } as any)).toEqual({ label: 'reviewed', type: 'success' })
+        expect(documentLifecycleLabel({ lifecycle: 'GENERAL_AVAILABILITY' } as any)?.label).toBe('general availability')
+        expect(documentLifecycleLabel({} as any)).toBeNull()
+        expect(documentLifecycleLabel(null)).toBeNull()
     })
 })

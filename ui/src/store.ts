@@ -37,6 +37,13 @@ const AGENT_BOARD_SELECTION = `
     defaultInputResolution
     blockingPriority
     completionPriority
+    budgetMicros
+    softAlertPercent
+    cycleCap
+    noProgressRepeatsToStop
+    coordinatorStopRelease
+    effectiveCoordinatorStopRelease
+    createdDate
     declarative { specHash appliedAt source { repo path commit } }
 `
 
@@ -51,10 +58,10 @@ const AGENT_TASK_SELECTION = `
     role
     orderIndex
     dependsOn
-    hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
+    hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop }
     requireHumanReview
     assignment { session agent role assignedAt promptVersion }
-    signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
     documents {
@@ -138,6 +145,8 @@ const AGENT_TASK_SELECTION = `
     reopenCount
     pullRequests { url state targetBranch mergedDate registered }
     budgetMicros
+    budgetSetBy { kind uuid name }
+    budgetSetAt
     coordinatorEstimateMicros
     requiredStrength
     strengthSetBy { kind uuid name }
@@ -2683,6 +2692,7 @@ const storeObject : any = {
                                 orderIndex
                                 wipLimit
                                 requireDistinctAgent
+                                blindReview
                                 active
                                 kind
                                 necessity
@@ -2866,6 +2876,7 @@ const storeObject : any = {
                             orderIndex
                             wipLimit
                             requireDistinctAgent
+                            blindReview
                             active
                             requiredCapabilities
                             kind
@@ -2875,6 +2886,7 @@ const storeObject : any = {
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
+                            hopBudgetMicros
                             modelStrengths { model strength }
                         }
                     }`,
@@ -2997,6 +3009,7 @@ const storeObject : any = {
                             orderIndex
                             wipLimit
                             requireDistinctAgent
+                            blindReview
                             active
                             requiredCapabilities
                             kind
@@ -3005,6 +3018,7 @@ const storeObject : any = {
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
+                            hopBudgetMicros
                             modelStrengths { model strength }
                         }
                     }`,
@@ -3095,6 +3109,20 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskAuthorize
+        },
+        /** A task's budget, in micros; null clears it (task 6f1b348d). Org admin. */
+        async agentTaskSetBudget (context: any, payload: { taskUuid: string, budgetMicros: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetBudget($taskUuid: ID!, $budgetMicros: Long) {
+                        agentTaskSetBudget(taskUuid: $taskUuid, budgetMicros: $budgetMicros) {
+                            uuid status budgetMicros budgetSetBy { kind uuid name } budgetSetAt
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetBudget
         },
         async agentTaskOrder (context: any, payload: { taskUuid: string, orderIndex: number }) {
             const response = await graphqlClient.mutate({
@@ -3201,13 +3229,14 @@ const storeObject : any = {
             })
             return response.data.agentBoardReseedCoordinatorPrompt
         },
-        async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string }) {
+        async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string, role?: string }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation agentTaskOperatorHold($taskUuid: ID!, $hold: Boolean!, $reason: String) {
-                        agentTaskOperatorHold(taskUuid: $taskUuid, hold: $hold, reason: $reason) { uuid status }
+                    mutation agentTaskOperatorHold($taskUuid: ID!, $hold: Boolean!, $reason: String, $role: String) {
+                        agentTaskOperatorHold(taskUuid: $taskUuid, hold: $hold, reason: $reason, role: $role) { uuid status role }
                     }`,
-                variables: { taskUuid: payload.taskUuid, hold: payload.hold, reason: payload.reason ?? null },
+                variables: { taskUuid: payload.taskUuid, hold: payload.hold, reason: payload.reason ?? null,
+                    role: payload.role ?? null },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskOperatorHold

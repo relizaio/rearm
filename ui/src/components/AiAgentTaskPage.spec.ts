@@ -54,6 +54,8 @@ describe('AiAgentTaskPage', () => {
         // the newest review round only: F-4 is new in round 3, F-1 is shown closed
         expect(w.text()).toContain('F-4')
         expect(w.findAll('.drow')).toHaveLength(5)
+        // each document says whether it was handed over or reviewed (0192a587)
+        expect(w.findAll('.drow').map(r => r.text()).every(t => /draft|handed over|reviewed/.test(t))).toBe(true)
         expect(w.text()).toContain('Dogfood')
         expect(w.find('.tpage__main').exists() && w.find('.tpage__side').exists()).toBe(true)
         // the controls sit in the side column, the record in the main one
