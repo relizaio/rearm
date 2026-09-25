@@ -224,14 +224,16 @@
                 </n-text>
                 <div>
                     <div class="flabel" style="margin-bottom: 4px">document path templates</div>
-                    <n-input v-for="spec in TEMPLATE_TYPES" :key="spec"
-                             v-model:value="editingBoard.documentPaths[spec]"
-                             :placeholder="effectiveTemplate(spec, null)" style="margin-bottom: 4px;">
-                        <template #prefix><span class="flabel">{{ spec.toLowerCase().replace('_', ' ') }}</span></template>
+                    <n-input v-for="row in templateTypeRows" :key="row.spec"
+                             v-model:value="editingBoard.documentPaths[row.spec]"
+                             :placeholder="row.placeholder" style="margin-bottom: 4px;">
+                        <template #prefix><span class="flabel">{{ row.spec.toLowerCase().replace(/_/g, ' ') }}</span></template>
                     </n-input>
                     <n-text depth="3" style="font-size: 11.5px;">
                         Placeholders: <code>{task}</code> <code>{round}</code> <code>{type}</code>
-                        <code>{component}</code>. Blank uses the default shown.
+                        <code>{component}</code>. Blank uses the default shown, which the server
+                        picks by scope: per task for a type a role produces per task, else one
+                        file per component.
                     </n-text>
                 </div>
                 <n-checkbox v-if="editingBoardIsNew" v-model:checked="editingBoard.seedFromPresets">
@@ -635,14 +637,18 @@ import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
-import { effectiveTemplate } from '@/utils/agentDocuments'
+import { templateRows } from '@/utils/agentDocuments'
 
 /**
  * Types the board editor offers a template for. The task-scoped pair, because those are the ones
  * an agent publishes per round and therefore the ones whose layout an operator actually chooses;
  * component-scoped documents share one shape and are rarely per-board.
  */
-const TEMPLATE_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT']
+// The board being edited is the selected one when it is not new, and then its roles are loaded;
+// a new board has none yet, so only the index types are listed.
+const templateTypeRows = computed(() => templateRows(
+    editingBoard.value && !editingBoardIsNew.value && editingBoard.value.uuid === selectedBoard.value ? roles.value : [],
+    editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'

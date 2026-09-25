@@ -2513,6 +2513,7 @@ const storeObject : any = {
                 query: gql`
                     query agentBoardsOfOrg($orgUuid: ID!) {
                         agentBoardsOfOrg(orgUuid: $orgUuid) {
+                            effectiveDocumentPaths
                             uuid
                             name
                             description
