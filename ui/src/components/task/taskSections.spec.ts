@@ -42,8 +42,8 @@ describe('taskSections.scss', () => {
         }
     })
 
-    it('the location keeps its full text as a tooltip', () => {
+    it('the location tooltip is the whole location, path and ref (9a118a2a T-2)', () => {
         const src = readFileSync(here('./TaskFindings.vue'), 'utf8')
-        expect(src).toContain('class="frow__loc" :title="findingLocation(f)"')
+        expect(src).toContain('class="frow__loc" :title="findingLocationFull(f)"')
     })
 })

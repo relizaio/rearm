@@ -20,7 +20,7 @@
             <n-tag v-if="f.status !== 'OPEN'" size="tiny" :bordered="false"
                    :type="statusType(f.status)">{{ f.status }}</n-tag>
             <span class="frow__title">{{ f.title }}</span>
-            <code v-if="findingLocation(f)" class="frow__loc" :title="findingLocation(f)">{{ findingLocation(f) }}</code>
+            <code v-if="findingLocation(f)" class="frow__loc" :title="findingLocationFull(f)">{{ findingLocation(f) }}</code>
             <span v-if="f.decidedBy" class="frow__dec" :title="f.resolution ?? ''">
                 {{ f.decidedBy.kind === 'USER' ? 'decided by' : 'agent decided' }}
                 {{ actorLabel(f.decidedBy) }}<template v-if="f.decidedAt"> · {{ ts(f.decidedAt) }}</template>
@@ -82,6 +82,7 @@ import {
     INDEXED_TYPES,
     documentVerdict,
     findingLocation,
+    findingLocationFull,
     latestRound,
     sortFindings,
     statusType,
