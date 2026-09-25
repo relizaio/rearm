@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, parse, DocumentNode } from 'graphql'
+import { validate, parse, DocumentNode } from 'graphql'
+import { CE_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
 import graphqlQueries from './graphqlQueries'
 
 // The instance view is fetched in two halves: a core document without
@@ -16,10 +15,9 @@ import graphqlQueries from './graphqlQueries'
 // Checked against the CE schema only, same reasoning as
 // releaseFragmentsSchemaDrift.spec.ts: it ships in this repo, and the Pro
 // schema is a superset of it for the Instance type.
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
+const CE_SCHEMA_PATH = CE_SCHEMA_DIR
 
-const ceSchema = buildSchema(readFileSync(CE_SCHEMA_PATH, 'utf8'))
+const ceSchema = loadSchemaDir(CE_SCHEMA_PATH)!
 
 function asInstanceQuery (fragment: string) {
     return parse(`query FragmentCheck($instanceUuid: ID!) {

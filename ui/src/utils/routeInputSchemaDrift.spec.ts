@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, coerceInputValue, type GraphQLSchema, type GraphQLInputType } from 'graphql'
+import { coerceInputValue, type GraphQLSchema, type GraphQLInputType } from 'graphql'
+import { CE_SCHEMA_DIR, PRO_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
 
 // notificationsCommon imports commonFunctions, which boots the graphql client
 // + keycloak as an import side effect. Same stub as notificationsCommon.spec.ts
@@ -22,13 +21,11 @@ const { buildNotificationRouteInput } = await import('./notificationsCommon')
 // Same convention as notificationInboxSchemaDrift.spec.ts: the CE mirror ships
 // in this repo so its checks always run; the Pro schema lives in the sibling
 // rearm-core checkout and is skipped (not failed) when absent.
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
+const CE_SCHEMA_PATH = CE_SCHEMA_DIR
+const PRO_SCHEMA_PATH = PRO_SCHEMA_DIR
 
 function loadSchema (path: string): GraphQLSchema | null {
-    return existsSync(path) ? buildSchema(readFileSync(path, 'utf8')) : null
+    return loadSchemaDir(path)
 }
 
 const ceSchema = loadSchema(CE_SCHEMA_PATH)
@@ -161,11 +158,14 @@ describe('Pro-only BOOLEAN route fields (notifyComponentOwner)', () => {
             buildNotificationRouteInput(ownerRoute))).toEqual([])
     })
 
-    it('CE lacks the field, and the off-state payload still coerces there', () => {
+    // CE had no such field when this was written; the syncs from Pro have since brought it into
+    // the CE mirror, so both states coerce there. Omitting it when off stays right: a CE deployment
+    // older than the sync still refuses the key. (Masked until the drift specs loaded the whole
+    // schema set -- schema.graphqls alone did not build.)
+    it('the CE mirror now takes the field, and the off-state payload still coerces there', () => {
         if (!ceSchema) return
         expect(coerceErrors(ceSchema, 'NotificationRouteInput',
-            { channels: ['ch-1'], notifyComponentOwner: true }).join(' '))
-            .toMatch(/notifyComponentOwner/)
+            { channels: ['ch-1'], notifyComponentOwner: true })).toEqual([])
         expect(coerceErrors(ceSchema, 'NotificationRouteInput',
             buildNotificationRouteInput({ ...ownerRoute, notifyComponentOwner: false, channels: ['ch-1'] })))
             .toEqual([])

@@ -2514,6 +2514,7 @@ const storeObject : any = {
                     query agentBoardsOfOrg($orgUuid: ID!) {
                         agentBoardsOfOrg(orgUuid: $orgUuid) {
                             coordinatorCapabilities
+                            effectiveDocumentPaths
                             uuid
                             name
                             description

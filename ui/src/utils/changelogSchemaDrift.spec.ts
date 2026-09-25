@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, parse, validate, type GraphQLSchema } from 'graphql'
+import { parse, validate, type GraphQLSchema } from 'graphql'
+import { CE_SCHEMA_DIR, PRO_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
 import {
     stripAdditiveFields,
     COMPONENT_CHANGELOG_QUERY,
@@ -17,13 +16,11 @@ import {
 // inbox split: the STRIPPED text must always validate against the CE mirror
 // (in-repo, unconditional), the FULL text against Pro (skipped when the
 // sibling rearm-core checkout is absent, e.g. in this repo's own CI).
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
+const CE_SCHEMA_PATH = CE_SCHEMA_DIR
+const PRO_SCHEMA_PATH = PRO_SCHEMA_DIR
 
 function loadSchema (path: string): GraphQLSchema | null {
-    return existsSync(path) ? buildSchema(readFileSync(path, 'utf8')) : null
+    return loadSchemaDir(path)
 }
 
 const ceSchema = loadSchema(CE_SCHEMA_PATH)

@@ -3,7 +3,7 @@ import {
     documentFileUrl,
     documentLabel,
     documentVerdict,
-    effectiveTemplate,
+    templateRows,
     findingLocation,
     findingsOf,
     completionBlockers,
@@ -164,13 +164,27 @@ describe('outputsOfHop', () => {
     })
 })
 
-describe('effectiveTemplate', () => {
-    it('prefers the board override and falls back to the default', () => {
-        expect(effectiveTemplate('REVIEW_FINDINGS', { REVIEW_FINDINGS: 'r/{task}.md' })).toBe('r/{task}.md')
-        expect(effectiveTemplate('REVIEW_FINDINGS', {})).toBe('findings/{task}/round-{round}.md')
-        expect(effectiveTemplate('TEST_REPORT', null)).toBe('tests/{task}/run-{round}.md')
-        // A component-scoped type has no per-type default and uses the shared shape.
-        expect(effectiveTemplate('ARCHITECTURE', null)).toBe('docs/{type}/{component}.md')
+describe('templateRows', () => {
+    const effective = {
+        REVIEW_FINDINGS: 'findings/{task}/round-{round}.md',
+        TEST_REPORT: 'tests/{task}/run-{round}.md',
+        QUESTIONS: 'questions/{task}/round-{round}.md',
+        DETAILED_DESIGN: 'docs/{type}/{task}/round-{round}.md',
+        GLOSSARY: 'docs/{type}/{component}.md',
+    }
+    it('lists the index types and every type an active role produces, with the server placeholder', () => {
+        const rows = templateRows([
+            { name: 'coder', active: true, producesOutputs: [{ specification: 'DETAILED_DESIGN', scope: 'TASK' }] },
+            { name: 'old', active: false, producesOutputs: [{ specification: 'GLOSSARY', scope: 'COMPONENT' }] },
+            { name: 'tester', producesOutputs: [{ specification: 'TEST_REPORT', scope: 'TASK' }] },
+        ], effective)
+        expect(rows.map(r => r.spec)).toEqual(['REVIEW_FINDINGS', 'TEST_REPORT', 'QUESTIONS', 'DETAILED_DESIGN'])
+        expect(rows.find(r => r.spec === 'DETAILED_DESIGN')?.placeholder).toBe('docs/{type}/{task}/round-{round}.md')
+    })
+    it('lists only the index types for a board with no roles yet, and says the default when none is known', () => {
+        const rows = templateRows(null, null)
+        expect(rows.map(r => r.spec)).toEqual(['REVIEW_FINDINGS', 'TEST_REPORT', 'QUESTIONS'])
+        expect(rows[0].placeholder).toBe('the default for its scope')
     })
 })
 

@@ -232,16 +232,20 @@ export function outputsOfHop (outputs: string[] | null | undefined,
 }
 
 /** Path templates the server falls back to, shown as placeholders in board settings. */
-export const DEFAULT_DOCUMENT_PATHS: Record<string, string> = {
-    REVIEW_FINDINGS: 'findings/{task}/round-{round}.md',
-    TEST_REPORT: 'tests/{task}/run-{round}.md',
-}
+/** The built-in index types, which every board's template form lists. */
+export const INDEX_DOCUMENT_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT', 'QUESTIONS']
 
-export const DEFAULT_COMPONENT_DOCUMENT_PATH = 'docs/{type}/{component}.md'
-
-/** The template a type would use, for display: the board's override, else the default. */
-export function effectiveTemplate (spec: string, overrides?: Record<string, string> | null): string {
-    const override = overrides?.[spec]
-    if (override) return override
-    return DEFAULT_DOCUMENT_PATHS[spec] ?? DEFAULT_COMPONENT_DOCUMENT_PATH
+/**
+ * The rows of a board's path-template form: every index type and every type an active role
+ * produces, each with the server's template after overrides and scope defaults as its placeholder
+ * (AgentBoard.effectiveDocumentPaths). No default is worked out here -- the server owns the rule
+ * (gaps §1.18), so the form cannot show a path the CLI would not use.
+ */
+export function templateRows (roles: any[] | null | undefined,
+    effective: Record<string, string> | null | undefined): { spec: string, placeholder: string }[] {
+    const produced = (roles ?? []).filter((r: any) => r?.active !== false)
+        .flatMap((r: any) => (r?.producesOutputs ?? []).map((p: any) => p?.specification))
+        .filter(Boolean) as string[]
+    return [...new Set([...INDEX_DOCUMENT_TYPES, ...produced])]
+        .map(spec => ({ spec, placeholder: effective?.[spec] ?? 'the default for its scope' }))
 }
