@@ -1624,4 +1624,20 @@ async function operatorLock (lock: boolean) {
     }
     .prlink { color: inherit; text-decoration: none; }
 }
+
+/* Top level, not under .boardsPanel: n-modal teleports its card to <body>, so a nested rule never
+   reaches the "Board as a spec" modal. The block scrolls, not the page; long lines scroll sideways
+   instead of painting past the card. white-space stays pre: the spec is YAML/JSON, and Copy gives
+   specText, never what is on screen. */
+.specBlock {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 65vh;
+    overflow: auto;
+    white-space: pre;
+    font-size: 12px;
+    line-height: 1.45;
+    background: var(--n-color-modal, #fafafa);
+    border-radius: 4px;
+}
 </style>
