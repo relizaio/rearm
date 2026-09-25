@@ -155,6 +155,20 @@ export function sortBySeverityThenId(findings: NormalizedReleaseFinding[]): Norm
     })
 }
 
+/** osv.dev indexes every id family ReARM sees (CVE, GHSA, PYSEC, RUSTSEC, GO, DEBIAN-CVE, ALPINE-CVE, ...),
+ *  unlike getFindingUrl, which links only the families its table used to link. */
+export function osvUrlFor(vulnId: string): string {
+    return `https://osv.dev/vulnerability/${encodeURIComponent(vulnId)}`
+}
+
+export function nvdUrlFor(cveId: string): string {
+    return `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveId)}`
+}
+
+export function githubAdvisoryUrlFor(ghsaId: string): string {
+    return `https://github.com/advisories/${encodeURIComponent(ghsaId)}`
+}
+
 export async function openExternalLink(href: string): Promise<void> {
     try {
         const now = Date.now()
