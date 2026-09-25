@@ -4,6 +4,8 @@
         <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
         <div class="drow">
             <span class="drow__label">{{ documentLabel(d) }}</span>
+            <n-tag v-if="documentLifecycleLabel(d)" size="tiny" :bordered="false"
+                   :type="documentLifecycleLabel(d)?.type" :title="d.lifecycle ?? undefined">{{ documentLifecycleLabel(d)?.label }}</n-tag>
             <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
                    :type="verdictType(documentVerdict(d))">{{ documentVerdict(d) }}</n-tag>
             <n-tag v-if="testCounts(d)" size="tiny" :bordered="false" type="info">
@@ -35,7 +37,7 @@ import { computed, ref, watch } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 import AiAgentCheckReport from '../AiAgentCheckReport.vue'
 import AiAgentDocumentElements from '../AiAgentDocumentElements.vue'
-import { DocumentRelease, documentFileUrl, documentLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
+import { DocumentRelease, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
 import { documentDefining, elementsOf } from '@/utils/agentElements'
 
 const props = defineProps<{
