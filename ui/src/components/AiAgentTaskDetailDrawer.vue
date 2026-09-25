@@ -16,10 +16,11 @@
                              @human-signoff="p => emit('human-signoff', p)"
                              @operator-release="p => emit('operator-release', p)"
                              @require-review="p => emit('require-review', p)"/>
-                <task-actions :task="task" :roles="roles" :board="board" :can-reopen="canReopen"
+                <task-actions :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                               @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
+                              @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
                               @set-budget="p => emit('set-budget', p)"/>
                 <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
                               @open="t => emit('open', t)"/>
@@ -63,6 +64,8 @@ const emit = defineEmits<{
     (e: 'reopen', p: { task: any, role: string, reason: string }): void
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
+    (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
+    (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 </script>
 

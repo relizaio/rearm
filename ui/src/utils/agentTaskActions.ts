@@ -126,6 +126,21 @@ export function useAgentTaskActions (after: AfterAction) {
                 ? `Decided — back to ${res.role}` : 'Decided', 'Decision failed')
     }
 
+    /** A task's required strength; null clears it (task 6fdc5a37). */
+    function setStrength (p: { task: any, requiredStrength: number | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskSetStrength', { taskUuid: p.task.uuid, requiredStrength: p.requiredStrength }),
+            () => p.requiredStrength == null ? 'Strength cleared' : `Strength set to ${p.requiredStrength}`,
+            'Setting strength failed')
+    }
+
+    /** An operator hold, which the coordinator cannot lift (task 6fdc5a37). */
+    function operatorHold (p: { task: any, reason: string }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskOperatorHold', { taskUuid: p.task.uuid, hold: true, reason: p.reason }),
+            () => 'On hold (operator)', 'Hold failed')
+    }
+
     function requireReview (p: { task: any, value: boolean }) {
         return kept(p.task,
             () => store.dispatch('agentTaskRequireHumanReview', { taskUuid: p.task.uuid, value: p.value }),
@@ -134,6 +149,6 @@ export function useAgentTaskActions (after: AfterAction) {
 
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setBudget,
+        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
     }
 }

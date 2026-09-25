@@ -185,7 +185,8 @@
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
                 @authorize="authorizeTask" @order="orderTask"
-                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings" @set-budget="setBudget"
+                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
+                @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
@@ -982,7 +983,7 @@ async function reseedCoordinator (presetName: string) {
 // the drawer; any other action reloads and keeps the drawer on the same task.
 const {
     humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
-    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setBudget,
+    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
     await refreshBoardContent()

@@ -3126,6 +3126,20 @@ const storeObject : any = {
             })
             return response.data.agentBoardReseedCoordinatorPrompt
         },
+        /** A task's required model strength; null clears it (task 6fdc5a37). Org admin. */
+        async agentTaskSetStrength (context: any, payload: { taskUuid: string, requiredStrength: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetStrength($taskUuid: ID!, $requiredStrength: Float) {
+                        agentTaskSetStrength(taskUuid: $taskUuid, requiredStrength: $requiredStrength) {
+                            uuid requiredStrength strengthSetBy { kind uuid name } strengthSetAt
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, requiredStrength: payload.requiredStrength },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetStrength
+        },
         async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string, role?: string }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`

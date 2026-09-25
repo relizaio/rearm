@@ -19,6 +19,29 @@
                 set by {{ actorLabel(task.orderSetBy) }} · {{ ts(task.orderSetAt) }}
             </span>
         </div>
+        <!-- A task's required model strength (D20: lowering it is a person's call). -->
+        <div v-if="admin" class="deprow strow">
+            <n-input-number v-model:value="strengthDraft" size="small" :min="0" :step="0.5" :precision="2"
+                            :placeholder="strengthPlaceholder(task, roles)" style="width: 190px">
+                <template #prefix><span class="deplab" style="min-width: 0">strength</span></template>
+            </n-input-number>
+            <n-button size="small" :disabled="strengthToSet(task, strengthDraft) === undefined"
+                      @click="emit('set-strength', { task, requiredStrength: strengthToSet(task, strengthDraft) as number })">
+                Set strength
+            </n-button>
+            <n-button v-if="task.requiredStrength != null" size="small" quaternary
+                      @click="emit('set-strength', { task, requiredStrength: null })">Clear</n-button>
+            <span v-if="task.strengthSetBy" class="holdmeta" style="margin-top: 0">
+                set by {{ actorLabel(task.strengthSetBy) }} · {{ ts(task.strengthSetAt) }}
+            </span>
+        </div>
+        <!-- An operator hold: the coordinator cannot lift it; the hold banner offers the release. -->
+        <div v-if="canPlaceHold(task, !!admin)" class="deprow holdrow">
+            <n-input v-model:value="holdReason" size="small" placeholder="Why hold it (required)"
+                     style="width: 260px"/>
+            <n-button size="small" type="warning" ghost :disabled="!holdPayload(task, holdReason)"
+                      @click="placeHold">Put on hold (operator)</n-button>
+        </div>
         <!-- What this task may spend, on top of the board's limit (task 6f1b348d). Blank and set
              clears it. A raise does not release a budget hold: release the hold to resume. -->
         <div class="deprow budrow">
@@ -137,6 +160,7 @@ import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { roleOptionsOf } from '@/utils/agentTaskOptions'
+import { canPlaceHold, holdPayload, strengthPlaceholder, strengthToSet } from '@/utils/agentTaskAdmin'
 import { budgetChanged, dollarsToMicros, microsToDollars } from '@/utils/agentBudget'
 
 const props = defineProps<{
@@ -145,6 +169,8 @@ const props = defineProps<{
     board?: any
     /** Org admin: may reopen a completed task (the server's rule for agentTaskReopen). */
     canReopen?: boolean
+    /** Org admin: may set the task's strength and place an operator hold (task 6fdc5a37). */
+    admin?: boolean
 }>()
 const emit = defineEmits<{
     (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
@@ -155,6 +181,8 @@ const emit = defineEmits<{
     (e: 'reopen', p: { task: any, role: string, reason: string }): void
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
+    (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
+    (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 
 const authorizeRole = ref<string | null>(null)
@@ -168,6 +196,12 @@ const reopenReady = computed(() => null !== reopenPayload(props.task, reopenRole
 function reopen () {
     const p = reopenPayload(props.task, reopenRole.value, reopenReason.value)
     if (p) emit('reopen', { task: props.task, role: p.role, reason: p.reason })
+}
+const strengthDraft = ref<number | null>(null)
+const holdReason = ref('')
+function placeHold () {
+    const p = holdPayload(props.task, holdReason.value)
+    if (p) emit('operator-hold', p)
 }
 const showComplete = ref(false)
 const completeNote = ref('')
@@ -194,6 +228,8 @@ watch(() => props.task?.uuid, () => { reopenRole.value = null; reopenReason.valu
 watch(() => props.task?.uuid, () => {
     authorizeRole.value = props.task?.role ?? null
     orderDraft.value = props.task?.orderIndex ?? null
+    strengthDraft.value = props.task?.requiredStrength ?? null
+    holdReason.value = ''
     budgetDraft.value = microsToDollars(props.task?.budgetMicros)
     cancelNote.value = ''
     showComplete.value = false

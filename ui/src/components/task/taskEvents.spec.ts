@@ -27,7 +27,7 @@ const { default: Page } = await import('../AiAgentTaskPage.vue')
 /** Which section emits which event. */
 const EMITTERS: [any, string, string[]][] = [
     [TaskHeader, 'TaskHeader', ['human-review', 'human-signoff', 'operator-release', 'require-review']],
-    [TaskActions, 'TaskActions', ['authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-budget']],
+    [TaskActions, 'TaskActions', ['authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget']],
     [TaskDependencies, 'TaskDependencies', ['open']],
     [TaskSummary, 'TaskSummary', ['open']],
     [TaskFindings, 'TaskFindings', ['decide', 'open-element']],
@@ -36,7 +36,7 @@ const EMITTERS: [any, string, string[]][] = [
 
 /** What the board panel listens to on the drawer, bar close. */
 const DRAWER_EVENTS = ['open', 'human-review', 'human-signoff', 'operator-release', 'require-review',
-    'authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-budget']
+    'authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget']
 
 /** The store action the page runs for each event ('open' navigates instead). */
 const PAGE_ACTIONS: Record<string, string> = {
@@ -44,7 +44,7 @@ const PAGE_ACTIONS: Record<string, string> = {
     'operator-release': 'agentTaskOperatorHold', 'require-review': 'agentTaskRequireHumanReview',
     authorize: 'agentTaskAuthorize', order: 'agentTaskOrder', complete: 'agentTaskComplete',
     cancel: 'agentTaskCancel', reopen: 'agentTaskReopen', decide: 'agentTaskDecideFindings',
-    answer: 'agentTaskAnswer', 'set-budget': 'agentTaskSetBudget',
+    answer: 'agentTaskAnswer', 'set-strength': 'agentTaskSetStrength', 'operator-hold': 'agentTaskOperatorHold', 'set-budget': 'agentTaskSetBudget',
 }
 
 const stubs = {
