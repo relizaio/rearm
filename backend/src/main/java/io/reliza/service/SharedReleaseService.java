@@ -1645,6 +1645,15 @@ public class SharedReleaseService {
 		return repository.findReleasesWithVulnerabilityAnyLocation(org.toString(), findingId);
 	}
 
+	/**
+	 * Whether any release in {@code org} carries {@code findingId} (as the
+	 * finding id or one of its aliases) in any location. Stops at the first
+	 * match, unlike {@link #findReleaseUuidsWithVulnerabilityAnyLocation}.
+	 */
+	public boolean hasReleaseWithVulnerabilityAnyLocation(UUID org, String findingId) {
+		return repository.existsReleaseWithVulnerabilityAnyLocation(org.toString(), findingId);
+	}
+
 	public List<UUID> findReleaseUuidsWithViolation(UUID org, String location, String findingId) {
 		return repository.findReleasesWithViolation(org.toString(), location, findingId);
 	}

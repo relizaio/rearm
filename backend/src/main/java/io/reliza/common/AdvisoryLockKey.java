@@ -23,7 +23,15 @@ public enum AdvisoryLockKey {
 	SWEEP_INSTANCE_DEPLOYMENT_FAILURES(31),
 	ENRICHMENT_PULL(32),
 	FLUSH_INSTANCE_DEPLOYMENT_COALESCE(33),
-	PURGE_CLI_SESSIONS(34);
+	PURGE_CLI_SESSIONS(34),
+	RECOMPUTE_VULNERABILITY_RECORDS(36),
+	/**
+	 * Namespace of the per-record transaction lock on vulnerability_records
+	 * (VulnerabilityRecordRepository.lockRecord), taken with the two-key form
+	 * whose second key is the record; unlike the others it is not a
+	 * scheduler lock.
+	 */
+	VULNERABILITY_RECORD_WRITE(37);
 	
 	private int queryVal;
 	

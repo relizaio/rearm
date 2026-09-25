@@ -5,6 +5,7 @@
 package io.reliza.service;
 
 import tools.jackson.core.JacksonException;
+import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -280,6 +282,69 @@ public class ArtifactService {
 	//Creates or Updates existing artifact
 	@Transactional
 	public Artifact createArtifact(ArtifactDto artifactDto, WhoUpdated wu) throws RelizaException{
+		// The digest records here are the CALLER'S. addArtifactManual reaches this method
+		// directly when the mutation carries no file, and that branch would otherwise persist
+		// whatever digest records the caller sent -- including an AS_UPLOADED that nothing on
+		// the server ever computed, which is the one claim this scope exists to make.
+		//
+		// uploadArtifact does NOT come through here. It runs this same check on its caller's
+		// records first, then adds the records the server derived (AS_UPLOADED, RAW_OCI_STORAGE
+		// from retainRawUpload) and persists through persistArtifact. Routing it through this
+		// guard refused the server's own records and with them every CycloneDX and SPDX upload.
+		Utils.rejectServerDerivedDigestScopes(artifactDto.getDigestRecords());
+		rejectReArmStorageWithoutFile(artifactDto);
+		return persistArtifact(artifactDto, wu);
+	}
+
+	/**
+	 * {@link #createArtifact} writes an artifact WITHOUT bytes, and persistArtifact rebuilds the
+	 * whole record from the dto. So two writes cannot come through it:
+	 *
+	 * <ul>
+	 * <li>An artifact that claims storedIn=REARM: there are no bytes for ReARM to store, and a BOM
+	 * of that shape failed AcollectionService on its missing internalBom, so the request was a
+	 * 500.</li>
+	 * <li>A new version of an artifact whose bytes ReARM holds: stored in ReARM, or carrying an
+	 * internalBom, which legacy rows can have with storedIn unset. The UI's "Upload New Artifact
+	 * Version" form submitted without a file sends exactly this (storedIn=REARM, empty
+	 * digestRecords, empty version), and the rebuild dropped everything the server had derived from
+	 * the stored bytes: internalBom, every digest record including AS_UPLOADED and RAW_OCI_STORAGE,
+	 * both repository names. For a BOM on a source code entry or a deliverable that wipe was
+	 * committed, and every later save of the release then failed in AcollectionService. Refused
+	 * whatever storage the dto claims, since claiming another would discard the bytes the same
+	 * way.</li>
+	 * </ul>
+	 *
+	 * Everything else is unchanged, including artifacts with download links and storedIn unset,
+	 * which is how API callers such as the integration tests attach a link.
+	 */
+	private void rejectReArmStorageWithoutFile(ArtifactDto artifactDto) throws RelizaException {
+		boolean newVersion = null != artifactDto.getUuid();
+		if (StoredIn.REARM == artifactDto.getStoredIn()) {
+			throw new RelizaException(newVersion
+					? "A new version of this artifact must include a file."
+					: "An artifact stored in ReARM must include a file; "
+							+ "use external storage with a download link for an artifact without one.");
+		}
+		if (newVersion) {
+			Optional<ArtifactData> existing = getArtifactData(artifactDto.getUuid());
+			if (existing.isPresent() && (StoredIn.REARM == existing.get().getStoredIn()
+					|| null != existing.get().getInternalBom())) {
+				throw new RelizaException("A new version of this artifact must include a file.");
+			}
+		}
+	}
+
+	/**
+	 * The artifact write itself, with no guard on the digest records: by the time a dto reaches
+	 * here its records are trusted, either because {@link #createArtifact} just checked them or
+	 * because {@link #uploadArtifact} checked the caller's and added the server's own.
+	 *
+	 * <p>Package-private on purpose. Every public way to write an artifact passes the
+	 * caller-input guard exactly once, and nothing outside this class gets a route around it.
+	 * Both callers are transactional, so this runs inside their transaction.
+	 */
+	Artifact persistArtifact(ArtifactDto artifactDto, WhoUpdated wu) throws RelizaException {
 		log.debug("RGDEBUG: create Artifact called: {}", artifactDto);
 		Artifact a;
 		Optional<Artifact> oa = Optional.empty();
@@ -545,6 +610,11 @@ public class ArtifactService {
 	public UUID uploadArtifact(ArtifactDto artifactDto, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
 		if (null == orgUuid) throw new RelizaException("Missing artifact org.");
+		// The caller's records are checked here and only here on this path: before the upload
+		// reaches the registry, and before retainRawUpload adds the server-derived records that
+		// the check exists to refuse from a caller. The write at the end goes through
+		// persistArtifact, not createArtifact, for exactly that reason.
+		Utils.rejectServerDerivedDigestScopes(artifactDto.getDigestRecords());
 		OASResponseDto artifactUploadResponse = null;
 		ArtifactData existingAd = null;
 		if(null != artifactDto.getUuid()){
@@ -612,8 +682,8 @@ public class ArtifactService {
 			artifactDto.setTags(allTags);
 		}
 		
-		Artifact art = createArtifact(artifactDto, wu);
-		
+		Artifact art = persistArtifact(artifactDto, wu);
+
         return art.getUuid();
     }
 	
@@ -674,21 +744,46 @@ public class ArtifactService {
 	@Transactional
 	private OASResponseDto storeArtifactOnRebom (ArtifactDto artifactDto, Resource file, ArtifactData existingAd, RebomOptions rebomOptions) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
-		
-		// 1. Parse BOM file
+
+		// 1. Read the upload ONCE into memory, then parse from those bytes.
+		// Everything downstream of this method works on a parsed tree, so these bytes are the
+		// only copy of what the publisher actually built and signed. Parsing them here as well
+		// removes any question of whether the multipart-backed Resource is re-readable.
+		byte[] uploadedBytes;
+		try {
+			uploadedBytes = file.getContentAsByteArray();
+		} catch (IOException e) {
+			log.error("Error reading uploaded artifact bytes", e);
+			throw new RelizaException("Cannot read uploaded artifact.");
+		}
+
+		// 2. Parse before retaining anything.
+		// A document that will not parse is refused here, and refusing it must not have cost us
+		// a permanent blob first: the tag is content-addressed, so re-uploading the SAME bytes
+		// reuses one blob, but a caller who varies the bytes gets a fresh blob per attempt and
+		// nothing reclaims them. Parsing first keeps the retained set a subset of what was
+		// accepted as a document at all.
 		JsonNode bomJson;
 		try {
-			bomJson = Utils.readJsonFromResource(file);
+			bomJson = Utils.OM.readTree(uploadedBytes);
 		} catch (Exception e) {
 			log.error("Error reading Json", e);
 			throw new RelizaException("Cannot parse artifact JSON. Make sure artifact type is set correctly.");
 		}
-		
+
+		// 3. Retain the bytes BEFORE rebom sees them, which is the ordering that actually matters.
+		// Pushing after rebom has accepted would avoid an unreferenced blob when rebom refuses
+		// -- but if the push itself then fails, rebom has already kept the serial number and
+		// version, and the user's retry of the SAME file comes back as a version conflict that
+		// only a version bump clears. A transient registry error would become a stuck upload.
+		// So: after the parse, before rebom.
+		retainRawUpload(artifactDto, file, uploadedBytes);
+
 		log.info("Starting BOM processing for artifact {}, format: {}", 
 			artifactDto.getUuid(), artifactDto.getBomFormat());
 
 		
-		// 2. Prepare for processing (format-specific validation/setup)
+		// 4. Prepare for processing (format-specific validation/setup)
 		UUID existingSerialNumberForSpdx = null;
 		if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
 			validateCycloneDxUpdate(artifactDto, bomJson, existingAd);
@@ -705,7 +800,7 @@ public class ArtifactService {
 			existingSerialNumberForSpdx = prepareSpdxUpdate(existingAd);
 		}
 
-		// 3. Process BOM through lifecycle service
+		// 5. Process BOM through lifecycle service
 		BomLifecycleService.BomLifecycleResult lifecycleResult;
 		try {
 			lifecycleResult = bomLifecycleService.processBomArtifact(
@@ -730,21 +825,114 @@ public class ArtifactService {
 		
 		RebomResponse rebomResponse = lifecycleResult.rebomResponse();
 		
-		// 4. Apply response to artifact (format-specific)
+		// 6. Apply response to artifact (format-specific)
 		OASResponseDto response;
 		if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
 			applyCycloneDxResponse(artifactDto, rebomResponse, lifecycleResult, rebomOptions);
 			response = rebomResponse.bom();
+			if (response == null) {
+				// Same guard the SPDX branch already carries. Without it a null here surfaces as
+				// an NPE further down instead of naming the rebom storage failure it is.
+				log.error("rebomResponse.bom() is null for CycloneDX artifact UUID: {}", artifactDto.getUuid());
+				throw new RelizaException("BOM processing failed: rebom response missing OCI storage information. " +
+					"This may indicate a rebom-backend storage error.");
+			}
 		} else if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
 			response = applySpdxResponse(artifactDto, rebomResponse, lifecycleResult, rebomOptions);
 		} else {
 			throw new RelizaException("Unsupported BOM format: " + artifactDto.getBomFormat());
 		}
 		
-		log.info("BOM processing complete for artifact {}, internalBomId: {}", 
+		// The user-visible size describes the file the user sent, not rebom's copy of it. This
+		// is the one pre-existing value this change corrects rather than leaves alone: it has no
+		// reader in the backend, so the whole of its blast radius is a number in the UI that has
+		// been reporting the processed copy (1446 for a 1043-byte upload).
+		response.setOriginalSize((long) uploadedBytes.length);
+
+		log.info("BOM processing complete for artifact {}, internalBomId: {}",
 			artifactDto.getUuid(), artifactDto.getInternalBom().id());
-		
+
 		return response;
+	}
+
+	/**
+	 * Pushes the uploaded bytes to rearm-core's own OCI storage and points the artifact at them.
+	 *
+	 * Content-addressed by the file's own sha256, so re-uploading an identical file reuses the
+	 * same tag instead of accumulating copies -- which is what makes it safe to push before the
+	 * document has been parsed or accepted (see the call site for why that ordering is the
+	 * right way round).
+	 *
+	 * ADDITIVE on the digest records. ORIGINAL_FILE, OCI_STORAGE and REARM keep their current
+	 * values, sources and meanings, so nothing that reads them today shifts under it and no
+	 * existing artifact needs migrating. What is new is AS_UPLOADED, the one digest in this
+	 * system taken over the bytes the publisher actually sent, present only where that is true
+	 * -- so its presence is what tells a reader the checksum can be trusted.
+	 *
+	 * <p>Because the blob is content-addressed and the repository is per-month rather than
+	 * per-org, two organizations uploading a byte-identical file share one blob. That is the
+	 * point -- it bounds what a retry or a duplicate upload costs -- but it means any future
+	 * deletion or reclamation path must be reference-aware: a blob may only go when NO artifact
+	 * version in ANY organization still carries its content address. Nothing deletes OCI blobs
+	 * today, so the invariant is free to state and expensive to discover later.
+	 */
+	private void retainRawUpload(ArtifactDto artifactDto, Resource file, byte[] uploadedBytes)
+			throws RelizaException {
+		String rawSha256 = Utils.bytesToHexSha256(uploadedBytes);
+		Resource rawResource = new NamedByteArrayResource(uploadedBytes, file.getFilename());
+		OASResponseDto rawPush;
+		try {
+			rawPush = uploadFileToConfiguredOci(rawResource, "raw-" + rawSha256, rawSha256);
+		} catch (Exception e) {
+			// The BOM is already in rebom at this point, so there is no silent degradation on
+			// offer: either the bytes are stored and the artifact can honour the checksum it is
+			// about to advertise, or the upload fails with a reason the caller can act on.
+			log.error("Failed to store raw upload for artifact {}", artifactDto.getUuid(), e);
+			throw new RelizaException("Could not store the uploaded artifact bytes: " + e.getMessage());
+		}
+		if (null == rawPush.getOciResponse() || StringUtils.isEmpty(rawPush.getOciResponse().getDigest())) {
+			throw new RelizaException("Artifact storage did not return a digest for the uploaded bytes.");
+		}
+
+		Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords()
+			? artifactDto.getDigestRecords() : new HashSet<>();
+		// The digest of the bytes as sent. Separate from ORIGINAL_FILE rather than replacing it:
+		// ORIGINAL_FILE means "someone told us this digest" -- a user declaration, or for a
+		// rebom-stored BOM a value derived from rebom's own copy -- and that meaning, right or
+		// wrong, is what every existing row and reader already assumes.
+		digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rawSha256, DigestScope.AS_UPLOADED));
+		// Loudly, not ifPresent: without the pointer the download cannot find these bytes and
+		// would fall back to rebom's re-serialization, which is what AS_UPLOADED promises it is
+		// not. Better to refuse the upload than to record a promise we cannot keep.
+		digestRecords.add(Utils.convertDigestStringToRecord(rawPush.getOciResponse().getDigest(),
+				DigestScope.RAW_OCI_STORAGE)
+			.orElseThrow(() -> new RelizaException("Unparseable digest for stored artifact bytes: "
+				+ rawPush.getOciResponse().getDigest())));
+		artifactDto.setDigestRecords(digestRecords);
+		// Matches the sibling pointer at the caller: an empty value is left null so the
+		// download falls back to the base repository rather than looking in "".
+		if (StringUtils.isNotEmpty(rawPush.getOciRepositoryName())) {
+			artifactDto.setRawOciRepositoryName(rawPush.getOciRepositoryName());
+		}
+
+		log.info("Retained {} raw bytes for artifact {} in {} under sha256 {}",
+			uploadedBytes.length, artifactDto.getUuid(), rawPush.getOciRepositoryName(), rawSha256);
+	}
+
+	/**
+	 * A ByteArrayResource that keeps a filename. Multipart encoding needs one, and
+	 * ByteArrayResource reports null.
+	 */
+	private static class NamedByteArrayResource extends ByteArrayResource {
+		private final String filename;
+		NamedByteArrayResource(byte[] bytes, String filename) {
+			super(bytes);
+			this.filename = filename;
+		}
+		@Override
+		public String getFilename() {
+			return filename;
+		}
 	}
 
 	/**
@@ -763,7 +951,11 @@ public class ArtifactService {
 		Integer newBomVersion = Integer.valueOf(newbomVerString);
 		artifactDto.setVersion(newbomVerString);
 		
-		if(null != existingAd){
+		// An existing artifact with no internalBom has no BOM lineage to continue: treat the upload
+		// as its first BOM, as prepareSpdxUpdate already does. Such rows exist because a no-file
+		// "new version" used to wipe internalBom (see rejectReArmStorageWithoutFile), and uploading
+		// a file onto one is how it gets repaired.
+		if(null != existingAd && null != existingAd.getInternalBom()){
 			Integer oldBomVersion = Integer.valueOf(
 				getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg())
 			);
@@ -960,7 +1152,9 @@ public class ArtifactService {
 		return response;
 	}
 
-	private OASResponseDto uploadFileToConfiguredOci(Resource file, String tag, String sha256Digest){
+	// Package-private rather than private so tests can stub the OCI push and exercise the
+	// callers' digest handling without a registry.
+	OASResponseDto uploadFileToConfiguredOci(Resource file, String tag, String sha256Digest){
 		MultiValueMap<String, Object> formData = new LinkedMultiValueMap<>();
 		if(!tag.startsWith("rearm")){
 			tag = "rearm-" + tag;

@@ -3,7 +3,6 @@
 */
 package io.reliza.service;
 
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
@@ -22,9 +21,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
+import io.reliza.util.OciRepositoryUtil;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
@@ -35,6 +36,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CarryForwardArm;
 import io.reliza.model.dto.CarryForwardPairing;
 import io.reliza.model.dto.CarryForwardTally;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
@@ -254,6 +256,23 @@ public class SharedArtifactService {
 	 * device-related is emitted, the rest of the support disclosure is unchanged.
 	 */
 	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad, DeviceLifecycle device) throws Exception{
+		return downloadArtifact(ad, device, ExportMetadataOptions.callerSilent());
+	}
+
+	/**
+	 * As above, honouring the per-export metadata flags this download's caller supplied.
+	 *
+	 * <p>Both flags are handed to {@code injectIfEnabledElseStrip} and resolved there, on the
+	 * same single decision point the org setting already goes through -- this method gains no
+	 * branch of its own, and its failure fallback forwards them rather than re-deciding. {@link ExportMetadataOptions#callerSilent()} is what every caller that
+	 * predates the arguments passes, and under it this path is byte-identical to before.
+	 *
+	 * <p>The RAW download ({@code downloadRawArtifact}) takes no options and never will: it
+	 * serves the publisher's uploaded bytes against an advertised checksum, and a flag that
+	 * edited them would break the one promise that path exists to make.
+	 */
+	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad, DeviceLifecycle device,
+			ExportMetadataOptions exportMetadata) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
         log.info("download artifacts for ad: {}", ad);
 
@@ -290,10 +309,25 @@ public class SharedArtifactService {
 				// deviceSupportRisk on the CycloneDX download of an artifact and not on the
 				// SPDX-augmented download of the SAME artifact.
 				try {
-					supportInjectionService.injectIfEnabledElseStrip(rebom, ad.getOrg(), device);
+					supportInjectionService.injectIfEnabledElseStrip(rebom, ad.getOrg(), device, exportMetadata);
 				} catch (Exception stripEx) {
 					log.error("Support strip/inject failed for SPDX-augmented artifact {} (org {});"
 							+ " serving unmarked: {}", ad.getUuid(), ad.getOrg(), stripEx.getMessage(), stripEx);
+					// UNMARKED stays unmarked -- re-marking would state a claim we did not
+					// check. SWEPT does not lapse with it: the sweep is the anti-spoofing
+					// control, the marker is only a statement about it, and this catch is
+					// reachable on an ENABLED org before inject() ever reached the sweep. So
+					// strip silently, which is strip-without-marking. The caller's
+					// internal-metadata choice is a separate promise and survives the failure:
+					// they asked for a document without our markers, and an unrelated outage is
+					// not a reason to hand them one with them.
+					try {
+						supportInjectionService.stripForgedProvenanceSilently(rebom);
+						supportInjectionService.stripInternalIfDeclined(rebom, exportMetadata);
+					} catch (Exception internalEx) {
+						log.error("Internal-marker strip also failed for artifact {}: {}",
+								ad.getUuid(), internalEx.getMessage(), internalEx);
+					}
 				}
 				byteArray = rebom.toString().getBytes(StandardCharsets.UTF_8);
 			} else {
@@ -319,7 +353,7 @@ public class SharedArtifactService {
 				// The device argument survives -- a PRODUCT download still stamps the device
 				// verdict when injection is on.
 				try {
-					supportInjectionService.injectIfEnabledElseStrip(bomNode, ad.getOrg(), device);
+					supportInjectionService.injectIfEnabledElseStrip(bomNode, ad.getOrg(), device, exportMetadata);
 				} catch (Exception supportEx) {
 					// Support injection is an add-on -- never fail the core BOM download because
 					// of a support-resolution error. The strip fallback lives INSIDE
@@ -329,7 +363,11 @@ public class SharedArtifactService {
 					log.error("Support injection failed for artifact {} (org {}); serving un-injected BOM: {}",
 							ad.getUuid(), ad.getOrg(), supportEx.getMessage(), supportEx);
 					try {
-						supportInjectionService.stripForgedProvenanceAndMark(bomNode);
+						// The options-aware overload, NOT the bare one: the fallback still
+						// serves a document, so it still owes the caller the internal-metadata
+						// choice they made. Deciding that here instead would be the second
+						// decision point injectIfEnabledElseStrip exists to prevent.
+						supportInjectionService.stripForgedProvenanceAndMark(bomNode, exportMetadata);
 					} catch (Exception stripEx) {
 						log.error("Support strip fallback also failed for artifact {}: {}",
 								ad.getUuid(), stripEx.getMessage(), stripEx);
@@ -353,6 +391,19 @@ public class SharedArtifactService {
 
 		return monoResponseEntity;
     }
+	/**
+	 * Null-safe "is this the sha256 record for this scope?".
+	 *
+	 * <p>Both fields are nullable in practice: DigestRecord's components come straight off
+	 * DigestRecordInput, and a caller can post {@code {digest: "..."}} with neither algo nor
+	 * scope. {@code dr.algo().equals(...)} on such a record throws, and on the raw-download
+	 * path that would be a permanent NPE for that artifact rather than a bad request. Enum
+	 * {@code ==} is null-safe and is the comparison these are really asking for.
+	 */
+	private static boolean isSha256(DigestRecord dr, DigestScope scope) {
+		return TeaChecksumType.SHA_256 == dr.algo() && scope == dr.scope();
+	}
+
 	private Mono<ResponseEntity<byte[]>> downloadRearmNonBomArtifact(ArtifactData ad)throws RelizaException{
 		var tags = ad.getTags();
 		Boolean isDownloadable = tags.stream().anyMatch(t -> t.key().equals(CommonVariables.DOWNLOADABLE_ARTIFACT) && t.value().equalsIgnoreCase("true"));
@@ -362,26 +413,42 @@ public class SharedArtifactService {
 		String mediaType = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.MEDIA_TYPE_FIELD)).findFirst().orElseThrow(() -> new RelizaException("Missing MEDIA_TYPE_FIELD for artifact: " + ad.getUuid())).value();
 		String fileName = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.FILE_NAME_FIELD)).findFirst().orElseThrow(() -> new RelizaException("Missing FILE_NAME_FIELD for artifact: " + ad.getUuid())).value();
 		String resolvedFileName = StringUtils.isNotEmpty(fileName) ? fileName : tagValue;
-		String ociDigest = ad.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaChecksumType.SHA_256) && dr.scope().equals(DigestScope.OCI_STORAGE)).findFirst().orElseThrow().digest();
+		String ociDigest = ad.getDigestRecords().stream().filter((DigestRecord dr) -> isSha256(dr, DigestScope.OCI_STORAGE)).findFirst().orElseThrow().digest();
 		
 		// Reconstruct full repository path from stored name
 		// Stored name is just "downloadable-artifacts-2026-03", need to add namespace prefix
 		String repositoryName;
 		if (StringUtils.isNotEmpty(ad.getOciRepositoryName())) {
 			// Combine namespace with stored monthly repository name
-			repositoryName = io.reliza.util.OciRepositoryUtil.constructRepositoryPath(this.registryNamespace, ad.getOciRepositoryName());
+			repositoryName = OciRepositoryUtil.constructRepositoryPath(this.registryNamespace, ad.getOciRepositoryName());
 		} else {
 			// Legacy artifact - use default repository
-			repositoryName = io.reliza.util.OciRepositoryUtil.constructRepositoryPath(this.registryNamespace, "downloadable-artifacts");
+			repositoryName = OciRepositoryUtil.constructRepositoryPath(this.registryNamespace, OciRepositoryUtil.DEFAULT_REPOSITORY_NAME);
 		}
 		
 		// Get expected file digest for validation (ORIGINAL_FILE scope)
-	Optional<String> expectedDigest = ad.getDigestRecords().stream()
-		.filter(dr -> dr.algo().equals(TeaChecksumType.SHA_256) && dr.scope().equals(DigestScope.ORIGINAL_FILE))
-		.map(DigestRecord::digest)
-		.findFirst();
-	
-	return this.webClient.get()
+		Optional<String> expectedDigest = ad.getDigestRecords().stream()
+			.filter(dr -> isSha256(dr, DigestScope.ORIGINAL_FILE))
+			.map(DigestRecord::digest)
+			.findFirst();
+
+		return fetchAndValidateOciBlob(ad, repositoryName, ociDigest, expectedDigest, mediaType, resolvedFileName);
+	}
+
+	/**
+	 * Pulls one OCI blob by its manifest digest and serves it verbatim, refusing to hand over
+	 * bytes that do not hash to what the artifact advertises.
+	 *
+	 * Split out of downloadRearmNonBomArtifact so the raw BOM download gets the same
+	 * fetch-and-validate behaviour rather than a second, drifting copy of it. Callers differ
+	 * only in how they resolve the repository, the blob digest and the display metadata.
+	 *
+	 * @param expectedDigest sha256 the fetched bytes must hash to; empty skips validation
+	 *                       (legacy rows that never recorded one)
+	 */
+	private Mono<ResponseEntity<byte[]>> fetchAndValidateOciBlob(ArtifactData ad, String repositoryName,
+			String ociDigest, Optional<String> expectedDigest, String mediaType, String resolvedFileName) {
+		return this.webClient.get()
 					.uri(uriBuilder -> uriBuilder
 							.path("/pull")
 									.queryParam("repo", repositoryName)
@@ -395,17 +462,19 @@ public class SharedArtifactService {
 						// Validate downloaded artifact digest
 						if (expectedDigest.isPresent()) {
 							try {
-								MessageDigest digest = MessageDigest.getInstance("SHA-256");
-								byte[] hash = digest.digest(data);
-								String actualDigest = bytesToHex(hash);
-								
+								String actualDigest = Utils.bytesToHexSha256(data);
+
 								if (!actualDigest.equalsIgnoreCase(expectedDigest.get())) {
-									log.error("Digest validation failed for artifact {}. Expected: {}, Actual: {}", 
+									log.error("Digest validation failed for artifact {}. Expected: {}, Actual: {}",
 										ad.getUuid(), expectedDigest.get(), actualDigest);
-									throw new RuntimeException(new RelizaException("Downloaded artifact digest does not match stored digest. Expected: " 
-										+ expectedDigest.get() + ", Actual: " + actualDigest));
+									// The two digests stay in the log, not in the response. Returning the
+									// computed one turns a failed fetch into an oracle: ask for a blob you
+									// should not have, read its hash out of the error, then ask again with
+									// that hash and pass validation.
+									throw new RuntimeException(new RelizaException(
+										"Stored artifact " + ad.getUuid() + " failed integrity validation."));
 								}
-								
+
 								log.debug("Artifact {} digest validated successfully: {}", ad.getUuid(), actualDigest);
 							} catch (Exception e) {
 								if (e instanceof RuntimeException && e.getCause() instanceof RelizaException) {
@@ -417,16 +486,40 @@ public class SharedArtifactService {
 						} else {
 							log.warn("No original file digest available for artifact {} - skipping digest validation", ad.getUuid());
 						}
-						
+
 						return ResponseEntity.ok()
 								.contentType(MediaType.parseMediaType(mediaType))
 								.header("Content-Disposition", "attachment; filename=\"" + resolvedFileName + "\"")
 								.header("Cache-Control", ACCESS_CONTROLLED_CACHE)
 								.body(data);
-					});	
+					})
+					// Without this the pull is silent on failure: a blob that is GONE and a
+					// registry that is merely unreachable both surface to the caller as an
+					// error and leave nothing behind for an operator, who then hears about it
+					// from the user. 404 is the one worth separating -- it means the bytes this
+					// artifact promises are not there, which no retry will fix.
+					.doOnError(WebClientResponseException.NotFound.class, e ->
+						log.error("Artifact {} is missing its stored bytes: digest {} not found in {}",
+							ad.getUuid(), ociDigest, repositoryName))
+					.doOnError(e -> {
+						if (!(e instanceof WebClientResponseException.NotFound)) {
+							log.error("Failed to fetch stored bytes for artifact {} (digest {} in {}): {}",
+								ad.getUuid(), ociDigest, repositoryName, e.getMessage());
+						}
+					});
 	}
 	public Mono<ResponseEntity<byte[]>> downloadRawArtifact(ArtifactData ad) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
+
+		// Uploaded bytes retained at ingest are served verbatim, and are the only thing that
+		// satisfies what TEA advertises for this URL: "Raw Artifact as Uploaded", a checksum
+		// over the publisher's own file, and their detached signature.
+		Optional<DigestRecord> rawBlob = ad.getDigestRecords().stream()
+			.filter(dr -> isSha256(dr, DigestScope.RAW_OCI_STORAGE))
+			.findFirst();
+		if (rawBlob.isPresent()) {
+			return downloadRetainedRawUpload(ad, rawBlob.get());
+		}
 
 		if(null != ad.getInternalBom()){
 			JsonNode rebom;
@@ -484,6 +577,50 @@ public class SharedArtifactService {
 		}
 		return monoResponseEntity;
     }
+
+	/**
+	 * Serves the uploaded bytes this artifact retained at ingest, byte for byte.
+	 *
+	 * Deliberately has NO fallback to the rebom path: once an artifact advertises an
+	 * AS_UPLOADED checksum over the publisher's own file, quietly substituting a re-serialized
+	 * document under that checksum is worse than failing. rebom tolerates a missing raw copy
+	 * and substitutes its processed BOM; this must not.
+	 */
+	private Mono<ResponseEntity<byte[]>> downloadRetainedRawUpload(ArtifactData ad, DigestRecord rawBlob)
+			throws RelizaException {
+		String repositoryName = OciRepositoryUtil.constructRepositoryPath(
+			this.registryNamespace,
+			StringUtils.isNotEmpty(ad.getRawOciRepositoryName())
+				? ad.getRawOciRepositoryName()
+				: OciRepositoryUtil.DEFAULT_REPOSITORY_NAME);
+
+		// AS_UPLOADED, not ORIGINAL_FILE: this path serves the bytes we retained, so it must
+		// verify them against the digest we took over those same bytes. ORIGINAL_FILE may hold a
+		// user declaration or a rebom-derived value describing a different document entirely.
+		Optional<String> expectedDigest = ad.getDigestRecords().stream()
+			.filter(dr -> isSha256(dr, DigestScope.AS_UPLOADED))
+			.map(DigestRecord::digest)
+			.findFirst();
+		if (expectedDigest.isEmpty()) {
+			throw new RelizaException("Artifact " + ad.getUuid()
+				+ " has retained raw bytes but no AS_UPLOADED digest to verify them against.");
+		}
+
+		String mediaType = ad.getTags().stream()
+			.filter(t -> t.key().equals(CommonVariables.MEDIA_TYPE_FIELD))
+			.map(TagRecord::value)
+			.findFirst()
+			.orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+		String fileName = ad.getTags().stream()
+			.filter(t -> t.key().equals(CommonVariables.FILE_NAME_FIELD))
+			.map(TagRecord::value)
+			.findFirst()
+			.orElse(ad.getUuid().toString() + ".json");
+
+		log.info("downloadRawArtifact: serving retained upload for artifact {} from {}",
+			ad.getUuid(), repositoryName);
+		return fetchAndValidateOciBlob(ad, repositoryName, rawBlob.digest(), expectedDigest, mediaType, fileName);
+	}
 
 	@Transactional
 	protected Artifact updateArtifactDti(Artifact a, DependencyTrackIntegration dti, WhoUpdated wu) {
@@ -1293,17 +1430,6 @@ public class SharedArtifactService {
 		return (null != m.getVulnerabilityDetails() ? m.getVulnerabilityDetails().size() : 0)
 				+ (null != m.getViolationDetails() ? m.getViolationDetails().size() : 0)
 				+ (null != m.getWeaknessDetails() ? m.getWeaknessDetails().size() : 0);
-	}
-	
-	/**
-	 * Convert byte array to hex string
-	 */
-	private static String bytesToHex(byte[] bytes) {
-		StringBuilder result = new StringBuilder();
-		for (byte b : bytes) {
-			result.append(String.format("%02x", b));
-		}
-		return result.toString();
 	}
 	
 }

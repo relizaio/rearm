@@ -276,6 +276,22 @@
         <artifactId>packageurl-java</artifactId>
         <version>1.5.0</version>
     </dependency>
+    <!-- CVSS 2 / 3.x / 4.0 base-score calculator (same library Dependency-Track uses);
+         computes scores for vectors DT stores without a score (OSV sources) -->
+    <dependency>
+        <groupId>us.springett</groupId>
+        <artifactId>cvss-calculator</artifactId>
+        <version>1.5.1</version>
+    </dependency>
+    <!-- Java time types for the Jackson 2 mapper Hibernate's JsonBinaryType uses
+         (Utils.JSONB_OM registers every module on the classpath). Declared rather
+         than inherited: otherwise it arrives only transitively, through the Azure
+         SDK, which the CE edition does not ship. Version managed by the Spring
+         Boot BOM. -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.datatype</groupId>
+        <artifactId>jackson-datatype-jsr310</artifactId>
+    </dependency>
     <!-- Bucket4j for token-bucket rate limiting -->
     <dependency>
         <groupId>com.bucket4j</groupId>
@@ -320,6 +336,13 @@
                          releases and clears their markers, which races @SpringBootTest classes
                          that assert on claim/marker state. Direct calls unaffected. -->
                     <relizaprops.autoIntegrateDrainEnabled>false</relizaprops.autoIntegrateDrainEnabled>
+                    <!-- Same reason once more: the PT1M orphaned-component GC deletes any sbom
+                         component that is unbucketed, mapped to no artifact and has no support
+                         row. Fixtures that save a component and attest it in a later transaction
+                         lose it to a tick in between, and the support assertions then read
+                         nothing (SbomComponentSupportServiceIntegrationTest failed on main this
+                         way). Direct calls to gcOrphanedComponents unaffected. -->
+                    <relizaprops.orphanedComponentGcEnabled>false</relizaprops.orphanedComponentGcEnabled>
                     <!-- Every test class that mints an org (TestInitializer.obtainOrganization)
                          would otherwise fetch the public CISA KEV feed and write ~1,700
                          kev_assertions rows for it, because a new org seeds its own KEV mirror
