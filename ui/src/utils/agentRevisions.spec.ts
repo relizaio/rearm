@@ -64,6 +64,16 @@ describe('agent revisions', () => {
         expect(describeValue('x'.repeat(200)).length).toBe(120)
     })
 
+    it('reads null and an empty string as one value, either way (T-2, run 2)', () => {
+        expect(diffSnapshots({ coordinatorPrompt: null }, { coordinatorPrompt: '' })).toEqual([])
+        expect(diffSnapshots({ coordinatorPrompt: '' }, { coordinatorPrompt: null })).toEqual([])
+        // an empty side against a real value is still a change
+        expect(diffSnapshots({ coordinatorPrompt: '' }, { coordinatorPrompt: 'coordinate' })[0])
+            .toMatchObject({ key: 'coordinatorPrompt', change: 'added', before: '—', after: 'coordinate' })
+        expect(diffSnapshots({ coordinatorPrompt: 'coordinate' }, { coordinatorPrompt: null })[0])
+            .toMatchObject({ change: 'removed', before: 'coordinate', after: '—' })
+    })
+
     it('never shows or compares the client __typename, at any depth (T-1, run 1)', () => {
         const before = { __typename: 'AgentTask', meta: { __typename: 'Meta', a: 1 } }
         const after = { __typename: 'AgentTask', meta: { __typename: 'Other', a: 1 } }

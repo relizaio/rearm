@@ -134,6 +134,9 @@ export function diffSnapshots (before: any, after: any): FieldChange[] {
         if (canonical(a) === canonical(b)) continue
         const emptyA = a === null || a === ''
         const emptyB = b === null || b === ''
+        // Null and an empty string are one value to a reader (T-2, run 2): both show as a dash, and
+        // a form that saves '' where the field was null has changed nothing anyone can see.
+        if (emptyA && emptyB) continue
         const beforeText = describeValue(a, key)
         let afterText = describeValue(b, key)
         if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) afterText += ' (changed)'
