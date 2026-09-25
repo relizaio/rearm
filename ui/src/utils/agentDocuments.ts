@@ -113,9 +113,14 @@ export function testCounts (release?: DocumentRelease | null): { passed: number,
 export function documentLabel (release?: DocumentRelease | null): string {
     const spec = release?.document?.specification
     if (!spec) return '—'
-    const pretty = spec.toLowerCase().replace(/_/g, ' ')
+    const pretty = (s: string) => s.toLowerCase().replace(/_/g, ' ')
+    // A round filed under one kind with another kind's index inside: before task bc7fc25a the board
+    // unwound a tester's or reviewer's findings frame into a QUESTIONS-filed round. It is named by
+    // what it holds, as the board's round, and not given a questions round number it never was.
+    const kind = (release?.document?.findings as any)?.kind
+    if (kind && kind !== spec) return `${pretty(kind)} · board round (filed as ${pretty(spec)})`
     const round = release?.document?.round
-    return round ? `${pretty} · round ${round}` : pretty
+    return round ? `${pretty(spec)} · round ${round}` : pretty(spec)
 }
 
 /**

@@ -124,6 +124,17 @@ describe('display helpers', () => {
         expect(documentLabel(null)).toBe('—')
     })
 
+    it('names a round filed as questions with a findings index inside by what it holds (bc7fc25a)', () => {
+        const legacy = { uuid: 'u1', document: { specification: 'QUESTIONS', round: 1,
+            findings: { kind: 'TEST_REPORT', verdict: 'REJECTED', findings: [] } } } as any
+        expect(documentLabel(legacy)).toBe('test report · board round (filed as questions)')
+        const real = { uuid: 'q1', document: { specification: 'QUESTIONS', round: 1,
+            findings: { kind: 'QUESTIONS', verdict: 'REJECTED', findings: [] } } } as any
+        expect(documentLabel(real)).toBe('questions · round 1')
+        const kindless = { uuid: 'q0', document: { specification: 'QUESTIONS', round: 2, findings: { findings: [] } } } as any
+        expect(documentLabel(kindless)).toBe('questions · round 2')
+    })
+
     it('reads the verdict and test counts', () => {
         expect(documentVerdict(release())).toBe('REJECTED')
         expect(testCounts(release())).toBeNull()
