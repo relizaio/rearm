@@ -4,6 +4,7 @@
  */
 
 import Swal from 'sweetalert2'
+import { FindingType } from '@/constants/findingType'
 
 export const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
 
@@ -40,21 +41,6 @@ export function getFindingTypeTagType(type: string): 'default' | 'error' | 'warn
         default:
             return 'default'
     }
-}
-
-export function getFindingUrl(id: string): string | null {
-    if (!id) return null
-    if (id.startsWith('ALPINE-CVE-') || id.startsWith('CVE-') || id.startsWith('GHSA-')) {
-        return `https://osv.dev/vulnerability/${id}`
-    }
-    if (id.startsWith('CWE-')) {
-        const raw = id.slice(4)
-        const num = String(parseInt(raw, 10))
-        if (num && num !== 'NaN') {
-            return `https://cwe.mitre.org/data/definitions/${num}.html`
-        }
-    }
-    return null
 }
 
 const LS_KEY = 'rearm_external_link_consent_until'
@@ -155,8 +141,7 @@ export function sortBySeverityThenId(findings: NormalizedReleaseFinding[]): Norm
     })
 }
 
-/** osv.dev indexes every id family ReARM sees (CVE, GHSA, PYSEC, RUSTSEC, GO, DEBIAN-CVE, ALPINE-CVE, ...),
- *  unlike getFindingUrl, which links only the families its table used to link. */
+/** osv.dev indexes every id family ReARM sees (CVE, GHSA, PYSEC, RUSTSEC, GO, DEBIAN-CVE, ALPINE-CVE, ...). */
 export function osvUrlFor(vulnId: string): string {
     return `https://osv.dev/vulnerability/${encodeURIComponent(vulnId)}`
 }
@@ -167,6 +152,93 @@ export function nvdUrlFor(cveId: string): string {
 
 export function githubAdvisoryUrlFor(ghsaId: string): string {
     return `https://github.com/advisories/${encodeURIComponent(ghsaId)}`
+}
+
+/** MITRE page for a CWE id ("CWE-79", "CWE-0079"); null when the id carries no number. */
+export function cweUrlFor(cweId: string): string | null {
+    if (!cweId || !cweId.startsWith('CWE-')) return null
+    const num = parseInt(cweId.slice(4), 10)
+    return Number.isNaN(num) ? null : `https://cwe.mitre.org/data/definitions/${num}.html`
+}
+
+/**
+ * Normalizes the finding-type spellings the UI receives: the findings table rows
+ * ('Vulnerability'), analysis records ('VULNERABILITY') and the changelog ('VULN').
+ */
+export function findingTypeOf(type: string | null | undefined): FindingType | null {
+    switch (type) {
+        case 'Vulnerability':
+        case 'VULNERABILITY':
+        case 'VULN':
+            return FindingType.VULNERABILITY
+        case 'Weakness':
+        case 'WEAKNESS':
+            return FindingType.WEAKNESS
+        case 'Violation':
+        case 'VIOLATION':
+            return FindingType.VIOLATION
+        default:
+            return null
+    }
+}
+
+/**
+ * Type of an id typed into the release-by-finding search, which offers
+ * vulnerability ids and CWE ids. Null for a blank search.
+ */
+export function findingTypeOfSearchedId(id: string | null | undefined): FindingType | null {
+    const trimmed = (id || '').trim()
+    if (!trimmed) return null
+    return /^CWE-/i.test(trimmed) ? FindingType.WEAKNESS : FindingType.VULNERABILITY
+}
+
+/**
+ * Where a finding id leads. A vulnerability opens the in-app details panel; its
+ * href stays the osv.dev page, which copy-link and middle-click still reach. A
+ * weakness links out to MITRE. Violations and unknown types are plain text.
+ */
+export type FindingIdLink =
+    | { action: 'details', href: string }
+    | { action: 'external', href: string }
+    | { action: 'none' }
+
+export function findingIdLink(id: string, type: FindingType | null): FindingIdLink {
+    if (!id) return { action: 'none' }
+    if (type === FindingType.VULNERABILITY) return { action: 'details', href: osvUrlFor(id) }
+    if (type === FindingType.WEAKNESS) {
+        const href = cweUrlFor(id)
+        return href ? { action: 'external', href } : { action: 'none' }
+    }
+    return { action: 'none' }
+}
+
+/**
+ * Follows a finding id link on click: the details panel through onVulnClick
+ * when the host has one, else the external page through the consent dialog.
+ */
+export function followFindingIdLink(e: Event, id: string, link: FindingIdLink,
+    onVulnClick?: (vulnId: string) => void): void {
+    if (link.action === 'none') return
+    e.preventDefault()
+    if (link.action === 'details' && onVulnClick) {
+        onVulnClick(id)
+        return
+    }
+    void openExternalLink(link.href)
+}
+
+/** Render-function form of a finding id for h()-built data-table cells. */
+export function renderFindingId(h: any, id: string, type: FindingType | null,
+    onVulnClick?: (vulnId: string) => void): any {
+    const link = findingIdLink(id, type)
+    if (link.action === 'none') return id
+    return h('a', {
+        href: link.href,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        title: link.action === 'details' && onVulnClick ? 'Show vulnerability details' : undefined,
+        onClick: (e: Event) => followFindingIdLink(e, id, link, onVulnClick)
+    }, id)
 }
 
 export async function openExternalLink(href: string): Promise<void> {

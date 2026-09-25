@@ -59,7 +59,8 @@
             
             <FindingListSection title="New Findings" title-class="finding-new" key-prefix="new" :findings="newFindings" :rich-aliases="true"
                 :description="isOrgLevelView ? 'Findings that appear for the first time across the entire organization in this period.' : 'Findings introduced in this component for the first time in this period.'"
-                @kev-click="openKevModal">
+                @kev-click="openKevModal"
+                @vuln-click="openVulnDetail">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getAppearedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -74,7 +75,8 @@
 
             <FindingListSection v-if="isOrgLevelView && worsenedFindings.length > 0" title="Worsened / Newly KEV" title-class="finding-inherited" key-prefix="worsened" :findings="worsenedFindings" :rich-aliases="true"
                 description="Findings still present that got worse in this period — newly listed as a CISA Known Exploited Vulnerability and/or had their severity raised. Findings that are also brand-new appear only under New Findings (badged there)."
-                @kev-click="openKevModal">
+                @kev-click="openKevModal"
+                @vuln-click="openVulnDetail">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
@@ -89,7 +91,8 @@
 
             <FindingListSection v-if="isOrgLevelView" title="Partially Resolved" title-class="finding-partial" key-prefix="partial" :findings="partiallyResolvedFindings" :rich-aliases="true"
                 description="Findings resolved in some components but still present in others within this period."
-                @kev-click="openKevModal">
+                @kev-click="openKevModal"
+                @vuln-click="openVulnDetail">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
@@ -104,7 +107,8 @@
 
             <FindingListSection v-if="isOrgLevelView" title="Inherited Technical Debt" title-class="finding-inherited" key-prefix="inherited" :findings="inheritedTechnicalDebtFindings" :rich-aliases="true"
                 description="Findings that existed before this period and remain unresolved — pre-existing technical debt carried across the entire date range."
-                @kev-click="openKevModal">
+                @kev-click="openKevModal"
+                @vuln-click="openVulnDetail">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
@@ -119,7 +123,8 @@
 
             <FindingListSection v-if="!isOrgLevelView" title="Still Present" title-class="finding-present" key-prefix="present" :findings="stillPresentFindings" :rich-aliases="true"
                 description="Findings that existed before this period and remain unresolved in this component."
-                @kev-click="openKevModal">
+                @kev-click="openKevModal"
+                @vuln-click="openVulnDetail">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-if="finding.orgContext?.isNewlyKev" class="worsened-badge worsened-badge-kev" title="Newly flagged as a CISA Known Exploited Vulnerability in this period">KEV added</span>
@@ -134,7 +139,8 @@
 
             <FindingListSection :title="isOrgLevelView ? 'Fully Resolved' : 'Resolved'" title-class="finding-resolved" key-prefix="resolved" :findings="fullyResolvedFindings" :rich-aliases="true"
                 :description="isOrgLevelView ? 'Findings resolved across all affected components and no longer present anywhere in this period.' : 'Findings that were present before and are no longer detected in this component.'"
-                @kev-click="openKevModal">
+                @kev-click="openKevModal"
+                @vuln-click="openVulnDetail">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -146,6 +152,8 @@
             </FindingListSection>
 
             <kev-details-modal v-model:show="showKevModal" :cve-id="kevModalCveId" :org-uuid="orgUuid || ''" />
+
+            <vulnerability-details-modal v-model:show="vulnDetail.show" :org-uuid="orgUuid || ''" :vuln-id="vulnDetail.vulnId" :severity="vulnDetail.severity" :known-exploited="vulnDetail.knownExploited" />
 
             <n-drawer v-model:show="showTimeline" :width="560" placement="right">
                 <n-drawer-content :title="timelineTitle" closable>
@@ -213,6 +221,8 @@ import { NTag, NTooltip, NDrawer, NDrawerContent, NSpin, NButton, NSwitch } from
 import FindingListSection from './FindingListSection.vue'
 import OverTimeFindingChanges from './OverTimeFindingChanges.vue'
 import KevDetailsModal from '../KevDetailsModal.vue'
+import VulnerabilityDetailsModal from '../VulnerabilityDetailsModal.vue'
+import { useVulnerabilityDetail } from '../../utils/useVulnerabilityDetail'
 import { getSeverityIndex } from '../../utils/findingUtils'
 import { resolveKevCveId } from '../../utils/kevService'
 import {
@@ -264,6 +274,8 @@ const canDrillDown = computed(() => !!(props.orgUuid && props.dateFrom && props.
 
 const showKevModal = ref(false)
 const kevModalCveId = ref('')
+
+const { vulnDetail, openVulnDetail } = useVulnerabilityDetail(() => props.orgUuid)
 
 function openKevModal(finding: any) {
     kevModalCveId.value = resolveKevCveId({ id: finding.findingId, aliases: finding.aliases })
@@ -372,7 +384,8 @@ const BUCKET_LABELS: Record<AttributionBucket, string> = {
     RESOLVED: 'Resolved in'
 }
 
-function findingKindOf(finding: NormalizedFinding): 'VULNERABILITY' | 'VIOLATION' | 'WEAKNESS' {
+// Maps to the ChangelogFindingKind query variable, a schema enum separate from FindingType.
+function changelogFindingKindOf(finding: NormalizedFinding): 'VULNERABILITY' | 'VIOLATION' | 'WEAKNESS' {
     switch (finding.type) {
         case 'VULN': return 'VULNERABILITY'
         case 'VIOLATION': return 'VIOLATION'
@@ -419,7 +432,7 @@ async function loadAttributionPage(page: number) {
 
 function openAttributionDrawer(finding: NormalizedFinding, bucket: AttributionBucket) {
     attributionFindingKey.value = finding.findingKey
-    attributionFindingKind.value = findingKindOf(finding)
+    attributionFindingKind.value = changelogFindingKindOf(finding)
     attributionBucket.value = bucket
     attributionTitle.value = `${BUCKET_LABELS[bucket]} — ${finding.findingId}`
     attributionItems.value = []

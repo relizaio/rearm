@@ -5,7 +5,8 @@ import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 import { resolveKevCveId } from '@/utils/kevService'
-import { osvUrlFor } from '@/utils/findingUtils'
+import { findingTypeOf, renderFindingId } from '@/utils/findingUtils'
+import { FindingType } from '@/constants/findingType'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -24,68 +25,6 @@ export type DetailedMetric = {
   // CISA KEV flag: stamped post-fetch by kevService.annotateKnownExploited,
   // or carried straight from the main query via the inline knownExploited field.
   knownExploited?: boolean
-}
-
-// Helper function to create vulnerability links with confirmation dialog
-function createVulnerabilityLink(h: any, id: string) {
-  const confirmAndOpen = async (e: Event, href: string) => {
-    e.preventDefault()
-    try {
-      const LS_KEY = 'rearm_external_link_consent_until'
-      const now = Date.now()
-      const stored = localStorage.getItem(LS_KEY)
-      if (stored && Number(stored) > now) {
-        window.open(href, '_blank')
-        return
-      }
-
-      const result = await Swal.fire({
-        icon: 'info',
-        title: 'Open external link?\n',
-        text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
-        showCancelButton: true,
-        confirmButtonText: 'Open',
-        cancelButtonText: 'Cancel',
-        input: 'checkbox',
-        inputValue: 0,
-        inputPlaceholder: "Don't ask me again for 15 days"
-      })
-      if (result.isConfirmed) {
-        if (result.value === 1) {
-          const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
-          localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
-        }
-        window.open(href, '_blank')
-      }
-    } catch (err) {
-      // Fail open on errors to avoid blocking navigation unexpectedly
-      window.open(href, '_blank')
-    }
-  }
-  
-  if (id.startsWith('ALPINE-CVE-') || id.startsWith('CVE-') || id.startsWith('GHSA-')) {
-    const href = `https://osv.dev/vulnerability/${id}`
-    return h('a', {
-      href,
-      target: '_blank',
-      rel: 'noopener noreferrer',
-      onClick: (e: Event) => confirmAndOpen(e, href)
-    }, id)
-  }
-  if (id.startsWith('CWE-')) {
-    const raw = id.slice(4)
-    const num = String(parseInt(raw, 10))
-    if (num && num !== 'NaN') {
-      const href = `https://cwe.mitre.org/data/definitions/${num}.html`
-      return h('a', {
-        href,
-        target: '_blank',
-        rel: 'noopener noreferrer',
-        onClick: (e: Event) => confirmAndOpen(e, href)
-      }, id)
-    }
-  }
-  return id
 }
 
 export function processMetricsData(metrics: any): DetailedMetric[] {
@@ -173,14 +112,18 @@ export function buildVulnerabilityColumns(
     // Opens the CISA KEV details modal for a KEV-flagged CVE (Pro only —
     // rows only carry knownExploited when the caller annotated them)
     onKevClick?: (cveId: string) => void
-    // Opens the in-app vulnerability details panel for a Vulnerability row.
-    // When provided, the id is an in-app link instead of an osv.dev link.
-    onVulnClick?: (row: any) => void
+    // Opens the in-app details panel for a vulnerability id of the row (its own
+    // id or an alias); without it vulnerability ids link to osv.dev.
+    onVulnClick?: (vulnId: string, row: any) => void
     initialSeverityFilter?: string
     initialTypeFilter?: string | string[]
     data?: any[]
   }
 ): DataTableColumns<any> {
+  const vulnClickFor = (row: any) => options?.onVulnClick
+    ? (vulnId: string) => options.onVulnClick!(vulnId, row)
+    : undefined
+
   function makePurlRenderer() {
     return (row: any) => {
       const purlText = row.purl || ''
@@ -316,18 +259,7 @@ export function buildVulnerabilityColumns(
       render: (row: any) => {
         const id = String(row.id || '')
         if (!id) return ''
-        // href stays the osv.dev page so copy-link / open-in-new-tab still
-        // work; the plain click opens the in-app panel instead.
-        const idLink = (row.type === 'Vulnerability' && options?.onVulnClick)
-          ? h('a', {
-            href: osvUrlFor(id),
-            title: 'Show vulnerability details',
-            onClick: (e: Event) => {
-              e.preventDefault()
-              options.onVulnClick?.(row)
-            }
-          }, id)
-          : createVulnerabilityLink(h, id)
+        const idLink = renderFindingId(h, id, findingTypeOf(row.type), vulnClickFor(row))
         if (!row.knownExploited) return idLink
         const kevTag = h(NTag, {
           type: 'error',
@@ -427,7 +359,8 @@ export function buildVulnerabilityColumns(
         
         // Add aliases if present for vulnerabilities
         if (row.type === 'Vulnerability' && row.aliases && row.aliases.length > 0) {
-          const aliasLinks = row.aliases.map((alias: any) => createVulnerabilityLink(h, alias.aliasId))
+          const aliasLinks = row.aliases.map((alias: any) =>
+            renderFindingId(h, alias.aliasId, FindingType.VULNERABILITY, vulnClickFor(row)))
           elements.push(h('span', {}, ['Aliases: ', ...aliasLinks.reduce((acc: any[], link: any, index: number) => {
             if (index > 0) acc.push(', ')
             acc.push(link)

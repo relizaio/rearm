@@ -9,9 +9,10 @@
                 </n-tag>
             </div>
             
-            <FindingListSection title="New Findings" title-class="finding-new" key-prefix="appeared" :findings="appearedFindings" @kev-click="openKevModal" />
-            <FindingListSection title="Resolved Findings" title-class="finding-resolved" key-prefix="resolved" :findings="resolvedFindings" @kev-click="openKevModal" />
+            <FindingListSection title="New Findings" title-class="finding-new" key-prefix="appeared" :findings="appearedFindings" @kev-click="openKevModal" @vuln-click="openVulnDetail" />
+            <FindingListSection title="Resolved Findings" title-class="finding-resolved" key-prefix="resolved" :findings="resolvedFindings" @kev-click="openKevModal" @vuln-click="openVulnDetail" />
             <kev-details-modal v-model:show="showKevModal" :cve-id="kevModalCveId" :org-uuid="orgUuid || ''" />
+            <vulnerability-details-modal v-model:show="vulnDetail.show" :org-uuid="orgUuid || ''" :vuln-id="vulnDetail.vulnId" :severity="vulnDetail.severity" :known-exploited="vulnDetail.knownExploited" />
         </div>
         <div v-else class="empty-state">
             <div class="summary-tags">
@@ -28,6 +29,8 @@ import { computed, ref } from 'vue'
 import { NTag } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
 import KevDetailsModal from '../KevDetailsModal.vue'
+import VulnerabilityDetailsModal from '../VulnerabilityDetailsModal.vue'
+import { useVulnerabilityDetail } from '../../utils/useVulnerabilityDetail'
 import { normalizeReleaseVuln as normalizeVuln, normalizeReleaseViolation as normalizeViolation, normalizeReleaseWeakness as normalizeWeakness, sortBySeverityThenId } from '../../utils/findingUtils'
 import { resolveKevCveId } from '../../utils/kevService'
 import type { ReleaseFindingChanges } from '../../types/changelog-sealed'
@@ -41,6 +44,8 @@ const props = defineProps<Props>()
 
 const showKevModal = ref(false)
 const kevModalCveId = ref('')
+
+const { vulnDetail, openVulnDetail } = useVulnerabilityDetail(() => props.orgUuid)
 
 function openKevModal(finding: any) {
     kevModalCveId.value = resolveKevCveId({ id: finding.findingId, aliases: finding.aliases })
