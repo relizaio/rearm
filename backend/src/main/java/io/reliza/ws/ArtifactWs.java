@@ -19,6 +19,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.ServletWebRequest;
 
@@ -34,12 +35,14 @@ import io.reliza.model.DownloadLogData.DownloadConfig;
 import io.reliza.model.DownloadLogData.DownloadSubjectType;
 import io.reliza.model.DownloadLogData.DownloadType;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.DeviceLifecycleHook;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.DownloadLogService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.SupportInjectionService;
 import io.reliza.service.UserService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -71,12 +74,38 @@ public class ArtifactWs {
 	@Autowired
 	private DownloadLogService downloadLogService;
 
+	@Autowired
+	private SupportInjectionService supportInjectionService;
+
+	/**
+	 * Parse and validate this download's per-export metadata flags.
+	 *
+	 * <p>One helper for both the manual and the programmatic endpoint so the two cannot answer
+	 * the same request differently -- which is the failure the single injection seam exists to
+	 * prevent, one layer down. Both parameters omitted is the pre-existing contract: every CLI
+	 * and API caller written before they existed lands on {@code callerSilent()} and gets the
+	 * same bytes it always got.
+	 *
+	 * <p>Not applied to either RAW download. That path serves the publisher's uploaded bytes
+	 * against an advertised checksum; a query parameter that edited them would break the only
+	 * promise it makes, so the flags are not accepted there rather than accepted and ignored.
+	 */
+	private ExportMetadataOptions exportMetadataFor(UUID orgUuid, Boolean includeSupportMetadata,
+			Boolean includeInternalMetadata) throws RelizaException {
+		ExportMetadataOptions options = ExportMetadataOptions
+				.fromCallerInput(includeSupportMetadata, includeInternalMetadata);
+		supportInjectionService.assertExportMetadataRequestable(orgUuid, options);
+		return options;
+	}
+
     @GetMapping("api/manual/v1/artifact/{uuid}/download")
     public Mono<ResponseEntity<byte[]>> downloadArtifact(
         @RequestHeader HttpHeaders headers,
         @PathVariable("uuid") UUID uuid,
-        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
-        @org.springframework.web.bind.annotation.RequestParam(value = "releaseUuid", required = false) UUID releaseUuid,
+        @RequestParam(value = "version", required = false) Integer version,
+        @RequestParam(value = "releaseUuid", required = false) UUID releaseUuid,
+        @RequestParam(value = "includeSupportMetadata", required = false) Boolean includeSupportMetadata,
+        @RequestParam(value = "includeInternalMetadata", required = false) Boolean includeInternalMetadata,
         ServletWebRequest request,
         @AuthenticationPrincipal OAuth2User oAuth2User,
         HttpServletResponse response
@@ -98,18 +127,27 @@ public class ArtifactWs {
             throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
         }
 
+        // BEFORE the log row, deliberately. A refused request downloaded nothing, and a
+        // download log that records it would report a document the caller never received --
+        // which is the one thing an auditor reconstructing a submission must be able to trust.
+        // The GraphQL export orders these the same way.
+        ExportMetadataOptions exportMetadata =
+            exportMetadataFor(ro.getOrg(), includeSupportMetadata, includeInternalMetadata);
         WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
         downloadLogService.createDownloadLog(ro.getOrg(), DownloadType.ARTIFACT_DOWNLOAD,
             DownloadSubjectType.ARTIFACT, oad.get().getUuid(), wu,
-            DownloadConfig.builder().artifactUuid(uuid).artifactVersion(version).build());
-        return sharedArtifactService.downloadArtifact(oad.get(), resolveDeviceLifecycle(releases, releaseUuid));
+            DownloadConfig.builder().artifactUuid(uuid).artifactVersion(version)
+                .includeSupportMetadata(exportMetadata.supportMetadata().toCallerInput())
+                .includeInternalMetadata(exportMetadata.internalMetadata().toCallerInput()).build());
+        return sharedArtifactService.downloadArtifact(oad.get(),
+            resolveDeviceLifecycle(releases, releaseUuid), exportMetadata);
 
     }
     @GetMapping("api/manual/v1/artifact/{uuid}/rawdownload")
     public Mono<ResponseEntity<byte[]>> downloadRawArtifact(
         @RequestHeader HttpHeaders headers,
         @PathVariable("uuid") UUID uuid,
-        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
+        @RequestParam(value = "version", required = false) Integer version,
         ServletWebRequest request,
         @AuthenticationPrincipal OAuth2User oAuth2User,
         HttpServletResponse response
@@ -143,8 +181,10 @@ public class ArtifactWs {
     public Mono<ResponseEntity<byte[]>> downloadArtifactProgrammatic(
         @RequestHeader HttpHeaders headers,
         @PathVariable("uuid") UUID uuid,
-        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
-        @org.springframework.web.bind.annotation.RequestParam(value = "releaseUuid", required = false) UUID releaseUuid,
+        @RequestParam(value = "version", required = false) Integer version,
+        @RequestParam(value = "releaseUuid", required = false) UUID releaseUuid,
+        @RequestParam(value = "includeSupportMetadata", required = false) Boolean includeSupportMetadata,
+        @RequestParam(value = "includeInternalMetadata", required = false) Boolean includeInternalMetadata,
         ServletWebRequest request,
         HttpServletResponse response
     ) throws Exception {
@@ -160,7 +200,8 @@ public class ArtifactWs {
             ? latestOad
             : artifactService.getArtifactDataByVersion(uuid, version);
         if (oad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
-        return sharedArtifactService.downloadArtifact(oad.get(), resolveDeviceLifecycle(releases, releaseUuid));
+        return sharedArtifactService.downloadArtifact(oad.get(), resolveDeviceLifecycle(releases, releaseUuid),
+            exportMetadataFor(ad.getOrg(), includeSupportMetadata, includeInternalMetadata));
     }
 
     /**
@@ -189,7 +230,7 @@ public class ArtifactWs {
     public Mono<ResponseEntity<byte[]>> downloadRawArtifactProgrammatic(
         @RequestHeader HttpHeaders headers,
         @PathVariable("uuid") UUID uuid,
-        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
+        @RequestParam(value = "version", required = false) Integer version,
         ServletWebRequest request,
         HttpServletResponse response
     ) throws Exception {

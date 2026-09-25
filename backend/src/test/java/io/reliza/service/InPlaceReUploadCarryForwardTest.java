@@ -35,9 +35,12 @@ import io.reliza.ws.oss.TestInitializer;
  * Covers the WIRING of the in-place carry-forward, which no unit test can reach.
  *
  * <p>{@code ArtifactFindingsCarryForwardTest} pins the decision function; this pins that
- * {@code createArtifact} actually calls it. Deleting the call site compiles cleanly and leaves every
- * unit test green, so without this the in-place half of the fix is unprotected -- which is exactly
- * the "a test can pass because nothing was written" trap this work has hit repeatedly.
+ * {@code persistArtifact}, the write an in-place re-upload goes through (uploadArtifact calls it
+ * directly since #587), actually calls it. It is driven there rather than through createArtifact,
+ * which now refuses a no-file write that claims ReARM storage -- a different rule with its own
+ * tests. Deleting the call site compiles cleanly and leaves every unit test green, so without this
+ * the in-place half of the fix is unprotected -- which is exactly the "a test can pass because
+ * nothing was written" trap this work has hit repeatedly.
  *
  * <p>The path matters because it is the COMMON one:
  * {@code ArtifactService.validateCycloneDxUpdate} only mints a new artifact uuid when the BOM's
@@ -86,7 +89,7 @@ public class InPlaceReUploadCarryForwardTest {
 		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
 
 		// 1. The artifact exists and has been scanned.
-		Artifact created = artifactService.createArtifact(dtoFor(org, UUID.randomUUID()), wu);
+		Artifact created = artifactService.persistArtifact(dtoFor(org, UUID.randomUUID()), wu);
 		sharedArtifactService.saveArtifactMetrics(created, scannedMetrics(7, created.getUuid()));
 
 		ArtifactData beforeReUpload = ArtifactData.dataFromRecord(
@@ -95,7 +98,7 @@ public class InPlaceReUploadCarryForwardTest {
 				"precondition: the scan landed and the findings are on the row");
 
 		// 2. Re-upload against the SAME uuid -- what a same-serial bump or any SPDX upload does.
-		artifactService.createArtifact(dtoFor(org, created.getUuid()), wu);
+		artifactService.persistArtifact(dtoFor(org, created.getUuid()), wu);
 
 		ArtifactData afterReUpload = ArtifactData.dataFromRecord(
 				sharedArtifactService.getArtifact(created.getUuid()).orElseThrow());
@@ -113,7 +116,7 @@ public class InPlaceReUploadCarryForwardTest {
 		// And the revision the NATIVE writes advanced must have survived the JPA flush that follows
 		// them. saveArtifactMetrics bumps metrics_revision through a @Modifying native query, which
 		// does not refresh the persistence context, so the managed entity still holds the pre-bump
-		// number and createArtifact's saveArtifact flush would write it straight back -- Artifact has
+		// number and persistArtifact's saveArtifact flush would write it straight back -- Artifact has
 		// no @DynamicUpdate, so the flush is a full-column UPDATE. The audit row was already stamped
 		// at the old revision, so the row would come to rest with revision == maxAuditRevision, which
 		// is exactly the condition that fires the monitored "Duplicate metrics audit revision
@@ -133,7 +136,7 @@ public class InPlaceReUploadCarryForwardTest {
 		UUID org = testInitializer.obtainOrganization().getUuid();
 		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
 
-		Artifact created = artifactService.createArtifact(dtoFor(org, UUID.randomUUID()), wu);
+		Artifact created = artifactService.persistArtifact(dtoFor(org, UUID.randomUUID()), wu);
 		ArtifactData ad = ArtifactData.dataFromRecord(
 				sharedArtifactService.getArtifact(created.getUuid()).orElseThrow());
 

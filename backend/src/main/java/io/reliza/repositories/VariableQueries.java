@@ -1001,6 +1001,10 @@ class VariableQueries {
 				)
 			""";
 
+	/** Yes/no form of {@link #FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION}: stops at the first match. */
+	protected static final String EXISTS_RELEASE_WITH_VULNERABILITY_ANY_LOCATION =
+			"SELECT EXISTS (" + FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION + ")";
+
 	protected static final String FIND_RELEASES_WITH_VIOLATION = """
 			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString

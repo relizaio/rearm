@@ -10,6 +10,13 @@ import org.apache.commons.lang3.StringUtils;
  * Handles repository path construction.
  */
 public class OciRepositoryUtil {
+
+    /**
+     * Repository used by artifacts stored before monthly rotation existed, i.e. rows whose
+     * repository pointer is null.
+     */
+    public static final String DEFAULT_REPOSITORY_NAME = "downloadable-artifacts";
+
     
     /**
      * Constructs a full repository path from namespace and repository name.

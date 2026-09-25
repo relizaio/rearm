@@ -39,10 +39,33 @@ public class UserTest
 	private TestInitializer testInitializer;
    
 	
+
+	/**
+	 * A fixture email that cannot collide with a previous run's.
+	 *
+	 * <p>These tests write to a long-lived database and nothing deletes what they create, so a
+	 * hardcoded address is registered exactly once and every later run fails on "Email already
+	 * registered" -- not on the behaviour under test, and not recoverably: the suite stays red until
+	 * someone clears the table by hand. It only takes one interrupted run to get there.
+	 */
+	private static String uniqueEmail(String prefix) {
+		return prefix + "-" + UUID.randomUUID() + "@reliza.io";
+	}
+
+	/**
+	 * Likewise for the OAuth id. Nothing rejects a duplicate today, so sharing one across runs
+	 * fails nothing -- but it leaves a pile of users behind one id, and
+	 * {@code getUserByOauthIdAndType} resolves that to an arbitrary one of them.
+	 */
+	private static String uniqueOauthId() {
+		return "test_githubid_" + UUID.randomUUID();
+	}
+
 	@Test
 	public void testCreateUserProper() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		User u = userService.createUser("Test User 1", "1test@reliza.io", false, List.of(org.getUuid()), "test_githubid", OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
+		User u = userService.createUser("Test User 1", uniqueEmail("1test"), false, List.of(org.getUuid()),
+								uniqueOauthId(), OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
 		UserData uSaved = userService.getUserData(u.getUuid()).get();
 		Assertions.assertEquals(u.getUuid(), uSaved.getUuid());
 	}
@@ -57,8 +80,8 @@ public class UserTest
 	@Test
 	public void findUserByUuidSuccess() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		User u = userService.createUser("Test User 4", "4test@reliza.io", false,
-								List.of(org.getUuid()), "test_githubid", OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
+		User u = userService.createUser("Test User 4", uniqueEmail("4test"), false,
+								List.of(org.getUuid()), uniqueOauthId(), OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
 		UserData uRet = userService.getUserData(u.getUuid()).get();
 		Assertions.assertEquals(u.getUuid(), uRet.getUuid());
 	}
@@ -67,9 +90,8 @@ public class UserTest
 	public void findUserByEmail() throws RelizaException {
 		// TODO: it fails bc we don't have yet constraint on having no more than one same email
 		Organization org = testInitializer.obtainOrganization();
-		Long timestamp = System.currentTimeMillis();
-		User u = userService.createUser("Test User 5", timestamp + "5test@reliza.io", false,
-													List.of(org.getUuid()), "test_githubid", OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
+		User u = userService.createUser("Test User 5", uniqueEmail("5test"), false,
+													List.of(org.getUuid()), uniqueOauthId(), OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
 		UserData uOrig = UserData.dataFromRecord(u);
 		UserData uRet = userService.getUserDataByEmail(uOrig.getEmail()).get();
 		Assertions.assertEquals(uOrig.getUuid(), uRet.getUuid());

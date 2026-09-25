@@ -19,6 +19,16 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.scheduling.Trigger;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Bean;
+import org.springframework.boot.test.context.TestConfiguration;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Delayed;
+import java.time.Instant;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -32,6 +42,8 @@ import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.config.Property;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Profile;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
@@ -61,7 +73,62 @@ import io.reliza.ws.oss.TestInitializer;
  */
 @ExtendWith(SpringExtension.class)
 @SpringBootTest(classes = {App.class})
+@ActiveProfiles(SchedulerIsolationTest.NO_SCHEDULED_WORK)
 public class SchedulerIsolationTest {
+
+	static final String NO_SCHEDULED_WORK = "no-scheduled-work";
+
+	/**
+	 * This context runs no {@code @Scheduled} work at all.
+	 *
+	 * <p>The class spies beans that the background ticks also call, and an invocation arriving
+	 * between {@code doAnswer(...)} and {@code .when(spy)} corrupts Mockito's stubbing state --
+	 * surfacing as UnfinishedStubbing at whichever stubbing site ran next. It is a race, so it
+	 * passed locally and failed in CI, and pinning the individual tick rates only narrowed the
+	 * window: there are twenty-odd scheduled methods and several fire at context refresh.
+	 *
+	 * <p>So the scheduler is replaced rather than the schedules retimed. Nothing in this class
+	 * needs a tick to fire on its own -- every scheduled method it exercises, it calls directly.
+	 */
+	// Profile-gated, and that is not belt-and-braces. App declares an explicit @ComponentScan over
+	// io.reliza.service, which REPLACES Boot's default filters -- including the TypeExcludeFilter
+	// that normally keeps @TestConfiguration out of component scanning. Without the profile this
+	// nested class is scanned into every context that scans that package, and its @Primary bean
+	// then wins by-type injection elsewhere: SchedulerPoolWiringTest asserts the TaskScheduler is
+	// a real ThreadPoolTaskScheduler and got this stub instead, which is how the first version of
+	// this fix turned one red test into a different one.
+	@Profile(NO_SCHEDULED_WORK)
+	@TestConfiguration
+	static class NoScheduledWork {
+		// Deliberately NOT named "taskScheduler": App declares that bean, definition overriding is
+		// off, and a same-name bean fails the context outright. @Primary is what makes @Scheduled
+		// resolve to this one.
+		@Bean
+		@Primary
+		TaskScheduler noScheduledWorkTaskScheduler() {
+			return new TaskScheduler() {
+				@Override public ScheduledFuture<?> schedule(Runnable task, Trigger trigger) { return never(); }
+				@Override public ScheduledFuture<?> schedule(Runnable task, Instant startTime) { return never(); }
+				@Override public ScheduledFuture<?> scheduleAtFixedRate(Runnable task, Instant startTime, Duration period) { return never(); }
+				@Override public ScheduledFuture<?> scheduleAtFixedRate(Runnable task, Duration period) { return never(); }
+				@Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task, Instant startTime, Duration delay) { return never(); }
+				@Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task, Duration delay) { return never(); }
+			};
+		}
+
+		/** Spring only holds the handle and cancels it at shutdown, so a stub is enough. */
+		private static ScheduledFuture<?> never() {
+			return new ScheduledFuture<Object>() {
+				@Override public long getDelay(TimeUnit unit) { return Long.MAX_VALUE; }
+				@Override public int compareTo(Delayed o) { return 0; }
+				@Override public boolean cancel(boolean mayInterruptIfRunning) { return true; }
+				@Override public boolean isCancelled() { return true; }
+				@Override public boolean isDone() { return true; }
+				@Override public Object get() { return null; }
+				@Override public Object get(long timeout, TimeUnit unit) { return null; }
+			};
+		}
+	}
 
 	@Autowired private TestInitializer testInitializer;
 	@Autowired private ComponentService componentService;

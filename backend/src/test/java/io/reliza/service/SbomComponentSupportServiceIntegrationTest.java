@@ -32,6 +32,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import javax.sql.DataSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import io.reliza.common.Utils;
 import io.reliza.model.ArtifactSbomComponent;
@@ -104,6 +106,7 @@ public class SbomComponentSupportServiceIntegrationTest {
 	@Autowired private TestInitializer testInitializer;
 	@Autowired private SupportInjectionService supportInjectionService;
 	@Autowired private DataSource dataSource;
+	@Autowired private PlatformTransactionManager transactionManager;
 
 	private SbomComponent newComponent(UUID org, String canonicalPurl) {
 		SbomComponent sc = new SbomComponent();
@@ -856,13 +859,23 @@ public class SbomComponentSupportServiceIntegrationTest {
 		// side and not the other, and the match silently misses -- which cost a debugging
 		// round here. Only this test spans both sides, so only this test is exposed to it.
 		String purl = "pkg:maven/org.example/e2e" + UUID.randomUUID().toString().substring(0, 8) + "@3.1.0";
-		SbomComponent sc = newComponent(orgUuid, purl);
 
-		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
-				new SupportAttestationRequest(null, null, null,
-						"monitored upstream for 12 months; no end-of-support date is published",
-						null, null, null, null, null, Set.of(), null),
-				UUID.randomUUID());
+		// The component and its attestation commit together, for the reason given on
+		// SupportInjectionServiceIntegrationTest#supported: gcOrphanedComponents on the PT1M tick
+		// deletes an unbucketed, unmapped component that has no support row. Committed apart, a
+		// tick between the two writes -- or one whose DELETE snapshot predates the support
+		// commit -- removes this component, and the injector then matches nothing and emits no
+		// properties. Surefire switches that GC off (relizaprops.orphanedComponentGcEnabled);
+		// this keeps the test sound where it is on, e.g. a run from an IDE. The service write
+		// joins this transaction, so it is still the production write path under test.
+		new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+			SbomComponent sc = newComponent(orgUuid, purl);
+			sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+					new SupportAttestationRequest(null, null, null,
+							"monitored upstream for 12 months; no end-of-support date is published",
+							null, null, null, null, null, Set.of(), null),
+					UUID.randomUUID());
+		});
 
 		JsonNode bom = Utils.OM.readTree("{\"components\":[{\"name\":\"e2e\",\"purl\":\""
 				+ purl + "\"}]}");

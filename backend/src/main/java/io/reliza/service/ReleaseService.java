@@ -69,6 +69,7 @@ import io.reliza.model.AnalysisState;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.VulnAnalysisData;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
@@ -83,6 +84,7 @@ import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.common.VulnerabilityReferenceParser;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.service.ComponentLockService.LockedOperation;
 import io.reliza.model.BranchData;
@@ -848,7 +850,8 @@ public class ReleaseService {
 	 */
 	private JsonNode getReleaseSbomAsJsonNode(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
 			ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu, 
-			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
+			ExportMetadataOptions exportMetadata) throws RelizaException, JacksonException {
 		JsonNode mergedBom = fetchMergedReleaseBom(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, org, wu, excludeCoverageTypes);
 		// The merged bom is assembled from component boms we did not write. A component bom
 		// uploaded with a reliza:support:* property carries it into this document unchanged,
@@ -874,8 +877,13 @@ public class ReleaseService {
 		// stripped but never injected, so an org at full attestation coverage exported a
 		// release SBOM carrying nothing -- while the single-artifact download beside it
 		// carried everything.
+		//
+		// The per-export flags (includeSupportMetadata / includeInternalMetadata) ride the SAME
+		// seam rather than adding a second one -- see injectIfEnabledElseStrip. A caller who
+		// said nothing supplies callerSilent() and this line behaves exactly as it did before
+		// the arguments existed.
 		try {
-			supportInjectionService.injectIfEnabledElseStrip(mergedBom, org);
+			supportInjectionService.injectIfEnabledElseStrip(mergedBom, org, exportMetadata);
 		} catch (Exception stripEx) {
 			// Same posture as the download path: never fail a bom export over the add-on. But
 			// unlike injection this failure is a security-control failure, so it is logged as
@@ -883,6 +891,21 @@ public class ReleaseService {
 			// honest signal that we did not vouch for it.
 			log.error("Support strip/inject failed for release {} (org {}); serving unmarked: {}",
 					releaseUuid, org, stripEx.getMessage(), stripEx);
+			// The document stays UNMARKED, deliberately, as above -- but it is still SWEPT.
+			// The sweep is the anti-spoofing control and the marker is a statement about it,
+			// so an outage that costs us the statement must not also waive the control: this
+			// catch is reached on a non-RuntimeException out of fact resolution on an ENABLED
+			// org, and serving that document unswept would hand back an uploader's forged
+			// reliza:support:* under our attribution. stripForgedProvenanceSilently is exactly
+			// strip-without-marking, which is what the paragraph above asks for. The caller's
+			// internal-metadata choice is a separate promise and survives the failure too.
+			try {
+				supportInjectionService.stripForgedProvenanceSilently(mergedBom);
+				supportInjectionService.stripInternalIfDeclined(mergedBom, exportMetadata);
+			} catch (Exception internalEx) {
+				log.error("Internal-marker strip also failed for release {}: {}",
+						releaseUuid, internalEx.getMessage(), internalEx);
+			}
 		}
 		return mergedBom;
 	}
@@ -924,10 +947,39 @@ public class ReleaseService {
 		return mergedBom;
 	}
 	
+	/**
+	 * As below, for a caller with no per-export metadata preference.
+	 *
+	 * <p>Called only from tests today -- the GraphQL mutation, and therefore the CLI and every
+	 * API consumer, reaches the overload below and supplies {@code callerSilent()} itself when
+	 * the arguments are omitted. Kept because "no preference" is the shape a new internal
+	 * caller wants and because it keeps the pre-existing signature intact for the CE sync, not
+	 * because anything in main uses it.
+	 */
 	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException{
+		return exportReleaseSbom(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, mediaType, org, wu,
+				excludeCoverageTypes, ExportMetadataOptions.callerSilent());
+	}
+
+	/**
+	 * The merged release BOM, in the requested media type, honouring the caller's per-export
+	 * metadata flags.
+	 *
+	 * <p>THE FLAGS REACH THE JSON BRANCH AND ONLY THE JSON BRANCH, and that is not an omission.
+	 * rebom renders CSV and EXCEL from a fixed column list (name, version, purl, license,
+	 * author) that carries neither component properties nor document metadata, so there is
+	 * nothing of ReARM's in those two encodings for either flag to add or remove -- the same
+	 * boundary the strip comment below already records from the security side. The flags are
+	 * still VALIDATED for them (see assertExportMetadataRequestable at the boundary): asking a
+	 * CSV export to include support metadata an org has disabled is the same caller error
+	 * whatever the encoding, and answering it differently per media type would be the more
+	 * surprising behaviour. If rebom ever grows a properties-aware renderer, the flags have to
+	 * be threaded into it there; SupportBomInjector's class javadoc records that boundary too.
+	 */
+	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes, ExportMetadataOptions exportMetadata) throws RelizaException, JacksonException{
 		String mergedBom = "";
 		if (mediaType == BomMediaType.JSON){
-			JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, org, wu, excludeCoverageTypes);
+			JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, org, wu, excludeCoverageTypes, exportMetadata);
 			mergedBom = mergedBomJsonNode.toString();
 		} else if (mediaType == BomMediaType.CSV) {
 			// Neither gated nor swept, and deliberately not pretending to be: rebom renders
@@ -2759,25 +2811,15 @@ public class ReleaseService {
 	}
 
 	/**
-	 * Parse DTrack's markdown-bullet references blob into discrete
-	 * CycloneDX references. The blob looks like {@code "* [text](url)"}
-	 * one per line; we extract each URL and emit a reference whose id
-	 * is the URL. Lines that don't match the expected shape are skipped.
+	 * DTrack's markdown-bullet references blob as CycloneDX references whose
+	 * id is the URL (see {@link VulnerabilityReferenceParser}).
 	 */
 	private static List<Vulnerability.Reference> parseReferencesMarkdown(String markdown) {
-		if (markdown == null || markdown.isBlank()) return List.of();
 		List<Vulnerability.Reference> refs = new ArrayList<>();
-		java.util.regex.Pattern bullet = java.util.regex.Pattern.compile("\\[[^\\]]*\\]\\((https?://[^\\)]+)\\)");
-		java.util.Set<String> seen = new java.util.HashSet<>();
-		for (String line : markdown.split("\\r?\\n")) {
-			java.util.regex.Matcher m = bullet.matcher(line);
-			while (m.find()) {
-				String url = m.group(1);
-				if (!seen.add(url)) continue;
-				Vulnerability.Reference ref = new Vulnerability.Reference();
-				ref.setId(url);
-				refs.add(ref);
-			}
+		for (VulnerabilityReferenceParser.Reference parsed : VulnerabilityReferenceParser.parse(markdown)) {
+			Vulnerability.Reference ref = new Vulnerability.Reference();
+			ref.setId(parsed.url());
+			refs.add(ref);
 		}
 		return refs;
 	}

@@ -167,6 +167,11 @@ public class ArtifactDataFetcher {
 		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
 		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
 		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
+		// No internalBom, no rebom lineage to report (a BOM wiped by a no-file "new version", see
+		// ArtifactService.rejectReArmStorageWithoutFile). The UI asks for this before offering the
+		// upload that repairs such a row, so answer null rather than fail; the UI has to tolerate
+		// the missing internalBom on its side too.
+		if (null == oad.get().getInternalBom()) return null;
 		return artifactService.getArtifactBomLatestVersion(oad.get().getInternalBom().id(), oad.get().getOrg());
 	}
 	
