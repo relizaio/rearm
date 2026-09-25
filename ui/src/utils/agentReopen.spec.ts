@@ -25,6 +25,11 @@ describe('reopenRoleOptions', () => {
             .toEqual(['architect', 'coder', 'tester'])
     })
 
+    it('offers the same on a DELIVERING task: its PR may be the thing that cannot land', () => {
+        expect(reopenRoleOptions({ status: 'DELIVERING' }, roles, true).map(o => o.value))
+            .toEqual(['architect', 'coder', 'tester'])
+    })
+
     it('offers nothing on any other status, a cancelled task included, or to a non-admin', () => {
         for (const status of ['CANCELLED', 'QUEUED', 'ASSIGNED', 'ON_HOLD', 'AWAITING_COORDINATOR']) {
             expect(reopenRoleOptions({ status }, roles, true)).toEqual([])

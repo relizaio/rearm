@@ -8,11 +8,12 @@ export function isOrgAdmin (permissions: any[] | null | undefined, orgUuid: stri
 
 /**
  * The roles a task can be reopened to: the board's active roles in board order, and only for a
- * COMPLETED task seen by an admin. A cancelled task is never reopened -- it is registered again.
+ * COMPLETED or DELIVERING task seen by an admin. A cancelled task is never reopened -- it is
+ * registered again.
  */
 export function reopenRoleOptions (task: any, roles: any[] | null | undefined,
     canReopen: boolean): { label: string, value: string }[] {
-    if (!canReopen || task?.status !== 'COMPLETED') return []
+    if (!canReopen || !['COMPLETED', 'DELIVERING'].includes(task?.status)) return []
     return (roles ?? [])
         .filter((r: any) => r?.active !== false && r?.name)
         .slice()

@@ -2727,6 +2727,7 @@ const storeObject : any = {
                             requiredRolesSkipped
                             reopenedAt
                             reopenCount
+                            pullRequests { url state targetBranch mergedDate registered }
                             budgetMicros
                             coordinatorEstimateMicros
                             requiredStrength

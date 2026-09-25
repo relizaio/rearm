@@ -355,9 +355,13 @@
 
                 <div v-if="task.prUrls?.length" class="dsec">
                     <div class="dsec__h">Pull requests</div>
-                    <div class="deprow">
-                        <a v-for="pr in task.prUrls" :key="pr" :href="pr" target="_blank"
-                           rel="noopener" class="prlink2">{{ pr.split('/').slice(-3).join('/') }}</a>
+                    <div v-if="task.status === 'DELIVERING'" class="holdmeta" style="margin: 0 0 6px">
+                        Every required role passed; the task completes when these merge.
+                    </div>
+                    <div v-for="c in prChips(task)" :key="c.url" class="deprow">
+                        <n-tag size="small" :bordered="false" :type="c.type">{{ c.state }}</n-tag>
+                        <a :href="c.url" target="_blank" rel="noopener" class="prlink2">{{ c.label }}</a>
+                        <span class="holdmeta" style="margin-top: 0">{{ c.title }}</span>
                     </div>
                 </div>
 
@@ -499,6 +503,7 @@ import AgentUsageSummary from './AgentUsageSummary.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
+import { prChips } from '@/utils/agentDelivery'
 import {
     DECIDABLE_STATUSES,
     DocumentRelease,
@@ -578,8 +583,10 @@ const gateAbout = ref<string | null>(null)
 
 const authorizable = computed(() =>
     props.task?.status === 'PENDING_INTAKE' || props.task?.status === 'AWAITING_COORDINATOR')
+// DELIVERING: a person completing it says the delivery happened (a PR merged by hand where CI does
+// not report), and the server completes it outright.
 const completable = computed(() =>
-    ['AWAITING_COORDINATOR', 'PENDING_INTAKE', 'QUEUED', 'ON_HOLD'].includes(props.task?.status))
+    ['AWAITING_COORDINATOR', 'PENDING_INTAKE', 'QUEUED', 'ON_HOLD', 'DELIVERING'].includes(props.task?.status))
 const canDecide = computed(() => DECIDABLE_STATUSES.includes(props.task?.status))
 
 const roleOptions = computed(() => (props.roles ?? [])
@@ -829,6 +836,7 @@ function dur (from: string | null | undefined, to: string | null | undefined): s
 
 function statusTone (s: string): string {
     if (s === 'COMPLETED') return 'success'
+    if (s === 'DELIVERING') return 'info'
     if (s === 'ON_HOLD' || s === 'CANCELLED') return 'error'
     if (s === 'ASSIGNED') return 'warning'
     return 'default'
