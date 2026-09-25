@@ -75,6 +75,11 @@ const routes : any[] = [
         component: () => import('@/components/AiAgentSessionView.vue')
     },
     {
+        path: '/aiAgentTask/:uuid',
+        name: 'AiAgentTaskPage',
+        component: () => import('@/components/AiAgentTaskPage.vue')
+    },
+    {
         // AI Agent Policies list moved under Org Settings → Policies → inner
         // "AI Agent Policies" tab. Keep the standalone path as a redirect so
         // bookmarks and the AiAgents "Manage policies →" link continue to

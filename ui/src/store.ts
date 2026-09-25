@@ -11,6 +11,148 @@ import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
 // Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
 const VIEW_STORAGE_KEY = 'relizaView'
 
+// The board and task selections, shared by the list reads and the single reads so the task page
+// and the board panel see the same shape. validate:graphql expands these where they are
+// interpolated.
+const AGENT_BOARD_SELECTION = `
+    coordinatorCapabilities
+    effectiveDocumentPaths
+    uuid
+    name
+    description
+    status
+    sources
+    documentsRepo { uuid uri }
+    documentPaths
+    coordinatorPrompt
+    missingCapabilities
+    events { kind message actor { kind uuid name } eventAt }
+    lock { level reason lockedBy { kind uuid name } lockedAt }
+    coordinatorSeat { session agent claimedAt }
+    perAgentWipLimit
+    priorityType
+    target
+    targetDetails { uuid name type }
+    defaultTaskLevel
+    defaultInputResolution
+    blockingPriority
+    completionPriority
+    budgetMicros
+    softAlertPercent
+    cycleCap
+    noProgressRepeatsToStop
+    createdDate
+    declarative { specHash appliedAt source { repo path commit } }
+`
+
+const AGENT_TASK_SELECTION = `
+    uuid
+    board
+    org
+    externalRef
+    title
+    sourceUrl
+    status
+    role
+    orderIndex
+    dependsOn
+    hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
+    requireHumanReview
+    assignment { session agent role assignedAt promptVersion }
+    signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
+    documents {
+        uuid
+        version
+        lifecycle
+        component
+        createdDate
+        sourceCodeEntryDetails { commit commitMessage vcsRepository { uri name } }
+        document {
+            specification
+            path
+            digest
+            mediaType
+            indexPath
+            task
+            session
+            round
+            elements {
+                grammarVersion
+                digest
+                elements { id family title parent level traces { verb target } assumes speculative contentDigest line }
+                warnings { code elementId message }
+            }
+            checks {
+                catalogueVersion
+                digest
+                scope { checked releases { release specification elementsDigest lifecycle } }
+                results { check result blocking reason offences { elementId release message } }
+            }
+            findings {
+                kind
+                round
+                verdict
+                counts { passed failed skipped }
+                findings {
+                    id
+                    priority
+                    status
+                    title
+                    location { path line ref element }
+                    resolvedBy
+                    resolution
+                    decidedBy { kind uuid name }
+                    decidedIn
+                    decidedAt
+                }
+                about { specification release }
+            }
+        }
+    }
+    openFindings {
+        id
+        priority
+        status
+        title
+        location { path line ref element }
+        resolvedBy
+        resolution
+        decidedBy { kind uuid name }
+        decidedAt
+    }
+    openQuestions {
+        id
+        priority
+        status
+        title
+        location { path line ref element }
+        resolvedBy
+        resolution
+    }
+    parentTask
+    childTasks
+    sessions
+    registeredBySession
+    statusHistory { from to at trigger actor { kind uuid name } note }
+    orderSetBy { kind uuid name }
+    orderSetAt
+    requiredRolesSkipped
+    reopenedAt
+    reopenCount
+    pullRequests { url state targetBranch mergedDate registered }
+    budgetMicros
+    coordinatorEstimateMicros
+    requiredStrength
+    strengthSetBy { kind uuid name }
+    strengthSetAt
+    questionStack { askingRole askingSession askingAgent questionsRelease answeringRole askedAt }
+    prUrls
+    createdDate
+    completedAt
+`
+
 const storeObject : any = {
     state () {
         return {
@@ -2513,34 +2655,7 @@ const storeObject : any = {
                 query: gql`
                     query agentBoardsOfOrg($orgUuid: ID!) {
                         agentBoardsOfOrg(orgUuid: $orgUuid) {
-                            coordinatorCapabilities
-                            effectiveDocumentPaths
-                            uuid
-                            name
-                            description
-                            status
-                            sources
-                            documentsRepo { uuid uri }
-                            documentPaths
-                            coordinatorPrompt
-                            missingCapabilities
-                            events { kind message actor { kind uuid name } eventAt }
-                            lock { level reason lockedBy { kind uuid name } lockedAt }
-                            coordinatorSeat { session agent claimedAt }
-                            perAgentWipLimit
-                            priorityType
-                            target
-                            targetDetails { uuid name type }
-                            defaultTaskLevel
-                            defaultInputResolution
-                            blockingPriority
-                            completionPriority
-                            budgetMicros
-                            softAlertPercent
-                            cycleCap
-                            noProgressRepeatsToStop
-                            createdDate
-                            declarative { specHash appliedAt source { repo path commit } }
+                            ${AGENT_BOARD_SELECTION}
                         }
                     }`,
                 variables: { orgUuid },
@@ -2573,6 +2688,7 @@ const storeObject : any = {
                                 orderIndex
                                 wipLimit
                                 requireDistinctAgent
+                                blindReview
                                 active
                                 kind
                                 necessity
@@ -2651,105 +2767,99 @@ const storeObject : any = {
                 query: gql`
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
-                            uuid
-                            externalRef
-                            title
-                            sourceUrl
-                            status
-                            role
-                            orderIndex
-                            dependsOn
-                            hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
-                            requireHumanReview
-                            assignment { session agent role assignedAt promptVersion }
-                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
-                            returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
-                            usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
-                            documents {
-                                uuid
-                                version
-                                lifecycle
-                                component
-                                createdDate
-                                sourceCodeEntryDetails { commit commitMessage vcsRepository { uri name } }
-                                document {
-                                    specification
-                                    path
-                                    digest
-                                    mediaType
-                                    indexPath
-                                    task
-                                    session
-                                    round
-                                    findings {
-                                        kind
-                                        round
-                                        verdict
-                                        counts { passed failed skipped }
-                                        findings {
-                                            id
-                                            priority
-                                            status
-                                            title
-                                            location { path line ref }
-                                            resolvedBy
-                                            resolution
-                                            decidedBy { kind uuid name }
-                                            decidedIn
-                                            decidedAt
-                                        }
-                                        about { specification release }
-                                    }
-                                }
-                            }
-                            openFindings {
-                                id
-                                priority
-                                status
-                                title
-                                location { path line ref }
-                                resolvedBy
-                                resolution
-                                decidedBy { kind uuid name }
-                                decidedAt
-                            }
-                            openQuestions {
-                                id
-                                priority
-                                status
-                                title
-                                location { path line ref }
-                                resolvedBy
-                                resolution
-                            }
-                            parentTask
-                            childTasks
-                            sessions
-                            registeredBySession
-                            statusHistory { from to at trigger actor { kind uuid name } note }
-                            orderSetBy { kind uuid name }
-                            orderSetAt
-                            requiredRolesSkipped
-                            reopenedAt
-                            reopenCount
-                            pullRequests { url state targetBranch mergedDate registered }
-                            budgetMicros
-                            budgetSetBy { kind uuid name }
-                            budgetSetAt
-                            coordinatorEstimateMicros
-                            requiredStrength
-                            strengthSetBy { kind uuid name }
-                            strengthSetAt
-                            questionStack { askingRole askingSession askingAgent questionsRelease answeringRole askedAt }
-                            prUrls
-                            createdDate
-                            completedAt
+                            ${AGENT_TASK_SELECTION}
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTasksOfBoard
+        },
+        /** The element check catalogue (elements.md §7): what each check means, for the report view. */
+        async fetchCheckCatalogue () {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query checkCatalogue { checkCatalogue { name description skipsWhen } }`,
+            })
+            return response.data.checkCatalogue ?? []
+        },
+        /** Re-run a document's element checks in its current scope; the report's release comes back. */
+        async runAgentChecks (context: any, releaseUuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentCheckRun($releaseUuid: ID!) {
+                        agentCheckRun(releaseUuid: $releaseUuid) {
+                            uuid
+                            lifecycle
+                            document {
+                                specification
+                                round
+                                checks {
+                                    catalogueVersion
+                                    digest
+                                    scope { checked releases { release specification elementsDigest lifecycle } }
+                                    results { check result blocking reason offences { elementId release message } }
+                                }
+                            }
+                        }
+                    }`,
+                variables: { releaseUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentCheckRun
+        },
+        async fetchAgentTask (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTask($uuid: ID!) {
+                        agentTask(uuid: $uuid) {
+                            ${AGENT_TASK_SELECTION}
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask
+        },
+        async fetchAgentBoard (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoard($uuid: ID!) {
+                        agentBoard(uuid: $uuid) {
+                            ${AGENT_BOARD_SELECTION}
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard
+        },
+        /**
+         * What only the server knows about an element of a task (elements.md §8): what depends on it
+         * across the board, and which rounds changed it. One task, through agentTask (rearm-saas#607),
+         * which the task page already reads by; boardUuid and status are no longer needed.
+         */
+        async fetchAgentTaskElementView (context: any, payload: { boardUuid?: string, taskUuid: string, status?: string, element: string, depth?: number }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskElementView($taskUuid: ID!, $element: String!, $depth: Int) {
+                        agentTask(uuid: $taskUuid) {
+                            uuid
+                            dependentsOf(element: $element, depth: $depth) {
+                                element found count truncated
+                                dependents {
+                                    distance
+                                    via { from to kind }
+                                    element { id family title release specification line }
+                                }
+                            }
+                            elementHistory(element: $element) { release round specification contentDigest line changed }
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, element: payload.element, depth: payload.depth },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask ?? null
         },
         async fetchAgentTaskRoleConfigsOfBoard (context: any, boardUuid: string) {
             const response = await graphqlClient.query({
@@ -2762,6 +2872,7 @@ const storeObject : any = {
                             orderIndex
                             wipLimit
                             requireDistinctAgent
+                            blindReview
                             active
                             requiredCapabilities
                             kind
@@ -2791,6 +2902,7 @@ const storeObject : any = {
                             orderIndex
                             wipLimit
                             requireDistinctAgent
+                            blindReview
                             active
                             requiredCapabilities
                             kind
@@ -2890,19 +3002,6 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskAuthorize
-        },
-        async agentTaskSetBudget (context: any, payload: { taskUuid: string, budgetMicros: number | null }) {
-            const response = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation agentTaskSetBudget($taskUuid: ID!, $budgetMicros: Long) {
-                        agentTaskSetBudget(taskUuid: $taskUuid, budgetMicros: $budgetMicros) {
-                            uuid status budgetMicros budgetSetBy { kind uuid name } budgetSetAt
-                        }
-                    }`,
-                variables: payload,
-                fetchPolicy: 'no-cache'
-            })
-            return response.data.agentTaskSetBudget
         },
         async agentTaskOrder (context: any, payload: { taskUuid: string, orderIndex: number }) {
             const response = await graphqlClient.mutate({
@@ -3644,6 +3743,7 @@ const storeObject : any = {
         },
     },
 }
+
 
 const store = createStore(storeObject)
 

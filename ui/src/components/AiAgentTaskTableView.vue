@@ -20,6 +20,8 @@
 <script lang="ts" setup>
 import { computed, h, ref } from 'vue'
 import { NDataTable, NInput, NSelect, NSpace, NTag, DataTableColumns } from 'naive-ui'
+import { RouterLink } from 'vue-router'
+import { taskPagePath } from '@/utils/agentTaskFormat'
 import { roleTagFor, shortRef } from '@/utils/agentTaskLabels'
 
 const props = defineProps<{
@@ -71,7 +73,12 @@ const columns: DataTableColumns<any> = [
         title: 'Ref', key: 'ref', width: 76, sorter: (a, b) => refOf(a).localeCompare(refOf(b), undefined, { numeric: true }),
         render: (t: any) => h('code', {}, refOf(t)),
     },
-    { title: 'Title', key: 'title', ellipsis: { tooltip: true }, sorter: 'default' },
+    {
+        // The title opens the task page; the rest of the row opens the drawer, as before.
+        title: 'Title', key: 'title', ellipsis: { tooltip: true }, sorter: 'default',
+        render: (t: any) => h(RouterLink, { to: taskPagePath(t.uuid), onClick: (e: Event) => e.stopPropagation() },
+            { default: () => t.title }),
+    },
     {
         title: 'Status', key: 'status', width: 168,
         sorter: (a, b) => a.status.localeCompare(b.status),

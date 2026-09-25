@@ -15,6 +15,10 @@
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
+                <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
+                          title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
+                    Subscribe
+                </n-button>
                 <n-button size="small" quaternary @click="applyKinds = ['BOARD']" v-if="canApplySpec">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
@@ -180,7 +184,7 @@
                 @close="selectedTask = null" @open="openTask"
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
-                @answer="answerQuestions" @authorize="authorizeTask" @order="orderTask" @set-budget="setTaskBudget"
+                @authorize="authorizeTask" @order="orderTask"
                 @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
@@ -242,11 +246,11 @@
                                     style="width: 170px">
                         <template #prefix><span class="flabel">no-progress stop</span></template>
                     </n-input-number>
-                    <n-input-number v-model:value="editingBoard.blockingPriority" :min="1" placeholder="strict"
+                    <n-input-number v-model:value="editingBoard.blockingPriority" :min="1" :max="priorityLevels" placeholder="strict"
                                     style="width: 150px">
                         <template #prefix><span class="flabel">blocking P≤</span></template>
                     </n-input-number>
-                    <n-input-number v-model:value="editingBoard.completionPriority" :min="1" placeholder="strict"
+                    <n-input-number v-model:value="editingBoard.completionPriority" :min="1" :max="priorityLevels" placeholder="strict"
                                     style="width: 160px">
                         <template #prefix><span class="flabel">completion P≤</span></template>
                     </n-input-number>
@@ -479,6 +483,13 @@
                     </div>
                     <n-space :size="18" v-if="editingRole.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingRole.requireDistinctAgent">require distinct agent</n-checkbox>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-checkbox v-model:checked="editingRole.blindReview">blind review</n-checkbox>
+                            </template>
+                            The session in this role reads its task without the earlier hops' notes, sessions and
+                            agents: it reviews the work, not the worker's account of it.
+                        </n-tooltip>
                         <n-checkbox v-model:checked="editingRole.active">active</n-checkbox>
                     </n-space>
                     <n-checkbox v-else v-model:checked="editingRole.active">active</n-checkbox>
@@ -659,6 +670,7 @@
                     </div>
                     <n-space :size="18" v-if="editingPreset.kind !== 'HUMAN'">
                         <n-checkbox v-model:checked="editingPreset.requireDistinctAgent">require distinct agent</n-checkbox>
+                        <n-checkbox v-model:checked="editingPreset.blindReview">blind review</n-checkbox>
                         <n-checkbox v-model:checked="editingPreset.active">active</n-checkbox>
                     </n-space>
                     <n-checkbox v-else v-model:checked="editingPreset.active">active</n-checkbox>
@@ -685,7 +697,7 @@
 <script lang="ts" setup>
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification, NText } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
@@ -712,6 +724,8 @@ const templateTypeRows = computed(() => templateRows(
     editingBoard.value && !editingBoardIsNew.value && editingBoard.value.uuid === selectedBoard.value ? roles.value : [],
     editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
+import { useAgentTaskActions } from '@/utils/agentTaskActions'
+import { taskPagePath } from '@/utils/agentTaskFormat'
 import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
@@ -809,6 +823,16 @@ const specText: ComputedRef<string> = computed(() => {
     const clean = stripNulls(specRaw.value)
     return specFormat.value === 'json' ? JSON.stringify(clean, null, 2) : toYaml(clean)
 })
+
+/** Opens the org's subscriptions with a new subscription pre-filled for this board (82880ea6). */
+function subscribeToBoard () {
+    if (!currentBoard.value) return
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: props.orgUuid },
+        query: { tab: 'integrations', integrationsTab: 'subscriptions', newBoardSub: currentBoard.value.uuid },
+    })
+}
 
 async function openSpec () {
     if (!currentBoard.value) return
@@ -915,46 +939,6 @@ function missingRequired (t: any): string[] {
         })
 }
 
-async function humanReview (p: { task: any, approve: boolean, note: string, findings?: any[],
-        about?: { specification: string } | null }) {
-    try {
-        const res = await store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve,
-            note: p.note || undefined, findings: p.findings, about: p.about })
-        notification.success({ content: `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass`
-            + (p.findings?.length && p.approve ? ' with a correction' : '')
-            + (res?.status === 'QUEUED' && res?.role ? ` — ${p.approve ? 'on' : 'back'} to ${res.role}` : ''), duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Review failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
-async function humanSignOff (p: { task: any, outcome: string, note: string }) {
-    try {
-        await store.dispatch('agentTaskHumanSignOff', { taskUuid: p.task.uuid, outcome: p.outcome, note: p.note || undefined })
-        notification.success({ content: `Signed off ${p.outcome} — returned to the coordinator`, duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Sign-off failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
-async function operatorRelease (p: { task: any, note?: string } | any) {
-    // Tolerates the bare task the drawer used to emit, so a stale caller does not lose the release.
-    const t = p?.task ?? p
-    try {
-        await store.dispatch('agentTaskOperatorHold', {
-            taskUuid: t.uuid, hold: false, reason: p?.note || undefined })
-        notification.success({ content: 'Hold released', duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Release failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
 // Mirrors AgentBoardService.coordinatorPresetFor: by whether sources are wired, with no
 // fallback. Shown so an operator can see which preset a board will take its prompt from.
 function coordinatorPresetFor (b: any): string {
@@ -985,22 +969,18 @@ async function reseedCoordinator (presetName: string) {
     }
 }
 
-async function answerQuestions (p: { task: any,
-        answers: { id: string, status: string, resolution: string }[], answerAll?: string }) {
-    try {
-        const res = await store.dispatch('agentTaskAnswer', {
-            taskUuid: p.task.uuid, answers: p.answers, answerAll: p.answerAll, releaseHold: true })
-        notification.success({
-            content: res?.role ? `Answered — back to ${res.role}` : 'Answered',
-            duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Answer failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
 // ---------- operator actions: people run a board without a coordinator ----------
+
+// A person's verbs on a task, shared with the task page. A verdict that hands the task on closes
+// the drawer; any other action reloads and keeps the drawer on the same task.
+const {
+    humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
+    completeTask, cancelTask, reopenTask, decideFindings, requireReview,
+} = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
+    if (!keepOpen) selectedTask.value = null
+    await refreshBoardContent()
+    if (keepOpen) selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? null
+})
 
 const priorityLevels = computed(() =>
     store.getters.orgById(props.orgUuid)?.settings?.findingPriorityLevels ?? 3)
@@ -1028,76 +1008,6 @@ async function registerTask () {
     }
 }
 
-/** Run an action on a task, refresh the board and keep the drawer on the same task. */
-async function taskAction (t: any, run: () => Promise<any>, done: (res: any) => string, failed: string) {
-    try {
-        const res = await run()
-        notification.success({ content: done(res), duration: 3000 })
-        await refreshBoardContent()
-        selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? null
-    } catch (e: any) {
-        notification.error({ content: `${failed}: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
-function authorizeTask (p: { task: any, role: string, orderIndex?: number | null }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskAuthorize', { taskUuid: p.task.uuid, role: p.role, orderIndex: p.orderIndex }),
-        () => `Authorized for ${p.role}`, 'Authorize failed')
-}
-
-function setTaskBudget (p: { task: any, budgetMicros: number | null }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskSetBudget', { taskUuid: p.task.uuid, budgetMicros: p.budgetMicros }),
-        (res: any) => (p.budgetMicros === null ? 'Task budget cleared' : 'Task budget set')
-            + (res?.status === 'ON_HOLD' ? '; release the hold to resume' : ''), 'Setting the budget failed')
-}
-
-function orderTask (p: { task: any, orderIndex: number }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskOrder', { taskUuid: p.task.uuid, orderIndex: p.orderIndex }),
-        () => `Order set to ${p.orderIndex}`, 'Reorder failed')
-}
-
-function completeTask (p: { task: any, note: string, skipRequiredRoles: boolean }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskComplete', { taskUuid: p.task.uuid, note: p.note,
-            skipRequiredRoles: p.skipRequiredRoles }),
-        () => 'Task completed', 'Complete failed')
-}
-
-function cancelTask (p: { task: any, note: string }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskCancel', { taskUuid: p.task.uuid, note: p.note }),
-        () => 'Task cancelled', 'Cancel failed')
-}
-
-function reopenTask (p: { task: any, role: string, reason: string }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskReopen', { taskUuid: p.task.uuid, role: p.role, reason: p.reason }),
-        (res: any) => res?.status === 'ON_HOLD' ? `Reopened to ${p.role}, held: the budget does not cover the round`
-            : `Reopened to ${p.role}`, 'Reopen failed')
-}
-
-function decideFindings (p: { task: any, specification: string, decisions: any[],
-        about?: { specification: string } | null }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskDecideFindings', { taskUuid: p.task.uuid, specification: p.specification,
-            decisions: p.decisions, about: p.about }),
-        (res: any) => res?.status === 'QUEUED' && res?.role !== p.task.role
-            ? `Decided — back to ${res.role}` : 'Decided', 'Decision failed')
-}
-
-async function requireReview (p: { task: any, value: boolean }) {
-    try {
-        await store.dispatch('agentTaskRequireHumanReview', { taskUuid: p.task.uuid, value: p.value })
-        notification.success({ content: p.value ? 'Next sign-off will require human review' : 'Human-review flag cleared', duration: 3000 })
-        await refreshBoardContent()
-        selectedTask.value = tasks.value.find(x => x.uuid === p.task.uuid) ?? null
-    } catch (e: any) {
-        notification.error({ content: `Update failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
 
 function assignedInRole (role: string): number {
     return tasks.value.filter(t => t.status === 'ASSIGNED' && t.assignment?.role === role).length
@@ -1197,7 +1107,12 @@ const TaskCard = defineComponent({
             p.t.status === 'COMPLETED' ? 'tcard--done' : '',
             workRank(p.t) === 1 ? 'tcard--ready' : '',
             workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
-            h('div', { class: 'tcard__title' }, p.t.title),
+            h('div', { class: 'tcard__title' }, [
+                p.t.title,
+                // The page, without opening the drawer on the way.
+                h(RouterLink, { to: taskPagePath(p.t.uuid), class: 'tcard__open', title: 'Open task page',
+                    onClick: (e: Event) => e.stopPropagation() }, { default: () => '↗' }),
+            ]),
             p.t.sourceUrl
                 ? h('div', { class: 'tcard__ref' }, h('a', { href: p.t.sourceUrl, target: '_blank', rel: 'noopener' },
                     refLabel(p.t, boardHasSources.value) ?? 'link'))
@@ -1336,6 +1251,7 @@ const roleColumns: DataTableColumns<any> = [
         title: 'Flags', key: 'flags', width: 120,
         render: (r: any) => h('span', {}, [
             r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'distinct agent' }) : null,
+            r.blindReview ? h(NTag, { size: 'tiny', bordered: false, type: 'info', style: 'margin-left:4px' }, { default: () => 'blind' }) : null,
             !r.active ? h(NTag, { size: 'tiny', bordered: false, style: 'margin-left:4px' }, { default: () => 'inactive' }) : null,
         ]),
     },
@@ -1519,7 +1435,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
 }
 
 async function saveRole () {
@@ -1536,6 +1452,7 @@ async function saveRole () {
                 prompt: editingRole.value.prompt ?? '',
                 orderIndex: editingRole.value.orderIndex ?? 0,
                 requireDistinctAgent: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.requireDistinctAgent,
+                blindReview: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.blindReview,
                 active: !!editingRole.value.active,
                 requiredCapabilities: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.requiredCapabilities ?? []),
                 wipLimit: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.wipLimit ?? 0),
@@ -1584,7 +1501,7 @@ async function openPresets () {
 function startAddPreset () {
     editingPresetIsNew.value = true
     const maxOrder = Math.max(0, ...presets.value.map(r => r.orderIndex ?? 0))
-    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', strength: strengthDraft(null) }
+    editingPreset.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, requiredCapabilities: [], kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', strength: strengthDraft(null) }
 }
 
 async function savePreset () {
@@ -1603,6 +1520,7 @@ async function savePreset () {
                 wipLimit: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.wipLimit ?? 0),
                 ...hopBudgetField(editingPreset.value),
                 requireDistinctAgent: editingPreset.value.kind === 'HUMAN' ? null : !!editingPreset.value.requireDistinctAgent,
+                blindReview: editingPreset.value.kind === 'HUMAN' ? null : !!editingPreset.value.blindReview,
                 active: !!editingPreset.value.active,
                 requiredCapabilities: editingPreset.value.kind === 'HUMAN' ? null : (editingPreset.value.requiredCapabilities ?? []),
                 kind: editingPreset.value.kind ?? 'AGENTIC',
@@ -1733,6 +1651,7 @@ async function operatorLock (lock: boolean) {
         &--stuck { opacity: 0.72; }
         &--done { opacity: 0.85; border-left: 3px solid #4a9d6e; }
         .tcard__title { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+        .tcard__open { margin-left: 6px; font-size: 12px; text-decoration: none; opacity: 0.7; }
         .tcard__ref { font-size: 12px; margin-bottom: 6px; word-break: break-all; }
         .tcard__meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
         .tcard__passages { display: flex; flex-wrap: wrap; gap: 4px; }

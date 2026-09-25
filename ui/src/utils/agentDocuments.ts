@@ -15,6 +15,10 @@ export interface DocumentRef {
     session?: string | null
     round?: number | null
     findings?: Record<string, any> | null
+    /** The element index of a prose document (gaps §2.A); see agentElements.ts. */
+    elements?: Record<string, any> | null
+    /** On a CHECK_REPORT round: the element checks' report; see agentChecks.ts. */
+    checks?: Record<string, any> | null
 }
 
 export interface DocumentRelease {
@@ -35,7 +39,7 @@ export interface Finding {
     priority?: number | null
     status?: string | null
     title?: string | null
-    location?: { path?: string | null, line?: number | null, ref?: string | null } | null
+    location?: { path?: string | null, line?: number | null, ref?: string | null, element?: string | null } | null
     resolvedBy?: string | null
     resolution?: string | null
     /** Who last decided it -- a person or an agent session. Written by the server. */
@@ -199,6 +203,19 @@ export function findingLocation (f?: Finding | null): string {
     return ''
 }
 
+/**
+ * Everything a finding's location says, for its tooltip: the file position and the ref together,
+ * "path:line — ref". The short form above shows the ref alone when there is one, so without this
+ * the path of a finding with a ref would be shown nowhere.
+ */
+export function findingLocationFull (f?: Finding | null): string {
+    const loc = f?.location
+    if (!loc) return ''
+    const at = loc.path ? (loc.line ? `${loc.path}:${loc.line}` : String(loc.path)) : ''
+    const ref = loc.ref ? String(loc.ref) : ''
+    return at && ref ? `${at} — ${ref}` : (at || ref)
+}
+
 /** Tag colour for a finding status. */
 export function statusType (status?: string | null): 'success' | 'warning' | 'error' | 'info' | 'default' {
     switch (status) {
@@ -248,4 +265,18 @@ export function templateRows (roles: any[] | null | undefined,
         .filter(Boolean) as string[]
     return [...new Set([...INDEX_DOCUMENT_TYPES, ...produced])]
         .map(spec => ({ spec, placeholder: effective?.[spec] ?? 'the default for its scope' }))
+}
+
+/**
+ * What a board document's lifecycle means (operator-actions D13-D15, task 0192a587): written,
+ * handed over by its producer's sign-off, or reviewed by a reviewer's pass or a person at a gate.
+ * Later stages are people's, and read as themselves.
+ */
+export function documentLifecycleLabel (release?: DocumentRelease | null): { label: string, type: 'default' | 'info' | 'success' } | null {
+    const lc = release?.lifecycle
+    if (!lc) return null
+    if (lc === 'DRAFT') return { label: 'draft', type: 'default' }
+    if (lc === 'ASSEMBLED') return { label: 'handed over', type: 'info' }
+    if (lc === 'READY_TO_SHIP') return { label: 'reviewed', type: 'success' }
+    return { label: lc.toLowerCase().replace(/_/g, ' '), type: 'default' }
 }
