@@ -203,6 +203,19 @@ export function findingLocation (f?: Finding | null): string {
     return ''
 }
 
+/**
+ * Everything a finding's location says, for its tooltip: the file position and the ref together,
+ * "path:line — ref". The short form above shows the ref alone when there is one, so without this
+ * the path of a finding with a ref would be shown nowhere.
+ */
+export function findingLocationFull (f?: Finding | null): string {
+    const loc = f?.location
+    if (!loc) return ''
+    const at = loc.path ? (loc.line ? `${loc.path}:${loc.line}` : String(loc.path)) : ''
+    const ref = loc.ref ? String(loc.ref) : ''
+    return at && ref ? `${at} — ${ref}` : (at || ref)
+}
+
 /** Tag colour for a finding status. */
 export function statusType (status?: string | null): 'success' | 'warning' | 'error' | 'info' | 'default' {
     switch (status) {
