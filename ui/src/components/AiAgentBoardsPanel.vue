@@ -664,6 +664,7 @@ const templateTypeRows = computed(() => templateRows(
     editingBoard.value && !editingBoardIsNew.value && editingBoard.value.uuid === selectedBoard.value ? roles.value : [],
     editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
+import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
@@ -867,46 +868,6 @@ function missingRequired (t: any): string[] {
         })
 }
 
-async function humanReview (p: { task: any, approve: boolean, note: string, findings?: any[],
-        about?: { specification: string } | null }) {
-    try {
-        const res = await store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve,
-            note: p.note || undefined, findings: p.findings, about: p.about })
-        notification.success({ content: `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass`
-            + (p.findings?.length && p.approve ? ' with a correction' : '')
-            + (res?.status === 'QUEUED' && res?.role ? ` — ${p.approve ? 'on' : 'back'} to ${res.role}` : ''), duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Review failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
-async function humanSignOff (p: { task: any, outcome: string, note: string }) {
-    try {
-        await store.dispatch('agentTaskHumanSignOff', { taskUuid: p.task.uuid, outcome: p.outcome, note: p.note || undefined })
-        notification.success({ content: `Signed off ${p.outcome} — returned to the coordinator`, duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Sign-off failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
-async function operatorRelease (p: { task: any, note?: string } | any) {
-    // Tolerates the bare task the drawer used to emit, so a stale caller does not lose the release.
-    const t = p?.task ?? p
-    try {
-        await store.dispatch('agentTaskOperatorHold', {
-            taskUuid: t.uuid, hold: false, reason: p?.note || undefined })
-        notification.success({ content: 'Hold released', duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Release failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
 // Mirrors AgentBoardService.coordinatorPresetFor: by whether sources are wired, with no
 // fallback. Shown so an operator can see which preset a board will take its prompt from.
 function coordinatorPresetFor (b: any): string {
@@ -937,22 +898,18 @@ async function reseedCoordinator (presetName: string) {
     }
 }
 
-async function answerQuestions (p: { task: any,
-        answers: { id: string, status: string, resolution: string }[], answerAll?: string }) {
-    try {
-        const res = await store.dispatch('agentTaskAnswer', {
-            taskUuid: p.task.uuid, answers: p.answers, answerAll: p.answerAll, releaseHold: true })
-        notification.success({
-            content: res?.role ? `Answered — back to ${res.role}` : 'Answered',
-            duration: 3000 })
-        selectedTask.value = null
-        await refreshBoardContent()
-    } catch (e: any) {
-        notification.error({ content: `Answer failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
 // ---------- operator actions: people run a board without a coordinator ----------
+
+// A person's verbs on a task, shared with the task page. A verdict that hands the task on closes
+// the drawer; any other action reloads and keeps the drawer on the same task.
+const {
+    humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
+    completeTask, cancelTask, reopenTask, decideFindings, requireReview,
+} = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
+    if (!keepOpen) selectedTask.value = null
+    await refreshBoardContent()
+    if (keepOpen) selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? null
+})
 
 const priorityLevels = computed(() =>
     store.getters.orgById(props.orgUuid)?.settings?.findingPriorityLevels ?? 3)
@@ -980,69 +937,6 @@ async function registerTask () {
     }
 }
 
-/** Run an action on a task, refresh the board and keep the drawer on the same task. */
-async function taskAction (t: any, run: () => Promise<any>, done: (res: any) => string, failed: string) {
-    try {
-        const res = await run()
-        notification.success({ content: done(res), duration: 3000 })
-        await refreshBoardContent()
-        selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? null
-    } catch (e: any) {
-        notification.error({ content: `${failed}: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
-
-function authorizeTask (p: { task: any, role: string, orderIndex?: number | null }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskAuthorize', { taskUuid: p.task.uuid, role: p.role, orderIndex: p.orderIndex }),
-        () => `Authorized for ${p.role}`, 'Authorize failed')
-}
-
-function orderTask (p: { task: any, orderIndex: number }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskOrder', { taskUuid: p.task.uuid, orderIndex: p.orderIndex }),
-        () => `Order set to ${p.orderIndex}`, 'Reorder failed')
-}
-
-function completeTask (p: { task: any, note: string, skipRequiredRoles: boolean }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskComplete', { taskUuid: p.task.uuid, note: p.note,
-            skipRequiredRoles: p.skipRequiredRoles }),
-        () => 'Task completed', 'Complete failed')
-}
-
-function cancelTask (p: { task: any, note: string }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskCancel', { taskUuid: p.task.uuid, note: p.note }),
-        () => 'Task cancelled', 'Cancel failed')
-}
-
-function reopenTask (p: { task: any, role: string, reason: string }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskReopen', { taskUuid: p.task.uuid, role: p.role, reason: p.reason }),
-        (res: any) => res?.status === 'ON_HOLD' ? `Reopened to ${p.role}, held: the budget does not cover the round`
-            : `Reopened to ${p.role}`, 'Reopen failed')
-}
-
-function decideFindings (p: { task: any, specification: string, decisions: any[],
-        about?: { specification: string } | null }) {
-    return taskAction(p.task,
-        () => store.dispatch('agentTaskDecideFindings', { taskUuid: p.task.uuid, specification: p.specification,
-            decisions: p.decisions, about: p.about }),
-        (res: any) => res?.status === 'QUEUED' && res?.role !== p.task.role
-            ? `Decided — back to ${res.role}` : 'Decided', 'Decision failed')
-}
-
-async function requireReview (p: { task: any, value: boolean }) {
-    try {
-        await store.dispatch('agentTaskRequireHumanReview', { taskUuid: p.task.uuid, value: p.value })
-        notification.success({ content: p.value ? 'Next sign-off will require human review' : 'Human-review flag cleared', duration: 3000 })
-        await refreshBoardContent()
-        selectedTask.value = tasks.value.find(x => x.uuid === p.task.uuid) ?? null
-    } catch (e: any) {
-        notification.error({ content: `Update failed: ${e?.message ?? e}`, duration: 8000 })
-    }
-}
 
 function assignedInRole (role: string): number {
     return tasks.value.filter(t => t.status === 'ASSIGNED' && t.assignment?.role === role).length

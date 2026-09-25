@@ -11,6 +11,131 @@ import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
 // Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
 const VIEW_STORAGE_KEY = 'relizaView'
 
+// The board and task selections, shared by the list reads and the single reads so the task page
+// and the board panel see the same shape. validate:graphql expands these where they are
+// interpolated.
+const AGENT_BOARD_SELECTION = `
+    coordinatorCapabilities
+    effectiveDocumentPaths
+    uuid
+    name
+    description
+    status
+    sources
+    documentsRepo { uuid uri }
+    documentPaths
+    coordinatorPrompt
+    missingCapabilities
+    events { kind message actor { kind uuid name } eventAt }
+    lock { level reason lockedBy { kind uuid name } lockedAt }
+    coordinatorSeat { session agent claimedAt }
+    perAgentWipLimit
+    priorityType
+    target
+    targetDetails { uuid name type }
+    defaultTaskLevel
+    defaultInputResolution
+    blockingPriority
+    completionPriority
+    declarative { specHash appliedAt source { repo path commit } }
+`
+
+const AGENT_TASK_SELECTION = `
+    uuid
+    board
+    org
+    externalRef
+    title
+    sourceUrl
+    status
+    role
+    orderIndex
+    dependsOn
+    hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
+    requireHumanReview
+    assignment { session agent role assignedAt promptVersion }
+    signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
+    documents {
+        uuid
+        version
+        lifecycle
+        component
+        createdDate
+        sourceCodeEntryDetails { commit commitMessage vcsRepository { uri name } }
+        document {
+            specification
+            path
+            digest
+            mediaType
+            indexPath
+            task
+            session
+            round
+            findings {
+                kind
+                round
+                verdict
+                counts { passed failed skipped }
+                findings {
+                    id
+                    priority
+                    status
+                    title
+                    location { path line ref }
+                    resolvedBy
+                    resolution
+                    decidedBy { kind uuid name }
+                    decidedIn
+                    decidedAt
+                }
+                about { specification release }
+            }
+        }
+    }
+    openFindings {
+        id
+        priority
+        status
+        title
+        location { path line ref }
+        resolvedBy
+        resolution
+        decidedBy { kind uuid name }
+        decidedAt
+    }
+    openQuestions {
+        id
+        priority
+        status
+        title
+        location { path line ref }
+        resolvedBy
+        resolution
+    }
+    parentTask
+    childTasks
+    sessions
+    registeredBySession
+    statusHistory { from to at trigger actor { kind uuid name } note }
+    orderSetBy { kind uuid name }
+    orderSetAt
+    requiredRolesSkipped
+    reopenedAt
+    reopenCount
+    pullRequests { url state targetBranch mergedDate registered }
+    budgetMicros
+    coordinatorEstimateMicros
+    requiredStrength
+    strengthSetBy { kind uuid name }
+    strengthSetAt
+    questionStack { askingRole askingSession askingAgent questionsRelease answeringRole askedAt }
+    prUrls
+    createdDate
+    completedAt
+`
+
 const storeObject : any = {
     state () {
         return {
@@ -2513,29 +2638,7 @@ const storeObject : any = {
                 query: gql`
                     query agentBoardsOfOrg($orgUuid: ID!) {
                         agentBoardsOfOrg(orgUuid: $orgUuid) {
-                            coordinatorCapabilities
-                            effectiveDocumentPaths
-                            uuid
-                            name
-                            description
-                            status
-                            sources
-                            documentsRepo { uuid uri }
-                            documentPaths
-                            coordinatorPrompt
-                            missingCapabilities
-                            events { kind message actor { kind uuid name } eventAt }
-                            lock { level reason lockedBy { kind uuid name } lockedAt }
-                            coordinatorSeat { session agent claimedAt }
-                            perAgentWipLimit
-                            priorityType
-                            target
-                            targetDetails { uuid name type }
-                            defaultTaskLevel
-                            defaultInputResolution
-                            blockingPriority
-                            completionPriority
-                            declarative { specHash appliedAt source { repo path commit } }
+                            ${AGENT_BOARD_SELECTION}
                         }
                     }`,
                 variables: { orgUuid },
@@ -2646,103 +2749,39 @@ const storeObject : any = {
                 query: gql`
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
-                            uuid
-                            externalRef
-                            title
-                            sourceUrl
-                            status
-                            role
-                            orderIndex
-                            dependsOn
-                            hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
-                            requireHumanReview
-                            assignment { session agent role assignedAt promptVersion }
-                            signOffs { role agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
-                            returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
-                            usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
-                            documents {
-                                uuid
-                                version
-                                lifecycle
-                                component
-                                createdDate
-                                sourceCodeEntryDetails { commit commitMessage vcsRepository { uri name } }
-                                document {
-                                    specification
-                                    path
-                                    digest
-                                    mediaType
-                                    indexPath
-                                    task
-                                    session
-                                    round
-                                    findings {
-                                        kind
-                                        round
-                                        verdict
-                                        counts { passed failed skipped }
-                                        findings {
-                                            id
-                                            priority
-                                            status
-                                            title
-                                            location { path line ref }
-                                            resolvedBy
-                                            resolution
-                                            decidedBy { kind uuid name }
-                                            decidedIn
-                                            decidedAt
-                                        }
-                                        about { specification release }
-                                    }
-                                }
-                            }
-                            openFindings {
-                                id
-                                priority
-                                status
-                                title
-                                location { path line ref }
-                                resolvedBy
-                                resolution
-                                decidedBy { kind uuid name }
-                                decidedAt
-                            }
-                            openQuestions {
-                                id
-                                priority
-                                status
-                                title
-                                location { path line ref }
-                                resolvedBy
-                                resolution
-                            }
-                            parentTask
-                            childTasks
-                            sessions
-                            registeredBySession
-                            statusHistory { from to at trigger actor { kind uuid name } note }
-                            orderSetBy { kind uuid name }
-                            orderSetAt
-                            requiredRolesSkipped
-                            reopenedAt
-                            reopenCount
-                            pullRequests { url state targetBranch mergedDate registered }
-                            budgetMicros
-                            coordinatorEstimateMicros
-                            requiredStrength
-                            strengthSetBy { kind uuid name }
-                            strengthSetAt
-                            questionStack { askingRole askingSession askingAgent questionsRelease answeringRole askedAt }
-                            prUrls
-                            createdDate
-                            completedAt
+                            ${AGENT_TASK_SELECTION}
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTasksOfBoard
+        },
+        async fetchAgentTask (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTask($uuid: ID!) {
+                        agentTask(uuid: $uuid) {
+                            ${AGENT_TASK_SELECTION}
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask
+        },
+        async fetchAgentBoard (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoard($uuid: ID!) {
+                        agentBoard(uuid: $uuid) {
+                            ${AGENT_BOARD_SELECTION}
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard
         },
         async fetchAgentTaskRoleConfigsOfBoard (context: any, boardUuid: string) {
             const response = await graphqlClient.query({
@@ -3622,6 +3661,7 @@ const storeObject : any = {
         },
     },
 }
+
 
 const store = createStore(storeObject)
 
