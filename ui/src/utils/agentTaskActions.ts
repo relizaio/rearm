@@ -76,6 +76,17 @@ export function useAgentTaskActions (after: AfterAction) {
             () => `Authorized for ${p.role}`, 'Authorize failed')
     }
 
+    /**
+     * A task's budget; null clears it (task 6f1b348d). A raise does not release a budget hold, so a
+     * held task's confirmation says to release it.
+     */
+    function setBudget (p: { task: any, budgetMicros: number | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskSetBudget', { taskUuid: p.task.uuid, budgetMicros: p.budgetMicros }),
+            (res: any) => (p.budgetMicros === null ? 'Task budget cleared' : 'Task budget set')
+                + (res?.status === 'ON_HOLD' ? '; release the hold to resume' : ''), 'Setting the budget failed')
+    }
+
     function orderTask (p: { task: any, orderIndex: number }) {
         return kept(p.task,
             () => store.dispatch('agentTaskOrder', { taskUuid: p.task.uuid, orderIndex: p.orderIndex }),
@@ -119,6 +130,6 @@ export function useAgentTaskActions (after: AfterAction) {
 
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-        completeTask, cancelTask, reopenTask, decideFindings, requireReview,
+        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setBudget,
     }
 }

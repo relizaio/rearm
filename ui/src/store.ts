@@ -143,6 +143,8 @@ const AGENT_TASK_SELECTION = `
     reopenCount
     pullRequests { url state targetBranch mergedDate registered }
     budgetMicros
+    budgetSetBy { kind uuid name }
+    budgetSetAt
     coordinatorEstimateMicros
     requiredStrength
     strengthSetBy { kind uuid name }
@@ -3002,6 +3004,20 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskAuthorize
+        },
+        /** A task's budget, in micros; null clears it (task 6f1b348d). Org admin. */
+        async agentTaskSetBudget (context: any, payload: { taskUuid: string, budgetMicros: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetBudget($taskUuid: ID!, $budgetMicros: Long) {
+                        agentTaskSetBudget(taskUuid: $taskUuid, budgetMicros: $budgetMicros) {
+                            uuid status budgetMicros budgetSetBy { kind uuid name } budgetSetAt
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetBudget
         },
         async agentTaskOrder (context: any, payload: { taskUuid: string, orderIndex: number }) {
             const response = await graphqlClient.mutate({
