@@ -45,4 +45,23 @@ describe('stop hold release', () => {
         await w.find('.relbtn').trigger('click')
         expect(w.emitted('operator-release')?.[1]?.[0]).toMatchObject({ role: 'coder' })
     })
+
+    it('shows who may release, and lets a person release the coordinator stop (task c0a2134c)', async () => {
+        const first = header({ level: 'COORDINATOR', kind: 'MANUAL', stop: 'NO_PROGRESS', heldBy: routing,
+            reason: 'stopped by no progress: [q1] stayed OPEN; the coordinator may release once' })
+        expect(first.find('.holdwho').text()).toBe('coordinator may release once')
+        expect(first.find('.relstop').text()).toContain('counts as the one release of this')
+        await first.find('.relbtn').trigger('click')
+        expect(first.emitted('operator-release')).toHaveLength(1)
+
+        const second = header({ level: 'OPERATOR', kind: 'MANUAL', stop: 'NO_PROGRESS', heldBy: routing,
+            reason: 'stopped by no progress: [q1] stayed OPEN; released once already' })
+        expect(second.find('.holdwho').text()).toBe('operator only')
+        expect(second.find('.relstop').text()).not.toContain('counts as the one release')
+
+        const own = header({ level: 'COORDINATOR', kind: 'MANUAL', stop: null, heldBy: { kind: 'SESSION', uuid: 's1' },
+            reason: 'waiting on the tracker' })
+        expect(own.find('.holdwho').exists()).toBe(false)
+        expect(own.find('.relbtn').exists()).toBe(false)
+    })
 })

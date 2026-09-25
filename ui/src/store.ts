@@ -41,6 +41,8 @@ const AGENT_BOARD_SELECTION = `
     softAlertPercent
     cycleCap
     noProgressRepeatsToStop
+    coordinatorStopRelease
+    effectiveCoordinatorStopRelease
     createdDate
     declarative { specHash appliedAt source { repo path commit } }
 `
@@ -56,7 +58,7 @@ const AGENT_TASK_SELECTION = `
     role
     orderIndex
     dependsOn
-    hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
+    hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop }
     requireHumanReview
     assignment { session agent role assignedAt promptVersion }
     signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
