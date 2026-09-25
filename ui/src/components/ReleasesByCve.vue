@@ -24,6 +24,13 @@
                 :show-is-latest-column="props.showIsLatestColumn ?? true"
             />
         </n-spin>
+        <vulnerability-details-modal
+            v-model:show="vulnDetail.show"
+            :org-uuid="props.orgUuid || ''"
+            :vuln-id="vulnDetail.vulnId"
+            :severity="vulnDetail.severity"
+            :known-exploited="vulnDetail.knownExploited"
+        />
     </n-modal>
 </template>
 
@@ -39,8 +46,10 @@ import { NModal, NSpin, NAlert, useNotification } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
-import Swal from 'sweetalert2'
 import ComponentBranchesTable from './ComponentBranchesTable.vue'
+import VulnerabilityDetailsModal from './VulnerabilityDetailsModal.vue'
+import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
+import { findingTypeOfSearchedId, renderFindingId } from '@/utils/findingUtils'
 
 const notification = useNotification()
 
@@ -62,60 +71,17 @@ const totalReleases = ref(0)
 const shownReleases = ref(0)
 const truncated = ref(false)
 
-const confirmAndOpen = async (e: Event, href: string) => {
-    e.preventDefault()
-    try {
-        const LS_KEY = 'rearm_external_link_consent_until'
-        const now = Date.now()
-        const stored = localStorage.getItem(LS_KEY)
-        if (stored && Number(stored) > now) {
-            window.open(href, '_blank')
-            return
-        }
-
-        const result = await Swal.fire({
-            icon: 'info',
-            title: 'Open external link?\n',
-            text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
-            showCancelButton: true,
-            confirmButtonText: 'Open',
-            cancelButtonText: 'Cancel',
-            input: 'checkbox',
-            inputValue: 0,
-            inputPlaceholder: "Don't ask me again for 15 days"
-        })
-        if (result.isConfirmed) {
-            if (result.value === 1) {
-                const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
-                localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
-            }
-            window.open(href, '_blank')
-        }
-    } catch (err) {
-        window.open(href, '_blank')
-    }
-}
+const { vulnDetail, openVulnDetail } = useVulnerabilityDetail(() => props.orgUuid)
 
 const modalTitle = computed(() => {
-    const cveId = props.cveId
+    // The home search binds its input here, and a cleared input is null.
+    const cveId = (props.cveId || '').trim()
     const perspectiveSuffix = props.perspectiveName ? `, Perspective: ${props.perspectiveName}` : ''
-    
-    if (cveId.startsWith('CVE-') || cveId.startsWith('GHSA-')) {
-        const href = `https://osv.dev/vulnerability/${cveId}`
-        return () => h('span', [
-            'Releases Affected by ',
-            h('a', {
-                href,
-                target: '_blank',
-                rel: 'noopener noreferrer',
-                onClick: (e: Event) => confirmAndOpen(e, href),
-                style: 'color: #18a058; text-decoration: underline;'
-            }, cveId),
-            perspectiveSuffix
-        ])
-    }
-    
-    return `Releases Affected by ${cveId}${perspectiveSuffix}`
+    return () => h('span', [
+        'Releases Affected by ',
+        renderFindingId(h, cveId, findingTypeOfSearchedId(cveId), openVulnDetail),
+        perspectiveSuffix
+    ])
 })
 
 const show = computed({
