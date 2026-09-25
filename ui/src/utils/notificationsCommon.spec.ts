@@ -503,7 +503,8 @@ describe('severity gating', () => {
     // every event rather than doing nothing.
     it('lists exactly the severity-bearing event types', () => {
         expect([...SEVERITY_BEARING_EVENT_TYPES].sort())
-            .toEqual(['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED',
+            .toEqual(['AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_QUEUE_AGE', 'AGENT_TASK_RETURNED',
+                'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED',
                 'NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED'])
     })
 
@@ -594,5 +595,35 @@ describe('instanceSubscriptionPrefillForUri (deep-link)', () => {
     it('survives null routes and null entries', () => {
         expect(clearInapplicableSeverity(null, ['RELEASE_CREATED'])).toBe(false)
         expect(clearInapplicableSeverity([null as any], ['RELEASE_CREATED'])).toBe(false)
+    })
+})
+
+describe('agent-board notifications (82880ea6)', () => {
+    it('offers the four board event types, Pro-only', async () => {
+        const { eventTypeOptions, AGENT_BOARD_EVENT_TYPES } = await import('./notificationsCommon')
+        for (const t of AGENT_BOARD_EVENT_TYPES) {
+            const o = (eventTypeOptions as any[]).find(x => x.value === t)
+            expect(o, t).toBeTruthy()
+            expect(o.proOnly).toBe(true)
+            expect(o.label.length).toBeGreaterThan(0)
+        }
+    })
+
+    it('presets only name board event types', async () => {
+        const { agentBoardPresets, AGENT_BOARD_EVENT_TYPES } = await import('./notificationsCommon')
+        expect(agentBoardPresets.map(p => p.key)).toEqual(['NEEDS_A_PERSON', 'BOARD_ALERTS', 'EVERYTHING_ON_BOARDS'])
+        for (const p of agentBoardPresets) {
+            expect(p.prefill.eventTypes.length).toBeGreaterThan(0)
+            for (const t of p.prefill.eventTypes) expect(AGENT_BOARD_EVENT_TYPES).toContain(t)
+        }
+    })
+
+    it('narrows a board subscription to the board, safely quoted', async () => {
+        const { boardSubscriptionPrefill, AGENT_BOARD_EVENT_TYPES } = await import('./notificationsCommon')
+        const p = boardSubscriptionPrefill('6a62ad38-2200-4668-9e7f-92653870ce98')
+        expect(p.eventTypes).toEqual(AGENT_BOARD_EVENT_TYPES)
+        expect(p.filterMode).toBe('ADVANCED')
+        expect(p.celExpression).toBe('event.board == "6a62ad38-2200-4668-9e7f-92653870ce98"')
+        expect(boardSubscriptionPrefill('x" || true || "').celExpression).toBe('event.board == "x\\" || true || \\""')
     })
 })

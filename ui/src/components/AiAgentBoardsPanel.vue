@@ -15,6 +15,10 @@
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
+                <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
+                          title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
+                    Subscribe
+                </n-button>
                 <n-button size="small" quaternary @click="applyKinds = ['BOARD']" v-if="canApplySpec">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
@@ -761,6 +765,16 @@ const specText: ComputedRef<string> = computed(() => {
     const clean = stripNulls(specRaw.value)
     return specFormat.value === 'json' ? JSON.stringify(clean, null, 2) : toYaml(clean)
 })
+
+/** Opens the org's subscriptions with a new subscription pre-filled for this board (82880ea6). */
+function subscribeToBoard () {
+    if (!currentBoard.value) return
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: props.orgUuid },
+        query: { tab: 'integrations', integrationsTab: 'subscriptions', newBoardSub: currentBoard.value.uuid },
+    })
+}
 
 async function openSpec () {
     if (!currentBoard.value) return
