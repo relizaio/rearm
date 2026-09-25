@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, coerceInputValue, type GraphQLSchema, type GraphQLInputType } from 'graphql'
+import { coerceInputValue, type GraphQLSchema, type GraphQLInputType } from 'graphql'
+import { PRO_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
 
 import {
     ownedComponentEventTypes,
@@ -105,11 +104,10 @@ describe('what gets stored', () => {
 // editor that cannot save. Same convention as routeInputSchemaDrift.spec.ts:
 // Teams are Pro-only, the schema lives in the sibling rearm-core checkout, and
 // its absence SKIPS rather than fails.
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
+const PRO_SCHEMA_PATH = PRO_SCHEMA_DIR
 
 function loadSchema (path: string): GraphQLSchema | null {
-    return existsSync(path) ? buildSchema(readFileSync(path, 'utf8')) : null
+    return loadSchemaDir(path)
 }
 const proSchema = loadSchema(PRO_SCHEMA_PATH)
 

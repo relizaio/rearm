@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, type GraphQLSchema } from 'graphql'
+import { validate, type GraphQLSchema } from 'graphql'
+import { CE_SCHEMA_DIR, PRO_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
 import { INBOX_QUERY_FULL, INBOX_QUERY_CORE, INBOX_ENRICHMENT_ITEM_FIELDS } from './notificationInboxQuery'
 
 // The CE mirror schema ships IN this repo -- always present, so its checks are
@@ -9,13 +8,11 @@ import { INBOX_QUERY_FULL, INBOX_QUERY_CORE, INBOX_ENRICHMENT_ITEM_FIELDS } from
 // which is NOT present in this repo's own CI; those checks are skipped (not
 // failed) when it's absent, so the suite is green in a CE-only checkout and
 // still meaningful on a dev box that has both.
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
+const CE_SCHEMA_PATH = CE_SCHEMA_DIR
+const PRO_SCHEMA_PATH = PRO_SCHEMA_DIR
 
 function loadSchema (path: string): GraphQLSchema | null {
-    return existsSync(path) ? buildSchema(readFileSync(path, 'utf8')) : null
+    return loadSchemaDir(path)
 }
 
 const ceSchema = loadSchema(CE_SCHEMA_PATH)
