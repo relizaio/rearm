@@ -2791,15 +2791,14 @@ const storeObject : any = {
         },
         /**
          * What only the server knows about an element of a task (elements.md §8): what depends on it
-         * across the board, and which rounds changed it. Read through agentTasksOfBoard narrowed by
-         * the task's status until a single-task user query exists (rearm-saas#607, agentTask); the
-         * fields are per task, so the swap is this query's root and nothing else.
+         * across the board, and which rounds changed it. One task, through agentTask (rearm-saas#607),
+         * which the task page already reads by; boardUuid and status are no longer needed.
          */
-        async fetchAgentTaskElementView (context: any, payload: { boardUuid: string, taskUuid: string, status?: string, element: string, depth?: number }) {
+        async fetchAgentTaskElementView (context: any, payload: { boardUuid?: string, taskUuid: string, status?: string, element: string, depth?: number }) {
             const response = await graphqlClient.query({
                 query: gql`
-                    query agentTaskElementView($boardUuid: ID!, $status: AgentTaskStatus, $element: String!, $depth: Int) {
-                        agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
+                    query agentTaskElementView($taskUuid: ID!, $element: String!, $depth: Int) {
+                        agentTask(uuid: $taskUuid) {
                             uuid
                             dependentsOf(element: $element, depth: $depth) {
                                 element found count truncated
@@ -2812,10 +2811,10 @@ const storeObject : any = {
                             elementHistory(element: $element) { release round specification contentDigest line changed }
                         }
                     }`,
-                variables: { boardUuid: payload.boardUuid, status: payload.status, element: payload.element, depth: payload.depth },
+                variables: { taskUuid: payload.taskUuid, element: payload.element, depth: payload.depth },
                 fetchPolicy: 'no-cache'
             })
-            return (response.data.agentTasksOfBoard ?? []).find((t: any) => t?.uuid === payload.taskUuid) ?? null
+            return response.data.agentTask ?? null
         },
         async fetchAgentTaskRoleConfigsOfBoard (context: any, boardUuid: string) {
             const response = await graphqlClient.query({
