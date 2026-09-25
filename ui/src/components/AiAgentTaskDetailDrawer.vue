@@ -130,6 +130,30 @@
                     </div>
                 </div>
 
+                <!-- A completed task whose delivery cannot land (a PR that no longer merges) goes back to
+                     the role that must redo its part; whoever read that part re-runs after it. -->
+                <div v-if="reopenOptions.length" class="dsec">
+                    <div class="dsec__h">Reopen</div>
+                    <div class="deprow">
+                        <n-select v-model:value="reopenRole" :options="reopenOptions" size="small"
+                                  placeholder="role" style="width: 170px"/>
+                        <n-input v-model:value="reopenReason" size="small" style="width: 300px"
+                                 placeholder="Why its delivery cannot land (required)"/>
+                        <n-popconfirm @positive-click="reopen">
+                            <template #trigger>
+                                <n-button size="small" :disabled="!reopenReady">
+                                    Reopen to {{ reopenRole ?? '…' }}
+                                </n-button>
+                            </template>
+                            The role's earlier pass stops counting; whoever read its part re-runs when it
+                            republishes.
+                        </n-popconfirm>
+                    </div>
+                </div>
+                <div v-if="task.reopenCount" class="holdmeta">
+                    Reopened {{ task.reopenCount }}× · last {{ ts(task.reopenedAt) }}
+                </div>
+
                 <div v-if="task.dependsOn?.length || dependents.length" class="dsec">
                     <div class="dsec__h">Dependencies</div>
                     <div v-if="task.dependsOn?.length" class="deprow">
@@ -474,6 +498,7 @@ import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumb
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
+import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import {
     DECIDABLE_STATUSES,
     DocumentRelease,
@@ -500,6 +525,8 @@ const props = defineProps<{
     roles?: any[]
     board?: any
     priorityLevels?: number
+    /** Org admin: may reopen a completed task (the server's rule for agentTaskReopen). */
+    canReopen?: boolean
 }>()
 const emit = defineEmits<{
     (e: 'close'): void
@@ -515,6 +542,7 @@ const emit = defineEmits<{
     (e: 'order', p: { task: any, orderIndex: number }): void
     (e: 'complete', p: { task: any, note: string, skipRequiredRoles: boolean }): void
     (e: 'cancel', p: { task: any, note: string }): void
+    (e: 'reopen', p: { task: any, role: string, reason: string }): void
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
 }>()
@@ -524,6 +552,15 @@ const emit = defineEmits<{
 const authorizeRole = ref<string | null>(null)
 const orderDraft = ref<number | null>(null)
 const cancelNote = ref('')
+const reopenRole = ref<string | null>(null)
+const reopenReason = ref('')
+const reopenOptions = computed(() => reopenRoleOptions(props.task, props.roles, !!props.canReopen))
+const reopenReady = computed(() => null !== reopenPayload(props.task, reopenRole.value, reopenReason.value))
+function reopen () {
+    const p = reopenPayload(props.task, reopenRole.value, reopenReason.value)
+    if (p) emit('reopen', { task: props.task, role: p.role, reason: p.reason })
+}
+watch(() => props.task?.uuid, () => { reopenRole.value = null; reopenReason.value = '' })
 const showComplete = ref(false)
 const completeNote = ref('')
 const skipRequired = ref(false)

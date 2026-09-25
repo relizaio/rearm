@@ -170,7 +170,8 @@
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
                 @answer="answerQuestions" @authorize="authorizeTask" @order="orderTask"
-                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"/>
+                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
+                :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
                  the coordinator's intake of the same issue finds it rather than duplicating it. -->
@@ -638,6 +639,7 @@ import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
 import { templateRows } from '@/utils/agentDocuments'
+import { isOrgAdmin } from '@/utils/agentReopen'
 
 /**
  * Types the board editor offers a template for. The task-scoped pair, because those are the ones
@@ -1001,6 +1003,13 @@ function cancelTask (p: { task: any, note: string }) {
         () => 'Task cancelled', 'Cancel failed')
 }
 
+function reopenTask (p: { task: any, role: string, reason: string }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskReopen', { taskUuid: p.task.uuid, role: p.role, reason: p.reason }),
+        (res: any) => res?.status === 'ON_HOLD' ? `Reopened to ${p.role}, held: the budget does not cover the round`
+            : `Reopened to ${p.role}`, 'Reopen failed')
+}
+
 function decideFindings (p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }) {
     return taskAction(p.task,
@@ -1269,6 +1278,9 @@ const canApplySpec = computed<boolean>(() => {
     return perms.some((p: any) => p.org === props.orgUuid && ((p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
         || ((p.functions ?? []).includes('CONFIGURATION_WRITE') && (p.type === 'READ_WRITE' || p.type === 'ADMIN'))))
 })
+
+// Reopening a completed task is an org admin's (agentTaskReopen); the server decides.
+const canReopen = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
 
 const applyKinds = ref<SpecKind[] | null>(null)
 
