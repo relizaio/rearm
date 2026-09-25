@@ -2513,6 +2513,7 @@ const storeObject : any = {
                 query: gql`
                     query agentBoardsOfOrg($orgUuid: ID!) {
                         agentBoardsOfOrg(orgUuid: $orgUuid) {
+                            coordinatorCapabilities
                             effectiveDocumentPaths
                             uuid
                             name
@@ -2560,6 +2561,7 @@ const storeObject : any = {
                             documentsRepo
                             documentPaths
                             coordinatorPrompt
+                            coordinatorCapabilities
                             roles {
                                 name
                                 prompt
@@ -2723,6 +2725,9 @@ const storeObject : any = {
                             orderSetBy { kind uuid name }
                             orderSetAt
                             requiredRolesSkipped
+                            reopenedAt
+                            reopenCount
+                            pullRequests { url state targetBranch mergedDate registered }
                             budgetMicros
                             coordinatorEstimateMicros
                             requiredStrength
@@ -2913,6 +2918,17 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskCancel
+        },
+        async agentTaskReopen (context: any, payload: { taskUuid: string, role: string, reason: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskReopen($taskUuid: ID!, $role: String!, $reason: String!) {
+                        agentTaskReopen(taskUuid: $taskUuid, role: $role, reason: $reason) { uuid status role }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskReopen
         },
         async agentTaskDecideFindings (context: any, payload: { taskUuid: string, specification: string,
             decisions: any[], about?: { specification: string, release?: string } | null }) {

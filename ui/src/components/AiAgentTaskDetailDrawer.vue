@@ -33,21 +33,22 @@
                         <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
                                  style="margin-top: 8px"/>
                         <!-- A rejection with a finding attached routes like a reviewer's: to whoever
-                             produces what it is about. Without one it goes to the coordinator. -->
+                             produces what it is about. Without one it goes to the coordinator. An
+                             approval with one files it as a correction and hands the work over; the
+                             server refuses a correction at the blocking priority as a rejection. -->
                         <n-space :size="6" style="margin-top: 8px" align="center">
                             <n-input v-model:value="gateFindingTitle" size="small"
-                                     placeholder="Finding to reject with (optional)" style="width: 230px"/>
+                                     placeholder="Finding or correction (optional)" style="width: 230px"/>
                             <n-select v-model:value="gateFindingPriority" :options="priorityOptions" size="small"
                                       style="width: 72px"/>
                             <n-select v-model:value="gateAbout" :options="aboutOptions" size="small" clearable
                                       placeholder="about" style="width: 150px"/>
                         </n-space>
                         <n-space style="margin-top: 8px">
-                            <n-button size="small" type="primary"
-                                      @click="emit('human-review', { task, approve: true, note: reviewNote })">
-                                Approve {{ task.hold.gateRole }} pass
+                            <n-button size="small" type="primary" @click="reviewAtGate(true)">
+                                {{ gateFindingTitle.trim() ? 'Approve with correction' : `Approve ${task.hold.gateRole} pass` }}
                             </n-button>
-                            <n-button size="small" type="error" ghost @click="rejectAtGate">
+                            <n-button size="small" type="error" ghost @click="reviewAtGate(false)">
                                 Reject{{ gateFindingTitle.trim() ? ' with finding' : '' }}
                             </n-button>
                         </n-space>
@@ -139,6 +140,30 @@
                             Cancelling is final. An agent working it finds it gone at its next call.
                         </n-popconfirm>
                     </div>
+                </div>
+
+                <!-- A completed task whose delivery cannot land (a PR that no longer merges) goes back to
+                     the role that must redo its part; whoever read that part re-runs after it. -->
+                <div v-if="reopenOptions.length" class="dsec">
+                    <div class="dsec__h">Reopen</div>
+                    <div class="deprow">
+                        <n-select v-model:value="reopenRole" :options="reopenOptions" size="small"
+                                  placeholder="role" style="width: 170px"/>
+                        <n-input v-model:value="reopenReason" size="small" style="width: 300px"
+                                 placeholder="Why its delivery cannot land (required)"/>
+                        <n-popconfirm @positive-click="reopen">
+                            <template #trigger>
+                                <n-button size="small" :disabled="!reopenReady">
+                                    Reopen to {{ reopenRole ?? '…' }}
+                                </n-button>
+                            </template>
+                            The role's earlier pass stops counting; whoever read its part re-runs when it
+                            republishes.
+                        </n-popconfirm>
+                    </div>
+                </div>
+                <div v-if="task.reopenCount" class="holdmeta">
+                    Reopened {{ task.reopenCount }}× · last {{ ts(task.reopenedAt) }}
                 </div>
 
                 <div v-if="task.dependsOn?.length || dependents.length" class="dsec">
@@ -345,9 +370,13 @@
 
                 <div v-if="task.prUrls?.length" class="dsec">
                     <div class="dsec__h">Pull requests</div>
-                    <div class="deprow">
-                        <a v-for="pr in task.prUrls" :key="pr" :href="pr" target="_blank"
-                           rel="noopener" class="prlink2">{{ pr.split('/').slice(-3).join('/') }}</a>
+                    <div v-if="task.status === 'DELIVERING'" class="holdmeta" style="margin: 0 0 6px">
+                        Every required role passed; the task completes when these merge.
+                    </div>
+                    <div v-for="c in prChips(task)" :key="c.url" class="deprow">
+                        <n-tag size="small" :bordered="false" :type="c.type">{{ c.state }}</n-tag>
+                        <a :href="c.url" target="_blank" rel="noopener" class="prlink2">{{ c.label }}</a>
+                        <span class="holdmeta" style="margin-top: 0">{{ c.title }}</span>
                     </div>
                 </div>
 
@@ -357,7 +386,7 @@
                         <div v-for="(f, i) in task.questionStack" :key="i" class="qstack__row">
                             <span class="qstack__depth">{{ i + 1 }}</span>
                             <span>{{ roleName(f.askingRole) }} asked {{ roleName(f.answeringRole) || 'nobody yet' }}</span>
-                            <a v-if="f.questionsRelease" :href="`/release/${f.questionsRelease}`" class="qstack__link">questions</a>
+                            <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">questions</router-link>
                             <span class="qstack__time">{{ ts(f.askedAt) }}</span>
                         </div>
                     </div>
@@ -489,6 +518,8 @@ import AgentUsageSummary from './AgentUsageSummary.vue'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress } from '@/utils/agentTaskLabels'
+import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
+import { prChips } from '@/utils/agentDelivery'
 import {
     DECIDABLE_STATUSES,
     DocumentRelease,
@@ -515,6 +546,8 @@ const props = defineProps<{
     roles?: any[]
     board?: any
     priorityLevels?: number
+    /** Org admin: may reopen a completed task (the server's rule for agentTaskReopen). */
+    canReopen?: boolean
 }>()
 const emit = defineEmits<{
     (e: 'close'): void
@@ -530,6 +563,7 @@ const emit = defineEmits<{
     (e: 'order', p: { task: any, orderIndex: number }): void
     (e: 'complete', p: { task: any, note: string, skipRequiredRoles: boolean }): void
     (e: 'cancel', p: { task: any, note: string }): void
+    (e: 'reopen', p: { task: any, role: string, reason: string }): void
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
 }>()
@@ -539,6 +573,15 @@ const emit = defineEmits<{
 const authorizeRole = ref<string | null>(null)
 const orderDraft = ref<number | null>(null)
 const cancelNote = ref('')
+const reopenRole = ref<string | null>(null)
+const reopenReason = ref('')
+const reopenOptions = computed(() => reopenRoleOptions(props.task, props.roles, !!props.canReopen))
+const reopenReady = computed(() => null !== reopenPayload(props.task, reopenRole.value, reopenReason.value))
+function reopen () {
+    const p = reopenPayload(props.task, reopenRole.value, reopenReason.value)
+    if (p) emit('reopen', { task: props.task, role: p.role, reason: p.reason })
+}
+watch(() => props.task?.uuid, () => { reopenRole.value = null; reopenReason.value = '' })
 const showComplete = ref(false)
 const completeNote = ref('')
 const skipRequired = ref(false)
@@ -556,8 +599,10 @@ const gateAbout = ref<string | null>(null)
 
 const authorizable = computed(() =>
     props.task?.status === 'PENDING_INTAKE' || props.task?.status === 'AWAITING_COORDINATOR')
+// DELIVERING: a person completing it says the delivery happened (a PR merged by hand where CI does
+// not report), and the server completes it outright.
 const completable = computed(() =>
-    ['AWAITING_COORDINATOR', 'PENDING_INTAKE', 'QUEUED', 'ON_HOLD'].includes(props.task?.status))
+    ['AWAITING_COORDINATOR', 'PENDING_INTAKE', 'QUEUED', 'ON_HOLD', 'DELIVERING'].includes(props.task?.status))
 const canDecide = computed(() => DECIDABLE_STATUSES.includes(props.task?.status))
 
 const roleOptions = computed(() => (props.roles ?? [])
@@ -617,11 +662,12 @@ function fileFinding () {
     fileTitle.value = ''
 }
 
-function rejectAtGate () {
+/** Either verdict may carry the typed finding: a rejection's reason, or an approval's correction. */
+function reviewAtGate (approve: boolean) {
     const title = gateFindingTitle.value.trim()
     emit('human-review', {
         task: props.task,
-        approve: false,
+        approve,
         note: reviewNote.value,
         findings: title ? [{ action: 'FILE', title, priority: gateFindingPriority.value }] : undefined,
         about: title && gateAbout.value ? { specification: gateAbout.value } : null,
@@ -811,6 +857,7 @@ function dur (from: string | null | undefined, to: string | null | undefined): s
 
 function statusTone (s: string): string {
     if (s === 'COMPLETED') return 'success'
+    if (s === 'DELIVERING') return 'info'
     if (s === 'ON_HOLD' || s === 'CANCELLED') return 'error'
     if (s === 'ASSIGNED') return 'warning'
     return 'default'

@@ -83,8 +83,9 @@
                 <n-button v-if="!isLocked" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
             </div>
             <n-alert v-if="currentBoard.missingCapabilities?.length" type="warning" class="lockbanner">
-                Delivery loop incomplete: no active role covers
-                {{ currentBoard.missingCapabilities.join(', ') }} — this board cannot ship until a role carries them.
+                Delivery loop incomplete: no active role or the coordinator covers
+                {{ currentBoard.missingCapabilities.join(', ') }} — give a role the capability, or declare
+                that the coordinator covers it in the board's settings.
             </n-alert>
             <n-alert v-if="awaitingHumanReview.length" type="error" class="lockbanner">
                 {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting your review:
@@ -143,6 +144,10 @@
                     <div class="col__head col__head--hold">On hold</div>
                     <TaskCard v-for="t in byStatus('ON_HOLD')" :key="t.uuid" :t="t"/>
                 </div>
+                <div class="col" v-if="byStatus('DELIVERING').length">
+                    <div class="col__head">Delivering</div>
+                    <TaskCard v-for="t in byStatus('DELIVERING')" :key="t.uuid" :t="t"/>
+                </div>
                 <div class="col col--done">
                     <div class="col__head">Completed</div>
                     <TaskCard v-for="t in byStatus('COMPLETED')" :key="t.uuid" :t="t"/>
@@ -171,7 +176,8 @@
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @operator-release="operatorRelease" @require-review="requireReview"
                 @answer="answerQuestions" @authorize="authorizeTask" @order="orderTask"
-                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"/>
+                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
+                :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
                  the coordinator's intake of the same issue finds it rather than duplicating it. -->
@@ -212,6 +218,11 @@
                 </n-input-number>
                 <n-select v-model:value="editingBoard.priorityType" :options="priorityOptions"
                           placeholder="Priority enforcement"/>
+                <!-- What the coordinator seat does itself, e.g. merging once the last required role
+                     has passed. The tracker verbs are always the coordinator's, so they are not offered. -->
+                <n-select v-model:value="editingBoard.coordinatorCapabilities" multiple
+                          :options="coordinatorCapabilityOptions"
+                          placeholder="Coordinator covers (e.g. PR_MERGE when it merges)"/>
                 <n-input v-model:value="editingBoard.documentsRepo"
                          placeholder="Documents repository, e.g. https://github.com/acme/docs">
                     <template #prefix><span class="flabel">documents repo</span></template>
@@ -639,7 +650,10 @@ import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
+import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { templateRows } from '@/utils/agentDocuments'
+import { isOrgAdmin } from '@/utils/agentReopen'
+import { prChips } from '@/utils/agentDelivery'
 
 /**
  * Types the board editor offers a template for. The task-scoped pair, because those are the ones
@@ -794,8 +808,9 @@ const editingPreset = ref<any>(null)
 const models = ref<any[]>([])
 const editingPresetIsNew = ref(false)
 
-const capabilityOptions = ['TRACKER_READ', 'TRACKER_WRITE', 'CODE_PUSH', 'PR_MERGE']
-    .map(c => ({ label: c, value: c }))
+const capabilityOptions = toOptions(CAPABILITIES)
+// The coordinator always has the tracker verbs, and the server refuses them here.
+const coordinatorCapabilityOptions = toOptions(COORDINATOR_CAPABILITIES)
 
 /**
  * Document types a role can be required to publish.
@@ -860,7 +875,8 @@ async function humanReview (p: { task: any, approve: boolean, note: string, find
         const res = await store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve,
             note: p.note || undefined, findings: p.findings, about: p.about })
         notification.success({ content: `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass`
-            + (res?.status === 'QUEUED' && res?.role ? ` — back to ${res.role}` : ''), duration: 3000 })
+            + (p.findings?.length && p.approve ? ' with a correction' : '')
+            + (res?.status === 'QUEUED' && res?.role ? ` — ${p.approve ? 'on' : 'back'} to ${res.role}` : ''), duration: 3000 })
         selectedTask.value = null
         await refreshBoardContent()
     } catch (e: any) {
@@ -1001,6 +1017,13 @@ function cancelTask (p: { task: any, note: string }) {
     return taskAction(p.task,
         () => store.dispatch('agentTaskCancel', { taskUuid: p.task.uuid, note: p.note }),
         () => 'Task cancelled', 'Cancel failed')
+}
+
+function reopenTask (p: { task: any, role: string, reason: string }) {
+    return taskAction(p.task,
+        () => store.dispatch('agentTaskReopen', { taskUuid: p.task.uuid, role: p.role, reason: p.reason }),
+        (res: any) => res?.status === 'ON_HOLD' ? `Reopened to ${p.role}, held: the budget does not cover the round`
+            : `Reopened to ${p.role}`, 'Reopen failed')
 }
 
 function decideFindings (p: { task: any, specification: string, decisions: any[],
@@ -1175,8 +1198,12 @@ const TaskCard = defineComponent({
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => `${p.t.returns.length} return${p.t.returns.length > 1 ? 's' : ''}` }),
                     default: () => p.t.returns.map((r: any) => `${r.role ?? '?'}: ${r.reason}${r.description ? ' — ' + r.description : ''}`).join(' | '),
                 }) : null,
-                ...(p.t.prUrls ?? []).map((pr: string) => h(NTag, { size: 'tiny', bordered: false, type: 'success' },
-                    { default: () => h('a', { href: pr, target: '_blank', rel: 'noopener', class: 'prlink' }, 'PR') })),
+                ...prChips(p.t).map((c) => h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: c.type },
+                        { default: () => h('a', { href: c.url, target: '_blank', rel: 'noopener', class: 'prlink' },
+                            c.state === 'linked' ? 'PR' : `PR ${c.state}`) }),
+                    default: () => `${c.label}: ${c.title}`,
+                })),
             ]),
             p.t.dependsOn?.length ? h('div', { class: 'tcard__deps' }, [
                 h('span', { class: 'deplabel' }, 'after'),
@@ -1286,6 +1313,8 @@ const canApplySpec = computed<boolean>(() => {
 
 // A board without sources is its own tracker: no task has a ref there, and none is a "draft".
 const boardHasSources = computed<boolean>(() => (currentBoard.value?.sources?.length ?? 0) > 0)
+// Reopening a completed task is an org admin's (agentTaskReopen); the server decides.
+const canReopen = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
 
 const applyKinds = ref<SpecKind[] | null>(null)
 
@@ -1343,9 +1372,11 @@ function startEditBoard (b: any | null) {
     // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])],
         documentsRepo: b.documentsRepo?.uri ?? '',
-        documentPaths: { ...(b.documentPaths ?? {}) } }
+        documentPaths: { ...(b.documentPaths ?? {}) },
+        coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])] }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
-            priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {} }
+            priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
+            coordinatorCapabilities: [] }
 }
 
 async function saveBoard () {
@@ -1371,6 +1402,8 @@ async function saveBoard () {
             Object.entries(editingBoard.value.documentPaths ?? {})
                 .filter(([, v]) => !!(v as string)?.trim()))
         if (Object.keys(paths).length) input.documentPaths = paths
+        // Always sent: the form shows the current list, so an emptied one clears it ([]).
+        input.coordinatorCapabilities = editingBoard.value.coordinatorCapabilities ?? []
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
             input.seedFromPresets = !!editingBoard.value.seedFromPresets
@@ -1651,4 +1684,20 @@ async function operatorLock (lock: boolean) {
 /* A role tag that names the last hop, not where the task is now (task 562ac668). Top level: the
    drawer is teleported out of the panel. */
 .tag--history { opacity: 0.75; font-style: italic; }
+
+/* Top level, not under .boardsPanel: n-modal teleports its card to <body>, so a nested rule never
+   reaches the "Board as a spec" modal. The block scrolls, not the page; long lines scroll sideways
+   instead of painting past the card. white-space stays pre: the spec is YAML/JSON, and Copy gives
+   specText, never what is on screen. */
+.specBlock {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 65vh;
+    overflow: auto;
+    white-space: pre;
+    font-size: 12px;
+    line-height: 1.45;
+    background: var(--n-color-modal, #fafafa);
+    border-radius: 4px;
+}
 </style>

@@ -33,7 +33,7 @@ const emit = defineEmits<{ (e: 'open', task: any): void }>()
 const textFilter = ref('')
 const statusFilter = ref<string[] | null>(null)
 
-const statusOptions = ['PENDING_INTAKE', 'QUEUED', 'ASSIGNED', 'AWAITING_COORDINATOR', 'ON_HOLD', 'COMPLETED', 'CANCELLED']
+const statusOptions = ['PENDING_INTAKE', 'QUEUED', 'ASSIGNED', 'AWAITING_COORDINATOR', 'ON_HOLD', 'DELIVERING', 'COMPLETED', 'CANCELLED']
     .map(s => ({ label: s.replace(/_/g, ' ').toLowerCase(), value: s }))
 
 const filtered = computed(() => {
@@ -79,8 +79,9 @@ const columns: DataTableColumns<any> = [
             h(NTag, {
                 size: 'small', bordered: false,
                 type: t.status === 'COMPLETED' ? 'success'
-                    : t.status === 'ASSIGNED' ? 'warning'
-                        : (t.status === 'ON_HOLD' || t.status === 'CANCELLED') ? 'error' : 'default',
+                    : t.status === 'DELIVERING' ? 'info'
+                        : t.status === 'ASSIGNED' ? 'warning'
+                            : (t.status === 'ON_HOLD' || t.status === 'CANCELLED') ? 'error' : 'default',
             }, { default: () => t.status.replace(/_/g, ' ').toLowerCase() }),
             blocked(t) ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left:4px' },
                 { default: () => 'blocked' }) : null,
