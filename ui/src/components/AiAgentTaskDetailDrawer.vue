@@ -243,6 +243,9 @@
                         <n-tag v-if="f.status !== 'OPEN'" size="tiny" :bordered="false"
                                :type="statusType(f.status)">{{ f.status }}</n-tag>
                         <span class="frow__title">{{ f.title }}</span>
+                        <n-tag v-if="findingElement(f)" size="tiny" :bordered="false" type="info" class="frow__el"
+                               title="The element this finding is about: open it under its document"
+                               @click="openElement(findingElement(f) ?? '')">{{ findingElement(f) }}</n-tag>
                         <code v-if="findingLocation(f)" class="frow__loc">{{ findingLocation(f) }}</code>
                         <span v-if="f.decidedBy" class="frow__dec" :title="f.resolution ?? ''">
                             {{ f.decidedBy.kind === 'USER' ? 'decided by' : 'agent decided' }}
@@ -303,7 +306,8 @@
 
                 <div class="dsec" v-if="taskDocuments.length">
                     <div class="dsec__h">Documents</div>
-                    <div v-for="d in taskDocuments" :key="d.uuid ?? ''" class="drow">
+                    <template v-for="d in taskDocuments" :key="d.uuid ?? ''">
+                    <div class="drow">
                         <span class="drow__label">{{ documentLabel(d) }}</span>
                         <n-tag v-if="documentVerdict(d)" size="tiny" :bordered="false"
                                :type="verdictType(documentVerdict(d))">{{ documentVerdict(d) }}</n-tag>
@@ -317,7 +321,15 @@
                         <code v-else class="drow__path drow__path--plain">{{ d.document?.path }}</code>
                         <code v-if="d.sourceCodeEntryDetails?.commit" class="drow__commit"
                               title="Commit this document is pinned to">{{ d.sourceCodeEntryDetails.commit.slice(0, 8) }}</code>
+                        <n-button v-if="elementsOf(d).length" size="tiny" quaternary
+                                  @click="expandedDoc = expandedDoc === d.uuid ? null : (d.uuid ?? null)">
+                            {{ elementsOf(d).length }} element{{ elementsOf(d).length === 1 ? '' : 's' }}
+                        </n-button>
                     </div>
+                    <AiAgentDocumentElements v-if="expandedDoc === d.uuid" :release="d" :documents="taskDocuments"
+                                             :board-uuid="board?.uuid" :task-uuid="task?.uuid"
+                                             :task-status="task?.status" :focus="focusedElement"/>
+                    </template>
                 </div>
 
                 <div class="dsec">
@@ -515,6 +527,8 @@
 import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag, NTooltip } from 'naive-ui'
 import AgentUsageSummary from './AgentUsageSummary.vue'
+import AiAgentDocumentElements from './AiAgentDocumentElements.vue'
+import { documentDefining, elementsOf, findingElement } from '@/utils/agentElements'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress } from '@/utils/agentTaskLabels'
@@ -732,6 +746,24 @@ const canAnswer = computed(() =>
 // Documents this task has produced, newest first as the server returns them.
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
 
+// The document whose element list is open, and the element to open in it (elements.md §8).
+const expandedDoc = ref<string | null>(null)
+const focusedElement = ref<string | null>(null)
+watch(() => props.task?.uuid, () => {
+    expandedDoc.value = null
+    focusedElement.value = null
+})
+
+/** From a finding's element chip: open the document that defines the element, at the element. */
+function openElement (id: string) {
+    const d = documentDefining(taskDocuments.value, id)
+    if (!d?.uuid) return
+    expandedDoc.value = d.uuid
+    // cleared first, so naming the same element again still opens it
+    focusedElement.value = null
+    setTimeout(() => { focusedElement.value = id })
+}
+
 // Open questions, when there is no answer form showing them: the task is with the role meant to
 // answer, and a reader still wants to see what it is waiting on.
 const openQuestionGroups = computed(() => groupByPriority((props.task?.openQuestions ?? []) as Finding[]))
@@ -890,6 +922,7 @@ function statusTone (s: string): string {
     &__id { font-weight: 600; font-size: 11.5px; }
     &__title { flex: 1; }
     &__loc { font-size: 11px; color: #999; }
+    &__el { cursor: pointer; }
     &__dec { font-size: 10.5px; color: #8a8; }
     &--closed { opacity: 0.6; }
 }
