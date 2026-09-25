@@ -6,7 +6,25 @@
 import Swal from 'sweetalert2'
 import { FindingType } from '@/constants/findingType'
 
-export const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
+/** The severities a finding can carry, worst first. */
+export const ROW_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED'] as const
+export type RowSeverity = typeof ROW_SEVERITIES[number]
+
+// '-' is the placeholder violations carry in place of a severity.
+export const SEVERITY_ORDER: string[] = [...ROW_SEVERITIES, '-']
+
+/**
+ * The severity bucket of a finding, as the findings table's Severity filter reads
+ * it: a missing, '-' or unrecognised severity is UNASSIGNED.
+ */
+export function severityBucketOf (finding: { severity?: string }): RowSeverity {
+    const s = finding.severity || ''
+    return (ROW_SEVERITIES as readonly string[]).includes(s) ? s as RowSeverity : 'UNASSIGNED'
+}
+
+export function emptySeverityCounts (): Record<RowSeverity, number> {
+    return Object.fromEntries(ROW_SEVERITIES.map(s => [s, 0])) as Record<RowSeverity, number>
+}
 
 export function getSeverityIndex(severity?: string): number {
     if (!severity) return SEVERITY_ORDER.length
