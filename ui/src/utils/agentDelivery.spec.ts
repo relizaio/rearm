@@ -75,6 +75,23 @@ describe('delivery modes and attestations (task 18c5c293)', () => {
         expect(chips[2].title).toBe('merged (CI) into main')
     })
 
+    it('keeps the tested-head line on an attested chip (with task 3b97ccfd)', () => {
+        const A = 'aaaaaaa1111111111111111111111111111111aa'
+        const B = 'bbbbbbb2222222222222222222222222222222bb'
+        const chips = prChips({
+            testedHeads: [{ pr: 'https://github.com/acme/app/pull/1', head: A }, { pr: 'https://github.com/acme/app/pull/2', head: A }],
+            pullRequests: [
+                { url: 'https://github.com/acme/app/pull/1', state: 'OPEN', registered: true, head: B,
+                    attestation: { outcome: 'DELIVERED', commit: 'ccccccc3', by: { kind: 'USER', name: 'op' }, note: null } },
+                { url: 'https://github.com/acme/app/pull/2', state: null, registered: false,
+                    attestation: { outcome: 'DELIVERED', commit: A, by: { kind: 'USER', name: 'op' }, note: null } }
+            ]
+        })
+        expect(chips[0]).toMatchObject({ state: 'merged', title: 'attested by op at ccccccc',
+            heads: 'tested aaaaaaa · now bbbbbbb: moved past the tested head', moved: true })
+        expect(chips[1]).toMatchObject({ state: 'merged', title: 'attested by op at aaaaaaa', heads: 'tested aaaaaaa' })
+    })
+
     it('offers the three modes with help, and sends the policy only when changed', () => {
         expect(DELIVERY_MODE_OPTIONS.map(o => o.value)).toEqual(['PR_ROWS', 'ATTESTED', 'NONE'])
         expect(DELIVERY_MODE_OPTIONS.every(o => o.help.length > 20)).toBe(true)
