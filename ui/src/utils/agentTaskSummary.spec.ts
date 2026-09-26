@@ -36,6 +36,11 @@ describe('taskSummary', () => {
         const s = taskSummary(t, [], fixtureRoles, { a1: 'Arch' })
         expect(s.assignment).toMatch(/^coder · Arch · since /)
         expect(s.usage).toBe('$0.42 · 1.5k tok · 3 requests')
+        // The board's figure when the server serves it (task 02bfab7c): rows plus the coordinator share.
+        const charged = taskSummary(richTask({ spentMicros: 470_000, coordinatorEstimateMicros: 50_000 }), [], fixtureRoles, {})
+        expect(charged.usage).toBe('$0.47 spent · 1.5k tok · 3 requests')
+        const shareOnly = taskSummary(richTask({ usage: null, spentMicros: 50_000 }), [], fixtureRoles, {})
+        expect(shareOnly.usage).toBe('$0.05 spent')
         const none = taskSummary(richTask({ usage: null }), [], fixtureRoles, {})
         expect(none.assignment).toBeNull()
         expect(none.usage).toBeNull()

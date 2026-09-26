@@ -36,7 +36,7 @@
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames"/>
-                    <task-usage :task="task"/>
+                    <task-usage :task="task" :board="board"/>
                     <task-pull-requests :task="task"/>
                 </div>
             </div>

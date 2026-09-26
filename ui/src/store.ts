@@ -156,6 +156,7 @@ const AGENT_TASK_SELECTION = `
     budgetSetBy { kind uuid name }
     budgetSetAt
     coordinatorEstimateMicros
+    spentMicros
     requiredStrength
     strengthSetBy { kind uuid name }
     strengthSetAt
@@ -2935,6 +2936,7 @@ const storeObject : any = {
                                 orderSetAt
                                 budgetMicros
                                 coordinatorEstimateMicros
+                                spentMicros
                                 requiredStrength
                                 strengthSetBy { kind uuid name }
                                 prUrls
