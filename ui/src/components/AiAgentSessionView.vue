@@ -15,8 +15,16 @@
                 <template #trigger>
                     <n-button size="tiny" type="error" ghost class="forceclose" :loading="closing">Force close</n-button>
                 </template>
-                Releases every task this session holds back to the coordinator and closes the session.
+                <div>Returns every task this session holds to the queue and closes the session.</div>
+                <n-input v-model:value="closeReasonInput" size="small" class="forceclose-reason" placeholder="Reason (optional)" />
             </n-popconfirm>
+            <n-tooltip v-if="isIdleWarned(session)" trigger="hover" :width="320">
+                <template #trigger>
+                    <n-tag size="small" type="warning" class="idle-warned">Closing idle</n-tag>
+                </template>
+                Warned {{ formatDate(session.idleWarnedAt) }} that it will be auto-closed for inactivity.
+                Any call with its session id, or <code>rearm agent session touch</code>, keeps it open.
+            </n-tooltip>
             <code class="dim">{{ session.uuid }}</code>
             <span class="dim">·</span>
             <a v-if="agent" @click.prevent="openAgent" href="#">
@@ -129,6 +137,9 @@
                     <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
                     <n-descriptions-item label="Started">{{ formatDate(session.startedAt) }}</n-descriptions-item>
                     <n-descriptions-item label="Closed">{{ formatDate(session.closedAt) }}</n-descriptions-item>
+                    <n-descriptions-item v-if="closeAttribution(session)" label="Closed by">
+                        <span class="close-attribution">{{ closeAttribution(session) }}</span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Last activity">{{ formatDate(session.lastActivityAt) }}</n-descriptions-item>
                     <n-descriptions-item label="Commits"><strong>{{ session.commits?.length ?? 0 }}</strong></n-descriptions-item>
                     <n-descriptions-item label="Artifacts"><strong>{{ session.artifacts?.length ?? 0 }}</strong></n-descriptions-item>
@@ -199,8 +210,9 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
 import { canForceClose } from '@/utils/agentTaskAdmin'
+import { closeAttribution, forceCloseReason, isIdleWarned } from '@/utils/agentSessionIdle'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
@@ -361,11 +373,13 @@ onMounted(load)
 
 const isAdmin = computed(() => isOrgAdmin(store.getters?.myuser?.permissions?.permissions, session.value?.org))
 const closing = ref(false)
+const closeReasonInput = ref('')
 async function forceClose () {
     closing.value = true
     try {
-        await store.dispatch('forceCloseAgentSession', session.value.uuid)
-        notification.success({ content: 'Session closed; its tasks went back to the coordinator', duration: 4000 })
+        await store.dispatch('forceCloseAgentSession', { sessionUuid: session.value.uuid, reason: forceCloseReason(closeReasonInput.value) })
+        closeReasonInput.value = ''
+        notification.success({ content: 'Session closed; its tasks went back to the queue', duration: 4000 })
         await load()
     } catch (e: any) {
         notification.error({ content: `Force close failed: ${e?.message ?? e}`, duration: 8000 })
@@ -708,6 +722,8 @@ const policyColumns: DataTableColumns<any> = [
 
 <style scoped>
 .aiAgentSessionView { padding: 16px; }
+.forceclose-reason { margin-top: 6px; }
+.idle-warned { margin-left: 4px; }
 .editor {
     background: #fffefe;
     color: #3a3838;

@@ -18,8 +18,8 @@ vi.mock('prismjs/themes/prism-tomorrow.css', () => ({}))
 
 const { default: SessionView } = await import('./AiAgentSessionView.vue')
 
-// The confirm's popover is teleported; a stub shows its trigger and a button that confirms.
-const confirm = { emits: ['positive-click'], template: '<div class="pc"><slot name="trigger"/><button class="pc__yes" @click="$emit(\'positive-click\')"/></div>' }
+// The confirm's popover is teleported; a stub shows its trigger, its body (the reason) and a button that confirms.
+const confirm = { emits: ['positive-click'], template: '<div class="pc"><slot name="trigger"/><slot/><button class="pc__yes" @click="$emit(\'positive-click\')"/></div>' }
 const stubs = { NPopconfirm: confirm, Popconfirm: confirm }
 
 function session (status: string) {
@@ -55,8 +55,38 @@ describe('session force close', () => {
         await flushPromises()
         await w.find('.pc__yes').trigger('click')
         await flushPromises()
-        expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', 's1')
+        expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', { sessionUuid: 's1', reason: null })
         expect(dispatch.mock.calls.filter(c => c[0] === 'fetchSession')).toHaveLength(2)
         expect(w.find('.forceclose').exists(), 'a closed session offers nothing').toBe(false)
+    })
+
+    it('sends the reason the admin typed and shows who closed it', async () => {
+        asAdmin(true)
+        let closed = false
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'fetchSession') {
+                return closed
+                    ? { ...session('CLOSED'), closedBy: { kind: 'USER', uuid: 'u1', name: 'pm@example.com' }, closeReason: 'force-closed by pm@example.com: agent crashed' }
+                    : session('OPEN')
+            }
+            if (a === 'forceCloseAgentSession') { closed = true; return { uuid: 's1', status: 'CLOSED' } }
+            return []
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        await w.find('.forceclose-reason input').setValue('  agent crashed ')
+        await w.find('.pc__yes').trigger('click')
+        await flushPromises()
+        expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', { sessionUuid: 's1', reason: 'agent crashed' })
+        expect(w.find('.close-attribution').text()).toBe('pm@example.com — force-closed by pm@example.com: agent crashed')
+    })
+
+    it('flags an open session the sweep has warned', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession'
+            ? { ...session('OPEN'), idleWarnedAt: '2026-09-26T10:00:00Z' } : [])
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(w.find('.idle-warned').exists()).toBe(true)
     })
 })
