@@ -255,6 +255,17 @@
                                     style="width: 160px">
                         <template #prefix><span class="flabel">completion P≤</span></template>
                     </n-input-number>
+                    <!-- task 28dc4afb: a task waiting on a person longer than this raises a queue-age
+                         notification (AGENT_TASK_QUEUE_AGE); empty or 0 is off. -->
+                    <n-tooltip trigger="hover">
+                        <template #trigger>
+                            <n-input-number v-model:value="editingBoard.humanQueueAgeMinutes" :min="0" placeholder="off"
+                                            style="width: 250px" data-testid="board-human-queue-age">
+                                <template #prefix><span class="flabel">notify a person after, min</span></template>
+                            </n-input-number>
+                        </template>
+                        A task waiting on a person longer than this raises a notification; empty or 0 is off.
+                    </n-tooltip>
                     <!-- task 04dedcc5: how long the event log keeps an event; 0 keeps everything. -->
                     <n-input-number v-model:value="editingBoard.eventRetentionDays" :min="0" placeholder="15"
                                     style="width: 170px" data-testid="board-event-retention">
@@ -753,7 +764,7 @@ import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
-import { budgetChip, dollarsToMicros, hopBudgetInput, microsToDollars, settingsPatch } from '@/utils/agentBudget'
+import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
@@ -1467,16 +1478,7 @@ async function saveBoard () {
         input.coordinatorCapabilities = editingBoard.value.coordinatorCapabilities ?? []
         // Only what changed: an emptied setting clears, one left alone is not sent (task 40f270be).
         const original = editingBoardIsNew.value ? null : boards.value.find(x => x.uuid === editingBoard.value.uuid)
-        const settings = settingsPatch(original, {
-            budgetMicros: dollarsToMicros(editingBoard.value.budgetDollars),
-            softAlertPercent: editingBoard.value.softAlertPercent ?? null,
-            cycleCap: editingBoard.value.cycleCap ?? null,
-            noProgressRepeatsToStop: editingBoard.value.noProgressRepeatsToStop ?? null,
-            blockingPriority: editingBoard.value.blockingPriority ?? null,
-            completionPriority: editingBoard.value.completionPriority ?? null,
-            eventRetentionDays: editingBoard.value.eventRetentionDays ?? null,
-            coordinatorStopRelease: editingBoard.value.coordinatorStopRelease ?? null,
-        })
+        const settings = settingsPatch(original, settingsDraftOf(editingBoard.value))
         if (settings) input.settings = settings
         // Only when changed; cleared restores the default, PR_ROWS (task 18c5c293).
         const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest,
