@@ -252,6 +252,18 @@ describe('completionBlockers', () => {
         expect(all.map(b => b.finding.id)).toEqual(['F-1', 'F-2', 'T-1'])
         expect(all[2].specification).toBe('TEST_REPORT')
     })
+
+    it('never counts a correction, at any threshold (task cac71351)', () => {
+        const withCorrections = [
+            { uuid: 'r', lifecycle: 'ASSEMBLED', document: { specification: 'REVIEW_FINDINGS', findings: { findings: [
+                { id: 'P-1', priority: 1, status: 'OPEN', correction: true },
+                { id: 'F-1', priority: 2, status: 'OPEN' },
+                { id: 'P-2', priority: 3, status: 'OPEN', correction: null },
+            ] } } },
+        ]
+        expect(completionBlockers(withCorrections, null).map(b => b.finding.id)).toEqual(['F-1', 'P-2'])
+        expect(completionBlockers(withCorrections, 1).map(b => b.finding.id)).toEqual([])
+    })
 })
 
 describe('documentLifecycleLabel', () => {
