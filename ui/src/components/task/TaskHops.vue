@@ -25,6 +25,14 @@
                             <span v-else>{{ documentLabel(o) }}</span>
                         </span>
                     </div>
+                    <div v-if="reviewedChips(e.rec).length" class="hist__reviewed">
+                        <n-tooltip v-for="c in reviewedChips(e.rec)" :key="c.release" :disabled="!c.title" trigger="hover">
+                            <template #trigger>
+                                <n-tag size="tiny" :bordered="false" :type="c.type" class="hist__rev">{{ c.label }}</n-tag>
+                            </template>
+                            {{ c.title }}
+                        </n-tooltip>
+                    </div>
                     <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                 </template>
                 <template v-else>
@@ -49,13 +57,15 @@
 </template>
 
 <script lang="ts" setup>
-// The hop log: sign-offs and returns, each with its cost and the documents it recorded.
+// The hop log: sign-offs and returns, each with its cost, the documents it recorded and, for a
+// review, what it reviewed and promoted (task fda2c9f1).
 import { computed } from 'vue'
-import { NTag } from 'naive-ui'
+import { NTag, NTooltip } from 'naive-ui'
 import { actorLabel } from '@/utils/agentActors'
 import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@/utils/agentDocuments'
 import { agentName, dur, hopHistory, ts } from '@/utils/agentTaskFormat'
+import { reviewedChips } from '@/utils/agentReviewed'
 
 const props = defineProps<{ task: any, agentNames: Record<string, string> }>()
 

@@ -11,8 +11,9 @@
                      style="margin-top: 8px"/>
             <!-- A rejection with a finding attached routes like a reviewer's: to whoever
                  produces what it is about. Without one it goes to the coordinator. An
-                 approval with one files it as a correction and hands the work over; the
-                 server refuses a correction at the blocking priority as a rejection. -->
+                 approval with one files it as a correction, which never blocks, and hands the
+                 work over; the server refuses an approval that leaves an existing blocking item
+                 undecided. -->
             <n-space :size="6" style="margin-top: 8px" align="center">
                 <n-input v-model:value="gateFindingTitle" size="small"
                          placeholder="Finding or correction (optional)" style="width: 230px"/>

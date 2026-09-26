@@ -46,6 +46,16 @@ export interface Finding {
     decidedBy?: { kind?: string | null, uuid?: string | null, name?: string | null } | null
     decidedIn?: string | null
     decidedAt?: string | null
+    /**
+     * Filed by a person approving at a gate (task cac71351): open work the task was approved past.
+     * Never blocks routing or completion. Written by the server.
+     */
+    correction?: boolean | null
+}
+
+/** Whether a finding is a correction: open work that never blocks. */
+export function isCorrection (f?: Finding | null): boolean {
+    return f?.correction === true
 }
 
 /** Types whose releases carry a findings index. */
@@ -152,13 +162,15 @@ export const DECIDABLE_STATUSES = ['QUEUED', 'AWAITING_COORDINATOR', 'ON_HOLD']
  * The open findings that stop a person completing a task: over the newest REVIEW_FINDINGS and
  * TEST_REPORT rounds, at or above the board's completion priority (1 is highest, so at or above
  * means a number no greater than it). A null threshold, or a finding with no priority, counts every
- * open item. Mirrors the server's check so the complete dialog can offer to decide them first.
+ * open item. A correction never counts. Mirrors the server's check so the complete dialog can offer
+ * to decide them first.
  */
 export function completionBlockers (documents: DocumentRelease[] | null | undefined,
     completionPriority?: number | null): { specification: string, finding: Finding }[] {
     const out: { specification: string, finding: Finding }[] = []
     for (const spec of INDEXED_TYPES) {
         for (const f of sortFindings(openFindingsOf(latestRound(documents, spec)))) {
+            if (isCorrection(f)) continue
             if (completionPriority == null || typeof f.priority !== 'number' || f.priority <= completionPriority) {
                 out.push({ specification: spec, finding: f })
             }
