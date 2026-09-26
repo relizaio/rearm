@@ -214,3 +214,33 @@ export function periodRange (hours: number, now: number = Date.now()): { from: s
         to: new Date(now).toISOString(),
     }
 }
+
+/**
+ * What the board charges a task (task 02bfab7c): the server's spentMicros, its usage rows plus its
+ * coordinator share -- the figure its budget is held to, which usage.derivedCostMicros alone
+ * reads lower than. The title says how much of it is the coordinator estimate.
+ */
+export function taskSpendLabel (task?: { spentMicros?: number | null, coordinatorEstimateMicros?: number | null,
+    usage?: UsageTotals | null } | null): { label: string, title: string } {
+    const spent = formatCostMicros(taskSpentMicros(task)) ?? '$0.00'
+    const estimate = task?.coordinatorEstimateMicros ?? 0
+    const source = estimate > 0
+        ? `incl. ${formatCostMicros(estimate)} coordinator estimate`
+        : 'all from its own usage'
+    const lowerBound = task?.usage?.costComplete === false ? ' (a lower bound: some usage has no price)' : ''
+    return { label: `${spent} spent`, title: `${spent} spent, ${source}${lowerBound}` }
+}
+
+/**
+ * The task's spend in micros: the server's spentMicros, else -- from a server that does not serve
+ * it -- the cost of its own usage rows, which is what the chip showed before.
+ */
+export function taskSpentMicros (task?: { spentMicros?: number | null, usage?: UsageTotals | null } | null): number {
+    return task?.spentMicros ?? task?.usage?.derivedCostMicros ?? 0
+}
+
+/** Whether a task has spend or a budget to show: a coordinator share alone is spend. */
+export function taskSpendVisible (task?: { spentMicros?: number | null, budgetMicros?: number | null,
+    usage?: UsageTotals | null } | null): boolean {
+    return taskSpentMicros(task) > 0 || (task?.budgetMicros ?? 0) > 0
+}

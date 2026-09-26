@@ -2,7 +2,7 @@
 // open the task page, and nothing that needs a page to read -- counts rather than tables, one line
 // per concern.
 import { DocumentRelease, Finding, INDEXED_TYPES, latestRound } from './agentDocuments'
-import { costLabel, formatTokens, totalTokens } from './agentUsage'
+import { costLabel, formatTokens, taskSpendLabel, totalTokens } from './agentUsage'
 import { agentName, dur, roleName, ts } from './agentTaskFormat'
 import { aboutLabel, latestQuestionRound } from './agentQuestionRounds'
 
@@ -79,8 +79,10 @@ export function taskSummary (task: any, tasks: any[], roles: any[] | null | unde
             blocks: task ? tasks.filter(t => (t.dependsOn ?? []).includes(task.uuid)).length : 0,
         },
         assignment: a ? `${a.role} · ${agentName(agentNames, a.agent)} · since ${ts(a.assignedAt)} (${dur(a.assignedAt, null)})` : null,
+        // The board's figure for the task (task 02bfab7c), as the usage chip headlines it: its rows
+        // plus its coordinator share, so a task whose only cost is the share still shows it.
         usage: (usage?.reports ?? 0) > 0
-            ? `${costLabel(usage)} · ${formatTokens(totalTokens(usage))} tok · ${usage.requests ?? 0} requests`
-            : null,
+            ? `${null != task?.spentMicros ? taskSpendLabel(task).label : costLabel(usage)} · ${formatTokens(totalTokens(usage))} tok · ${usage.requests ?? 0} requests`
+            : (task?.spentMicros ?? 0) > 0 ? taskSpendLabel(task).label : null,
     }
 }
