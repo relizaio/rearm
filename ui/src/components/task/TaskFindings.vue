@@ -19,6 +19,8 @@
             </n-tag>
             <n-tag v-if="f.status !== 'OPEN'" size="tiny" :bordered="false"
                    :type="statusType(f.status)">{{ f.status }}</n-tag>
+            <n-tag v-if="isCorrection(f)" size="tiny" :bordered="false" type="info" class="frow__corr"
+                   title="Filed by a person approving at a gate: work the task was approved past. It never blocks; the producer's next round addresses it.">correction</n-tag>
             <span class="frow__title">{{ f.title }}</span>
             <n-tag v-if="findingElement(f)" size="tiny" :bordered="false" type="info" class="frow__el"
                    title="The element this finding is about: open it under its document"
@@ -87,6 +89,7 @@ import {
     documentVerdict,
     findingLocation,
     findingLocationFull,
+    isCorrection,
     latestRound,
     sortFindings,
     statusType,
