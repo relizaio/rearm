@@ -684,6 +684,7 @@ const storeObject : any = {
                                 settings {
                                     justificationMandatory
                                     findingPriorityLevels
+                                    agentSessionIdleCloseHours
                                     branchSuffixMode
                                     vexComplianceFramework
                                     sidPurlMode
@@ -2763,13 +2764,13 @@ const storeObject : any = {
             })
             return response.data.agentBoardOperatorLock
         },
-        async forceCloseAgentSession (context: any, sessionUuid: string) {
+        async forceCloseAgentSession (context: any, payload: { sessionUuid: string, reason?: string | null }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation agentSessionForceClose($sessionUuid: ID!) {
-                        agentSessionForceClose(sessionUuid: $sessionUuid) { uuid status closedAt }
+                    mutation agentSessionForceClose($sessionUuid: ID!, $reason: String) {
+                        agentSessionForceClose(sessionUuid: $sessionUuid, reason: $reason) { uuid status closedAt closeReason }
                     }`,
-                variables: { sessionUuid },
+                variables: { sessionUuid: payload.sessionUuid, reason: payload.reason ?? null },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentSessionForceClose
@@ -3532,6 +3533,9 @@ const storeObject : any = {
                             startedAt
                             closedAt
                             lastActivityAt
+                            closedBy { kind uuid name }
+                            closeReason
+                            idleWarnedAt
                             providerSessions {
                                 provider
                                 id

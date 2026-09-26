@@ -999,6 +999,21 @@
                         </n-form-item>
                     </n-form>
                 </div>
+                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                    <h5>Agent Sessions</h5>
+                    <p class="text-muted">How long an agent session may make no calls before it is closed.</p>
+                    <n-form>
+                        <n-form-item label="Idle close (hours)">
+                            <n-input-number v-model:value="orgSettings.agentSessionIdleCloseHours"
+                                            :min="IDLE_CLOSE_HOURS_MIN" :max="IDLE_CLOSE_HOURS_MAX" style="width: 120px;"/>
+                            <span class="ml-2 text-muted">
+                                Any call with a session's id counts as activity. The session is warned two hours
+                                before it closes (half the window when shorter); one that holds a task or a
+                                coordinator seat is given twice the window. Its tasks go back to the queue.
+                            </span>
+                        </n-form-item>
+                    </n-form>
+                </div>
                 <div class="adminSettingsBlock mt-4">
                     <h5>Finding Analysis Settings</h5>
                     <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
@@ -1256,6 +1271,7 @@ import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
+import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
 
 const route = useRoute()
 const router = useRouter()
@@ -1448,6 +1464,7 @@ type SidPurlMode = 'DISABLED' | 'ENABLED_STRICT' | 'ENABLED_FLEXIBLE'
 const orgSettings = reactive({
     justificationMandatory: false,
     findingPriorityLevels: 3,
+    agentSessionIdleCloseHours: IDLE_CLOSE_HOURS_DEFAULT,
     branchSuffixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION',
     vexComplianceFramework: 'NONE' as 'NONE' | 'CISA',
     sidPurlMode: 'DISABLED' as SidPurlMode,
@@ -3598,6 +3615,7 @@ async function loadOrgSettings() {
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
     orgSettings.findingPriorityLevels = s?.findingPriorityLevels ?? 3
+    orgSettings.agentSessionIdleCloseHours = idleCloseHoursOf(s)
     orgSettings.branchSuffixMode = (s?.branchSuffixMode && s.branchSuffixMode !== 'INHERIT') ? s.branchSuffixMode : 'APPEND'
     orgSettings.vexComplianceFramework = s?.vexComplianceFramework || 'NONE'
     orgSettings.sidPurlMode = (s?.sidPurlMode as SidPurlMode) || 'DISABLED'
@@ -3638,6 +3656,8 @@ async function saveOrgSettings() {
                         }
                         settings {
                             justificationMandatory
+                            findingPriorityLevels
+                            agentSessionIdleCloseHours
                             branchSuffixMode
                             vexComplianceFramework
                             sidPurlMode
@@ -3650,6 +3670,7 @@ async function saveOrgSettings() {
                 settings: {
                     justificationMandatory: orgSettings.justificationMandatory,
                     findingPriorityLevels: orgSettings.findingPriorityLevels,
+                    agentSessionIdleCloseHours: orgSettings.agentSessionIdleCloseHours,
                     branchSuffixMode: orgSettings.branchSuffixMode,
                     vexComplianceFramework: orgSettings.vexComplianceFramework,
                     sidPurlMode: orgSettings.sidPurlMode,
