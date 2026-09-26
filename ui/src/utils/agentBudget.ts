@@ -36,8 +36,27 @@ export function budgetChip (spentMicros: number | null | undefined, budgetMicros
 
 /** The board settings the form edits, in the order it shows them. */
 export const BOARD_SETTING_KEYS = ['budgetMicros', 'softAlertPercent', 'cycleCap', 'noProgressRepeatsToStop',
-    'blockingPriority', 'completionPriority', 'eventRetentionDays', 'coordinatorStopRelease'] as const
+    'blockingPriority', 'completionPriority', 'humanQueueAgeMinutes', 'eventRetentionDays', 'coordinatorStopRelease'] as const
 export type BoardSettingKey = typeof BOARD_SETTING_KEYS[number]
+
+/**
+ * The board form's settings as settingsPatch compares them: each key read off the form, blank as
+ * null, the budget converted from dollars. One list, so a setting the form shows is also one it
+ * saves (task 28dc4afb: humanQueueAgeMinutes was on the board and missing here).
+ */
+export function settingsDraftOf (form: any): Record<BoardSettingKey, number | boolean | null> {
+    return {
+        budgetMicros: dollarsToMicros(form?.budgetDollars),
+        softAlertPercent: form?.softAlertPercent ?? null,
+        cycleCap: form?.cycleCap ?? null,
+        noProgressRepeatsToStop: form?.noProgressRepeatsToStop ?? null,
+        blockingPriority: form?.blockingPriority ?? null,
+        completionPriority: form?.completionPriority ?? null,
+        humanQueueAgeMinutes: form?.humanQueueAgeMinutes ?? null,
+        eventRetentionDays: form?.eventRetentionDays ?? null,
+        coordinatorStopRelease: form?.coordinatorStopRelease ?? null,
+    }
+}
 
 /**
  * What the form sends as AgentBoardInput.settings: only what changed. A value the person emptied is

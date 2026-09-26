@@ -41,6 +41,7 @@ const AGENT_BOARD_SELECTION = `
     softAlertPercent
     cycleCap
     noProgressRepeatsToStop
+    humanQueueAgeMinutes
     coordinatorStopRelease
     deliveryPolicy { mode attest merge { by method atTestedHead requireAttestation order } }
     effectiveDeliveryPolicy { merge { by method atTestedHead requireAttestation order } }
