@@ -1,6 +1,6 @@
 <template>
     <div class="dhead">
-        <div class="dhead__title">{{ task.title }}</div>
+        <div class="dhead__title"><code v-if="task.key" class="dhead__key">{{ task.key }}</code>{{ task.title }}</div>
         <div class="dhead__sub">
             <a v-if="task.sourceUrl" :href="task.sourceUrl" target="_blank" rel="noopener">
                 {{ refLabel(task, boardHasSources) ?? 'link' }}
@@ -36,6 +36,7 @@ const roleTag = computed(() => roleTagFor(props.task))
 <style scoped lang="scss">
 .dhead {
     &__title { font-size: 15px; font-weight: 600; }
+    &__key { margin-right: 8px; font-weight: 600; }
     &__sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; flex-wrap: wrap; }
 }
 /* A role tag that names the last hop, not where the task is now (task 562ac668). */

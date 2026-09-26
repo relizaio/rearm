@@ -26,8 +26,12 @@ export function shortId (u: string | null | undefined): string {
     return u ? u.slice(0, 8) : ''
 }
 
-/** A task as a chip: its tracker number when it has one, else its title cut to 20 characters. */
+/**
+ * A task as a chip: its key (RD-42) when it has one (board-documents.md D12), else its tracker
+ * number, else its title cut to 20 characters.
+ */
 export function taskLabel (t: any): string {
+    if (t?.key) return String(t.key)
     if (t?.externalRef?.includes('#')) return '#' + t.externalRef.split('#').pop()
     const title = t?.title ?? 'task'
     return title.length > 20 ? title.slice(0, 19) + '…' : title

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { refLabel, roleTagFor, shortRef, subtaskProgress, subtaskTag } from './agentTaskLabels'
+import { compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef, subtaskProgress, subtaskTag } from './agentTaskLabels'
 
 const tasks = [
     { uuid: 'c1', status: 'COMPLETED', title: 'one' },
@@ -71,5 +71,22 @@ describe('refLabel and shortRef', () => {
         expect(refLabel({}, false)).toBeNull()
         expect(shortRef({}, true)).toBe('draft')
         expect(shortRef({}, false)).toBe('—')
+    })
+})
+
+// Task keys (task 3d1f9dd7): the table filter matches the key, and the key column sorts by number.
+describe('task keys in the table', () => {
+    const t = { key: 'RD-42', number: 42, title: 'Reopen a task', externalRef: 'github:acme/widget#7' }
+    it('the filter matches the key, the title or the ref, case ignored', () => {
+        expect(matchesTaskText(t, 'rd-42')).toBe(true)
+        expect(matchesTaskText(t, 'reopen')).toBe(true)
+        expect(matchesTaskText(t, 'widget#7')).toBe(true)
+        expect(matchesTaskText(t, 'RD-43')).toBe(false)
+        expect(matchesTaskText(t, '  ')).toBe(true)
+        expect(matchesTaskText({ title: 'no key yet' }, 'no key')).toBe(true)
+    })
+    it('the key column sorts by number, unnumbered last', () => {
+        const rows = [{ key: 'RD-10', number: 10 }, { title: 'old' }, { key: 'RD-9', number: 9 }]
+        expect([...rows].sort(compareTaskKeys).map(r => r.key ?? r.title)).toEqual(['RD-9', 'RD-10', 'old'])
     })
 })
