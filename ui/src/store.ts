@@ -112,6 +112,7 @@ const AGENT_TASK_SELECTION = `
                     decidedBy { kind uuid name }
                     decidedIn
                     decidedAt
+                    correction
                 }
                 about { specification release }
             }
@@ -127,6 +128,7 @@ const AGENT_TASK_SELECTION = `
         resolution
         decidedBy { kind uuid name }
         decidedAt
+        correction
     }
     openQuestions {
         id
