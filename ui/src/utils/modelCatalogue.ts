@@ -152,3 +152,15 @@ export function modelFieldOfError (message: string | null | undefined): 'name' |
     if (m.includes('strength')) return 'strength'
     return null
 }
+
+/**
+ * The merge preview's sentence (RD2-27 run 1 T-2): which row points at which. Each row is named by its
+ * label and what it was declared as, since the duplicates the hint sends people here for share a
+ * canonical id -- and so a label.
+ */
+export function mergeDirection (plan: { survivor: any, folded: any } | null): string {
+    if (!plan) return ''
+    const name = (m: any) => `${modelLabel(m)} (${modelDeclaredAs(m)})`
+    const why = plan.survivor?.resolution === 'RESOLVED' ? '' : ', the older row'
+    return `${name(plan.folded)} will point at the survivor, ${name(plan.survivor)}${why}.`
+}

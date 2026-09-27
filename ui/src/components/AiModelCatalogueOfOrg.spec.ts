@@ -81,7 +81,9 @@ describe('AiModelCatalogueOfOrg', () => {
         expect(preview.find('[data-uuid="o1"]').text()).toContain('1 live')
         expect(preview.find('[data-uuid="o2"]').text()).toContain('folded')
         expect(preview.find('[data-uuid="o2"]').text()).toContain('unused')
-        expect(w.find('[data-testid="merge-direction"]').text()).toContain('will point at the survivor')
+        // The two rows share a canonical id, so the sentence tells them apart by what each was declared as (T-2).
+        expect(w.find('[data-testid="merge-direction"]').text()).toBe('claude-opus-5-5 (declared as claude-opus · v5.5) will point '
+            + 'at the survivor, claude-opus-5-5 (declared as claude-opus-5-5 · v1).')
         await vm.doMerge()
         expect(dispatch).toHaveBeenCalledWith('mergeModelOntology', { from: 'o2', into: 'o1' })
     })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-    bundleOptions, canonicalIsFree, hasDuplicate, isSyntheticRow, mergeSurvivor, modelDeclaredAs, modelDraftOf,
+    bundleOptions, canonicalIsFree, hasDuplicate, isSyntheticRow, mergeDirection, mergeSurvivor, modelDeclaredAs, modelDraftOf,
     modelEditChanged, modelFieldOfError, modelLabel, modelUpdateInput, sharedCanonicalIds, unresolvedCount, usageLabel,
 } from './modelCatalogue'
 
@@ -115,5 +115,18 @@ describe('the edit drawer', () => {
             .toBe('canonicalId')
         expect(modelFieldOfError('strength must be at most 10')).toBe('strength')
         expect(modelFieldOfError('Not authorized')).toBeNull()
+    })
+})
+
+// Tester run 1 T-2: duplicates share a canonical id, so a label alone cannot tell them apart.
+describe('the merge sentence', () => {
+    it('names each row by its label and what it was declared as', () => {
+        const priced = { uuid: 'a', name: 'claude-sonnet', version: '5', canonicalId: 'claude-sonnet-5', resolution: 'RESOLVED' }
+        const twin = { uuid: 'b', name: 'rd27-foo', version: 'unknown', canonicalId: 'claude-sonnet-5', resolution: 'RESOLVED' }
+        expect(mergeDirection({ survivor: priced, folded: twin })).toBe('claude-sonnet-5 (declared as rd27-foo) will point at '
+            + 'the survivor, claude-sonnet-5 (declared as claude-sonnet · v5).')
+        expect(mergeDirection({ survivor: local, folded: { ...local, uuid: 'l2', name: 'house-model-2' } }))
+            .toBe('house-model-2 (declared as house-model-2) will point at the survivor, house-model (declared as house-model), the older row.')
+        expect(mergeDirection(null)).toBe('')
     })
 })

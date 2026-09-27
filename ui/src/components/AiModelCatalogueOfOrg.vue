@@ -178,8 +178,7 @@
                     </tr>
                 </table>
                 <n-text v-if="mergePlan" depth="3" style="display: block; margin-top: 8px;" data-testid="merge-direction">
-                    <code>{{ modelLabel(mergePlan.folded) }}</code> will point at the survivor,
-                    <code>{{ modelLabel(mergePlan.survivor) }}</code>{{ mergePlan.survivor.resolution === 'RESOLVED' ? '' : ' (the older row)' }}.
+                    {{ mergeDirection(mergePlan) }}
                 </n-text>
                 <n-space justify="end" style="margin-top: 16px;">
                     <n-button size="small" @click="showMerge = false">Cancel</n-button>
@@ -247,7 +246,7 @@ import {
     DataTableColumns, useNotification,
 } from 'naive-ui'
 
-import { bundleOptions, canonicalIsFree, hasDuplicate, isSyntheticRow, mergeSurvivor, modelDeclaredAs, modelDraftOf,
+import { bundleOptions, canonicalIsFree, hasDuplicate, isSyntheticRow, mergeDirection, mergeSurvivor, modelDeclaredAs, modelDraftOf,
     ModelDraft, modelEditChanged, modelFieldOfError, modelLabel, modelUpdateInput, sharedCanonicalIds, unresolvedCount as countUnresolved,
     usageLabel } from '@/utils/modelCatalogue'
 
