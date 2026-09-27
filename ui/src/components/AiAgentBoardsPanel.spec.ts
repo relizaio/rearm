@@ -98,3 +98,20 @@ describe('the board page: New task', () => {
         expect(can).toContain('!taskDescriptionProblem(registering.value.description)')
     })
 })
+
+// Both lists in one warning, the coverage read for the selected board only (task 5c70990d).
+describe('the board warning: capabilities and coverage', () => {
+    it('shows the capability line, then each coverage line, in one alert', () => {
+        const alert = template.slice(template.indexOf('data-testid="board-warning"'))
+        const body = alert.slice(0, alert.indexOf('</n-alert>'))
+        expect(template).toContain('v-if="boardWarningShown(currentBoard.missingCapabilities, missingCoverage)"')
+        expect(body).toContain('currentBoard.missingCapabilities.join')
+        expect(body).toContain('v-for="line in coverageLines(missingCoverage)"')
+        expect(body.indexOf('missingCapabilities.join')).toBeLessThan(body.indexOf('coverageLines(missingCoverage)'))
+    })
+
+    it('reads the coverage for the selected board, not with the board list', () => {
+        expect(source).toContain("await store.dispatch('fetchAgentBoardCoverage', selectedBoard.value)")
+        expect(source).toContain('    await loadCoverage()\n')
+    })
+})
