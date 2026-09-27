@@ -12,6 +12,7 @@
                 <span class="lg"><i class="sw sw--ready"/>ready</span>
                 <span class="lg"><i class="sw sw--blocked"/>blocked</span>
                 <span class="lg"><i class="sw sw--hold"/>on hold</span>
+                <span v-if="graph.groups.length" class="lg"><i class="sw sw--gate"/>waits on a group</span>
             </div>
             <div class="pert-scroll">
                 <svg :width="graph.width" :height="graph.height" class="pert-svg">
@@ -25,6 +26,20 @@
                             <path d="M 0 0 L 8 4 L 0 8 z" fill="#c2410c"/>
                         </marker>
                     </defs>
+                    <!-- The board's groups (RD2-31): a box each along the top, laid out by the groups they
+                         wait on; a gated task hangs off the group holding it back by a dotted line. -->
+                    <path v-for="(e, i) in graph.groupEdges" :key="'ge' + i" :d="e.d" class="pert-gedge"
+                          marker-end="url(#pert-arrow)" data-testid="pert-group-edge"/>
+                    <path v-for="(e, i) in graph.gateEdges" :key="'gt' + i" :d="e.d" class="pert-gate"
+                          :data-gate="e.group + '>' + e.task" data-testid="pert-gate-edge"/>
+                    <g v-for="g in graph.groups" :key="'g' + g.key" :transform="`translate(${g.x}, ${g.y})`"
+                       class="pert-group" :class="{ 'pert-group--closed': g.closed }" data-testid="pert-group" :data-key="g.key">
+                        <rect :width="GROUP_W" :height="GROUP_H" rx="6" :style="{ stroke: g.colour }"/>
+                        <rect :width="5" :height="GROUP_H" rx="2" :style="{ fill: g.colour }"/>
+                        <text class="pert-ref" x="12" y="16">{{ g.key }}</text>
+                        <text class="pert-status" x="12" y="30">{{ g.progress }}</text>
+                        <title>{{ g.label }}</title>
+                    </g>
                     <path
                         v-for="(e, i) in graph.edges"
                         :key="'e' + i"
@@ -41,6 +56,8 @@
                         :class="[`pert-node--${n.tone}`, { 'pert-node--crit': n.critical }]"
                     >
                         <rect :width="NODE_W" :height="NODE_H" rx="6"/>
+                        <rect v-if="groupColour(n.t.group?.key)" :width="4" :height="NODE_H" rx="2"
+                              :style="{ fill: groupColour(n.t.group?.key) }" class="pert-node__group"/>
                         <text class="pert-ref" x="10" y="18">{{ refLabel(n.t) }}</text>
                         <text class="pert-role" :x="NODE_W - 10" y="18" text-anchor="end">{{ n.t.role || '—' }}</text>
                         <text class="pert-title" x="10" y="35">{{ clip(n.t.title, 26) }}</text>
@@ -63,6 +80,7 @@
 import { computed } from 'vue'
 import { cardRef } from '@/utils/agentTaskFormat'
 import { refWithLevel } from '@/utils/agentTaskLevel'
+import { groupColour, groupLabel, groupLayers, groupProgress, sortedGroups } from '@/utils/agentTaskGroups'
 
 const props = defineProps<{ tasks: any[], board?: any }>()
 
@@ -71,6 +89,9 @@ const NODE_H = 62
 const COL_GAP = 84
 const ROW_GAP = 26
 const PAD = 14
+const GROUP_W = 150
+const GROUP_H = 38
+const GROUP_GAP = 40
 
 // Charted set: everything still in play plus completed tasks that
 // something open depends on (they explain why work is unblocked).
@@ -125,6 +146,38 @@ const graph = computed(() => {
             : null
     }
 
+    // The group band along the top, when the board has groups.
+    const layers = groupLayers(props.board)
+    const groupRows = new Map<number, number>()
+    const groups: any[] = []
+    const groupPos = new Map<string, { x: number, y: number }>()
+    for (const g of sortedGroups(props.board)) {
+        const l = layers.get(g.key) ?? 0
+        const row = groupRows.get(l) ?? 0
+        groupRows.set(l, row + 1)
+        const x = PAD + l * (GROUP_W + GROUP_GAP)
+        const y = PAD + row * (GROUP_H + 8)
+        groupPos.set(g.key, { x, y })
+        groups.push({ key: g.key, x, y, colour: groupColour(g.key), progress: groupProgress(g), label: groupLabel(g),
+            closed: g.status === 'CLOSED' })
+    }
+    const bandRows = Math.max(0, ...groupRows.values())
+    const top = groups.length ? bandRows * (GROUP_H + 8) + ROW_GAP * 2 : 0
+    const groupEdges: any[] = []
+    for (const g of sortedGroups(props.board)) {
+        for (const d of g.dependsOn ?? []) {
+            const from = groupPos.get(d)
+            const to = groupPos.get(g.key)
+            if (!from || !to) continue
+            const x1 = from.x + GROUP_W
+            const y1 = from.y + GROUP_H / 2
+            const x2 = to.x
+            const y2 = to.y + GROUP_H / 2
+            const dx = Math.max(20, (x2 - x1) / 2)
+            groupEdges.push({ d: `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}` })
+        }
+    }
+
     const byLayer = new Map<number, any[]>()
     for (const t of charted.value) {
         const l = layerOf(t.uuid)
@@ -137,7 +190,7 @@ const graph = computed(() => {
         group.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
         group.forEach((t, i) => {
             const x = PAD + l * (NODE_W + COL_GAP)
-            const y = PAD + i * (NODE_H + ROW_GAP)
+            const y = PAD + top + i * (NODE_H + ROW_GAP)
             positions.set(t.uuid, { x, y })
             nodes.push({ t, x, y, layer: l, tone: toneOf(t), critical: criticalSet.has(t.uuid) })
         })
@@ -162,13 +215,32 @@ const graph = computed(() => {
         }
     }
 
+    // A gated task's dotted line up to each group it waits on.
+    const gateEdges: any[] = []
+    for (const n of nodes) {
+        for (const k of n.t.waitingOnGroups ?? []) {
+            const from = groupPos.get(k)
+            if (!from) continue
+            const x1 = from.x + GROUP_W / 2
+            const y1 = from.y + GROUP_H
+            const x2 = n.x + NODE_W / 2
+            const y2 = n.y
+            gateEdges.push({ d: `M ${x1} ${y1} C ${x1} ${y1 + 30}, ${x2} ${y2 - 30}, ${x2} ${y2}`, group: k, task: n.t.uuid })
+        }
+    }
+
     const maxLayer = Math.max(0, ...[...byLayer.keys()])
     const maxRows = Math.max(1, ...[...byLayer.values()].map(g => g.length))
+    const maxGroupLayer = Math.max(0, ...[...groupRows.keys()])
     return {
         nodes,
         edges,
-        width: PAD * 2 + (maxLayer + 1) * NODE_W + maxLayer * COL_GAP,
-        height: PAD * 2 + maxRows * NODE_H + (maxRows - 1) * ROW_GAP,
+        groups,
+        groupEdges,
+        gateEdges,
+        width: Math.max(PAD * 2 + (maxLayer + 1) * NODE_W + maxLayer * COL_GAP,
+            groups.length ? PAD * 2 + (maxGroupLayer + 1) * GROUP_W + maxGroupLayer * GROUP_GAP : 0),
+        height: PAD * 2 + top + maxRows * NODE_H + (maxRows - 1) * ROW_GAP,
         criticalLength: tail ? chainOf(tail.uuid) : 0,
     }
 })
@@ -226,6 +298,7 @@ function clip (s: string, n: number): string {
         &--ready { background: #e8f0fb; border: 1px solid #6c8fc7; }
         &--blocked { background: #f2f2f2; border: 1px dashed #b0b0b0; }
         &--hold { background: #fbe3e3; border: 1px solid #b03a3a; }
+        &--gate { background: transparent; border: 1px dotted #d9a24a; }
     }
 }
 .pert-scroll { overflow: auto; max-width: 100%; padding-bottom: 4px; }
@@ -237,6 +310,15 @@ function clip (s: string, n: number): string {
     stroke-dasharray: 4 3;
     &--met { stroke-dasharray: none; stroke: #4a9d6e; }
     &--crit { stroke: #c2410c; stroke-width: 2.5; stroke-dasharray: none; }
+}
+.pert-gedge { fill: none; stroke: #9a9a9a; stroke-width: 1.5; }
+.pert-gate { fill: none; stroke: #d9a24a; stroke-width: 1.5; stroke-dasharray: 1 3; stroke-linecap: round; }
+.pert-group {
+    rect:first-child { fill: #fafafa; stroke-width: 1.5; }
+    text { font-size: 11px; fill: #333; }
+    .pert-ref { font-family: monospace; font-weight: 600; }
+    .pert-status { font-size: 10px; fill: #888; }
+    &--closed { opacity: 0.55; }
 }
 .pert-node {
     rect {

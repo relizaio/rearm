@@ -10,7 +10,7 @@
                     size="small"
                     style="min-width: 220px"
                 />
-                <n-button size="small" quaternary @click="registering = { title: '', description: '', externalRef: '', sourceUrl: '' }"
+                <n-button size="small" quaternary @click="registering = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }"
                           v-if="currentBoard && canOperate(currentBoard)">+ New task</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)"
                           v-if="currentBoard && canConfigure(currentBoard)">Edit board</n-button>
@@ -145,10 +145,19 @@
                 <n-select :value="levelFilter" :options="levelFilterOptions" size="small" clearable
                           placeholder="any level" style="width: 130px" data-testid="level-filter"
                           @update:value="setLevelFilter"/>
+                <!-- The group and tag filters (RD2-31), in the URL as ?group=core-work&tag=client-req. -->
+                <n-select v-if="currentBoard?.groups?.length" :value="groupFilter" :options="groupFilterOptions" size="small" clearable
+                          placeholder="any group" style="width: 170px" data-testid="group-filter"
+                          @update:value="setGroupFilter"/>
+                <n-select v-if="tagFilterOptions.length" :value="tagFilter" :options="tagFilterOptions" size="small" clearable filterable
+                          placeholder="any tag" style="width: 150px" data-testid="tag-filter"
+                          @update:value="setTagFilter"/>
             </n-space>
             <!-- Hub-and-spoke kanban: intake / per-role / awaiting coordinator / done -->
             <div v-for="lane in kanbanLanes" :key="lane.key" class="lane" :data-lane="lane.key">
-            <div v-if="groupBy !== 'none'" class="lane__head" data-testid="lane-head">{{ lane.label }}</div>
+            <div v-if="groupBy !== 'none'" class="lane__head" data-testid="lane-head"
+                 :style="groupBy === 'group' && groupColour(lane.key === 'none' ? null : lane.key)
+                     ? { borderLeft: `4px solid ${groupColour(lane.key)}`, paddingLeft: '6px' } : undefined">{{ lane.label }}</div>
             <div class="board">
                 <div class="col">
                     <div class="col__head">Pending intake</div>
@@ -203,6 +212,8 @@
             </n-tab-pane>
             <n-tab-pane name="table" tab="Table">
                 <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" :board-has-sources="boardHasSources" :board="currentBoard"
+                                      :group-filter="groupFilter" :tag-filter="tagFilter"
+                                      @update:group-filter="setGroupFilter" @update:tag-filter="setTagFilter"
                                       @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="usage" tab="Usage">
@@ -212,6 +223,9 @@
             </n-tab-pane>
             <n-tab-pane name="documents" tab="Documents">
                 <AgentBoardDocumentsPanel :series="documentSeries" :org-uuid="orgUuid"/>
+            </n-tab-pane>
+            <n-tab-pane name="groups" tab="Groups">
+                <AgentBoardGroupsPanel :board="currentBoard" :can-configure="canConfigure(currentBoard)" :save-group="saveGroup"/>
             </n-tab-pane>
             </n-tabs>
 
@@ -224,6 +238,7 @@
                 @authorize="authorizeTask" @order="orderTask"
                 @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
                 @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget" @set-level="setLevel"
+                @set-group="setGroup" @set-tags="setTags"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
@@ -253,6 +268,17 @@
                                  ? 'Tracker issue, e.g. github:owner/repo#42 (required)'
                                  : 'Tracker issue (optional)'"/>
                     <n-input v-model:value="registering.sourceUrl" placeholder="Link (optional)"/>
+                    <!-- Group, tags and level (RD2-31): a group takes new tasks only while OPEN. -->
+                    <n-select v-if="currentBoard.groups?.length" v-model:value="registering.group" data-testid="new-task-group"
+                              :options="groupOptions(currentBoard, { openOnly: true, none: true })" placeholder="Group: none"/>
+                    <n-input v-model:value="registering.tagsText" data-testid="new-task-tags"
+                             placeholder="Tags (optional), comma separated, e.g. client-req, sandbox-only"
+                             :status="tagsProblem(parseTags(registering.tagsText)) ? 'error' : undefined"/>
+                    <n-text v-if="tagsProblem(parseTags(registering.tagsText))" type="error" style="font-size: 12px; margin-top: -6px;">
+                        {{ tagsProblem(parseTags(registering.tagsText)) }}
+                    </n-text>
+                    <n-input-number v-model:value="registering.level" :min="0" :max="MAX_LEVEL" :step="1" :precision="0" clearable
+                                    data-testid="new-task-level" :placeholder="`Level: ${levelPlaceholder(currentBoard)}`"/>
                     <n-space justify="end">
                         <n-button size="small" @click="registering = null">Cancel</n-button>
                         <n-button size="small" type="primary" :disabled="!canRegister" @click="registerTask">
@@ -903,6 +929,7 @@ import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
 import AgentBoardDocumentsPanel from '@/components/AgentBoardDocumentsPanel.vue'
+import AgentBoardGroupsPanel from '@/components/AgentBoardGroupsPanel.vue'
 import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
@@ -916,7 +943,9 @@ import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionTy
 import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
-    levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
+    levelPlaceholder, levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
+import { groupColour, groupFromQuery, groupLabel, groupByKey, groupOptions, NO_GROUP, parseTags, passesGroupAndTag,
+    registerGroupFields, tagFromQuery, tagOptions, tagsProblem, waitingOnLabel, withGroupQuery } from '@/utils/agentTaskGroups'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
@@ -949,13 +978,13 @@ const router = useRouter()
 
 // Board selection and view live in the query string so a board (and
 // the view you were looking at) is linkable and survives a reload.
-const BOARD_VIEWS = ['kanban', 'pert', 'timeline', 'table']
+const BOARD_VIEWS = ['kanban', 'pert', 'timeline', 'table', 'groups']
 const boardView = ref<string>(
     BOARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : 'kanban')
 
 function syncQuery () {
-    const q: Record<string, string> = withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },
-        groupBy.value, levelFilter.value)
+    const q: Record<string, string> = withGroupQuery(withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },
+        groupBy.value, levelFilter.value), groupFilter.value, tagFilter.value)
     if (selectedBoard.value) q.board = selectedBoard.value
     else delete q.board
     q.view = boardView.value
@@ -975,6 +1004,20 @@ function setLevelFilter (v: number | null) {
 }
 const levelFilterOptions = Array.from({ length: MAX_LEVEL + 1 }, (_, i) => ({ label: `L${i}`, value: i }))
 
+// The group and tag filters (RD2-31), shared by the kanban and the table and kept in the URL.
+const groupFilter = ref<string | null>(groupFromQuery(route.query))
+const tagFilter = ref<string | null>(tagFromQuery(route.query))
+function setGroupFilter (v: string | null) {
+    groupFilter.value = v ?? null
+    syncQuery()
+}
+function setTagFilter (v: string | null) {
+    tagFilter.value = v ?? null
+    syncQuery()
+}
+const groupFilterOptions = computed(() => [{ label: 'ungrouped', value: NO_GROUP }, ...groupOptions(currentBoard.value)])
+const tagFilterOptions = computed(() => tagOptions(tasks.value))
+
 function setBoardView (v: string) {
     boardView.value = v
     syncQuery()
@@ -985,7 +1028,8 @@ const selectedBoard = ref<string | null>(null)
 const tasks = ref<any[]>([])
 // The kanban's tasks under the level filter, in lanes by the grouping (one lane for "none").
 const kanbanLanes = computed(() => groupTasks(
-    levelFilter.value == null ? tasks.value : tasks.value.filter(t => levelOf(t, currentBoard.value) === levelFilter.value),
+    tasks.value.filter(t => (levelFilter.value == null || levelOf(t, currentBoard.value) === levelFilter.value)
+        && passesGroupAndTag(t, groupFilter.value, tagFilter.value)),
     groupBy.value, currentBoard.value))
 const roles = ref<any[]>([])
 const showRoles = ref(false)
@@ -1216,6 +1260,7 @@ async function reseedCoordinator (presetName: string) {
 const {
     humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
+    setGroup, setTags,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
     await refreshBoardContent()
@@ -1225,17 +1270,27 @@ const {
 const priorityLevels = computed(() =>
     store.getters.orgById(props.orgUuid)?.settings?.findingPriorityLevels ?? 3)
 
-const registering = ref<{ title: string, description: string, externalRef: string, sourceUrl: string } | null>(null)
+const registering = ref<{ title: string, description: string, externalRef: string, sourceUrl: string,
+    group?: string | null, tagsText?: string, level?: number | null } | null>(null)
 const canRegister = computed(() => !!registering.value?.title.trim()
     && !taskTitleProblem(registering.value.title) && !taskDescriptionProblem(registering.value.description)
+    && !tagsProblem(parseTags(registering.value.tagsText))
     && ((currentBoard.value?.sources?.length ?? 0) === 0 || !!registering.value?.externalRef.trim()))
+
+/** A group from the Groups tab (agentBoardGroupSet); a refusal goes back to the form, beside its field. */
+async function saveGroup (group: Record<string, any>) {
+    if (!currentBoard.value) return
+    await store.dispatch('agentBoardGroupSet', { boardUuid: currentBoard.value.uuid, group })
+    notification.success({ content: `Group ${group.key} saved`, duration: 3000 })
+    await refreshBoards()
+}
 
 async function registerTask () {
     if (!registering.value || !currentBoard.value) return
     try {
         await store.dispatch('agentTaskRegister', {
             boardUuid: currentBoard.value.uuid,
-            input: taskRegisterInput(registering.value),
+            input: { ...taskRegisterInput(registering.value), ...registerGroupFields(registering.value) },
         })
         notification.success({ content: 'Task registered — pending intake', duration: 3000 })
         registering.value = null
@@ -1339,17 +1394,27 @@ function atRole (role: string, among: any[] = tasks.value): any[] {
 const TaskCard = defineComponent({
     props: { t: { type: Object, required: true } },
     setup (p: any) {
-        return () => h(NCard, { size: 'small', style: 'cursor: pointer', onClick: () => openTask(p.t), class: ['tcard',
-            p.t.status === 'ASSIGNED' ? 'tcard--assigned' : '',
-            p.t.status === 'COMPLETED' ? 'tcard--done' : '',
-            workRank(p.t) === 1 ? 'tcard--ready' : '',
-            workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
+        // The group's colour on the card's edge, in every grouping (RD2-31).
+        return () => h(NCard, { size: 'small', onClick: () => openTask(p.t), 'data-group': p.t.group?.key ?? undefined,
+            style: 'cursor: pointer' + (groupColour(p.t.group?.key) ? `; border-left: 3px solid ${groupColour(p.t.group?.key)}` : ''),
+            class: ['tcard',
+                p.t.status === 'ASSIGNED' ? 'tcard--assigned' : '',
+                p.t.status === 'COMPLETED' ? 'tcard--done' : '',
+                workRank(p.t) === 1 ? 'tcard--ready' : '',
+                workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
             h('div', { class: 'tcard__title' }, [
                 // The level where the key goes (RD2-1; RD2-22 puts the key beside it).
                 levelLabel(p.t, currentBoard.value) ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__level' },
                         { default: () => levelLabel(p.t, currentBoard.value) }),
                     default: () => levelTooltip(p.t, currentBoard.value, actorLabel),
+                }) : null,
+                // The group beside the key and level (RD2-31).
+                p.t.group?.key ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__group', 'data-testid': 'card-group',
+                        color: { color: `${groupColour(p.t.group.key)}22`, textColor: groupColour(p.t.group.key) ?? undefined } },
+                    { default: () => p.t.group.key }),
+                    default: () => groupLabel(groupByKey(currentBoard.value, p.t.group.key) ?? p.t.group),
                 }) : null,
                 p.t.title,
                 // The page, without opening the drawer on the way.
@@ -1390,6 +1455,11 @@ const TaskCard = defineComponent({
                             .join(', '),
                     }),
                     default: () => 'Not assignable until every dependency is COMPLETED; the server releases it automatically.',
+                }) : null,
+                waitingOnLabel(p.t) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning', 'data-testid': 'card-waiting' },
+                        { default: () => waitingOnLabel(p.t) }),
+                    default: () => 'Not offered or assignable until every task of the groups it waits on is done or cancelled.',
                 }) : null,
                 wipCapped(p.t) ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'wip-capped' }),
@@ -1948,6 +2018,7 @@ async function operatorLock (lock: boolean) {
     .lane { margin-bottom: 12px; }
     .lane__head { font-weight: 600; font-size: 13px; margin: 6px 0; }
     .tcard__level { margin-right: 6px; }
+    .tcard__group { margin-right: 6px; font-family: monospace; }
     .board {
         display: grid;
         grid-auto-flow: column;

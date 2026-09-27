@@ -23,6 +23,7 @@
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
                               @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
                               @set-level="p => emit('set-level', p)"
+                              @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
                               @set-budget="p => emit('set-budget', p)"/>
                 <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
                               @open="t => emit('open', t)"/>
@@ -69,6 +70,8 @@ const emit = defineEmits<{
         about?: { specification: string } | null }): void
     (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
     (e: 'set-level', p: { task: any, level: number | null }): void
+    (e: 'set-group', p: { task: any, group: string | null }): void
+    (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 </script>

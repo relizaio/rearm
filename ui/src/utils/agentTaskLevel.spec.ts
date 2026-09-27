@@ -79,7 +79,7 @@ describe('filters, lanes and the URL', () => {
         const withDefault = groupTasks(tasks, 'level', { defaultTaskLevel: 1 })
         expect(withDefault.map(l => l.key)).toEqual(['0', '1', '3'], 'an unset task reads the default')
         expect(groupTasks(tasks, 'none', {})).toEqual([{ key: 'all', label: '', tasks }])
-        expect(GROUP_BY_OPTIONS.map(o => o.value)).toEqual(['none', 'level'])
+        expect(GROUP_BY_OPTIONS.map(o => o.value)).toEqual(['none', 'level', 'group'])
     })
 
     it('keeps the grouping and the level filter in the query', () => {
