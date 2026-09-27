@@ -878,7 +878,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
-import { boardTargetOptions, targetChip, targetMissing, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
+import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
@@ -1449,6 +1449,7 @@ const roleColumns: DataTableColumns<any> = [
 ]
 
 onMounted(refreshBoards)
+onMounted(() => loadTargetComponents(true))
 watch(selectedBoard, async () => {
     syncQuery()
     await refreshBoardContent()
@@ -1530,20 +1531,21 @@ const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, target?:
 
 // The target picker's list (task RD2-4): the org's software components, read (cache-first) when the
 // form opens. Read into the form, not off the store getter, which also holds components fetched one
-// by one, a board's DOCUMENT components among them.
+// by one, a board's DOCUMENT components among them. Also read quietly with the panel, so the header
+// chip can name the target on a server that does not resolve targetDetails (T-1).
 const targetComponents = ref<any[]>([])
-async function loadTargetComponents () {
+async function loadTargetComponents (quiet = false) {
     try {
         targetComponents.value = await store.dispatch('fetchComponents', props.orgUuid) ?? []
     } catch (e: any) {
         targetComponents.value = []
-        notification.error({ content: `Could not load the components to pick a target from: ${e?.message ?? e}`, duration: 8000 })
+        if (!quiet) notification.error({ content: `Could not load the components to pick a target from: ${e?.message ?? e}`, duration: 8000 })
     }
 }
-const targetOptions = computed(() => boardTargetOptions(targetComponents.value,
-    editingBoardIsNew.value ? null : boards.value.find(x => x.uuid === editingBoard.value?.uuid)?.targetDetails))
+const targetOptions = computed(() => boardTargetOptions(targetComponents.value, editingBoardIsNew.value ? null
+    : targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetComponents.value)))
 const renderTargetOption = (o: any) => h('span', null, [o.label, h('span', { style: 'color: #888; font-size: 12px;' }, ` · ${targetOptionType(o)}`)])
-const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid))
+const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetComponents.value))
 
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null

@@ -149,7 +149,7 @@ describe('the board form: target component', () => {
 
     it('offers the fetched software components, keeping the current target on Edit', () => {
         expect(source).toContain("targetComponents.value = await store.dispatch('fetchComponents', props.orgUuid) ?? []")
-        expect(source).toContain('editingBoardIsNew.value ? null : boards.value.find(x => x.uuid === editingBoard.value?.uuid)?.targetDetails))')
+        expect(source).toContain(': targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetComponents.value)))')
         expect(source).toContain('void loadTargetComponents()')
     })
 
@@ -164,6 +164,10 @@ describe('the board form: target component', () => {
         expect(chip).toBeGreaterThan(-1)
         expect(template.slice(chip, template.indexOf('</n-tag>', chip)))
             .toContain('<RouterLink :to="boardTargetChip.to">{{ boardTargetChip.label }}</RouterLink>')
-        expect(source).toContain('const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid))')
+        expect(source).toContain('const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetComponents.value))')
+        // T-1: the list is read quietly with the panel too, so the chip can name the target on a
+        // server that does not resolve targetDetails.
+        expect(source).toContain('onMounted(() => loadTargetComponents(true))')
+        expect(source).toContain('if (!quiet) notification.error(')
     })
 })

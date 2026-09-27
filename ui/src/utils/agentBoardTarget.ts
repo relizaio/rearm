@@ -19,7 +19,7 @@ export function boardTargetOptions (components: any[] | null | undefined, curren
         .filter(c => c?.uuid && c?.status !== 'ARCHIVED' && c?.kind !== 'DOCUMENT')
         .map(c => ({ label: String(c.name ?? c.uuid), value: String(c.uuid), type: String(c.type ?? 'COMPONENT') }))
     if (current?.uuid && !opts.some(o => o.value === current.uuid)) {
-        opts.push({ label: String(current.name ?? current.uuid), value: String(current.uuid), type: String(current.type ?? 'COMPONENT') })
+        opts.push({ label: String(current.name ?? String(current.uuid).slice(0, 8)), value: String(current.uuid), type: String(current.type ?? 'COMPONENT') })
     }
     return opts.sort((a, b) => a.label.localeCompare(b.label))
 }
@@ -44,10 +44,25 @@ export function targetPatch (original: any | null, chosen: string | null | undef
     return chosen === original.target ? undefined : chosen
 }
 
-/** The header chip: "target <name>" linking to the component in the org, or null for a board without one. */
-export function targetChip (board: any | null | undefined, orgUuid: string): { label: string, to: string } | null {
+/**
+ * The board's target as far as it can be named (task RD2-4, T-1): the server's targetDetails; on a
+ * server that does not resolve them, the component of that uuid in the loaded list; else the uuid
+ * alone. Null for a board without a target.
+ */
+export function targetOf (board: any | null | undefined, components?: any[] | null): { uuid: string, name?: string, type?: string } | null {
     const uuid = board?.targetDetails?.uuid ?? board?.target
     if (!uuid) return null
-    const name = board?.targetDetails?.name ?? String(uuid).slice(0, 8)
-    return { label: `target ${name}`, to: `/componentsOfOrg/${orgUuid}/${uuid}` }
+    if (board?.targetDetails?.name) return board.targetDetails
+    const known = (components ?? []).find(c => c?.uuid === uuid)
+    return known?.name ? { uuid, name: known.name, type: known.type } : { uuid }
+}
+
+/**
+ * The header chip: "target <name>" linking to the component in the org, the name from targetOf,
+ * the uuid's first eight characters only when nothing names it; null for a board without one.
+ */
+export function targetChip (board: any | null | undefined, orgUuid: string, components?: any[] | null): { label: string, to: string } | null {
+    const t = targetOf(board, components)
+    if (!t) return null
+    return { label: `target ${t.name ?? String(t.uuid).slice(0, 8)}`, to: `/componentsOfOrg/${orgUuid}/${t.uuid}` }
 }

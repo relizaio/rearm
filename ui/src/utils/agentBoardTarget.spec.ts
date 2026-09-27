@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boardTargetOptions, targetChip, targetMissing, targetOptionType, targetPatch, TARGET_HINT } from './agentBoardTarget'
+import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from './agentBoardTarget'
 import { boardFieldOfError } from './agentBoardNaming'
 
 // The target picker in the board form (task RD2-4).
@@ -47,6 +47,27 @@ describe('the board target picker', () => {
         expect(targetChip({ target: 'c1abcdef99' }, 'o1')?.label).toBe('target c1abcdef')
         expect(targetChip({}, 'o1')).toBeNull()
         expect(targetChip(null, 'o1')).toBeNull()
+    })
+
+    // T-1: the server answered targetDetails with null for every board; the name then comes from the
+    // loaded components, and the uuid's first eight characters only when nothing names it.
+    it('names the target from targetDetails, else the loaded components, else the uuid', () => {
+        const served = { target: 'c1', targetDetails: { uuid: 'c1', name: 'api' } }
+        const unserved = { target: 'c1', targetDetails: null }
+        expect(targetChip(served, 'o1', comps)?.label).toBe('target api')
+        expect(targetChip({ ...served, targetDetails: { uuid: 'c1', name: 'renamed' } }, 'o1', comps)?.label,
+            'the server wins over the cache').toBe('target renamed')
+        expect(targetChip(unserved, 'o1', comps)).toEqual({ label: 'target api', to: '/componentsOfOrg/o1/c1' })
+        expect(targetChip({ target: 'feedbeef0001', targetDetails: null }, 'o1', comps)?.label).toBe('target feedbeef')
+        expect(targetOf(unserved, comps)).toEqual({ uuid: 'c1', name: 'api', type: 'COMPONENT' })
+        expect(targetOf({ target: 'zz' }, null)).toEqual({ uuid: 'zz' })
+        expect(targetOf({}, comps)).toBeNull()
+    })
+
+    it('keeps the current target on Edit by the name the cache gives it, the uuid prefix last', () => {
+        const current = targetOf({ target: 'c3', targetDetails: null }, comps)
+        expect(boardTargetOptions(comps.filter(c => c.uuid !== 'c3'), current).find(o => o.value === 'c3')?.label).toBe('old')
+        expect(boardTargetOptions([], { uuid: 'feedbeef0001' }).map(o => o.label)).toEqual(['feedbeef'])
     })
 
     it('shows the server\'s target refusals beside the field', () => {
