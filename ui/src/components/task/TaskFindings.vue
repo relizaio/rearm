@@ -28,7 +28,7 @@
             <code v-if="findingLocation(f)" class="frow__loc" :title="findingLocationFull(f)">{{ findingLocation(f) }}</code>
             <span v-if="f.decidedBy" class="frow__dec" :title="f.resolution ?? ''">
                 {{ f.decidedBy.kind === 'USER' ? 'decided by' : 'agent decided' }}
-                {{ actorLabel(f.decidedBy) }}<template v-if="f.decidedAt"> · {{ ts(f.decidedAt) }}</template>
+                <actor-ref :actor="f.decidedBy"/><template v-if="f.decidedAt"> · {{ ts(f.decidedAt) }}</template>
             </span>
             <n-button v-if="canDecide && f.status === 'OPEN'" size="tiny" quaternary
                       @click="toggleDecide(r.spec, f)">decide</n-button>
@@ -79,7 +79,7 @@
 // new finding.
 import { computed, ref, watch } from 'vue'
 import { NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
-import { actorLabel } from '@/utils/agentActors'
+import ActorRef from '../ActorRef.vue'
 import { findingElement } from '@/utils/agentElements'
 import {
     DECIDABLE_STATUSES,

@@ -11,7 +11,10 @@
                     </n-tag>
                     <span class="hist__role">{{ e.rec.role }}</span>
                     <n-tag v-if="e.rec.reviewedBy" size="tiny" :bordered="false" type="info">human</n-tag>
-                    <span class="hist__agent">{{ actorLabel(e.rec.reviewedBy) || agentName(agentNames, e.rec.agent) }}</span>
+                    <!-- The session that worked the hop, role first and linked (RD2-11); a person's verdict by name. -->
+                    <span class="hist__agent"><actor-ref v-if="e.rec.reviewedBy" :actor="e.rec.reviewedBy"/><session-ref
+                        v-else-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, null)"/><template
+                        v-else>{{ agentName(agentNames, e.rec.agent) }}</template></span>
                     <span class="hist__time">{{ ts(e.rec.signedOffAt) }}<template v-if="e.rec.assignedAt">
                         · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</template></span>
                     <code v-if="e.rec.promptVersion" class="hist__pv"
@@ -38,7 +41,8 @@
                 <template v-else>
                     <n-tag size="tiny" :bordered="false" type="warning">RETURNED</n-tag>
                     <span class="hist__role">{{ e.rec.role }}</span>
-                    <span class="hist__agent">{{ agentName(agentNames, e.rec.agent) }}</span>
+                    <span class="hist__agent"><session-ref v-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, null)"/><template
+                        v-else>{{ agentName(agentNames, e.rec.agent) }}</template></span>
                     <span class="hist__time">{{ ts(e.rec.returnedAt) }} · {{ e.rec.reason }}</span>
                     <span v-if="hopHasUsage(e.rec)" class="hist__usage"
                           :title="hopTitle(e.rec)">{{ hopLabel(e.rec) }}</span>
@@ -57,6 +61,9 @@
 </template>
 
 <script lang="ts" setup>
+import ActorRef from '../ActorRef.vue'
+import SessionRef from '../SessionRef.vue'
+import { AgentName, sessionOf } from '@/utils/agentSessionLabel'
 // The hop log: sign-offs and returns, each with its cost, the documents it recorded and, for a
 // review, what it reviewed and promoted (task fda2c9f1).
 import { computed } from 'vue'
@@ -67,7 +74,7 @@ import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@
 import { agentName, dur, hopHistory, ts } from '@/utils/agentTaskFormat'
 import { reviewedChips } from '@/utils/agentReviewed'
 
-const props = defineProps<{ task: any, agentNames: Record<string, string> }>()
+const props = defineProps<{ task: any, agentNames: Record<string, string>, agentDir?: Record<string, AgentName> }>()
 
 const history = computed(() => hopHistory(props.task))
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])

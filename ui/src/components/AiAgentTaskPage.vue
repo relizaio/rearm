@@ -22,7 +22,7 @@
                     <task-open-questions :task="task" :roles="roles"/>
                     <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
                     <task-documents :task="task" :focus="elementFocus" :can-rerun="canReopen"/>
-                    <task-hops :task="task" :agent-names="agentNames"/>
+                    <task-hops :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-history :task="task"/>
                     <AiAgentRevisionHistory v-if="canReadHistory && task.uuid" kind="task" :uuid="task.uuid" :current="task"/>
                 </div>
@@ -37,7 +37,7 @@
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
                                   @set-level="setLevel" @set-group="setGroup" @set-tags="setTags"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
-                    <task-assignment :task="task" :agent-names="agentNames"/>
+                    <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
                     <task-pull-requests :task="task"/>
                 </div>
@@ -69,6 +69,7 @@ import TaskQuestions from './task/TaskQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
 import { boardCan, canOperate } from '@/utils/agentBoardAccess'
+import { AgentName, agentDirectory, agentNamesOf } from '@/utils/agentSessionLabel'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
 
@@ -82,6 +83,8 @@ const board = ref<any>(null)
 const tasks = ref<any[]>([])
 const roles = ref<any[]>([])
 const agentNames = ref<Record<string, string>>({})
+// Agents by uuid with their own name apart from the key's note, for naming sessions (RD2-11).
+const agentDir = ref<Record<string, AgentName>>({})
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 
@@ -114,9 +117,8 @@ async function load () {
         board.value = b
         tasks.value = ts ?? []
         roles.value = rs ?? []
-        const names: Record<string, string> = {}
-        for (const a of agents ?? []) names[a.uuid] = a.effectiveDisplayName || a.name || a.uuid.slice(0, 8)
-        agentNames.value = names
+        agentDir.value = agentDirectory(agents)
+        agentNames.value = agentNamesOf(agents)
     } catch (e: any) {
         task.value = null
         loadError.value = `Could not load the task: ${e?.message ?? e}`

@@ -18,6 +18,8 @@ export function closeAttribution (session: any): string {
     if (session?.status !== 'CLOSED') return ''
     const who = actorLabel(session.closedBy as AgentActor | null)
     const why = (session.closeReason ?? '').trim()
+    // A force-close's reason already names who ("force-closed by X: ..."): say it once (RD2-11).
+    if (who && why && why.toLowerCase().includes(who.toLowerCase())) return why.charAt(0).toUpperCase() + why.slice(1)
     if (who && why) return `${who} — ${why}`
     return who || why
 }
