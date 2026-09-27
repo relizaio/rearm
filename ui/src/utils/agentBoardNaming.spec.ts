@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+    DESCRIPTION_MAX, TITLE_MAX, taskDescriptionProblem, taskRegisterInput, taskTitleProblem,
     boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsInput, documentsPatch, documentsRootPlaceholder,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskPrefixPatch, taskPrefixPlaceholder, taskPrefixProblem,
 } from './agentBoardNaming'
@@ -69,7 +70,9 @@ describe('the documents block', () => {
         expect(documentsRootPlaceholder(true)).toContain('boards/{board}/')
         expect(documentsRootPlaceholder(false)).toContain('repository root')
         expect(slug('ReARM Dogfood')).toBe('rearm-dogfood')
-        expect(slug('Café Crème')).toBe('cafe-creme')
+        // The server's board slug: an accented letter is a separator (T-4 of tests/fceb1e57/run-1.md).
+        expect(slug('Café Crème')).toBe('caf-cr-me')
+        expect(slug('Tf Ünïcödé Straße Øre mujm01q1')).toBe('tf-n-c-d-stra-e-re-mujm01q1')
         expect(slug('  --Payments!! ')).toBe('payments')
     })
 })
@@ -83,5 +86,33 @@ describe('a save refusal', () => {
         expect(boardFieldOfError("documents.prefix '--' names nothing: it needs a letter or a digit")).toBe('documents')
         expect(boardFieldOfError('Board name is required')).toBeNull()
         expect(boardFieldOfError(null)).toBeNull()
+    })
+})
+
+// The New task form (T-3 of tests/fceb1e57/run-1.md): the server's title and description rules, said
+// before the save, and the description sent with the title.
+describe('the New task form', () => {
+    it('takes a title of 120 characters and says why a longer one or two lines are refused', () => {
+        expect(TITLE_MAX).toBe(120)
+        expect(taskTitleProblem('x'.repeat(120))).toBeNull()
+        expect(taskTitleProblem('  ' + 'x'.repeat(120) + '  ')).toBeNull()
+        expect(taskTitleProblem('x'.repeat(121))).toBe('Titles are at most 120 characters (this one is 121); put the rest in the description')
+        expect(taskTitleProblem('one\ntwo')).toBe('A title is one line; put the rest in the description')
+        expect(taskTitleProblem('one\rtwo')).not.toBeNull()
+        expect(taskTitleProblem('')).toBeNull()
+    })
+
+    it('takes a description of 4000 characters and not more', () => {
+        expect(DESCRIPTION_MAX).toBe(4000)
+        expect(taskDescriptionProblem('d'.repeat(4000))).toBeNull()
+        expect(taskDescriptionProblem('d'.repeat(4001))).toBe('A description is at most 4000 characters (this one is 4001)')
+        expect(taskDescriptionProblem(undefined)).toBeNull()
+    })
+
+    it('sends the description whole with the trimmed title, and none when blank', () => {
+        const long = 'Why: briefs in titles.\n\n  What: a description.  '
+        expect(taskRegisterInput({ title: '  Cap titles ', description: long, externalRef: ' #12 ', sourceUrl: '' }))
+            .toEqual({ title: 'Cap titles', description: long, externalRef: '#12', sourceUrl: null })
+        expect(taskRegisterInput({ title: 'T', description: '   ', externalRef: '', sourceUrl: '' }).description).toBeNull()
     })
 })

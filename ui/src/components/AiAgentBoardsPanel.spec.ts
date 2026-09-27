@@ -78,3 +78,23 @@ describe('the board form: task-key prefix and documents', () => {
         expect(docsError.slice(0, docsError.indexOf('</n-text>'))).toContain('{{ boardFieldErrors.documents }}')
     })
 })
+
+// The New task form carries a description and refuses a title the server would (T-3 of
+// tests/fceb1e57/run-1.md).
+describe('the board page: New task', () => {
+    it('has a description beside the title, and sends both through taskRegisterInput', () => {
+        const modal = template.slice(template.indexOf('title="New task"'))
+        const form = modal.slice(0, modal.indexOf('</n-modal>'))
+        expect(form).toContain('v-model:value="registering.title"')
+        expect(form).toContain('v-model:value="registering.description" type="textarea"')
+        expect(form).toContain('data-testid="new-task-title-error"')
+        expect(source).toContain('input: taskRegisterInput(registering.value),')
+        expect(source).toContain("registering = { title: '', description: '', externalRef: '', sourceUrl: '' }")
+    })
+
+    it('cannot register a title or description the server refuses', () => {
+        const can = source.slice(source.indexOf('const canRegister'), source.indexOf('async function registerTask'))
+        expect(can).toContain('!taskTitleProblem(registering.value.title)')
+        expect(can).toContain('!taskDescriptionProblem(registering.value.description)')
+    })
+})

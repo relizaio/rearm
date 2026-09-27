@@ -50,10 +50,44 @@ export function priorTaskPrefixes (history?: string[] | null, current?: string |
     return (history ?? []).filter(p => p && p !== current)
 }
 
-/** A name as the server slugs it: lower case, accents dropped, anything else one hyphen, trimmed. */
+/**
+ * A name as the server slugs a board's (AgentBoardData.slug): lower case, then each run of anything
+ * but a-z and 0-9 one hyphen, none at either end. An accented letter is a separator, not a plain
+ * letter: "Café" is "caf" (tests/fceb1e57/run-1.md T-4).
+ */
 export function slug (s?: string | null): string {
-    return (s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    return (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+/** The limits the server puts on a registered task (board-documents.md §4.5). */
+export const TITLE_MAX = 120
+export const DESCRIPTION_MAX = 4000
+
+/**
+ * Why a New task title would be refused, or null: the server's rule, so the form says it before the
+ * save. A title is one line; the rest goes in the description.
+ */
+export function taskTitleProblem (title?: string | null): string | null {
+    const t = (title ?? '').trim()
+    if (/[\r\n]/.test(t)) return 'A title is one line; put the rest in the description'
+    if (t.length > TITLE_MAX) return `Titles are at most ${TITLE_MAX} characters (this one is ${t.length}); put the rest in the description`
+    return null
+}
+
+/** Why a New task description would be refused, or null. */
+export function taskDescriptionProblem (description?: string | null): string | null {
+    const d = description ?? ''
+    return d.length > DESCRIPTION_MAX ? `A description is at most ${DESCRIPTION_MAX} characters (this one is ${d.length})` : null
+}
+
+/** The New task form's input: the title trimmed, the description whole or left out when blank. */
+export function taskRegisterInput (draft: { title: string, description?: string, externalRef: string, sourceUrl: string }) {
+    return {
+        title: draft.title.trim(),
+        description: draft.description?.trim() ? draft.description : null,
+        externalRef: draft.externalRef.trim() || null,
+        sourceUrl: draft.sourceUrl.trim() || null,
+    }
 }
 
 /**

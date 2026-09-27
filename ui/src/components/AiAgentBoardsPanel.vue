@@ -10,7 +10,7 @@
                     size="small"
                     style="min-width: 220px"
                 />
-                <n-button size="small" quaternary @click="registering = { title: '', externalRef: '', sourceUrl: '' }"
+                <n-button size="small" quaternary @click="registering = { title: '', description: '', externalRef: '', sourceUrl: '' }"
                           v-if="currentBoard">+ New task</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
@@ -199,7 +199,23 @@
             <n-modal :show="registering !== null" preset="card" title="New task" style="max-width: 520px"
                      @update:show="(v: boolean) => { if (!v) registering = null }">
                 <n-space vertical :size="10" v-if="registering">
-                    <n-input v-model:value="registering.title" placeholder="Title"/>
+                    <!-- A title is one line of at most 120 characters, what a card shows; the rest goes
+                         in the description (task fceb1e57). Said here before the server refuses it. -->
+                    <n-input v-model:value="registering.title" placeholder="Title (one line, at most 120 characters)"
+                             data-testid="new-task-title"
+                             :status="taskTitleProblem(registering.title) ? 'error' : undefined"/>
+                    <n-text v-if="taskTitleProblem(registering.title)" type="error" data-testid="new-task-title-error"
+                            style="font-size: 12px; margin-top: -6px;">
+                        {{ taskTitleProblem(registering.title) }}
+                    </n-text>
+                    <n-input v-model:value="registering.description" type="textarea" data-testid="new-task-description"
+                             :autosize="{ minRows: 3, maxRows: 12 }"
+                             placeholder="Description (optional): what the task is, beyond its title"
+                             :status="taskDescriptionProblem(registering.description) ? 'error' : undefined"/>
+                    <n-text v-if="taskDescriptionProblem(registering.description)" type="error"
+                            style="font-size: 12px; margin-top: -6px;">
+                        {{ taskDescriptionProblem(registering.description) }}
+                    </n-text>
                     <n-input v-model:value="registering.externalRef"
                              :placeholder="(currentBoard.sources?.length ?? 0) > 0
                                  ? 'Tracker issue, e.g. github:owner/repo#42 (required)'
@@ -831,7 +847,8 @@ import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agent
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
 import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch, documentsRootPlaceholder,
-    normaliseTaskPrefix, priorTaskPrefixes, slug, taskPrefixPatch, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
+    normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
+    taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
@@ -1123,8 +1140,9 @@ const {
 const priorityLevels = computed(() =>
     store.getters.orgById(props.orgUuid)?.settings?.findingPriorityLevels ?? 3)
 
-const registering = ref<{ title: string, externalRef: string, sourceUrl: string } | null>(null)
+const registering = ref<{ title: string, description: string, externalRef: string, sourceUrl: string } | null>(null)
 const canRegister = computed(() => !!registering.value?.title.trim()
+    && !taskTitleProblem(registering.value.title) && !taskDescriptionProblem(registering.value.description)
     && ((currentBoard.value?.sources?.length ?? 0) === 0 || !!registering.value?.externalRef.trim()))
 
 async function registerTask () {
@@ -1132,11 +1150,7 @@ async function registerTask () {
     try {
         await store.dispatch('agentTaskRegister', {
             boardUuid: currentBoard.value.uuid,
-            input: {
-                title: registering.value.title.trim(),
-                externalRef: registering.value.externalRef.trim() || null,
-                sourceUrl: registering.value.sourceUrl.trim() || null,
-            },
+            input: taskRegisterInput(registering.value),
         })
         notification.success({ content: 'Task registered — pending intake', duration: 3000 })
         registering.value = null

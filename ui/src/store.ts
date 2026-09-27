@@ -3174,7 +3174,7 @@ const storeObject : any = {
         },
         // Operator actions: people run a board without a coordinator (operator-actions brief §2).
         async agentTaskRegister (context: any, payload: { boardUuid: string, input: { title: string,
-            externalRef?: string | null, sourceUrl?: string | null } }) {
+            description?: string | null, externalRef?: string | null, sourceUrl?: string | null } }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
                     mutation agentTaskRegister($boardUuid: ID!, $input: AgentTaskUserRegisterInput!) {
