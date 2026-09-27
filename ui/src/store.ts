@@ -3639,6 +3639,7 @@ const storeObject : any = {
                             closedBy { kind uuid name }
                             closeReason
                             idleWarnedAt
+                            boardsWorked
                             providerSessions {
                                 provider
                                 id
