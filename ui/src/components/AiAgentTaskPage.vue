@@ -17,11 +17,11 @@
                  One column below, controls first. -->
             <div class="tpage">
                 <div class="tpage__main tsecs">
-                    <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels"
+                    <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels" :board="board"
                                    @decide="decideFindings" @open-element="openElement"/>
                     <task-open-questions :task="task" :roles="roles"/>
                     <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
-                    <task-documents :task="task" :focus="elementFocus"/>
+                    <task-documents :task="task" :focus="elementFocus" :can-rerun="canReopen"/>
                     <task-hops :task="task" :agent-names="agentNames"/>
                     <task-history :task="task"/>
                     <AiAgentRevisionHistory v-if="canReadHistory && task.uuid" kind="task" :uuid="task.uuid" :current="task"/>

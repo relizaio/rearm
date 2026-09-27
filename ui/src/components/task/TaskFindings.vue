@@ -96,12 +96,15 @@ import {
     verdictType,
 } from '@/utils/agentDocuments'
 import { ts } from '@/utils/agentTaskFormat'
+import { canOperate } from '@/utils/agentBoardAccess'
 import { aboutOptionsOf, fileSpecOptions, priorityOptionsOf } from '@/utils/agentTaskOptions'
 
 const props = defineProps<{
     task: any
     roles?: any[]
     priorityLevels?: number
+    /** The task's board: deciding and filing need BOARD_WRITE on it (RD2-6); hidden, not disabled. */
+    board?: any
 }>()
 const emit = defineEmits<{
     (e: 'open-element', id: string): void
@@ -117,7 +120,7 @@ const fileTitle = ref('')
 const filePriority = ref<number | null>(null)
 const fileAbout = ref<string | null>(null)
 
-const canDecide = computed(() => DECIDABLE_STATUSES.includes(props.task?.status))
+const canDecide = computed(() => DECIDABLE_STATUSES.includes(props.task?.status) && canOperate(props.board))
 const priorityOptions = computed(() => priorityOptionsOf(props.priorityLevels))
 const aboutOptions = computed(() => aboutOptionsOf(props.roles))
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])

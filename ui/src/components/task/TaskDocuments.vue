@@ -34,7 +34,7 @@
                 {{ elementsOf(d).length }} element{{ elementsOf(d).length === 1 ? '' : 's' }}
             </n-button>
         </div>
-        <AiAgentCheckReport v-if="d.document?.elements" :release="d" :documents="taskDocuments"/>
+        <AiAgentCheckReport v-if="d.document?.elements" :release="d" :documents="taskDocuments" :can-rerun="canRerun"/>
         <AiAgentDocumentElements v-if="expandedDoc === d.uuid" :release="d" :documents="taskDocuments"
                                  :board-uuid="task?.board" :task-uuid="task?.uuid"
                                  :task-status="task?.status" :focus="focusedElement"/>
@@ -56,6 +56,8 @@ const props = defineProps<{
     task: any
     /** An element to open under its document, e.g. from a finding's element chip; n re-triggers the same id. */
     focus?: { id: string, n: number } | null
+    /** BOARD_WRITE on the board: a check report's Re-run shows (RD2-6). */
+    canRerun?: boolean
 }>()
 
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])

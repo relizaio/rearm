@@ -15,7 +15,8 @@
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)"
                           v-if="currentBoard && canConfigure(currentBoard)">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
-                <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
+                <n-button size="small" quaternary @click="openSpec" v-if="currentBoard && canConfigureRead(currentBoard)"
+                          data-testid="view-as-spec">View as spec</n-button>
                 <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
                           title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
                     Subscribe
@@ -117,12 +118,17 @@
                 </div>
                 <div v-for="line in coverageLines(missingCoverage)" :key="line" class="coverage-line">{{ line }}</div>
             </n-alert>
-            <n-alert v-if="awaitingHumanReview.length" type="error" class="lockbanner">
+            <!-- A person who can approve is asked to; a reader is told the board waits on a person (RD2-6). -->
+            <n-alert v-if="awaitingHumanReview.length && canOperate(currentBoard)" type="error" class="lockbanner"
+                     data-testid="review-banner">
                 {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting your review:
                 <n-button v-for="t in awaitingHumanReview" :key="t.uuid" size="tiny" quaternary
                           style="margin-left: 6px" @click="openTask(t)">
                     {{ t.externalRef ? '#' + t.externalRef.split('#').pop() : t.title }} ({{ t.hold.gateRole }})
                 </n-button>
+            </n-alert>
+            <n-alert v-else-if="awaitingHumanReview.length" type="info" class="lockbanner" data-testid="review-banner-info">
+                {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting human review.
             </n-alert>
             <n-collapse v-if="currentBoard.events?.length" class="eventsfeed">
                 <n-collapse-item :title="`Board events (${currentBoard.events.length})`" name="ev">
@@ -561,7 +567,9 @@
                 <n-button size="small" @click="copySpec" :disabled="!specText">Copy</n-button>
             </n-space>
             <n-spin :show="specLoading">
-                <pre class="specBlock">{{ specText }}</pre>
+                <!-- A refusal in place of the spec, never an empty block (RD2-6). -->
+                <n-alert v-if="specError" type="warning" :bordered="false" data-testid="spec-error">{{ specError }}</n-alert>
+                <pre v-else class="specBlock">{{ specText }}</pre>
             </n-spin>
         </n-modal>
 
@@ -944,7 +952,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
 import { isOrgAdmin } from '@/utils/agentReopen'
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
-import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
+import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
     levelPlaceholder, levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
@@ -1045,6 +1053,7 @@ const showSpec = ref(false)
 const specLoading = ref(false)
 const specFormat = ref<'yaml' | 'json'>('yaml')
 const specRaw = ref<any>(null)
+const specError = ref<string | null>(null)
 
 function stripNulls (v: any): any {
     if (Array.isArray(v)) return v.map(stripNulls).filter(x => x !== null && x !== undefined)
@@ -1113,11 +1122,13 @@ async function openSpec () {
     if (!currentBoard.value) return
     showSpec.value = true
     specLoading.value = true
+    specRaw.value = null
+    specError.value = null
     try {
         specRaw.value = await store.dispatch('fetchAgentBoardSpec', currentBoard.value.uuid)
     } catch (e: any) {
-        notify('error', 'Could not read the board spec', e?.message ?? String(e))
-        showSpec.value = false
+        // Said in the modal: the person asked to see the spec, and an empty block explains nothing.
+        specError.value = specRefusal(e)
     } finally {
         specLoading.value = false
     }

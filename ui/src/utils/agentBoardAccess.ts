@@ -18,7 +18,25 @@ export function canOperate (board: WithPermissions | null | undefined): boolean 
     return boardCan(board, 'BOARD_WRITE')
 }
 
+/**
+ * Reading the board as configuration -- its spec (RD2-6): CONFIGURATION_READ, or CONFIGURATION_WRITE,
+ * which reads what it writes. A null myPermissions (some key-authenticated reads) is nothing held.
+ */
+export function canConfigureRead (board: WithPermissions | null | undefined): boolean {
+    return boardCan(board, 'CONFIGURATION_READ') || boardCan(board, 'CONFIGURATION_WRITE')
+}
+
 /** The configuration verbs: the person configures this board. */
 export function canConfigure (board: WithPermissions | null | undefined): boolean {
     return boardCan(board, 'CONFIGURATION_WRITE')
+}
+
+/**
+ * The spec modal's message when the read is refused (RD2-6): the server's words, without the GraphQL
+ * prefix; a bare "Not authorized" says which function the read needs.
+ */
+export function specRefusal (e: any): string {
+    const raw = String(e?.message ?? e ?? '').replace(/^GraphQL error:\s*/, '').trim()
+    if (!raw || /^not authori[sz]ed\.?$/i.test(raw)) return 'Needs Configuration read on this board to show it as a spec.'
+    return raw
 }
