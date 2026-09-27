@@ -158,6 +158,16 @@ export function useAgentTaskActions (after: AfterAction) {
             'Could not set the tags')
     }
 
+    /** A person's attestation of a delivery unit, or of its abandonment (RD2-10). */
+    function delivered (p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskDelivered', { taskUuid: p.task.uuid, unit: p.unit, commit: p.commit,
+                outcome: p.outcome, note: p.note }),
+            (res: any) => p.outcome === 'ABANDONED' ? `${p.unit} marked abandoned`
+                : res?.status === 'COMPLETED' ? 'Delivery attested: task completed' : 'Delivery attested',
+            'Could not attest')
+    }
+
     /** An operator hold, which the coordinator cannot lift (task 6fdc5a37). */
     function operatorHold (p: { task: any, reason: string }) {
         return kept(p.task,
@@ -174,6 +184,6 @@ export function useAgentTaskActions (after: AfterAction) {
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
         completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
-        setLevel, setGroup, setTags,
+        setLevel, setGroup, setTags, delivered,
     }
 }

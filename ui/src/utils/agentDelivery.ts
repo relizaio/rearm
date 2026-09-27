@@ -196,3 +196,46 @@ function chipOf (pr: any): PrChip {
     return { url: pr.url, label: shortPr(pr.url), state: 'open', type: 'warning',
         title: `open${pr.targetBranch ? ' against ' + pr.targetBranch : ''}` }
 }
+
+// ---------- attesting a delivery from the page (task RD2-10) ----------
+
+/** A commit as the server takes one: 7 to 40 hex characters. */
+export const COMMIT_SHA = /^[0-9a-fA-F]{7,40}$/
+
+/** What the commit field says before the server does; null when it is fine. */
+export function commitProblem (commit: string | null | undefined): string | null {
+    const c = String(commit ?? '').trim()
+    if (!c) return 'The merge commit is required'
+    return COMMIT_SHA.test(c) ? null : 'A commit is 7 to 40 hex characters'
+}
+
+/** A PR a person can still attest: linked, not yet merged or abandoned. */
+export function attestable (chip: PrChip): boolean {
+    return chip.state !== 'merged' && chip.state !== 'abandoned'
+}
+
+export interface AttestDraft {
+    unit: string
+    commit: string
+    note: string
+    outcome: 'DELIVERED' | 'ABANDONED'
+}
+
+/** A draft for a PR (unit pre-filled with its URL), or for a board with no PRs (unit free text). */
+export function attestDraftOf (unit: string | null, outcome: 'DELIVERED' | 'ABANDONED' = 'DELIVERED'): AttestDraft {
+    return { unit: unit ?? '', commit: '', note: '', outcome }
+}
+
+/**
+ * The agentTaskDelivered variables for a draft, or null while it cannot be sent: a unit always; a
+ * DELIVERED one also a commit of 7 to 40 hex; an ABANDONED one a note saying why.
+ */
+export function attestPayload (task: any, d: AttestDraft):
+    { task: any, unit: string, commit: string | null, outcome: string, note: string | null } | null {
+    const unit = d.unit.trim()
+    if (!unit) return null
+    if (d.outcome === 'DELIVERED' && commitProblem(d.commit)) return null
+    if (d.outcome === 'ABANDONED' && !d.note.trim()) return null
+    return { task, unit, commit: d.outcome === 'DELIVERED' ? d.commit.trim() : null, outcome: d.outcome,
+        note: d.note.trim() || null }
+}
