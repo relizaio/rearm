@@ -336,10 +336,13 @@
                         <template #prefix><span class="flabel">{{ row.spec.toLowerCase().replace(/_/g, ' ') }}</span></template>
                     </n-input>
                     <n-text depth="3" style="font-size: 11.5px;">
-                        Placeholders: <code>{task}</code> <code>{round}</code> <code>{type}</code>
-                        <code>{component}</code>. Blank uses the default shown, which the server
-                        picks by scope: per task for a type a role produces per task, else one
-                        file per component.
+                        Placeholders: <template v-for="p in PATH_PLACEHOLDERS" :key="p"><code>{{ p }}</code> </template>
+                        (<code>{task}</code> is read as <code>{key}</code>, the task's key). Blank
+                        uses the default shown, which the server picks by scope: per task for a type
+                        a role produces per task, else one file per component.
+                        <template v-if="documentsRootNote(editingBoard.documentsRoot)">
+                            {{ documentsRootNote(editingBoard.documentsRoot) }}
+                        </template>
                     </n-text>
                 </div>
                 <n-checkbox v-if="editingBoardIsNew" v-model:checked="editingBoard.seedFromPresets">
@@ -768,7 +771,7 @@ import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsP
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
-import { templateRows } from '@/utils/agentDocuments'
+import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
