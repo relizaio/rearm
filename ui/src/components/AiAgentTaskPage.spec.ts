@@ -100,4 +100,15 @@ describe('AiAgentTaskPage', () => {
         expect(dispatch.mock.calls.filter(c => c[0] === 'fetchAgentTask').length).toBe(before + 1)
         expect(push).not.toHaveBeenCalled()
     })
+
+    it('shows the description whole under the title (fceb1e57)', async () => {
+        const long = 'Why: titles carried whole briefs.\nWhat: a description beside a one-line title.'
+        serve(richTask({ description: long }))
+        const w = mount(Page)
+        await flushPromises()
+        const desc = w.find('.dhead__desc')
+        expect(desc.element.textContent).toBe(long)
+        expect(desc.classes()).not.toContain('dhead__desc--clamped')
+        expect(desc.attributes('title')).toBeUndefined()
+    })
 })

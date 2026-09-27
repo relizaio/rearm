@@ -4,6 +4,7 @@ import gql from 'graphql-tag'
 import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
+import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
 import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
@@ -25,6 +26,7 @@ const AGENT_BOARD_SELECTION = `
     documentsRepo { uuid uri }
     documentPaths
     documentsRoot
+    documents { prefix shared root }
     perspectives
     perspectiveNames
     myPermissions
@@ -66,6 +68,7 @@ const AGENT_TASK_SELECTION = `
     org
     externalRef
     title
+    description
     sourceUrl
     status
     role
@@ -93,6 +96,8 @@ const AGENT_TASK_SELECTION = `
             task
             session
             round
+            advisory
+            publishedByRole
             elements {
                 grammarVersion
                 digest
@@ -802,7 +807,9 @@ const storeObject : any = {
             const perspectiveUuid = context.state.iam.perspectiveUuid
             const variables: any = { 
                 orgUuid: orgid,
-                componentType: 'COMPONENT'
+                componentType: 'COMPONENT',
+                // Software only: a board's DOCUMENT components are shown inside their board (task 36d0549e).
+                kinds: SOFTWARE_KINDS
             }
             
             // Add perspective parameter if non-default perspective is selected
@@ -812,8 +819,8 @@ const storeObject : any = {
             
             const response = await graphqlClient.query({
                 query: gql`
-                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID) {
-                        components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective) {
+                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID, $kinds: [ComponentKind]) {
+                        components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective, kinds: $kinds) {
                             ${graphqlQueries.ComponentShortData}
                         }
                     }`,
@@ -2846,6 +2853,64 @@ const storeObject : any = {
             })
             return response.data.agentTask
         },
+        /** What a board has produced, per document series (task 36d0549e): its own read, off the board list. */
+        /**
+         * A document component's rounds (task 36d0549e): the releases of its base branch with what each
+         * round is, and the keys of their tasks -- best-effort, since reading a task needs its board.
+         */
+        async fetchDocumentRounds (context: any, branchUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query documentRounds($branch: ID!) {
+                        releases(branchFilter: $branch) {
+                            uuid version lifecycle createdDate
+                            document { specification round path task }
+                        }
+                    }`,
+                variables: { branch: branchUuid },
+                fetchPolicy: 'no-cache'
+            })
+            const releases = response.data.releases ?? []
+            const taskUuids = [...new Set(releases.map((r: any) => r.document?.task).filter(Boolean))]
+            const taskKeys: Record<string, string> = {}
+            if (taskUuids.length) {
+                try {
+                    const t = await graphqlClient.query({
+                        query: gql`
+                            query documentRoundTasks($ts: [ID!]!) {
+                                agentTasksByUuid(taskUuids: $ts) { uuid key }
+                            }`,
+                        variables: { ts: taskUuids.slice(0, 100) },
+                        fetchPolicy: 'no-cache'
+                    })
+                    for (const task of t.data.agentTasksByUuid ?? []) if (task.key) taskKeys[task.uuid] = task.key
+                } catch {
+                    // without the board's read, a round names its task by uuid
+                }
+            }
+            return { releases, taskKeys }
+        },
+        async fetchAgentBoardDocumentSeries (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardDocumentSeries($uuid: ID!) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            documentSeries {
+                                specification
+                                component { uuid name }
+                                latestRound { round version lifecycle path task release }
+                                roundsCount
+                                openFindings
+                                checkVerdict
+                            }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.documentSeries ?? []
+        },
         async fetchAgentBoard (context: any, uuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
@@ -3110,7 +3175,7 @@ const storeObject : any = {
         },
         // Operator actions: people run a board without a coordinator (operator-actions brief §2).
         async agentTaskRegister (context: any, payload: { boardUuid: string, input: { title: string,
-            externalRef?: string | null, sourceUrl?: string | null } }) {
+            description?: string | null, externalRef?: string | null, sourceUrl?: string | null } }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
                     mutation agentTaskRegister($boardUuid: ID!, $input: AgentTaskUserRegisterInput!) {

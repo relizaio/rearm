@@ -2456,7 +2456,7 @@ async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspec
         const response = await graphqlClient.query({
             query: gql`
                 query componentsOfPerspective($perspectiveUuid: ID!) {
-                    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+                    componentsOfPerspective(perspectiveUuid: $perspectiveUuid, kinds: [GENERIC, HELM]) {
                         uuid
                         name
                         org

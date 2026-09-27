@@ -85,4 +85,13 @@ describe('AiAgentTaskDetailDrawer', () => {
         expect(reader.findComponent({ name: 'TaskActions' }).exists()).toBe(false)
         expect(reader.findAll('.dsec__h').map(h => h.text())).toContain('Summary')
     })
+
+    it('previews the description under the title, the whole of it on hover (fceb1e57)', () => {
+        const long = 'Why: titles carried whole briefs.\nWhat: a description beside a one-line title.'
+        const desc = mountDrawer(richTask({ description: long })).find('.dhead__desc')
+        expect(desc.element.textContent).toBe(long)
+        expect(desc.classes()).toContain('dhead__desc--clamped')
+        expect(desc.attributes('title')).toBe(long)
+        expect(mountDrawer(richTask()).find('.dhead__desc').exists()).toBe(false)
+    })
 })

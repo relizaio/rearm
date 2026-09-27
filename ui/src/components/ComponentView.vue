@@ -3,7 +3,12 @@
         <n-grid x-gap="8" cols="10">
             <!-- DevOps view (header View dropdown) swaps the two charts for the
                  "Deployed to" table; Security keeps the charts. -->
-            <n-gi v-if="myview === 'devops'" span="10">
+            <!-- A board's document series (task 36d0549e): its board and its rounds, not the software charts. -->
+            <n-gi v-if="isDocument" span="10">
+                <document-component-panel :component="componentData" :org-uuid="componentData?.org"
+                                          :base-branch-uuid="baseBranchUuid"/>
+            </n-gi>
+            <n-gi v-else-if="myview === 'devops'" span="10">
                 <deployed-to-widget
                     v-if="componentData?.uuid"
                     :org-uuid="myorg?.uuid || ''"
@@ -40,7 +45,7 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <n-gi :span="selectedTab === 'latest' ? 10 : 3">
+            <n-gi :span="isDocument || selectedTab === 'latest' ? 10 : 3">
                 <div class="componentTop">
                     <div class="componentSummary">
                         <h5 v-if="componentData">
@@ -56,7 +61,7 @@
                         </h5>
                         <div class="componentIconsAndSettings">
                             <n-space v-cloak :size="0">
-                                <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
+                                <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable && !isDocument" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" size="24"><Tool /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" size="24"><List /></n-icon>
                                 <n-icon v-if="componentData" class="clickable icons" :title="'Feature Sets Including This ' + words.componentFirstUpper" @click="showFeatureSetParticipationModal = true" size="24"><Eye /></n-icon>
@@ -78,7 +83,7 @@
                                     </div>
                                 </n-tooltip>
 
-                                <n-icon v-if="componentData" @click="navigateToVulnAnalysis" class="clickable icons" size="24" :title="'Open ' + words.componentFirstUpper + ' Finding Analysis'">
+                                <n-icon v-if="componentData && !isDocument" @click="navigateToVulnAnalysis" class="clickable icons" size="24" :title="'Open ' + words.componentFirstUpper + ' Finding Analysis'">
                                     <bug-outlined />
                                 </n-icon>
                             </n-space>
@@ -197,7 +202,7 @@
                                             <n-input v-if="isWritable" v-model:value="updatedComponent.name" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.name" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && !isDocument">
                                             <label id="componentVersionSchemaLabel" for="componentVersionSchema">Version Schema</label>
                                             <n-select
                                                 v-model:value="updatedComponent.versionSchema"
@@ -207,7 +212,7 @@
                                                 :options="constants.VersionTypes" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.versionSchema" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS' && !isDocument">
                                             <label id="componentVersionSchemaLabel" for="componentVersionSchema">Marketing Version</label>
                                             Enabled:  <n-switch v-model:value="marketingVersionEnabled" @update:value="toggleMarketingVersion"/>
                                         </div>
@@ -221,7 +226,7 @@
                                                 :options="constants.VersionTypes" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.marketingVersionSchema" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock featureBranchVersioning" v-if="updatedComponent && componentData && updatedComponent.type === 'COMPONENT'">
+                                        <div class="versionSchemaBlock featureBranchVersioning" v-if="updatedComponent && componentData && updatedComponent.type === 'COMPONENT' && !isDocument">
                                             <label id="componentFeatureBranchVersionSchemaLabel" for="componentFeatureBranchVersionSchema">Feature Branch Versioning Schema</label>
                                             <n-input v-if="isWritable" v-model:value="updatedComponent.featureBranchVersioning" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
@@ -308,7 +313,11 @@
                                                 </span>
                                             </div>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && supportsComponentKind">
+                                        <div class="versionSchemaBlock documentKind" v-if="updatedComponent && componentData && isDocument">
+                                            <label for="componentKind">Component Kind</label>
+                                            <n-input type="text" value="Document" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && supportsComponentKind && !isDocument">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
                                             <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" clearable />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
@@ -516,7 +525,7 @@
                                             </n-space>
                                         </div>
                                     </n-tab-pane>
-                                    <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS'">
+                                    <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS' && !isDocument">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Actions</h4>
                                         <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
                                         <Icon v-if="isWritable" class="clickable" size="25" title="Add Action" @click="resetOutputTrigger(); loadEnvTypes(); showCreateOutputTriggerModal = true">
@@ -556,7 +565,7 @@
                                             </template>
                                         </div>
                                     </n-tab-pane>
-                                    <n-tab-pane name="Input Events" tab="Rules" v-if="myUser.installationType !== 'OSS'">
+                                    <n-tab-pane name="Input Events" tab="Rules" v-if="myUser.installationType !== 'OSS' && !isDocument">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Rules</h4>
                                         <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
                                         <Icon v-if="isWritable" class="clickable" size="25" title="Add Rule" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
@@ -1137,7 +1146,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="componentDetails">
+                <div class="componentDetails" v-if="!isDocument">
                     <n-tabs v-if="componentData" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
                         <n-tab-pane name="latest" tab="Latest">
                             <latest-releases-of-component
@@ -1157,7 +1166,7 @@
                     </n-tabs>
                 </div>
             </n-gi>
-            <n-gi v-if="selectedTab !== 'latest'" span="7">
+            <n-gi v-if="!isDocument && selectedTab !== 'latest'" span="7">
                 <div v-if="marketingVersionEnabled" class="marketingReleases">
                     <mrkt-releases-of-component :component="updatedComponent.uuid" />
                 </div>
@@ -1188,6 +1197,8 @@ import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
 import LatestReleasesOfComponent from './LatestReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import DeployedToWidget from './DeployedToWidget.vue'
+import DocumentComponentPanel from './DocumentComponentPanel.vue'
+import { isDocumentComponent } from '@/utils/agentDocumentsView'
 import { DashboardView } from '@/utils/dashboardView'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
@@ -1342,6 +1353,11 @@ if (route.params.orguuid) {
 }
 
 const componentUuid: string = route.params.compuuid.toString()
+
+// A board's document series (task 36d0549e): shown as its rounds, without the software panels.
+const isDocument = computed<boolean>(() => isDocumentComponent(componentData.value))
+const baseBranchUuid = computed<string | null>(() =>
+    branches.value?.find((b: any) => b.type === 'BASE')?.uuid ?? branches.value?.[0]?.uuid ?? null)
 
 const componentData: ComputedRef<any> = computed((): any => {
     return store.getters.componentById(componentUuid)

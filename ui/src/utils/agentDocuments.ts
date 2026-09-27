@@ -19,6 +19,10 @@ export interface DocumentRef {
     elements?: Record<string, any> | null
     /** On a CHECK_REPORT round: the element checks' report; see agentChecks.ts. */
     checks?: Record<string, any> | null
+    /** A round a role published on a task it did not hold (task e97fde56). */
+    advisory?: boolean | null
+    /** The role the round was published as; absent on older rounds. */
+    publishedByRole?: string | null
 }
 
 export interface DocumentRelease {
@@ -120,6 +124,16 @@ export function testCounts (release?: DocumentRelease | null): { passed: number,
 }
 
 /** Short label for a document release: type, round, verdict. */
+/**
+ * The chip on an advisory round (task e97fde56): "advisory · architect", naming the role that
+ * published it on a task it did not hold. Null on every other round, so nothing is shown.
+ */
+export function advisoryLabel (release?: DocumentRelease | null): string | null {
+    const doc = release?.document
+    if (!doc?.advisory) return null
+    return doc.publishedByRole ? `advisory · ${doc.publishedByRole}` : 'advisory'
+}
+
 export function documentLabel (release?: DocumentRelease | null): string {
     const spec = release?.document?.specification
     if (!spec) return '—'

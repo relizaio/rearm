@@ -3,7 +3,7 @@
               @update:show="(v: boolean) => { if (!v) emit('close') }">
         <n-drawer-content v-if="task" closable>
             <template #header>
-                <task-title :task="task" :board="board"/>
+                <task-title :task="task" :board="board" clamp/>
             </template>
 
             <!-- A preview (gaps §1.26): what a person needs to decide whether to open the task,
