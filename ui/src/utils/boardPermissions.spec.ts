@@ -36,7 +36,9 @@ describe('the board functions', () => {
         expect(boardNameOf(null, 'b1')).toBeNull()
     })
 
-    it('have labels and descriptions', async () => {
+    // The label component's first import takes about 3 s alone and more under a full parallel run,
+    // past the 5 s default (seen failing on the RD2-1 branch); the time is the import, not the check.
+    it('have labels and descriptions', { timeout: 20_000 }, async () => {
         const { default: Label } = await import('@/components/PermissionFunctionLabel.vue')
         expect(mount(Label, { props: { f: 'BOARD_READ' } }).text()).toBe('Board Read')
         expect(mount(Label, { props: { f: 'BOARD_AGENT' } }).text()).toBe('Board Agent')
