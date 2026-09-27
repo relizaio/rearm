@@ -142,6 +142,22 @@ export function useAgentTaskActions (after: AfterAction) {
             'Could not set the level')
     }
 
+    /** Move a task into a group by key, or out of every group with null (RD2-31). */
+    function setGroup (p: { task: any, group: string | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskSetGroup', { taskUuid: p.task.uuid, group: p.group }),
+            () => p.group == null ? 'Moved out of its group' : `Moved into group ${p.group}`,
+            'Could not move the task')
+    }
+
+    /** Replace a task's tags (RD2-31). */
+    function setTags (p: { task: any, tags: { key: string, value?: string | null }[] }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskSetTags', { taskUuid: p.task.uuid, tags: p.tags }),
+            () => p.tags.length ? `Tags: ${p.tags.map(t => t.key).join(', ')}` : 'Tags cleared',
+            'Could not set the tags')
+    }
+
     /** An operator hold, which the coordinator cannot lift (task 6fdc5a37). */
     function operatorHold (p: { task: any, reason: string }) {
         return kept(p.task,
@@ -158,6 +174,6 @@ export function useAgentTaskActions (after: AfterAction) {
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
         completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
-        setLevel,
+        setLevel, setGroup, setTags,
     }
 }

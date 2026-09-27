@@ -2,9 +2,16 @@
     <div class="ttable">
         <n-space :size="8" class="ttable__filters">
             <n-input v-model:value="textFilter" size="small" clearable
-                     placeholder="Filter by key, title, ref or level (L2)" style="width: 260px"/>
+                     placeholder="Filter by key, title, ref, level (L2), group or tag" style="width: 300px"/>
             <n-select v-model:value="statusFilter" size="small" clearable multiple
                       :options="statusOptions" placeholder="Status" style="min-width: 220px"/>
+            <!-- Group and tag (RD2-31): the board page keeps them in the URL, shared with the kanban. -->
+            <n-select v-if="board?.groups?.length" :value="groupFilter ?? null" size="small" clearable data-testid="table-group-filter"
+                      :options="groupFilterOptions" placeholder="Group" style="width: 170px"
+                      @update:value="(v: string | null) => emit('update:groupFilter', v ?? null)"/>
+            <n-select v-if="tagFilterOptions.length" :value="tagFilter ?? null" size="small" clearable filterable
+                      data-testid="table-tag-filter" :options="tagFilterOptions" placeholder="Tag" style="width: 150px"
+                      @update:value="(v: string | null) => emit('update:tagFilter', v ?? null)"/>
         </n-space>
         <n-data-table
             :columns="columns"
@@ -25,6 +32,7 @@ import { taskPagePath } from '@/utils/agentTaskFormat'
 import { compareTaskKeys, matchesTaskText, roleTagFor, shortRef } from '@/utils/agentTaskLabels'
 import { levelLabel, levelOf, levelTooltip, matchesLevel } from '@/utils/agentTaskLevel'
 import { actorLabel } from '@/utils/agentActors'
+import { groupColour, groupOptions, groupRank, matchesGroupOrTag, NO_GROUP, passesGroupAndTag, tagKeys, tagOptions } from '@/utils/agentTaskGroups'
 
 const props = defineProps<{
     tasks: any[]
@@ -33,8 +41,19 @@ const props = defineProps<{
     boardHasSources?: boolean
     /** The board, for the level a task without its own reads (its default). */
     board?: any
+    /** The group filter: a key, NO_GROUP for the ungrouped tasks, null for any (RD2-31). */
+    groupFilter?: string | null
+    /** The tag filter: a tag key, or null for any. */
+    tagFilter?: string | null
 }>()
-const emit = defineEmits<{ (e: 'open', task: any): void }>()
+const emit = defineEmits<{
+    (e: 'open', task: any): void
+    (e: 'update:groupFilter', v: string | null): void
+    (e: 'update:tagFilter', v: string | null): void
+}>()
+
+const groupFilterOptions = computed(() => [{ label: 'ungrouped', value: NO_GROUP }, ...groupOptions(props.board)])
+const tagFilterOptions = computed(() => tagOptions(props.tasks))
 
 const textFilter = ref('')
 const statusFilter = ref<string[] | null>(null)
@@ -46,8 +65,9 @@ const filtered = computed(() => {
     const q = textFilter.value.trim().toLowerCase()
     return (props.tasks ?? []).filter(t => {
         if (statusFilter.value?.length && !statusFilter.value.includes(t.status)) return false
-        // "L2" or "level 2" filters by level; any other text by key, title and ref.
-        if (!matchesLevel(t, props.board, q) && !matchesTaskText(t, q)) return false
+        if (!passesGroupAndTag(t, props.groupFilter, props.tagFilter)) return false
+        // "L2" or "level 2" filters by level; any other text by key, title, ref, group and tags.
+        if (!matchesLevel(t, props.board, q) && !matchesTaskText(t, q) && !matchesGroupOrTag(t, q)) return false
         return true
     })
 })
@@ -113,6 +133,20 @@ const columns: DataTableColumns<any> = [
             return l ? h('span', { title: levelTooltip(t, props.board, actorLabel) ?? '', 'data-level': l }, l) : '—'
         },
     },
+    {
+        // The group in its colour (RD2-31): sorted in the board's order, ungrouped last.
+        title: 'Group', key: 'group', width: 110,
+        sorter: (a, b) => groupSortRank(a) - groupSortRank(b),
+        render: (t: any) => t.group?.key
+            ? h('code', { 'data-group': t.group.key, style: `color: ${groupColour(t.group.key)}` }, t.group.key) : '—',
+    },
+    {
+        title: 'Tags', key: 'tags', width: 150,
+        sorter: (a, b) => tagKeys(a).join(',').localeCompare(tagKeys(b).join(',')),
+        render: (t: any) => tagKeys(t).length
+            ? h('span', { 'data-tags': tagKeys(t).join(',') }, tagKeys(t).map(k => h(NTag, { size: 'tiny', bordered: false, round: true,
+                style: 'margin-right:3px' }, { default: () => k }))) : '—',
+    },
     { title: 'Role', key: 'role', width: 90, sorter: (a, b) => String(a.role ?? '').localeCompare(String(b.role ?? '')), render: (t: any) => roleTagFor(t)?.text ?? '—' },
     { title: 'Order', key: 'orderIndex', width: 70, sorter: (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0) },
     {
@@ -124,6 +158,10 @@ const columns: DataTableColumns<any> = [
     { title: 'PRs', key: 'prs', width: 56, render: (t: any) => (t.prUrls?.length ?? 0) || '—' },
     { title: 'Age', key: 'age', width: 64, sorter: (a, b) => new Date(a.createdDate ?? 0).getTime() - new Date(b.createdDate ?? 0).getTime(), render: ageOf },
 ]
+
+function groupSortRank (t: any): number {
+    return t.group?.key ? groupRank(t.group.key, props.board) : Number.MAX_SAFE_INTEGER
+}
 
 function rowProps (t: any) {
     return { style: 'cursor: pointer', onClick: () => emit('open', t) }

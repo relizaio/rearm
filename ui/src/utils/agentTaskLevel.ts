@@ -4,6 +4,8 @@
 // serves it as effectiveLevel; what is worked out here is only how it reads (a chip, a tooltip, a
 // lane) and what the editor sends. Pure, so every surface shares one rule and it is testable.
 
+import { groupLaneLabel, groupRank } from './agentTaskGroups'
+
 /** The client's process ladder, by level; deeper levels are allowed and read as "level N". */
 export const LEVEL_LADDER = [
     'requirements',
@@ -85,14 +87,16 @@ export function defaultLevelPatch (board: any, draft: number | null | undefined)
     return { changed: next !== (board?.defaultTaskLevel ?? null), value: next }
 }
 
-// ---------- grouping the kanban (generic: RD2-2 adds "group" here) ----------
+// ---------- grouping the kanban (by level, RD2-1; by task group, RD2-31) ----------
 
 export interface Lane { key: string, label: string, tasks: any[] }
 
 interface Grouping {
     /** The lane a task goes in; null is the "none" lane, last. */
     keyOf: (task: any, board?: any) => number | string | null
-    label: (key: number | string | null) => string
+    label: (key: number | string | null, board?: any) => string
+    /** Where a lane sorts, when not by its key: task groups follow the board's order. */
+    rank?: (key: number | string, board?: any) => number
 }
 
 /** The ways the kanban can be grouped, by the name the URL carries (?groupBy=level). */
@@ -100,6 +104,12 @@ export const GROUPINGS: Record<string, Grouping> = {
     level: {
         keyOf: (t, b) => levelOf(t, b),
         label: k => k == null ? 'no level' : `L${k}${levelName(Number(k)) ? ' · ' + levelName(Number(k)) : ''}`,
+    },
+    // A lane per task group in the board's order, "Ungrouped" last (RD2-31).
+    group: {
+        keyOf: t => t?.group?.key ?? null,
+        label: (k, b) => groupLaneLabel(k == null ? null : String(k), b),
+        rank: (k, b) => groupRank(String(k), b),
     },
 }
 
@@ -123,9 +133,10 @@ export function groupTasks (tasks: any[], groupBy: string | null | undefined, bo
     const keys = [...byKey.keys()].sort((a, b) => {
         if (a == null) return 1
         if (b == null) return -1
+        if (g.rank) return g.rank(a, board) - g.rank(b, board) || String(a).localeCompare(String(b))
         return typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b))
     })
-    return keys.map(k => ({ key: k == null ? 'none' : String(k), label: `${g.label(k)} (${byKey.get(k)!.length})`, tasks: byKey.get(k)! }))
+    return keys.map(k => ({ key: k == null ? 'none' : String(k), label: `${g.label(k, board)} (${byKey.get(k)!.length})`, tasks: byKey.get(k)! }))
 }
 
 // ---------- the URL (?groupBy=level&level=2) ----------

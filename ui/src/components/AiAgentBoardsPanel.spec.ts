@@ -88,8 +88,8 @@ describe('the board page: New task', () => {
         expect(form).toContain('v-model:value="registering.title"')
         expect(form).toContain('v-model:value="registering.description" type="textarea"')
         expect(form).toContain('data-testid="new-task-title-error"')
-        expect(source).toContain('input: taskRegisterInput(registering.value),')
-        expect(source).toContain("registering = { title: '', description: '', externalRef: '', sourceUrl: '' }")
+        expect(source).toContain('input: { ...taskRegisterInput(registering.value), ...registerGroupFields(registering.value) },')
+        expect(source).toContain("registering = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }")
     })
 
     it('cannot register a title or description the server refuses', () => {
@@ -194,5 +194,53 @@ describe('the board form: target component', () => {
         // server that does not resolve targetDetails.
         expect(source).toContain('onMounted(() => loadTargetComponents(true))')
         expect(source).toContain('if (!quiet) notification.error(')
+    })
+})
+
+// Task groups and tags on the board page (RD2-31): the Groups tab over agentBoardGroupSet, the group
+// and tag filters in the URL shared by the kanban and the table, the card's group colour, chip and
+// gated tag, and the New task form's group, tags and level.
+describe('the board page: groups and tags', () => {
+    it('has a Groups tab that saves through agentBoardGroupSet and reloads the board', () => {
+        expect(template).toContain('<n-tab-pane name="groups" tab="Groups">')
+        expect(template).toContain('<AgentBoardGroupsPanel :board="currentBoard" :can-configure="canConfigure(currentBoard)" :save-group="saveGroup"/>')
+        const save = source.slice(source.indexOf('async function saveGroup'), source.indexOf('async function registerTask'))
+        expect(save).toContain("store.dispatch('agentBoardGroupSet', { boardUuid: currentBoard.value.uuid, group })")
+        expect(save).toContain('await refreshBoards()')
+        expect(source).toContain("const BOARD_VIEWS = ['kanban', 'pert', 'timeline', 'table', 'groups']")
+    })
+
+    it('filters the kanban and the table by group and tag, kept in the URL', () => {
+        expect(template).toContain('data-testid="group-filter"')
+        expect(template).toContain('data-testid="tag-filter"')
+        expect(source).toContain('&& passesGroupAndTag(t, groupFilter.value, tagFilter.value)),')
+        expect(source).toContain('groupBy.value, levelFilter.value), groupFilter.value, tagFilter.value)')
+        expect(source).toContain('const groupFilter = ref<string | null>(groupFromQuery(route.query))')
+        expect(source).toContain('const tagFilter = ref<string | null>(tagFromQuery(route.query))')
+        expect(template).toContain(':group-filter="groupFilter" :tag-filter="tagFilter"')
+        expect(template).toContain('@update:group-filter="setGroupFilter" @update:tag-filter="setTagFilter"')
+    })
+
+    it('colours a card by its group, names the group and says what a gated card waits on', () => {
+        const card = source.slice(source.indexOf('const TaskCard = defineComponent'))
+        expect(card).toContain('border-left: 3px solid ${groupColour(p.t.group?.key)}')
+        expect(card).toContain("'data-testid': 'card-group'")
+        expect(card).toContain("'data-testid': 'card-waiting'")
+        expect(card).toContain('{ default: () => waitingOnLabel(p.t) }')
+        expect(template).toContain("groupBy === 'group' && groupColour(lane.key === 'none' ? null : lane.key)")
+    })
+
+    it('registers a task into an open group with tags and a level', () => {
+        const modal = template.slice(template.indexOf('title="New task"'))
+        const form = modal.slice(0, modal.indexOf('</n-modal>'))
+        expect(form).toContain(':options="groupOptions(currentBoard, { openOnly: true, none: true })"')
+        expect(form).toContain('v-model:value="registering.tagsText" data-testid="new-task-tags"')
+        expect(form).toContain('data-testid="new-task-level"')
+        const can = source.slice(source.indexOf('const canRegister'), source.indexOf('async function registerTask'))
+        expect(can).toContain('!tagsProblem(parseTags(registering.value.tagsText))')
+    })
+
+    it('moves and tags a task from the drawer', () => {
+        expect(template).toContain('@set-group="setGroup" @set-tags="setTags"')
     })
 })

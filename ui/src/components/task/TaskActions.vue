@@ -52,6 +52,22 @@
                 set by {{ actorLabel(task.levelSetBy) }} · {{ ts(task.levelSetAt) }}
             </span>
         </div>
+        <!-- The task's group and tags (RD2-31): a move goes into an OPEN group or out of every group;
+             the tags are replaced whole on save, each key trimmed and lower-cased as the server does. -->
+        <div v-if="!terminal && (board?.groups?.length || task.group)" class="deprow grouprow" data-testid="group-move-row">
+            <n-select v-model:value="groupDraft" size="small" style="width: 220px" data-testid="group-select"
+                      :options="groupOptions(board, { openOnly: true, none: true })" placeholder="group"/>
+            <n-button size="small" :disabled="!groupChanged" data-testid="group-move"
+                      @click="emit('set-group', { task, group: groupToSend(groupDraft) })">Move</n-button>
+        </div>
+        <div class="deprow tagrow" data-testid="tags-row">
+            <span class="deplab">tags</span>
+            <n-dynamic-tags :value="tagsDraft" size="small" data-testid="tags-edit"
+                            @update:value="(v: string[]) => tagsDraft = parseTags(v.join(','))"/>
+            <n-button size="small" :disabled="!tagsReady" data-testid="tags-save"
+                      @click="emit('set-tags', { task, tags: tagsToSet(task, tagsDraft) ?? [] })">Save tags</n-button>
+            <span v-if="tagsProblem(tagsDraft)" class="holdmeta" style="margin-top: 0; color: #d03050">{{ tagsProblem(tagsDraft) }}</span>
+        </div>
         <!-- An operator hold: the coordinator cannot lift it; the hold banner offers the release. -->
         <div v-if="canPlaceHold(task, !!admin)" class="deprow holdrow">
             <n-input v-model:value="holdReason" size="small" placeholder="Why hold it (required)"
@@ -171,7 +187,8 @@
 // A person's verbs on a task: authorize, order, complete, cancel, reopen, and the decisions a
 // completion needs. The drawer's preview and the task page both carry this whole.
 import { computed, ref, watch } from 'vue'
-import { NButton, NCheckbox, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui'
+import { NButton, NCheckbox, NDynamicTags, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui'
+import { groupOptions, groupToSend, NO_GROUP, parseTags, tagKeys, tagsProblem, tagsToSet } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
@@ -201,6 +218,8 @@ const emit = defineEmits<{
         about?: { specification: string } | null }): void
     (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
     (e: 'set-level', p: { task: any, level: number | null }): void
+    (e: 'set-group', p: { task: any, group: string | null }): void
+    (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 
@@ -218,6 +237,10 @@ function reopen () {
 }
 const strengthDraft = ref<number | null>(null)
 const levelDraft = ref<number | null>(null)
+const groupDraft = ref<string>(NO_GROUP)
+const groupChanged = computed(() => groupToSend(groupDraft.value) !== (props.task?.group?.key ?? null))
+const tagsDraft = ref<string[]>([])
+const tagsReady = computed(() => tagsToSet(props.task, tagsDraft.value) !== undefined && !tagsProblem(tagsDraft.value))
 const holdReason = ref('')
 function placeHold () {
     const p = holdPayload(props.task, holdReason.value)
@@ -250,6 +273,8 @@ watch(() => props.task?.uuid, () => {
     orderDraft.value = props.task?.orderIndex ?? null
     strengthDraft.value = props.task?.requiredStrength ?? null
     levelDraft.value = props.task?.level ?? null
+    groupDraft.value = props.task?.group?.key ?? NO_GROUP
+    tagsDraft.value = tagKeys(props.task)
     holdReason.value = ''
     budgetDraft.value = microsToDollars(props.task?.budgetMicros)
     cancelNote.value = ''
