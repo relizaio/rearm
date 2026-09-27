@@ -55,3 +55,47 @@ describe('AiAgentTaskTableView: level', () => {
         expect(w.find('tbody').text()).toContain('none of its own')
     })
 })
+
+// Group and Tags columns (RD2-31): the filter box matches group and tag keys, and the group and tag
+// filters the page keeps in the URL narrow the rows.
+describe('AiAgentTaskTableView: groups and tags', () => {
+    const board = { groups: [{ key: 'core-work', order: 1, status: 'OPEN' }, { key: 'ui-work', order: 2, status: 'OPEN' }] }
+    const tasks = [
+        { uuid: 'a', key: 'RD2-1', title: 'front', status: 'QUEUED', group: { key: 'ui-work' }, tags: [{ key: 'client-req' }] },
+        { uuid: 'b', key: 'RD2-2', title: 'back', status: 'QUEUED', group: { key: 'core-work' }, tags: [] },
+        { uuid: 'c', key: 'RD2-3', title: 'loose', status: 'QUEUED', group: null, tags: [{ key: 'urgent' }, { key: 'client-req' }] },
+    ]
+    const titles = (w: any) => w.findAll('tbody tr').map((r: any) => r.text().includes('front') ? 'a' : r.text().includes('back') ? 'b' : 'c')
+
+    it('shows each task\'s group and tags', () => {
+        const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
+        expect(w.findAll('[data-group]').map(e => e.text())).toEqual(['ui-work', 'core-work'])
+        expect(w.findAll('[data-tags]').map(e => e.attributes('data-tags'))).toEqual(['client-req', 'urgent,client-req'])
+    })
+
+    it('sorts groups in the board\'s order, ungrouped last', async () => {
+        const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
+        const header = () => w.findAll('th').find((th: any) => th.text().includes('Group'))!
+        await header().trigger('click')
+        const first = titles(w)
+        await header().trigger('click')
+        expect([first, titles(w)]).toEqual(expect.arrayContaining([['b', 'a', 'c'], ['c', 'a', 'b']]))
+    })
+
+    it('filters by group or tag text in the filter box', async () => {
+        const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
+        await w.find('input').setValue('core-work')
+        expect(titles(w)).toEqual(['b'])
+        await w.find('input').setValue('client')
+        expect(titles(w)).toEqual(['a', 'c'])
+    })
+
+    it('narrows to the group and tag the page asks for', async () => {
+        const w = mount(TableView, { props: { tasks, agentNames: {}, board, groupFilter: 'ui-work' }, global: { stubs } })
+        expect(titles(w)).toEqual(['a'])
+        await w.setProps({ groupFilter: '', tagFilter: 'client-req' })
+        expect(titles(w)).toEqual(['c'], 'ungrouped and tagged')
+        await w.setProps({ groupFilter: null, tagFilter: 'client-req' })
+        expect(titles(w)).toEqual(['a', 'c'])
+    })
+})

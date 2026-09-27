@@ -9,6 +9,16 @@
                 </template>
                 {{ levelTooltip(task, board, actorLabel) }}
             </n-tooltip>
+            <!-- The group beside the level, in its colour (RD2-31). -->
+            <n-tooltip v-if="task.group?.key" trigger="hover">
+                <template #trigger>
+                    <n-tag size="small" :bordered="false" class="dhead__group" data-testid="group-chip"
+                           :color="{ color: `${groupColour(task.group.key)}22`, textColor: groupColour(task.group.key) ?? undefined }">
+                        {{ task.group.key }}
+                    </n-tag>
+                </template>
+                {{ groupLabel(groupByKey(board, task.group.key) ?? task.group) }}
+            </n-tooltip>
             {{ task.title }}
         </div>
         <!-- What the task is beyond its one-line title (task fceb1e57): whole on the page, the first
@@ -30,6 +40,11 @@
                 </template>
                 {{ roleTag.tooltip }}
             </n-tooltip>
+            <n-tag v-if="waitingOnLabel(task)" size="small" :bordered="false" type="warning" data-testid="waiting-chip">
+                {{ waitingOnLabel(task) }}
+            </n-tag>
+            <n-tag v-for="k in tagKeys(task)" :key="k" size="small" :bordered="false" round class="dhead__tag"
+                   data-testid="tag-chip">#{{ k }}</n-tag>
             <slot/>
         </div>
     </div>
@@ -41,6 +56,7 @@ import { NTag, NTooltip } from 'naive-ui'
 import { statusTone } from '@/utils/agentTaskFormat'
 import { refLabel, roleTagFor } from '@/utils/agentTaskLabels'
 import { levelLabel, levelTooltip } from '@/utils/agentTaskLevel'
+import { groupByKey, groupColour, groupLabel, tagKeys, waitingOnLabel } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
 
 const props = defineProps<{ task: any, board?: any, clamp?: boolean }>()
@@ -54,6 +70,8 @@ const roleTag = computed(() => roleTagFor(props.task))
     &__title { font-size: 15px; font-weight: 600; }
     &__key { margin-right: 8px; font-weight: 600; }
     &__level { margin-right: 8px; vertical-align: 2px; }
+    &__group { margin-right: 8px; vertical-align: 2px; font-family: monospace; }
+    &__tag { opacity: 0.85; }
     &__desc { margin-top: 4px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
     &__desc--clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     &__sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; flex-wrap: wrap; }

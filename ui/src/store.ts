@@ -58,6 +58,8 @@ const AGENT_BOARD_SELECTION = `
     eventRetentionDays
     createdDate
     declarative { specHash appliedAt source { repo path commit } }
+    groups { uuid key name description order dependsOn defaultLevel status createdAt
+        progress { total done open complete } spentMicros }
 `
 
 const AGENT_TASK_SELECTION = `
@@ -173,6 +175,9 @@ const AGENT_TASK_SELECTION = `
     effectiveLevel
     levelSetBy { kind uuid name }
     levelSetAt
+    group { uuid key name }
+    tags { key value }
+    waitingOnGroups
     coordinatorEstimateMicros
     spentMicros
     requiredStrength
@@ -3206,7 +3211,8 @@ const storeObject : any = {
         },
         // Operator actions: people run a board without a coordinator (operator-actions brief §2).
         async agentTaskRegister (context: any, payload: { boardUuid: string, input: { title: string,
-            description?: string | null, externalRef?: string | null, sourceUrl?: string | null } }) {
+            description?: string | null, externalRef?: string | null, sourceUrl?: string | null,
+            group?: string | null, tags?: { key: string }[] | null, level?: number | null } }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
                     mutation agentTaskRegister($boardUuid: ID!, $input: AgentTaskUserRegisterInput!) {
@@ -3360,6 +3366,63 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskSetLevel
+        },
+        /**
+         * Create or edit a board's group by key (task RD2-29); status CLOSED closes it. CONFIGURATION_WRITE
+         * and BOARD_WRITE on the board. The refusal comes back as the error's message.
+         */
+        async agentBoardGroupSet (context: any, payload: { boardUuid: string, group: { key: string, uuid?: string | null,
+            name?: string | null, description?: string | null, order?: number | null, dependsOn?: string[] | null,
+            defaultLevel?: number | null, status?: string | null } }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardGroupSet($boardUuid: ID!, $group: TaskGroupInput!) {
+                        agentBoardGroupSet(boardUuid: $boardUuid, group: $group) {
+                            uuid key name description order dependsOn defaultLevel status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardGroupSet
+        },
+        /** Delete an empty group; refused while a task names it (task RD2-29). */
+        async agentBoardGroupDelete (context: any, payload: { boardUuid: string, key: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardGroupDelete($boardUuid: ID!, $key: String!) {
+                        agentBoardGroupDelete(boardUuid: $boardUuid, key: $key)
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardGroupDelete
+        },
+        /** Move a task into a group by key, or out of every group with null (task RD2-29). BOARD_WRITE. */
+        async agentTaskSetGroup (context: any, payload: { taskUuid: string, group: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetGroup($taskUuid: ID!, $group: String) {
+                        agentTaskSetGroup(taskUuid: $taskUuid, group: $group) {
+                            uuid group { uuid key name } waitingOnGroups
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, group: payload.group },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetGroup
+        },
+        /** Replace a task's tags (task RD2-29). BOARD_WRITE. */
+        async agentTaskSetTags (context: any, payload: { taskUuid: string, tags: { key: string, value?: string | null }[] }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetTags($taskUuid: ID!, $tags: [TagRecordInput!]!) {
+                        agentTaskSetTags(taskUuid: $taskUuid, tags: $tags) { uuid tags { key value } }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, tags: payload.tags },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetTags
         },
         /** A task's required model strength; null clears it (task 6fdc5a37). Org admin. */
         async agentTaskSetStrength (context: any, payload: { taskUuid: string, requiredStrength: number | null }) {
