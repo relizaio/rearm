@@ -26,7 +26,6 @@ import io.reliza.model.Branch;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
-import io.reliza.model.MetricsAudit.MetricsEntityType;
 import io.reliza.model.Organization;
 import io.reliza.model.Release;
 import io.reliza.model.WhoUpdated;
@@ -35,7 +34,6 @@ import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.repositories.FindingChangeV3BranchSeedRepository;
-import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.ws.App;
 import io.reliza.ws.oss.TestInitializer;
@@ -72,8 +70,6 @@ public class FindingChangeV3DrainTest {
 	@Autowired private FindingDimBackfillService findingDimBackfillService;
 	@Autowired private FindingChangeV3BranchSeedRepository seedRepository;
 	@Autowired private TestInitializer testInitializer;
-	@Autowired private MetricsAuditRepository metricsAuditRepository;
-	@Autowired private OrganizationService organizationService;
 
 	private static final int KV = FindingDimKey.KEY_VERSION;
 	/**
@@ -185,15 +181,13 @@ public class FindingChangeV3DrainTest {
 
 	/**
 	 * RESUME: a budget that runs out mid-org leaves it UNCERTIFIED with a partial marker set; a follow-up
-	 * drain marks the remainder and certifies. To make the per-tick progress deterministic despite the
-	 * GLOBAL per-tick budget (the drain shares it across every uncertified org), first drain the whole DB so
-	 * every OTHER org is certified, THEN create this test's org -- now it is the sole uncertified org, so a
-	 * batch=1 tick marks exactly one of ITS branches and none other competes for the unit.
+	 * drain marks the remainder and certifies. The drain is scoped to this test's org, so each batch=1 tick
+	 * marks exactly one of ITS branches: the budget is global, and in the shared test database other orgs
+	 * can turn uncertified at any moment (a fresh context's startup work runs on scheduling threads while
+	 * the test does), which used to spend this test's ticks on them.
 	 */
 	@Test
 	public void budgetExhaustedMidOrgResumesAndCertifies() throws RelizaException {
-		backfillService.drainV3Backfill(DRAIN_ALL); // certify every pre-existing uncertified org first
-
 		Organization org = testInitializer.obtainOrganization();
 		UUID orgUuid = org.getUuid();
 		Component component = newComponent(orgUuid);
@@ -206,27 +200,20 @@ public class FindingChangeV3DrainTest {
 		int totalBranches = branchService.listBranchesOfOrg(orgUuid).size();
 		assertTrue(totalBranches >= 3, "need at least 3 branches to exercise mid-org resume");
 
-		// Force this org to be the SOLE uncertified one. The DRAIN_ALL above certifies every REACHABLE org,
-		// but in the shared CI DB a sibling test's org whose backfill cannot cleanly complete stays uncertified
-		// and, sitting ahead of this org in the drain's iteration, would eat the single per-tick unit every
-		// tick (the batch=0 flake this guards against).
-		isolateAsSoleUncertifiedOrg(orgUuid);
-
-		// This org is now the ONLY uncertified one, so batch=1 marks exactly one of ITS branches per tick and
-		// cannot certify until all are marked -- the mid-org resume path.
+		// batch=1 marks exactly one of this org's branches per tick, and the org cannot certify until all
+		// are marked -- the mid-org resume path.
 		boolean certifiedMidPartial = false;
-		for (int tick = 0; tick < totalBranches + 2; tick++) {
-			backfillService.drainV3Backfill(1);
+		for (int tick = 0; tick < totalBranches; tick++) {
+			backfillService.drainV3Backfill(1, orgUuid::equals);
 			long marked = seedRepository.countSeeded(orgUuid, KV);
+			assertEquals(tick + 1, marked, "each batch=1 tick marks one more of this org's branches");
 			boolean certified = !findingDimBackfillService.needsV3Backfill(orgUuid);
 			if (marked < totalBranches) {
 				// mid-org: never certified while a branch is still un-marked
 				assertFalse(certified,
 						"org must stay UNCERTIFIED while " + (totalBranches - marked) + " branch(es) un-marked");
-			}
-			if (marked == totalBranches) {
+			} else {
 				certifiedMidPartial = certified;
-				break;
 			}
 		}
 		assertEquals(totalBranches, seedRepository.countSeeded(orgUuid, KV),
@@ -236,21 +223,6 @@ public class FindingChangeV3DrainTest {
 	}
 
 	// ---- helpers ----
-
-	/**
-	 * Force-certify every OTHER org with audit history so {@code keep} is the SOLE uncertified org the drain
-	 * will act on -- makes the batch=1 mid-org-resume progress deterministic in the shared test DB (a sibling
-	 * org that cannot cleanly backfill would otherwise sit ahead of {@code keep} and consume every per-tick
-	 * unit). Certifying uses the SAME watermark path the drain itself calls, so it is a benign no-op for any
-	 * org that is already certified.
-	 */
-	private void isolateAsSoleUncertifiedOrg(UUID keep) {
-		for (UUID other : metricsAuditRepository.findDistinctOrgsWithAudits(MetricsEntityType.RELEASE.name())) {
-			if (other != null && !other.equals(keep) && findingDimBackfillService.needsV3Backfill(other)) {
-				organizationService.certifyFindingChangeV3Backfill(other, ZonedDateTime.now());
-			}
-		}
-	}
 
 	private Component newComponent(UUID orgUuid) throws RelizaException {
 		return componentService.createComponent(

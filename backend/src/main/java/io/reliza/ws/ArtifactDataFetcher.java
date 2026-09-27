@@ -24,6 +24,8 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
+
+import graphql.execution.DataFetcherResult;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.TagRecord;
@@ -47,6 +49,7 @@ import io.reliza.service.GetOrganizationService;
 import io.reliza.service.RebomService;
 import io.reliza.service.RebomService.EnrichmentTriggerResult;
 import io.reliza.service.ReleaseMetricsComputeService;
+import io.reliza.service.RiskSummaryCalculator;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -206,21 +209,37 @@ public class ArtifactDataFetcher {
 	 * all otherwise or when the artifact has no CVE-shaped findings.
 	 */
 	@DgsData(parentType = "Artifact", field = "metrics")
-	public ReleaseMetricsDto metricsOfArtifact(DgsDataFetchingEnvironment dfe) {
+	public DataFetcherResult<ReleaseMetricsDto> metricsOfArtifact(DgsDataFetchingEnvironment dfe) {
 		ArtifactData ad = dfe.getSource();
-		if (null == ad) return null;
+		if (null == ad) return DataFetcherResult.<ReleaseMetricsDto>newResult().build();
+		return DataFetcherResult.<ReleaseMetricsDto>newResult()
+				.data(kevStampedIfSelected(dfe, ad))
+				// the org, for the score fields below; see VulnerabilityScoreDataFetcher
+				.localContext(new MetricsContext(ad.getOrg()))
+				.build();
+	}
+
+	private ReleaseMetricsDto kevStampedIfSelected(DgsDataFetchingEnvironment dfe, ArtifactData ad) {
 		// Only pay for the KEV probe when the query asks for the flag ITSELF, not
 		// merely for findings. Artifact.metrics is selected in bulk on the
 		// release page, and the CLI/agent paths select vulnerabilityDetails
 		// WITHOUT knownExploited -- guarding on the parent alone would be one KEV
-		// round trip per artifact for data nobody selected.
+		// round trip per artifact for data nobody selected. The two counts are
+		// KEV reads as well: the stored kevCount was tallied from unstamped
+		// rows, so it is recounted from the stamped copy.
 		//
 		// Keep this narrow. ReleaseDatafetcher's artifactsOfReleaseWithDep serves
 		// a LIGHT artifact load (details stripped, counts from metrics_totals)
-		// unless metrics/vulnerabilityDetails is selected, so a broader glob here
-		// could stamp a light-loaded artifact whose detail lists are empty.
-		if (!dfe.getSelectionSet().containsAnyOf("vulnerabilityDetails/knownExploited")) return ad.getMetrics();
-		return releaseMetricsComputeService.knownExploitedStampedCopy(ad.getOrg(), ad.getMetrics());
+		// unless metrics/vulnerabilityDetails (or one of the two counts) is
+		// selected, so a broader glob here could stamp a light-loaded artifact
+		// whose detail lists are empty.
+		if (!dfe.getSelectionSet().containsAnyOf("vulnerabilityDetails/knownExploited", "kevCount",
+				"riskSummary/kevCount")) return ad.getMetrics();
+		ReleaseMetricsDto stamped = releaseMetricsComputeService.knownExploitedStampedCopy(ad.getOrg(), ad.getMetrics());
+		if (stamped != null && RiskSummaryCalculator.hasFindingRows(stamped)) {
+			stamped.setKevCount(RiskSummaryCalculator.openKevCount(stamped.getVulnerabilityDetails()));
+		}
+		return stamped;
 	}
 
 	/**
