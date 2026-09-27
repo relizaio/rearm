@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-    dependencyOptions, GROUP_PALETTE, groupByKey, groupDraftOf, groupFieldOfError, groupInputOf, groupColour, groupFromQuery, groupLabel, groupLaneLabel, groupLayers, groupOptions,
+    dependencyOptions, GROUP_PALETTE, groupByKey, groupDraftOf, groupFieldOfError, groupInputOf, groupKeyTaken, groupColour, groupFromQuery, groupLabel, groupLaneLabel, groupLayers, groupOptions,
     groupProgress, groupRank, groupToSend, groupWaitingOn, matchesGroupOrTag, MAX_TAGS, NO_GROUP, normaliseTag,
     parseTags, passesGroupAndTag, registerGroupFields, sortedGroups, tagFromQuery, tagOptions, tagsProblem, tagsToSet, waitingOnLabel,
     withGroupQuery,
@@ -206,5 +206,26 @@ describe('the groups tab\'s form', () => {
         expect(groupFieldOfError('A group name is one line')).toBe('name')
         expect(groupFieldOfError('Not authorized')).toBeNull()
         expect(groupFieldOfError(null)).toBeNull()
+    })
+})
+
+describe('a key the board already has (RD2-31 T-1)', () => {
+    const withUuids = { groups: board.groups.map((g, i) => ({ ...g, uuid: `g${i}` })) }
+    it('is refused for a new group, in the server\'s words, whatever its spelling', () => {
+        const d = groupDraftOf()
+        d.key = ' UI-Work '
+        expect(groupKeyTaken(withUuids, d)).toBe('group ui-work exists on this board')
+        d.key = 'fresh-work'
+        expect(groupKeyTaken(withUuids, d)).toBeNull()
+        d.key = ''
+        expect(groupKeyTaken(withUuids, d)).toBeNull()
+        expect(groupFieldOfError('group ui-work exists on this board')).toBe('key')
+    })
+
+    it('is a group\'s own key on an edit, and refused when an edit renames onto another', () => {
+        const own = groupDraftOf(withUuids.groups[0])
+        expect(groupKeyTaken(withUuids, own)).toBeNull()
+        own.key = 'core-work'
+        expect(groupKeyTaken(withUuids, own)).toBe('group core-work exists on this board')
     })
 })

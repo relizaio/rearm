@@ -78,7 +78,7 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
 import { NButton, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NTag, NText } from 'naive-ui'
-import { dependencyOptions, groupColour, groupDraftOf, GroupDraft, groupFieldOfError, groupInputOf, groupProgress,
+import { dependencyOptions, groupColour, groupDraftOf, GroupDraft, groupFieldOfError, groupInputOf, groupKeyTaken, groupProgress,
     groupWaitingOn, sortedGroups, TaskGroup } from '@/utils/agentTaskGroups'
 import { formatCostMicros } from '@/utils/agentUsage'
 import { MAX_LEVEL } from '@/utils/agentTaskLevel'
@@ -118,6 +118,12 @@ function messageOf (e: any): string {
 
 async function save () {
     if (!draft.value) return
+    // An Add with a key the board has would edit that group (create-or-edit by key): refuse it here.
+    const taken = groupKeyTaken(props.board, draft.value)
+    if (taken) {
+        error.value = taken
+        return
+    }
     saving.value = true
     error.value = null
     try {

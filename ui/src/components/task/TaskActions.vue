@@ -63,7 +63,13 @@
         <div class="deprow tagrow" data-testid="tags-row">
             <span class="deplab">tags</span>
             <n-dynamic-tags :value="tagsDraft" size="small" data-testid="tags-edit"
-                            @update:value="(v: string[]) => tagsDraft = parseTags(v.join(','))"/>
+                            @update:value="(v: string[]) => tagsDraft = parseTags(v.join(','))">
+                <!-- A named trigger: the default is an icon-only "+" a screen reader cannot name. -->
+                <template #trigger="{ activate, disabled }">
+                    <n-button size="small" dashed :disabled="disabled" aria-label="Add tag" data-testid="tags-add"
+                              @click="activate()">+ tag</n-button>
+                </template>
+            </n-dynamic-tags>
             <n-button size="small" :disabled="!tagsReady" data-testid="tags-save"
                       @click="emit('set-tags', { task, tags: tagsToSet(task, tagsDraft) ?? [] })">Save tags</n-button>
             <span v-if="tagsProblem(tagsDraft)" class="holdmeta" style="margin-top: 0; color: #d03050">{{ tagsProblem(tagsDraft) }}</span>

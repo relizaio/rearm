@@ -78,4 +78,11 @@ describe('Task actions: group and tags', () => {
         await save.trigger('click')
         expect(w.emitted('set-tags')?.[0]?.[0]).toMatchObject({ tags: [{ key: 'client-req', value: 'R-7' }, { key: 'urgent' }] })
     })
+
+    it('names the add-tag trigger for a screen reader (run 1 observation 1)', () => {
+        const w = actions(richTask({ status: 'QUEUED', hold: null, tags: [] }))
+        const add = w.find('[data-testid="tags-add"]')
+        expect(add.attributes('aria-label')).toBe('Add tag')
+        expect(add.text()).toBe('+ tag')
+    })
 })

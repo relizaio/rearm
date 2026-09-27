@@ -296,6 +296,21 @@ export function dependencyOptions (board: any, key: string | null | undefined): 
     return groupOptions(board).filter(o => o.value !== (key ?? '').trim().toLowerCase())
 }
 
+/**
+ * A key the board already gives another group, refused in the form before anything is sent, in the
+ * server's words (RD2-31 T-1). agentBoardGroupSet is create-or-edit by key: an Add with a taken key
+ * would otherwise overwrite that group, name, dependencies and all, without a word. On an edit the
+ * group's own key is not taken; another group's is.
+ */
+export function groupKeyTaken (board: any, d: GroupDraft): string | null {
+    const key = d.key.trim().toLowerCase()
+    if (!key) return null
+    const holder = groupByKey(board, key)
+    if (!holder) return null
+    if (d.uuid && holder.uuid === d.uuid) return null
+    return `group ${key} exists on this board`
+}
+
 /** Which field of the form a refusal is about, so it shows beside it; null for the form as a whole. */
 export function groupFieldOfError (message: string | null | undefined): 'key' | 'name' | 'dependsOn' | 'defaultLevel' | null {
     const m = (message ?? '').toLowerCase()
