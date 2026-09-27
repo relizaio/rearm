@@ -2680,6 +2680,18 @@ const storeObject : any = {
             })
             return response.data.agent
         },
+        /** The org's boards by uuid and name, for the permission editors' board picker (task 428b4a71). */
+        async fetchAgentBoardNamesOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardNamesOfOrg($orgUuid: ID!) {
+                        agentBoardsOfOrg(orgUuid: $orgUuid) { uuid name }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardsOfOrg ?? []
+        },
         async fetchAgentBoardsOfOrg (context: any, orgUuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
