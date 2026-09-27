@@ -60,6 +60,9 @@
                 <n-tag size="tiny" :bordered="false" :type="currentBoard.coordinatorSeat ? 'success' : 'default'">
                     {{ currentBoard.coordinatorSeat ? 'coordinator connected' : 'no coordinator' }}
                 </n-tag>
+                <n-tag v-if="boardTargetChip" size="tiny" :bordered="false" data-testid="target-chip">
+                    <RouterLink :to="boardTargetChip.to">{{ boardTargetChip.label }}</RouterLink>
+                </n-tag>
                 <n-tag v-for="p in perspectiveChips(currentBoard)" :key="p" size="tiny" :bordered="false"
                        data-testid="perspective-chip">{{ p }}</n-tag>
                 <n-tag v-if="spendChip" size="tiny" :bordered="false" :type="spendChip.type" data-testid="spend-chip">
@@ -270,6 +273,22 @@
                     <template #prefix><span class="flabel">name</span></template>
                 </n-input>
                 <n-input v-model:value="editingBoard.description" placeholder="Description"/>
+                <!-- The node the board builds (task RD2-4): required on New, editable on Edit; a refusal about
+                     it (not a member of a perspective, archived, ...) is shown beside it. -->
+                <div>
+                    <n-select v-model:value="editingBoard.target" filterable :options="targetOptions"
+                              :render-label="renderTargetOption" data-testid="board-target"
+                              :status="boardFieldErrors.target ? 'error' : undefined"
+                              placeholder="Target component"/>
+                    <n-text v-if="boardFieldErrors.target" type="error" data-testid="board-target-error"
+                            style="display: block; font-size: 12px;">
+                        {{ boardFieldErrors.target }}
+                    </n-text>
+                    <n-text v-else-if="targetMissing(editingBoardIsNew, editingBoard.target)" depth="3"
+                            data-testid="board-target-hint" style="display: block; font-size: 12px;">
+                        Target component: {{ TARGET_HINT }}
+                    </n-text>
+                </div>
                 <n-select v-model:value="editingBoard.sources" filterable multiple tag
                           placeholder="Wired sources, e.g. github:owner/repo (type + enter)"
                           :show-arrow="false" :show="false"/>
@@ -491,7 +510,8 @@
                                         :uuid="editingBoard.uuid" :current="boards.find(b => b.uuid === editingBoard.uuid)"/>
                 <n-space justify="end">
                     <n-button quaternary @click="editingBoard = null">Cancel</n-button>
-                    <n-button type="primary" :loading="saving" @click="saveBoard">Save</n-button>
+                    <n-button type="primary" :loading="saving" data-testid="board-save"
+                              :disabled="targetMissing(editingBoardIsNew, editingBoard.target)" @click="saveBoard">Save</n-button>
                 </n-space>
             </n-space>
         </n-modal>
@@ -892,6 +912,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
@@ -1488,6 +1509,7 @@ const roleColumns: DataTableColumns<any> = [
 ]
 
 onMounted(refreshBoards)
+onMounted(() => loadTargetComponents(true))
 watch(selectedBoard, async () => {
     syncQuery()
     await refreshBoardContent()
@@ -1565,11 +1587,30 @@ async function refreshBoardContent () {
 }
 
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).
-const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultTaskLevel?: string }>({})
+const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultTaskLevel?: string, target?: string }>({})
+
+// The target picker's list (task RD2-4): the org's software components, read (cache-first) when the
+// form opens. Read into the form, not off the store getter, which also holds components fetched one
+// by one, a board's DOCUMENT components among them. Also read quietly with the panel, so the header
+// chip can name the target on a server that does not resolve targetDetails (T-1).
+const targetComponents = ref<any[]>([])
+async function loadTargetComponents (quiet = false) {
+    try {
+        targetComponents.value = await store.dispatch('fetchComponents', props.orgUuid) ?? []
+    } catch (e: any) {
+        targetComponents.value = []
+        if (!quiet) notification.error({ content: `Could not load the components to pick a target from: ${e?.message ?? e}`, duration: 8000 })
+    }
+}
+const targetOptions = computed(() => boardTargetOptions(targetComponents.value, editingBoardIsNew.value ? null
+    : targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetComponents.value)))
+const renderTargetOption = (o: any) => h('span', null, [o.label, h('span', { style: 'color: #888; font-size: 12px;' }, ` · ${targetOptionType(o)}`)])
+const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetComponents.value))
 
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
     boardFieldErrors.value = {}
+    void loadTargetComponents()
     // documentsRepo comes back as the repository ROW; the editor works in uris, and the mutation
     // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])], budgetDollars: microsToDollars(b.budgetMicros),
@@ -1583,7 +1624,7 @@ function startEditBoard (b: any | null) {
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
             coordinatorCapabilities: [], perspectives: [], merge: mergeDraftOf(null),
-            taskPrefix: '', documentsDraft: documentsDraftOf(null) }
+            taskPrefix: '', documentsDraft: documentsDraftOf(null), target: null }
 }
 
 /** hopBudgetMicros for the role input: set, removed (null), or left out when never set and still blank. */
@@ -1641,6 +1682,10 @@ async function saveBoard () {
         notification.error({ content: 'Board name is required', duration: 8000 })
         return
     }
+    if (targetMissing(editingBoardIsNew.value, editingBoard.value.target)) {
+        boardFieldErrors.value = { target: `Board requires a target component: ${TARGET_HINT}` }
+        return
+    }
     saving.value = true
     try {
         const input: any = {
@@ -1664,6 +1709,9 @@ async function saveBoard () {
         // Only what changed: an emptied setting clears, one left alone is not sent (task 40f270be).
         const original = editingBoardIsNew.value ? null : boards.value.find(x => x.uuid === editingBoard.value.uuid)
         // Only when changed: a change asks for consent on each perspective added or removed.
+        // Sent on create, and on update only when changed (task RD2-4); a board always has one.
+        const target = targetPatch(original, editingBoard.value.target)
+        if (target !== undefined) input.target = target
         const perspectives = perspectivesPatch(original, editingBoard.value.perspectives)
         if (perspectives !== undefined) input.perspectives = perspectives
         const settings = settingsPatch(original, settingsDraftOf(editingBoard.value))
