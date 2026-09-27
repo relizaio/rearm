@@ -19,6 +19,8 @@ const VIOLATION_COLORS = {
 // KEV (known-exploited) series color: deliberately outside the severity
 // palette -- KEV is an exploitation signal, not a severity level.
 const KEV_SERIES_COLOR = '#7c3aed'
+// Release header EPSS pill: a probability, not a severity, so none of the severity colours.
+const EPSS_PILL_COLOR = '#546e7a'
 
 // Combined findings colors for charts (domain/range arrays for Vega-Lite)
 const FINDINGS_CHART_COLORS = {
@@ -315,6 +317,8 @@ export default {
     ArtifactLifecycleTypeColors: ARTIFACT_LIFECYCLE_TYPE_COLORS,
     BatchModeHelp: BATCH_MODE_HELP,
     VulnerabilityColors: VULNERABILITY_COLORS,
+    KevSeriesColor: KEV_SERIES_COLOR,
+    EpssPillColor: EPSS_PILL_COLOR,
     ViolationColors: VIOLATION_COLORS,
     FindingsChartColors: FINDINGS_CHART_COLORS,
     PermissionTypes: PERMISSION_TYPES,

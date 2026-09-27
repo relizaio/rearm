@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { buildSchema, validate, parse } from 'graphql'
+import { buildSchema, validate, parse, type GraphQLSchema } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 
 // These release selection sets are interpolated into `gql` templates at
@@ -12,20 +12,26 @@ import graphqlQueries from './graphqlQueries'
 // existed. The whole query fails validation at runtime, so a single wrong
 // field name blanks the view rather than degrading it.
 //
-// Checked against the CE schema only. It ships in this repo, so the path
-// always resolves and there is nothing to skip; the Pro schema lives in a
-// separate repository that is not available here. CE is expected to match
-// Pro (it may lag on updates), so a field valid on CE is valid on Pro.
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
+// Checked against the CE schema, which ships in this repo, so the path always
+// resolves and there is nothing to skip; and against Pro when a sibling
+// rearm-core checkout is present. CE is expected to match Pro (it may lag on
+// updates), so a field valid on CE is valid on Pro.
+//
+// A schema is the three SDL files together: since the split, the root Query /
+// Mutation fields live in user.graphqls and some shared types reference types
+// declared there, so schema.graphqls alone does not build.
+const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
+const CE_SCHEMA_DIR = fileURLToPath(new URL('../../../backend/src/main/resources/schema/', import.meta.url))
+const PRO_SCHEMA_DIR = fileURLToPath(new URL('../../../../rearm-core/backend/src/main/resources/schema/', import.meta.url))
 
-// Read eagerly: a missing schema is a broken checkout, and should fail the
+const readSchema = (dir: string): GraphQLSchema =>
+    buildSchema(SCHEMA_FILES.map(f => readFileSync(dir + f, 'utf8')).join('\n'))
+
+// Read eagerly: a missing CE schema is a broken checkout, and should fail the
 // suite rather than quietly skip every assertion below.
-const ceSchema = buildSchema(readFileSync(CE_SCHEMA_PATH, 'utf8'))
-const proSchema = existsSync(PRO_SCHEMA_PATH)
-    ? buildSchema(readFileSync(PRO_SCHEMA_PATH, 'utf8'))
+const ceSchema = readSchema(CE_SCHEMA_DIR)
+const proSchema = SCHEMA_FILES.every(f => existsSync(PRO_SCHEMA_DIR + f))
+    ? readSchema(PRO_SCHEMA_DIR)
     : null
 
 // Every fragment here is a selection set on Release, so each one is checked in
@@ -63,10 +69,14 @@ const SINGLE_RELEASE_DOCUMENTS: Array<[string, any]> = [
 ]
 
 describe('single-release documents vs the CE schema', () => {
+    it.each(SINGLE_RELEASE_DOCUMENTS)('%s is valid against the CE schema', (_name, doc) => {
+        expect(validate(ceSchema, doc).map(e => e.message)).toEqual([])
+    })
+
     /**
-     * Pro, not CE. These two select fdaAssessmentNarrative, which CE gains at the deferred
-     * sync -- so a CE assertion here would fail for a reason the ruling has already accepted
-     * as informational. Checking Pro keeps the assertion meaningful instead of deleting it.
+     * Pro too, when the sibling checkout is there: the documents run against both, and a
+     * field Pro gains first shows up here before the mirror (the release header's
+     * kevCount / riskSummary were such fields until the CE sync).
      */
     it.runIf(proSchema).each(SINGLE_RELEASE_DOCUMENTS)(
         '%s is valid against the Pro schema', (_name, doc) => {
@@ -74,19 +84,14 @@ describe('single-release documents vs the CE schema', () => {
         })
 
     /**
-     * The CE gap is EXPECTED and TEMPORARY, asserted so it cannot quietly become permanent:
-     * when the sync lands this fails, and the documents move back to a CE assertion.
+     * The header's KEV circle and CVSS / EPSS pills read these, and fetchRelease switches
+     * between the two documents by tab (see the pairing note above): selected by one only, the
+     * pills would come and go as the operator clicks around.
      */
-    it.each(SINGLE_RELEASE_DOCUMENTS)('%s is still ahead of CE, pending the sync', (_name, doc) => {
-        const errs = validate(ceSchema, doc).map(e => e.message)
-        // EVERY error must be the expected one, not merely "the expected one appears".
-        // Joining and asking toContain was near-worthless: an unrelated typo -- a misspelled
-        // artifactDetails subfield, say -- adds its own message while the expected string is
-        // still present, so the assertion passed on a broken document. Combined with the Pro
-        // check being skippable on a checkout without a rearm-core sibling, these two
-        // documents could have ended up with no real validity checking at all.
-        expect(errs.length).toBeGreaterThan(0)
-        expect(errs.filter(e => !e.includes('fdaAssessmentNarrative'))).toEqual([])
+    it.each(SINGLE_RELEASE_DOCUMENTS)('%s selects the release risk summary', (_name, doc) => {
+        const printed = doc.loc?.source?.body ?? ''
+        expect(printed).toMatch(/\bkevCount\b/)
+        expect(printed).toMatch(/\briskSummary\s*\{/)
     })
 
     it.each(SINGLE_RELEASE_DOCUMENTS)('%s selects the device support window', (_name, doc) => {

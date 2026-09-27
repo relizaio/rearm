@@ -66,6 +66,32 @@ describe('grouping findings by component', () => {
         expect(groups.map(g => g.label)).toEqual(['crit@1', 'kev@1', 'big@1', 'a@1', 'b@1', 'violation-only@1'])
     })
 
+    it('carries the highest score and EPSS of its findings, null without scores', () => {
+        const cvss = (n: number) => ({ type: 'CVSS_V3' as const, score: n, subScores: [] })
+        const epss = (n: number) => ({ type: 'EPSS' as const, score: n, subScores: [] })
+        const [group] = groupFindingsByComponent([
+            row({ type: 'Vulnerability', id: 'a', purl: 'pkg:npm/a@1', severity: 'HIGH', topScore: cvss(7.5), epss: epss(0.02), scores: [] }),
+            row({ type: 'Vulnerability', id: 'b', purl: 'pkg:npm/a@1', severity: 'HIGH', topScore: cvss(8.1), epss: epss(0.4), scores: [] }),
+            row({ type: 'Vulnerability', id: 'c', purl: 'pkg:npm/a@1', severity: 'HIGH', topScore: null, epss: null, scores: [] })
+        ])
+        expect(group.worstScore?.score).toBe(8.1)
+        expect(group.maxEpss?.score).toBe(0.4)
+        const [unscored] = groupFindingsByComponent([row({ type: 'Vulnerability', id: 'd', purl: 'pkg:npm/d@1', severity: 'HIGH' })])
+        expect(unscored.worstScore).toBeNull()
+        expect(unscored.maxEpss).toBeNull()
+    })
+
+    it('breaks a severity tie on the worst score before known-exploited', () => {
+        const cvss = (n: number) => ({ type: 'CVSS_V3' as const, score: n, subScores: [] })
+        const groups = groupFindingsByComponent([
+            row({ type: 'Vulnerability', id: 'a', purl: 'pkg:npm/kev@1', severity: 'HIGH', knownExploited: true, topScore: cvss(7.0) }),
+            row({ type: 'Vulnerability', id: 'b', purl: 'pkg:npm/scored@1', severity: 'HIGH', topScore: cvss(8.8) }),
+            row({ type: 'Vulnerability', id: 'c', purl: 'pkg:npm/unscored@1', severity: 'HIGH' }),
+            row({ type: 'Vulnerability', id: 'd', purl: 'pkg:npm/crit@1', severity: 'CRITICAL', topScore: cvss(5.0) })
+        ])
+        expect(groups.map(g => g.label)).toEqual(['crit@1', 'scored@1', 'kev@1', 'unscored@1'])
+    })
+
     it('groups weaknesses by their location and collects rows without one', () => {
         const groups = groupFindingsByComponent([
             row({ type: 'Weakness', id: 'CWE-79', purl: 'src/app/view.ts', severity: 'MEDIUM' }),
