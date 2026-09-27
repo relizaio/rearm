@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+    advisoryLabel,
     documentFileUrl,
     documentLabel,
     documentVerdict,
@@ -275,5 +276,19 @@ describe('documentLifecycleLabel', () => {
         expect(documentLifecycleLabel({ lifecycle: 'GENERAL_AVAILABILITY' } as any)?.label).toBe('general availability')
         expect(documentLifecycleLabel({} as any)).toBeNull()
         expect(documentLifecycleLabel(null)).toBeNull()
+    })
+})
+
+// Advisory rounds (task e97fde56): the chip names the role that published on a task it did not hold.
+describe('advisoryLabel', () => {
+    it('names the role on an advisory round', () => {
+        expect(advisoryLabel({ document: { specification: 'ARCHITECTURE', round: 2, advisory: true, publishedByRole: 'architect' } }))
+            .toBe('advisory · architect')
+        expect(advisoryLabel({ document: { specification: 'ARCHITECTURE', advisory: true } })).toBe('advisory')
+    })
+    it('shows nothing on any other round', () => {
+        expect(advisoryLabel({ document: { specification: 'DETAILED_DESIGN', advisory: false, publishedByRole: 'coder' } })).toBeNull()
+        expect(advisoryLabel({ document: { specification: 'ARCHITECTURE' } })).toBeNull()
+        expect(advisoryLabel(null)).toBeNull()
     })
 })
