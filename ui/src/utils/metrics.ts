@@ -5,8 +5,10 @@ import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 import { resolveKevCveId } from '@/utils/kevService'
-import { findingTypeOf, renderFindingId } from '@/utils/findingUtils'
+import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, severityBucketOf } from '@/utils/findingUtils'
 import { FindingType } from '@/constants/findingType'
+import constants from '@/utils/constants'
+import type { FindingComponentGroup } from '@/utils/findingGroups'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -117,6 +119,11 @@ export function buildVulnerabilityColumns(
     onVulnClick?: (vulnId: string, row: any) => void
     initialSeverityFilter?: string
     initialTypeFilter?: string | string[]
+    // Controlled Type / Severity filters: when given, the columns show these
+    // values (the caller keeps them from the table's update:filters) instead of
+    // seeding their own from the initial* options.
+    typeFilter?: () => string[]
+    severityFilter?: () => string[]
     data?: any[]
   }
 ): DataTableColumns<any> {
@@ -191,13 +198,8 @@ export function buildVulnerabilityColumns(
     'Violation': data.filter(r => r.type === 'Violation').length,
     'Weakness': data.filter(r => r.type === 'Weakness').length
   }
-  const severityCounts: Record<string, number> = {
-    'CRITICAL': data.filter(r => r.severity === 'CRITICAL').length,
-    'HIGH': data.filter(r => r.severity === 'HIGH').length,
-    'MEDIUM': data.filter(r => r.severity === 'MEDIUM').length,
-    'LOW': data.filter(r => r.severity === 'LOW').length,
-    'UNASSIGNED': data.filter(r => r.severity === 'UNASSIGNED' || r.severity === '-' || !r.severity).length
-  }
+  const severityCounts = emptySeverityCounts()
+  data.forEach(r => { severityCounts[severityBucketOf(r)]++ })
 
   return [
     {
@@ -210,7 +212,9 @@ export function buildVulnerabilityColumns(
         { label: `Violation (${typeCounts['Violation']})`, value: 'Violation' },
         { label: `Weakness (${typeCounts['Weakness']})`, value: 'Weakness' }
       ],
-      defaultFilterOptionValues: options?.initialTypeFilter ? (Array.isArray(options.initialTypeFilter) ? options.initialTypeFilter : [options.initialTypeFilter]) : [],
+      ...(options?.typeFilter
+        ? { filterOptionValues: options.typeFilter() }
+        : { defaultFilterOptionValues: options?.initialTypeFilter ? (Array.isArray(options.initialTypeFilter) ? options.initialTypeFilter : [options.initialTypeFilter]) : [] }),
       filter: (value: any, row: any) => row.type === value,
       render: (row: any) => {
         const typeColors: any = {
@@ -285,11 +289,10 @@ export function buildVulnerabilityColumns(
         { label: `LOW (${severityCounts['LOW']})`, value: 'LOW' },
         { label: `UNASSIGNED (${severityCounts['UNASSIGNED']})`, value: 'UNASSIGNED' }
       ],
-      defaultFilterOptionValues: options?.initialSeverityFilter ? [options.initialSeverityFilter] : [],
-      filter: (value: any, row: any) => {
-        const severity = (!row.severity || row.severity === '-') ? 'UNASSIGNED' : row.severity
-        return severity === value
-      },
+      ...(options?.severityFilter
+        ? { filterOptionValues: options.severityFilter() }
+        : { defaultFilterOptionValues: options?.initialSeverityFilter ? [options.initialSeverityFilter] : [] }),
+      filter: (value: any, row: any) => severityBucketOf(row) === value,
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
         const idx = (v: string) => {
@@ -453,6 +456,96 @@ export function buildVulnerabilityColumns(
         
         return h('div', {}, [viewIcon])
       }
+    }
+  ]
+}
+
+// Columns of the group-by-component view: one row per affected component, its
+// findings table (the flat columns) nested in the expanded row.
+export function buildComponentGroupColumns(
+  h: any,
+  NTag: any,
+  NDataTable: any,
+  options: {
+    // Columns of the nested findings table; a getter so filter changes re-render it.
+    findingColumns: () => DataTableColumns<any>
+    rowKey: (row: any) => string
+    // Forwarded from the nested tables so their filters stay the view's filters.
+    onUpdateFilters: (filters: Record<string, any>) => void
+    onPurlClick?: (purl: string) => void
+  }
+): DataTableColumns<FindingComponentGroup> {
+  const severityCircle = (severity: string, count: number) => h('span', {
+    class: 'circle',
+    style: { background: (constants.VulnerabilityColors as Record<string, string>)[severity] },
+    title: `${count} ${severity.toLowerCase()}`
+  }, String(count))
+
+  return [
+    {
+      type: 'expand',
+      renderExpand: (group: FindingComponentGroup) => h(NDataTable, {
+        data: group.rows,
+        columns: options.findingColumns(),
+        rowKey: options.rowKey,
+        pagination: group.rows.length > 10 ? { pageSize: 10 } : false,
+        scrollX: 1400,
+        size: 'small',
+        'onUpdate:filters': options.onUpdateFilters
+      })
+    },
+    {
+      title: 'Component',
+      key: 'label',
+      minWidth: 320,
+      render: (group: FindingComponentGroup) => {
+        const parts: any[] = []
+        if (group.ecosystem) {
+          parts.push(h(NTag, { size: 'small', bordered: false, style: 'margin-right: 6px;' }, () => group.ecosystem))
+        }
+        const onPurlClick = options.onPurlClick
+        parts.push(group.purl && onPurlClick
+          ? h('a', {
+            href: '#',
+            title: `Open dependency graph for ${group.purl}`,
+            onClick: (e: Event) => {
+              e.preventDefault()
+              onPurlClick(group.purl!)
+            }
+          }, group.label)
+          : h('span', { title: group.purl || group.label }, group.label))
+        return h('span', {}, parts)
+      }
+    },
+    {
+      title: 'Findings',
+      key: 'findings',
+      width: 280,
+      render: (group: FindingComponentGroup) => {
+        const circles = ROW_SEVERITIES
+          .filter(s => group.severityCounts[s] > 0)
+          .map(s => severityCircle(s, group.severityCounts[s]))
+        if (group.violationCount > 0) {
+          circles.push(h(NTag, { type: 'warning', size: 'small', bordered: false },
+            () => `${group.violationCount} violation${group.violationCount === 1 ? '' : 's'}`))
+        }
+        return h('div', { style: 'display: flex; align-items: center; gap: 4px;' }, circles)
+      }
+    },
+    {
+      title: 'KEV',
+      key: 'kevCount',
+      width: 90,
+      render: (group: FindingComponentGroup) => group.kevCount > 0
+        ? h(NTag, { type: 'error', size: 'small', bordered: false, title: 'CISA Known Exploited Vulnerabilities' },
+          () => `KEV ${group.kevCount}`)
+        : ''
+    },
+    {
+      title: 'Total',
+      key: 'total',
+      width: 80,
+      render: (group: FindingComponentGroup) => String(group.rows.length)
     }
   ]
 }
