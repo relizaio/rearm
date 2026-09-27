@@ -23,12 +23,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.ServletWebRequest;
 
+import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.ReleaseData;
-import io.reliza.model.RelizaObject;
+import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.DownloadLogData.DownloadConfig;
@@ -45,10 +46,8 @@ import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SupportInjectionService;
 import io.reliza.service.UserService;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
-@Slf4j
 @RestController
 public class ArtifactWs {
 
@@ -113,28 +112,25 @@ public class ArtifactWs {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
         var oud = userService.getUserDataByAuth(auth);
 		Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
-        log.debug("latestOad is present? {}", latestOad.isPresent());
-        log.debug("latestOad is  {}", latestOad.get());
-		RelizaObject ro = latestOad.isPresent() ? latestOad.get() : null;
-		var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ro.getOrg());
+		if (latestOad.isEmpty()) return notFound();
+		ArtifactData ad = latestOad.get();
+		var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
 		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
-		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
+		authorizeUserDownload(oud.get(), ad, components);
 		if (response.isCommitted()) return null;
         Optional<ArtifactData> oad = (version == null)
             ? latestOad
             : artifactService.getArtifactDataByVersion(uuid, version);
-		if (oad.isEmpty()) {
-            throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
-        }
+		if (oad.isEmpty()) return notFound();
 
         // BEFORE the log row, deliberately. A refused request downloaded nothing, and a
         // download log that records it would report a document the caller never received --
         // which is the one thing an auditor reconstructing a submission must be able to trust.
         // The GraphQL export orders these the same way.
         ExportMetadataOptions exportMetadata =
-            exportMetadataFor(ro.getOrg(), includeSupportMetadata, includeInternalMetadata);
+            exportMetadataFor(ad.getOrg(), includeSupportMetadata, includeInternalMetadata);
         WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-        downloadLogService.createDownloadLog(ro.getOrg(), DownloadType.ARTIFACT_DOWNLOAD,
+        downloadLogService.createDownloadLog(ad.getOrg(), DownloadType.ARTIFACT_DOWNLOAD,
             DownloadSubjectType.ARTIFACT, oad.get().getUuid(), wu,
             DownloadConfig.builder().artifactUuid(uuid).artifactVersion(version)
                 .includeSupportMetadata(exportMetadata.supportMetadata().toCallerInput())
@@ -155,22 +151,19 @@ public class ArtifactWs {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
         var oud = userService.getUserDataByAuth(auth);
 		Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
-        log.debug("latestOad is present? {}", latestOad.isPresent());
-        log.debug("latestOad is  {}", latestOad.get());
-		RelizaObject ro = latestOad.isPresent() ? latestOad.get() : null;
-		var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ro.getOrg());
+		if (latestOad.isEmpty()) return notFound();
+		ArtifactData ad = latestOad.get();
+		var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
 		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
-		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
+		authorizeUserDownload(oud.get(), ad, components);
         if (response.isCommitted()) return null;
 		Optional<ArtifactData> oad = (version == null)
             ? latestOad
             : artifactService.getArtifactDataByVersion(uuid, version);		
-		if (oad.isEmpty()) {
-            throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
-        }
+		if (oad.isEmpty()) return notFound();
         
         WhoUpdated wuRaw = WhoUpdated.getWhoUpdated(oud.get());
-        downloadLogService.createDownloadLog(ro.getOrg(), DownloadType.RAW_ARTIFACT_DOWNLOAD,
+        downloadLogService.createDownloadLog(ad.getOrg(), DownloadType.RAW_ARTIFACT_DOWNLOAD,
             DownloadSubjectType.ARTIFACT, oad.get().getUuid(), wuRaw,
             DownloadConfig.builder().artifactUuid(uuid).artifactVersion(version).build());
         return sharedArtifactService.downloadRawArtifact(oad.get());
@@ -189,19 +182,58 @@ public class ArtifactWs {
         HttpServletResponse response
     ) throws Exception {
         Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
-        if (latestOad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        if (latestOad.isEmpty()) return notFound();
         ArtifactData ad = latestOad.get();
         var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
         Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
         var ahp = authorizationService.authenticateProgrammatic(headers, request);
-        authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(
-            ahp, PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ad));
+        authorizeKeyDownload(ahp, ad, components);
         Optional<ArtifactData> oad = (version == null)
             ? latestOad
             : artifactService.getArtifactDataByVersion(uuid, version);
-        if (oad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        if (oad.isEmpty()) return notFound();
         return sharedArtifactService.downloadArtifact(oad.get(), resolveDeviceLifecycle(releases, releaseUuid),
             exportMetadataFor(ad.getOrg(), includeSupportMetadata, includeInternalMetadata));
+    }
+
+    /**
+     * ARTIFACT_DOWNLOAD for a user. An artifact on a release is authorized per component, as
+     * before. One on no release has no component to ask about: an AI agent session's artifact
+     * (sessions hold theirs directly), a signature sub-artifact, or the previous artifact after a
+     * new-serial replacement. The per-component check refused those for everyone short of a global
+     * admin, org admins included, so the session page could list its reports but not open them.
+     * They are authorized at organization scope on the artifact's own org instead -- the boundary
+     * {@link ArtifactDataFetcher#getArtifact} already falls back to for the same artifacts' metadata.
+     */
+    private void authorizeUserDownload(UserData ud, ArtifactData ad, Set<UUID> components) throws RelizaException {
+        if (components.isEmpty()) {
+            authorizationService.isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.ARTIFACT_DOWNLOAD,
+                PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), CallType.READ);
+        } else {
+            authorizationService.isUserAuthorizedForAnyObjectGraphQL(ud, PermissionFunction.ARTIFACT_DOWNLOAD,
+                PermissionScope.COMPONENT, components, List.of(ad), CallType.READ);
+        }
+    }
+
+    /** The same rule as {@link #authorizeUserDownload} for an API key on the programmatic endpoints. */
+    private void authorizeKeyDownload(AuthHeaderParse ahp, ArtifactData ad, Set<UUID> components) throws RelizaException {
+        if (components.isEmpty()) {
+            authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp, PermissionFunction.ARTIFACT_DOWNLOAD,
+                PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), CallType.READ);
+        } else {
+            authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(ahp, PermissionFunction.ARTIFACT_DOWNLOAD,
+                PermissionScope.COMPONENT, components, List.of(ad));
+        }
+    }
+
+    /**
+     * An unknown artifact, or an unknown version of one, is a 404. Returned rather than thrown: a
+     * thrown status is forwarded to /error, which an API-key caller (authenticated in the handler,
+     * not by the filter chain) reaches anonymously and gets as a 401. These used to be a 500 from
+     * an empty Optional on the manual endpoints and a 500 from RelizaException on the rest.
+     */
+    private static Mono<ResponseEntity<byte[]>> notFound() {
+        return Mono.just(ResponseEntity.notFound().build());
     }
 
     /**
@@ -235,17 +267,16 @@ public class ArtifactWs {
         HttpServletResponse response
     ) throws Exception {
         Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
-        if (latestOad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        if (latestOad.isEmpty()) return notFound();
         ArtifactData ad = latestOad.get();
         var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
         Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
         var ahp = authorizationService.authenticateProgrammatic(headers, request);
-        authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(
-            ahp, PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ad));
+        authorizeKeyDownload(ahp, ad, components);
         Optional<ArtifactData> oad = (version == null)
             ? latestOad
             : artifactService.getArtifactDataByVersion(uuid, version);
-        if (oad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        if (oad.isEmpty()) return notFound();
         return sharedArtifactService.downloadRawArtifact(oad.get());
     }
 

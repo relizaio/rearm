@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -2153,12 +2154,32 @@ private static int currentReconcileFailureCount(Release r) {
 				orgUuidStr, base, Utils.escapeSqlLikeLiteral(base));
 	}
 
+	/**
+	 * Resolves a purl to the org's sbom_components row, in one indexed query over
+	 * every spelling the stored canonical can have ({@link Utils#canonicalPurlSpellings}).
+	 * An exact lookup of {@link Utils#canonicalizePurl} alone misses rebom's rows:
+	 * its PackageURL round-trip writes a Debian {@code 5.36.0-7+deb12u3} or
+	 * {@code 1:1.2.13} as {@code %2B} / {@code %3A}, where rebom keeps them raw.
+	 * The caller's own bytes go first when they parse to the same identity, which
+	 * covers a purl copied from a stored row whatever else it encodes.
+	 */
 	public UUID searchSbomComponentByPurl(String purl, UUID orgUuid) {
 		if (orgUuid == null) return null;
 		String canonical = Utils.canonicalizePurl(purl);
 		if (canonical == null) return null;
-		return sbomComponentRepository.findByOrgAndCanonicalPurl(orgUuid, canonical)
-				.map(SbomComponent::getUuid)
+		Set<String> spellings = new LinkedHashSet<>();
+		String asGiven = Utils.canonicalizePurlPreservingEncoding(purl);
+		if (asGiven != null && Utils.purlsSemanticallyEqual(asGiven, canonical)) spellings.add(asGiven);
+		spellings.addAll(Utils.canonicalPurlSpellings(purl));
+		Map<String, UUID> byCanonical = new HashMap<>();
+		for (SbomComponent sc : sbomComponentRepository
+				.findByOrgAndCanonicalPurlIn(orgUuid.toString(), spellings)) {
+			byCanonical.put(sc.getCanonicalPurl(), sc.getUuid());
+		}
+		return spellings.stream()
+				.map(byCanonical::get)
+				.filter(Objects::nonNull)
+				.findFirst()
 				.orElse(null);
 	}
 

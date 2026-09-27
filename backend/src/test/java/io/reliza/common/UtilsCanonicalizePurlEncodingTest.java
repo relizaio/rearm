@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -147,5 +149,26 @@ public class UtilsCanonicalizePurlEncodingTest {
 		assertNull(Utils.purlSemanticKey("cpe:2.3:a:zlib:zlib:1.2.13:*:*:*:*:*:*:*"));
 		assertNull(Utils.purlSemanticKey("__token"));
 		assertNull(Utils.purlSemanticKey(null));
+	}
+
+	@Test
+	public void canonicalSpellingsCoverEveryWriterEncodingOfTheVersion() {
+		assertEquals(List.of(
+				"pkg:deb/debian/shadow@1:4.13+dfsg1-1+deb12u2?distro=debian-12",
+				"pkg:deb/debian/shadow@1%3A4.13+dfsg1-1+deb12u2?distro=debian-12",
+				"pkg:deb/debian/shadow@1:4.13%2Bdfsg1-1%2Bdeb12u2?distro=debian-12",
+				"pkg:deb/debian/shadow@1%3A4.13%2Bdfsg1-1%2Bdeb12u2?distro=debian-12"),
+				Utils.canonicalPurlSpellings("pkg:deb/debian/shadow@1:4.13+dfsg1-1+deb12u2?arch=amd64&distro=debian-12"),
+				"rebom's raw form first, then every mix of the two encodings");
+		assertEquals(List.of("pkg:deb/debian/pcre2@10.42-1?distro=debian-12"),
+				Utils.canonicalPurlSpellings("pkg:deb/debian/pcre2@10.42-1?distro=debian-12"));
+		// '@' in a scoped npm namespace is not the version separator.
+		assertEquals(List.of("pkg:npm/%40babel/traverse@7.22.0"),
+				Utils.canonicalPurlSpellings("pkg:npm/@babel/traverse@7.22.0"));
+		assertEquals(List.of("pkg:npm/lodash"), Utils.canonicalPurlSpellings("pkg:npm/lodash"));
+		// Only the version varies: an encoded '+' in a qualifier value stays as written.
+		assertEquals(List.of("pkg:deb/debian/foo@1.0?distro=a%2Bb"),
+				Utils.canonicalPurlSpellings("pkg:deb/debian/foo@1.0?distro=a+b"));
+		assertEquals(List.of(), Utils.canonicalPurlSpellings("not a purl"));
 	}
 }

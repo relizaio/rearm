@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -1283,6 +1284,34 @@ public class Utils {
 		} catch (MalformedPackageURLException e) {
 			return null;
 		}
+	}
+
+	/**
+	 * Every spelling a stored {@code sbom_components.canonical_purl} can have for
+	 * the identity of {@code purl}. Writers disagree only on the version: rebom
+	 * (packageurl-js) keeps {@code +} and an epoch {@code :} raw, PackageURL
+	 * writes them {@code %2B} / {@code %3A}, and rebom rows of an older era carry
+	 * {@code %2B} next to a raw {@code :}. Built from {@link #canonicalizePurl},
+	 * rebom's spelling first; empty when the purl does not parse.
+	 */
+	public static List<String> canonicalPurlSpellings(String purl) {
+		String canonical = canonicalizePurl(purl);
+		if (canonical == null) return List.of();
+		// Everything before the first raw '@' is type/namespace/name, where
+		// PackageURL encodes '@' itself; the version runs to '?' or the end.
+		int at = canonical.indexOf('@');
+		if (at < 0) return List.of(canonical);
+		int q = canonical.indexOf('?', at);
+		String head = canonical.substring(0, at + 1);
+		String version = q < 0 ? canonical.substring(at + 1) : canonical.substring(at + 1, q);
+		String tail = q < 0 ? "" : canonical.substring(q);
+		Set<String> spellings = new LinkedHashSet<>();
+		for (String plus : List.of("+", "%2B")) {
+			for (String colon : List.of(":", "%3A")) {
+				spellings.add(head + version.replace("%2B", plus).replace("%3A", colon) + tail);
+			}
+		}
+		return List.copyOf(spellings);
 	}
 
 	public static String canonicalizePurl(String purl) {
