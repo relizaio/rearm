@@ -2,7 +2,7 @@
 // open the task page, and nothing that needs a page to read -- counts rather than tables, one line
 // per concern.
 import { DocumentRelease, Finding, INDEXED_TYPES, latestRound } from './agentDocuments'
-import { costLabel, formatTokens, taskSpendLabel, totalTokens } from './agentUsage'
+import { costLabel, formatTokenSplit, formatTokens, taskSpendLabel, totalTokens } from './agentUsage'
 import { agentName, dur, roleName, ts } from './agentTaskFormat'
 import { aboutLabel, latestQuestionRound } from './agentQuestionRounds'
 
@@ -84,5 +84,7 @@ export function taskSummary (task: any, tasks: any[], roles: any[] | null | unde
         usage: (usage?.reports ?? 0) > 0
             ? `${null != task?.spentMicros ? taskSpendLabel(task).label : costLabel(usage)} · ${formatTokens(totalTokens(usage))} tok · ${usage.requests ?? 0} requests`
             : (task?.spentMicros ?? 0) > 0 ? taskSpendLabel(task).label : null,
+        // The classes behind the line's token total (task RD2-3), for its tooltip; null without any.
+        usageSplit: (usage?.reports ?? 0) > 0 ? (formatTokenSplit(usage) || null) : null,
     }
 }

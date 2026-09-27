@@ -62,7 +62,7 @@
 import { computed } from 'vue'
 import { NTag, NTooltip } from 'naive-ui'
 import { actorLabel } from '@/utils/agentActors'
-import { costLabel, formatTokens, totalTokens } from '@/utils/agentUsage'
+import { costLabel, formatTokenSplit, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@/utils/agentDocuments'
 import { agentName, dur, hopHistory, ts } from '@/utils/agentTaskFormat'
 import { reviewedChips } from '@/utils/agentReviewed'
@@ -91,9 +91,8 @@ function hopLabel (rec: any): string {
 
 function hopTitle (rec: any): string {
     const u = rec.usage ?? {}
-    return `${u.requests ?? 0} requests, ${u.turns ?? 0} turns\n` +
-        `in ${formatTokens(u.inputTokens)} · out ${formatTokens(u.outputTokens)} · ` +
-        `cache read ${formatTokens(u.cacheReadTokens)} · cache write ${formatTokens(u.cacheWriteTokens)}` +
+    const split = formatTokenSplit(u)
+    return `${u.requests ?? 0} requests, ${u.turns ?? 0} turns` + (split ? `\n${split}` : '') +
         (u.costComplete === false ? '\nSome rows had no applicable price: the cost is a lower bound.' : '')
 }
 </script>

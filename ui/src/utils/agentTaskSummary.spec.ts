@@ -44,11 +44,18 @@ describe('taskSummary', () => {
         const none = taskSummary(richTask({ usage: null }), [], fixtureRoles, {})
         expect(none.assignment).toBeNull()
         expect(none.usage).toBeNull()
+        expect(none.usageSplit).toBeNull()
+    })
+
+    it('carries the token split behind the usage line, for its tooltip (task RD2-3)', () => {
+        const s = taskSummary(richTask({ usage: { reports: 1, inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 3 } }), [], fixtureRoles, {})
+        expect(s.usage).toBe('no price · 1.5k tok · 3 requests')
+        expect(s.usageSplit).toBe('in 1.0k · out 500')
     })
 
     it('reads an empty task as nothing to show', () => {
         const s = taskSummary({ uuid: 'x' }, [], [], {})
         expect(s).toEqual({ openFindings: [], openQuestions: 0, questions: null, latestDocuments: [],
-            dependencies: { done: 0, pending: 0, blocks: 0 }, assignment: null, usage: null })
+            dependencies: { done: 0, pending: 0, blocks: 0 }, assignment: null, usage: null, usageSplit: null })
     })
 })

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+    addTokenClasses,
+    formatTokenSplit,
+    tokenSplit,
     modelDisplayName,
     totalTokens,
     formatTokens,
@@ -162,5 +165,36 @@ describe('modelDisplayName', () => {
     it('renders an empty row as a dash', () => {
         expect(modelDisplayName(null)).toBe('—')
         expect(modelDisplayName({})).toBe('—')
+    })
+})
+
+// The token split (task RD2-3): the four classes a total sums, shown wherever the total is.
+describe('tokenSplit and formatTokenSplit', () => {
+    const full = { inputTokens: 300_000, outputTokens: 120_000, cacheReadTokens: 700_000, cacheWriteTokens: 80_000 }
+
+    it('reads the four classes, nulls as zero', () => {
+        expect(tokenSplit(full)).toEqual({ input: 300_000, output: 120_000, cacheRead: 700_000, cacheWrite: 80_000 })
+        expect(tokenSplit(null)).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+        expect(tokenSplit({ inputTokens: 5, cacheReadTokens: null })).toEqual({ input: 5, output: 0, cacheRead: 0, cacheWrite: 0 })
+    })
+
+    it('formats the split in the compact number format, leaving out zero classes', () => {
+        expect(formatTokenSplit(full)).toBe('in 300.0k · out 120.0k · cache 700.0k read / 80.0k write')
+        expect(formatTokenSplit({ ...full, cacheReadTokens: 0, cacheWriteTokens: 0 })).toBe('in 300.0k · out 120.0k')
+        expect(formatTokenSplit({ ...full, cacheWriteTokens: 0 })).toBe('in 300.0k · out 120.0k · cache 700.0k read')
+        expect(formatTokenSplit({ cacheWriteTokens: 2_500_000 })).toBe('cache 2.50M write')
+        expect(formatTokenSplit(null)).toBe('')
+        expect(formatTokenSplit({})).toBe('')
+    })
+
+    it('leaves the total as it was: the sum of the four', () => {
+        expect(totalTokens(full)).toBe(1_200_000)
+        const s = tokenSplit(full)
+        expect(s.input + s.output + s.cacheRead + s.cacheWrite).toBe(totalTokens(full))
+    })
+
+    it('adds classes up for a row summed from several records', () => {
+        const acc = addTokenClasses(addTokenClasses({}, full), { inputTokens: 1, cacheWriteTokens: null })
+        expect(tokenSplit(acc)).toEqual({ input: 300_001, output: 120_000, cacheRead: 700_000, cacheWrite: 80_000 })
     })
 })

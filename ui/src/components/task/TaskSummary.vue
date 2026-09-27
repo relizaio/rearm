@@ -41,7 +41,7 @@
             <span class="deplab">assigned</span><span>{{ summary.assignment }}</span>
         </div>
         <div v-if="summary.usage" class="deprow">
-            <span class="deplab">usage</span><span>{{ summary.usage }}</span>
+            <span class="deplab">usage</span><span :title="summary.usageSplit ?? undefined" class="usage-line">{{ summary.usage }}</span>
         </div>
         <div v-if="task.prUrls?.length" class="deprow">
             <span class="deplab">PRs</span>

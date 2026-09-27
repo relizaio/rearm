@@ -15,7 +15,7 @@
                 <div class="usage-caption">cost</div>
             </div>
             <div class="usage-figure">
-                <div class="usage-value">{{ formatTokens(totalTokens(usage)) }}</div>
+                <div class="usage-value"><token-split :usage="usage" compact /></div>
                 <div class="usage-caption">tokens</div>
             </div>
             <div class="usage-figure">
@@ -37,11 +37,8 @@
         <!-- The token split is where the money actually is: cache reads dominate a
              long session, so the breakdown is shown rather than folded away. -->
         <n-space :size="16" style="margin-top: 6px; flex-wrap: wrap;">
-            <n-text depth="3" style="font-size: 12px;">
-                in {{ formatTokens(usage.inputTokens) }} ·
-                out {{ formatTokens(usage.outputTokens) }} ·
-                cache read {{ formatTokens(usage.cacheReadTokens) }} ·
-                cache write {{ formatTokens(usage.cacheWriteTokens) }}
+            <n-text v-if="formatTokenSplit(usage)" depth="3" style="font-size: 12px;" class="usage-split">
+                {{ formatTokenSplit(usage) }}
             </n-text>
         </n-space>
 
@@ -60,10 +57,10 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
 import { NSpace, NTag, NText, NTooltip, NDataTable, DataTableColumns } from 'naive-ui'
+import TokenSplit from './TokenSplit.vue'
 import {
     UsageTotals,
-    totalTokens,
-    formatTokens,
+    formatTokenSplit,
     costLabel,
     usageBadges,
     byModelRows,
@@ -95,7 +92,7 @@ const modelColumns = computed<DataTableColumns<any>>(() => [
     { title: 'Model', key: 'model', render: (r: any) => modelDisplayName(r) },
     { title: 'Requests', key: 'requests', render: (r: any) => r.requests ?? 0 },
     { title: 'Turns', key: 'turns', render: (r: any) => r.turns ?? 0 },
-    { title: 'Tokens', key: 'tokens', render: (r: any) => formatTokens(totalTokens(r)) },
+    { title: 'Tokens', key: 'tokens', render: (r: any) => h(TokenSplit, { usage: r, compact: true }) },
     {
         title: 'Cost',
         key: 'cost',

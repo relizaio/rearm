@@ -49,6 +49,49 @@ export function totalTokens (u?: UsageTotals | null): number {
         (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0)
 }
 
+/** The four token classes a total sums, the ones pricing reads (task RD2-3). */
+export interface TokenSplit {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+}
+
+/** The classes behind totalTokens(u); nulls read as zero, as they do in the total. */
+export function tokenSplit (u?: UsageTotals | null): TokenSplit {
+    return {
+        input: u?.inputTokens ?? 0,
+        output: u?.outputTokens ?? 0,
+        cacheRead: u?.cacheReadTokens ?? 0,
+        cacheWrite: u?.cacheWriteTokens ?? 0,
+    }
+}
+
+/**
+ * The split as one line, "in 300.0k · out 120.0k · cache 700.0k read / 80.0k write", leaving out
+ * the classes that are zero; empty when every class is. Where the money is: cache reads dominate
+ * a long cached session, and the total alone hides that.
+ */
+export function formatTokenSplit (u?: UsageTotals | null): string {
+    const s = tokenSplit(u)
+    const parts: string[] = []
+    if (s.input) parts.push(`in ${formatTokens(s.input)}`)
+    if (s.output) parts.push(`out ${formatTokens(s.output)}`)
+    const cache = [s.cacheRead ? `${formatTokens(s.cacheRead)} read` : '', s.cacheWrite ? `${formatTokens(s.cacheWrite)} write` : '']
+        .filter(Boolean)
+    if (cache.length) parts.push(`cache ${cache.join(' / ')}`)
+    return parts.join(' · ')
+}
+
+/** Adds u's token classes into acc, for a row summed from several usage records. */
+export function addTokenClasses (acc: UsageTotals, u?: UsageTotals | null): UsageTotals {
+    acc.inputTokens = (acc.inputTokens ?? 0) + (u?.inputTokens ?? 0)
+    acc.outputTokens = (acc.outputTokens ?? 0) + (u?.outputTokens ?? 0)
+    acc.cacheReadTokens = (acc.cacheReadTokens ?? 0) + (u?.cacheReadTokens ?? 0)
+    acc.cacheWriteTokens = (acc.cacheWriteTokens ?? 0) + (u?.cacheWriteTokens ?? 0)
+    return acc
+}
+
 /** Compact token count: 1_234_567 -> "1.23M". */
 export function formatTokens (n?: number | null): string {
     const v = n ?? 0
