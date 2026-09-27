@@ -43,6 +43,8 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
+import graphql.execution.DataFetcherResult;
+import graphql.schema.DataFetchingFieldSelectionSet;
 import org.dataloader.BatchLoader;
 import org.dataloader.DataLoader;
 import java.util.concurrent.CompletableFuture;
@@ -93,6 +95,7 @@ import io.reliza.model.dto.CveSearchResultDto;
 import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.model.dto.ReleaseDto;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
@@ -578,8 +581,7 @@ public class ReleaseDatafetcher {
 		// selects them; otherwise serve totals from the light view (avoids
 		// reading/deserializing vulnerabilityDetails/violationDetails/weaknessDetails
 		// for every release in the list).
-		boolean needsMetricsDetails = dfe.getSelectionSet().containsAnyOf(
-				"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails");
+		boolean needsMetricsDetails = selectsAny(dfe.getSelectionSet(), RELEASE_METRICS_ROW_SELECTIONS);
 		List<ReleaseData> retRel = new LinkedList<>();
 		if (null != branchFilter) {
 			log.debug("num of release records in get releases dto = " + numRecords);
@@ -2181,6 +2183,43 @@ public class ReleaseDatafetcher {
 		return pullRequestService.findByOrgAndAnyCommit(rd.getOrg(), sceUuids);
 	}
 
+	/**
+	 * Selections of a release's metrics that need its finding rows, not just
+	 * the totals-only view: the detail lists, and riskSummary, which is
+	 * computed from the rows.
+	 */
+	static final List<String> RELEASE_METRICS_ROW_SELECTIONS = List.of(
+		"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails", "metrics/riskSummary");
+
+	/**
+	 * The same for an artifact, plus kevCount: an artifact's stored rows are
+	 * never KEV-stamped, so its count is taken from the rows at read time
+	 * (see ArtifactDataFetcher.metricsOfArtifact).
+	 */
+	static final List<String> ARTIFACT_METRICS_ROW_SELECTIONS = List.of(
+		"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails", "metrics/riskSummary",
+		"metrics/kevCount");
+
+	static boolean selectsAny(DataFetchingFieldSelectionSet selection, List<String> globs) {
+		return globs.stream().anyMatch(selection::contains);
+	}
+
+	/**
+	 * The stored metrics as they are, with the release's org attached as
+	 * local context: {@code ReleaseMetricsDto} does not carry the org, and
+	 * the score fields below it read the org's vulnerability records (see
+	 * {@link VulnerabilityScoreDataFetcher}). Loads nothing itself.
+	 */
+	@DgsData(parentType = "Release", field = "metrics")
+	public DataFetcherResult<ReleaseMetricsDto> metricsOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		if (rd == null) return DataFetcherResult.<ReleaseMetricsDto>newResult().build();
+		return DataFetcherResult.<ReleaseMetricsDto>newResult()
+				.data(rd.getMetrics())
+				.localContext(new MetricsContext(rd.getOrg()))
+				.build();
+	}
+
 	@DgsData(parentType = "Release", field = "artifactDetails")
 	public List<ArtifactData> artifactsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
@@ -2191,9 +2230,8 @@ public class ReleaseDatafetcher {
 		// Load the heavy metrics detail arrays only when the query selects them;
 		// otherwise serve totals from the light view. Batched (was an N+1 per
 		// artifact), then re-ordered to the release's artifact order with missing
-		// ids skipped — preserving prior behavior.
-		boolean needsMetricsDetails = dfe.getSelectionSet().containsAnyOf(
-				"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails");
+		// ids skipped -- preserving prior behavior.
+		boolean needsMetricsDetails = selectsAny(dfe.getSelectionSet(), ARTIFACT_METRICS_ROW_SELECTIONS);
 		List<ArtifactData> loaded = needsMetricsDetails
 				? artifactService.getArtifactDataList(artUuids)
 				: artifactService.getArtifactDataListLight(artUuids);
