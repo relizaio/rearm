@@ -10,7 +10,8 @@
                    title="Hand-over is refused while these fail">blocks: {{ summary.blockingFailed.join(', ') }}</n-tag>
             <n-tag v-if="stale" size="tiny" :bordered="false" type="warning"
                    title="An input has a newer document since this report; re-run to check against it">stale</n-tag>
-            <n-button size="tiny" quaternary :loading="running" @click.stop="rerun">Re-run</n-button>
+            <n-button v-if="canRerun" size="tiny" quaternary :loading="running" data-testid="check-rerun"
+                      @click.stop="rerun">Re-run</n-button>
         </div>
         <div v-if="error" class="chk__error">{{ error }}</div>
         <table v-if="open" class="chk__table">
@@ -52,6 +53,8 @@ const props = defineProps<{
     release: DocumentRelease
     /** The task's documents, newest first; the report rounds are among them. */
     documents: DocumentRelease[]
+    /** BOARD_WRITE on the board: re-running is the board's verb (RD2-6); the report stays readable. */
+    canRerun?: boolean
 }>()
 
 const store = useStore()

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { boardCan, canConfigure, canOperate } from './agentBoardAccess'
+import { boardCan, canConfigure, canOperate, canConfigureRead, specRefusal } from './agentBoardAccess'
 
 // Board enforcement (task d8e7bd7e): controls follow the board's myPermissions.
 describe('board access', () => {
@@ -22,5 +22,23 @@ describe('board access', () => {
         expect(canOperate(null)).toBe(false)
         expect(canOperate({})).toBe(false)
         expect(canConfigure({ myPermissions: null })).toBe(false)
+    })
+})
+
+// Controls shown to people who cannot act (RD2-6): reading the board as a spec, and what the spec
+// modal says when the read is refused.
+describe('reading the board as configuration', () => {
+    it('needs CONFIGURATION_READ, or CONFIGURATION_WRITE which reads what it writes', () => {
+        expect(canConfigureRead({ myPermissions: ['BOARD_READ'] })).toBe(false)
+        expect(canConfigureRead({ myPermissions: ['BOARD_READ', 'CONFIGURATION_READ'] })).toBe(true)
+        expect(canConfigureRead({ myPermissions: ['CONFIGURATION_WRITE'] })).toBe(true)
+        expect(canConfigureRead({ myPermissions: null })).toBe(false)
+        expect(canConfigureRead(null)).toBe(false)
+    })
+
+    it('shows the server\'s refusal in the modal, and says what a bare Not authorized needs', () => {
+        expect(specRefusal(new Error('GraphQL error: Not authorized'))).toBe('Needs Configuration read on this board to show it as a spec.')
+        expect(specRefusal(new Error('Board not found: b1'))).toBe('Board not found: b1')
+        expect(specRefusal(null)).toBe('Needs Configuration read on this board to show it as a spec.')
     })
 })
