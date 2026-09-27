@@ -10,8 +10,9 @@
                 {{ session.status }}
             </n-tag>
             <!-- A stuck session (an agent that died holding tasks) is otherwise released only by the
-                 idle autoclose. Org admin, as the server requires. -->
-            <n-popconfirm v-if="canForceClose(session, isAdmin)" @positive-click="forceClose">
+                 idle autoclose. BOARD_WRITE on a board it worked, or the org admin, as the server
+                 requires (task RD2-5); hidden, not disabled, for anyone else. -->
+            <n-popconfirm v-if="canForceClose(session, isAdmin, orgBoards)" @positive-click="forceClose">
                 <template #trigger>
                     <n-button size="tiny" type="error" ghost class="forceclose" :loading="closing">Force close</n-button>
                 </template>
@@ -211,7 +212,7 @@ import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
-import { canForceClose } from '@/utils/agentTaskAdmin'
+import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { closeAttribution, forceCloseReason, isIdleWarned } from '@/utils/agentSessionIdle'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import AgentUsageSummary from './AgentUsageSummary.vue'
@@ -374,6 +375,9 @@ onMounted(load)
 const isAdmin = computed(() => isOrgAdmin(store.getters?.myuser?.permissions?.permissions, session.value?.org))
 const closing = ref(false)
 const closeReasonInput = ref('')
+// The org's boards the reader sees, with their myPermissions: read only when they decide whether a
+// non-admin may force-close (task RD2-5). A failed read offers nothing, as the server would refuse.
+const orgBoards = ref<any[]>([])
 async function forceClose () {
     closing.value = true
     try {
@@ -382,7 +386,7 @@ async function forceClose () {
         notification.success({ content: 'Session closed; its tasks went back to the queue', duration: 4000 })
         await load()
     } catch (e: any) {
-        notification.error({ content: `Force close failed: ${e?.message ?? e}`, duration: 8000 })
+        notification.error({ content: `Could not force-close: ${e?.message ?? e}`, duration: 8000 })
     } finally {
         closing.value = false
     }
@@ -390,6 +394,9 @@ async function forceClose () {
 
 async function load () {
     session.value = await store.dispatch('fetchSession', sessionUuid.value)
+    orgBoards.value = forceCloseNeedsBoards(session.value, isAdmin.value)
+        ? await store.dispatch('fetchAgentBoardsOfOrg', session.value.org).catch(() => []) ?? []
+        : []
     if (session.value?.agent) {
         agent.value = await store.dispatch('fetchAgent', session.value.agent).catch(() => null)
     }
