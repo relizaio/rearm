@@ -28,7 +28,7 @@
                 </div>
                 <div class="tpage__side tsecs">
                     <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels"
-                                 :can-operate="canReopen"
+                                 :can-operate="canReopen" :board="board"
                                  @human-review="humanReview" @human-signoff="humanSignOff"
                                  @operator-release="operatorRelease" @require-review="requireReview"/>
                     <task-actions v-if="canReopen" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"

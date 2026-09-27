@@ -42,7 +42,11 @@ describe('AiAgentTaskDetailDrawer', () => {
         expect(held.text()).toContain('Release past the stop')
         expect(held.findAll('.dsec__h').map(h => h.text())).toEqual(['Human review', 'Task actions', 'Summary'])
         const gate = mountDrawer(fixtureVariants().humanGate)
-        expect(gate.text()).toContain('Approve reviewer pass')
+        // The fixture's reviewer rejected over F-4: sending it back leads, and approving past F-4
+        // needs a decision on it -- never "pass" on a rejection (task RD2-25).
+        expect(gate.text()).toContain('Reject (send back)')
+        expect(gate.text()).toContain('Approve past the findings')
+        expect(gate.text()).not.toContain('reviewer pass')
         const done = mountDrawer(fixtureVariants().completed)
         expect(done.findAll('.dsec__h').map(h => h.text())).toEqual(['Reopen', 'Summary'])
     })

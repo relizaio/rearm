@@ -22,12 +22,41 @@
                 <n-select v-model:value="gateAbout" :options="aboutOptions" size="small" clearable
                           placeholder="about" style="width: 150px"/>
             </n-space>
+            <!-- The gated hop rejected with items that block (task RD2-25): approving past them needs a
+                 decision on each, with the person's words, as the server requires; sending it back
+                 leads. -->
+            <div v-if="rejected && blocking.length" class="gatefinds" data-testid="gate-findings">
+                <div class="holdmeta">The {{ task.hold.gateRole }} rejected over these. Send it back, or decide each to approve past it:</div>
+                <div v-for="f in blocking" :key="f.id" class="gatefind" :data-finding="f.id">
+                    <span class="gatefind__id">{{ f.id }}{{ f.priority != null ? ` (P${f.priority})` : '' }}</span>
+                    <span class="gatefind__title">{{ f.title }}</span>
+                    <n-radio-group v-model:value="decisionOf(f.id).action" size="small">
+                        <n-radio-button value="ACCEPT" class="gatefind__accept">accept</n-radio-button>
+                        <n-radio-button value="DISMISS" class="gatefind__dismiss">dismiss</n-radio-button>
+                    </n-radio-group>
+                    <n-input v-model:value="decisionOf(f.id).reason" size="small" class="gatefind__reason"
+                             placeholder="why (required)" style="width: 200px"/>
+                </div>
+            </div>
             <n-space style="margin-top: 8px">
-                <n-button size="small" type="primary" @click="reviewAtGate(true)">
-                    {{ gateFindingTitle.trim() ? 'Approve with correction' : `Approve ${task.hold.gateRole} pass` }}
+                <n-button v-if="rejected" size="small" type="error" class="gate-reject" @click="reviewAtGate(false)">
+                    {{ rejectLabel(true, !!gateFindingTitle.trim()) }}
                 </n-button>
-                <n-button size="small" type="error" ghost @click="reviewAtGate(false)">
-                    Reject{{ gateFindingTitle.trim() ? ' with finding' : '' }}
+                <n-popconfirm v-if="rejected && blocking.length" :disabled="undecidedCount > 0"
+                              @positive-click="reviewAtGate(true)">
+                    <template #trigger>
+                        <n-button size="small" ghost class="gate-approve" :disabled="undecidedCount > 0">
+                            {{ approveLabel(task, true, blocking, !!gateFindingTitle.trim()) }}
+                        </n-button>
+                    </template>
+                    <span class="gate-confirm">{{ approveConfirm(blocking, decisions) }}</span>
+                </n-popconfirm>
+                <n-button v-else size="small" :type="rejected ? 'default' : 'primary'" :ghost="rejected"
+                          class="gate-approve" @click="reviewAtGate(true)">
+                    {{ approveLabel(task, rejected, blocking, !!gateFindingTitle.trim()) }}
+                </n-button>
+                <n-button v-if="!rejected" size="small" type="error" ghost class="gate-reject" @click="reviewAtGate(false)">
+                    {{ rejectLabel(false, !!gateFindingTitle.trim()) }}
                 </n-button>
             </n-space>
         </template>
@@ -105,7 +134,9 @@
 // stage of a HUMAN role, and the human-review flag. A gate verdict or a release must stay one click
 // away wherever the task is shown, so the drawer's preview keeps this whole.
 import { computed, ref, watch } from 'vue'
-import { NAlert, NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
+import { NAlert, NButton, NInput, NPopconfirm, NRadioButton, NRadioGroup, NSelect, NSpace, NTag } from 'naive-ui'
+import { approveConfirm, approveLabel, gateBlockingFindings, gateDecisions, GateDecision, gateRejected, rejectLabel,
+    undecided } from '@/utils/agentGateReview'
 import { actorLabel } from '@/utils/agentActors'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
@@ -122,6 +153,8 @@ const props = defineProps<{
     questionsOnPage?: boolean
     /** BOARD_WRITE on the task's board (task d8e7bd7e): the gate verdict, release and human stage are shown. */
     canOperate?: boolean
+    /** The task's board: its blocking priority says which of a rejected hop's items block (task RD2-25). */
+    board?: any
 }>()
 const emit = defineEmits<{
     (e: 'human-review', p: { task: any, approve: boolean, note: string, findings?: any[],
@@ -140,6 +173,15 @@ const roleOptions = computed(() => releaseRoleOptions(props.roles))
 const gateFindingTitle = ref('')
 const gateFindingPriority = ref<number | null>(1)
 const gateAbout = ref<string | null>(null)
+// A rejected gate's blocking items and the person's decision on each (task RD2-25).
+const rejected = computed(() => gateRejected(props.task))
+const blocking = computed(() => rejected.value ? gateBlockingFindings(props.task, props.board) : [])
+const decisions = ref<Record<string, GateDecision>>({})
+function decisionOf (id: string): GateDecision {
+    if (!decisions.value[id]) decisions.value[id] = { action: null, reason: '' }
+    return decisions.value[id]
+}
+const undecidedCount = computed(() => undecided(blocking.value, decisions.value).length)
 
 const priorityOptions = computed(() => priorityOptionsOf(props.priorityLevels))
 const aboutOptions = computed(() => aboutOptionsOf(props.roles))
@@ -155,14 +197,20 @@ const humanStageRole = computed(() => {
     return rc?.kind === 'HUMAN' ? rc : null
 })
 
-/** Either verdict may carry the typed finding: a rejection's reason, or an approval's correction. */
+/**
+ * Either verdict may carry the typed finding: a rejection's reason, or an approval's correction. An
+ * approval past a rejected hop also carries the person's decision on each blocking item.
+ */
 function reviewAtGate (approve: boolean) {
     const title = gateFindingTitle.value.trim()
+    const decided = approve ? gateDecisions(blocking.value, decisions.value) : []
+    const filed = title ? [{ action: 'FILE', title, priority: gateFindingPriority.value }] : []
+    const findings = [...decided, ...filed]
     emit('human-review', {
         task: props.task,
         approve,
         note: reviewNote.value,
-        findings: title ? [{ action: 'FILE', title, priority: gateFindingPriority.value }] : undefined,
+        findings: findings.length ? findings : undefined,
         about: title && gateAbout.value ? { specification: gateAbout.value } : null,
     })
 }
@@ -173,9 +221,21 @@ watch(() => props.task?.uuid, () => {
     releaseRole.value = null
     gateFindingTitle.value = ''
     gateAbout.value = null
+    decisions.value = {}
 })
 </script>
 
 <style scoped lang="scss">
 @use './taskSections';
+
+.gatefinds { margin-top: 8px; }
+.gatefind {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+.gatefind__id { font-family: monospace; font-size: 12px; }
+.gatefind__title { font-size: 12px; }
 </style>
