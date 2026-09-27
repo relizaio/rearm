@@ -1259,6 +1259,32 @@ public class Utils {
 		}
 	}
 
+	/**
+	 * Hashable counterpart of {@link #purlsSemanticallyEqual}: purls that compare
+	 * equal there (same type/namespace/name/version and qualifier map, encoding
+	 * variants and subpath ignored) produce the same key, so a lookup can go
+	 * through a map instead of a pairwise scan. The key is an opaque index value,
+	 * not a purl to persist or display.
+	 *
+	 * @return the key, or null when the input is not a parseable pkg: purl.
+	 */
+	public static String purlSemanticKey(String purl) {
+		if (purl == null || !purl.startsWith(PURL_SCHEME_PREFIX)) return null;
+		try {
+			// Same raw '+' pre-normalization as purlsSemanticallyEqual.
+			PackageURL p = new PackageURL(purl.replace("+", "%2B"));
+			PackageURLBuilder builder = PackageURLBuilder.aPackageURL()
+					.withType(p.getType())
+					.withNamespace(p.getNamespace())
+					.withName(p.getName())
+					.withVersion(p.getVersion());
+			if (p.getQualifiers() != null) p.getQualifiers().forEach(builder::withQualifier);
+			return builder.build().canonicalize();
+		} catch (MalformedPackageURLException e) {
+			return null;
+		}
+	}
+
 	public static String canonicalizePurl(String purl) {
 		if (purl == null || purl.isEmpty() || !purl.startsWith("pkg:")) {
 			return null;

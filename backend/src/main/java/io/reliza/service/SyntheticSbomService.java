@@ -637,9 +637,10 @@ public class SyntheticSbomService {
 	private Map<String, Object> toFindingsByCanonical(
 			UUID orgUuid, SyntheticFindings findings, Map<String, Object> identityMap) {
 		Map<String, Object> byCanonical = new LinkedHashMap<>();
+		CanonicalResolver resolver = new CanonicalResolver(identityMap);
 		if (findings.vulns() != null) {
 			for (IntegrationService.VulnWithCpe vc : findings.vulns()) {
-				String canonical = resolveCanonical(identityMap, vc.vuln().purl(), vc.cpe());
+				String canonical = resolver.resolve(vc.vuln().purl(), vc.cpe());
 				if (canonical == null) continue;
 				bucketFor(byCanonical, canonical, "vulns")
 						.add(Utils.OM.convertValue(vc.vuln(), LinkedHashMap.class));
@@ -647,7 +648,7 @@ public class SyntheticSbomService {
 		}
 		if (findings.violations() != null) {
 			for (IntegrationService.ViolationWithCpe vc : findings.violations()) {
-				String canonical = resolveCanonical(identityMap, vc.violation().purl(), vc.cpe());
+				String canonical = resolver.resolve(vc.violation().purl(), vc.cpe());
 				if (canonical == null) continue;
 				bucketFor(byCanonical, canonical, "violations")
 						.add(Utils.OM.convertValue(vc.violation(), LinkedHashMap.class));
@@ -709,14 +710,53 @@ public class SyntheticSbomService {
 		}
 	}
 
-	/** Map a finding's purl-or-cpe coordinate to its canonical via the identity map. */
-	private String resolveCanonical(Map<String, Object> identityMap, String purl, String cpe) {
-		if (identityMap != null) {
-			if (purl != null && identityMap.get(purl) != null) return String.valueOf(identityMap.get(purl));
-			if (cpe != null && identityMap.get(cpe) != null) return String.valueOf(identityMap.get(cpe));
+	/**
+	 * Maps a finding's purl-or-cpe coordinate back to the canonical the bucket
+	 * submitted, via the identity map: exact purl, then the purl with
+	 * percent-encoding differences ignored ({@link Utils#purlSemanticKey}), then
+	 * exact cpe. Purl identity goes first because a cpe can be shared by several
+	 * components in a bucket and the identity map keeps only the last one.
+	 *
+	 * <p>The encoding fallback is load-bearing. DTrack re-encodes the purls it is
+	 * sent, so a canonical rebom stored as {@code zlib@1:1.2.13.dfsg-1} or
+	 * {@code glibc@2.36-9+deb12u14} comes back as {@code 1%3A1.2.13.dfsg-1} /
+	 * {@code 2.36-9%2Bdeb12u14}, and IntegrationService turns a scoped npm
+	 * {@code %40scope} into {@code @scope}. Filed under those keys, the findings
+	 * match no component and never reach an artifact, which still shows as
+	 * scanned.
+	 */
+	private static final class CanonicalResolver {
+		private final Map<String, Object> identityMap;
+		/** Semantic key -> canonical, built on the first exact miss. */
+		private Map<String, String> bySemanticKey;
+
+		CanonicalResolver(Map<String, Object> identityMap) {
+			this.identityMap = identityMap != null ? identityMap : Map.of();
 		}
-		// Fallback: a purl-keyed finding is canonical by itself (purl == canonical).
-		return purl;
+
+		String resolve(String purl, String cpe) {
+			if (purl != null && identityMap.get(purl) != null) return String.valueOf(identityMap.get(purl));
+			if (purl != null) {
+				String canonical = semanticIndex().get(Utils.purlSemanticKey(purl));
+				if (canonical != null) return canonical;
+			}
+			if (cpe != null && identityMap.get(cpe) != null) return String.valueOf(identityMap.get(cpe));
+			// Fallback: a purl-keyed finding is canonical by itself (purl == canonical).
+			return purl;
+		}
+
+		private Map<String, String> semanticIndex() {
+			if (bySemanticKey == null) {
+				bySemanticKey = new HashMap<>();
+				for (Map.Entry<String, Object> e : identityMap.entrySet()) {
+					String key = Utils.purlSemanticKey(e.getKey());
+					if (key != null && e.getValue() != null) {
+						bySemanticKey.putIfAbsent(key, String.valueOf(e.getValue()));
+					}
+				}
+			}
+			return bySemanticKey;
+		}
 	}
 
 	@SuppressWarnings("unchecked")
@@ -897,6 +937,23 @@ public class SyntheticSbomService {
 		double cutoffEpoch = 0d;
 		for (SyntheticDtrackBucket bucket : bucketRepository.findByOrg(orgUuid)) {
 			if (IngestState.INGESTED != bucket.getIngestState()) continue;
+			if (rekeyEncodingVariantFindings(bucket)) {
+				// Bumping lastUpdatedDate raises the cutoff below, so artifacts
+				// already stamped scanned re-enter the pool and get the findings.
+				ZonedDateTime previous = bucket.getLastUpdatedDate();
+				try {
+					bucket.setLastUpdatedDate(ZonedDateTime.now());
+					bucketRepository.save(bucket);
+					log.info("Re-keyed encoding-variant findings in synthetic bucket {} for org {}",
+							bucket.getBucketIndex(), orgUuid);
+				} catch (Exception e) {
+					// Not persisted (e.g. a concurrent manual resync): keep the healed
+					// findings for this pass but not the cutoff bump; retried next tick.
+					bucket.setLastUpdatedDate(previous);
+					log.error("Failed to save re-keyed synthetic bucket {} for org {}",
+							bucket.getBucketIndex(), orgUuid, e);
+				}
+			}
 			if (bucket.getLastUpdatedDate() != null) {
 				cutoffEpoch = Math.max(cutoffEpoch, bucket.getLastUpdatedDate().toInstant().getEpochSecond());
 			}
@@ -974,6 +1031,54 @@ public class SyntheticSbomService {
 				applyFindingsToArtifact(m.getArtifactUuid(), artifactFindings);
 			}
 		}
+	}
+
+	/**
+	 * Re-files stored findings that an ingest without the
+	 * {@link CanonicalResolver} encoding fallback keyed under DTrack's re-encoded
+	 * purl instead of the submitted canonical. A later DTrack re-analysis rewrites
+	 * such a bucket, but only when DTrack reports its project as changed, which a
+	 * stable org may never see; this repairs the stored map in place instead.
+	 * No-op for a bucket whose keys are all submitted canonicals, and for keys
+	 * that resolve to no canonical (left as they are).
+	 *
+	 * @return whether the bucket's findings were re-keyed.
+	 */
+	@SuppressWarnings("unchecked")
+	boolean rekeyEncodingVariantFindings(SyntheticDtrackBucket bucket) {
+		Map<String, Object> findings = bucket.getFindings();
+		Map<String, Object> refMap = bucket.getRefMap();
+		if (findings == null || findings.isEmpty() || refMap == null) return false;
+		Set<Object> canonicals = new HashSet<>(refMap.values());
+		if (canonicals.containsAll(findings.keySet())) return false;
+		CanonicalResolver resolver = new CanonicalResolver(refMap);
+		Map<String, Object> rekeyed = new LinkedHashMap<>();
+		boolean changed = false;
+		for (Map.Entry<String, Object> e : findings.entrySet()) {
+			String key = e.getKey();
+			String target = canonicals.contains(key) ? key : resolver.resolve(key, null);
+			if (!key.equals(target)) changed = true;
+			Object prior = rekeyed.putIfAbsent(target, e.getValue());
+			if (prior instanceof Map && e.getValue() instanceof Map) {
+				// Both spellings stored: keep every finding under the canonical and
+				// alias-collapse the union, as ingest does for each canonical.
+				Map<String, Object> merged = new LinkedHashMap<>((Map<String, Object>) prior);
+				for (Map.Entry<String, Object> kind : ((Map<String, Object>) e.getValue()).entrySet()) {
+					List<Object> list = new ArrayList<>();
+					if (merged.get(kind.getKey()) instanceof List) list.addAll((List<Object>) merged.get(kind.getKey()));
+					if (kind.getValue() instanceof List) list.addAll((List<Object>) kind.getValue());
+					merged.put(kind.getKey(), list);
+				}
+				try {
+					organizeCanonicalFindings(bucket.getOrg(), merged);
+				} catch (Exception ex) {
+					log.warn("Alias-merge of re-keyed bucket findings failed for a canonical, keeping raw: {}", ex.getMessage());
+				}
+				rekeyed.put(target, merged);
+			}
+		}
+		if (changed) bucket.setFindings(rekeyed);
+		return changed;
 	}
 
 	private void applyFindingsToArtifact(UUID artifactUuid, FindingSet fs) {
