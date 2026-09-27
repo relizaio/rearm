@@ -534,7 +534,7 @@ query FetchInstanceStatus($orgUuid: ID!) {
 
 const COMPONENTS_OF_PERSPECTIVE_GQL = gql`
 query ComponentsOfPerspective($perspectiveUuid: ID!) {
-    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+    componentsOfPerspective(perspectiveUuid: $perspectiveUuid, kinds: [GENERIC, HELM]) {
         uuid
         name
         type
@@ -1106,6 +1106,7 @@ const COMPONENT_FULL_DATA = `
     resourceGroup
     type
     kind
+    agentBoard { uuid name taskPrefix }
     versionSchema
     marketingVersionSchema
     versionType
@@ -1302,6 +1303,7 @@ const BRANCH_GQL_DATA = `
             uuid
             name
             type
+            kind
         }
         branch {
             uuid

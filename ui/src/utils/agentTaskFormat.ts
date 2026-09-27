@@ -37,6 +37,16 @@ export function taskLabel (t: any): string {
     return title.length > 20 ? title.slice(0, 19) + '…' : title
 }
 
+/**
+ * The reference a board card leads with (task 36d0549e): the task's key (RD-42), else its tracker
+ * number, else the fallback the card uses for a task with neither.
+ */
+export function cardRef (t: any, fallback: string): string {
+    if (t?.key) return String(t.key)
+    if (t?.externalRef?.includes('#')) return '#' + t.externalRef.split('#').pop()
+    return fallback
+}
+
 export function statusTone (s: string | null | undefined): 'success' | 'info' | 'error' | 'warning' | 'default' {
     if (s === 'COMPLETED') return 'success'
     if (s === 'DELIVERING') return 'info'
