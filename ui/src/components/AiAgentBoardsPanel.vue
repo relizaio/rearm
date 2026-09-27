@@ -178,6 +178,9 @@
                                       :budget-micros="currentBoard?.budgetMicros" :lifetime-spent-micros="lifetimeSpentMicros"
                                       :soft-alert-percent="currentBoard?.softAlertPercent"/>
             </n-tab-pane>
+            <n-tab-pane name="documents" tab="Documents">
+                <AgentBoardDocumentsPanel :series="documentSeries" :org-uuid="orgUuid"/>
+            </n-tab-pane>
             </n-tabs>
 
             <AiAgentTaskDetailDrawer
@@ -821,6 +824,7 @@ import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
+import AgentBoardDocumentsPanel from '@/components/AgentBoardDocumentsPanel.vue'
 import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
@@ -1463,6 +1467,7 @@ async function refreshBoardContent () {
     tasks.value = t ?? []
     roles.value = r ?? []
     await loadLifetimeSpend()
+    await loadDocumentSeries()
     // agent uuid -> display name map for timeline/table/drawer; loaded
     // lazily once per panel life, refreshed with board content
     models.value = await store.dispatch('fetchModelOntologiesOfOrg', props.orgUuid).catch(() => []) ?? []
@@ -1499,6 +1504,18 @@ function hopBudgetField (draft: any): Record<string, number | null> {
     if (draft?.kind === 'HUMAN') return {}
     const hop = hopBudgetInput(draft?.hopBudgetMicros, draft?.hopDollars)
     return hop === undefined ? {} : { hopBudgetMicros: hop }
+}
+
+// What the board has produced, per document series (task 36d0549e); an overlay like the spend.
+const documentSeries = ref<any[]>([])
+async function loadDocumentSeries () {
+    documentSeries.value = []
+    if (!selectedBoard.value) return
+    try {
+        documentSeries.value = await store.dispatch('fetchAgentBoardDocumentSeries', selectedBoard.value) ?? []
+    } catch {
+        documentSeries.value = []
+    }
 }
 
 // Everything the board has spent since it was created, against its budget (task 40f270be).

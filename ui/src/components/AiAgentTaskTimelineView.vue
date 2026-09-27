@@ -46,6 +46,7 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
+import { cardRef } from '@/utils/agentTaskFormat'
 
 const props = defineProps<{
     tasks: any[]
@@ -151,8 +152,9 @@ function time (iso: string | null | undefined): number | null {
     const t = new Date(iso).getTime()
     return isNaN(t) ? null : t
 }
+/** The bar's reference: the task's key first (task 36d0549e), else its tracker number, else its title cut. */
 function refOf (t: any): string {
-    return t.externalRef?.includes('#') ? '#' + t.externalRef.split('#').pop() : (t.title ?? '').slice(0, 12)
+    return cardRef(t, (t.title ?? '').slice(0, 12))
 }
 function nameOf (uuid: string): string {
     return props.agentNames[uuid] ?? (uuid ? uuid.slice(0, 8) : '—')

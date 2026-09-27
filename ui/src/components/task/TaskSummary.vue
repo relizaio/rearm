@@ -24,6 +24,7 @@
                 <a v-if="documentFileUrl(d)" :href="documentFileUrl(d) ?? undefined" target="_blank" rel="noopener"
                    class="tsum__doc">{{ documentLabel(d) }}</a>
                 <span v-else class="tsum__doc">{{ documentLabel(d) }}</span>
+                <n-tag v-if="advisoryLabel(d)" size="tiny" :bordered="false" type="warning">{{ advisoryLabel(d) }}</n-tag>
             </template>
         </div>
         <div v-if="task.dependsOn?.length || summary.dependencies.blocks" class="deprow">
@@ -55,7 +56,7 @@
 // The drawer's preview: counts and one-liners, enough to decide whether to open the task page.
 import { computed } from 'vue'
 import { NTag } from 'naive-ui'
-import { documentFileUrl, documentLabel } from '@/utils/agentDocuments'
+import { advisoryLabel, documentFileUrl, documentLabel } from '@/utils/agentDocuments'
 import { prChips } from '@/utils/agentDelivery'
 import { taskLabel } from '@/utils/agentTaskFormat'
 import { taskSummary } from '@/utils/agentTaskSummary'
