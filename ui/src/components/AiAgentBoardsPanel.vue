@@ -27,9 +27,12 @@
             </n-space>
         </div>
 
-        <div v-if="!boards.length" class="empty">
-            No boards yet. A board wires tracker repos to a role pipeline governed by its coordinator.
-        </div>
+        <!-- A refusal says so (RD2-9): the list is what the person may read, so an empty one is "none
+             yet" only for an org admin, and a board link to a board not listed is a board they cannot open. -->
+        <n-alert v-if="hiddenBoard" type="warning" :bordered="false" class="lockbanner" data-testid="hidden-board">
+            {{ hiddenBoardText(hiddenBoard) }}
+        </n-alert>
+        <div v-if="!boards.length" class="empty" data-testid="no-boards">{{ noBoardsText(isAdmin) }}</div>
 
         <template v-if="currentBoard">
             <!-- Lock banner + operator lock controls -->
@@ -939,6 +942,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
@@ -1581,6 +1585,8 @@ const roleColumns: DataTableColumns<any> = [
 onMounted(refreshBoards)
 onMounted(() => loadTargetComponents(true))
 watch(selectedBoard, async () => {
+    // Picking a board the person can read clears the notice about the one they could not.
+    if (selectedBoard.value) hiddenBoard.value = null
     syncQuery()
     await refreshBoardContent()
 })
@@ -1602,6 +1608,9 @@ const canReopen = computed<boolean>(() => canOperate(currentBoard.value))
 // A board's and its roles' histories read with the board; the org presets' stay the org admin's.
 const canReadHistory = computed<boolean>(() => boardCan(currentBoard.value, 'BOARD_READ'))
 const canReadPresetHistory = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
+// Only an org admin reads every board, so only an admin's empty list means the org has none (RD2-9).
+const isAdmin = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
+const hiddenBoard = ref<string | null>(null)
 
 const applyKinds = ref<SpecKind[] | null>(null)
 
@@ -1630,7 +1639,9 @@ async function refreshBoards () {
     if (!selectedBoard.value) {
         const fromUrl = route.query.board as string | undefined
         const known = fromUrl && boards.value.some(b => b.uuid === fromUrl)
-        selectedBoard.value = known ? (fromUrl as string) : (boards.value[0]?.uuid ?? null)
+        // A link to a board the list does not hold is not silently another board (RD2-9).
+        hiddenBoard.value = fromUrl && !known ? fromUrl : null
+        selectedBoard.value = known ? (fromUrl as string) : hiddenBoard.value ? null : (boards.value[0]?.uuid ?? null)
     }
     syncQuery()
     await refreshBoardContent()

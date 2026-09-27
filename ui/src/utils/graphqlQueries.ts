@@ -1106,7 +1106,7 @@ const COMPONENT_FULL_DATA = `
     resourceGroup
     type
     kind
-    agentBoard { uuid name taskPrefix }
+    agentBoard { uuid name taskPrefix readable }
     versionSchema
     marketingVersionSchema
     versionType

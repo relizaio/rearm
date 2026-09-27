@@ -69,6 +69,7 @@ import TaskQuestions from './task/TaskQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
 import { boardCan, canOperate } from '@/utils/agentBoardAccess'
+import { taskLoadErrorText } from '@/utils/agentAccessMessages'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
 
@@ -119,7 +120,8 @@ async function load () {
         agentNames.value = names
     } catch (e: any) {
         task.value = null
-        loadError.value = `Could not load the task: ${e?.message ?? e}`
+        // A refusal says what it needs (RD2-9); any other error keeps the server's words.
+        loadError.value = taskLoadErrorText(e)
     } finally {
         loading.value = false
     }

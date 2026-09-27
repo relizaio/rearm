@@ -112,3 +112,25 @@ describe('AiAgentTaskPage', () => {
         expect(desc.attributes('title')).toBeUndefined()
     })
 })
+
+// RD2-9: a refusal says what it needs; the page does not read it as a missing task.
+describe('AiAgentTaskPage: a task the person cannot read', () => {
+    beforeEach(() => { dispatch.mockReset(); params.uuid = 't1' })
+
+    it('says the board needs Board read, and keeps any other error\'s words', async () => {
+        dispatch.mockImplementation(async (action: string) => {
+            if (action === 'fetchAgentTask') throw new Error('GraphQL error: Not authorized: this needs BOARD_READ on board X')
+            return null
+        })
+        const w = mount(Page)
+        await flushPromises()
+        expect(w.text()).toContain("You don't have access to this task's board (needs Board read)")
+        dispatch.mockImplementation(async (action: string) => {
+            if (action === 'fetchAgentTask') throw new Error('GraphQL error: timeout')
+            return null
+        })
+        const other = mount(Page)
+        await flushPromises()
+        expect(other.text()).toContain('Could not load the task: timeout')
+    })
+})

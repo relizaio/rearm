@@ -244,3 +244,20 @@ describe('the board page: groups and tags', () => {
         expect(template).toContain('@set-group="setGroup" @set-tags="setTags"')
     })
 })
+
+// Access refusals that say so (RD2-9): an empty list is "none yet" only for an org admin, and a board
+// link to a board the list does not hold says the person cannot open it instead of showing another.
+describe('the boards tab for a person who cannot read a board', () => {
+    it('words the empty list by whether the person reads every board', () => {
+        expect(template).toContain('<div v-if="!boards.length" class="empty" data-testid="no-boards">{{ noBoardsText(isAdmin) }}</div>')
+        expect(source).toContain('const isAdmin = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))')
+    })
+
+    it('says a linked board is not readable, and does not open another in its place', () => {
+        expect(template).toContain('{{ hiddenBoardText(hiddenBoard) }}')
+        const refresh = source.slice(source.indexOf('async function refreshBoards'), source.indexOf('async function refreshBoardContent'))
+        expect(refresh).toContain('hiddenBoard.value = fromUrl && !known ? fromUrl : null')
+        expect(refresh).toContain('selectedBoard.value = known ? (fromUrl as string) : hiddenBoard.value ? null : (boards.value[0]?.uuid ?? null)')
+        expect(source).toContain('if (selectedBoard.value) hiddenBoard.value = null')
+    })
+})

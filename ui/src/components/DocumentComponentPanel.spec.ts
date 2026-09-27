@@ -21,9 +21,10 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push }), RouterLink: { props:
 describe('DocumentComponentPanel', () => {
     it('names the board with its prefix and lists the rounds newest first', async () => {
         const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: 'b1',
-            component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD' } } } })
+            component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: true } } } })
         await flushPromises()
         expect(dispatch).toHaveBeenCalledWith('fetchDocumentRounds', 'b1')
+        expect(w.find('a.rl.documentComponent__board').exists()).toBe(true)
         expect(w.find('.documentComponent__board').text()).toBe('Belongs to board RD · ReARM Dogfood')
         expect(w.find('.documentComponent__title').text()).toBe('Rounds')
         const rows = w.findAll('.documentComponent__round')
@@ -39,5 +40,14 @@ describe('DocumentComponentPanel', () => {
         await flushPromises()
         expect(w.find('.documentComponent__board').text()).toBe('Document component, no board')
         expect(w.find('a.rl').exists()).toBe(false)
+    })
+
+    // RD2-9: the component reads under its own permission (D18); its board only under the board's.
+    it('names a board the person cannot open without linking to it', async () => {
+        const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: 'b1',
+            component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: false } } } })
+        await flushPromises()
+        expect(w.find('a.rl').exists()).toBe(false)
+        expect(w.find('.documentComponent__board').text()).toBe('Belongs to board RD · ReARM Dogfood (board not visible to you)')
     })
 })
