@@ -18,6 +18,7 @@ describe('agentTaskFormat', () => {
         expect(taskLabel({ title: 'short' })).toBe('short')
         expect(taskLabel({ title: 'a title well over twenty characters' })).toBe('a title well over t…')
         expect(taskLabel({})).toBe('task')
+        expect(taskLabel({ key: 'RD-42', externalRef: 'github:relizaio/rearm#42', title: 'x' })).toBe('RD-42')
     })
 
     it('resolves names with short-uuid fallbacks', () => {

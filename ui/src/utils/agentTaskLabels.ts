@@ -73,6 +73,21 @@ export function refLabel (task: any, boardHasSources: boolean): string | null {
     return boardHasSources ? 'draft (no tracker ref yet)' : null
 }
 
+/**
+ * Whether a task matches the table's text filter: its key (RD-42), title or tracker ref, case
+ * ignored. The key first, since it is what people type (board-documents.md D12).
+ */
+export function matchesTaskText (task: any, query: string | null | undefined): boolean {
+    const q = (query ?? '').trim().toLowerCase()
+    if (!q) return true
+    return `${task?.key ?? ''} ${task?.title ?? ''} ${task?.externalRef ?? ''}`.toLowerCase().includes(q)
+}
+
+/** The table's key column sorts by number, so RD-9 comes before RD-10. */
+export function compareTaskKeys (a: any, b: any): number {
+    return (a?.number ?? Number.MAX_SAFE_INTEGER) - (b?.number ?? Number.MAX_SAFE_INTEGER)
+}
+
 /** The table's short ref: "#123", or "draft" on a board with sources, else a dash. */
 export function shortRef (task: any, boardHasSources: boolean): string {
     if (task?.externalRef?.includes('#')) return '#' + String(task.externalRef).split('#').pop()

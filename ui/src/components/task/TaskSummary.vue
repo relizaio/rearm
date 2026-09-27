@@ -1,6 +1,9 @@
 <template>
     <div class="dsec tsum">
         <div class="dsec__h">Summary</div>
+        <div v-if="task.key" class="deprow">
+            <span class="deplab">key</span><code>{{ task.key }}</code>
+        </div>
         <div class="deprow">
             <span class="deplab">findings</span>
             <template v-if="summary.openFindings.length">
