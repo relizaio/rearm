@@ -529,6 +529,7 @@
                                 :components="orgComponents"
                                 :instances="orgInstances"
                                 :clusters="orgClusters"
+                                :boards="orgBoards"
                             />
                             <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
                                 <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
@@ -656,6 +657,7 @@
                                 :components="orgComponents"
                                 :instances="orgInstances"
                                 :clusters="orgClusters"
+                                :boards="orgBoards"
                             />
                         </n-flex>
                         <n-space style="margin-top: 20px;">
@@ -1258,6 +1260,7 @@ import NotificationHistory from './NotificationHistory.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
+import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
@@ -1304,6 +1307,7 @@ async function loadTabSpecificData (tabName: string) {
         await Promise.all([
             loadUsers(),
             loadPerspectives(),
+            loadBoardNames(),
             store.dispatch('fetchComponents', orgResolved.value),
             store.dispatch('fetchProducts', orgResolved.value),
             ...(myUser.value.installationType !== 'OSS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
@@ -2162,6 +2166,16 @@ function userGroupRowClassName(row: any) {
 
 // Perspectives
 const perspectives: Ref<any[]> = ref([])
+// The org's boards ({ uuid, name }) for the Per-Board section and for naming BOARD grants (task 428b4a71).
+const orgBoards: Ref<any[]> = ref([])
+async function loadBoardNames () {
+    try {
+        orgBoards.value = await store.dispatch('fetchAgentBoardNamesOfOrg', orgResolved.value) ?? []
+    } catch (e) {
+        console.warn('permissions editor: the org\'s boards are unavailable to this user', e)
+        orgBoards.value = []
+    }
+}
 const newPerspective: Ref<any> = ref({
     name: ''
 })
@@ -2794,6 +2808,8 @@ const userFields = [
                     } else if (p.scope === 'PERSPECTIVE' && p.object) {
                         const persp = perspectives.value.find((persp: any) => persp.uuid === p.object)
                         objectName = persp?.name || p.object
+                    } else if (p.scope === 'BOARD' && p.object) {
+                        objectName = boardNameOf(orgBoards.value, p.object) ?? p.object
                     } else if (p.scope === 'COMPONENT' && p.object) {
                         const comp = store.getters.componentById(p.object)
                         objectName = comp?.name || p.object
@@ -3757,6 +3773,11 @@ async function resolveScopedObjectName(scope: string, objectId: string): Promise
     const cached = scopedObjectNameCache.get(cacheKey)
     if (cached) return cached
 
+    if (scope === 'BOARD') {
+        // Not cached: the board list loads with the editor, and an early miss must not stick.
+        return boardNameOf(orgBoards.value, objectId) ?? objectId
+    }
+
     if (scope === 'PERSPECTIVE') {
         const perspective = perspectives.value.find((p: any) => p.uuid === objectId)
         const resolved = perspective ? perspective.name : objectId
@@ -3810,6 +3831,7 @@ async function editUser(email: string) {
     selectedUser.value = commonFunctions.deepCopy(user[0])
     await Promise.all([
         loadPerspectives(),
+        loadBoardNames(),
         store.dispatch('fetchComponents', orgResolved.value),
         store.dispatch('fetchProducts', orgResolved.value)
     ])
@@ -3822,7 +3844,8 @@ async function editUser(email: string) {
             perm = up
         } else if (up.scope === 'INSTANCE' && up.org === orgResolved.value) {
             instancePermissions.value[up.object] = up.type
-        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT') && up.org === orgResolved.value) {
+        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT' || up.scope === 'BOARD') && up.org === orgResolved.value) {
+            // BOARD among them: the save replaces the whole set, so a grant left out here is dropped (task 428b4a71).
             const objectName = await resolveScopedObjectName(up.scope, up.object)
             scopedPerms.push({
                 scope: up.scope,
@@ -4128,6 +4151,7 @@ async function editUserGroup(groupUuid: string) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
         await Promise.all([
             loadPerspectives(),
+            loadBoardNames(),
             store.dispatch('fetchComponents', orgResolved.value),
             store.dispatch('fetchProducts', orgResolved.value)
         ])
@@ -4144,7 +4168,7 @@ async function editUserGroup(groupUuid: string) {
                         functions: p.functions || [],
                         approvals: p.approvals || []
                     }
-                } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT' || p.scope === 'INSTANCE') && p.org === orgResolved.value) {
+                } else if (editorKeepsScope(p.scope) && p.org === orgResolved.value) {
                     const objectName = await resolveScopedObjectName(p.scope, p.object)
                     scopedPerms.push({
                         scope: p.scope,

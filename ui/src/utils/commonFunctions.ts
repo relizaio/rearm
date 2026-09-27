@@ -29,6 +29,9 @@ function translateFunctionName(fn: string): string {
         case 'DISTRIBUTION': return 'Distribution'
         case 'CONFIGURATION_READ': return 'Configuration Read'
         case 'CONFIGURATION_WRITE': return 'Configuration Write'
+        case 'BOARD_READ': return 'Board Read'
+        case 'BOARD_AGENT': return 'Board Agent'
+        case 'BOARD_WRITE': return 'Board Write'
         default: return fn
     }
 }
@@ -64,6 +67,12 @@ const PERMISSION_FUNCTION_DESCRIPTIONS: Record<string, string> = {
         'Export declarative configuration (components, products, branches, feature sets) as spec files through the programmatic API. Organization admins have this implicitly.',
     CONFIGURATION_WRITE:
         'Apply declarative configuration spec files through the programmatic API - what a GitOps pipeline or the Terraform provider needs. Implies Configuration Read. Requires Read & Write permission to take effect.',
+    BOARD_READ:
+        'Read a task board - its tasks, rounds, check reports, events and the sessions that worked it. Granted on the organization, a perspective (covering the boards hanging off it) or one board.',
+    BOARD_AGENT:
+        'Work a task board as an agent - take its next task, sign off, return, publish documents, link pull requests. Implies Board Read. What an agent key needs on a board, beside the organization-wide AI Agent marker.',
+    BOARD_WRITE:
+        'Run a task board - register, authorize and order tasks, holds and releases, gate verdicts, budgets, and the coordinator seat. Implies Board Read. Board notifications go to the people who hold it. Requires Read & Write permission to take effect.',
 }
 
 function translateFunctionDescription(fn: string): string | null {
