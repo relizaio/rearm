@@ -284,6 +284,21 @@ export function outputsOfHop (outputs: string[] | null | undefined,
 export const INDEX_DOCUMENT_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT', 'QUESTIONS']
 
 /**
+ * The placeholders a path template takes (board-documents.md §3): the task's key (RD-42), the round,
+ * the type in lower case and the component slugged. {task} is gone; the server reads it as {key}.
+ */
+export const PATH_PLACEHOLDERS = ['{key}', '{round}', '{type}', '{component}']
+
+/**
+ * The note beside the templates about where the board's documents sit (AgentBoard.documentsRoot):
+ * every path the server gives starts with the root, e.g. boards/platform/ on a repository several
+ * boards share. Empty when the paths start at the repository's own root.
+ */
+export function documentsRootNote (root?: string | null): string {
+    return root ? `Every path starts with ${root}, this board's root in the documents repository.` : ''
+}
+
+/**
  * The rows of a board's path-template form: every index type and every type an active role
  * produces, each with the server's template after overrides and scope defaults as its placeholder
  * (AgentBoard.effectiveDocumentPaths). No default is worked out here -- the server owns the rule

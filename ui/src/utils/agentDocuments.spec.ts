@@ -5,6 +5,8 @@ import {
     documentLabel,
     documentVerdict,
     templateRows,
+    documentsRootNote,
+    PATH_PLACEHOLDERS,
     findingLocation,
     findingLocationFull,
     findingsOf,
@@ -290,5 +292,20 @@ describe('advisoryLabel', () => {
         expect(advisoryLabel({ document: { specification: 'DETAILED_DESIGN', advisory: false, publishedByRole: 'coder' } })).toBeNull()
         expect(advisoryLabel({ document: { specification: 'ARCHITECTURE' } })).toBeNull()
         expect(advisoryLabel(null)).toBeNull()
+    })
+})
+
+// T-2 (tests/0cc38817/run-1.md): the board form's help names the placeholders the server takes.
+describe('path template help', () => {
+    it('lists {key}, not {task}', () => {
+        expect(PATH_PLACEHOLDERS).toContain('{key}')
+        expect(PATH_PLACEHOLDERS).not.toContain('{task}')
+        expect(PATH_PLACEHOLDERS).toEqual(['{key}', '{round}', '{type}', '{component}'])
+    })
+    it('shows the documents root only when the board has one', () => {
+        expect(documentsRootNote('boards/platform/')).toContain('boards/platform/')
+        expect(documentsRootNote('')).toBe('')
+        expect(documentsRootNote(null)).toBe('')
+        expect(documentsRootNote(undefined)).toBe('')
     })
 })
