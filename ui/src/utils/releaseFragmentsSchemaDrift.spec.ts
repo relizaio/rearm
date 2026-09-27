@@ -69,32 +69,19 @@ const SINGLE_RELEASE_DOCUMENTS: Array<[string, any]> = [
 ]
 
 describe('single-release documents vs the CE schema', () => {
+    it.each(SINGLE_RELEASE_DOCUMENTS)('%s is valid against the CE schema', (_name, doc) => {
+        expect(validate(ceSchema, doc).map(e => e.message)).toEqual([])
+    })
+
     /**
-     * Pro, not CE. These two select the release header's kevCount and riskSummary, which CE
-     * gains at the mirror of the backend PR that added them -- so a CE assertion here would
-     * fail for a reason already accepted. Checking Pro keeps the assertion meaningful instead
-     * of deleting it. (fdaAssessmentNarrative was the previous such field; CE has it now.)
+     * Pro too, when the sibling checkout is there: the documents run against both, and a
+     * field Pro gains first shows up here before the mirror (the release header's
+     * kevCount / riskSummary were such fields until the CE sync).
      */
     it.runIf(proSchema).each(SINGLE_RELEASE_DOCUMENTS)(
         '%s is valid against the Pro schema', (_name, doc) => {
             expect(validate(proSchema as any, doc).map(e => e.message)).toEqual([])
         })
-
-    /**
-     * The CE gap is EXPECTED and TEMPORARY, asserted so it cannot quietly become permanent:
-     * when the mirror lands this fails, and the documents move back to a CE assertion.
-     */
-    it.each(SINGLE_RELEASE_DOCUMENTS)('%s is still ahead of CE, pending the sync', (_name, doc) => {
-        const errs = validate(ceSchema, doc).map(e => e.message)
-        // EVERY error must be an expected one, not merely "the expected one appears".
-        // Joining and asking toContain was near-worthless: an unrelated typo -- a misspelled
-        // artifactDetails subfield, say -- adds its own message while the expected string is
-        // still present, so the assertion passed on a broken document. Combined with the Pro
-        // check being skippable on a checkout without a rearm-core sibling, these two
-        // documents could have ended up with no real validity checking at all.
-        expect(errs.length).toBeGreaterThan(0)
-        expect(errs.filter(e => !/field "(kevCount|riskSummary)" on type "DependencyTrackMetrics"/.test(e))).toEqual([])
-    })
 
     /**
      * The header's KEV circle and CVSS / EPSS pills read these, and fetchRelease switches

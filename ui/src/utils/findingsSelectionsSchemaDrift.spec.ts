@@ -16,8 +16,9 @@ import {
 // artifact query was inline in ReleaseView.vue.
 //
 // Each load is a FULL / CORE pair (loadWithSchemaDriftFallback): FULL adds the
-// per-finding scores, which a CE backend gains only at the mirror; CORE is
-// everything else and must validate on CE, or the modal blanks there.
+// per-finding scores; CORE is everything else, the fallback for a backend
+// without them (a CE install behind this UI), and must validate on CE or the
+// modal blanks there. Both validate on CE since the mirror.
 //
 // A schema is the three SDL files together (root fields live in user.graphqls).
 // CE ships in this repo; Pro is checked when a sibling rearm-core checkout is
@@ -70,15 +71,8 @@ describe('findings modal documents vs the CE mirror schema (in-repo, always runs
         expect(errorsAgainst(ceSchema as GraphQLSchema, core)).toEqual([])
     })
 
-    /**
-     * EXPECTED and TEMPORARY: CE rejects FULL, and only for the score fields, which is
-     * exactly the case the CORE fallback exists for. Every error must be one of those;
-     * when the mirror lands this fails and becomes a plain "FULL is valid against CE".
-     */
-    it.each(PAIRS)('%s FULL is still ahead of CE only by the score fields', (_name, full) => {
-        const errs = errorsAgainst(ceSchema as GraphQLSchema, full)
-        expect(errs.length).toBeGreaterThan(0)
-        expect(errs.filter(e => !/field "(scores|topScore|epss)" on type "Vulnerability"/.test(e))).toEqual([])
+    it.each(PAIRS)('%s FULL is valid against CE', (_name, full) => {
+        expect(errorsAgainst(ceSchema as GraphQLSchema, full)).toEqual([])
     })
 })
 

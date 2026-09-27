@@ -1029,10 +1029,10 @@ const singleReleaseDataParentRecursion = `
     }
 `
 
-// The release header's KEV count and read-time risk summary (Pro-ahead of
-// CE until the mirror). Selected on the single release itself only, never on
-// its parents or in list fragments: the summary loads the org's vulnerability
-// records for every open finding of the release.
+// The release header's KEV count and read-time risk summary. Selected on the
+// single release itself only, never on its parents or in list fragments: the
+// summary loads the org's vulnerability records for every open finding of the
+// release.
 const RELEASE_RISK_SUMMARY_DATA = `
     metrics {
         kevCount
