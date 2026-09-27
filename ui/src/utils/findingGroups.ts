@@ -10,6 +10,8 @@ import {
 } from './findingUtils'
 import type { RowSeverity } from './findingUtils'
 import { FindingType } from '@/constants/findingType'
+import type { VulnScore } from './vulnerabilityRecordService'
+import { maxEpssOf, scoreSortValue, worstScoreOf } from './vulnScoreDisplay'
 
 /**
  * Group-by-component view of a findings table: one group per affected
@@ -49,6 +51,10 @@ export interface FindingComponentGroup {
     severityCounts: Record<RowSeverity, number>
     violationCount: number
     kevCount: number
+    // Highest headline CVSS / EPSS among the group's findings; null when none
+    // is scored or the rows carry no scores.
+    worstScore: VulnScore | null
+    maxEpss: VulnScore | null
 }
 
 const NO_COMPONENT_KEY = '(none)'
@@ -79,7 +85,8 @@ function identityOf (row: DetailedMetric): ComponentIdentity & { purl?: string }
 
 /**
  * Groups rows by affected component, worst first: by worst severity, then
- * known-exploited count, then finding count, then label.
+ * worst CVSS score, then known-exploited count, then finding count, then
+ * label.
  */
 export function groupFindingsByComponent (rows: DetailedMetric[]): FindingComponentGroup[] {
     const groups = new Map<string, FindingComponentGroup>()
@@ -95,7 +102,9 @@ export function groupFindingsByComponent (rows: DetailedMetric[]): FindingCompon
                 rows: [],
                 severityCounts: emptySeverityCounts(),
                 violationCount: 0,
-                kevCount: 0
+                kevCount: 0,
+                worstScore: null,
+                maxEpss: null
             }
             groups.set(identity.key, group)
         }
@@ -104,8 +113,13 @@ export function groupFindingsByComponent (rows: DetailedMetric[]): FindingCompon
         else group.severityCounts[severityBucketOf(row)]++
         if (row.knownExploited) group.kevCount++
     }
+    for (const group of groups.values()) {
+        group.worstScore = worstScoreOf(group.rows)
+        group.maxEpss = maxEpssOf(group.rows)
+    }
     return [...groups.values()].sort((a, b) =>
         worstSeverityIndex(a) - worstSeverityIndex(b)
+        || scoreSortValue(b.worstScore) - scoreSortValue(a.worstScore)
         || b.kevCount - a.kevCount
         || b.rows.length - a.rows.length
         || a.label.localeCompare(b.label))

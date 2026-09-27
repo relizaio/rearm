@@ -1130,6 +1130,9 @@
                             <span title="Medium Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'MEDIUM', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.medium }}</span>
                             <span title="Low Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.LOW, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'LOW', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.low }}</span>
                             <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'UNASSIGNED', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.unassigned }}</span>
+                            <span v-if="updatedRelease.metrics.kevCount > 0" title="Known exploited vulnerabilities (CISA KEV)" class="circle" :style="{background: constants.KevSeriesColor, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', '', { kevOnly: true })">{{ updatedRelease.metrics.kevCount }}</span>
+                            <span v-if="cvssPill" :title="cvssPill.title" class="riskPill" :style="{background: cvssPillColor}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', '', { sortKey: 'score' })">{{ cvssPill.label }}</span>
+                            <span v-if="epssPill" :title="epssPill.title" class="riskPill" :style="{background: constants.EpssPillColor}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', '', { sortKey: 'epss' })">{{ epssPill.label }}</span>
                             <div style="width: 30px;"></div>
                             <span title="Licensing Policy Violations" class="circle" :style="{background: constants.ViolationColors.LICENSE, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
                             <span title="Security Policy Violations" class="circle" :style="{background: constants.ViolationColors.SECURITY, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
@@ -1890,6 +1893,8 @@
             :artifact-view-only="!!currentArtifactDisplayId"
             :initial-severity-filter="currentSeverityFilter"
             :initial-type-filter="currentTypeFilter"
+            :initial-kev-only="currentKevOnly"
+            :initial-sort-key="currentSortKey"
             @refresh-data="handleRefreshVulnerabilityData"
         />
         <n-modal
@@ -2078,10 +2083,10 @@ import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
+import type { FindingSortKey } from '@/utils/metrics'
+import { cvssBandOf, cvssPillOf, epssPillOf } from '@/utils/vulnScoreDisplay'
 import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus } from '@/utils/releaseScanStatus'
 import { resolveApprovalRoles } from '@/utils/approvalRoles'
-import { processMetricsData } from '@/utils/metrics'
-import { annotateKnownExploited, fetchArtifactKevVulnIds } from '@/utils/kevService'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { PackageURL } from 'packageurl-js'
 
@@ -5131,13 +5136,29 @@ const currentDtrackProjectUuids: Ref<string[]> = ref([])
 const currentArtifactDisplayId: Ref<string> = ref('')
 const currentSeverityFilter: Ref<string> = ref('')
 const currentTypeFilter: Ref<string | string[]> = ref('')
+const currentKevOnly: Ref<boolean> = ref(false)
+const currentSortKey: Ref<FindingSortKey> = ref('severity')
 
-async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string, severityFilter: string = '', typeFilter: string | string[] = '') {
+// Release header pills from the read-time risk summary; absent (no pill) when
+// the backend does not serve the summary or no open finding is scored.
+const cvssPill = computed(() => cvssPillOf(updatedRelease.value?.metrics?.riskSummary))
+const epssPill = computed(() => epssPillOf(updatedRelease.value?.metrics?.riskSummary))
+const cvssPillColor = computed(() => {
+    const maxCvss = updatedRelease.value?.metrics?.riskSummary?.maxCvss
+    if (maxCvss == null) return constants.VulnerabilityColors.UNASSIGNED
+    const band = cvssBandOf(maxCvss)
+    return band === 'NONE' ? constants.VulnerabilityColors.UNASSIGNED : constants.VulnerabilityColors[band]
+})
+
+async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string, severityFilter: string = '', typeFilter: string | string[] = '',
+    opening: { sortKey?: FindingSortKey, kevOnly?: boolean } = {}) {
     loadingVulnerabilities.value = true
     showDetailedVulnerabilitiesModal.value = true
     currentArtifactDisplayId.value = '' // Clear artifact display ID for release view
     currentSeverityFilter.value = severityFilter
     currentTypeFilter.value = typeFilter
+    currentKevOnly.value = !!opening.kevOnly
+    currentSortKey.value = opening.sortKey || 'severity'
     
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
@@ -5166,107 +5187,15 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
     currentReleaseOrgUuid.value = release.value.org
     currentSeverityFilter.value = severityFilter
     currentTypeFilter.value = typeFilter
+    currentKevOnly.value = false
+    currentSortKey.value = 'severity'
     loadingVulnerabilities.value = true
 
     try {
-        const kevVulnIdsPromise = fetchArtifactKevVulnIds(artifactUuid)
-        const response = await graphqlClient.query({
-            query: gql`
-                query getArtifactDetails($artifactUuid: ID!) {
-                    artifact(artifactUuid: $artifactUuid) {
-                        uuid
-                        displayIdentifier
-                        metrics {
-                            vulnerabilityDetails {
-                                purl
-                                vulnId
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                aliases {
-                                    type
-                                    aliasId
-                                }
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                                severities {
-                                    source
-                                    severity
-                                }
-                            }
-                            violationDetails {
-                                purl
-                                type
-                                license
-                                violationDetails
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                            }
-                            weaknessDetails {
-                                cweId
-                                ruleId
-                                location
-                                fingerprint
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            `,
-            variables: { artifactUuid }
-        })
-        
-        const artifact = response.data.artifact
-        if (artifact && artifact.metrics) {
-            const processedMetrics = processMetricsData(artifact.metrics)
-            annotateKnownExploited(processedMetrics, await kevVulnIdsPromise)
-            detailedVulnerabilitiesData.value = processedMetrics
-            currentArtifactDisplayId.value = artifact.displayIdentifier || ''
+        const findings = await ReleaseVulnerabilityService.fetchArtifactFindings(artifactUuid)
+        if (findings) {
+            detailedVulnerabilitiesData.value = findings.vulnerabilityData
+            currentArtifactDisplayId.value = findings.displayIdentifier
         }
     } catch (error) {
         console.error('Error fetching artifact details:', error)
@@ -8383,6 +8312,17 @@ async function handleTabSwitch(tabName: string) {
 </script>
     
 <style scoped lang="scss">
+.riskPill {
+    display: inline-flex;
+    align-items: center;
+    height: 1.8em;
+    padding: 0 0.6em;
+    margin-left: 4px;
+    border-radius: 0.9em;
+    color: #fff;
+    white-space: nowrap;
+    cursor: pointer;
+}
 // Legend swatches mirror the segmented control in the table so the
 // legend teaches the same visual language the cells use.
 .approval-legend-swatch {

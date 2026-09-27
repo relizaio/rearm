@@ -1029,8 +1029,32 @@ const singleReleaseDataParentRecursion = `
     }
 `
 
+// The release header's KEV count and read-time risk summary (Pro-ahead of
+// CE until the mirror). Selected on the single release itself only, never on
+// its parents or in list fragments: the summary loads the org's vulnerability
+// records for every open finding of the release.
+const RELEASE_RISK_SUMMARY_DATA = `
+    metrics {
+        kevCount
+        riskSummary {
+            maxCvss
+            maxCvssType
+            maxCvssVulnId
+            maxEpss
+            maxEpssVulnId
+            cvssBands { critical high medium low none unscored }
+            epssAtLeastTenPercent
+            kevCount
+            severityWeightedScore
+            scoredFindings
+            totalFindings
+        }
+    }
+`
+
 const SINGLE_RELEASE_GQL_DATA = `
     ${singleReleaseDataNoParent}
+    ${RELEASE_RISK_SUMMARY_DATA}
     parentReleases {
         release
         releaseDetails {
@@ -1495,6 +1519,7 @@ const singleReleaseProductNoParent = `
 
 const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
     ${singleReleaseProductNoParent}
+    ${RELEASE_RISK_SUMMARY_DATA}
     parentReleases {
         release
         releaseDetails {

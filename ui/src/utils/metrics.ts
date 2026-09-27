@@ -9,6 +9,17 @@ import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, se
 import { FindingType } from '@/constants/findingType'
 import constants from '@/utils/constants'
 import type { FindingComponentGroup } from '@/utils/findingGroups'
+import type { VulnScore } from '@/utils/vulnerabilityRecordService'
+import {
+  COMPUTED_FROM_VECTOR_TITLE,
+  formatPrimaryScore,
+  formatSubScores,
+  isComputedFromVector,
+  rowEpss,
+  rowTopScore,
+  scoreSortValue,
+  summarizeScores
+} from '@/utils/vulnScoreDisplay'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -27,6 +38,35 @@ export type DetailedMetric = {
   // CISA KEV flag: stamped post-fetch by kevService.annotateKnownExploited,
   // or carried straight from the main query via the inline knownExploited field.
   knownExploited?: boolean
+  // Vulnerability rows only, and only when the query selected them (see
+  // findingsQuery.ts): the org's record scores, the headline CVSS and EPSS.
+  scores?: VulnScore[]
+  topScore?: VulnScore | null
+  epss?: VulnScore | null
+}
+
+// Column a findings table opens sorted by: severity ascending (worst first),
+// or a score column descending (highest first).
+export type FindingSortKey = 'severity' | 'score' | 'epss'
+
+// A findings table's sort: the column key and its order; order false = unsorted.
+export interface FindingSortState {
+  columnKey: string
+  order: 'ascend' | 'descend' | false
+}
+
+/** The sort a findings table opens with for a FindingSortKey. */
+export function openingFindingSort(key: FindingSortKey): FindingSortState {
+  return key === 'severity' ? { columnKey: 'severity', order: 'ascend' } : { columnKey: key, order: 'descend' }
+}
+
+/**
+ * The sort a naive-ui DataTable reports in update:sorter (single-column:
+ * { columnKey, sorter, order }, order false once cleared; null from
+ * clearSorter) as a FindingSortState.
+ */
+export function findingSortStateOf(sorter: { columnKey: string | number, order: 'ascend' | 'descend' | false } | null | undefined): FindingSortState {
+  return sorter && sorter.order ? { columnKey: String(sorter.columnKey), order: sorter.order } : { columnKey: '', order: false }
 }
 
 export function processMetricsData(metrics: any): DetailedMetric[] {
@@ -49,7 +89,10 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         analysisState: vuln.analysisState,
         analysisDate: vuln.analysisDate,
         attributedAt: vuln.attributedAt,
-        knownExploited: !!vuln.knownExploited
+        knownExploited: !!vuln.knownExploited,
+        scores: vuln.scores,
+        topScore: vuln.topScore,
+        epss: vuln.epss
       })
     })
   }
@@ -125,8 +168,22 @@ export function buildVulnerabilityColumns(
     typeFilter?: () => string[]
     severityFilter?: () => string[]
     data?: any[]
+    // Adds the Score and EPSS columns; set when the rows carry scores.
+    showScores?: boolean
+    // Controlled sort, kept by the caller from the table's update:sorter;
+    // without it the table sorts by severity on its own.
+    sortState?: () => FindingSortState
   }
 ): DataTableColumns<any> {
+  // Controlled, every sortable column carries its order (naive-ui ignores a
+  // sortable column without one once any column is controlled). A sort on a
+  // score column that is not shown falls back to the severity order.
+  const sortOrderOf = (key: string): { sortOrder?: FindingSortState['order'], defaultSortOrder?: FindingSortState['order'] } => {
+    if (!options?.sortState) return key === 'severity' ? { defaultSortOrder: 'ascend' } : {}
+    let state = options.sortState()
+    if (!options.showScores && (state.columnKey === 'score' || state.columnKey === 'epss')) state = openingFindingSort('severity')
+    return { sortOrder: state.columnKey === key ? state.order : false }
+  }
   const vulnClickFor = (row: any) => options?.onVulnClick
     ? (vulnId: string) => options.onVulnClick!(vulnId, row)
     : undefined
@@ -207,6 +264,7 @@ export function buildVulnerabilityColumns(
       key: 'type',
       width: 124,
       sorter: 'default',
+      ...sortOrderOf('type'),
       filterOptions: [
         { label: `Vulnerability (${typeCounts['Vulnerability']})`, value: 'Vulnerability' },
         { label: `Violation (${typeCounts['Violation']})`, value: 'Violation' },
@@ -281,7 +339,7 @@ export function buildVulnerabilityColumns(
       title: 'Severity',
       key: 'severity',
       width: 140,
-      defaultSortOrder: 'ascend',
+      ...sortOrderOf('severity'),
       filterOptions: [
         { label: `CRITICAL (${severityCounts['CRITICAL']})`, value: 'CRITICAL' },
         { label: `HIGH (${severityCounts['HIGH']})`, value: 'HIGH' },
@@ -351,6 +409,7 @@ export function buildVulnerabilityColumns(
         return severityTag
       }
     },
+    ...(options?.showScores ? scoreColumns(h, NTag, sortOrderOf) : []),
     { 
       title: 'Details', 
       key: 'details', 
@@ -460,6 +519,72 @@ export function buildVulnerabilityColumns(
   ]
 }
 
+// Score / EPSS cell: the formatted number with a native tooltip, '-' when
+// the finding has none (violations, weaknesses, vulnerabilities without a
+// record).
+function scoreCell(h: any, sc: VulnScore | null, title: string, extra: any[] = []) {
+  if (!sc) return '-'
+  // The number never breaks; a tag after it wraps below when the column is narrow.
+  return h('span', { title, style: 'display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px;' },
+    [h('span', { style: 'white-space: nowrap;' }, formatPrimaryScore(sc)), ...extra])
+}
+
+// "Exploit probability 42.00%; Percentile 97.00%"
+function epssTitle(epss: VulnScore): string {
+  return [`Exploit probability ${formatPrimaryScore(epss)}`, formatSubScores(epss)].filter(Boolean).join('; ')
+}
+
+// The per-finding score columns, after Severity. Sorting puts rows without a
+// score last when descending, the order the release header's pills open with.
+function scoreColumns(h: any, NTag: any, sortOrderOf: (key: string) => object): DataTableColumns<any> {
+  return [
+    {
+      title: 'Score',
+      key: 'score',
+      width: 140,
+      ...sortOrderOf('score'),
+      sorter: (rowA: any, rowB: any) => scoreSortValue(rowTopScore(rowA)) - scoreSortValue(rowTopScore(rowB)),
+      render: (row: any) => {
+        const top = rowTopScore(row)
+        const computedTag = top && isComputedFromVector(top)
+          ? [h(NTag, { size: 'tiny', bordered: false, title: COMPUTED_FROM_VECTOR_TITLE }, { default: () => 'computed' })]
+          : []
+        return scoreCell(h, top, summarizeScores(row.scores), computedTag)
+      }
+    },
+    {
+      title: 'EPSS',
+      key: 'epss',
+      width: 90,
+      ...sortOrderOf('epss'),
+      sorter: (rowA: any, rowB: any) => scoreSortValue(rowEpss(rowA)) - scoreSortValue(rowEpss(rowB)),
+      render: (row: any) => {
+        const epss = rowEpss(row)
+        return scoreCell(h, epss, epss ? epssTitle(epss) : '')
+      }
+    }
+  ]
+}
+
+// The group view's score columns: the highest headline CVSS and EPSS among
+// the group's findings. Groups already sort worst first, so no sorter.
+function groupScoreColumns(h: any): DataTableColumns<FindingComponentGroup> {
+  return [
+    {
+      title: 'Worst score',
+      key: 'worstScore',
+      width: 110,
+      render: (group: FindingComponentGroup) => scoreCell(h, group.worstScore, group.worstScore ? summarizeScores([group.worstScore]) : '')
+    },
+    {
+      title: 'EPSS',
+      key: 'maxEpss',
+      width: 90,
+      render: (group: FindingComponentGroup) => scoreCell(h, group.maxEpss, group.maxEpss ? epssTitle(group.maxEpss) : '')
+    }
+  ]
+}
+
 // Columns of the group-by-component view: one row per affected component, its
 // findings table (the flat columns) nested in the expanded row.
 export function buildComponentGroupColumns(
@@ -470,9 +595,12 @@ export function buildComponentGroupColumns(
     // Columns of the nested findings table; a getter so filter changes re-render it.
     findingColumns: () => DataTableColumns<any>
     rowKey: (row: any) => string
-    // Forwarded from the nested tables so their filters stay the view's filters.
+    // Forwarded from the nested tables so their filters and sort stay the view's.
     onUpdateFilters: (filters: Record<string, any>) => void
+    onUpdateSorter?: (sorter: any) => void
     onPurlClick?: (purl: string) => void
+    // Adds the Worst score and EPSS columns; set when the rows carry scores.
+    showScores?: boolean
   }
 ): DataTableColumns<FindingComponentGroup> {
   const severityCircle = (severity: string, count: number) => h('span', {
@@ -491,7 +619,8 @@ export function buildComponentGroupColumns(
         pagination: group.rows.length > 10 ? { pageSize: 10 } : false,
         scrollX: 1400,
         size: 'small',
-        'onUpdate:filters': options.onUpdateFilters
+        'onUpdate:filters': options.onUpdateFilters,
+        'onUpdate:sorter': options.onUpdateSorter
       })
     },
     {
@@ -532,6 +661,7 @@ export function buildComponentGroupColumns(
         return h('div', { style: 'display: flex; align-items: center; gap: 4px;' }, circles)
       }
     },
+    ...(options.showScores ? groupScoreColumns(h) : []),
     {
       title: 'KEV',
       key: 'kevCount',
