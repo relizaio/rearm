@@ -34,7 +34,8 @@
                     <task-actions v-if="canReopen" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                                   @authorize="authorizeTask" @order="orderTask" @complete="completeTask"
                                   @cancel="cancelTask" @reopen="reopenTask" @decide="decideFindings"
-                                  @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"/>
+                                  @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
+                                  @set-level="setLevel"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames"/>
                     <task-usage :task="task" :board="board"/>
@@ -129,7 +130,7 @@ watch(taskUuid, load, { immediate: true })
 // The page stays on its task after any action, including a verdict that hands the task on.
 const {
     humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
+    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
 } = useAgentTaskActions(async () => { await load() })
 
 // A finding's element chip opens the element under its document (elements.md §8).

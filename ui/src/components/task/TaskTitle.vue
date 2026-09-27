@@ -1,6 +1,16 @@
 <template>
     <div class="dhead">
-        <div class="dhead__title"><code v-if="task.key" class="dhead__key">{{ task.key }}</code>{{ task.title }}</div>
+        <div class="dhead__title">
+            <code v-if="task.key" class="dhead__key">{{ task.key }}</code>
+            <!-- The level after the key (RD2-1); none for a task with no level and no board default. -->
+            <n-tooltip v-if="levelLabel(task, board)" trigger="hover">
+                <template #trigger>
+                    <n-tag size="small" :bordered="false" class="dhead__level" data-testid="level-chip">{{ levelLabel(task, board) }}</n-tag>
+                </template>
+                {{ levelTooltip(task, board, actorLabel) }}
+            </n-tooltip>
+            {{ task.title }}
+        </div>
         <!-- What the task is beyond its one-line title (task fceb1e57): whole on the page, the first
              lines in the drawer's preview with the rest on hover. -->
         <div v-if="task.description" class="dhead__desc" :class="{ 'dhead__desc--clamped': clamp }"
@@ -30,6 +40,8 @@ import { computed } from 'vue'
 import { NTag, NTooltip } from 'naive-ui'
 import { statusTone } from '@/utils/agentTaskFormat'
 import { refLabel, roleTagFor } from '@/utils/agentTaskLabels'
+import { levelLabel, levelTooltip } from '@/utils/agentTaskLevel'
+import { actorLabel } from '@/utils/agentActors'
 
 const props = defineProps<{ task: any, board?: any, clamp?: boolean }>()
 // A board without sources is its own tracker: no task has a ref there, and none is a "draft".
@@ -41,6 +53,7 @@ const roleTag = computed(() => roleTagFor(props.task))
 .dhead {
     &__title { font-size: 15px; font-weight: 600; }
     &__key { margin-right: 8px; font-weight: 600; }
+    &__level { margin-right: 8px; vertical-align: 2px; }
     &__desc { margin-top: 4px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
     &__desc--clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     &__sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; flex-wrap: wrap; }

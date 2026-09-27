@@ -22,6 +22,7 @@
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
                               @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
+                              @set-level="p => emit('set-level', p)"
                               @set-budget="p => emit('set-budget', p)"/>
                 <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
                               @open="t => emit('open', t)"/>
@@ -67,6 +68,7 @@ const emit = defineEmits<{
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
     (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
+    (e: 'set-level', p: { task: any, level: number | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 </script>
