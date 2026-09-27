@@ -1,0 +1,39 @@
+// @vitest-environment happy-dom
+//
+// The board page's Documents section (task 36d0549e): one row per document series, and an empty state.
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import Panel from './AgentBoardDocumentsPanel.vue'
+
+const stubs = { RouterLink: { props: ['to'], template: '<a class="rl" :href="JSON.stringify(to)"><slot/></a>' } }
+
+describe('AgentBoardDocumentsPanel', () => {
+    it('renders a row per series, linking to the component', () => {
+        const w = mount(Panel, {
+            props: {
+                orgUuid: 'o1',
+                series: [
+                    { specification: 'ARCHITECTURE', component: { uuid: 'c1', name: 'rd-architecture' },
+                        latestRound: { round: 2, version: '5', lifecycle: 'ASSEMBLED' }, roundsCount: 5, openFindings: null, checkVerdict: 'PASS' },
+                    { specification: 'REVIEW_FINDINGS', component: { uuid: 'c2', name: 'rd-review_findings' },
+                        latestRound: { round: 1, version: '1', lifecycle: 'ASSEMBLED' }, roundsCount: 1, openFindings: 3, checkVerdict: null },
+                ],
+            },
+            global: { stubs },
+        })
+        const rows = w.findAll('.boardDocuments__row')
+        expect(rows).toHaveLength(2)
+        expect(rows[0].text()).toContain('architecture')
+        expect(rows[0].text()).toContain('rd-architecture')
+        expect(rows[0].text()).toContain('PASS')
+        expect(rows[1].text()).toContain('review findings')
+        expect(rows[1].text()).toContain('3')
+        expect(rows[0].find('.rl').attributes('href')).toContain('"compuuid":"c1"')
+    })
+
+    it('says so when the board has published nothing', () => {
+        const w = mount(Panel, { props: { series: [] }, global: { stubs } })
+        expect(w.find('.boardDocuments__row').exists()).toBe(false)
+        expect(w.text()).toContain('No documents yet')
+    })
+})

@@ -61,6 +61,7 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
+import { cardRef } from '@/utils/agentTaskFormat'
 
 const props = defineProps<{ tasks: any[] }>()
 
@@ -192,9 +193,9 @@ function statusLabel (t: any): string {
     return t.status.replace(/_/g, ' ').toLowerCase()
 }
 
+/** The card's reference: the task's key first (task 36d0549e), else its tracker number, else "draft". */
 function refLabel (t: any): string {
-    if (t.externalRef?.includes('#')) return '#' + t.externalRef.split('#').pop()
-    return 'draft'
+    return cardRef(t, 'draft')
 }
 
 function clip (s: string, n: number): string {
