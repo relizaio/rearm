@@ -39,9 +39,13 @@ describe('the token split on every usage surface', () => {
     })
 
     it('every row of the board usage tables', async () => {
-        dispatch.mockResolvedValue({ ...usage, byModel: [{ model: 'm1', modelName: 'Opus', ...usage }] })
-        const task = { uuid: 't1', returns: [], signOffs: [{ role: 'coder', session: 's1', usage }] }
-        const w = mount(AgentBoardUsagePanel, { props: { boardUuid: 'b1', tasks: [task], agentNames: {} }, global: { stubs } })
+        // The total, and its breakdown by role and session (RD2-8), each row carrying its classes.
+        dispatch.mockImplementation(async (action: string) => action === 'fetchAgentBoardSpendBreakdown'
+            ? { totalMicros: 1_500_000, costComplete: true, coordinatorEstimateMicros: 0, unattributedMicros: 0,
+                byRole: [{ role: 'coder', costMicros: 1_500_000, closedHops: 1, openHops: 0, tokens: usage }],
+                bySession: [{ session: 's1', agent: 'a1', role: 'coder', costMicros: 1_500_000, tokens: usage }] }
+            : { ...usage, byModel: [{ model: 'm1', modelName: 'Opus', ...usage }] })
+        const w = mount(AgentBoardUsagePanel, { props: { boardUuid: 'b1', agentNames: {} }, global: { stubs } })
         await flushPromises()
         const cells = w.findAll('.tokensplit')
         // the total's figure, the model row, the role row, the session row

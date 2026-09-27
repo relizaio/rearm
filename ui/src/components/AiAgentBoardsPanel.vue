@@ -217,7 +217,7 @@
                                       @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="usage" tab="Usage">
-                <AgentBoardUsagePanel :board-uuid="selectedBoard" :tasks="tasks" :agent-names="agentNames"
+                <AgentBoardUsagePanel :board-uuid="selectedBoard" :agent-names="agentNames"
                                       :budget-micros="currentBoard?.budgetMicros" :lifetime-spent-micros="lifetimeSpentMicros"
                                       :soft-alert-percent="currentBoard?.softAlertPercent"/>
             </n-tab-pane>

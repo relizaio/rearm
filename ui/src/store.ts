@@ -3502,6 +3502,28 @@ const storeObject : any = {
         // Board and org rollups are period queries, so they are actions rather
         // than fields on an already-fetched object: the window is chosen in the
         // UI and re-fetched when it changes.
+        /**
+         * The Usage tab's breakdown (RD2-8): by role, by session, the coordinator seat and what no
+         * hop owns, from the same rows and prices as agentBoardUsage, so the parts add up to it.
+         */
+        async fetchAgentBoardSpendBreakdown (context: any, payload: { boardUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardSpendBreakdown($uuid: ID!, $from: DateTime, $to: DateTime) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            spendBreakdown(from: $from, to: $to) {
+                                totalMicros costComplete coordinatorEstimateMicros unattributedMicros from to
+                                byRole { role costMicros closedHops openHops tokens { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports } }
+                                bySession { session agent role costMicros tokens { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports } }
+                            }
+                        }
+                    }`,
+                variables: { uuid: payload.boardUuid, from: payload.from, to: payload.to },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.spendBreakdown ?? null
+        },
         async fetchAgentBoardUsage (context: any, payload: { boardUuid: string, from: string, to: string }) {
             const response = await graphqlClient.query({
                 query: gql`
