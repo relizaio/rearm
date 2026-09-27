@@ -17,6 +17,8 @@
                              @human-signoff="p => emit('human-signoff', p)"
                              @operator-release="p => emit('operator-release', p)"
                              @require-review="p => emit('require-review', p)"/>
+                <!-- What the task waits on, for every reader (RD2-7). -->
+                <task-open-questions :task="task" :roles="roles"/>
                 <task-actions v-if="canOperate(board)" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                               @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
@@ -37,6 +39,7 @@ import { RouterLink } from 'vue-router'
 import { NDrawer, NDrawerContent } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
 import TaskHeader from './task/TaskHeader.vue'
+import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
 import TaskSummary from './task/TaskSummary.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import { taskPagePath } from '@/utils/agentTaskFormat'

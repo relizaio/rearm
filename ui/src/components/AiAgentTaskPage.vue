@@ -21,6 +21,7 @@
                                    @decide="decideFindings" @open-element="openElement"/>
                     <task-open-questions :task="task" :roles="roles"/>
                     <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
+                    <task-answered-questions :task="task" :roles="roles"/>
                     <task-documents :task="task" :focus="elementFocus"/>
                     <task-hops :task="task" :agent-names="agentNames"/>
                     <task-history :task="task"/>
@@ -66,6 +67,7 @@ import TaskHops from './task/TaskHops.vue'
 import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
 import TaskPullRequests from './task/TaskPullRequests.vue'
 import TaskQuestions from './task/TaskQuestions.vue'
+import TaskAnsweredQuestions from './task/TaskAnsweredQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
 import { boardCan, canOperate } from '@/utils/agentBoardAccess'

@@ -23,6 +23,10 @@ export interface QuestionRound {
     state: 'open' | 'answered' | 'withdrawn'
     counts: { open: number, answered: number, withdrawn: number }
     answeredBy: AnsweredBy[]
+    /** When the round was published: since when the task has waited on it. */
+    askedAt: string | null
+    /** The round's items as the newest round that has each says (RD2-7). */
+    items: Finding[]
 }
 
 function roleRef (roles: any[] | null | undefined, task: any, uuid: string | null | undefined,
@@ -118,6 +122,8 @@ export function questionRounds (task: any, roles?: any[] | null): QuestionRound[
             state,
             counts,
             answeredBy,
+            askedAt: (d as any).createdDate ?? frame?.askedAt ?? null,
+            items,
         })
         if (askedBy) previousAsker = askedBy
     }
@@ -196,3 +202,72 @@ export function answeredByLabel (a: AnsweredBy): string {
     if ('person' in a) return a.round == null ? 'answered by a person' : `answered by a person in questions round ${a.round}`
     return `answered by ${roundText(a.specification ?? 'a document', a.round)}`
 }
+
+// ---------- the answered questions (RD2-7) ----------
+
+/** One question the task was asked and is no longer waiting on: what was asked and what closed it. */
+export interface AnsweredQuestion {
+    id: string
+    title: string
+    /** The answer's words: the item's resolution. */
+    answer: string | null
+    withdrawn: boolean
+    /** The round that asked it. */
+    askedIn: QuestionRound
+    /** What answered it; null for a withdrawn question, which nothing answered. */
+    answeredBy: AnsweredBy | null
+    /** When the answer arrived: the publish time of the round or document that closed it. */
+    answeredAt: string | null
+}
+
+/**
+ * Every question the task was asked that is no longer open, newest asking round first. A person's
+ * answer, or the board's unwind, is itself a QUESTIONS round carrying the same items, so an item is
+ * listed once, under the round that first asked it.
+ */
+export function answeredQuestions (task: any, roles?: any[] | null): AnsweredQuestion[] {
+    const documents: DocumentRelease[] = task?.documents ?? []
+    const byUuid = new Map<string, DocumentRelease>()
+    for (const d of documents) if (d?.uuid) byUuid.set(d.uuid, d)
+    const rounds = questionRounds(task, roles)
+    const oldestFirst = [...rounds].reverse()
+    const seen = new Set<string>()
+    const perRound = new Map<string, AnsweredQuestion[]>()
+    oldestFirst.forEach((r, i) => {
+        for (const f of r.items) {
+            const id = String(f.id ?? '')
+            if (!id || seen.has(id)) continue
+            seen.add(id)
+            if (f.status === 'OPEN') continue
+            const withdrawn = f.status === 'WITHDRAWN'
+            const by = f.resolvedBy ? byUuid.get(f.resolvedBy) : undefined
+            // The round that closed it: the one the server pointed at, else the first later round
+            // where the item is no longer open (rows from before the self-pointer).
+            const closingRound = by ? null : oldestFirst.slice(i).find(x => x.items.some(y => y.id === f.id && y.status !== 'OPEN'))
+            const closing: any = by ?? (closingRound ? byUuid.get(closingRound.release) : undefined)
+            let answeredBy: AnsweredBy | null = null
+            if (!withdrawn) {
+                answeredBy = by && by.document?.specification !== 'QUESTIONS'
+                    ? { specification: by.document?.specification ?? null, round: by.document?.round ?? null, release: f.resolvedBy as string }
+                    : { person: true, round: closing?.document?.round ?? null }
+            }
+            const list = perRound.get(r.release) ?? []
+            list.push({ id, title: f.title ?? '', answer: (f as any).resolution ?? null, withdrawn, askedIn: r, answeredBy,
+                answeredAt: closing?.createdDate ?? null })
+            perRound.set(r.release, list)
+        }
+    })
+    return rounds.flatMap(r => perRound.get(r.release) ?? [])
+}
+
+/** "asked by coder · questions round 1 · about ARCHITECTURE round 1". */
+export function askedByLabel (r: QuestionRound): string {
+    const parts = [`asked by ${r.askedBy?.roleName ?? 'a role'}`]
+    if (r.round != null) parts.push(`questions round ${r.round}`)
+    const about = aboutLabel(r)
+    if (about) parts.push(about)
+    return parts.join(' · ')
+}
+
+/** How many answered questions show before "show all". */
+export const ANSWERED_SHOWN = 5
