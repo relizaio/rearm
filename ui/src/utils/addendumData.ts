@@ -66,11 +66,12 @@ export const ADDENDUM_PAGE_QUERY = gql`
  * and still returned -- they are release lifecycle for TEA/CLE -- but they are NO LONGER the
  * source of `deviceEos`/`deviceEol`.
  *
- * **Split because CE cannot answer FULL.** CE's schema declares `Component.medicalProfile` but
- * NOT `deviceSupportWindow` inside it, so adding the subfield to a `medicalProfile` selection
- * makes the WHOLE DOCUMENT invalid there -- not just that field null. A CE build issuing FULL
- * gets a validation error and renders nothing, which is the #339 defect exactly. CORE is what
- * every backend can answer; on it the device window is simply not available and the addendum
+ * **Split because a backend without the device window cannot answer FULL.** One that declares
+ * `Component.medicalProfile` but NOT `deviceSupportWindow` inside it (in practice a Pro build
+ * older than the field; CE has carried it since the 2026-09 sync, #368) rejects a selection
+ * of the subfield as a WHOLE-DOCUMENT error, not a null field. Issuing FULL there gets a
+ * validation error and renders nothing, which is the #339 defect exactly. CORE is what such a
+ * backend can answer; on it the device window is simply not available and the addendum
  * reports "not declared", which is honest rather than wrong.
  */
 const ADDENDUM_RELEASE_CORE_SELECTION = `

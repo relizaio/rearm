@@ -1,7 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, print, type GraphQLSchema } from 'graphql'
+import { validate, print, type GraphQLSchema } from 'graphql'
 import {
     FLEET_RISK_QUERY_CORE, FLEET_RISK_QUERY_FULL, FLEET_RISK_ENRICHMENT_ROW_FIELDS,
     FLEET_RISK_CORE_ROW_FIELDS, FLEET_RISK_CORE_PAGE_FIELDS, FLEET_RISK_ENRICHMENT_PAGE_FIELDS,
@@ -10,41 +8,25 @@ import {
     type FleetRiskRow
 } from './fleetSupportRisk'
 import { UNRECOGNISED_TAG } from './supportStatusTag'
+import { ceSchema, proSchema, enumValuesOf } from './schemaDriftSupport'
 
 /**
  * The fleet-risk documents against BOTH schemas (D7).
  *
- * Unlike the other drift specs, the honest CE assertion here is not "CORE validates": CE has
- * no `devicesAtSupportRisk` at all, so BOTH documents fail on CE today and the panel hides.
- * What this pins is the shape of that failure -- the query is what is missing, not a field
- * inside it -- because that is the fact the runtime relies on to tell "hide" (query absent,
- * CORE rejected too) from "degrade" (query present, an enrichment field rejected). The day
- * CE syncs the query, the CE test below flips and must be rewritten as the usual
- * CORE-validates / FULL-does-not pair.
+ * NOTE: this spec used to assert that CE had no `devicesAtSupportRisk` at all, so both
+ * documents failed there and the panel hid. The 2026-09 CE sync (#368) brought the query and
+ * its enrichment over, so that canary was retired: both documents now validate on both
+ * schemas. The hide and degrade branches stay for a backend without the query or its
+ * enrichment (CE before the sync, or an older Pro build), and are exercised below against
+ * the error it would raise.
  */
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-
-const ceSchema = buildSchema(readFileSync(CE_SCHEMA_PATH, 'utf8'))
-const proSchema: GraphQLSchema | null = existsSync(PRO_SCHEMA_PATH)
-    ? buildSchema(readFileSync(PRO_SCHEMA_PATH, 'utf8'))
-    : null
 
 const errorsAgainst = (schema: GraphQLSchema, doc: any) => validate(schema, doc).map(e => e.message)
 
 describe('the devicesAtSupportRisk documents', () => {
-    it('CE does not declare the query at all, and that is why the panel hides', () => {
-        const ceText = readFileSync(CE_SCHEMA_PATH, 'utf8')
-        expect(ceText).not.toMatch(/devicesAtSupportRisk/)
-        for (const doc of [FLEET_RISK_QUERY_CORE, FLEET_RISK_QUERY_FULL]) {
-            const errs = errorsAgainst(ceSchema, doc)
-            expect(errs.length).toBeGreaterThan(0)
-            // The QUERY is what CE lacks. If this ever fails on a row field instead, CE has
-            // gained the query and this spec must become the CORE-validates / FULL-fails pair.
-            expect(errs.join(' ')).toMatch(/Cannot query field "devicesAtSupportRisk"/)
-        }
+    it('both validate against the CE mirror', () => {
+        expect(errorsAgainst(ceSchema, FLEET_RISK_QUERY_CORE)).toEqual([])
+        expect(errorsAgainst(ceSchema, FLEET_RISK_QUERY_FULL)).toEqual([])
     })
 
     it('FULL selects every enrichment field and CORE none of them', () => {
@@ -82,13 +64,13 @@ describe('the devicesAtSupportRisk documents', () => {
      * a roster row can carry any identifier the unit was given. Pinned against the schema so
      * a new type cannot land in the backend and leave the union quietly short.
      */
-    it.runIf(proSchema)('mirrors every IdentifierType the schema declares', () => {
-        for (const text of [readFileSync(CE_SCHEMA_PATH, 'utf8'), readFileSync(PRO_SCHEMA_PATH, 'utf8')]) {
-            const body = text.slice(text.indexOf('enum IdentifierType {'))
-            const declared = body.slice(0, body.indexOf('}')).split('\n').slice(1)
-                .map(l => l.replace(/#.*/, '').trim()).filter(Boolean)
-            expect([...declared].sort()).toEqual([...IDENTIFIER_TYPES].sort())
-        }
+    it('mirrors every IdentifierType the CE schema declares', () => {
+        expect(enumValuesOf(ceSchema, 'IdentifierType').sort()).toEqual([...IDENTIFIER_TYPES].sort())
+    })
+
+    it.runIf(proSchema)('mirrors every IdentifierType the Pro schema declares', () => {
+        expect(enumValuesOf(proSchema as GraphQLSchema, 'IdentifierType').sort())
+            .toEqual([...IDENTIFIER_TYPES].sort())
     })
 
     // it.runIf, not an early return: a silent green when rearm-core is absent is how a drift

@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, parse, type GraphQLSchema } from 'graphql'
+import { validate, parse, type GraphQLSchema } from 'graphql'
 import { SBOM_COMPONENTS_PAGE_QUERY, SBOM_COMPONENTS_QUERY } from './sbomComponentsQuery'
+import { ceSchema, proSchema } from './schemaDriftSupport'
 
 /**
  * The only static validation these two documents get.
@@ -23,17 +22,6 @@ import { SBOM_COMPONENTS_PAGE_QUERY, SBOM_COMPONENTS_QUERY } from './sbomCompone
  * a typo of ours wearing somebody else's outdated backend as a costume. That has happened
  * twice on this feature.
  */
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-
-function loadSchema (path: string): GraphQLSchema | null {
-    return existsSync(path) ? buildSchema(readFileSync(path, 'utf8')) : null
-}
-const ceSchema = loadSchema(CE_SCHEMA_PATH)
-const proSchema = loadSchema(PRO_SCHEMA_PATH)
-
 const DOCUMENTS: Array<[string, any]> = [
     ['paged', SBOM_COMPONENTS_PAGE_QUERY],
     ['unpaged', SBOM_COMPONENTS_QUERY]
@@ -44,16 +32,12 @@ function errorsAgainst (schema: GraphQLSchema, doc: any): string[] {
 }
 
 describe('the interpolated SBOM component documents', () => {
-    it('has the CE mirror schema available', () => {
-        expect(ceSchema, `CE mirror schema not found at ${CE_SCHEMA_PATH}`).not.toBeNull()
-    })
-
     it.each(DOCUMENTS)('%s: parses after interpolation', (_name, doc) => {
         expect(() => parse(doc.loc.source.body)).not.toThrow()
     })
 
     it.each(DOCUMENTS)('%s: validates against the CE schema', (_name, doc) => {
-        expect(errorsAgainst(ceSchema as GraphQLSchema, doc)).toEqual([])
+        expect(errorsAgainst(ceSchema, doc)).toEqual([])
     })
 
     /**

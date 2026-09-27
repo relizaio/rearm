@@ -40,14 +40,19 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const UI_ROOT = join(HERE, '..')
 const SRC = join(UI_ROOT, 'src')
 // Since the schema split, the shared types live in schema.graphqls and the root fields in
-// user.graphqls (browser) and programmatic.graphqls (API keys); a schema is the three together.
-const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
+// user.graphqls (browser) and programmatic.graphqls (API keys). A schema is every .graphql /
+// .graphqls file under the directory -- the set the backend loads and serves on /graphql --
+// so a further split needs no change here. src/utils/schemaDriftSupport.ts reads the same set.
+const SCHEMA_FILE = /\.graphqls?$/
 const PRO_SCHEMA = join(UI_ROOT, '../../rearm-core/backend/src/main/resources/schema')
 const CE_SCHEMA = join(UI_ROOT, '../backend/src/main/resources/schema')
 
 function loadSchema (dir, label) {
-    const present = SCHEMA_FILES.map(f => join(dir, f)).filter(existsSync)
-    if (!present.length || !existsSync(join(dir, 'schema.graphqls'))) {
+    const present = existsSync(dir)
+        ? readdirSync(dir, { recursive: true, encoding: 'utf8' })
+            .filter(f => SCHEMA_FILE.test(f)).sort().map(f => join(dir, f))
+        : []
+    if (!present.length) {
         console.warn(`[validate-graphql] ${label} schema not found at ${dir} -- skipping ${label} checks`)
         return null
     }

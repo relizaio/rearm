@@ -9,11 +9,11 @@ import gql from 'graphql-tag'
 /**
  * The organizations query, in two shapes.
  *
- * CORE is the document every backend can answer. FULL adds only
- * Settings.supportInjection, which CE gains at the deferred sync. Split rather than
- * conditional because loadWithSchemaDriftFallback takes two documents, and because a single
- * document assembled by string concatenation is the thing scripts/validate-graphql cannot
- * check.
+ * CORE is the document a backend without Settings.supportInjection can answer (in practice a
+ * Pro build older than the field; CE has carried it since the 2026-09 sync, #368). FULL adds
+ * only that field. Split rather than conditional because loadWithSchemaDriftFallback takes two
+ * documents, and because a single document assembled by string concatenation is the thing
+ * scripts/validate-graphql cannot check.
  */
 const ORGANIZATIONS_CORE_SETTINGS = `
                                     justificationMandatory

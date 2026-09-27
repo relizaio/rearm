@@ -9,14 +9,14 @@ import {
 /**
  * THE FLEET QUESTION (D7), read-only: which in-field units outlive their software.
  *
- * <p>`devicesAtSupportRisk` is Pro-only today -- CE declares the Distribution surface but not
- * this query -- so the panel that renders it must be able to HIDE, not just degrade. The
- * document is still split CORE/FULL the way every other Pro-leading read is: CORE selects the
- * verdict and the ids, FULL adds the evidence (which release was judged, the window in force,
- * the soonest component EOS, how many components drive the verdict) and the labels (the
- * unit's identifiers, the site and client names) plus the fleet-wide at-risk count. When CE
- * gains the query it will gain the CORE shape first; the panel then renders rows with the
- * evidence and label columns blank instead of blanking outright.
+ * <p>A backend older than the 2026-09 CE sync (#368) declares the Distribution surface but not
+ * `devicesAtSupportRisk`, so the panel that renders it must be able to HIDE, not just degrade.
+ * The document is still split CORE/FULL the way every other Pro-leading read is: CORE selects
+ * the verdict and the ids, FULL adds the evidence (which release was judged, the window in
+ * force, the soonest component EOS, how many components drive the verdict) and the labels (the
+ * unit's identifiers, the site and client names) plus the fleet-wide at-risk count. A backend
+ * with the query but not the enrichment renders rows with the evidence and label columns blank
+ * instead of blanking outright.
  *
  * <p>Enrichment fields are read behind a presence guard by the caller, same rule as
  * notificationInboxQuery.ts: on a CORE-served page they are absent, not null.
@@ -115,13 +115,13 @@ export type IdentifierType =
     | 'UDI' | 'UDI_DI' | 'UDI_PI' | 'SERIAL' | 'LOT'
     | 'SWID' | 'SWHID' | 'OMNIBORID' | 'GTIN' | 'GMN' | 'MPN'
     | 'PART_NUMBER' | 'MODEL_NUMBER' | 'SKU' | 'ASSET_TAG'
-    | 'FCC_ID' | 'IMEI' | 'MAC_ADDRESS'
+    | 'FCC_ID' | 'IMEI' | 'MAC_ADDRESS' | 'SPECIFICATION'
 export const IDENTIFIER_TYPES: IdentifierType[] = [
     'PURL', 'CPE', 'TEI', 'COMPLIANCE_DOCUMENT',
     'UDI', 'UDI_DI', 'UDI_PI', 'SERIAL', 'LOT',
     'SWID', 'SWHID', 'OMNIBORID', 'GTIN', 'GMN', 'MPN',
     'PART_NUMBER', 'MODEL_NUMBER', 'SKU', 'ASSET_TAG',
-    'FCC_ID', 'IMEI', 'MAC_ADDRESS'
+    'FCC_ID', 'IMEI', 'MAC_ADDRESS', 'SPECIFICATION'
 ]
 
 export interface FleetRiskIdentifier {

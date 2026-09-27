@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, parse, type GraphQLSchema } from 'graphql'
+import { validate, parse } from 'graphql'
 import graphqlQueries from './graphqlQueries'
+import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // These release selection sets are interpolated into `gql` templates at
 // runtime (store.fetchReleasesByOrgUuids and friends). scripts/validate-graphql
@@ -16,23 +15,6 @@ import graphqlQueries from './graphqlQueries'
 // resolves and there is nothing to skip; and against Pro when a sibling
 // rearm-core checkout is present. CE is expected to match Pro (it may lag on
 // updates), so a field valid on CE is valid on Pro.
-//
-// A schema is the three SDL files together: since the split, the root Query /
-// Mutation fields live in user.graphqls and some shared types reference types
-// declared there, so schema.graphqls alone does not build.
-const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
-const CE_SCHEMA_DIR = fileURLToPath(new URL('../../../backend/src/main/resources/schema/', import.meta.url))
-const PRO_SCHEMA_DIR = fileURLToPath(new URL('../../../../rearm-core/backend/src/main/resources/schema/', import.meta.url))
-
-const readSchema = (dir: string): GraphQLSchema =>
-    buildSchema(SCHEMA_FILES.map(f => readFileSync(dir + f, 'utf8')).join('\n'))
-
-// Read eagerly: a missing CE schema is a broken checkout, and should fail the
-// suite rather than quietly skip every assertion below.
-const ceSchema = readSchema(CE_SCHEMA_DIR)
-const proSchema = SCHEMA_FILES.every(f => existsSync(PRO_SCHEMA_DIR + f))
-    ? readSchema(PRO_SCHEMA_DIR)
-    : null
 
 // Every fragment here is a selection set on Release, so each one is checked in
 // the operation shape the UI actually sends it in.

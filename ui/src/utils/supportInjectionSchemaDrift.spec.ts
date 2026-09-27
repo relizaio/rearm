@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, type GraphQLSchema } from 'graphql'
+import { validate, print, type GraphQLSchema } from 'graphql'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './organizationsQuery'
+import { ceSchema, proSchema, enumValuesOf } from './schemaDriftSupport'
 
 /**
  * The organizations query, validated as a DOCUMENT against both schemas.
@@ -13,29 +12,12 @@ import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './organizationsQuery'
  * adding the field to the shared organizations query made the whole document invalid on a
  * backend without it, so `myorg` stayed null and every page rendered blank. A text match
  * cannot see that. Validation can, and this is what the three sibling drift specs already do.
- *
- * CE is read EAGERLY, not under runIf: the CE schema ships in this repo, so its absence is a
- * broken checkout and should fail the suite rather than silently drop the assertion that
- * matters most here.
  */
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-
-const ceSchema = buildSchema(readFileSync(CE_SCHEMA_PATH, 'utf8'))
-const proSchema: GraphQLSchema | null = existsSync(PRO_SCHEMA_PATH)
-    ? buildSchema(readFileSync(PRO_SCHEMA_PATH, 'utf8'))
-    : null
 
 const errorsAgainst = (schema: GraphQLSchema, doc: any) =>
     validate(schema, doc).map(e => e.message)
 
 describe('the organizations query survives a backend without supportInjection', () => {
-    it('has the CE mirror schema available', () => {
-        expect(ceSchema, `CE mirror schema not found at ${CE_SCHEMA_PATH}`).not.toBeNull()
-    })
-
     /**
      * THE ONE THAT MATTERS. Every page derives myorg from this query, so a document CE cannot
      * answer takes the whole app down -- not just the setting. CORE is what the fallback
@@ -46,14 +28,18 @@ describe('the organizations query survives a backend without supportInjection', 
     })
 
     /**
-     * And FULL is NOT, today -- which is why the fallback exists rather than being defensive
-     * decoration. When the deferred sync lands this fails, and the fallback can be retired
-     * along with it.
+     * NOTE: this used to assert FULL was still ahead of CE. The 2026-09 CE sync (#368) brought
+     * supportInjection over, so that canary was retired. The fallback stays for a backend
+     * without the field (in practice a Pro build older than it); with FULL valid on both
+     * schemas, what keeps it honest is that CORE still leaves the field out.
      */
-    it('FULL is still ahead of CE, pending the sync', () => {
-        const errs = errorsAgainst(ceSchema, ORGANIZATIONS_FULL)
-        expect(errs.length).toBeGreaterThan(0)
-        expect(errs.filter(e => !e.includes('supportInjection'))).toEqual([])
+    it('FULL is valid against the CE schema too', () => {
+        expect(errorsAgainst(ceSchema, ORGANIZATIONS_FULL)).toEqual([])
+    })
+
+    it('only FULL selects supportInjection', () => {
+        expect(print(ORGANIZATIONS_CORE)).not.toMatch(/\bsupportInjection\b/)
+        expect(print(ORGANIZATIONS_FULL)).toMatch(/\bsupportInjection\b/)
     })
 
     it.runIf(proSchema)('both documents are valid against the Pro schema', () => {
@@ -63,11 +49,12 @@ describe('the organizations query survives a backend without supportInjection', 
 
     // The form maps a switch to exactly two members. A third means the switch is no longer
     // sufficient, and whoever adds it should find that out here.
-    it.runIf(proSchema)('the setting enum has exactly the two members the switch maps to', () => {
-        const schema = readFileSync(PRO_SCHEMA_PATH, 'utf8')
-        const body = schema.slice(schema.indexOf('enum SupportInjectionSetting'))
-        const members = body.slice(0, body.indexOf('}'))
-            .split('\n').map(l => l.trim()).filter(l => /^[A-Z_]+$/.test(l))
-        expect(members).toEqual(['ENABLED', 'DISABLED'])
+    it('the setting enum has exactly the two members the switch maps to, on CE', () => {
+        expect(enumValuesOf(ceSchema, 'SupportInjectionSetting')).toEqual(['ENABLED', 'DISABLED'])
+    })
+
+    it.runIf(proSchema)('and on Pro', () => {
+        expect(enumValuesOf(proSchema as GraphQLSchema, 'SupportInjectionSetting'))
+            .toEqual(['ENABLED', 'DISABLED'])
     })
 })
