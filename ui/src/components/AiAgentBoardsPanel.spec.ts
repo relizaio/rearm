@@ -46,3 +46,35 @@ describe('the board settings form: notify a person after', () => {
         expect(Object.values(settingsDraftOf({})).every(v => v === null)).toBe(true)
     })
 })
+
+// The naming fields (task fceb1e57): the prefix and the documents block are in the form, saved
+// through the utils the spec above pins, and a refusal about either is shown beside it.
+describe('the board form: task-key prefix and documents', () => {
+    it('binds the four fields', () => {
+        expect(template).toContain('v-model:value="editingBoard.taskPrefix"')
+        expect(template).toContain('v-model:value="editingBoard.documentsDraft.prefix"')
+        expect(template).toContain('v-model:checked="editingBoard.documentsDraft.shared"')
+        expect(template).toContain('v-model:checked="editingBoard.documentsDraft.rootSet"')
+        expect(template).toContain('v-model:value="editingBoard.documentsDraft.root"')
+        expect(template).toContain(':placeholder="editingBoardIsNew ? taskPrefixPlaceholder(editingBoard.name) : \'unchanged\'"')
+    })
+
+    it('saves both through the board input, create and update alike', () => {
+        expect(source).toContain('const taskPrefix = taskPrefixPatch(original, editingBoard.value.taskPrefix)')
+        expect(source).toContain('if (taskPrefix !== undefined) input.taskPrefix = taskPrefix')
+        expect(source).toContain('const documents = documentsPatch(original, editingBoard.value.documentsDraft)')
+        expect(source).toContain('if (documents !== undefined) input.documents = documents')
+        const save = source.slice(source.indexOf('async function saveBoard'))
+        expect(save.indexOf('input.documents = documents')).toBeLessThan(save.indexOf("store.dispatch('createAgentBoard'"))
+        expect(source).toContain('taskPrefix: b.taskPrefix ?? \'\', heldTaskPrefix: b.taskPrefix ?? \'\', documentsDraft: documentsDraftOf(b)')
+    })
+
+    it('shows a refusal beside its field, verbatim', () => {
+        expect(source).toContain('const field = boardFieldOfError(message)')
+        expect(source).toContain('if (field) boardFieldErrors.value = { [field]: message }')
+        const prefixError = template.slice(template.indexOf('data-testid="board-task-prefix-error"'))
+        expect(prefixError.slice(0, prefixError.indexOf('</n-text>'))).toContain('boardFieldErrors.taskPrefix')
+        const docsError = template.slice(template.indexOf('data-testid="board-documents-error"'))
+        expect(docsError.slice(0, docsError.indexOf('</n-text>'))).toContain('{{ boardFieldErrors.documents }}')
+    })
+})

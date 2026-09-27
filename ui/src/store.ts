@@ -25,6 +25,7 @@ const AGENT_BOARD_SELECTION = `
     documentsRepo { uuid uri }
     documentPaths
     documentsRoot
+    documents { prefix shared root }
     perspectives
     perspectiveNames
     taskPrefix
@@ -65,6 +66,7 @@ const AGENT_TASK_SELECTION = `
     org
     externalRef
     title
+    description
     sourceUrl
     status
     role
