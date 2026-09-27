@@ -25,6 +25,8 @@ const AGENT_BOARD_SELECTION = `
     documentsRepo { uuid uri }
     documentPaths
     documentsRoot
+    perspectives
+    perspectiveNames
     taskPrefix
     taskPrefixHistory
     coordinatorPrompt

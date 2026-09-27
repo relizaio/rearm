@@ -58,6 +58,8 @@
                 <n-tag size="tiny" :bordered="false" :type="currentBoard.coordinatorSeat ? 'success' : 'default'">
                     {{ currentBoard.coordinatorSeat ? 'coordinator connected' : 'no coordinator' }}
                 </n-tag>
+                <n-tag v-for="p in perspectiveChips(currentBoard)" :key="p" size="tiny" :bordered="false"
+                       data-testid="perspective-chip">{{ p }}</n-tag>
                 <n-tag v-if="spendChip" size="tiny" :bordered="false" :type="spendChip.type" data-testid="spend-chip">
                     {{ spendChip.label }}
                 </n-tag>
@@ -317,6 +319,11 @@
                 <n-select v-model:value="editingBoard.coordinatorCapabilities" multiple
                           :options="coordinatorCapabilityOptions"
                           placeholder="Coordinator covers (e.g. PR_MERGE when it merges)"/>
+                <!-- Perspectives the board hangs off (board-permissions.md §3): the target must be a member
+                     of each, and adding or removing one needs BOARD_WRITE and CONFIGURATION_WRITE on it. -->
+                <n-select v-model:value="editingBoard.perspectives" multiple filterable
+                          :options="perspectiveOptions" data-testid="board-perspectives"
+                          placeholder="Perspectives (a grant on any of them covers the board)"/>
                 <n-input v-model:value="editingBoard.documentsRepo"
                          placeholder="Documents repository, e.g. https://github.com/acme/docs">
                     <template #prefix><span class="flabel">documents repo</span></template>
@@ -773,6 +780,7 @@ import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agent
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
 
@@ -1423,11 +1431,12 @@ function startEditBoard (b: any | null) {
         documentsRepo: b.documentsRepo?.uri ?? '',
         documentPaths: { ...(b.documentPaths ?? {}) },
         coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])],
+        perspectives: [...(b.perspectives ?? [])],
         deliveryMode: b.deliveryPolicy?.mode ?? null, deliveryAttest: !!b.deliveryPolicy?.attest,
         merge: mergeDraftOf(b.deliveryPolicy) }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
-            coordinatorCapabilities: [], merge: mergeDraftOf(null) }
+            coordinatorCapabilities: [], perspectives: [], merge: mergeDraftOf(null) }
 }
 
 /** hopBudgetMicros for the role input: set, removed (null), or left out when never set and still blank. */
@@ -1451,6 +1460,7 @@ async function loadLifetimeSpend () {
         lifetimeSpentMicros.value = null
     }
 }
+const perspectiveOptions = computed(() => boardPerspectiveOptions(store.getters.perspectivesOfOrg(props.orgUuid)))
 const spendChip = computed(() => null === lifetimeSpentMicros.value ? null
     : budgetChip(lifetimeSpentMicros.value, currentBoard.value?.budgetMicros, currentBoard.value?.softAlertPercent))
 
@@ -1481,6 +1491,9 @@ async function saveBoard () {
         input.coordinatorCapabilities = editingBoard.value.coordinatorCapabilities ?? []
         // Only what changed: an emptied setting clears, one left alone is not sent (task 40f270be).
         const original = editingBoardIsNew.value ? null : boards.value.find(x => x.uuid === editingBoard.value.uuid)
+        // Only when changed: a change asks for consent on each perspective added or removed.
+        const perspectives = perspectivesPatch(original, editingBoard.value.perspectives)
+        if (perspectives !== undefined) input.perspectives = perspectives
         const settings = settingsPatch(original, settingsDraftOf(editingBoard.value))
         if (settings) input.settings = settings
         // Only when changed; cleared restores the default, PR_ROWS (task 18c5c293).
