@@ -12,7 +12,7 @@
             <div class="tsecs">
                 <router-link :to="taskPagePath(task.uuid)" class="openpage">Open task page →</router-link>
                 <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels" questions-on-page
-                             :can-operate="canOperate(board)"
+                             :can-operate="canOperate(board)" :board="board"
                              @human-review="p => emit('human-review', p)"
                              @human-signoff="p => emit('human-signoff', p)"
                              @operator-release="p => emit('operator-release', p)"
