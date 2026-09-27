@@ -75,11 +75,12 @@ import { useStore } from 'vuex'
 import { NCard, NDataTable, NGrid, NGridItem, NSelect, NSpace, NSpin, NTag, NText, DataTableColumns } from 'naive-ui'
 import { budgetChip } from '@/utils/agentBudget'
 import AgentUsageSummary from './AgentUsageSummary.vue'
+import TokenSplit from './TokenSplit.vue'
 import {
     UsageTotals,
     USAGE_PERIODS,
     periodRange,
-    formatTokens,
+    addTokenClasses,
     formatCostMicros,
     totalTokens,
     byModelRows,
@@ -159,11 +160,13 @@ const hopRecords = computed(() => {
 })
 
 function accumulate (key: (h: any) => string | null) {
-    const acc = new Map<string, { key: string, tokens: number, cost: number | null, hops: number, turns: number }>()
+    const acc = new Map<string, { key: string, tokens: number, usage: UsageTotals, cost: number | null, hops: number, turns: number }>()
     for (const rec of hopRecords.value) {
         const k = key(rec) ?? '—'
-        const cur = acc.get(k) ?? { key: k, tokens: 0, cost: null, hops: 0, turns: 0 }
+        const cur = acc.get(k) ?? { key: k, tokens: 0, usage: {}, cost: null, hops: 0, turns: 0 }
         cur.tokens += totalTokens(rec.usage)
+        // The classes too, so the row shows the split behind its total (task RD2-3).
+        addTokenClasses(cur.usage, rec.usage)
         cur.hops += 1
         cur.turns += rec.usage.turns ?? 0
         if (rec.usage.derivedCostMicros != null) {
@@ -187,7 +190,7 @@ const costCell = (micros: number | null) => h('span', formatCostMicros(micros) ?
 const modelColumns = computed<DataTableColumns<any>>(() => [
     { title: 'Model', key: 'model', render: (r: any) => modelDisplayName(r) },
     { title: 'Requests', key: 'requests', render: (r: any) => r.requests ?? 0 },
-    { title: 'Tokens', key: 'tokens', render: (r: any) => formatTokens(totalTokens(r)) },
+    { title: 'Tokens', key: 'tokens', render: (r: any) => h(TokenSplit, { usage: r, compact: true }) },
     { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.derivedCostMicros ?? null) },
 ])
 
@@ -195,7 +198,7 @@ const roleColumns = computed<DataTableColumns<any>>(() => [
     { title: 'Role', key: 'key' },
     { title: 'Hops', key: 'hops' },
     { title: 'Turns', key: 'turns' },
-    { title: 'Tokens', key: 'tokens', render: (r: any) => formatTokens(r.tokens) },
+    { title: 'Tokens', key: 'tokens', render: (r: any) => h(TokenSplit, { usage: r.usage, compact: true }) },
     { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.cost) },
 ])
 
@@ -207,7 +210,7 @@ const sessionColumns = computed<DataTableColumns<any>>(() => [
             r.key === '—' ? '—' : String(r.key).slice(0, 8) + '…'),
     },
     { title: 'Hops', key: 'hops' },
-    { title: 'Tokens', key: 'tokens', render: (r: any) => formatTokens(r.tokens) },
+    { title: 'Tokens', key: 'tokens', render: (r: any) => h(TokenSplit, { usage: r.usage, compact: true }) },
     { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.cost) },
 ])
 </script>
