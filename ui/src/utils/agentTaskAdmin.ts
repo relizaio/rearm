@@ -2,6 +2,8 @@
 // 6fdc5a37): a task's required strength, an operator hold, and force-closing a session. Which
 // apply, and what each sends; pure, so the specs need no store.
 
+import { boardCan } from './agentBoardAccess'
+
 /** The statuses the server places a hold from; ASSIGNED and later are refused (placeHold). */
 export const HOLDABLE_STATUSES = ['PENDING_INTAKE', 'QUEUED', 'AWAITING_COORDINATOR']
 
@@ -37,7 +39,20 @@ export function strengthToSet (task: any, draft: number | null | undefined): num
     return v === task?.requiredStrength ? undefined : v
 }
 
-/** An admin may force-close an OPEN session: its tasks go back to the coordinator. */
-export function canForceClose (session: any, admin: boolean): boolean {
-    return admin && session?.status === 'OPEN'
+/**
+ * Who may force-close an OPEN session, as the server decides it (board-permissions.md D15, task
+ * RD2-5): a person holding BOARD_WRITE on a board the session worked, read from those boards'
+ * myPermissions; the org admin, which covers every board and alone covers a session that worked
+ * none. Its tasks go back to the queue.
+ */
+export function canForceClose (session: any, admin: boolean, boards?: any[] | null): boolean {
+    if (session?.status !== 'OPEN') return false
+    if (admin) return true
+    const worked = new Set<string>(session?.boardsWorked ?? [])
+    return (boards ?? []).some(b => worked.has(b?.uuid) && boardCan(b, 'BOARD_WRITE'))
+}
+
+/** Whether the page needs the org's boards to decide: an open session that worked boards, read by a non-admin. */
+export function forceCloseNeedsBoards (session: any, admin: boolean): boolean {
+    return !admin && session?.status === 'OPEN' && (session?.boardsWorked ?? []).length > 0
 }

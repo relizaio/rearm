@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canForceClose, canPlaceHold, holdPayload, roleFloor, strengthPlaceholder, strengthToSet } from './agentTaskAdmin'
+import { canForceClose, canPlaceHold, forceCloseNeedsBoards, holdPayload, roleFloor, strengthPlaceholder, strengthToSet } from './agentTaskAdmin'
 
 const roles = [{ name: 'coder', requiredStrength: 3.5 }, { name: 'tester', requiredStrength: null }]
 
@@ -41,5 +41,32 @@ describe('task admin verbs', () => {
         expect(canForceClose({ status: 'CLOSED' }, true)).toBe(false)
         expect(canForceClose({ status: 'OPEN' }, false)).toBe(false)
         expect(canForceClose(null, true)).toBe(false)
+    })
+
+    // RD2-5: the server's rule, BOARD_WRITE on a board the session worked, else the org admin.
+    const writeA = { uuid: 'A', myPermissions: ['BOARD_READ', 'BOARD_AGENT', 'BOARD_WRITE'] }
+    const readA = { uuid: 'A', myPermissions: ['BOARD_READ'] }
+    const writeB = { uuid: 'B', myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }
+    const workedA = { status: 'OPEN', boardsWorked: ['A'] }
+
+    it('offers force-close on BOARD_WRITE over a board the session worked', () => {
+        expect(canForceClose(workedA, true, [])).toBe(true)
+        expect(canForceClose(workedA, false, [writeA])).toBe(true)
+        expect(canForceClose(workedA, false, [readA]), 'BOARD_READ only').toBe(false)
+        expect(canForceClose(workedA, false, [writeB]), 'BOARD_WRITE on a board it did not work').toBe(false)
+        expect(canForceClose({ status: 'OPEN', boardsWorked: ['B', 'A'] }, false, [readA, writeB])).toBe(true)
+        expect(canForceClose({ status: 'OPEN', boardsWorked: [] }, false, [writeA]), 'no board and not admin').toBe(false)
+        expect(canForceClose({ status: 'OPEN' }, false, [writeA]), 'boardsWorked not served').toBe(false)
+        expect(canForceClose({ ...workedA, status: 'CLOSED' }, false, [writeA])).toBe(false)
+        expect(canForceClose({ ...workedA, status: 'CLOSED' }, true, [writeA])).toBe(false)
+        expect(canForceClose(workedA, false, null)).toBe(false)
+    })
+
+    it('reads the boards only when they decide', () => {
+        expect(forceCloseNeedsBoards(workedA, false)).toBe(true)
+        expect(forceCloseNeedsBoards(workedA, true), 'the admin passes anyway').toBe(false)
+        expect(forceCloseNeedsBoards({ ...workedA, status: 'CLOSED' }, false)).toBe(false)
+        expect(forceCloseNeedsBoards({ status: 'OPEN', boardsWorked: [] }, false)).toBe(false)
+        expect(forceCloseNeedsBoards(null, false)).toBe(false)
     })
 })
