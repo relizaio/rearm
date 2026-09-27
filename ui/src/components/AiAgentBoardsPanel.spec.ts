@@ -115,3 +115,59 @@ describe('the board warning: capabilities and coverage', () => {
         expect(source).toContain('    await loadCoverage()\n')
     })
 })
+
+// The target picker (task RD2-4): the choices, the patch and the chip are pinned in
+// utils/agentBoardTarget.spec.ts; here, that the form and the header use them.
+describe('the board form: target component', () => {
+    const field = template.indexOf('data-testid="board-target"')
+
+    it('sits between the description and the sources, bound to the board\'s target', () => {
+        expect(field).toBeGreaterThan(-1)
+        const tag = template.lastIndexOf('<n-select', field)
+        expect(template.slice(tag, field)).toContain('v-model:value="editingBoard.target" filterable :options="targetOptions"')
+        expect(template.indexOf('v-model:value="editingBoard.description"')).toBeLessThan(field)
+        expect(template.indexOf('v-model:value="editingBoard.sources"')).toBeGreaterThan(field)
+        expect(template.indexOf('v-model:value="editingBoard.perspectives"')).toBeGreaterThan(field)
+    })
+
+    it('keeps Save disabled on a new board without a target, and says why', () => {
+        const save = template.indexOf('data-testid="board-save"')
+        expect(template.slice(save, template.indexOf('</n-button>', save)))
+            .toContain(':disabled="targetMissing(editingBoardIsNew, editingBoard.target)"')
+        expect(template).toContain('v-else-if="targetMissing(editingBoardIsNew, editingBoard.target)"')
+        expect(template).toContain('Target component: {{ TARGET_HINT }}')
+        expect(source).toContain("taskPrefix: '', documentsDraft: documentsDraftOf(null), target: null }")
+    })
+
+    it('sends the target on create and on a changed update, before either mutation', () => {
+        const save = source.slice(source.indexOf('async function saveBoard'))
+        expect(save).toContain('const target = targetPatch(original, editingBoard.value.target)')
+        expect(save).toContain('if (target !== undefined) input.target = target')
+        expect(save.indexOf('input.target = target')).toBeLessThan(save.indexOf("store.dispatch('createAgentBoard'"))
+        expect(save.indexOf('input.target = target')).toBeLessThan(save.indexOf("store.dispatch('updateAgentBoard'"))
+    })
+
+    it('offers the fetched software components, keeping the current target on Edit', () => {
+        expect(source).toContain("targetComponents.value = await store.dispatch('fetchComponents', props.orgUuid) ?? []")
+        expect(source).toContain(': targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetComponents.value)))')
+        expect(source).toContain('void loadTargetComponents()')
+    })
+
+    it('shows a refusal about the target beside the field', () => {
+        expect(template).toContain(':status="boardFieldErrors.target ? \'error\' : undefined"')
+        const err = template.indexOf('data-testid="board-target-error"')
+        expect(template.slice(err, template.indexOf('</n-text>', err))).toContain('{{ boardFieldErrors.target }}')
+    })
+
+    it('shows the target as a chip in the header, linking to the component', () => {
+        const chip = template.indexOf('data-testid="target-chip"')
+        expect(chip).toBeGreaterThan(-1)
+        expect(template.slice(chip, template.indexOf('</n-tag>', chip)))
+            .toContain('<RouterLink :to="boardTargetChip.to">{{ boardTargetChip.label }}</RouterLink>')
+        expect(source).toContain('const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetComponents.value))')
+        // T-1: the list is read quietly with the panel too, so the chip can name the target on a
+        // server that does not resolve targetDetails.
+        expect(source).toContain('onMounted(() => loadTargetComponents(true))')
+        expect(source).toContain('if (!quiet) notification.error(')
+    })
+})

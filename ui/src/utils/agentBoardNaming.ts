@@ -138,11 +138,13 @@ export function documentsRootPlaceholder (shared: boolean): string {
 
 /**
  * Which field a save refusal belongs to, so it is shown beside that field: the task prefix, the
- * documents block, or neither (null, shown as a notification).
+ * documents block, the target, or neither (null, shown as a notification).
  */
-export function boardFieldOfError (message?: string | null): 'taskPrefix' | 'documents' | null {
+export function boardFieldOfError (message?: string | null): 'taskPrefix' | 'documents' | 'target' | null {
     const m = message ?? ''
     if (/taskPrefix|task-key prefix/.test(m)) return 'taskPrefix'
     if (/documents\.(prefix|root)|documents prefix|documents root/.test(m)) return 'documents'
+    // The target (task RD2-4): missing, not found, archived, another org's, or not a member of a perspective.
+    if (/\b[Tt]arget\b/.test(m)) return 'target'
     return null
 }
