@@ -134,6 +134,14 @@ export function useAgentTaskActions (after: AfterAction) {
             'Setting strength failed')
     }
 
+    /** A task's level, 0 to 9; null clears it to the board default (RD2-1). */
+    function setLevel (p: { task: any, level: number | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskSetLevel', { taskUuid: p.task.uuid, level: p.level }),
+            () => p.level == null ? 'Level cleared' : `Level set to ${p.level}`,
+            'Could not set the level')
+    }
+
     /** An operator hold, which the coordinator cannot lift (task 6fdc5a37). */
     function operatorHold (p: { task: any, reason: string }) {
         return kept(p.task,
@@ -150,5 +158,6 @@ export function useAgentTaskActions (after: AfterAction) {
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
         completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
+        setLevel,
     }
 }

@@ -81,6 +81,13 @@
                         ? 'STRICT: a worker may only take the top eligible task for it — coordinator ordering is enforced at assignment.'
                         : 'LAX: the poll offers work in priority order, but a worker may assign any eligible task.' }}
                 </n-tooltip>
+                <!-- The level a task without its own reads (RD2-1). -->
+                <n-tooltip v-if="currentBoard.defaultTaskLevel != null" trigger="hover">
+                    <template #trigger>
+                        <span class="wipchip" data-testid="default-level-chip">default level {{ currentBoard.defaultTaskLevel }}</span>
+                    </template>
+                    Tasks without a level of their own read level {{ currentBoard.defaultTaskLevel }}. {{ LEVEL_LADDER_HINT }}
+                </n-tooltip>
                 <n-tooltip v-for="w in agentWip" :key="w.agent" trigger="hover">
                     <template #trigger>
                         <span class="wipchip" :class="{ 'wipchip--full': w.count >= currentBoard.perAgentWipLimit }">
@@ -125,11 +132,24 @@
             <n-tabs type="segment" size="small" class="viewtabs"
                     :value="boardView" @update:value="setBoardView">
             <n-tab-pane name="kanban" tab="Kanban">
+            <!-- Grouping and the level filter (RD2-1), kept in the URL (?groupBy=level&level=2). The
+                 grouping is generic: RD2-2 adds "group" to GROUPINGS, not a second toggle. -->
+            <n-space :size="8" align="center" class="kanbanbar" data-testid="kanban-bar">
+                <span class="flabel">group by</span>
+                <n-radio-group :value="groupBy" size="small" @update:value="setGroupBy" data-testid="group-by">
+                    <n-radio-button v-for="o in GROUP_BY_OPTIONS" :key="o.value" :value="o.value" :label="o.label"/>
+                </n-radio-group>
+                <n-select :value="levelFilter" :options="levelFilterOptions" size="small" clearable
+                          placeholder="any level" style="width: 130px" data-testid="level-filter"
+                          @update:value="setLevelFilter"/>
+            </n-space>
             <!-- Hub-and-spoke kanban: intake / per-role / awaiting coordinator / done -->
+            <div v-for="lane in kanbanLanes" :key="lane.key" class="lane" :data-lane="lane.key">
+            <div v-if="groupBy !== 'none'" class="lane__head" data-testid="lane-head">{{ lane.label }}</div>
             <div class="board">
                 <div class="col">
                     <div class="col__head">Pending intake</div>
-                    <TaskCard v-for="t in byStatus('PENDING_INTAKE')" :key="t.uuid" :t="t"/>
+                    <TaskCard v-for="t in byStatus('PENDING_INTAKE', lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
                 <div class="col" v-for="r in activeRoles" :key="r.name">
                     <div class="col__head">
@@ -151,34 +171,35 @@
                             {{ assignedInRole(r.name) }}/{{ r.wipLimit }} wip
                         </span>
                     </div>
-                    <TaskCard v-for="t in atRole(r.name)" :key="t.uuid" :t="t"/>
+                    <TaskCard v-for="t in atRole(r.name, lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
                 <div class="col">
                     <div class="col__head">Awaiting coordinator</div>
-                    <TaskCard v-for="t in byStatus('AWAITING_COORDINATOR')" :key="t.uuid" :t="t"/>
+                    <TaskCard v-for="t in byStatus('AWAITING_COORDINATOR', lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
-                <div class="col" v-if="byStatus('ON_HOLD').length">
+                <div class="col" v-if="byStatus('ON_HOLD', lane.tasks).length">
                     <div class="col__head col__head--hold">On hold</div>
-                    <TaskCard v-for="t in byStatus('ON_HOLD')" :key="t.uuid" :t="t"/>
+                    <TaskCard v-for="t in byStatus('ON_HOLD', lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
-                <div class="col" v-if="byStatus('DELIVERING').length">
+                <div class="col" v-if="byStatus('DELIVERING', lane.tasks).length">
                     <div class="col__head">Delivering</div>
-                    <TaskCard v-for="t in byStatus('DELIVERING')" :key="t.uuid" :t="t"/>
+                    <TaskCard v-for="t in byStatus('DELIVERING', lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
                 <div class="col col--done">
                     <div class="col__head">Completed</div>
-                    <TaskCard v-for="t in byStatus('COMPLETED')" :key="t.uuid" :t="t"/>
+                    <TaskCard v-for="t in byStatus('COMPLETED', lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
+            </div>
             </div>
             </n-tab-pane>
             <n-tab-pane name="pert" tab="PERT">
-                <AiAgentTaskPertView :tasks="tasks"/>
+                <AiAgentTaskPertView :tasks="tasks" :board="currentBoard"/>
             </n-tab-pane>
             <n-tab-pane name="timeline" tab="Timeline">
-                <AiAgentTaskTimelineView :tasks="tasks" :agent-names="agentNames" @open="openTask"/>
+                <AiAgentTaskTimelineView :tasks="tasks" :agent-names="agentNames" :board="currentBoard" @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="table" tab="Table">
-                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" :board-has-sources="boardHasSources"
+                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" :board-has-sources="boardHasSources" :board="currentBoard"
                                       @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="usage" tab="Usage">
@@ -199,7 +220,7 @@
                 @operator-release="operatorRelease" @require-review="requireReview"
                 @authorize="authorizeTask" @order="orderTask"
                 @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
-                @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
+                @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget" @set-level="setLevel"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
@@ -300,7 +321,20 @@
                                     style="width: 170px" data-testid="board-event-retention">
                         <template #prefix><span class="flabel">keep events, days</span></template>
                     </n-input-number>
+                    <!-- RD2-1: the level a task without its own reads; blank clears it. -->
+                    <n-tooltip trigger="hover">
+                        <template #trigger>
+                            <n-input-number v-model:value="editingBoard.defaultTaskLevel" :min="0" :max="MAX_LEVEL" :precision="0"
+                                            placeholder="none" style="width: 180px" data-testid="board-default-level"
+                                            :status="boardFieldErrors.defaultTaskLevel ? 'error' : undefined">
+                                <template #prefix><span class="flabel">default level</span></template>
+                            </n-input-number>
+                        </template>
+                        {{ LEVEL_LADDER_HINT }}
+                    </n-tooltip>
                 </n-space>
+                <n-text v-if="boardFieldErrors.defaultTaskLevel" type="error" data-testid="board-default-level-error"
+                        style="font-size: 12px; margin-top: -6px;">{{ boardFieldErrors.defaultTaskLevel }}</n-text>
                 <!-- task c0a2134c: on (the default, null) a no-progress or cycle-cap stop parks for the
                      coordinator first, which may release it once per stop kind per task or escalate it. -->
                 <n-checkbox :checked="editingBoard.coordinatorStopRelease !== false" data-testid="board-stop-release"
@@ -860,6 +894,8 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
 import { isOrgAdmin } from '@/utils/agentReopen'
 import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
+import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
+    levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
@@ -897,12 +933,26 @@ const boardView = ref<string>(
     BOARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : 'kanban')
 
 function syncQuery () {
-    const q: Record<string, string> = { ...(route.query as Record<string, string>), tab: 'boards' }
+    const q: Record<string, string> = withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },
+        groupBy.value, levelFilter.value)
     if (selectedBoard.value) q.board = selectedBoard.value
     else delete q.board
     q.view = boardView.value
     router.replace({ query: q }).catch(() => { /* duplicate navigation is fine */ })
 }
+
+// The kanban's grouping and level filter (RD2-1), read from and written to the URL with the board.
+const groupBy = ref<string>(groupByFromQuery(route.query))
+const levelFilter = ref<number | null>(levelFromQuery(route.query))
+function setGroupBy (v: string) {
+    groupBy.value = v
+    syncQuery()
+}
+function setLevelFilter (v: number | null) {
+    levelFilter.value = v ?? null
+    syncQuery()
+}
+const levelFilterOptions = Array.from({ length: MAX_LEVEL + 1 }, (_, i) => ({ label: `L${i}`, value: i }))
 
 function setBoardView (v: string) {
     boardView.value = v
@@ -912,6 +962,10 @@ function setBoardView (v: string) {
 const boards = ref<any[]>([])
 const selectedBoard = ref<string | null>(null)
 const tasks = ref<any[]>([])
+// The kanban's tasks under the level filter, in lanes by the grouping (one lane for "none").
+const kanbanLanes = computed(() => groupTasks(
+    levelFilter.value == null ? tasks.value : tasks.value.filter(t => levelOf(t, currentBoard.value) === levelFilter.value),
+    groupBy.value, currentBoard.value))
 const roles = ref<any[]>([])
 const showRoles = ref(false)
 
@@ -1140,7 +1194,7 @@ async function reseedCoordinator (presetName: string) {
 // the drawer; any other action reloads and keeps the drawer on the same task.
 const {
     humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
-    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
+    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
     await refreshBoardContent()
@@ -1245,8 +1299,8 @@ function byPriority (list: any[]): any[] {
         || String(a.createdDate ?? '').localeCompare(String(b.createdDate ?? '')))
 }
 
-function byStatus (s: string): any[] {
-    const list = tasks.value.filter(t => t.status === s)
+function byStatus (s: string, among: any[] = tasks.value): any[] {
+    const list = among.filter(t => t.status === s)
     // completed reads best newest-first; everything else by priority
     if (s === 'COMPLETED') {
         return [...list].sort((a, b) =>
@@ -1255,8 +1309,8 @@ function byStatus (s: string): any[] {
     return byPriority(list)
 }
 // QUEUED + ASSIGNED tasks grouped under their current role column
-function atRole (role: string): any[] {
-    return byPriority(tasks.value.filter(t =>
+function atRole (role: string, among: any[] = tasks.value): any[] {
+    return byPriority(among.filter(t =>
         (t.status === 'QUEUED' || t.status === 'ASSIGNED') && t.role === role))
 }
 
@@ -1270,6 +1324,12 @@ const TaskCard = defineComponent({
             workRank(p.t) === 1 ? 'tcard--ready' : '',
             workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
             h('div', { class: 'tcard__title' }, [
+                // The level where the key goes (RD2-1; RD2-22 puts the key beside it).
+                levelLabel(p.t, currentBoard.value) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__level' },
+                        { default: () => levelLabel(p.t, currentBoard.value) }),
+                    default: () => levelTooltip(p.t, currentBoard.value, actorLabel),
+                }) : null,
                 p.t.title,
                 // The page, without opening the drawer on the way.
                 h(RouterLink, { to: taskPagePath(p.t.uuid), class: 'tcard__open', title: 'Open task page',
@@ -1505,7 +1565,7 @@ async function refreshBoardContent () {
 }
 
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).
-const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string }>({})
+const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultTaskLevel?: string }>({})
 
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
@@ -1617,6 +1677,9 @@ async function saveBoard () {
         if (taskPrefix !== undefined) input.taskPrefix = taskPrefix
         const documents = documentsPatch(original, editingBoard.value.documentsDraft)
         if (documents !== undefined) input.documents = documents
+        // Only when changed; blank sends null, which clears it (RD2-1).
+        const defaultLevel = defaultLevelPatch(original, editingBoard.value.defaultTaskLevel)
+        if (defaultLevel.changed) input.defaultTaskLevel = defaultLevel.value
         boardFieldErrors.value = {}
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
@@ -1833,6 +1896,10 @@ async function operatorLock (lock: boolean) {
         .coordissue { font-size: 12px; }
     }
     .viewtabs { margin-bottom: 6px; }
+    .kanbanbar { margin-bottom: 8px; }
+    .lane { margin-bottom: 12px; }
+    .lane__head { font-weight: 600; font-size: 13px; margin: 6px 0; }
+    .tcard__level { margin-right: 6px; }
     .board {
         display: grid;
         grid-auto-flow: column;

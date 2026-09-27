@@ -35,6 +35,23 @@
                 set by {{ actorLabel(task.strengthSetBy) }} · {{ ts(task.strengthSetAt) }}
             </span>
         </div>
+        <!-- The task's level, the depth in the product tree (RD2-1): a declaration the board makes
+             about the work, as strength and budget are. Blank reads the board's default. -->
+        <div class="deprow lvlrow" data-testid="level-row">
+            <n-input-number v-model:value="levelDraft" size="small" :min="0" :max="MAX_LEVEL" :step="1" :precision="0"
+                            :placeholder="levelPlaceholder(board)" style="width: 190px">
+                <template #prefix><span class="deplab" style="min-width: 0">level</span></template>
+            </n-input-number>
+            <n-button size="small" :disabled="levelToSet(task, levelDraft) === undefined" data-testid="level-set"
+                      @click="emit('set-level', { task, level: levelToSet(task, levelDraft) as number })">
+                Set level
+            </n-button>
+            <n-button v-if="task.level != null" size="small" quaternary data-testid="level-clear"
+                      @click="emit('set-level', { task, level: null })">Clear</n-button>
+            <span v-if="task.levelSetBy" class="holdmeta" style="margin-top: 0">
+                set by {{ actorLabel(task.levelSetBy) }} · {{ ts(task.levelSetAt) }}
+            </span>
+        </div>
         <!-- An operator hold: the coordinator cannot lift it; the hold banner offers the release. -->
         <div v-if="canPlaceHold(task, !!admin)" class="deprow holdrow">
             <n-input v-model:value="holdReason" size="small" placeholder="Why hold it (required)"
@@ -161,6 +178,7 @@ import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { roleOptionsOf } from '@/utils/agentTaskOptions'
 import { canPlaceHold, holdPayload, strengthPlaceholder, strengthToSet } from '@/utils/agentTaskAdmin'
+import { levelPlaceholder, levelToSet, MAX_LEVEL } from '@/utils/agentTaskLevel'
 import { budgetChanged, dollarsToMicros, microsToDollars } from '@/utils/agentBudget'
 
 const props = defineProps<{
@@ -182,6 +200,7 @@ const emit = defineEmits<{
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
     (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
+    (e: 'set-level', p: { task: any, level: number | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 
@@ -198,6 +217,7 @@ function reopen () {
     if (p) emit('reopen', { task: props.task, role: p.role, reason: p.reason })
 }
 const strengthDraft = ref<number | null>(null)
+const levelDraft = ref<number | null>(null)
 const holdReason = ref('')
 function placeHold () {
     const p = holdPayload(props.task, holdReason.value)
@@ -229,6 +249,7 @@ watch(() => props.task?.uuid, () => {
     authorizeRole.value = props.task?.role ?? null
     orderDraft.value = props.task?.orderIndex ?? null
     strengthDraft.value = props.task?.requiredStrength ?? null
+    levelDraft.value = props.task?.level ?? null
     holdReason.value = ''
     budgetDraft.value = microsToDollars(props.task?.budgetMicros)
     cancelNote.value = ''

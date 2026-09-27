@@ -32,6 +32,7 @@ const TABLE: [string, any, string, any, boolean][] = [
     ['operatorHold', { task, reason: 'waiting on legal' }, 'agentTaskOperatorHold',
         { taskUuid: 't1', hold: true, reason: 'waiting on legal' }, true],
     ['setBudget', { task, budgetMicros: 2_500_000 }, 'agentTaskSetBudget', { taskUuid: 't1', budgetMicros: 2_500_000 }, true],
+    ['setLevel', { task, level: 2 }, 'agentTaskSetLevel', { taskUuid: 't1', level: 2 }, true],
 ]
 
 describe('useAgentTaskActions', () => {

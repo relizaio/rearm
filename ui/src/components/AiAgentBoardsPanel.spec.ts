@@ -115,3 +115,28 @@ describe('the board warning: capabilities and coverage', () => {
         expect(source).toContain('    await loadCoverage()\n')
     })
 })
+
+// Task level on the board (RD2-1): the form's default level, the header chip, lanes and the URL.
+describe('the board: task level', () => {
+    it('the form has the default level beside the other settings, sent when changed, with its refusal beside it', () => {
+        expect(template).toContain('v-model:value="editingBoard.defaultTaskLevel"')
+        expect(template).toContain('data-testid="board-default-level-error"')
+        expect(source).toContain('const defaultLevel = defaultLevelPatch(original, editingBoard.value.defaultTaskLevel)')
+        expect(source).toContain('if (defaultLevel.changed) input.defaultTaskLevel = defaultLevel.value')
+        const save = source.slice(source.indexOf('async function saveBoard'))
+        expect(save.indexOf('input.defaultTaskLevel = defaultLevel.value')).toBeLessThan(save.indexOf("store.dispatch('createAgentBoard'"))
+    })
+
+    it('the header names the default level', () => {
+        expect(template).toContain('data-testid="default-level-chip">default level {{ currentBoard.defaultTaskLevel }}')
+    })
+
+    it('the kanban groups by lane and filters by level, both kept in the URL', () => {
+        expect(template).toContain('<div v-for="lane in kanbanLanes" :key="lane.key" class="lane" :data-lane="lane.key">')
+        expect(template).toContain(`byStatus('PENDING_INTAKE', lane.tasks)`)
+        expect(template).toContain('atRole(r.name, lane.tasks)')
+        expect(source).toContain('const groupBy = ref<string>(groupByFromQuery(route.query))')
+        expect(source).toContain('const levelFilter = ref<number | null>(levelFromQuery(route.query))')
+        expect(source).toContain("withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },")
+    })
+})

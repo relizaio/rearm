@@ -39,7 +39,7 @@ describe('documents view contract', () => {
     })
 
     it('the PERT and timeline cards lead with the key', () => {
-        expect(src('AiAgentTaskPertView.vue')).toContain("return cardRef(t, 'draft')")
-        expect(src('AiAgentTaskTimelineView.vue')).toContain('return cardRef(t, (t.title ?? \'\').slice(0, 12))')
+        expect(src('AiAgentTaskPertView.vue')).toContain("return refWithLevel(cardRef(t, 'draft'), t, props.board)")
+        expect(src('AiAgentTaskTimelineView.vue')).toContain('return refWithLevel(cardRef(t, (t.title ?? \'\').slice(0, 12)), t, props.board)')
     })
 })

@@ -47,10 +47,13 @@
 <script lang="ts" setup>
 import { computed } from 'vue'
 import { cardRef } from '@/utils/agentTaskFormat'
+import { refWithLevel } from '@/utils/agentTaskLevel'
 
 const props = defineProps<{
     tasks: any[]
     agentNames: Record<string, string>
+    /** The board, for the level a task without its own reads (RD2-1). */
+    board?: any
 }>()
 const emit = defineEmits<{ (e: 'open', task: any): void }>()
 
@@ -154,7 +157,7 @@ function time (iso: string | null | undefined): number | null {
 }
 /** The bar's reference: the task's key first (task 36d0549e), else its tracker number, else its title cut. */
 function refOf (t: any): string {
-    return cardRef(t, (t.title ?? '').slice(0, 12))
+    return refWithLevel(cardRef(t, (t.title ?? '').slice(0, 12)), t, props.board)
 }
 function nameOf (uuid: string): string {
     return props.agentNames[uuid] ?? (uuid ? uuid.slice(0, 8) : '—')

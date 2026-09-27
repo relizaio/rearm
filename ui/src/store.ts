@@ -169,6 +169,10 @@ const AGENT_TASK_SELECTION = `
     budgetMicros
     budgetSetBy { kind uuid name }
     budgetSetAt
+    level
+    effectiveLevel
+    levelSetBy { kind uuid name }
+    levelSetAt
     coordinatorEstimateMicros
     spentMicros
     requiredStrength
@@ -3342,6 +3346,20 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentBoardReseedCoordinatorPrompt
+        },
+        /** A task's level, 0 to 9; null clears it to the board default (RD2-1). BOARD_WRITE. */
+        async agentTaskSetLevel (context: any, payload: { taskUuid: string, level: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetLevel($taskUuid: ID!, $level: Int) {
+                        agentTaskSetLevel(taskUuid: $taskUuid, level: $level) {
+                            uuid level effectiveLevel levelSetBy { kind uuid name } levelSetAt
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, level: payload.level },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetLevel
         },
         /** A task's required model strength; null clears it (task 6fdc5a37). Org admin. */
         async agentTaskSetStrength (context: any, payload: { taskUuid: string, requiredStrength: number | null }) {

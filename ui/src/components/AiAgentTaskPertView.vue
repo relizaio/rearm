@@ -62,8 +62,9 @@
 <script lang="ts" setup>
 import { computed } from 'vue'
 import { cardRef } from '@/utils/agentTaskFormat'
+import { refWithLevel } from '@/utils/agentTaskLevel'
 
-const props = defineProps<{ tasks: any[] }>()
+const props = defineProps<{ tasks: any[], board?: any }>()
 
 const NODE_W = 190
 const NODE_H = 62
@@ -195,7 +196,7 @@ function statusLabel (t: any): string {
 
 /** The card's reference: the task's key first (task 36d0549e), else its tracker number, else "draft". */
 function refLabel (t: any): string {
-    return cardRef(t, 'draft')
+    return refWithLevel(cardRef(t, 'draft'), t, props.board)
 }
 
 function clip (s: string, n: number): string {

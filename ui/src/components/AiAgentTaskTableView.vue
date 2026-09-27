@@ -2,7 +2,7 @@
     <div class="ttable">
         <n-space :size="8" class="ttable__filters">
             <n-input v-model:value="textFilter" size="small" clearable
-                     placeholder="Filter by key, title or ref" style="width: 240px"/>
+                     placeholder="Filter by key, title, ref or level (L2)" style="width: 260px"/>
             <n-select v-model:value="statusFilter" size="small" clearable multiple
                       :options="statusOptions" placeholder="Status" style="min-width: 220px"/>
         </n-space>
@@ -23,12 +23,16 @@ import { NDataTable, NInput, NSelect, NSpace, NTag, DataTableColumns } from 'nai
 import { RouterLink } from 'vue-router'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import { compareTaskKeys, matchesTaskText, roleTagFor, shortRef } from '@/utils/agentTaskLabels'
+import { levelLabel, levelOf, levelTooltip, matchesLevel } from '@/utils/agentTaskLevel'
+import { actorLabel } from '@/utils/agentActors'
 
 const props = defineProps<{
     tasks: any[]
     agentNames: Record<string, string>
     /** A board without sources has no tracker refs, so no task on it is a "draft". */
     boardHasSources?: boolean
+    /** The board, for the level a task without its own reads (its default). */
+    board?: any
 }>()
 const emit = defineEmits<{ (e: 'open', task: any): void }>()
 
@@ -42,7 +46,8 @@ const filtered = computed(() => {
     const q = textFilter.value.trim().toLowerCase()
     return (props.tasks ?? []).filter(t => {
         if (statusFilter.value?.length && !statusFilter.value.includes(t.status)) return false
-        if (!matchesTaskText(t, q)) return false
+        // "L2" or "level 2" filters by level; any other text by key, title and ref.
+        if (!matchesLevel(t, props.board, q) && !matchesTaskText(t, q)) return false
         return true
     })
 })
@@ -98,6 +103,15 @@ const columns: DataTableColumns<any> = [
             blocked(t) ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left:4px' },
                 { default: () => 'blocked' }) : null,
         ]),
+    },
+    {
+        // The level the board reads (RD2-1): sorted numerically, a task with none last.
+        title: 'Level', key: 'level', width: 66,
+        sorter: (a, b) => (levelOf(a, props.board) ?? 99) - (levelOf(b, props.board) ?? 99),
+        render: (t: any) => {
+            const l = levelLabel(t, props.board)
+            return l ? h('span', { title: levelTooltip(t, props.board, actorLabel) ?? '', 'data-level': l }, l) : '—'
+        },
     },
     { title: 'Role', key: 'role', width: 90, sorter: (a, b) => String(a.role ?? '').localeCompare(String(b.role ?? '')), render: (t: any) => roleTagFor(t)?.text ?? '—' },
     { title: 'Order', key: 'orderIndex', width: 70, sorter: (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0) },
