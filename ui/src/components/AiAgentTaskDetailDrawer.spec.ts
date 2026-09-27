@@ -72,4 +72,13 @@ describe('AiAgentTaskDetailDrawer', () => {
         expect(w.text()).toContain('Answer it on the task page')
         expect(w.text()).not.toContain('Answer it under')
     })
+
+    it('previews the description under the title, the whole of it on hover (fceb1e57)', () => {
+        const long = 'Why: titles carried whole briefs.\nWhat: a description beside a one-line title.'
+        const desc = mountDrawer(richTask({ description: long })).find('.dhead__desc')
+        expect(desc.element.textContent).toBe(long)
+        expect(desc.classes()).toContain('dhead__desc--clamped')
+        expect(desc.attributes('title')).toBe(long)
+        expect(mountDrawer(richTask()).find('.dhead__desc').exists()).toBe(false)
+    })
 })

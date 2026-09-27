@@ -10,7 +10,7 @@
                     size="small"
                     style="min-width: 220px"
                 />
-                <n-button size="small" quaternary @click="registering = { title: '', externalRef: '', sourceUrl: '' }"
+                <n-button size="small" quaternary @click="registering = { title: '', description: '', externalRef: '', sourceUrl: '' }"
                           v-if="currentBoard">+ New task</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
@@ -199,7 +199,23 @@
             <n-modal :show="registering !== null" preset="card" title="New task" style="max-width: 520px"
                      @update:show="(v: boolean) => { if (!v) registering = null }">
                 <n-space vertical :size="10" v-if="registering">
-                    <n-input v-model:value="registering.title" placeholder="Title"/>
+                    <!-- A title is one line of at most 120 characters, what a card shows; the rest goes
+                         in the description (task fceb1e57). Said here before the server refuses it. -->
+                    <n-input v-model:value="registering.title" placeholder="Title (one line, at most 120 characters)"
+                             data-testid="new-task-title"
+                             :status="taskTitleProblem(registering.title) ? 'error' : undefined"/>
+                    <n-text v-if="taskTitleProblem(registering.title)" type="error" data-testid="new-task-title-error"
+                            style="font-size: 12px; margin-top: -6px;">
+                        {{ taskTitleProblem(registering.title) }}
+                    </n-text>
+                    <n-input v-model:value="registering.description" type="textarea" data-testid="new-task-description"
+                             :autosize="{ minRows: 3, maxRows: 12 }"
+                             placeholder="Description (optional): what the task is, beyond its title"
+                             :status="taskDescriptionProblem(registering.description) ? 'error' : undefined"/>
+                    <n-text v-if="taskDescriptionProblem(registering.description)" type="error"
+                            style="font-size: 12px; margin-top: -6px;">
+                        {{ taskDescriptionProblem(registering.description) }}
+                    </n-text>
                     <n-input v-model:value="registering.externalRef"
                              :placeholder="(currentBoard.sources?.length ?? 0) > 0
                                  ? 'Tracker issue, e.g. github:owner/repo#42 (required)'
@@ -338,6 +354,53 @@
                     under the coordinator's rogue-activity watch; a source written as
                     <code>github:acme/docs</code> matches <code>https://github.com/acme/docs</code>.
                 </n-text>
+                <!-- Task keys and document naming (board-documents.md §5; task fceb1e57). A refusal on
+                     save is shown beside the field it is about. -->
+                <div data-testid="board-task-prefix">
+                    <n-input v-model:value="editingBoard.taskPrefix" :maxlength="8"
+                             :placeholder="editingBoardIsNew ? taskPrefixPlaceholder(editingBoard.name) : 'unchanged'"
+                             :status="boardFieldErrors.taskPrefix || taskPrefixProblem(editingBoard.taskPrefix) ? 'error' : undefined">
+                        <template #prefix><span class="flabel">task-key prefix</span></template>
+                    </n-input>
+                    <n-text depth="3" style="font-size: 11.5px;">
+                        Tasks are keyed <code>{{ normaliseTaskPrefix(editingBoard.taskPrefix) || (editingBoardIsNew ? derivedTaskPrefix(editingBoard.name) : editingBoard.heldTaskPrefix) }}-1</code>,
+                        <code>-2</code>… A change is a rename: existing keys stay and still resolve, and a
+                        prefix is never reused in the organization.
+                        <template v-if="priorTaskPrefixes(editingBoard.taskPrefixHistory, editingBoard.heldTaskPrefix).length">
+                            Held before: {{ priorTaskPrefixes(editingBoard.taskPrefixHistory, editingBoard.heldTaskPrefix).join(', ') }}.
+                        </template>
+                    </n-text>
+                    <n-text v-if="boardFieldErrors.taskPrefix || taskPrefixProblem(editingBoard.taskPrefix)" type="error"
+                            data-testid="board-task-prefix-error" style="display: block; font-size: 12px;">
+                        {{ boardFieldErrors.taskPrefix || taskPrefixProblem(editingBoard.taskPrefix) }}
+                    </n-text>
+                </div>
+                <div data-testid="board-documents">
+                    <div class="flabel" style="margin-bottom: 4px">documents</div>
+                    <n-space :size="8" align="center">
+                        <n-input v-model:value="editingBoard.documentsDraft.prefix" size="small" style="width: 260px"
+                                 :placeholder="slug(editingBoard.name) || 'the board name, slugged'">
+                            <template #prefix><span class="flabel">name prefix</span></template>
+                        </n-input>
+                        <n-checkbox v-model:checked="editingBoard.documentsDraft.shared">repository shared by several boards</n-checkbox>
+                        <n-checkbox v-model:checked="editingBoard.documentsDraft.rootSet">set the root</n-checkbox>
+                        <n-input v-model:value="editingBoard.documentsDraft.root" size="small" style="width: 260px"
+                                 :disabled="!editingBoard.documentsDraft.rootSet"
+                                 :placeholder="editingBoard.documentsDraft.rootSet ? 'empty is the repository root' : documentsRootPlaceholder(editingBoard.documentsDraft.shared)">
+                            <template #prefix><span class="flabel">root</span></template>
+                        </n-input>
+                    </n-space>
+                    <n-text depth="3" style="font-size: 11.5px;">
+                        The name prefix replaces the board name in its document components' names. A
+                        shared repository puts this board under <code>boards/{board}/</code> unless a
+                        root is set; a set root may be empty, the repository's own root.
+                        <template v-if="!editingBoardIsNew">Resolved now: <code>{{ editingBoard.documentsRoot || '(the repository root)' }}</code>.</template>
+                    </n-text>
+                    <n-text v-if="boardFieldErrors.documents" type="error" data-testid="board-documents-error"
+                            style="display: block; font-size: 12px;">
+                        {{ boardFieldErrors.documents }}
+                    </n-text>
+                </div>
                 <div>
                     <div class="flabel" style="margin-bottom: 4px">document path templates</div>
                     <n-input v-for="row in templateTypeRows" :key="row.spec"
@@ -783,6 +846,9 @@ import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
+import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch, documentsRootPlaceholder,
+    normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
+    taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
@@ -1074,8 +1140,9 @@ const {
 const priorityLevels = computed(() =>
     store.getters.orgById(props.orgUuid)?.settings?.findingPriorityLevels ?? 3)
 
-const registering = ref<{ title: string, externalRef: string, sourceUrl: string } | null>(null)
+const registering = ref<{ title: string, description: string, externalRef: string, sourceUrl: string } | null>(null)
 const canRegister = computed(() => !!registering.value?.title.trim()
+    && !taskTitleProblem(registering.value.title) && !taskDescriptionProblem(registering.value.description)
     && ((currentBoard.value?.sources?.length ?? 0) === 0 || !!registering.value?.externalRef.trim()))
 
 async function registerTask () {
@@ -1083,11 +1150,7 @@ async function registerTask () {
     try {
         await store.dispatch('agentTaskRegister', {
             boardUuid: currentBoard.value.uuid,
-            input: {
-                title: registering.value.title.trim(),
-                externalRef: registering.value.externalRef.trim() || null,
-                sourceUrl: registering.value.sourceUrl.trim() || null,
-            },
+            input: taskRegisterInput(registering.value),
         })
         notification.success({ content: 'Task registered — pending intake', duration: 3000 })
         registering.value = null
@@ -1428,8 +1491,12 @@ async function refreshBoardContent () {
     agentNames.value = m
 }
 
+// A save refusal about one of the naming fields, shown beside it (task fceb1e57).
+const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string }>({})
+
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
+    boardFieldErrors.value = {}
     // documentsRepo comes back as the repository ROW; the editor works in uris, and the mutation
     // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])], budgetDollars: microsToDollars(b.budgetMicros),
@@ -1437,11 +1504,13 @@ function startEditBoard (b: any | null) {
         documentPaths: { ...(b.documentPaths ?? {}) },
         coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])],
         perspectives: [...(b.perspectives ?? [])],
+        taskPrefix: b.taskPrefix ?? '', heldTaskPrefix: b.taskPrefix ?? '', documentsDraft: documentsDraftOf(b),
         deliveryMode: b.deliveryPolicy?.mode ?? null, deliveryAttest: !!b.deliveryPolicy?.attest,
         merge: mergeDraftOf(b.deliveryPolicy) }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
-            coordinatorCapabilities: [], perspectives: [], merge: mergeDraftOf(null) }
+            coordinatorCapabilities: [], perspectives: [], merge: mergeDraftOf(null),
+            taskPrefix: '', documentsDraft: documentsDraftOf(null) }
 }
 
 /** hopBudgetMicros for the role input: set, removed (null), or left out when never set and still blank. */
@@ -1517,6 +1586,12 @@ async function saveBoard () {
         const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest,
             editingBoard.value.merge)
         if (delivery.changed) input.deliveryPolicy = delivery.value
+        // Only when changed; the documents block goes whole, an explicit empty root as '' (task fceb1e57).
+        const taskPrefix = taskPrefixPatch(original, editingBoard.value.taskPrefix)
+        if (taskPrefix !== undefined) input.taskPrefix = taskPrefix
+        const documents = documentsPatch(original, editingBoard.value.documentsDraft)
+        if (documents !== undefined) input.documents = documents
+        boardFieldErrors.value = {}
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
             input.seedFromPresets = !!editingBoard.value.seedFromPresets
@@ -1534,7 +1609,10 @@ async function saveBoard () {
             if (created) selectedBoard.value = created.uuid
         }
     } catch (e: any) {
-        notification.error({ content: `Save failed: ${e?.message ?? e}`, duration: 8000 })
+        const message = String(e?.message ?? e)
+        const field = boardFieldOfError(message)
+        if (field) boardFieldErrors.value = { [field]: message }
+        else notification.error({ content: `Save failed: ${message}`, duration: 8000 })
     } finally {
         saving.value = false
     }
