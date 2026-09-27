@@ -93,10 +93,16 @@
                 </n-tooltip>
                 <n-button v-if="!isLocked && canOperate(currentBoard)" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
             </div>
-            <n-alert v-if="currentBoard.missingCapabilities?.length" type="warning" class="lockbanner">
-                Delivery loop incomplete: no active role or the coordinator covers
-                {{ currentBoard.missingCapabilities.join(', ') }} — give a role the capability, or declare
-                that the coordinator covers it in the board's settings.
+            <!-- One warning for what the board lacks (task 5c70990d): the delivery loop's capabilities,
+                 then what no key can do on the board. -->
+            <n-alert v-if="boardWarningShown(currentBoard.missingCapabilities, missingCoverage)" type="warning"
+                     class="lockbanner" data-testid="board-warning">
+                <div v-if="currentBoard.missingCapabilities?.length">
+                    Delivery loop incomplete: no active role or the coordinator covers
+                    {{ currentBoard.missingCapabilities.join(', ') }} — give a role the capability, or declare
+                    that the coordinator covers it in the board's settings.
+                </div>
+                <div v-for="line in coverageLines(missingCoverage)" :key="line" class="coverage-line">{{ line }}</div>
             </n-alert>
             <n-alert v-if="awaitingHumanReview.length" type="error" class="lockbanner">
                 {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting your review:
@@ -853,6 +859,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
+import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
@@ -1487,6 +1494,7 @@ async function refreshBoardContent () {
     roles.value = r ?? []
     await loadLifetimeSpend()
     await loadDocumentSeries()
+    await loadCoverage()
     // agent uuid -> display name map for timeline/table/drawer; loaded
     // lazily once per panel life, refreshed with board content
     models.value = await store.dispatch('fetchModelOntologiesOfOrg', props.orgUuid).catch(() => []) ?? []
@@ -1523,6 +1531,19 @@ function hopBudgetField (draft: any): Record<string, number | null> {
     if (draft?.kind === 'HUMAN') return {}
     const hop = hopBudgetInput(draft?.hopBudgetMicros, draft?.hopDollars)
     return hop === undefined ? {} : { hopBudgetMicros: hop }
+}
+
+// What no key can do on the board (task 5c70990d): read for the selected board only, since the
+// server reads the org's keys for it; an overlay like the spend, never a precondition.
+const missingCoverage = ref<any[]>([])
+async function loadCoverage () {
+    missingCoverage.value = []
+    if (!selectedBoard.value) return
+    try {
+        missingCoverage.value = await store.dispatch('fetchAgentBoardCoverage', selectedBoard.value) ?? []
+    } catch {
+        missingCoverage.value = []
+    }
 }
 
 // What the board has produced, per document series (task 36d0549e); an overlay like the spend.

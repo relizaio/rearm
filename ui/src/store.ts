@@ -2890,6 +2890,21 @@ const storeObject : any = {
             }
             return { releases, taskKeys }
         },
+        /** What no key can do on a board (task 5c70990d); read for the selected board only. */
+        async fetchAgentBoardCoverage (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardCoverage($uuid: ID!) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            missingCoverage { function message }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.missingCoverage ?? []
+        },
         async fetchAgentBoardDocumentSeries (context: any, uuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
