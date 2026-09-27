@@ -26,6 +26,8 @@ const AGENT_BOARD_SELECTION = `
     documentPaths
     perspectives
     perspectiveNames
+    taskPrefix
+    taskPrefixHistory
     coordinatorPrompt
     missingCapabilities
     events { kind message actor { kind uuid name } eventAt }
@@ -56,6 +58,8 @@ const AGENT_BOARD_SELECTION = `
 
 const AGENT_TASK_SELECTION = `
     uuid
+    key
+    number
     board
     org
     externalRef

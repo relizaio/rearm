@@ -2,7 +2,7 @@
     <div class="ttable">
         <n-space :size="8" class="ttable__filters">
             <n-input v-model:value="textFilter" size="small" clearable
-                     placeholder="Filter by title or ref" style="width: 240px"/>
+                     placeholder="Filter by key, title or ref" style="width: 240px"/>
             <n-select v-model:value="statusFilter" size="small" clearable multiple
                       :options="statusOptions" placeholder="Status" style="min-width: 220px"/>
         </n-space>
@@ -22,7 +22,7 @@ import { computed, h, ref } from 'vue'
 import { NDataTable, NInput, NSelect, NSpace, NTag, DataTableColumns } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 import { taskPagePath } from '@/utils/agentTaskFormat'
-import { roleTagFor, shortRef } from '@/utils/agentTaskLabels'
+import { compareTaskKeys, matchesTaskText, roleTagFor, shortRef } from '@/utils/agentTaskLabels'
 
 const props = defineProps<{
     tasks: any[]
@@ -42,7 +42,7 @@ const filtered = computed(() => {
     const q = textFilter.value.trim().toLowerCase()
     return (props.tasks ?? []).filter(t => {
         if (statusFilter.value?.length && !statusFilter.value.includes(t.status)) return false
-        if (q && !(`${t.title} ${t.externalRef ?? ''}`.toLowerCase().includes(q))) return false
+        if (!matchesTaskText(t, q)) return false
         return true
     })
 })
@@ -69,6 +69,11 @@ function blocked (t: any): boolean {
 }
 
 const columns: DataTableColumns<any> = [
+    {
+        // The key leads (board-documents.md D12): what people say aloud and type in the filter.
+        title: 'Key', key: 'key', width: 84, sorter: compareTaskKeys,
+        render: (t: any) => h('code', {}, t.key ?? '—'),
+    },
     {
         title: 'Ref', key: 'ref', width: 76, sorter: (a, b) => refOf(a).localeCompare(refOf(b), undefined, { numeric: true }),
         render: (t: any) => h('code', {}, refOf(t)),
