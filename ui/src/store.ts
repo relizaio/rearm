@@ -93,6 +93,8 @@ const AGENT_TASK_SELECTION = `
             task
             session
             round
+            advisory
+            publishedByRole
             elements {
                 grammarVersion
                 digest

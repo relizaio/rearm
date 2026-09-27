@@ -4,6 +4,9 @@
         <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
         <div class="drow">
             <span class="drow__label">{{ documentLabel(d) }}</span>
+            <!-- An amendment another role put on this task while it did not hold it (task e97fde56). -->
+            <n-tag v-if="advisoryLabel(d)" size="tiny" :bordered="false" type="warning"
+                   title="Published by a role that did not hold the task; assembled at publish">{{ advisoryLabel(d) }}</n-tag>
             <n-tag v-if="documentLifecycleLabel(d)" size="tiny" :bordered="false"
                    :type="documentLifecycleLabel(d)?.type" :title="d.lifecycle ?? undefined">{{ documentLifecycleLabel(d)?.label }}</n-tag>
             <!-- A QUESTIONS round's verdict is the asking hop's REJECTED; it reads as if the
@@ -45,7 +48,7 @@ import { computed, ref, watch } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 import AiAgentCheckReport from '../AiAgentCheckReport.vue'
 import AiAgentDocumentElements from '../AiAgentDocumentElements.vue'
-import { DocumentRelease, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
+import { DocumentRelease, advisoryLabel, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
 import { documentDefining, elementsOf } from '@/utils/agentElements'
 import { answeredByLabel, questionRounds, questionStateLabel, questionStateType } from '@/utils/agentQuestionRounds'
 
