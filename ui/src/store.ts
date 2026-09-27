@@ -29,6 +29,7 @@ const AGENT_BOARD_SELECTION = `
     documents { prefix shared root }
     perspectives
     perspectiveNames
+    myPermissions
     taskPrefix
     taskPrefixHistory
     coordinatorPrompt

@@ -12,7 +12,7 @@ vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) })
 const routing = { kind: 'SYSTEM', uuid: null, name: 'routing' }
 
 function header (hold: any) {
-    return mount(TaskHeader, { props: { task: richTask({ status: 'ON_HOLD', hold }), roles: fixtureRoles } })
+    return mount(TaskHeader, { props: { task: richTask({ status: 'ON_HOLD', hold }), roles: fixtureRoles, canOperate: true } })
 }
 
 describe('stop hold release', () => {

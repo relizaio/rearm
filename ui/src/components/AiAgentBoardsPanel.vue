@@ -11,15 +11,17 @@
                     style="min-width: 220px"
                 />
                 <n-button size="small" quaternary @click="registering = { title: '', description: '', externalRef: '', sourceUrl: '' }"
-                          v-if="currentBoard">+ New task</n-button>
-                <n-button size="small" quaternary @click="startEditBoard(currentBoard)" v-if="currentBoard">Edit board</n-button>
+                          v-if="currentBoard && canOperate(currentBoard)">+ New task</n-button>
+                <n-button size="small" quaternary @click="startEditBoard(currentBoard)"
+                          v-if="currentBoard && canConfigure(currentBoard)">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard">View as spec</n-button>
                 <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
                           title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
                     Subscribe
                 </n-button>
-                <n-button size="small" quaternary @click="applyKinds = ['BOARD']" v-if="canApplySpec">Apply spec</n-button>
+                <n-button size="small" quaternary @click="applyKinds = ['BOARD']"
+                          v-if="canApplySpec || canConfigure(currentBoard)">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(null)">+ New board</n-button>
             </n-space>
@@ -40,7 +42,7 @@
                 <template v-if="currentBoard.lock.reason"> Reason: {{ currentBoard.lock.reason }}.</template>
                 <template v-if="actorLabel(currentBoard.lock.lockedBy)"> Held by {{ actorLabel(currentBoard.lock.lockedBy) }}.</template>
                 <n-button
-                    v-if="currentBoard.lock.level === 'OPERATOR'"
+                    v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
                     size="tiny" style="margin-left: 10px"
                     @click="operatorLock(false)"
                 >Operator unlock</n-button>
@@ -89,7 +91,7 @@
                         ? 'At the per-agent WIP limit — this agent gets no new assignments until a task leaves ASSIGNED.'
                         : 'Concurrently assigned tasks vs the board per-agent limit.' }}
                 </n-tooltip>
-                <n-button v-if="!isLocked" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
+                <n-button v-if="!isLocked && canOperate(currentBoard)" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
             </div>
             <n-alert v-if="currentBoard.missingCapabilities?.length" type="warning" class="lockbanner">
                 Delivery loop incomplete: no active role or the coordinator covers
@@ -482,7 +484,7 @@
                 configurable here. Sign-offs pin the prompt version they ran under.
             </p>
             <n-data-table :columns="roleColumns" :data="sortedRoles" :row-key="(r: any) => r.uuid ?? r.name" size="small"/>
-            <n-button class="addbtn" size="small" dashed @click="startAddRole">+ Add role</n-button>
+            <n-button v-if="canConfigure(currentBoard)" class="addbtn" size="small" dashed @click="startAddRole">+ Add role</n-button>
 
             <n-modal :show="editingRole !== null" preset="card"
                      :title="editingRoleIsNew ? 'New role' : `Edit role: ${editingRole?.name}`"
@@ -815,7 +817,7 @@
                         <div class="flabel" style="margin-bottom: 4px">prompt</div>
                         <n-input v-model:value="editingPreset.prompt" type="textarea" :autosize="{ minRows: 8, maxRows: 20 }"/>
                     </div>
-                    <AiAgentRevisionHistory v-if="canReadHistory && !editingPresetIsNew && editingPreset.uuid" kind="role"
+                    <AiAgentRevisionHistory v-if="canReadPresetHistory && !editingPresetIsNew && editingPreset.uuid" kind="role"
                                             :uuid="editingPreset.uuid" :current="presets.find(p => p.uuid === editingPreset.uuid)"/>
                     <n-space justify="end">
                         <n-button quaternary @click="editingPreset = null">Cancel</n-button>
@@ -850,6 +852,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { boardCan, canConfigure, canOperate } from '@/utils/agentBoardAccess'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
@@ -1410,7 +1413,8 @@ const roleColumns: DataTableColumns<any> = [
     { title: 'Prompt', key: 'prompt', ellipsis: { tooltip: true }, render: (r: any) => (r.prompt ? r.prompt.split('\n')[0] : '—') },
     {
         title: '', key: 'actions', width: 62,
-        render: (r: any) => h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r, hopDollars: microsToDollars(r.hopBudgetMicros),
+        // Editing a role's prompt is configuring the board (task d8e7bd7e): hidden without CONFIGURATION_WRITE.
+        render: (r: any) => !canConfigure(currentBoard.value) ? null : h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r, hopDollars: microsToDollars(r.hopBudgetMicros),
             producesOutputTypes: (r.producesOutputs ?? []).map((p: any) => p?.specification).filter(Boolean),
             strength: strengthDraft(r) } } }, { default: () => 'Edit' }),
     },
@@ -1434,10 +1438,11 @@ const canApplySpec = computed<boolean>(() => {
 
 // A board without sources is its own tracker: no task has a ref there, and none is a "draft".
 const boardHasSources = computed<boolean>(() => (currentBoard.value?.sources?.length ?? 0) > 0)
-// Reopening a completed task is an org admin's (agentTaskReopen); the server decides.
-const canReopen = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
-// The history reads are org admin on the server (22ddc644); nobody else is offered the section.
-const canReadHistory = canReopen
+// The operator verbs, reopen included, need BOARD_WRITE on the board (task d8e7bd7e); the server decides.
+const canReopen = computed<boolean>(() => canOperate(currentBoard.value))
+// A board's and its roles' histories read with the board; the org presets' stay the org admin's.
+const canReadHistory = computed<boolean>(() => boardCan(currentBoard.value, 'BOARD_READ'))
+const canReadPresetHistory = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))
 
 const applyKinds = ref<SpecKind[] | null>(null)
 

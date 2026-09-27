@@ -6,7 +6,7 @@
             <n-tag v-if="holdWho" size="small" :bordered="false" class="holdwho"
                    :type="task.hold.level === 'OPERATOR' ? 'error' : 'info'">{{ holdWho }}</n-tag>
         </div>
-        <template v-if="task.hold.kind === 'HUMAN_GATE'">
+        <template v-if="task.hold.kind === 'HUMAN_GATE' && canOperate">
             <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
                      style="margin-top: 8px"/>
             <!-- A rejection with a finding attached routes like a reviewer's: to whoever
@@ -37,7 +37,7 @@
                 board routes your answer back to whoever asked.
             </div>
         </template>
-        <template v-else-if="personMayRelease(task.hold)">
+        <template v-else-if="canOperate && personMayRelease(task.hold)">
             <!-- A loop stop is released past that stop once: to the role routing would pick, or to
                  the one named here (task 4c566d0d). The cycle is still counted. The first stop of a
                  kind is the coordinator's to release once, and a person may release it too; either
@@ -67,7 +67,7 @@
         {{ subtasks.done }} of {{ subtasks.total }} done; the board completes it when they finish.
     </n-alert>
 
-    <n-alert v-if="humanStageRole" type="info" :title="`Human stage: ${humanStageRole.name}`">
+    <n-alert v-if="humanStageRole && canOperate" type="info" :title="`Human stage: ${humanStageRole.name}`">
         <div v-if="humanStageRole.prompt" class="holdmeta">{{ humanStageRole.prompt }}</div>
         <n-input v-model:value="reviewNote" size="small" placeholder="Sign-off note (optional)"
                  style="margin-top: 8px"/>
@@ -89,7 +89,7 @@
             <n-tag v-if="task.requireHumanReview" size="small" :bordered="false" type="warning">
                 next sign-off requires human review
             </n-tag>
-            <n-button size="tiny" quaternary
+            <n-button v-if="canOperate" size="tiny" quaternary
                       @click="emit('require-review', { task, value: !task.requireHumanReview })">
                 {{ task.requireHumanReview ? 'clear flag (operator)' : 'require human review of next sign-off' }}
             </n-button>
@@ -120,6 +120,8 @@ const props = defineProps<{
     priorityLevels?: number
     /** The answer form is on the task page, not beside this banner (the drawer's preview). */
     questionsOnPage?: boolean
+    /** BOARD_WRITE on the task's board (task d8e7bd7e): the gate verdict, release and human stage are shown. */
+    canOperate?: boolean
 }>()
 const emit = defineEmits<{
     (e: 'human-review', p: { task: any, approve: boolean, note: string, findings?: any[],

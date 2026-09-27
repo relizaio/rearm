@@ -20,7 +20,7 @@
                     <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels"
                                    @decide="decideFindings" @open-element="openElement"/>
                     <task-open-questions :task="task" :roles="roles"/>
-                    <task-questions :task="task" :roles="roles" @answer="answerQuestions"/>
+                    <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
                     <task-documents :task="task" :focus="elementFocus"/>
                     <task-hops :task="task" :agent-names="agentNames"/>
                     <task-history :task="task"/>
@@ -28,9 +28,10 @@
                 </div>
                 <div class="tpage__side tsecs">
                     <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels"
+                                 :can-operate="canReopen"
                                  @human-review="humanReview" @human-signoff="humanSignOff"
                                  @operator-release="operatorRelease" @require-review="requireReview"/>
-                    <task-actions :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
+                    <task-actions v-if="canReopen" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                                   @authorize="authorizeTask" @order="orderTask" @complete="completeTask"
                                   @cancel="cancelTask" @reopen="reopenTask" @decide="decideFindings"
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"/>
@@ -66,7 +67,7 @@ import TaskPullRequests from './task/TaskPullRequests.vue'
 import TaskQuestions from './task/TaskQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
-import { isOrgAdmin } from '@/utils/agentReopen'
+import { boardCan, canOperate } from '@/utils/agentBoardAccess'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
 
@@ -85,10 +86,10 @@ const loadError = ref<string | null>(null)
 
 const priorityLevels = computed<number>(() =>
     store.getters?.orgById?.(task.value?.org)?.settings?.findingPriorityLevels ?? 3)
-const canReopen = computed<boolean>(() =>
-    !!task.value?.org && isOrgAdmin(store.getters?.myuser?.permissions?.permissions, task.value.org))
-// The revisions read (agentTaskHistory) is org admin too (22ddc644).
-const canReadHistory = canReopen
+// The operator verbs, reopen included, need BOARD_WRITE on the task's board (task d8e7bd7e).
+const canReopen = computed<boolean>(() => canOperate(board.value))
+// The revisions read (agentTaskHistory) reads with the board.
+const canReadHistory = computed<boolean>(() => boardCan(board.value, 'BOARD_READ'))
 
 async function load () {
     loading.value = true

@@ -12,11 +12,12 @@
             <div class="tsecs">
                 <router-link :to="taskPagePath(task.uuid)" class="openpage">Open task page →</router-link>
                 <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels" questions-on-page
+                             :can-operate="canOperate(board)"
                              @human-review="p => emit('human-review', p)"
                              @human-signoff="p => emit('human-signoff', p)"
                              @operator-release="p => emit('operator-release', p)"
                              @require-review="p => emit('require-review', p)"/>
-                <task-actions :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
+                <task-actions v-if="canOperate(board)" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                               @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
@@ -37,6 +38,7 @@ import TaskHeader from './task/TaskHeader.vue'
 import TaskSummary from './task/TaskSummary.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import { taskPagePath } from '@/utils/agentTaskFormat'
+import { canOperate } from '@/utils/agentBoardAccess'
 
 defineProps<{
     task: any | null

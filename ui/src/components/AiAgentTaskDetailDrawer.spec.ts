@@ -13,9 +13,9 @@ const stubs = {
     RouterLink: { props: ['to'], template: '<a class="rl" :href="to"><slot/></a>' },
 }
 
-function mountDrawer (task: any) {
+function mountDrawer (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD_WRITE']) {
     return mount(Drawer, {
-        props: { task, tasks: fixtureTasks(task), agentNames: { a1: 'Arch' }, roles: fixtureRoles, board: {}, priorityLevels: 3, canReopen: true },
+        props: { task, tasks: fixtureTasks(task), agentNames: { a1: 'Arch' }, roles: fixtureRoles, board: { myPermissions }, priorityLevels: 3, canReopen: true },
         global: { stubs },
     })
 }
@@ -71,6 +71,19 @@ describe('AiAgentTaskDetailDrawer', () => {
         const w = mountDrawer(richTask({ hold: { level: 'OPERATOR', kind: 'QUESTION', reason: 'nobody answers', heldBy: null, heldAt: null } }))
         expect(w.text()).toContain('Answer it on the task page')
         expect(w.text()).not.toContain('Answer it under')
+    })
+
+    // Board enforcement (task d8e7bd7e): a person who only reads the board sees no operator control.
+    it('hides the operator controls from a reader of the board', () => {
+        const held = richTask({ status: 'ON_HOLD', hold: { level: 'OPERATOR', kind: 'MANUAL', reason: 'waiting',
+            heldBy: { kind: 'USER', name: 'pavel' }, heldAt: '2026-09-25T10:00:00Z' } })
+        const operator = mountDrawer(held)
+        expect(operator.find('.relbtn').exists()).toBe(true)
+        expect(operator.findComponent({ name: 'TaskActions' }).exists()).toBe(true)
+        const reader = mountDrawer(held, ['BOARD_READ'])
+        expect(reader.find('.relbtn').exists()).toBe(false)
+        expect(reader.findComponent({ name: 'TaskActions' }).exists()).toBe(false)
+        expect(reader.findAll('.dsec__h').map(h => h.text())).toContain('Summary')
     })
 
     it('previews the description under the title, the whole of it on hover (fceb1e57)', () => {
