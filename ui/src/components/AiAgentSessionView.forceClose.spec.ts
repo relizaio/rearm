@@ -1,15 +1,17 @@
 // @vitest-environment happy-dom
 //
 // Force-closing a session from its page (task 6fdc5a37): offered to an org admin on an OPEN
-// session, confirmed, then the page reloads the session.
+// session, confirmed, then the page reloads the session. RD2-5: also to a person with BOARD_WRITE
+// on a board the session worked.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 const dispatch = vi.fn()
+const notifyError = vi.fn()
 const getters: any = {}
 vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters }) }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { uuid: 's1' } }), useRouter: () => ({ push: vi.fn() }) }))
-vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification: () => ({ success: vi.fn(), error: vi.fn() }) }))
+vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification: () => ({ success: vi.fn(), error: notifyError }) }))
 // fetchClient pulls in the Keycloak client, which waits for a login that never comes here.
 vi.mock('@/utils/fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 vi.mock('vue-prism-editor', () => ({ PrismEditor: { template: '<div/>' } }))
@@ -31,7 +33,7 @@ function asAdmin (admin: boolean) {
 }
 
 describe('session force close', () => {
-    beforeEach(() => dispatch.mockReset())
+    beforeEach(() => { dispatch.mockReset(); notifyError.mockReset() })
 
     it('is offered to an admin on an open session only', async () => {
         for (const [status, admin, shown] of [['OPEN', true, true], ['OPEN', false, false], ['CLOSED', true, false]] as const) {
@@ -88,5 +90,58 @@ describe('session force close', () => {
         const w = mount(SessionView, { global: { stubs } })
         await flushPromises()
         expect(w.find('.idle-warned').exists()).toBe(true)
+    })
+
+    // RD2-5: the board personas, with the session having worked board A.
+    function onBoards (boards: any[]) {
+        return async (a: string) => {
+            if (a === 'fetchSession') return { ...session('OPEN'), boardsWorked: ['A'] }
+            if (a === 'fetchAgentBoardsOfOrg') return boards
+            return []
+        }
+    }
+
+    it('is offered to BOARD_WRITE on a board the session worked, not to its reader', async () => {
+        for (const [perms, shown] of [[['BOARD_READ', 'BOARD_WRITE'], true], [['BOARD_READ'], false]] as const) {
+            asAdmin(false)
+            dispatch.mockReset()
+            dispatch.mockImplementation(onBoards([{ uuid: 'A', myPermissions: perms }]))
+            const w = mount(SessionView, { global: { stubs } })
+            await flushPromises()
+            expect(w.find('.forceclose').exists(), perms.join(',')).toBe(shown)
+            expect(dispatch).toHaveBeenCalledWith('fetchAgentBoardsOfOrg', 'o1')
+        }
+    })
+
+    it('reads the boards only when they decide, and offers nothing when the read fails', async () => {
+        asAdmin(true)
+        dispatch.mockImplementation(onBoards([]))
+        mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(dispatch.mock.calls.some(c => c[0] === 'fetchAgentBoardsOfOrg'), 'an admin needs no boards').toBe(false)
+
+        asAdmin(false)
+        dispatch.mockReset()
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'fetchSession') return { ...session('OPEN'), boardsWorked: ['A'] }
+            if (a === 'fetchAgentBoardsOfOrg') throw new Error('Not authorized')
+            return []
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(w.find('.forceclose').exists()).toBe(false)
+    })
+
+    it('says so when the server still refuses', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'forceCloseAgentSession') throw new Error('Not authorized')
+            return onBoards([{ uuid: 'A', myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }])(a)
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        await w.find('.pc__yes').trigger('click')
+        await flushPromises()
+        expect(notifyError).toHaveBeenCalledWith(expect.objectContaining({ content: 'Could not force-close: Not authorized' }))
     })
 })
