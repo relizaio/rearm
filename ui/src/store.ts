@@ -26,6 +26,7 @@ const AGENT_BOARD_SELECTION = `
     documentPaths
     perspectives
     perspectiveNames
+    myPermissions
     taskPrefix
     taskPrefixHistory
     coordinatorPrompt

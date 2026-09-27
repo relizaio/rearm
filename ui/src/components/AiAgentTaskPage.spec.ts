@@ -16,7 +16,7 @@ function serve (task: any) {
     dispatch.mockImplementation(async (action: string, arg: any) => {
         switch (action) {
         case 'fetchAgentTask': return arg === task.uuid ? task : null
-        case 'fetchAgentBoard': return { uuid: 'b1', name: 'Dogfood', completionPriority: null }
+        case 'fetchAgentBoard': return { uuid: 'b1', name: 'Dogfood', completionPriority: null, myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }
         case 'fetchAgentTasksOfBoard': return fixtureTasks(task)
         case 'fetchAgentTaskRoleConfigsOfBoard': return fixtureRoles
         case 'fetchAgentsOfOrg': return [{ uuid: 'a1', name: 'Arch' }]

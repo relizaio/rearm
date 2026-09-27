@@ -65,7 +65,7 @@ describe('task section events', () => {
     it('the drawer forwards the events of the sections it shows, payload intact', () => {
         const task = richTask()
         const w = mount(Drawer, {
-            props: { task, tasks: fixtureTasks(task), agentNames: {}, roles: fixtureRoles, board: {}, priorityLevels: 3, canReopen: true },
+            props: { task, tasks: fixtureTasks(task), agentNames: {}, roles: fixtureRoles, board: { myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }, priorityLevels: 3, canReopen: true },
             global: { stubs },
         })
         for (const [comp, name, events] of EMITTERS) {
@@ -87,7 +87,7 @@ describe('task section events', () => {
             if (action === 'fetchAgentTask') return task
             if (action === 'fetchAgentTasksOfBoard') return fixtureTasks(task)
             if (action === 'fetchAgentTaskRoleConfigsOfBoard') return fixtureRoles
-            if (action === 'fetchAgentBoard') return { uuid: 'b1', name: 'b' }
+            if (action === 'fetchAgentBoard') return { uuid: 'b1', name: 'b', myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }
             return []
         })
         const w = mount(Page, { global: { stubs } })
