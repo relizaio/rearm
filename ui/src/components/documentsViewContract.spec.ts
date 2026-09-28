@@ -9,9 +9,12 @@ const src = (f: string) => readFileSync(resolve(__dirname, f), 'utf8')
 describe('documents view contract', () => {
     it('ComponentView shows the document panel and hides the software ones for a DOCUMENT component', () => {
         const cv = src('ComponentView.vue')
-        expect(cv).toContain('<n-gi v-if="isDocument" span="10">')
-        expect(cv).toContain('<document-component-panel')
-        expect(cv).toContain('<n-gi v-else-if="myview === \'devops\'" span="10">')
+        // The panel sits below the component's title (RD2-24 run 1, T-2), and a document shows no charts.
+        const panel = cv.indexOf('<document-component-panel v-if="isDocument"')
+        expect(panel).toBeGreaterThan(cv.indexOf('<h5 v-if="componentData">'))
+        expect(panel).toBeLessThan(cv.indexOf('<div class="componentDetails" v-if="!isDocument">'))
+        expect(cv).toContain('<n-gi v-if="!isDocument && myview === \'devops\'" span="10">')
+        expect(cv).toContain('<n-gi v-else-if="!isDocument" span="10">')
         expect(cv).toContain('<div class="componentDetails" v-if="!isDocument">')
         expect(cv).toContain('v-if="!isDocument && selectedTab !== \'latest\'"')
         expect(cv).toMatch(/genApiKey\('rlz'\)/)
@@ -58,6 +61,20 @@ describe('documents view contract', () => {
         expect(rv).toContain("<div class=\"container\" v-if=\"updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound\">")
         expect(rv).toContain('<n-tab-pane v-if="!isDocumentRound" name="vex" tab="VEX">')
         expect(rv).toContain("roundTask.value = await store.dispatch('fetchDocumentRoundTask', task)")
+    })
+
+    it('the round page spaces its links and verdict, hides an empty File row, and the store keeps each doc with its read (RD2-24 run 1)', () => {
+        const rv = src('ReleaseView.vue')
+        const round = rv.slice(rv.indexOf('data-testid="document-round"'), rv.indexOf('</n-descriptions>', rv.indexOf('data-testid="document-round"')))
+        expect(round).not.toContain('class="ml-2"')
+        expect(rv.match(/class="round-gap"/g)?.length).toBe(2)
+        expect(rv).toContain('.round-gap { margin-left: 8px; }')
+        expect(rv).toContain('<n-descriptions-item v-if="documentRound.path" label="File">')
+        const store = src('../store.ts')
+        const task = store.indexOf('async fetchDocumentRoundTask')
+        const rounds = store.indexOf('async fetchDocumentRounds (')
+        expect(store.slice(store.lastIndexOf('/**', task), task)).toContain('The task a document round belongs to')
+        expect(store.slice(store.lastIndexOf('/**', rounds), rounds)).toContain("A document component's rounds")
     })
 })
 

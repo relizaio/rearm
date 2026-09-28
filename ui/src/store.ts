@@ -2875,11 +2875,6 @@ const storeObject : any = {
             })
             return response.data.agentTask
         },
-        /** What a board has produced, per document series (task 36d0549e): its own read, off the board list. */
-        /**
-         * A document component's rounds (task 36d0549e): the releases of its base branch with what each
-         * round is, and the keys of their tasks -- best-effort, since reading a task needs its board.
-         */
         /**
          * The task a document round belongs to, for its release page (RD2-24): its key and board, and the
          * newest check report of each of its documents -- the round's own among them. Null when the person
@@ -2899,6 +2894,10 @@ const storeObject : any = {
             })
             return (response.data.agentTasksByUuid ?? [])[0] ?? null
         },
+        /**
+         * A document component's rounds (task 36d0549e): the releases of its base branch with what each
+         * round is, and the keys of their tasks -- best-effort, since reading a task needs its board.
+         */
         async fetchDocumentRounds (context: any, branchUuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
@@ -2946,6 +2945,7 @@ const storeObject : any = {
             })
             return response.data.agentBoard?.missingCoverage ?? []
         },
+        /** What a board has produced, per document series (task 36d0549e): its own read, off the board list. */
         async fetchAgentBoardDocumentSeries (context: any, uuid: string) {
             const response = await graphqlClient.query({
                 query: gql`

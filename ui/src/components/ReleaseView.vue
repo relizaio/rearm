@@ -709,20 +709,21 @@
                         <n-descriptions :column="1" bordered size="small" label-placement="left">
                             <n-descriptions-item label="Document">{{ documentRound.specification || '—' }}</n-descriptions-item>
                             <n-descriptions-item label="Round">{{ documentRound.round ?? '—' }}</n-descriptions-item>
-                            <n-descriptions-item label="File">
+                            <!-- A round without a path shows no File row (RD2-24 run 1, T-3). -->
+                            <n-descriptions-item v-if="documentRound.path" label="File">
                                 <a v-if="documentFileUrl(release)" :href="documentFileUrl(release) ?? undefined"
                                    target="_blank" rel="noopener" data-testid="round-file">{{ documentRound.path }}</a>
                                 <code v-else>{{ documentRound.path }}</code>
                             </n-descriptions-item>
                             <n-descriptions-item v-if="documentRound.taskPath" label="Task">
                                 <router-link :to="documentRound.taskPath" data-testid="round-task">{{ documentRound.taskLabel }}</router-link>
-                                <router-link v-if="documentRound.boardPath" :to="documentRound.boardPath" class="ml-2"
+                                <router-link v-if="documentRound.boardPath" :to="documentRound.boardPath" class="round-gap"
                                              data-testid="round-board">Open board</router-link>
                             </n-descriptions-item>
                             <n-descriptions-item v-if="documentRound.findings" label="Findings">{{ documentRound.findings }}</n-descriptions-item>
                             <n-descriptions-item v-if="documentRound.checks" label="Checks">
                                 <span data-testid="round-checks">{{ documentRound.checks.line }}</span>
-                                <n-tag v-if="documentRound.checks.verdict" size="small" class="ml-2"
+                                <n-tag v-if="documentRound.checks.verdict" size="small" class="round-gap"
                                        :type="verdictType(documentRound.checks.verdict)">{{ documentRound.checks.verdict }}</n-tag>
                             </n-descriptions-item>
                             <n-descriptions-item v-if="documentRound.elementsCount != null" label="Elements">
@@ -6716,6 +6717,8 @@ async function handleTabSwitch(tabName: string) {
 </script>
     
 <style scoped lang="scss">
+// The round page's task, board and verdict keep apart (RD2-24 run 1, T-1): ml-2 was defined nowhere.
+.round-gap { margin-left: 8px; }
 // Legend swatches mirror the segmented control in the table so the
 // legend teaches the same visual language the cells use.
 .approval-legend-swatch {
