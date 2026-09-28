@@ -168,8 +168,8 @@ const AGENT_TASK_SELECTION = `
     reopenCount
     reopens { role at reason by { kind uuid name } }
     pullRequests { url state targetBranch mergedDate registered
-        attestation { unit commit outcome by { kind uuid name } at note } }
-    deliveries { unit commit outcome by { kind uuid name } at note }
+        attestation { unit commit outcome by { kind uuid name } at note supersededBy } }
+    deliveries { unit commit outcome by { kind uuid name } at note supersededBy }
     budgetMicros
     budgetSetBy { kind uuid name }
     budgetSetAt

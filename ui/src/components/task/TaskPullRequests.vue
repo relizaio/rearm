@@ -7,7 +7,7 @@
         <div v-for="c in prChips(task)" :key="c.url" class="prrow">
             <div class="deprow">
                 <n-tag size="small" :bordered="false" :type="c.type">{{ c.state }}</n-tag>
-                <a :href="c.url" target="_blank" rel="noopener" class="prlink2">{{ c.label }}</a>
+                <a :href="c.url" target="_blank" rel="noopener" class="prlink2" :class="{ struck: c.superseded }">{{ c.label }}</a>
                 <span class="holdmeta" style="margin-top: 0">{{ c.title }}</span>
                 <!-- The head that passed against the PR's head now (task 3b97ccfd). -->
                 <n-tag v-if="c.heads" size="small" :bordered="false" class="prheads" :type="c.moved ? 'error' : 'default'">
@@ -91,4 +91,7 @@ watch(() => props.task?.uuid, () => { drafts.value = {} })
     max-width: 420px;
     &__err { font-size: 11px; color: #d03050; }
 }
+
+/* A PR declared superseded by its replacement (task RD3-13): kept in the record, struck through. */
+.struck { text-decoration: line-through; opacity: 0.7; }
 </style>

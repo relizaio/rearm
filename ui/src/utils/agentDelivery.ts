@@ -5,11 +5,13 @@ export interface PrChip {
     url: string
     /** owner/repo/pull/N, or the URL's tail */
     label: string
-    /** merged | open | closed | unregistered */
+    /** merged | open | closed | unregistered | abandoned | superseded */
     state: string
     /** naive-ui tag type */
     type: 'success' | 'warning' | 'error' | 'default'
     title: string
+    /** Declared superseded by its replacement (task RD3-13): the row is struck through, the successor named. */
+    superseded?: boolean
     /**
      * The head the newest passing review or test covered against the PR's current head (task
      * 3b97ccfd), when the read carries them; moved when the PR is past the tested head.
@@ -68,6 +70,12 @@ function actorName (a: any): string {
     return a.name || [String(a.kind ?? '').toLowerCase(), String(a.uuid ?? '').slice(0, 8)].filter(Boolean).join(' ')
 }
 
+/** "#694" for a PR URL ending in its number; the short form otherwise. */
+export function prNumber (url: string | null | undefined): string {
+    const tail = String(url ?? '').replace(/\/+$/, '').split('/').pop() ?? ''
+    return /^\d+$/.test(tail) ? `#${tail}` : shortPr(String(url ?? ''))
+}
+
 /**
  * A PR whose delivery was attested (task 18c5c293): merged where this ReARM cannot see it, or
  * abandoned. The newest attestation settles it, whatever the row says.
@@ -76,6 +84,10 @@ export function attestationChip (pr: any): PrChip | null {
     const a = pr?.attestation
     if (!a) return null
     const note = a.note ? `: ${a.note}` : ''
+    if (a.outcome === 'SUPERSEDED') {
+        return { url: pr.url, label: shortPr(pr.url), state: 'superseded', type: 'default', superseded: true,
+            title: `superseded by ${prNumber(a.supersededBy)}, declared by ${actorName(a.by)}${note}` }
+    }
     if (a.outcome === 'ABANDONED') {
         return { url: pr.url, label: shortPr(pr.url), state: 'abandoned', type: 'error',
             title: `attested abandoned by ${actorName(a.by)}${note}` }
@@ -211,7 +223,7 @@ export function commitProblem (commit: string | null | undefined): string | null
 
 /** A PR a person can still attest: linked, not yet merged or abandoned. */
 export function attestable (chip: PrChip): boolean {
-    return chip.state !== 'merged' && chip.state !== 'abandoned'
+    return chip.state !== 'merged' && chip.state !== 'abandoned' && chip.state !== 'superseded'
 }
 
 export interface AttestDraft {
