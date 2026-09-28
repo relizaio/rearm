@@ -173,6 +173,10 @@
                      ? { borderLeft: `4px solid ${groupColour(lane.key)}`, paddingLeft: '6px' } : undefined">{{ lane.label }}</div>
             <!-- Columns at a laptop's width (RD2-13): each head counts its cards, an empty column folds to
                  its head until opened, and a strip still too wide says how many columns sit past the edge. -->
+            <!-- Above the strip, where it shows without scrolling the page (RD2-13 run 1, T-2). -->
+            <div v-if="moreLanesHint(pastEdge[lane.key] ?? 0)" class="board__more" data-testid="more-lanes">
+                {{ moreLanesHint(pastEdge[lane.key] ?? 0) }}
+            </div>
             <div class="board" :ref="(el: any) => boardEl(lane.key, el)" @scroll="measureBoards">
                 <div class="col" :class="{ 'col--folded': folded('intake', byStatus('PENDING_INTAKE', lane.tasks)) }" data-col="intake">
                     <div class="col__head" @click="openColumn('intake')">Pending intake<span class="col__count" data-testid="col-count">{{ byStatus('PENDING_INTAKE', lane.tasks).length }}</span></div>
@@ -225,9 +229,6 @@
                         <TaskCard v-for="t in byStatus('COMPLETED', lane.tasks)" :key="t.uuid" :t="t"/>
                     </template>
                 </div>
-            </div>
-            <div v-if="moreLanesHint(pastEdge[lane.key] ?? 0)" class="board__more" data-testid="more-lanes">
-                {{ moreLanesHint(pastEdge[lane.key] ?? 0) }}
             </div>
             </div>
             <!-- An empty board says how tasks arrive (RD2-13). -->
@@ -967,7 +968,7 @@ import AgentBoardGroupsPanel from '@/components/AgentBoardGroupsPanel.vue'
 import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag, waitsOnLabel } from '@/utils/agentTaskLabels'
-import { columnFolded, columnsPastEdge, EMPTY_BOARD_HINT, moreLanesHint } from '@/utils/agentKanban'
+import { columnFolded, EMPTY_BOARD_HINT, moreLanesHint, stripMeasure } from '@/utils/agentKanban'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
 import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch, documentsRootPlaceholder,
@@ -1339,19 +1340,11 @@ function openColumn (key: string) {
     if (openedColumns.value.has(key)) return
     openedColumns.value = new Set([...openedColumns.value, key])
 }
-const boardEls = new Map<string, HTMLElement>()
 const pastEdge = ref<Record<string, number>>({})
-function boardEl (key: string, el: any) {
-    if (el) boardEls.set(key, el as HTMLElement)
-    else boardEls.delete(key)
-}
-function measureBoards () {
-    const out: Record<string, number> = {}
-    for (const [key, el] of boardEls) {
-        out[key] = columnsPastEdge(Array.from(el.children) as HTMLElement[], el.scrollLeft, el.clientWidth)
-    }
-    pastEdge.value = out
-}
+// Each lane's strip, measured when it mounts and whenever the tasks, the open columns or the window change (RD2-13).
+const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge)
+const boardEl = strips.boardEl
+const measureBoards = strips.measure
 onMounted(() => window.addEventListener('resize', measureBoards))
 onBeforeUnmount(() => window.removeEventListener('resize', measureBoards))
 watch([tasks, openedColumns], () => nextTick(measureBoards))
@@ -2105,7 +2098,7 @@ async function operatorLock (lock: boolean, reason?: string) {
     .col--folded { flex: 0 0 auto; min-width: 0; }
     .col--folded .col__head { cursor: pointer; opacity: 0.6; white-space: nowrap; }
     .col__count { margin-left: 6px; font-weight: 500; color: #888; }
-    .board__more { text-align: right; font-size: 12px; color: #888; margin-top: 2px; }
+    .board__more { text-align: right; font-size: 12px; color: #888; margin-bottom: 2px; }
     .board__empty { color: #888; font-size: 13px; padding: 12px 0; }
     .col__head {
         font-size: 12px;

@@ -30,3 +30,36 @@ export function moreLanesHint (past: number): string | null {
 
 /** What an empty board says under its headers. */
 export const EMPTY_BOARD_HINT = 'No tasks yet. + New task, or agents register tasks via the coordinator.'
+
+export interface StripMeasure {
+    /** The lane's strip as Vue hands it to a :ref callback: set when it mounts, null when it goes. */
+    boardEl (key: string, el: any): void
+    /** Re-measure every strip: on scroll, on resize, after the tasks change. */
+    measure (): void
+    /** Per lane, how many columns end past the strip's edge. */
+    pastEdge: { value: Record<string, number> }
+}
+
+/**
+ * Each lane's strip, and how many of its columns sit past its edge. A strip is measured when it mounts
+ * (RD2-13 run 1, T-1): opened on another tab first, the kanban's strip mounts after the tasks arrived, so a
+ * watch on the tasks alone measured nothing.
+ */
+export function stripMeasure (after: (fn: () => void) => void, pastEdge: { value: Record<string, number> }): StripMeasure {
+    const els = new Map<string, HTMLElement>()
+    function measure () {
+        const out: Record<string, number> = {}
+        for (const [key, el] of els) out[key] = columnsPastEdge(Array.from(el.children) as any[], el.scrollLeft, el.clientWidth)
+        pastEdge.value = out
+    }
+    function boardEl (key: string, el: any) {
+        if (!el) {
+            els.delete(key)
+            return
+        }
+        const fresh = els.get(key) !== el
+        els.set(key, el as HTMLElement)
+        if (fresh) after(measure)
+    }
+    return { boardEl, measure, pastEdge }
+}

@@ -370,3 +370,15 @@ describe('the kanban: cards and columns', () => {
     })
 })
 
+// Tester run 1 T-2: the hint sat under the strip, below the fold at 900 high; it now sits above it.
+describe('the kanban: more-lanes hint', () => {
+    it('shows above each lane\'s strip, and the strip is measured through the tested helper', () => {
+        const hint = template.indexOf('data-testid="more-lanes"')
+        const strip = template.indexOf('<div class="board" :ref="(el: any) => boardEl(lane.key, el)"')
+        expect(hint).toBeGreaterThan(-1)
+        expect(hint).toBeLessThan(strip)
+        expect(template.slice(strip).indexOf('data-testid="more-lanes"')).toBe(-1, 'not under the strip too')
+        expect(source).toContain('const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge)')
+    })
+})
+

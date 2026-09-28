@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { COL_MIN_WIDTH, columnFolded, columnHead, columnsPastEdge, EMPTY_BOARD_HINT, moreLanesHint } from './agentKanban'
+import { COL_MIN_WIDTH, columnFolded, columnHead, columnsPastEdge, EMPTY_BOARD_HINT, moreLanesHint, stripMeasure } from './agentKanban'
 
 // RD2-13 (sweep UI-21, UI-36): the kanban's columns at a laptop's width.
 describe('the kanban columns', () => {
@@ -32,3 +32,32 @@ describe('the kanban columns', () => {
         expect(EMPTY_BOARD_HINT).toBe('No tasks yet. + New task, or agents register tasks via the coordinator.')
     })
 })
+
+// Tester run 1 T-1: the kanban opened after another tab mounts its strip once the tasks are there; the strip is
+// measured when it mounts, not only when the tasks change.
+describe('measuring a lane\'s strip', () => {
+    const strip = (widths: number[], clientWidth: number) => ({ scrollLeft: 0, clientWidth,
+        children: widths.map((w, i) => ({ offsetLeft: i * (w + 12), offsetWidth: w })) })
+
+    it('measures a strip when it mounts, and says how many columns sit past its edge', () => {
+        const queued: (() => void)[] = []
+        const m = stripMeasure(fn => { queued.push(fn) }, { value: {} })
+        m.boardEl('none', strip([180, 180, 180, 180, 180, 180, 180, 180], 1180))
+        expect(queued).toHaveLength(1, 'a measure is due on mount')
+        queued.forEach(fn => fn())
+        expect(m.pastEdge.value).toEqual({ none: 2 })
+    })
+
+    it('does not re-measure for the same strip handed again, and forgets a strip that goes', () => {
+        const queued: (() => void)[] = []
+        const m = stripMeasure(fn => { queued.push(fn) }, { value: {} })
+        const el = strip([180, 180], 1180)
+        m.boardEl('none', el)
+        m.boardEl('none', el)
+        expect(queued).toHaveLength(1)
+        m.boardEl('none', null)
+        m.measure()
+        expect(m.pastEdge.value).toEqual({})
+    })
+})
+
