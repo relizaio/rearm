@@ -3793,6 +3793,7 @@ const storeObject : any = {
                             closedBy { kind uuid name }
                             closeReason
                             idleWarnedAt
+                            idleCloseAt
                             boardsWorked
                             tasksWorked { uuid key title role board boardName }
                             providerSessions {
