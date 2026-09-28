@@ -42,4 +42,22 @@ describe('documents view contract', () => {
         expect(src('AiAgentTaskPertView.vue')).toContain("return refWithLevel(cardRef(t, 'draft'), t, props.board)")
         expect(src('AiAgentTaskTimelineView.vue')).toContain('return refWithLevel(cardRef(t, (t.title ?? \'\').slice(0, 12)), t, props.board)')
     })
+
+    it('ReleaseView shows a document round as the round, without the software panels (RD2-24)', () => {
+        const rv = src('ReleaseView.vue')
+        expect(rv).toContain('const isDocumentRound = computed(() => !!release.value?.document)')
+        expect(rv).toContain('<div class="container" v-if="isDocumentRound && documentRound" data-testid="document-round">')
+        for (const field of ['label="Document"', 'label="Round"', 'label="File"', 'data-testid="round-task"',
+            'data-testid="round-board"', 'label="Findings"', 'data-testid="round-checks"', 'label="Elements"']) {
+            expect(rv, field).toContain(field)
+        }
+        // the four software panels: vulnerabilities, the SBOM changes and BOM components, deliverables, VEX
+        expect(rv).toContain('<n-gi v-if="!isDocumentRound" span="2">')
+        expect(rv).toContain("v-if=\"updatedRelease.componentDetails.type === 'COMPONENT' && !isHardware && !isDocumentRound\"")
+        expect(rv).toContain('<n-tab-pane v-if="!isDocumentRound" name="bomComponents" tab="BOM Components">')
+        expect(rv).toContain("<div class=\"container\" v-if=\"updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound\">")
+        expect(rv).toContain('<n-tab-pane v-if="!isDocumentRound" name="vex" tab="VEX">')
+        expect(rv).toContain("roundTask.value = await store.dispatch('fetchDocumentRoundTask', task)")
+    })
 })
+

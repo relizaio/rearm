@@ -37,3 +37,17 @@ describe('AgentBoardDocumentsPanel', () => {
         expect(w.text()).toContain('No documents yet')
     })
 })
+
+// RD2-24: the Checks cell says what the task page says, with the verdict by the same rule.
+describe('the Documents tab\'s checks', () => {
+    it('counts the checks and gives the verdict from the counts', () => {
+        const w = mount(Panel, { props: { orgUuid: 'o1', series: [{ specification: 'ARCHITECTURE', component: { uuid: 'c1', name: 'arch' },
+            latestRound: { round: 1, version: '0', lifecycle: 'ASSEMBLED' }, roundsCount: 1, openFindings: null,
+            checkVerdict: 'FAIL', checkCounts: { pass: 7, fail: 1, skip: 2, blockingFailed: 1 } }] }, global: { stubs } })
+        const cells = w.findAll('.boardDocuments__row td').map(c => c.text())
+        expect(cells).toContain('round 1 · v0')
+        expect(cells).toContain('assembled')
+        expect(w.find('.boardDocuments__checks').text()).toBe('7 pass · 1 fail · 2 skip · FAIL')
+    })
+})
+

@@ -2879,6 +2879,25 @@ const storeObject : any = {
          * A document component's rounds (task 36d0549e): the releases of its base branch with what each
          * round is, and the keys of their tasks -- best-effort, since reading a task needs its board.
          */
+        /**
+         * The task a document round belongs to, for its release page (RD2-24): its key and board, and the
+         * newest check report of each of its documents -- the round's own among them. Null when the person
+         * may not read the task.
+         */
+        async fetchDocumentRoundTask (context: any, taskUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query documentRoundTask($ts: [ID!]!) {
+                        agentTasksByUuid(taskUuids: $ts) {
+                            uuid key board
+                            checks { scope { checked } results { check result blocking } }
+                        }
+                    }`,
+                variables: { ts: [taskUuid] },
+                fetchPolicy: 'no-cache'
+            })
+            return (response.data.agentTasksByUuid ?? [])[0] ?? null
+        },
         async fetchDocumentRounds (context: any, branchUuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
@@ -2939,6 +2958,7 @@ const storeObject : any = {
                                 roundsCount
                                 openFindings
                                 checkVerdict
+                                checkCounts { pass fail skip blockingFailed }
                             }
                         }
                     }`,

@@ -39,7 +39,7 @@ describe('DocumentComponentPanel', () => {
         const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: null, component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: null } } })
         await flushPromises()
         expect(w.find('.documentComponent__board').text()).toBe('Document component, no board')
-        expect(w.find('a.rl').exists()).toBe(false)
+        expect(w.find('a.rl.documentComponent__board').exists()).toBe(false)
     })
 
     // RD2-9: the component reads under its own permission (D18); its board only under the board's.
@@ -47,7 +47,25 @@ describe('DocumentComponentPanel', () => {
         const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: 'b1',
             component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: false } } } })
         await flushPromises()
-        expect(w.find('a.rl').exists()).toBe(false)
+        expect(w.find('a.rl.documentComponent__board').exists()).toBe(false)
         expect(w.find('.documentComponent__board').text()).toBe('Belongs to board RD · ReARM Dogfood (board not visible to you)')
     })
 })
+
+// RD2-24: a normal Rounds heading, the state as a word, the task a link to its page, the date through ts().
+describe('the DOCUMENT page\'s rounds', () => {
+    it('reads as the page speaks, and links each round to its task', async () => {
+        const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: 'b1',
+            component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: true } } } })
+        await flushPromises()
+        const heading = w.find('[data-testid="rounds-heading"]')
+        expect(heading.element.tagName).toBe('DIV', 'a section heading, not the 9 px h6')
+        expect(heading.classes()).toContain('dsec__h')
+        const rows = w.findAll('.documentComponent__round')
+        expect(rows[1].text()).toContain('assembled')
+        expect(rows[1].text()).not.toContain('ASSEMBLED')
+        const task = rows[0].find('[data-testid="round-task"]')
+        expect(task.text()).toBe('RD-1')
+    })
+})
+

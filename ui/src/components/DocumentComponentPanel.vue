@@ -7,7 +7,7 @@
             </router-link>
             <span v-else class="documentComponent__board">{{ banner.text }}</span>
         </n-alert>
-        <h6 class="documentComponent__title">Rounds</h6>
+        <div class="dsec__h documentComponent__title" data-testid="rounds-heading">Rounds</div>
         <p v-if="!rows.length" class="documentComponent__empty">No rounds published yet.</p>
         <table v-else class="documentComponent__rounds">
             <thead>
@@ -17,10 +17,12 @@
                 <tr v-for="r in rows" :key="r.uuid" class="documentComponent__round clickable" @click="openRelease(r.uuid)">
                     <td>{{ r.round ?? '—' }}</td>
                     <td>{{ r.version }}</td>
-                    <td>{{ r.lifecycle }}</td>
+                    <td>{{ lifecycleWord(r.lifecycle) }}</td>
                     <td><code>{{ r.path }}</code></td>
-                    <td>{{ r.task }}</td>
-                    <td>{{ r.publishedAt ? new Date(r.publishedAt).toLocaleString() : '' }}</td>
+                    <td>
+                        <router-link v-if="r.taskUuid" :to="taskPagePath(r.taskUuid)" data-testid="round-task" @click.stop>{{ r.task }}</router-link>
+                    </td>
+                    <td>{{ ts(r.publishedAt) }}</td>
                 </tr>
             </tbody>
         </table>
@@ -34,7 +36,8 @@ import { computed, ref, watch } from 'vue'
 import { NAlert } from 'naive-ui'
 import { RouterLink, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import { documentBoardBanner, documentRoundRows } from '@/utils/agentDocumentsView'
+import { documentBoardBanner, documentRoundRows, lifecycleWord } from '@/utils/agentDocumentsView'
+import { taskPagePath, ts } from '@/utils/agentTaskFormat'
 
 const props = defineProps<{
     /** The component, with agentBoard { uuid name taskPrefix }. */
@@ -72,6 +75,7 @@ watch(() => props.baseBranchUuid, load, { immediate: true })
 .documentComponent__rounds { width: 100%; border-collapse: collapse; font-size: 13px; }
 .documentComponent__rounds th, .documentComponent__rounds td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #eee; }
 .documentComponent__banner { margin-bottom: 10px; }
+.documentComponent__title { font-size: 14px; font-weight: 600; margin: 4px 0 8px; }
 .documentComponent__empty { color: #888; }
 .clickable { cursor: pointer; }
 </style>

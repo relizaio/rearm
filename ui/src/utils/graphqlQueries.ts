@@ -762,6 +762,7 @@ const singleReleaseDataNoParent = `
         task
         session
         round
+        elements { elements { id } }
         findings {
             kind
             round

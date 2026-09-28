@@ -22,7 +22,10 @@
                     <td>{{ r.lifecycle }}</td>
                     <td>{{ r.roundsCount }}</td>
                     <td>{{ r.openFindings ?? '—' }}</td>
-                    <td>{{ r.checkVerdict ?? '—' }}</td>
+                    <!-- The task page's summary, the verdict by the same rule beside it (RD2-24). -->
+                    <td class="boardDocuments__checks" :data-verdict="r.checkVerdict ?? undefined">
+                        {{ r.checks }}<span v-if="r.checkVerdict && r.checks !== r.checkVerdict" class="boardDocuments__verdict"> · {{ r.checkVerdict }}</span>
+                    </td>
                 </tr>
             </tbody>
         </table>
