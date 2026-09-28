@@ -133,6 +133,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 import { createApiKeyControls, apiKeyIdsColumn } from '../utils/apiKeyControls'
+import { hardEndCell } from '@/utils/cliSessionLifetime'
 
 
 const route = useRoute()
@@ -411,7 +412,7 @@ watch(orgOptions, (opts) => {
 async function loadMyKeys () {
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes status holder adminDisabled
+            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes status holder adminDisabled sessionMaxMinutes
                 secrets { slot active createdDate lastUsedDate expiresDate }
                 permissions { permissions { org scope object type meta approvals functions } } } }`,
             fetchPolicy: 'network-only'
@@ -448,13 +449,14 @@ function requestFreeformKey () {
 const cliSessions: Ref<any[]> = ref([])
 async function loadCliSessions () {
     try {
-        const resp: any = await graphqlClient.query({ query: gql`query myCliSessions { myCliSessions { uuid status apiKey org requestedFrom createdDate expiresDate lastUsedDate deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } } }`, fetchPolicy: 'network-only' })
+        const resp: any = await graphqlClient.query({ query: gql`query myCliSessions { myCliSessions { uuid status apiKey org requestedFrom createdDate expiresDate hardExpiresDate lastUsedDate deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } } }`, fetchPolicy: 'network-only' })
         cliSessions.value = (resp.data.myCliSessions || []).map((s: any) => Object.assign({}, s, {
             orgName: store.getters.orgById(s.org)?.name || s.org,
             keyLabel: (myKeys.value.find((k: any) => k.uuid === s.apiKey) || {}).type === 'FREEFORM' ? 'Free Form (held)' : 'Personal',
             createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
             lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
-            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : ''
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '',
+            hardEndDisplay: hardEndCell(s.hardExpiresDate, (d: Date) => d.toLocaleString('en-CA'))
         }))
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
@@ -476,6 +478,7 @@ const cliSessionFields: ComputedRef<any> = computed((): any => [
     { key: 'createdDisplay', width: 170, title: 'Signed in' },
     { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
     { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'hardEndDisplay', width: 170, title: 'Ends (key limit)' },
     { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeCliSession(row) }, { default: () => 'Revoke' }) }
 ])
 const editModalMode = ref<'edit' | 'view'>('edit')

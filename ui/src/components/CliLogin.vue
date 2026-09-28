@@ -68,12 +68,17 @@
                                     <strong>{{ k.type === 'USER' ? 'Personal' : 'Free Form (held)' }}</strong> · {{ orgName(k.org) }}
                                     <span class="subtle"> · {{ (k.permissions?.permissions || []).length }} permission{{ (k.permissions?.permissions || []).length === 1 ? '' : 's' }}</span>
                                     <span class="subtle" v-if="k.notes"> · {{ k.notes }}</span>
+                                    <span class="subtle" v-if="k.sessionMaxMinutes"> · sessions end after {{ describeMinutes(k.sessionMaxMinutes) }}</span>
                                 </n-radio>
                             </n-space>
                         </n-radio-group>
                     </div>
                 </n-space>
             </n-radio-group>
+            <n-form-item label="Session lifetime (minutes, optional)" :validation-status="lifetimeProblem ? 'error' : undefined" :feedback="lifetimeProblem || endSentence">
+                <n-input-number v-model:value="maxMinutes" clearable :show-button="false" style="max-width: 280px;"
+                    :placeholder="keyLimit ? 'The key allows up to ' + keyLimit : 'Shorter than the default, if you want'" />
+            </n-form-item>
             <n-space>
                 <n-button type="primary" :disabled="!canApprove" @click="approve">Approve</n-button>
                 <n-button type="error" ghost @click="deny">Deny</n-button>
@@ -94,7 +99,7 @@
  * Browser side of `rearm login` (device authorization). The user is already signed in to ReARM
  * (the SPA requires it); here they approve the CLI's request by choosing what the session acts as.
  */
-import { NAlert, NButton, NFormItem, NInput, NRadio, NRadioGroup, NSelect, NSpace, NSpin, useNotification, NotificationType } from 'naive-ui'
+import { NAlert, NButton, NFormItem, NInput, NInputNumber, NRadio, NRadioGroup, NSelect, NSpace, NSpin, useNotification, NotificationType } from 'naive-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import constants from '../utils/constants'
@@ -103,6 +108,7 @@ import { useStore } from 'vuex'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
+import { approvalLifetimeProblem, describeMinutes, sessionEndSentence } from '@/utils/cliSessionLifetime'
 
 const route = useRoute()
 const store = useStore()
@@ -124,7 +130,14 @@ const orgOptions = computed(() => organizations.value.map((o: any) => ({ label: 
 const orgName = (uuid: string) => organizations.value.find((o: any) => o.uuid === uuid)?.name || uuid
 const eligibleKeys = computed(() => myKeys.value.filter((k: any) => k.status === 'ACTIVE' && (k.type === 'USER' || k.type === 'FREEFORM')))
 const defaultNotes = computed(() => 'CLI session' + (request.value.requestedFrom ? ' on ' + request.value.requestedFrom : ''))
-const canApprove = computed(() => choice.value === 'new' ? !!newKeyOrg.value : !!chosenKey.value)
+// the session's lifetime (task RD3-7): the chosen key's limit, which the approver may shorten but not lengthen;
+// a fresh key carries no limit
+const maxMinutes = ref<number | null>(null)
+const keyLimit = computed<number | null>(() => choice.value === 'existing'
+    ? (eligibleKeys.value.find((k: any) => k.uuid === chosenKey.value)?.sessionMaxMinutes ?? null) : null)
+const lifetimeProblem = computed(() => approvalLifetimeProblem(keyLimit.value, maxMinutes.value))
+const endSentence = computed(() => sessionEndSentence(new Date(), keyLimit.value, maxMinutes.value, (d: Date) => d.toLocaleString('en-CA')))
+const canApprove = computed(() => !lifetimeProblem.value && (choice.value === 'new' ? !!newKeyOrg.value : !!chosenKey.value))
 
 // ---- the permission form on the new-key branch, bounded by what the approver holds in the chosen org ----
 const scoped = ref<{ orgPermission: any, scopedPermissions: any[] }>({ orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] })
@@ -215,7 +228,7 @@ async function lookup () {
         })
         if (!resp.data.cliLoginRequest) { lookupError.value = 'No pending sign-in for this code. It may have expired: run rearm login again.'; return }
         request.value = resp.data.cliLoginRequest
-        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes permissions { permissions { scope type } } } }`, fetchPolicy: 'no-cache' })
+        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes sessionMaxMinutes permissions { permissions { scope type } } } }`, fetchPolicy: 'no-cache' })
         myKeys.value = keys.data.myApiKeys || []
         phase.value = 'choose'
     } catch (e: any) { lookupError.value = commonFunctions.parseGraphQLError(e.message) }
@@ -223,7 +236,7 @@ async function lookup () {
 
 async function approve () {
     try {
-        const vars: any = { userCode: request.value.userCode }
+        const vars: any = { userCode: request.value.userCode, maxMinutes: maxMinutes.value ?? null }
         if (choice.value === 'existing') vars.apiKeyUuid = chosenKey.value
         else {
             vars.createKeyOrgUuid = newKeyOrg.value; vars.createKeyNotes = newKeyNotes.value || defaultNotes.value
@@ -231,8 +244,8 @@ async function approve () {
             vars.permissionType = orgPermType; vars.permissions = permissions
         }
         await graphqlClient.mutate({
-            mutation: gql`mutation approveCliLogin($userCode: String!, $apiKeyUuid: ID, $createKeyOrgUuid: ID, $createKeyNotes: String, $permissionType: PermissionType, $permissions: [PermissionInput]) {
-                approveCliLogin(userCode: $userCode, apiKeyUuid: $apiKeyUuid, createKeyOrgUuid: $createKeyOrgUuid, createKeyNotes: $createKeyNotes, permissionType: $permissionType, permissions: $permissions) { uuid status } }`,
+            mutation: gql`mutation approveCliLogin($userCode: String!, $apiKeyUuid: ID, $createKeyOrgUuid: ID, $createKeyNotes: String, $permissionType: PermissionType, $permissions: [PermissionInput], $maxMinutes: Int) {
+                approveCliLogin(userCode: $userCode, apiKeyUuid: $apiKeyUuid, createKeyOrgUuid: $createKeyOrgUuid, createKeyNotes: $createKeyNotes, permissionType: $permissionType, permissions: $permissions, maxMinutes: $maxMinutes) { uuid status hardExpiresDate } }`,
             variables: vars, fetchPolicy: 'no-cache'
         })
         phase.value = 'done'
