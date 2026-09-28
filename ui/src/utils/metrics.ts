@@ -9,7 +9,8 @@ import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, se
 import { FindingType } from '@/constants/findingType'
 import constants from '@/utils/constants'
 import type { FindingComponentGroup } from '@/utils/findingGroups'
-import type { VulnScore } from '@/utils/vulnerabilityRecordService'
+import type { FixedIn, VulnScore } from '@/utils/vulnerabilityRecordService'
+import { bumpTargetsOf, bumpToText, bumpToTitle, fixedInText, fixedInTitle, isNoFix } from '@/utils/fixedInDisplay'
 import {
   COMPUTED_FROM_VECTOR_TITLE,
   formatPrimaryScore,
@@ -43,6 +44,9 @@ export type DetailedMetric = {
   scores?: VulnScore[]
   topScore?: VulnScore | null
   epss?: VulnScore | null
+  // Vulnerability rows only, when the query selected it: the advisory's fix
+  // version for the row's package.
+  fixedIn?: FixedIn | null
 }
 
 // Column a findings table opens sorted by: severity ascending (worst first),
@@ -92,7 +96,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         knownExploited: !!vuln.knownExploited,
         scores: vuln.scores,
         topScore: vuln.topScore,
-        epss: vuln.epss
+        epss: vuln.epss,
+        fixedIn: vuln.fixedIn
       })
     })
   }
@@ -170,6 +175,8 @@ export function buildVulnerabilityColumns(
     data?: any[]
     // Adds the Score and EPSS columns; set when the rows carry scores.
     showScores?: boolean
+    // Adds the Fixed in column; set when the rows carry fix versions.
+    showFixedIn?: boolean
     // Controlled sort, kept by the caller from the table's update:sorter;
     // without it the table sorts by severity on its own.
     sortState?: () => FindingSortState
@@ -410,6 +417,7 @@ export function buildVulnerabilityColumns(
       }
     },
     ...(options?.showScores ? scoreColumns(h, NTag, sortOrderOf) : []),
+    ...(options?.showFixedIn ? [fixedInColumn(h, NTag)] : []),
     { 
       title: 'Details', 
       key: 'details', 
@@ -566,6 +574,39 @@ function scoreColumns(h: any, NTag: any, sortOrderOf: (key: string) => object): 
   ]
 }
 
+// The advisory's fix version for the row's package; the hover text says why
+// when there is none. No sorter: the UI has no version ordering.
+function fixedInColumn(h: any, NTag: any) {
+  return {
+    title: 'Fixed in',
+    key: 'fixedIn',
+    // wide enough for a Debian security update (1:9.2p1-2+deb12u10) on one line
+    width: 150,
+    render: (row: any) => {
+      const fixedIn: FixedIn | null | undefined = row.fixedIn
+      if (!fixedIn) return '-'
+      const title = fixedInTitle(fixedIn)
+      if (isNoFix(fixedIn)) {
+        return h(NTag, { size: 'small', type: 'warning', bordered: false, title }, { default: () => fixedInText(fixedIn) })
+      }
+      return h('span', { title, style: 'overflow-wrap: anywhere;' }, fixedInText(fixedIn))
+    }
+  }
+}
+
+// The group view's fix column: the distinct fix versions of the group's findings.
+function bumpToColumn(h: any) {
+  return {
+    title: 'Bump to',
+    key: 'bumpTo',
+    width: 140,
+    render: (group: FindingComponentGroup) => {
+      const targets = bumpTargetsOf(group.rows)
+      return h('span', { title: bumpToTitle(targets), style: 'overflow-wrap: anywhere;' }, bumpToText(targets))
+    }
+  }
+}
+
 // The group view's score columns: the highest headline CVSS and EPSS among
 // the group's findings. Groups already sort worst first, so no sorter.
 function groupScoreColumns(h: any): DataTableColumns<FindingComponentGroup> {
@@ -601,6 +642,8 @@ export function buildComponentGroupColumns(
     onPurlClick?: (purl: string) => void
     // Adds the Worst score and EPSS columns; set when the rows carry scores.
     showScores?: boolean
+    // Adds the Bump to column; set when the rows carry fix versions.
+    showFixedIn?: boolean
   }
 ): DataTableColumns<FindingComponentGroup> {
   const severityCircle = (severity: string, count: number) => h('span', {
@@ -662,6 +705,7 @@ export function buildComponentGroupColumns(
       }
     },
     ...(options.showScores ? groupScoreColumns(h) : []),
+    ...(options.showFixedIn ? [bumpToColumn(h)] : []),
     {
       title: 'KEV',
       key: 'kevCount',

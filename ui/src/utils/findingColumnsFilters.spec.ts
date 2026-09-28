@@ -146,3 +146,58 @@ describe('score columns and the findings sort', () => {
         expect(plain.scores).toBeUndefined()
     })
 })
+
+describe('the fix version columns', () => {
+    const keys = (columns: any[]) => columns.map(c => c.key)
+    const fixedIn = (verdict: string, extra: any = {}) => ({ verdict, sources: ['OSV'], ...extra })
+    const vuln = (id: string, fix: any) => ({ type: 'Vulnerability', id, purl: 'pkg:pypi/django@1.11', severity: 'HIGH', fixedIn: fix } as any)
+
+    it('adds Fixed in after the score columns only when the rows carry fix versions', () => {
+        expect(keys(buildVulnerabilityColumns(h, Stub, Stub, Stub, undefined, { data: [], showScores: true }) as any[])).not.toContain('fixedIn')
+        const withFix = keys(buildVulnerabilityColumns(h, Stub, Stub, Stub, undefined, { data: [], showScores: true, showFixedIn: true }) as any[])
+        expect(withFix.slice(withFix.indexOf('epss'), withFix.indexOf('epss') + 2)).toEqual(['epss', 'fixedIn'])
+    })
+
+    it('renders the version, the last affected one, a no-fix tag, or a dash with the reason', () => {
+        const render = column(buildVulnerabilityColumns(h, Stub, Stub, Stub, undefined, { data: [], showFixedIn: true }) as any[], 'fixedIn').render
+        const fixed: any = render({ fixedIn: fixedIn('FIXED_IN', { version: '1.11.11' }) })
+        expect(fixed.children).toBe('1.11.11')
+        expect(fixed.props.title).toMatch(/fixes the finding \(OSV\)$/)
+        expect(render({ fixedIn: fixedIn('FIXED_AFTER', { endIncluding: '2.0' }) }).children).toBe('> 2.0')
+        const noFix: any = render({ fixedIn: fixedIn('NO_FIX_AVAILABLE') })
+        expect(noFix.children.default()).toBe('no fix')
+        const outside: any = render({ fixedIn: fixedIn('NOT_IN_ADVISORY_RANGE') })
+        expect(outside.children).toBe('-')
+        expect(outside.props.title).toMatch(/matched by name/i)
+        expect(render({ type: 'Violation' })).toBe('-')
+    })
+
+    it('lists a component\'s distinct fix versions as its bump targets, a count past three', () => {
+        const columns = buildComponentGroupColumns(h, Stub, Stub, {
+            findingColumns: () => [], rowKey: (r: any) => r.id, onUpdateFilters: () => {}, showFixedIn: true
+        }) as any[]
+        expect(keys(columns)).toContain('bumpTo')
+        const [two] = groupFindingsByComponent([
+            vuln('A', fixedIn('FIXED_IN', { version: '1.11.11' })),
+            vuln('B', fixedIn('NO_FIX_AVAILABLE')),
+            vuln('C', fixedIn('FIXED_IN', { version: '1.11.5' })),
+            vuln('D', fixedIn('FIXED_IN', { version: '1.11.11' }))])
+        expect((column(columns, 'bumpTo').render(two) as any).children).toBe('1.11.11, 1.11.5')
+        const [four] = groupFindingsByComponent(['1', '2', '3', '4'].map(v => vuln(v, fixedIn('FIXED_IN', { version: `1.11.${v}` }))))
+        const many: any = column(columns, 'bumpTo').render(four)
+        expect(many.children).toBe('4 targets')
+        expect(many.props.title).toContain('1.11.1, 1.11.2, 1.11.3, 1.11.4')
+        const [none] = groupFindingsByComponent([vuln('E', fixedIn('NO_RANGE_DATA'))])
+        expect((column(columns, 'bumpTo').render(none) as any).children).toBe('-')
+        expect(keys(buildComponentGroupColumns(h, Stub, Stub, {
+            findingColumns: () => [], rowKey: (r: any) => r.id, onUpdateFilters: () => {}
+        }) as any[])).not.toContain('bumpTo')
+    })
+
+    it('copies the fix version onto vulnerability rows, leaving it unset when not selected', () => {
+        const [fixed] = processMetricsData({ vulnerabilityDetails: [{ vulnId: 'CVE-1', fixedIn: fixedIn('FIXED_IN', { version: '2' }) }] })
+        expect(fixed.fixedIn).toEqual(fixedIn('FIXED_IN', { version: '2' }))
+        const [plain] = processMetricsData({ vulnerabilityDetails: [{ vulnId: 'CVE-2' }] })
+        expect(plain.fixedIn).toBeUndefined()
+    })
+})
