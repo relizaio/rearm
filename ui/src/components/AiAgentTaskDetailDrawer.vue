@@ -62,7 +62,7 @@ const emit = defineEmits<{
     (e: 'human-review', p: { task: any, approve: boolean, note: string, findings?: any[],
         about?: { specification: string } | null }): void
     (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
-    (e: 'operator-release', p: { task: any, note: string }): void
+    (e: 'operator-release', p: { task: any, note: string, role?: string }): void
     (e: 'require-review', p: { task: any, value: boolean }): void
     (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
     (e: 'order', p: { task: any, orderIndex: number }): void

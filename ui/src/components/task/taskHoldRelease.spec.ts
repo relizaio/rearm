@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
-// Releasing a stop hold (task 4c566d0d): the role picker shows on a loop stop only, and the release
-// carries the picked role.
+// Releasing a hold (task 4c566d0d): the release carries the picked role. RD2-20: the picker shows on every
+// release a person gives -- a manual operator hold's and a budget stop's as well as a loop stop's.
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TaskHeader from './TaskHeader.vue'
@@ -16,21 +16,41 @@ function header (hold: any) {
 }
 
 describe('stop hold release', () => {
-    it('offers a role only on a loop stop', () => {
+    it('offers a role on a loop stop, with the stop\'s words', () => {
         const stop = header({ level: 'OPERATOR', kind: 'MANUAL', reason: 'stopped by no progress: [q1] stayed OPEN',
             heldBy: routing, heldAt: '2026-09-25T10:00:00Z' })
         expect(stop.find('.relrole').exists()).toBe(true)
         expect(stop.find('.relstop').text()).toContain('past this stop once')
         expect(stop.find('.relbtn').text()).toBe('Release past the stop')
 
+    })
+
+    it('offers the same picker on a manual operator hold and a budget stop (RD2-20)', () => {
         for (const hold of [
             { level: 'OPERATOR', kind: 'MANUAL', reason: 'stopped by budget: does not fit', heldBy: routing },
             { level: 'OPERATOR', kind: 'MANUAL', reason: 'waiting on legal', heldBy: { kind: 'USER', name: 'pavel' } },
         ]) {
             const w = header(hold)
-            expect(w.find('.relrole').exists(), hold.reason).toBe(false)
+            expect(w.find('.relrole').exists(), hold.reason).toBe(true)
+            expect(w.find('.relstop').exists(), 'no stop to route past').toBe(false)
             expect(w.find('.relbtn').text()).toBe('Operator release')
         }
+    })
+
+    it('releases a manual hold to the picked role, and without one lets routing pick (RD2-20)', async () => {
+        const w = header({ level: 'OPERATOR', kind: 'MANUAL', reason: 'waiting on legal', heldBy: { kind: 'USER', name: 'pavel' } })
+        expect((w.vm as any).roleOptions.map((o: any) => o.value)).toContain('coder')
+        await w.find('.relbtn').trigger('click')
+        const plain = w.emitted('operator-release')?.[0]?.[0] as any
+        expect(plain).not.toHaveProperty('role')
+        expect(plain).toMatchObject({ note: '' })
+
+        ;(w.vm as any).releaseNote = 'legal cleared it'
+        ;(w.vm as any).releaseRole = 'coder'
+        await w.vm.$nextTick()
+        expect(w.find('.relbtn').text()).toBe('Release to coder')
+        await w.find('.relbtn').trigger('click')
+        expect(w.emitted('operator-release')?.[1]?.[0]).toMatchObject({ note: 'legal cleared it', role: 'coder' })
     })
 
     it('releases with the picked role, and without one lets routing pick', async () => {
