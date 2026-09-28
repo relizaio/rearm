@@ -12,7 +12,7 @@ describe('taskSummary', () => {
     it('says how many questions are open, who asked, in which round and about what', () => {
         const s = taskSummary(questionsTask(), [], fixtureRoles, {})
         expect(s.openQuestions).toBe(1)
-        expect(s.questions).toBe('1 open question from coder (round 1, about ARCHITECTURE round 1)')
+        expect(s.questions).toBe('1 open question from coder (round 1, about architecture round 1)')
         // No QUESTIONS round on the read: the frame still names the asker.
         expect(taskSummary(richTask(), [], fixtureRoles, {}).questions).toBe('1 open question from coder')
         expect(taskSummary(richTask({ questionStack: [] }), [], fixtureRoles, {}).questions).toBe('1 open question')

@@ -26,7 +26,7 @@ describe('an open question, for a reader and for who answers it', () => {
     it('a reader sees the question, who asked it, what it waits on and since when, and no form', () => {
         const w = mount(TaskOpenQuestions, { props: { task: waitingOnAPerson(), roles: fixtureRoles } })
         expect(w.find('[data-testid="open-questions"]').exists()).toBe(true, 'shown while a person could answer, too')
-        expect(w.find('.dsec__h').text()).toBe('Questions from coder · round 1 · about ARCHITECTURE round 1 · open (1)')
+        expect(w.find('.dsec__h').text()).toBe('Questions from coder · round 1 · about architecture round 1 · open (1)')
         expect(w.find('.oq__sub').text()).toBe('with the coordinator to name a role')
         expect(w.find('[data-testid="open-questions-since"]').text()).toMatch(/^since /)
         expect(w.text()).toContain('Which branch does the page link to?')
@@ -70,12 +70,12 @@ describe('answered questions', () => {
         const q1 = w.find('[data-id="Q-1"]')
         expect(q1.text()).toContain('which branch?')
         expect(q1.find('.aq__a').text()).toBe('main')
-        expect(q1.find('.aq__meta').text()).toContain('asked by coder · questions round 1 · about ARCHITECTURE round 1')
+        expect(q1.find('.aq__meta').text()).toContain('asked by coder · questions round 1 · about architecture round 1')
         expect(q1.find('.aq__meta').text()).toContain('answered by a person in questions round 2')
         const q2 = w.find('[data-id="Q-2"]')
         expect(q2.find('[data-testid="answered-withdrawn"]').exists()).toBe(true)
         expect(q2.find('.aq__meta').text()).toContain('does not apply')
-        expect(w.find('[data-id="Q-3"] .aq__meta').text()).toContain('answered by ARCHITECTURE round 2')
+        expect(w.find('[data-id="Q-3"] .aq__meta').text()).toContain('answered by architecture round 2')
     })
 
     it('shows nothing while every question is still open', () => {

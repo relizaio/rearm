@@ -1,7 +1,8 @@
 // Earlier revisions of tasks, boards and role configs (task 22ddc644). The server reads them
 // from the audit rows each save already writes and serves each snapshot through the live
-// type; here two snapshots are compared field by field. Pure and dependency-free like
-// agentDocuments.ts, so the spec can cover it without a store.
+// type; here two snapshots are compared field by field. Pure like agentDocuments.ts (it reads only
+// agentWords' table), so the spec can cover it without a store.
+import { holdPhrase, levelWord, statusWord } from './agentWords'
 
 export type RevisionKind = 'task' | 'board' | 'role'
 
@@ -158,15 +159,15 @@ export function revisionSummary (kind: RevisionKind, s: any): string[] {
     if (!s) return ['unreadable snapshot']
     const out: string[] = []
     if (kind === 'task') {
-        if (s.status) out.push(String(s.status).replace(/_/g, ' '))
+        if (s.status) out.push(statusWord(s.status))
         if (s.role) out.push(`role ${s.role}`)
-        if (s.hold) out.push(`hold ${String(s.hold.kind ?? s.hold.level ?? '').toLowerCase()}`)
+        if (s.hold) out.push(holdPhrase(s.hold))
         if (s.orderIndex != null) out.push(`order ${s.orderIndex}`)
         if (s.budgetMicros != null) out.push(`budget $${(s.budgetMicros / 1_000_000).toFixed(2)}`)
         if (s.requiredStrength != null) out.push(`strength ${s.requiredStrength}`)
     } else if (kind === 'board') {
-        if (s.status) out.push(String(s.status))
-        if (s.lock?.level) out.push(`lock ${String(s.lock.level).toLowerCase()}`)
+        if (s.status) out.push(statusWord(s.status))
+        if (s.lock?.level) out.push(`lock ${levelWord(s.lock.level)}`)
         if (s.cycleCap != null) out.push(`cycle cap ${s.cycleCap}`)
         if (s.budgetMicros != null) out.push(`budget $${(s.budgetMicros / 1_000_000).toFixed(2)}`)
     } else {

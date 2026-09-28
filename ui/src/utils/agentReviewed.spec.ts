@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { reviewedChips } from './agentReviewed'
 
 describe('reviewedChips', () => {
-    it('names each reviewed document and what the review did to it', () => {
+    it('names each reviewed document and what the review did to it, in words (RD2-23)', () => {
         expect(reviewedChips({
             reviewedInputs: [
                 { release: 'a1', specification: 'DETAILED_DESIGN', round: 2, promotedTo: 'READY_TO_SHIP' },
@@ -11,9 +11,9 @@ describe('reviewedChips', () => {
             ],
             refusedPromotions: [{ release: 'b2', specification: 'ARCHITECTURE', reason: 'ships only by a person' }],
         })).toEqual([
-            { release: 'a1', label: 'reviewed: DETAILED_DESIGN round 2 → READY_TO_SHIP', type: 'success', title: null },
-            { release: 'b2', label: 'reviewed: ARCHITECTURE — not promoted', type: 'warning', title: 'ships only by a person' },
-            { release: 'c3', label: 'reviewed: TEST_REPORT round 1', type: 'default', title: null },
+            { release: 'a1', label: 'reviewed: detailed design · round 2 → ready to ship', type: 'success', title: null },
+            { release: 'b2', label: 'reviewed: architecture — not promoted', type: 'warning', title: 'ships only by a person' },
+            { release: 'c3', label: 'reviewed: test report · round 1', type: 'default', title: null },
         ])
     })
 

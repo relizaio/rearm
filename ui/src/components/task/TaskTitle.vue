@@ -31,7 +31,7 @@
             </a>
             <span v-else-if="refLabel(task, boardHasSources)">{{ refLabel(task, boardHasSources) }}</span>
             <n-tag size="small" :bordered="false" :type="statusTone(task.status)">
-                {{ task.status.replace(/_/g, ' ') }}
+                {{ statusWord(task.status) }}
             </n-tag>
             <n-tooltip v-if="roleTag" trigger="hover" :disabled="!roleTag.tooltip">
                 <template #trigger>
@@ -47,22 +47,26 @@
                    data-testid="tag-chip">#{{ k }}</n-tag>
             <slot/>
         </div>
+        <!-- The required roles still to pass, under the status on the page and in the drawer (RD2-23). -->
+        <div v-if="requiredLine" class="dhead__required" data-testid="required-signoffs">{{ requiredLine }}</div>
     </div>
 </template>
 
 <script lang="ts" setup>
 import { computed } from 'vue'
 import { NTag, NTooltip } from 'naive-ui'
-import { statusTone } from '@/utils/agentTaskFormat'
+import { missingRequiredRoles, requiredSignOffsLine, statusTone } from '@/utils/agentTaskFormat'
+import { statusWord } from '@/utils/agentWords'
 import { refLabel, roleTagFor } from '@/utils/agentTaskLabels'
 import { levelLabel, levelTooltip } from '@/utils/agentTaskLevel'
 import { groupByKey, groupColour, groupLabel, tagKeys, waitingOnLabel } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
 
-const props = defineProps<{ task: any, board?: any, clamp?: boolean }>()
+const props = defineProps<{ task: any, board?: any, clamp?: boolean, roles?: any[] }>()
 // A board without sources is its own tracker: no task has a ref there, and none is a "draft".
 const boardHasSources = computed(() => (props.board?.sources?.length ?? 0) > 0)
 const roleTag = computed(() => roleTagFor(props.task))
+const requiredLine = computed(() => requiredSignOffsLine(missingRequiredRoles(props.task, props.roles)))
 </script>
 
 <style scoped lang="scss">
@@ -75,6 +79,7 @@ const roleTag = computed(() => roleTagFor(props.task))
     &__desc { margin-top: 4px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
     &__desc--clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     &__sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; flex-wrap: wrap; }
+    &__required { margin-top: 4px; font-size: 12px; color: #d03050; }
 }
 /* A role tag that names the last hop, not where the task is now (task 562ac668). */
 .tag--history { opacity: 0.75; font-style: italic; }

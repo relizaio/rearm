@@ -7,7 +7,7 @@
                 <span class="hist__agent"><session-ref v-if="task.assignment.session"
                     :session="sessionOf(task.assignment.session, task.assignment.agent, agentDir, task.assignment.role)"/><template
                     v-else>{{ agentName(agentNames, task.assignment.agent) }}</template></span>
-                <span class="hist__time">since {{ ts(task.assignment.assignedAt) }}
+                <span class="hist__time">since <agent-time :at="task.assignment.assignedAt"/>
                     ({{ dur(task.assignment.assignedAt, null) }})</span>
                 <code v-if="task.assignment.promptVersion" class="hist__pv"
                       title="Served role-prompt version">{{ task.assignment.promptVersion }}</code>
@@ -17,8 +17,9 @@
 </template>
 
 <script lang="ts" setup>
+import AgentTime from '../AgentTime.vue'
 import SessionRef from '../SessionRef.vue'
-import { agentName, dur, ts } from '@/utils/agentTaskFormat'
+import { agentName, dur } from '@/utils/agentTaskFormat'
 import { AgentName, sessionOf } from '@/utils/agentSessionLabel'
 
 defineProps<{ task: any, agentNames: Record<string, string>, agentDir?: Record<string, AgentName> }>()

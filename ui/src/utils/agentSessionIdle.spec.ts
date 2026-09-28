@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { closeAttribution, forceCloseReason, idleCloseHoursOf, isIdleWarned, IDLE_CLOSE_HOURS_DEFAULT } from './agentSessionIdle'
+import { closeAttribution, forceCloseReason, idleCloseHoursOf, isIdleWarned, IDLE_CLOSE_HOURS_DEFAULT, idleWarningText } from './agentSessionIdle'
 
 describe('idleCloseHoursOf', () => {
     it('is the org setting, else the server default', () => {
@@ -41,3 +41,21 @@ describe('forceCloseReason', () => {
         expect(forceCloseReason(undefined)).toBeNull()
     })
 })
+
+// RD2-15: the tooltip says when the sweep closes the session and what a person may do, not a CLI verb.
+describe('the closing-idle tooltip', () => {
+    const when = (at: string) => at.slice(0, 16).replace('T', ' ')
+
+    it('gives the warning time and the close time', () => {
+        const text = idleWarningText({ idleWarnedAt: '2026-09-27T20:00:00Z', idleCloseAt: '2026-09-27T22:00:00Z' }, when)
+        expect(text).toBe('Warned 2026-09-27 20:00; closes at 2026-09-27 22:00 unless the agent calls again.'
+            + ' A person with Board write may force-close it now.')
+        expect(text).not.toContain('rearm agent session touch')
+    })
+
+    it('says soon when the read carries no close time', () => {
+        expect(idleWarningText({ idleWarnedAt: '2026-09-27T20:00:00Z' }, when))
+            .toBe('Warned 2026-09-27 20:00; closes soon unless the agent calls again. A person with Board write may force-close it now.')
+    })
+})
+

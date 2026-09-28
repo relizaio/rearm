@@ -648,7 +648,7 @@
                         ><Copy /></n-icon>
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                     </n-gi>
-                    <n-gi span="2">
+                    <n-gi v-if="!isDocumentRound" span="2">
                         <span
                             v-if="releaseScanStatus.kind !== 'ready'"
                             :title="releaseScanStatus.title"
@@ -702,6 +702,35 @@
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
             <n-tabs style="padding-left:0.2%;" type="segment" @update:value="handleTabSwitch" animated>
                 <n-tab-pane name="components" tab="Components">
+                    <!-- A document round (RD2-24): what the round is, where it sits and what it said, in place of
+                         the software panels this page hides for it. -->
+                    <div class="container" v-if="isDocumentRound && documentRound" data-testid="document-round">
+                        <h3>Document round</h3>
+                        <n-descriptions :column="1" bordered size="small" label-placement="left">
+                            <n-descriptions-item label="Document">{{ documentRound.specification || '—' }}</n-descriptions-item>
+                            <n-descriptions-item label="Round">{{ documentRound.round ?? '—' }}</n-descriptions-item>
+                            <!-- A round without a path shows no File row (RD2-24 run 1, T-3). -->
+                            <n-descriptions-item v-if="documentRound.path" label="File">
+                                <a v-if="documentFileUrl(release)" :href="documentFileUrl(release) ?? undefined"
+                                   target="_blank" rel="noopener" data-testid="round-file">{{ documentRound.path }}</a>
+                                <code v-else>{{ documentRound.path }}</code>
+                            </n-descriptions-item>
+                            <n-descriptions-item v-if="documentRound.taskPath" label="Task">
+                                <router-link :to="documentRound.taskPath" data-testid="round-task">{{ documentRound.taskLabel }}</router-link>
+                                <router-link v-if="documentRound.boardPath" :to="documentRound.boardPath" class="round-gap"
+                                             data-testid="round-board">Open board</router-link>
+                            </n-descriptions-item>
+                            <n-descriptions-item v-if="documentRound.findings" label="Findings">{{ documentRound.findings }}</n-descriptions-item>
+                            <n-descriptions-item v-if="documentRound.checks" label="Checks">
+                                <span data-testid="round-checks">{{ documentRound.checks.line }}</span>
+                                <n-tag v-if="documentRound.checks.verdict" size="small" class="round-gap"
+                                       :type="verdictType(documentRound.checks.verdict)">{{ documentRound.checks.verdict }}</n-tag>
+                            </n-descriptions-item>
+                            <n-descriptions-item v-if="documentRound.elementsCount != null" label="Elements">
+                                {{ documentRound.elementsCount }}
+                            </n-descriptions-item>
+                        </n-descriptions>
+                    </div>
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Components
                             <Icon v-if="isWritable && isUpdatable"
@@ -721,18 +750,19 @@
                         </h3>
                         <n-data-table :data="commits" :columns="commitTableFields" :row-key="artifactsRowKey" />
                     </div>
-                    <div class="container" v-if="failedReleaseCommitsFlattened.length > 0">
+                    <!-- A document round shows its block and its signed commit only (RD2-24 architecture-2 §2). -->
+                    <div class="container" v-if="failedReleaseCommitsFlattened.length > 0 && !isDocumentRound">
                         <h3>Source Code Entries from Failed/Pending Releases</h3>
                         <n-data-table :data="failedReleaseCommitsFlattened" :columns="failedReleaseCommitTableFields" :row-key="(row) => row.uuid" />
                     </div>
-                    <div class="container">
+                    <div class="container" v-if="!isDocumentRound">
                         <h3>Artifacts
                             <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Artifact" @click="showReleaseAddProducesArtifactModal=true">
                                 <CirclePlus/>
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <div v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isHardware">
+                        <div v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isHardware && !isDocumentRound">
                             <h3>Changes in SBOM Components
                                 <Icon v-if="isWritable" 
                                     class="clickable addIcon" 
@@ -753,7 +783,7 @@
                             />
                         </div>
                     </div>
-                    <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
+                    <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound">
                         <h3>
                             Produced Deliverables
                             <Icon v-if="isWritable && isUpdatable" class="clickable addIcon" size="25" title="Add Deliverable" @click="showReleaseAddDeliverableModal=true">
@@ -920,7 +950,7 @@
                         </ul>
                     </div>
                 </n-tab-pane>
-                <n-tab-pane name="bomComponents" tab="BOM Components">
+                <n-tab-pane v-if="!isDocumentRound" name="bomComponents" tab="BOM Components">
                     <n-tabs type="line" v-model:value="bomSubTab" @update:value="handleBomSubTabSwitch" animated>
                         <n-tab-pane name="sbomSub" :tab="`SBOM Components${sbomComponents.length ? ' · ' + sbomComponents.length : ''}`">
                     <div class="container">
@@ -1044,7 +1074,7 @@
                     <h3>Approval History</h3>
                     <n-data-table :columns="approvalHistoryFields" :data="approvalHistoryEvents" class="table-hover" />
                 </n-tab-pane>
-                <n-tab-pane name="vex" tab="VEX">
+                <n-tab-pane v-if="!isDocumentRound" name="vex" tab="VEX">
                     <n-space vertical>
                         <h3>VEX Statement Proposals for this Release</h3>
                         <n-text depth="3" style="font-size: 12px;">
@@ -1083,7 +1113,7 @@
                                 </n-descriptions-item>
                                 <n-descriptions-item label="Verdict" v-if="documentVerdict(release)">
                                     <n-tag size="small" :type="verdictType(documentVerdict(release))">
-                                        {{ documentVerdict(release) }}
+                                        {{ outcomeWord(documentVerdict(release)) }}
                                     </n-tag>
                                 </n-descriptions-item>
                             </n-descriptions>
@@ -1374,6 +1404,7 @@ import {
     statusType,
     verdictType,
 } from '@/utils/agentDocuments'
+import { outcomeWord } from '@/utils/agentWords'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
@@ -1400,6 +1431,8 @@ import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, w
 import type { Component } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
+import { documentRoundView } from '@/utils/agentDocumentsView'
+import { summarise } from '@/utils/agentChecks'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
@@ -1682,6 +1715,22 @@ const pullRequest: ComputedRef<any> = computed((): any => {
 
 const releaseUuid: Ref<string> = ref(props.uuidprop ?? route.params.uuid.toString())
 const release: Ref<any> = ref({})
+/** A document round's release (RD2-24): shown as the round, without the software panels. */
+const isDocumentRound = computed(() => !!release.value?.document)
+const roundTask = ref<any>(null)
+const roundChecks = computed(() => {
+    const report = (roundTask.value?.checks ?? []).find((c: any) => c?.scope?.checked === release.value?.uuid)
+    if (!report) return null
+    const s = summarise(report)
+    return { pass: s.pass, fail: s.fail, skip: s.skip, blockingFailed: s.blockingFailed.length }
+})
+const documentRound = computed(() => documentRoundView(release.value, roundTask.value,
+    release.value?.orgDetails?.uuid ?? release.value?.org ?? null, roundChecks.value))
+watch(() => release.value?.document?.task, async (task) => {
+    roundTask.value = null
+    if (!task) return
+    roundTask.value = await store.dispatch('fetchDocumentRoundTask', task).catch(() => null)
+})
 
 // Document releases: the findings index rendered as a table when this release carries one.
 const documentFindings = computed(() => sortFindings(findingsOf(release.value)))
@@ -6670,6 +6719,8 @@ async function handleTabSwitch(tabName: string) {
 </script>
     
 <style scoped lang="scss">
+// The round page's task, board and verdict keep apart (RD2-24 run 1, T-1): ml-2 was defined nowhere.
+.round-gap { margin-left: 8px; }
 // Legend swatches mirror the segmented control in the table so the
 // legend teaches the same visual language the cells use.
 .approval-legend-swatch {

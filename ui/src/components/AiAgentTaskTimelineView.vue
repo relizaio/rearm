@@ -10,7 +10,8 @@
                 <span class="lg"><i class="sw sw--active"/>in progress</span>
                 <span class="lg"><i class="sw sw--return"/>◆ returned</span>
             </div>
-            <div class="tl-scroll">
+            <!-- The drawing fills the panel, never under 760 px (RD2-12). -->
+            <div ref="scrollEl" class="tl-scroll">
                 <svg :width="width" :height="height" class="tl-svg">
                     <line v-for="(g, i) in gridLines" :key="'g' + i"
                           :x1="g.x" :y1="0" :x2="g.x" :y2="height - AXIS_H" class="tl-grid"/>
@@ -33,8 +34,8 @@
                         </g>
                     </g>
                     <g class="tl-axis">
-                        <text v-for="(g, i) in gridLines" :key="'t' + i"
-                              :x="g.x + 4" :y="height - 6">{{ g.label }}</text>
+                        <text v-for="(g, i) in gridLines" :key="'t' + i" :data-tick="i"
+                              :x="g.labelX" :y="height - 6" :text-anchor="g.anchor">{{ g.label }}</text>
                     </g>
                 </svg>
             </div>
@@ -47,7 +48,8 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ticks, timelineWidth } from '@/utils/agentTimelineAxis'
 import { useRouter } from 'vue-router'
 import { AgentName, sessionLabel, sessionOf, sessionPath } from '@/utils/agentSessionLabel'
 import { cardRef } from '@/utils/agentTaskFormat'
@@ -72,7 +74,6 @@ const LANE_H = 46
 const LANE_PAD_TOP = 22
 const BAR_H = 18
 const AXIS_H = 20
-const MIN_WIDTH = 760
 const LABEL_W = 0 // agent label overlays the lane start
 
 type Bar = { x: number, w: number, tone: string, label: string, tip: string, task: any }
@@ -106,7 +107,19 @@ const domain = computed(() => {
     return { min, max: max === min ? min + 60000 : max }
 })
 
-const width = computed(() => MIN_WIDTH)
+// The panel's width, as the scroll box reports it; the drawing follows it (RD2-12).
+const scrollEl = ref<HTMLElement | null>(null)
+const panelWidth = ref<number | null>(null)
+let observer: ResizeObserver | null = null
+onMounted(() => {
+    if (!scrollEl.value) return
+    panelWidth.value = scrollEl.value.clientWidth || null
+    if (typeof ResizeObserver === 'undefined') return
+    observer = new ResizeObserver(entries => { panelWidth.value = entries[0]?.contentRect.width ?? panelWidth.value })
+    observer.observe(scrollEl.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+const width = computed(() => timelineWidth(panelWidth.value))
 const height = computed(() => lanes.value.length * LANE_H + AXIS_H)
 
 function xOf (t: number): number {
@@ -149,19 +162,10 @@ const lanes = computed(() => {
         .sort((a, b) => a.name.localeCompare(b.name))
 })
 
+// Ticks named for the span shown, so a three-minute span does not repeat a minute (RD2-12).
 const gridLines = computed(() => {
     const d = domain.value
-    if (!d) return []
-    const n = 4
-    return Array.from({ length: n + 1 }, (_, i) => {
-        const t = d.min + ((d.max - d.min) * i) / n
-        return {
-            x: xOf(t),
-            label: new Date(t).toLocaleString('en-CA', {
-                month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-            }),
-        }
-    })
+    return d ? ticks(d.min, d.max, xOf) : []
 })
 
 function laneY (i: number): number { return i * LANE_H }

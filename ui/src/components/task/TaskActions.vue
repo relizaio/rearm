@@ -4,19 +4,23 @@
         <div v-if="authorizable" class="deprow">
             <n-select v-model:value="authorizeRole" :options="roleOptions" size="small"
                       placeholder="role" style="width: 170px"/>
-            <n-button size="small" :disabled="!authorizeRole"
-                      @click="emit('authorize', { task, role: authorizeRole as string, orderIndex: orderDraft })">
-                Authorize
-            </n-button>
+            <disabled-hint :reason="hint('authorize')">
+                <n-button size="small" :disabled="!authorizeRole" data-testid="authorize"
+                          @click="emit('authorize', { task, role: authorizeRole as string, orderIndex: orderDraft })">
+                    Authorize
+                </n-button>
+            </disabled-hint>
         </div>
         <div class="deprow">
             <n-input-number v-model:value="orderDraft" size="small" :min="0" style="width: 130px">
                 <template #prefix><span class="deplab" style="min-width: 0">order</span></template>
             </n-input-number>
-            <n-button size="small" :disabled="orderDraft == null || orderDraft === task.orderIndex"
-                      @click="emit('order', { task, orderIndex: orderDraft as number })">Set order</n-button>
+            <disabled-hint :reason="hint('order')">
+                <n-button size="small" :disabled="orderDraft == null || orderDraft === task.orderIndex" data-testid="order-set"
+                          @click="emit('order', { task, orderIndex: orderDraft as number })">Set order</n-button>
+            </disabled-hint>
             <span v-if="task.orderSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.orderSetBy" :task="task"/> · {{ ts(task.orderSetAt) }}
+                set by <actor-ref :actor="task.orderSetBy" :task="task"/> · <agent-time :at="task.orderSetAt"/>
             </span>
         </div>
         <!-- A task's required model strength (D20: lowering it is a person's call). -->
@@ -32,7 +36,7 @@
             <n-button v-if="task.requiredStrength != null" size="small" quaternary
                       @click="emit('set-strength', { task, requiredStrength: null })">Clear</n-button>
             <span v-if="task.strengthSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.strengthSetBy" :task="task"/> · {{ ts(task.strengthSetAt) }}
+                set by <actor-ref :actor="task.strengthSetBy" :task="task"/> · <agent-time :at="task.strengthSetAt"/>
             </span>
         </div>
         <!-- The task's level, the depth in the product tree (RD2-1): a declaration the board makes
@@ -49,7 +53,7 @@
             <n-button v-if="task.level != null" size="small" quaternary data-testid="level-clear"
                       @click="emit('set-level', { task, level: null })">Clear</n-button>
             <span v-if="task.levelSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.levelSetBy" :task="task"/> · {{ ts(task.levelSetAt) }}
+                set by <actor-ref :actor="task.levelSetBy" :task="task"/> · <agent-time :at="task.levelSetAt"/>
             </span>
         </div>
         <!-- The task's group and tags (RD2-31): a move goes into an OPEN group or out of every group;
@@ -96,14 +100,16 @@
         <div v-if="canPlaceHold(task, !!admin)" class="deprow holdrow">
             <n-input v-model:value="holdReason" size="small" placeholder="Why hold it (required)"
                      style="width: 260px"/>
-            <n-button size="small" type="warning" ghost :disabled="!holdPayload(task, holdReason)"
-                      @click="placeHold">Put on hold (operator)</n-button>
+            <disabled-hint :reason="hint('hold')">
+                <n-button size="small" type="warning" ghost :disabled="!holdPayload(task, holdReason)" data-testid="hold-place"
+                          @click="placeHold">Put on hold (operator)</n-button>
+            </disabled-hint>
         </div>
         <!-- What this task may spend, on top of the board's limit (task 6f1b348d). Blank and set
              clears it. A raise does not release a budget hold: release the hold to resume. -->
         <div class="deprow budrow">
             <n-input-number v-model:value="budgetDraft" size="small" :min="0" :precision="2"
-                            placeholder="no budget" style="width: 150px">
+                            placeholder="none" style="width: 170px" data-testid="task-budget">
                 <template #prefix><span class="deplab" style="min-width: 0">budget $</span></template>
             </n-input-number>
             <n-button size="small" :disabled="!budgetChanged(task.budgetMicros, budgetDraft)"
@@ -111,12 +117,14 @@
                 {{ budgetDraft == null && task.budgetMicros != null ? 'Clear budget' : 'Set budget' }}
             </n-button>
             <span v-if="task.budgetSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.budgetSetBy" :task="task"/> · {{ ts(task.budgetSetAt) }}
+                set by <actor-ref :actor="task.budgetSetBy" :task="task"/> · <agent-time :at="task.budgetSetAt"/>
             </span>
         </div>
         <div class="deprow">
-            <n-button size="small" type="primary" ghost :disabled="!completable"
-                      @click="showComplete = true">Complete…</n-button>
+            <disabled-hint :reason="hint('complete')">
+                <n-button size="small" type="primary" ghost :disabled="!completable" data-testid="complete-open"
+                          @click="showComplete = true">Complete…</n-button>
+            </disabled-hint>
             <n-input v-model:value="cancelNote" size="small" placeholder="Why cancel (optional)"
                      style="width: 220px"/>
             <n-popconfirm @positive-click="emit('cancel', { task, note: cancelNote })">
@@ -139,18 +147,19 @@
                      placeholder="Why its delivery cannot land (required)"/>
             <n-popconfirm @positive-click="reopen">
                 <template #trigger>
-                    <n-button size="small" :disabled="!reopenReady">
-                        Reopen to {{ reopenRole ?? '…' }}
-                    </n-button>
+                    <disabled-hint :reason="hint('reopen')">
+                        <n-button size="small" :disabled="!reopenReady || boardLocked(board)" data-testid="reopen">
+                            Reopen to {{ reopenRole ?? '…' }}
+                        </n-button>
+                    </disabled-hint>
                 </template>
                 The role's earlier pass stops counting; whoever read its part re-runs when it
                 republishes.
             </n-popconfirm>
         </div>
     </div>
-    <div v-if="task.reopenCount" class="holdmeta">
-        Reopened {{ task.reopenCount }}× · last {{ ts(task.reopenedAt) }}
-    </div>
+    <!-- Who reopened it, to which role and why (RD2-16). -->
+    <div v-if="reopenLine(task, ts)" class="holdmeta" data-testid="reopen-line">{{ reopenLine(task, ts) }}</div>
 
     <!-- A person's complete: findings that block completion are decided one by one, never
          skipped; required roles that have not passed may be skipped, with a note. -->
@@ -210,10 +219,13 @@
 <script lang="ts" setup>
 // A person's verbs on a task: authorize, order, complete, cancel, reopen, and the decisions a
 // completion needs. The drawer's preview and the task page both carry this whole.
+import AgentTime from '../AgentTime.vue'
 import { computed, ref, watch } from 'vue'
 import { NButton, NCheckbox, NDynamicTags, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui'
 import { groupOptions, groupToSend, NO_GROUP, parseTags, tagKeys, tagsProblem, tagsToSet } from '@/utils/agentTaskGroups'
 import ActorRef from '../ActorRef.vue'
+import DisabledHint from './DisabledHint.vue'
+import { boardLocked, COMPLETABLE, disabledReason, HintedAction, reopenLine } from '@/utils/agentTaskHints'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
@@ -288,8 +300,12 @@ const authorizable = computed(() =>
     props.task?.status === 'PENDING_INTAKE' || props.task?.status === 'AWAITING_COORDINATOR')
 // DELIVERING: a person completing it says the delivery happened (a PR merged by hand where CI does
 // not report), and the server completes it outright.
-const completable = computed(() =>
-    ['AWAITING_COORDINATOR', 'PENDING_INTAKE', 'QUEUED', 'ON_HOLD', 'DELIVERING'].includes(props.task?.status))
+const completable = computed(() => COMPLETABLE.includes(props.task?.status))
+/** Why a button is disabled, from the same rules the server applies (RD2-16). */
+function hint (action: HintedAction): string | null {
+    return disabledReason(action, props.task, props.board, { role: authorizeRole.value, order: orderDraft.value,
+        holdReason: holdReason.value, reopenRole: reopenRole.value, reopenReason: reopenReason.value })
+}
 const terminal = computed(() => isTerminal(props.task))
 const roleOptions = computed(() => roleOptionsOf(props.roles))
 const missingRequired = computed(() => missingRequiredRoles(props.task, props.roles))

@@ -33,7 +33,7 @@ describe('question rounds on the task page', () => {
         const open = questionsTask({ status: 'ASSIGNED',
             questionStack: [{ askingRole: 'rc-coder', questionsRelease: 'q-rel', answeringRole: 'rc-arch', askedAt: null }] })
         const w = mount(TaskOpenQuestions, { props: { task: open, roles: fixtureRoles } })
-        expect(w.find('.dsec__h').text()).toBe('Questions from coder · round 1 · about ARCHITECTURE round 1 · open (1)')
+        expect(w.find('.dsec__h').text()).toBe('Questions from coder · round 1 · about architecture round 1 · open (1)')
         expect(w.find('.oq__sub').text()).toBe('waiting on architect')
 
         const nobody = mount(TaskOpenQuestions, { props: { task: questionsTask({ status: 'ASSIGNED' }), roles: fixtureRoles } })
@@ -51,11 +51,13 @@ describe('question rounds on the task page', () => {
         expect(rows).toHaveLength(2)
         for (const r of rows) {
             expect(r.find('.drow__qstate').text()).toBe('answered')
-            expect(r.find('.drow__answered').text()).toBe('answered by ARCHITECTURE round 2')
+            expect(r.find('.drow__answered').text()).toBe('answered by architecture round 2')
             expect(r.text()).not.toContain('REJECTED')
+            expect(r.text()).not.toContain('rejected')
         }
-        // The other indexed types keep their verdict.
-        expect(answered.text()).toContain('REJECTED')
+        // The other indexed types keep their verdict, in words (RD2-23 run 1, T-1).
+        expect(answered.text()).toContain('rejected')
+        expect(answered.text()).not.toContain('REJECTED')
     })
 
     it('says a person answered, and a withdrawn round names nothing', () => {
@@ -71,7 +73,7 @@ describe('question rounds on the task page', () => {
         for (const r of rows) {
             expect(r.find('.drow__qstate').text()).toBe('answered')
             expect(r.findAll('.drow__answered').map(a => a.text())).toEqual(['answered by a person in questions round 2'])
-            expect(r.text()).not.toContain('answered by QUESTIONS')
+            expect(r.text()).not.toContain('answered by questions')
         }
 
         const allWithdrawn = questionsRound('q-3', 3, [fixtureFinding('Q-9', 2, 'WITHDRAWN', 'moot', { resolution: 'moot', resolvedBy: 'q-3' })])
@@ -84,7 +86,7 @@ describe('question rounds on the task page', () => {
 
     it('says which round each waiting-on row is and what it is about', () => {
         const w = mount(TaskQuestions, { props: { task: questionsTask(), roles: fixtureRoles }, global: { stubs } })
-        expect(w.find('.qstack__row').text()).toContain('coder asked nobody yet · questions round 1 · about ARCHITECTURE round 1')
+        expect(w.find('.qstack__row').text()).toContain('coder asked nobody yet · questions round 1 · about architecture round 1')
     })
 
     it('words a findings frame as the reviewer waiting on the maker, not as a question (bc7fc25a)', () => {
@@ -113,6 +115,6 @@ describe('question rounds on the task page', () => {
     it('puts the open questions on one line in the preview', () => {
         const w = mount(TaskSummary, { props: { task: questionsTask(), tasks: [], roles: fixtureRoles, agentNames: {} },
             global: { stubs } })
-        expect(w.text()).toContain('1 open question from coder (round 1, about ARCHITECTURE round 1)')
+        expect(w.text()).toContain('1 open question from coder (round 1, about architecture round 1)')
     })
 })

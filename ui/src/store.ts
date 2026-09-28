@@ -165,6 +165,7 @@ const AGENT_TASK_SELECTION = `
     requiredRolesSkipped
     reopenedAt
     reopenCount
+    reopens { role at reason by { kind uuid name } }
     pullRequests { url state targetBranch mergedDate registered
         attestation { unit commit outcome by { kind uuid name } at note } }
     deliveries { unit commit outcome by { kind uuid name } at note }
@@ -2819,6 +2820,8 @@ const storeObject : any = {
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
                             ${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
@@ -2874,7 +2877,25 @@ const storeObject : any = {
             })
             return response.data.agentTask
         },
-        /** What a board has produced, per document series (task 36d0549e): its own read, off the board list. */
+        /**
+         * The task a document round belongs to, for its release page (RD2-24): its key and board, and the
+         * newest check report of each of its documents -- the round's own among them. Null when the person
+         * may not read the task.
+         */
+        async fetchDocumentRoundTask (context: any, taskUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query documentRoundTask($ts: [ID!]!) {
+                        agentTasksByUuid(taskUuids: $ts) {
+                            uuid key board
+                            checks { scope { checked } results { check result blocking } }
+                        }
+                    }`,
+                variables: { ts: [taskUuid] },
+                fetchPolicy: 'no-cache'
+            })
+            return (response.data.agentTasksByUuid ?? [])[0] ?? null
+        },
         /**
          * A document component's rounds (task 36d0549e): the releases of its base branch with what each
          * round is, and the keys of their tasks -- best-effort, since reading a task needs its board.
@@ -2926,6 +2947,7 @@ const storeObject : any = {
             })
             return response.data.agentBoard?.missingCoverage ?? []
         },
+        /** What a board has produced, per document series (task 36d0549e): its own read, off the board list. */
         async fetchAgentBoardDocumentSeries (context: any, uuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
@@ -2939,6 +2961,7 @@ const storeObject : any = {
                                 roundsCount
                                 openFindings
                                 checkVerdict
+                                checkCounts { pass fail skip blockingFailed }
                             }
                         }
                     }`,
@@ -3793,6 +3816,7 @@ const storeObject : any = {
                             closedBy { kind uuid name }
                             closeReason
                             idleWarnedAt
+                            idleCloseAt
                             boardsWorked
                             tasksWorked { uuid key title role board boardName }
                             providerSessions {
