@@ -37,6 +37,9 @@ const TABLE: [string, any, string, any, boolean][] = [
     ['setLevel', { task, level: 2 }, 'agentTaskSetLevel', { taskUuid: 't1', level: 2 }, true],
     ['setGroup', { task, group: 'core-work' }, 'agentTaskSetGroup', { taskUuid: 't1', group: 'core-work' }, true],
     ['setTags', { task, tags: [{ key: 'urgent' }] }, 'agentTaskSetTags', { taskUuid: 't1', tags: [{ key: 'urgent' }] }, true],
+    ['supersedePr', { task, oldUrl: 'https://github.com/o/r/pull/1', byUrl: 'https://github.com/o/r/pull/2', note: null },
+        'agentTaskSupersedePullRequest', { taskUuid: 't1', oldUrl: 'https://github.com/o/r/pull/1',
+            byUrl: 'https://github.com/o/r/pull/2', note: null }, true],
     ['delivered', { task, unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null },
         'agentTaskDelivered', { taskUuid: 't1', unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null }, true],
 ]

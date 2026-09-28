@@ -3397,6 +3397,21 @@ const storeObject : any = {
             })
             return response.data.agentTaskDelivered
         },
+        /** A person declares a linked PR superseded by its replacement (task RD3-13, RD3-18). BOARD_WRITE. */
+        async agentTaskSupersedePullRequest (context: any, payload: { taskUuid: string, oldUrl: string, byUrl: string,
+            note: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSupersedePullRequest($taskUuid: ID!, $oldUrl: String!, $byUrl: String!, $note: String) {
+                        agentTaskSupersedePullRequest(taskUuid: $taskUuid, oldUrl: $oldUrl, byUrl: $byUrl, note: $note) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSupersedePullRequest
+        },
         /** A task's level, 0 to 9; null clears it to the board default (RD2-1). BOARD_WRITE. */
         async agentTaskSetLevel (context: any, payload: { taskUuid: string, level: number | null }) {
             const response = await graphqlClient.mutate({
