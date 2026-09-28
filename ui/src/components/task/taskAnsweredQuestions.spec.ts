@@ -10,7 +10,7 @@ import TaskOpenQuestions from './TaskOpenQuestions.vue'
 import TaskQuestions from './TaskQuestions.vue'
 import TaskAnsweredQuestions from './TaskAnsweredQuestions.vue'
 import { fixtureFinding, fixtureRoles, questionsRound, questionsTask, richDocuments } from './taskFixtures'
-import { answeredQuestions } from '@/utils/agentQuestionRounds'
+import { answeredQuestions, questionRounds } from '@/utils/agentQuestionRounds'
 
 vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) }))
 
@@ -95,3 +95,49 @@ describe('answered questions', () => {
         expect(w.find('[data-testid="answered-toggle"]').text()).toBe('show fewer')
     })
 })
+
+// Tester run 1 T-2: q1 asked, a person answered it, then q1 asked again. Items were matched by id across the
+// task, so round 1 read as the re-ask (open) and the answer round was skipped as seen: the list was empty.
+describe('a question asked again after its answer', () => {
+    function reasked () {
+        const asked = questionsRound('q-rel', 1, [fixtureFinding('q1', 2, 'OPEN', 'which branch?')])
+        const answered = questionsRound('q-2', 2, [
+            fixtureFinding('q1', 2, 'RESOLVED', 'which branch?', { resolvedBy: 'q-2', resolution: 'main' })])
+        const again = questionsRound('q-3', 3, [fixtureFinding('q1', 2, 'OPEN', 'which branch, for the docs?')])
+        ;(answered as any).createdDate = '2026-09-26T10:00:00Z'
+        return questionsTask({ status: 'ON_HOLD', openQuestions: [fixtureFinding('q1', 2, 'OPEN', 'which branch, for the docs?')],
+            questionStack: [{ askingRole: 'rc-coder', questionsRelease: 'q-3', answeringRole: null, askedAt: '2026-09-27T10:00:00Z' }],
+            signOffs: [{ role: 'coder', roleUuid: 'rc-coder', outputs: ['q-rel'], outcome: 'REJECTED' },
+                { role: 'coder', roleUuid: 'rc-coder', outputs: ['q-3'], outcome: 'REJECTED' }],
+            documents: [again, answered, asked, ...richDocuments()] })
+    }
+
+    it('keeps the first answer under the round that asked it, and the re-ask open', () => {
+        const qs = answeredQuestions(reasked(), fixtureRoles)
+        expect(qs.map(q => [q.id, q.askedIn.round, q.answer])).toEqual([['q1', 1, 'main']])
+        expect(qs[0].answeredBy).toEqual({ person: true, round: 2 })
+        expect(qs[0].answeredAt).toBe('2026-09-26T10:00:00Z')
+        const w = mount(TaskAnsweredQuestions, { props: { task: reasked(), roles: fixtureRoles } })
+        expect(w.text()).toContain('which branch?')
+        expect(w.text()).toContain('main')
+    })
+
+    it('lists the question twice once the re-ask is answered too, each under the round that asked it', () => {
+        const task = reasked()
+        const fourth = questionsRound('q-4', 4, [fixtureFinding('q1', 2, 'RESOLVED', 'which branch, for the docs?',
+            { resolvedBy: 'q-4', resolution: 'docs-main' })])
+        task.documents = [fourth, ...task.documents]
+        const qs = answeredQuestions(task, fixtureRoles)
+        expect(qs.map(q => [q.id, q.askedIn.round, q.answer])).toEqual([['q1', 3, 'docs-main'], ['q1', 1, 'main']])
+    })
+
+    it('reads round 1 as answered and the re-asking round as open', () => {
+        const rounds = questionRounds(reasked(), fixtureRoles)
+        expect(rounds.map(r => [r.round, r.state])).toEqual([[3, 'open'], [2, 'answered'], [1, 'answered']])
+        expect(rounds[2].answeredBy).toEqual([{ person: true, round: 2 }])
+        const w = mount(TaskOpenQuestions, { props: { task: reasked(), roles: fixtureRoles } })
+        expect(w.find('.dsec__h').text()).toContain('round 3')
+        expect(w.text()).toContain('which branch, for the docs?')
+    })
+})
+
