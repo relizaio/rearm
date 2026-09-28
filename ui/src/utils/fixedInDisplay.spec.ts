@@ -19,7 +19,7 @@ const fixedIn = (verdict: FixedIn['verdict'], extra: Partial<FixedIn> = {}): Fix
 describe('the fix version of a finding', () => {
     it('shows the version, the last affected one, no fix yet, or a dash', () => {
         expect(fixedInText(fixedIn('FIXED_IN', { version: '4.7.7' }))).toBe('4.7.7')
-        expect(fixedInText(fixedIn('FIXED_AFTER', { endIncluding: '1.2.1.2-jre17' }))).toBe('> 1.2.1.2-jre17')
+        expect(fixedInText(fixedIn('FIXED_AFTER', { versionEndIncluding: '1.2.1.2-jre17' }))).toBe('> 1.2.1.2-jre17')
         expect(fixedInText(fixedIn('NO_FIX_AVAILABLE'))).toBe('no fix yet')
         for (const verdict of ['NOT_IN_ADVISORY_RANGE', 'NO_RANGE_DATA', 'UNCOMPARABLE'] as const) {
             expect(fixedInText(fixedIn(verdict))).toBe('-')
@@ -39,14 +39,14 @@ describe('the fix version of a finding', () => {
 
     it('counts as a fix only when the advisory names the version', () => {
         expect(fixVersionOf({ fixedIn: fixedIn('FIXED_IN', { version: '2.0.3' }) })).toBe('2.0.3')
-        expect(fixVersionOf({ fixedIn: fixedIn('FIXED_AFTER', { endIncluding: '2.0.2' }) })).toBeNull()
+        expect(fixVersionOf({ fixedIn: fixedIn('FIXED_AFTER', { versionEndIncluding: '2.0.2' }) })).toBeNull()
         expect(fixVersionOf({ fixedIn: fixedIn('NO_FIX_AVAILABLE') })).toBeNull()
         expect(fixVersionOf({})).toBeNull()
     })
 
     it('tells a missing fix from the others', () => {
         expect(isNoFix(fixedIn('NO_FIX_AVAILABLE'))).toBe(true)
-        expect(isNoFix(fixedIn('FIXED_AFTER', { endIncluding: '1' }))).toBe(false)
+        expect(isNoFix(fixedIn('FIXED_AFTER', { versionEndIncluding: '1' }))).toBe(false)
         expect(isNoFix(null)).toBe(false)
     })
 

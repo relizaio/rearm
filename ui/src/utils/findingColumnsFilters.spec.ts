@@ -163,7 +163,7 @@ describe('the fix version columns', () => {
         const fixed: any = render({ fixedIn: fixedIn('FIXED_IN', { version: '1.11.11' }) })
         expect(fixed.children).toBe('1.11.11')
         expect(fixed.props.title).toMatch(/fixes the finding \(OSV\)$/)
-        expect(render({ fixedIn: fixedIn('FIXED_AFTER', { endIncluding: '2.0' }) }).children).toBe('> 2.0')
+        expect(render({ fixedIn: fixedIn('FIXED_AFTER', { versionEndIncluding: '2.0' }) }).children).toBe('> 2.0')
         const noFix: any = render({ fixedIn: fixedIn('NO_FIX_AVAILABLE') })
         expect(noFix.children.default()).toBe('no fix yet')
         expect(noFix.props.title).toMatch(/no fixed version yet for this package \(OSV\)$/)

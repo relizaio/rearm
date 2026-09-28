@@ -47,7 +47,7 @@ export function fixedInText (fixedIn: FixedIn | null | undefined): string {
     if (!fixedIn) return '-'
     switch (fixedIn.verdict) {
     case 'FIXED_IN': return fixedIn.version || '-'
-    case 'FIXED_AFTER': return fixedIn.endIncluding ? `> ${fixedIn.endIncluding}` : '-'
+    case 'FIXED_AFTER': return fixedIn.versionEndIncluding ? `> ${fixedIn.versionEndIncluding}` : '-'
     case 'NO_FIX_AVAILABLE': return 'no fix yet'
     default: return '-'
     }

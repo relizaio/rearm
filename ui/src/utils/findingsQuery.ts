@@ -18,7 +18,7 @@ const FINDING_SCORE_FIELDS = `
             epss { ...VulnScoreFields }`
 
 const FINDING_FIX_FIELDS = `
-            fixedIn { version verdict endIncluding sources }`
+            fixedIn { version verdict versionEndIncluding sources }`
 
 const findingsMetrics = (optionalFields: string) => `
     metrics {
