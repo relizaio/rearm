@@ -11,17 +11,22 @@
                     size="small"
                     style="min-width: 220px"
                 />
-                <n-button size="small" quaternary @click="registering = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }"
+                <n-button size="small" quaternary @click="newTask"
                           v-if="currentBoard && canOperate(currentBoard)">+ New task</n-button>
                 <n-button size="small" quaternary @click="startEditBoard(currentBoard)"
                           v-if="currentBoard && canConfigure(currentBoard)">Edit board</n-button>
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard && canConfigureRead(currentBoard)"
                           data-testid="view-as-spec">View as spec</n-button>
-                <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
+                <!-- Subscriptions are an org admin's (RD2-14); everyone else is told how the board reaches them. -->
+                <n-button size="small" quaternary @click="subscribeToBoard"
+                          v-if="currentBoard && subscribeOffer(currentBoard, isAdmin).kind === 'subscribe'" data-testid="subscribe"
                           title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
                     Subscribe
                 </n-button>
+                <span v-else-if="currentBoard" class="subhint" data-testid="subscribe-hint">
+                    {{ (subscribeOffer(currentBoard, isAdmin) as any).text }}
+                </span>
                 <n-button size="small" quaternary @click="applyKinds = ['BOARD']"
                           v-if="canApplySpec || canConfigure(currentBoard)">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
@@ -46,11 +51,8 @@
                 Board locked ({{ currentBoard.lock.level }}) — no new assignments.
                 <template v-if="currentBoard.lock.reason"> Reason: {{ currentBoard.lock.reason }}.</template>
                 <template v-if="actorLabel(currentBoard.lock.lockedBy)"> Held by {{ actorLabel(currentBoard.lock.lockedBy) }}.</template>
-                <n-button
-                    v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
-                    size="tiny" style="margin-left: 10px"
-                    @click="operatorLock(false)"
-                >Operator unlock</n-button>
+                <BoardLockControl v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
+                                  action="unlock" :board="currentBoard" :when="formatEventTime" @unlock="operatorLock(false)"/>
             </n-alert>
             <div class="boardmeta">
                 <n-tooltip v-if="currentBoard.declarative" trigger="hover">
@@ -106,7 +108,8 @@
                         ? 'At the per-agent WIP limit — this agent gets no new assignments until a task leaves ASSIGNED.'
                         : 'Concurrently assigned tasks vs the board per-agent limit.' }}
                 </n-tooltip>
-                <n-button v-if="!isLocked && canOperate(currentBoard)" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
+                <BoardLockControl v-if="!isLocked && canOperate(currentBoard)" action="lock" :board="currentBoard"
+                                  :when="formatEventTime" @lock="p => operatorLock(true, p.reason)"/>
             </div>
             <!-- One warning for what the board lacks (task 5c70990d): the delivery loop's capabilities,
                  then what no key can do on the board. -->
@@ -168,14 +171,23 @@
             <div v-if="groupBy !== 'none'" class="lane__head" data-testid="lane-head"
                  :style="groupBy === 'group' && groupColour(lane.key === 'none' ? null : lane.key)
                      ? { borderLeft: `4px solid ${groupColour(lane.key)}`, paddingLeft: '6px' } : undefined">{{ lane.label }}</div>
-            <div class="board">
-                <div class="col">
-                    <div class="col__head">Pending intake</div>
-                    <TaskCard v-for="t in byStatus('PENDING_INTAKE', lane.tasks)" :key="t.uuid" :t="t"/>
+            <!-- Columns at a laptop's width (RD2-13): each head counts its cards, an empty column folds to
+                 its head until opened, and a strip still too wide says how many columns sit past the edge. -->
+            <!-- Above the strip, where it shows without scrolling the page (RD2-13 run 1, T-2). -->
+            <div v-if="moreLanesHint(pastEdge[lane.key] ?? 0)" class="board__more" data-testid="more-lanes">
+                {{ moreLanesHint(pastEdge[lane.key] ?? 0) }}
+            </div>
+            <div class="board" :ref="(el: any) => boardEl(lane.key, el)" @scroll="measureBoards">
+                <div class="col" :class="{ 'col--folded': folded('intake', byStatus('PENDING_INTAKE', lane.tasks)) }" data-col="intake">
+                    <div class="col__head" @click="openColumn('intake')">Pending intake<span class="col__count" data-testid="col-count">{{ byStatus('PENDING_INTAKE', lane.tasks).length }}</span></div>
+                    <template v-if="!folded('intake', byStatus('PENDING_INTAKE', lane.tasks))">
+                        <TaskCard v-for="t in byStatus('PENDING_INTAKE', lane.tasks)" :key="t.uuid" :t="t"/>
+                    </template>
                 </div>
-                <div class="col" v-for="r in activeRoles" :key="r.name">
-                    <div class="col__head">
-                        {{ r.name }}
+                <div class="col" v-for="r in activeRoles" :key="r.name" :class="{ 'col--folded': folded('role:' + r.name, atRole(r.name, lane.tasks)) }"
+                     :data-col="'role:' + r.name">
+                    <div class="col__head" @click="openColumn('role:' + r.name)">
+                        {{ r.name }}<span class="col__count" data-testid="col-count">{{ atRole(r.name, lane.tasks).length }}</span>
                         <n-tooltip v-if="r.kind === 'HUMAN'" trigger="hover">
                             <template #trigger><span class="col__human">human</span></template>
                             Human stage: never offered to agent polls — an org admin signs off directly from the queue (open the card).
@@ -193,25 +205,36 @@
                             {{ assignedInRole(r.name) }}/{{ r.wipLimit }} wip
                         </span>
                     </div>
-                    <TaskCard v-for="t in atRole(r.name, lane.tasks)" :key="t.uuid" :t="t"/>
+                    <template v-if="!folded('role:' + r.name, atRole(r.name, lane.tasks))">
+                        <TaskCard v-for="t in atRole(r.name, lane.tasks)" :key="t.uuid" :t="t"/>
+                    </template>
                 </div>
-                <div class="col">
-                    <div class="col__head">Awaiting coordinator</div>
-                    <TaskCard v-for="t in byStatus('AWAITING_COORDINATOR', lane.tasks)" :key="t.uuid" :t="t"/>
+                <div class="col" :class="{ 'col--folded': folded('awaiting', byStatus('AWAITING_COORDINATOR', lane.tasks)) }" data-col="awaiting">
+                    <div class="col__head" @click="openColumn('awaiting')">Awaiting coordinator<span class="col__count" data-testid="col-count">{{ byStatus('AWAITING_COORDINATOR', lane.tasks).length }}</span></div>
+                    <template v-if="!folded('awaiting', byStatus('AWAITING_COORDINATOR', lane.tasks))">
+                        <TaskCard v-for="t in byStatus('AWAITING_COORDINATOR', lane.tasks)" :key="t.uuid" :t="t"/>
+                    </template>
                 </div>
-                <div class="col" v-if="byStatus('ON_HOLD', lane.tasks).length">
-                    <div class="col__head col__head--hold">On hold</div>
+                <div class="col" v-if="byStatus('ON_HOLD', lane.tasks).length" data-col="hold">
+                    <div class="col__head col__head--hold">On hold<span class="col__count" data-testid="col-count">{{ byStatus('ON_HOLD', lane.tasks).length }}</span></div>
                     <TaskCard v-for="t in byStatus('ON_HOLD', lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
-                <div class="col" v-if="byStatus('DELIVERING', lane.tasks).length">
-                    <div class="col__head">Delivering</div>
+                <div class="col" v-if="byStatus('DELIVERING', lane.tasks).length" data-col="delivering">
+                    <div class="col__head">Delivering<span class="col__count" data-testid="col-count">{{ byStatus('DELIVERING', lane.tasks).length }}</span></div>
                     <TaskCard v-for="t in byStatus('DELIVERING', lane.tasks)" :key="t.uuid" :t="t"/>
                 </div>
-                <div class="col col--done">
-                    <div class="col__head">Completed</div>
-                    <TaskCard v-for="t in byStatus('COMPLETED', lane.tasks)" :key="t.uuid" :t="t"/>
+                <div class="col col--done" :class="{ 'col--folded': folded('done', byStatus('COMPLETED', lane.tasks)) }" data-col="done">
+                    <div class="col__head" @click="openColumn('done')">Completed<span class="col__count" data-testid="col-count">{{ byStatus('COMPLETED', lane.tasks).length }}</span></div>
+                    <template v-if="!folded('done', byStatus('COMPLETED', lane.tasks))">
+                        <TaskCard v-for="t in byStatus('COMPLETED', lane.tasks)" :key="t.uuid" :t="t"/>
+                    </template>
                 </div>
             </div>
+            </div>
+            <!-- An empty board says how tasks arrive (RD2-13). -->
+            <div v-if="!tasks.length" class="board__empty" data-testid="empty-board">
+                {{ EMPTY_BOARD_HINT }}
+                <n-button v-if="currentBoard && canOperate(currentBoard)" size="tiny" style="margin-left: 8px" @click="newTask">+ New task</n-button>
             </div>
             </n-tab-pane>
             <n-tab-pane name="pert" tab="PERT">
@@ -928,7 +951,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, defineComponent, h, onMounted, provide, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -942,7 +965,8 @@ import AgentBoardDocumentsPanel from '@/components/AgentBoardDocumentsPanel.vue'
 import AgentBoardGroupsPanel from '@/components/AgentBoardGroupsPanel.vue'
 import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
 import { actorLabel } from '@/utils/agentActors'
-import { refLabel, roleTagFor, subtaskProgress, subtaskTag } from '@/utils/agentTaskLabels'
+import { refLabel, roleTagFor, subtaskProgress, subtaskTag, waitsOnLabel } from '@/utils/agentTaskLabels'
+import { columnFolded, EMPTY_BOARD_HINT, moreLanesHint, stripMeasure } from '@/utils/agentKanban'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
 import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch, documentsRootPlaceholder,
@@ -953,7 +977,7 @@ import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentLabel, age
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/utils/agentTaskKeys'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
-import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal } from '@/utils/agentBoardAccess'
+import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal, subscribeOffer } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
     levelPlaceholder, levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
@@ -974,6 +998,7 @@ const templateTypeRows = computed(() => templateRows(
     editingBoard.value && !editingBoardIsNew.value && editingBoard.value.uuid === selectedBoard.value ? roles.value : [],
     editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
+import BoardLockControl from '@/components/BoardLockControl.vue'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import AiAgentRevisionHistory from '@/components/AiAgentRevisionHistory.vue'
@@ -1298,6 +1323,30 @@ const canRegister = computed(() => !!registering.value?.title.trim()
     && !tagsProblem(parseTags(registering.value.tagsText))
     && ((currentBoard.value?.sources?.length ?? 0) === 0 || !!registering.value?.externalRef.trim()))
 
+/** A new task's draft, from the header or the empty board's hint (RD2-13). */
+function newTask () {
+    registering.value = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }
+}
+
+// The kanban's columns at a laptop's width (RD2-13): empty columns fold until opened; each lane's strip says how
+// many columns sit past its edge, measured after each render, on scroll and on resize.
+const openedColumns = ref<Set<string>>(new Set())
+function folded (key: string, cards: any[]): boolean {
+    return columnFolded(key, cards.length, openedColumns.value)
+}
+function openColumn (key: string) {
+    if (openedColumns.value.has(key)) return
+    openedColumns.value = new Set([...openedColumns.value, key])
+}
+const pastEdge = ref<Record<string, number>>({})
+// Each lane's strip, measured when it mounts and whenever the tasks, the open columns or the window change (RD2-13).
+const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge)
+const boardEl = strips.boardEl
+const measureBoards = strips.measure
+onMounted(() => window.addEventListener('resize', measureBoards))
+onBeforeUnmount(() => window.removeEventListener('resize', measureBoards))
+watch([tasks, openedColumns], () => nextTick(measureBoards))
+
 /** A group from the Groups tab (agentBoardGroupSet); a refusal goes back to the form, beside its field. */
 async function saveGroup (group: Record<string, any>) {
     if (!currentBoard.value) return
@@ -1345,13 +1394,7 @@ function blockedBy (t: any): string[] {
     })
 }
 
-// Resolve dependency uuids to the task rows so cards can name what
-// they wait on ("after") and what waits on them ("blocks").
-function depsOf (t: any): any[] {
-    return (t.dependsOn ?? []).map((d: string) =>
-        tasks.value.find(x => x.uuid === d) ?? { uuid: d, title: 'unknown task', status: 'UNKNOWN' })
-}
-
+// What waits on a card ("blocks"); what it waits on is its one waits-on chip (RD2-13).
 function dependentsOf (t: any): any[] {
     return tasks.value.filter(x => (x.dependsOn ?? []).includes(t.uuid))
 }
@@ -1471,13 +1514,17 @@ const TaskCard = defineComponent({
                     }),
                     default: () => 'Required role(s) without a passing sign-off — completion is blocked until they stamp.',
                 }) : null,
-                blockedBy(p.t).length ? h(NTooltip, { trigger: 'hover' }, {
-                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, {
-                        default: () => 'blocked by ' + blockedBy(p.t)
-                            .map((d: string) => depLabel(tasks.value.find(x => x.uuid === d) ?? { uuid: d }))
-                            .join(', '),
-                    }),
+                // The blocker named once, by key (RD2-13): the "after" row that named it again is gone.
+                waitsOnLabel(p.t, tasks.value) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning', 'data-testid': 'card-waits-on' },
+                        { default: () => waitsOnLabel(p.t, tasks.value) }),
                     default: () => 'Not assignable until every dependency is COMPLETED; the server releases it automatically.',
+                }) : null,
+                // A linked PR moved past the head its passing test named (RD2-13): re-test before merging.
+                prChips(p.t).some((c: any) => c.moved) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error', 'data-testid': 'card-pr-moved' },
+                        { default: () => 'PR moved · re-test' }),
+                    default: () => prChips(p.t).filter((c: any) => c.moved).map((c: any) => `${c.label}: ${c.heads}`).join(' | '),
                 }) : null,
                 waitingOnLabel(p.t) ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning', 'data-testid': 'card-waiting' },
@@ -1509,15 +1556,6 @@ const TaskCard = defineComponent({
                     default: () => `${c.label}: ${c.title}`,
                 })),
             ]),
-            p.t.dependsOn?.length ? h('div', { class: 'tcard__deps' }, [
-                h('span', { class: 'deplabel' }, 'after'),
-                ...depsOf(p.t).map((d: any, i: number) => h(NTooltip, { trigger: 'hover', key: 'a' + i }, {
-                    trigger: () => h('span', {
-                        class: ['depchip', d.status === 'COMPLETED' ? 'depchip--done' : 'depchip--wait'],
-                    }, depLabel(d)),
-                    default: () => `${d.title} — ${d.status}`,
-                })),
-            ]) : null,
             dependentsOf(p.t).length ? h('div', { class: 'tcard__deps' }, [
                 h('span', { class: 'deplabel' }, 'blocks'),
                 ...dependentsOf(p.t).map((d: any, i: number) => h(NTooltip, { trigger: 'hover', key: 'b' + i }, {
@@ -1961,12 +1999,8 @@ async function savePreset () {
     }
 }
 
-async function operatorLock (lock: boolean) {
-    let reason: string | undefined
-    if (lock) {
-        reason = window.prompt('Lock reason (shown to agents and on the board):') ?? undefined
-        if (reason === undefined) return
-    }
+/** Lock with the reason the in-page form asked for, or unlock once confirmed (RD2-17). */
+async function operatorLock (lock: boolean, reason?: string) {
     try {
         await store.dispatch('setAgentBoardOperatorLock', { boardUuid: selectedBoard.value, lock, reason })
         notification.success({ content: lock ? 'Board locked (OPERATOR)' : 'Board unlocked', duration: 3000 })
@@ -2051,16 +2085,23 @@ async function operatorLock (lock: boolean) {
     .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
     .form-grid .fcell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .form-grid .fcell .n-input-number { width: 100%; }
+    .subhint { font-size: 12px; color: #888; align-self: center; }
     .tcard__key { margin-right: 6px; font-family: monospace; font-size: 12px; color: #666; }
     .tcard__group { margin-right: 6px; font-family: monospace; }
+    // A laptop's width holds the common columns (RD2-13): 180 px each at the least, an empty column folded to
+    // its head, and a hint when the strip still runs past the edge.
     .board {
-        display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(200px, 1fr);
+        display: flex;
         gap: 12px;
-        align-items: start;
+        align-items: flex-start;
         overflow-x: auto;
     }
+    .col { flex: 1 1 180px; min-width: 180px; }
+    .col--folded { flex: 0 0 auto; min-width: 0; }
+    .col--folded .col__head { cursor: pointer; opacity: 0.6; white-space: nowrap; }
+    .col__count { margin-left: 6px; font-weight: 500; color: #888; }
+    .board__more { text-align: right; font-size: 12px; color: #888; margin-bottom: 2px; }
+    .board__empty { color: #888; font-size: 13px; padding: 12px 0; }
     .col__head {
         font-size: 12px;
         font-weight: 600;
@@ -2086,6 +2127,9 @@ async function operatorLock (lock: boolean) {
         .tcard__open { margin-left: 6px; font-size: 12px; text-decoration: none; opacity: 0.7; }
         .tcard__ref { font-size: 12px; margin-bottom: 6px; word-break: break-all; }
         .tcard__meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+        // A long chip ellipsizes inside the card; its tooltip says it whole (RD2-13).
+        .tcard__meta .n-tag { max-width: 100%; }
+        .tcard__meta .n-tag .n-tag__content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .tcard__passages { display: flex; flex-wrap: wrap; gap: 4px; }
         .tcard__deps {
             display: flex;

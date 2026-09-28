@@ -89,7 +89,9 @@ describe('the board page: New task', () => {
         expect(form).toContain('v-model:value="registering.description" type="textarea"')
         expect(form).toContain('data-testid="new-task-title-error"')
         expect(source).toContain('input: { ...taskRegisterInput(registering.value), ...registerGroupFields(registering.value) },')
-        expect(source).toContain("registering = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }")
+        // The draft now comes from newTask, which the header and the empty board's hint share (RD2-13).
+        expect(source).toContain("registering.value = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }")
+        expect(template).toContain('@click="newTask"')
     })
 
     it('cannot register a title or description the server refuses', () => {
@@ -286,6 +288,25 @@ describe('the board page for a reader', () => {
     })
 })
 
+// RD2-14: Subscribe only for an org admin, opening the prefilled subscription form; everyone else a hint in its
+// place, from subscribeOffer (agentBoardAccess.spec covers who gets which).
+describe('the board header: Subscribe', () => {
+    it('shows the button only when the offer is Subscribe, and the hint otherwise', () => {
+        const button = template.indexOf('data-testid="subscribe"')
+        expect(button).toBeGreaterThan(-1)
+        expect(template.slice(template.lastIndexOf('<n-button', button), button))
+            .toContain("v-if=\"currentBoard && subscribeOffer(currentBoard, isAdmin).kind === 'subscribe'\"")
+        const hint = template.indexOf('data-testid="subscribe-hint"')
+        expect(template.slice(template.lastIndexOf('<span', hint), hint)).toContain('v-else-if="currentBoard"')
+        expect(template.slice(hint, template.indexOf('</span>', hint))).toContain('subscribeOffer(currentBoard, isAdmin)')
+    })
+
+    it('opens the subscription form prefilled for the board, as before', () => {
+        expect(source).toContain("query: { tab: 'integrations', integrationsTab: 'subscriptions', newBoardSub: currentBoard.value.uuid }")
+        expect(source).toContain('const isAdmin = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))')
+    })
+})
+
 // The task key wherever a task is named (RD2-22): the card, the review banner and the board picker read
 // through agentTaskKeys, whose own spec covers the labels.
 describe('the board page: task keys', () => {
@@ -343,6 +364,58 @@ describe('board pages at 1280', () => {
         expect(rev).toContain('<span class="revhist__actions">')
         expect(rev).toContain('.revhist__actions { display: inline-flex; flex-shrink: 0; white-space: nowrap;')
         expect(rev).toMatch(/\.revhist__line \{\s*display: flex;\s*flex-wrap: nowrap;/)
+    })
+})
+
+// RD2-13 (sweep UI-21, UI-21b, UI-36, UI-42, UI-38): the kanban's cards and columns; the rules are agentKanban's
+// and agentTaskLabels', whose specs cover them.
+describe('the kanban: cards and columns', () => {
+    const card = source.slice(source.indexOf('const TaskCard = defineComponent'), source.indexOf('const TaskCard = defineComponent') + 6000)
+
+    it('tells an empty board how tasks arrive, with New task for who may add one', () => {
+        const hint = template.indexOf('data-testid="empty-board"')
+        expect(template.slice(template.lastIndexOf('<div', hint), hint)).toContain('v-if="!tasks.length"')
+        expect(template.slice(hint, template.indexOf('</div>', hint))).toContain('{{ EMPTY_BOARD_HINT }}')
+        expect(template.slice(hint, template.indexOf('</div>', hint))).toContain('v-if="currentBoard && canOperate(currentBoard)"')
+    })
+
+    it('folds an empty column to its head with its count, and opens it on a click', () => {
+        const awaiting = template.slice(template.indexOf('data-col="awaiting"') - 200, template.indexOf('data-col="awaiting"') + 700)
+        expect(awaiting).toContain(":class=\"{ 'col--folded': folded('awaiting', byStatus('AWAITING_COORDINATOR', lane.tasks)) }\"")
+        expect(awaiting).toContain('@click="openColumn(\'awaiting\')"')
+        expect(awaiting).toContain('data-testid="col-count"')
+        expect(awaiting).toContain('<template v-if="!folded(\'awaiting\', byStatus(\'AWAITING_COORDINATOR\', lane.tasks))">')
+        expect(template.match(/data-testid="col-count"/g)?.length).toBe(6, 'every column head counts its cards')
+        expect(template).toContain('data-testid="more-lanes"')
+    })
+
+    it('wraps and ellipsizes the chips, names the blocker once, and says when a PR moved', () => {
+        expect(source).toMatch(/\.tcard__meta \{ display: flex; flex-wrap: wrap;/)
+        expect(source).toMatch(/\.tcard__meta \.n-tag \.n-tag__content \{ overflow: hidden; text-overflow: ellipsis;/)
+        expect(card).toContain('waitsOnLabel(p.t, tasks.value)')
+        expect(card).not.toContain("'blocked by '")
+        expect(card).not.toContain("h('span', { class: 'deplabel' }, 'after')")
+        expect(card).toContain("{ default: () => 'PR moved · re-test' }")
+        expect(card).toContain('prChips(p.t).some((c: any) => c.moved)')
+    })
+
+    it('reads the PR heads the moved chip needs with the board\'s tasks', () => {
+        const store = readFileSync(fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
+        const q = store.slice(store.indexOf('query agentTasksOfBoard('), store.indexOf('query agentTasksOfBoard(') + 400)
+        expect(q).toContain('testedHeads { pr head }')
+        expect(q).toContain('pullRequests { url head }')
+    })
+})
+
+// Tester run 1 T-2: the hint sat under the strip, below the fold at 900 high; it now sits above it.
+describe('the kanban: more-lanes hint', () => {
+    it('shows above each lane\'s strip, and the strip is measured through the tested helper', () => {
+        const hint = template.indexOf('data-testid="more-lanes"')
+        const strip = template.indexOf('<div class="board" :ref="(el: any) => boardEl(lane.key, el)"')
+        expect(hint).toBeGreaterThan(-1)
+        expect(hint).toBeLessThan(strip)
+        expect(template.slice(strip).indexOf('data-testid="more-lanes"')).toBe(-1, 'not under the strip too')
+        expect(source).toContain('const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge)')
     })
 })
 

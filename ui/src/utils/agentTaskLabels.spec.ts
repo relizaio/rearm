@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef, subtaskProgress, subtaskTag } from './agentTaskLabels'
+import { compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef, subtaskProgress, subtaskTag, waitsOn, waitsOnLabel } from './agentTaskLabels'
+import { prChips } from './agentDelivery'
 
 const tasks = [
     { uuid: 'c1', status: 'COMPLETED', title: 'one' },
@@ -90,3 +91,37 @@ describe('task keys in the table', () => {
         expect([...rows].sort(compareTaskKeys).map(r => r.key ?? r.title)).toEqual(['RD-9', 'RD-10', 'old'])
     })
 })
+
+// RD2-13 (sweep UI-42, UI-38): the card names what it waits on once, by key; and says when a linked PR moved past
+// the head its passing test named.
+describe('what a card waits on', () => {
+    const tasks = [
+        { uuid: 'a', key: 'RD-1', status: 'ASSIGNED' },
+        { uuid: 'b', key: 'RD-2', status: 'COMPLETED' },
+        { uuid: 'c', externalRef: 'github:acme/x#12', status: 'QUEUED' },
+    ]
+
+    it('names each open dependency once, by key, else the issue number, else the uuid', () => {
+        expect(waitsOn({ status: 'QUEUED', dependsOn: ['a', 'b', 'c', 'zzzzzzzz-9'] }, tasks)).toEqual(['RD-1', '#12', 'zzzzzzzz'])
+        expect(waitsOnLabel({ status: 'QUEUED', dependsOn: ['a'] }, tasks)).toBe('waits on RD-1')
+    })
+
+    it('says nothing when every dependency is done, or the task is', () => {
+        expect(waitsOnLabel({ status: 'QUEUED', dependsOn: ['b'] }, tasks)).toBeNull()
+        expect(waitsOnLabel({ status: 'COMPLETED', dependsOn: ['a'] }, tasks)).toBeNull()
+        expect(waitsOnLabel({ status: 'QUEUED' }, tasks)).toBeNull()
+    })
+})
+
+describe('a linked PR moved past the tested head', () => {
+    const url = 'https://github.com/acme/x/pull/7'
+    it('is flagged when the PR\'s head is not the one the passing test named', () => {
+        const moved = prChips({ prUrls: [url], pullRequests: [{ url, state: 'OPEN', head: 'bbbbbbb2' }],
+            testedHeads: [{ pr: url, head: 'aaaaaaa1' }] })
+        expect(moved.some((c: any) => c.moved)).toBe(true)
+        const same = prChips({ prUrls: [url], pullRequests: [{ url, state: 'OPEN', head: 'aaaaaaa1' }],
+            testedHeads: [{ pr: url, head: 'aaaaaaa1' }] })
+        expect(same.some((c: any) => c.moved)).toBe(false)
+    })
+})
+

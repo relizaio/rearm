@@ -165,6 +165,7 @@ const AGENT_TASK_SELECTION = `
     requiredRolesSkipped
     reopenedAt
     reopenCount
+    reopens { role at reason by { kind uuid name } }
     pullRequests { url state targetBranch mergedDate registered
         attestation { unit commit outcome by { kind uuid name } at note } }
     deliveries { unit commit outcome by { kind uuid name } at note }
@@ -2819,6 +2820,8 @@ const storeObject : any = {
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
                             ${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
@@ -3793,6 +3796,7 @@ const storeObject : any = {
                             closedBy { kind uuid name }
                             closeReason
                             idleWarnedAt
+                            idleCloseAt
                             boardsWorked
                             tasksWorked { uuid key title role board boardName }
                             providerSessions {
