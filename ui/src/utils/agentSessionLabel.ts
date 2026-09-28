@@ -58,6 +58,15 @@ export function sessionOfActor (actor: any, role?: string | null): SessionLabelI
 /** The agent directory a page provides, so every session reference under it names the agent. */
 export const AGENT_DIR: InjectionKey<Ref<Record<string, AgentName>>> = Symbol('agentDir')
 
+/** The board's coordinator seat as its read carries it: the session holding it and its agent. */
+export interface CoordinatorSeat { session?: string | null, agent?: string | null }
+
+/**
+ * The seat a page provides beside the directory (RD2-11 run 2, T-3): the coordinator's session registers
+ * tasks, sets orders and holds them without ever taking a hop, so the task alone cannot name it.
+ */
+export const COORDINATOR_SEAT: InjectionKey<Ref<CoordinatorSeat | null | undefined>> = Symbol('coordinatorSeat')
+
 /** The agent a session worked a task as: its assignment, sign-offs or returns say. */
 export function agentOfSession (task: any, session: string): string | null {
     if (task?.assignment?.session === session && task.assignment.agent) return task.assignment.agent
@@ -72,8 +81,10 @@ export function agentOfSession (task: any, session: string): string | null {
  * caller knows the role better (a hop's own role), and its agent's name.
  */
 export function sessionOnTask (task: any, session: string, agents: Record<string, AgentName> | null | undefined,
-    role?: string | null): SessionLabelInput {
-    return sessionOf(session, agentOfSession(task, session), agents, role ?? roleOfSession(task, session))
+    role?: string | null, seat?: CoordinatorSeat | null): SessionLabelInput {
+    const isSeat = !!seat?.session && seat.session === session
+    const agent = agentOfSession(task, session) ?? (isSeat ? seat?.agent ?? null : null)
+    return sessionOf(session, agent, agents, role ?? roleOfSession(task, session) ?? (isSeat ? 'coordinator' : null))
 }
 
 /** Where a session's page is. */

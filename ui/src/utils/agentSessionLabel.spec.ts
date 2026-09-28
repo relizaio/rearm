@@ -59,3 +59,20 @@ describe('a session named by the task it appears on (RD2-11 run 1, T-2)', () => 
         expect(sessionLabel(sessionOnTask(task, 'unknown1', dir))).toBe('unknown1', 'a session the task does not know')
     })
 })
+
+describe('the coordinator seat (RD2-11 run 2, T-3)', () => {
+    const dir = agentDirectory([{ uuid: 'a9', name: 'coordinator-bot' }, { uuid: 'a1', name: 'claude-code' }])
+    const seat = { session: 'seat-ses', agent: 'a9' }
+
+    it('names the seat session coordinator, by the seat\'s agent, when the task does not know it', () => {
+        expect(sessionLabel(sessionOnTask({}, 'seat-ses', dir, null, seat))).toBe('coordinator · coordinator-bot · seat-ses')
+        expect(sessionLabel(sessionOnTask(null, 'seat-ses', dir, null, seat))).toBe('coordinator · coordinator-bot · seat-ses')
+        expect(sessionLabel(sessionOnTask({}, 'other-se', dir, null, seat))).toBe('other-se', 'another session is not the seat')
+    })
+
+    it('lets the task\'s own record win for a seat session that also worked a hop', () => {
+        const task = { signOffs: [{ session: 'seat-ses', agent: 'a1', role: 'coder', signedOffAt: '2026-09-27T09:00:00Z' }] }
+        expect(sessionLabel(sessionOnTask(task, 'seat-ses', dir, null, seat))).toBe('coder · claude-code · seat-ses')
+    })
+})
+

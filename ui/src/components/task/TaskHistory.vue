@@ -31,15 +31,16 @@ import { inject, ref } from 'vue'
 import { actorLabel } from '@/utils/agentActors'
 import ActorRef from '../ActorRef.vue'
 import SessionRef from '../SessionRef.vue'
-import { AGENT_DIR, sessionOnTask } from '@/utils/agentSessionLabel'
+import { AGENT_DIR, COORDINATOR_SEAT, sessionOnTask } from '@/utils/agentSessionLabel'
 import { dur, ts } from '@/utils/agentTaskFormat'
 
 const props = defineProps<{ task: any }>()
 const agents = inject(AGENT_DIR, ref({}))
+const seat = inject(COORDINATOR_SEAT, ref(null))
 
 /** A session on the task, role first and named by its agent (RD2-11). */
 function sessionWorked (s: string) {
-    return sessionOnTask(props.task, s, agents.value)
+    return sessionOnTask(props.task, s, agents.value, null, seat.value)
 }
 </script>
 

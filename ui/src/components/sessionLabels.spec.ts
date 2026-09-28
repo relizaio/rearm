@@ -14,7 +14,7 @@ import Table from './AiAgentTaskTableView.vue'
 import { ref } from 'vue'
 import ActorRef from './ActorRef.vue'
 import TaskHeader from './task/TaskHeader.vue'
-import { AGENT_DIR, agentDirectory } from '@/utils/agentSessionLabel'
+import { AGENT_DIR, agentDirectory, COORDINATOR_SEAT } from '@/utils/agentSessionLabel'
 import { fixtureRoles, richTask } from './task/taskFixtures'
 
 vi.mock('vue-router', async (orig) => ({ ...(await orig() as any), useRouter: () => ({ push: vi.fn() }) }))
@@ -107,3 +107,36 @@ describe('the board names sessions', () => {
         expect(ref.text()).toBe('coder · claude-code · 11111111')
     })
 })
+
+// Tester run 2 T-3: the coordinator's seat session registers, reorders and holds without taking a hop, so the
+// task alone cannot name it; the page provides the board's coordinatorSeat, and it reads role first as well.
+describe('the coordinator seat', () => {
+    const seatSession = '33333333-aaaa-bbbb-cccc-000000000003'
+    const seatAgents = agentDirectory([{ uuid: 'a1', name: 'claude-code' }, { uuid: 'a9', name: 'coordinator-bot' }])
+    const withSeat = { ...global, provide: { [AGENT_DIR as symbol]: ref(seatAgents),
+        [COORDINATOR_SEAT as symbol]: ref({ session: seatSession, agent: 'a9' }) } }
+    const byTheSeat = () => ({ ...worked(), registeredBySession: seatSession, sessions: [s1, s2], statusHistory: [
+        { from: 'PENDING_INTAKE', to: 'QUEUED', at: '2026-09-27T07:00:00Z', trigger: 'AUTHORIZE',
+            actor: { kind: 'SESSION', uuid: seatSession, name: 'agent board budget key' } }] })
+
+    it('names the seat in the status history: by and registered by', () => {
+        const h = mount(TaskHistory, { props: { task: byTheSeat() }, global: withSeat })
+        expect(h.find('.shist__by a.rl').text()).toBe('coordinator · coordinator-bot · 33333333')
+        expect(h.findAll('a.rl').map(r => r.text()).filter(l => l === 'coordinator · coordinator-bot · 33333333').length)
+            .toBe(2, 'by, and registered by')
+        expect(h.findAll('a.rl').some(r => /^[0-9a-f]{8}$/.test(r.text()))).toBe(false, 'no bare uuid8')
+    })
+
+    it('names the seat for set by, with the task or without one', () => {
+        const actor = { kind: 'SESSION', uuid: seatSession, name: 'agent board budget key' }
+        expect(mount(ActorRef, { props: { actor, task: byTheSeat() }, global: withSeat }).text())
+            .toBe('coordinator · coordinator-bot · 33333333')
+        expect(mount(ActorRef, { props: { actor }, global: withSeat }).text()).toBe('coordinator · coordinator-bot · 33333333')
+    })
+
+    it('leaves a worker session its own role, even beside the seat', () => {
+        const actor = { kind: 'SESSION', uuid: s1, name: 'agent board budget key' }
+        expect(mount(ActorRef, { props: { actor, task: byTheSeat() }, global: withSeat }).text()).toBe('designer · claude-code · 11111111')
+    })
+})
+

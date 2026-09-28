@@ -950,7 +950,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
-import { AGENT_DIR, AgentName, agentDirectory, agentLabel, agentNamesOf } from '@/utils/agentSessionLabel'
+import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentLabel, agentNamesOf } from '@/utils/agentSessionLabel'
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal } from '@/utils/agentBoardAccess'
@@ -1166,6 +1166,7 @@ const agentNames = ref<Record<string, string>>({})
 // Agents by uuid with their own name apart from the key's note, for naming sessions (RD2-11).
 const agentDir = ref<Record<string, AgentName>>({})
 provide(AGENT_DIR, agentDir)
+provide(COORDINATOR_SEAT, computed(() => currentBoard.value?.coordinatorSeat ?? null))
 
 function openTask (t: any) {
     // resolve to the freshest copy from the board so drawer navigation

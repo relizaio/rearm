@@ -71,7 +71,7 @@ import TaskAnsweredQuestions from './task/TaskAnsweredQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
 import { boardCan, canOperate } from '@/utils/agentBoardAccess'
-import { AGENT_DIR, AgentName, agentDirectory, agentNamesOf } from '@/utils/agentSessionLabel'
+import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentNamesOf } from '@/utils/agentSessionLabel'
 import { taskLoadErrorText } from '@/utils/agentAccessMessages'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
@@ -89,6 +89,7 @@ const agentNames = ref<Record<string, string>>({})
 // Agents by uuid with their own name apart from the key's note, for naming sessions (RD2-11).
 const agentDir = ref<Record<string, AgentName>>({})
 provide(AGENT_DIR, agentDir)
+provide(COORDINATOR_SEAT, computed(() => board.value?.coordinatorSeat ?? null))
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 
