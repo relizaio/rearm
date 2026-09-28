@@ -60,7 +60,8 @@
         <n-space :size="6" align="center">
             <n-select v-model:value="fileSpec" :options="fileSpecOptions" size="small" style="width: 130px"/>
             <n-input v-model:value="fileTitle" size="small" placeholder="What is wrong" style="width: 200px"/>
-            <n-select v-model:value="filePriority" :options="priorityOptions" size="small" style="width: 72px"/>
+            <n-select v-model:value="filePriority" :options="priorityOptions" size="small" placeholder="severity"
+                      style="width: 96px" data-testid="file-severity"/>
             <n-select v-if="!aboutOf(fileSpec)" v-model:value="fileAbout" :options="aboutOptions" size="small"
                       clearable placeholder="about" style="width: 150px"/>
             <n-button size="small" :disabled="!fileTitle.trim() || filePriority == null" @click="fileFinding">

@@ -309,3 +309,40 @@ describe('the board page: task keys', () => {
     })
 })
 
+// RD2-12 (sweep UI-17, UI-18, UI-19, UI-20): the board pages at 1280 -- short placeholders, the board form's
+// settings label-above in two columns, table headers on one line, revision rows' actions on one line.
+describe('board pages at 1280', () => {
+    const read = (f: string) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8')
+
+    it('lays the board form\'s settings out label above, two columns, with short placeholders', () => {
+        const grid = template.slice(template.indexOf('<div class="form-grid" data-testid="board-settings">'))
+        const block = grid.slice(0, grid.indexOf('\n                </div>'))
+        expect(block.match(/<label class="fcell"><span class="flabel">/g)?.length).toBe(9, 'every setting labelled above')
+        expect(block).not.toContain('<template #prefix>')
+        expect(block).toContain('placeholder="none" data-testid="board-budget"')
+        expect(block).toContain('placeholder="off"')
+        expect(source).toMatch(/\.form-grid \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/)
+        expect(template).toContain('placeholder="PRs registered here (default)" size="small" style="min-width: 280px"')
+    })
+
+    it('gives the task page\'s selects and budget short placeholders', () => {
+        expect(read('./task/TaskFindings.vue')).toContain('placeholder="severity"')
+        expect(read('./task/TaskHeader.vue')).toContain('placeholder="severity"')
+        expect(read('./task/TaskActions.vue')).toContain('placeholder="none" style="width: 150px" data-testid="task-budget"')
+    })
+
+    it('keeps the table\'s headers on one line, Order wide enough', () => {
+        const table = read('./AiAgentTaskTableView.vue')
+        expect(table).toContain('class="ttable__table"')
+        expect(table).toContain('.ttable__table :deep(.n-data-table-th) { white-space: nowrap; }')
+        expect(table).toContain("{ title: 'Order', key: 'orderIndex', width: 80, minWidth: 80,")
+    })
+
+    it('keeps a revision row\'s actions on one line beside its facts', () => {
+        const rev = read('./AiAgentRevisionHistory.vue')
+        expect(rev).toContain('<span class="revhist__actions">')
+        expect(rev).toContain('.revhist__actions { display: inline-flex; flex-shrink: 0; white-space: nowrap;')
+        expect(rev).toMatch(/\.revhist__line \{\s*display: flex;\s*flex-wrap: nowrap;/)
+    })
+})
+

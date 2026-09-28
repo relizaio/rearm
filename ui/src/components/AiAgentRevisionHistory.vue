@@ -9,13 +9,16 @@
                         <span class="revhist__rev">{{ e.revision === null ? 'current' : `rev ${e.revision}` }}</span>
                         <span v-if="e.at" class="revhist__at">{{ when(e.at) }}</span>
                         <span class="revhist__facts">{{ revisionSummary(kind, e.snapshot).join(' · ') }}</span>
-                        <n-button v-if="i + 1 < shown.length" size="tiny" quaternary class="revhist__compare"
-                                  @click="flip('compare', i)">
-                            {{ compareOpen.has(i) ? 'hide changes' : 'changes from previous' }}
-                        </n-button>
-                        <n-button v-if="e.snapshot" size="tiny" quaternary @click="flip('full', i)">
-                            {{ fullOpen.has(i) ? 'hide snapshot' : 'snapshot' }}
-                        </n-button>
+                        <!-- The row's actions keep to one line beside the facts (RD2-12). -->
+                        <span class="revhist__actions">
+                            <n-button v-if="i + 1 < shown.length" size="tiny" quaternary class="revhist__compare"
+                                      @click="flip('compare', i)">
+                                {{ compareOpen.has(i) ? 'hide changes' : 'changes from previous' }}
+                            </n-button>
+                            <n-button v-if="e.snapshot" size="tiny" quaternary @click="flip('full', i)">
+                                {{ fullOpen.has(i) ? 'hide snapshot' : 'snapshot' }}
+                            </n-button>
+                        </span>
                     </div>
                     <div v-if="compareOpen.has(i)" class="revhist__diff">
                         <div v-if="!changesAt(i).length" class="revhist__note">No field shown here changed.</div>
@@ -134,11 +137,13 @@ defineExpose({ load })
 }
 .revhist__line {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
     font-size: 12px;
 }
+.revhist__facts { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.revhist__actions { display: inline-flex; flex-shrink: 0; white-space: nowrap; gap: 2px; }
 .revhist__rev {
     font-weight: 600;
     min-width: 52px;

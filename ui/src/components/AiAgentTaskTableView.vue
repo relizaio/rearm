@@ -14,6 +14,7 @@
                       @update:value="(v: string | null) => emit('update:tagFilter', v ?? null)"/>
         </n-space>
         <n-data-table
+            class="ttable__table"
             :columns="columns"
             :data="filtered"
             :row-key="(r: any) => r.uuid"
@@ -152,7 +153,7 @@ const columns: DataTableColumns<any> = [
                 style: 'margin-right:3px' }, { default: () => k }))) : '—',
     },
     { title: 'Role', key: 'role', width: 90, sorter: (a, b) => String(a.role ?? '').localeCompare(String(b.role ?? '')), render: (t: any) => roleTagFor(t)?.text ?? '—' },
-    { title: 'Order', key: 'orderIndex', width: 70, sorter: (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0) },
+    { title: 'Order', key: 'orderIndex', width: 80, minWidth: 80, sorter: (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0) },
     {
         title: 'Agent', key: 'agent', width: 140,
         // The session working it, role first and linked (RD2-11), not the key's note shared by every session on it.
@@ -177,5 +178,7 @@ function rowProps (t: any) {
 </script>
 
 <style scoped lang="scss">
+// Headers keep to one line (RD2-12): "Order" wrapped mid-word at 1280.
+.ttable__table :deep(.n-data-table-th) { white-space: nowrap; }
 .ttable { &__filters { margin-bottom: 8px; } }
 </style>
