@@ -2819,6 +2819,8 @@ const storeObject : any = {
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
                             ${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
