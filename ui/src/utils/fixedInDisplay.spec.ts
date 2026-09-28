@@ -17,10 +17,10 @@ import type { AffectedRange, FixedIn } from './vulnerabilityRecordService'
 const fixedIn = (verdict: FixedIn['verdict'], extra: Partial<FixedIn> = {}): FixedIn => ({ verdict, sources: [], ...extra })
 
 describe('the fix version of a finding', () => {
-    it('shows the version, the last affected one, no fix, or a dash', () => {
+    it('shows the version, the last affected one, no fix yet, or a dash', () => {
         expect(fixedInText(fixedIn('FIXED_IN', { version: '4.7.7' }))).toBe('4.7.7')
         expect(fixedInText(fixedIn('FIXED_AFTER', { endIncluding: '1.2.1.2-jre17' }))).toBe('> 1.2.1.2-jre17')
-        expect(fixedInText(fixedIn('NO_FIX_AVAILABLE'))).toBe('no fix')
+        expect(fixedInText(fixedIn('NO_FIX_AVAILABLE'))).toBe('no fix yet')
         for (const verdict of ['NOT_IN_ADVISORY_RANGE', 'NO_RANGE_DATA', 'UNCOMPARABLE'] as const) {
             expect(fixedInText(fixedIn(verdict))).toBe('-')
         }
@@ -32,6 +32,8 @@ describe('the fix version of a finding', () => {
         expect(fixedInTitle(fixedIn('FIXED_IN', { version: '4.7.7', sources: ['GITHUB', 'OSV'] })))
             .toBe(`${FIXED_IN_TITLES.FIXED_IN} (GITHUB, OSV)`)
         expect(fixedInTitle(fixedIn('NOT_IN_ADVISORY_RANGE'))).toMatch(/matched by name/i)
+        // "not fixed yet", never "unfixable": most of these are Debian releases still waiting for a fix
+        expect(FIXED_IN_TITLES.NO_FIX_AVAILABLE).toBe('The advisory names no fixed version yet for this package')
         expect(fixedInTitle(null)).toBe('')
     })
 

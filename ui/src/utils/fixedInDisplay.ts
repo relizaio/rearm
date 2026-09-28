@@ -18,7 +18,7 @@ export interface FixedInRow {
 export const FIXED_IN_TITLES: Record<FixedInVerdict, string> = {
     FIXED_IN: 'The advisory says this version fixes the finding',
     FIXED_AFTER: 'The advisory says versions up to this one are affected, and names no fixed version',
-    NO_FIX_AVAILABLE: 'The advisory knows no fixed version: every later version is affected too',
+    NO_FIX_AVAILABLE: 'The advisory names no fixed version yet for this package',
     NOT_IN_ADVISORY_RANGE: 'Matched by name; this version is outside the advisory\'s affected ranges',
     NO_RANGE_DATA: 'No affected version ranges for this package yet',
     UNCOMPARABLE: 'This version cannot be placed in the advisory\'s affected ranges'
@@ -37,18 +37,18 @@ export function fixVersionOf (row: FixedInRow): string | null {
     return row.fixedIn?.verdict === 'FIXED_IN' && row.fixedIn.version ? row.fixedIn.version : null
 }
 
-/** The advisory knows no fixed version. */
+/** The advisory names no fixed version yet. */
 export function isNoFix (fixedIn: FixedIn | null | undefined): boolean {
     return fixedIn?.verdict === 'NO_FIX_AVAILABLE'
 }
 
-/** The cell text: the version, "> version" for a last affected one, "no fix", else "-". */
+/** The cell text: the version, "> version" for a last affected one, "no fix yet", else "-". */
 export function fixedInText (fixedIn: FixedIn | null | undefined): string {
     if (!fixedIn) return '-'
     switch (fixedIn.verdict) {
     case 'FIXED_IN': return fixedIn.version || '-'
     case 'FIXED_AFTER': return fixedIn.endIncluding ? `> ${fixedIn.endIncluding}` : '-'
-    case 'NO_FIX_AVAILABLE': return 'no fix'
+    case 'NO_FIX_AVAILABLE': return 'no fix yet'
     default: return '-'
     }
 }
