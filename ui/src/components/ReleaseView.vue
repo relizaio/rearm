@@ -750,11 +750,12 @@
                         </h3>
                         <n-data-table :data="commits" :columns="commitTableFields" :row-key="artifactsRowKey" />
                     </div>
-                    <div class="container" v-if="failedReleaseCommitsFlattened.length > 0">
+                    <!-- A document round shows its block and its signed commit only (RD2-24 architecture-2 §2). -->
+                    <div class="container" v-if="failedReleaseCommitsFlattened.length > 0 && !isDocumentRound">
                         <h3>Source Code Entries from Failed/Pending Releases</h3>
                         <n-data-table :data="failedReleaseCommitsFlattened" :columns="failedReleaseCommitTableFields" :row-key="(row) => row.uuid" />
                     </div>
-                    <div class="container">
+                    <div class="container" v-if="!isDocumentRound">
                         <h3>Artifacts
                             <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Artifact" @click="showReleaseAddProducesArtifactModal=true">
                                 <CirclePlus/>

@@ -76,5 +76,19 @@ describe('documents view contract', () => {
         expect(store.slice(store.lastIndexOf('/**', task), task)).toContain('The task a document round belongs to')
         expect(store.slice(store.lastIndexOf('/**', rounds), rounds)).toContain("A document component's rounds")
     })
-})
 
+    it('a round\'s Components tab shows the round block and its Source Code Entries, nothing else (RD2-24 architecture-2 §2)', () => {
+        const rv = src('ReleaseView.vue')
+        const start = rv.indexOf('<n-tab-pane name="components" tab="Components">')
+        const pane = rv.slice(start, rv.indexOf('</n-tab-pane>', start))
+        const sections = [...pane.matchAll(/<div class="container"(?: v-if="([^"]*)")?[^>]*>\s*<h3>\s*([^<\n]*?)\s*(?:<|\n)/g)]
+            .map(m => ({ guard: m[1] ?? '', heading: m[2] }))
+        expect(sections.map(s => s.heading)).toEqual(['Document round', 'Components', 'Source Code Entries',
+            'Source Code Entries from Failed/Pending Releases', 'Artifacts', 'Produced Deliverables', 'Inbound Deliverables'])
+        // A round's component is never a PRODUCT, so a PRODUCT-only section does not render for one.
+        const shownForARound = sections.filter(s => s.guard !== 'false' && !s.guard.includes('!isDocumentRound')
+            && !/componentDetails\.type === 'PRODUCT'$/.test(s.guard))
+        expect(shownForARound.map(s => s.heading)).toEqual(['Document round', 'Source Code Entries'])
+        expect(sections.find(s => s.heading === 'Source Code Entries')?.guard).not.toContain('isDocumentRound')
+    })
+})
