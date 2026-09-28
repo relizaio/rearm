@@ -31,7 +31,9 @@
                  form, which files a round now, opens from here only when asked for. -->
             <div class="holdmeta gatemode" data-testid="gate-finding-mode">
                 {{ GATE_FINDING_MODE }}
-                <n-button text size="tiny" type="primary" class="gatefilenow" data-testid="gate-file-now"
+                <!-- Filing now takes only what does not block (RD2-18 run 1, T-1): none on a strict board. -->
+                <span v-if="!fileNowPriorities(board, priorityLevels).length" data-testid="gate-every-blocks">{{ EVERY_PRIORITY_BLOCKS }}</span>
+                <n-button v-else text size="tiny" type="primary" class="gatefilenow" data-testid="gate-file-now"
                           @click="toggleFileNow(task)">
                     {{ fileNowOpened(task) ? 'hide the file-now form' : 'file now without deciding' }}
                 </n-button>
@@ -148,7 +150,7 @@
 // stage of a HUMAN role, and the human-review flag. A gate verdict or a release must stay one click
 // away wherever the task is shown, so the drawer's preview keeps this whole.
 import { computed, ref, watch } from 'vue'
-import { fileNowOpened, GATE_FINDING_MODE, toggleFileNow } from '@/utils/agentGateFinding'
+import { EVERY_PRIORITY_BLOCKS, fileNowOpened, fileNowPriorities, GATE_FINDING_MODE, toggleFileNow } from '@/utils/agentGateFinding'
 import { NAlert, NButton, NInput, NPopconfirm, NRadioButton, NRadioGroup, NSelect, NSpace, NTag } from 'naive-ui'
 import { approveConfirm, approveLabel, gateBlockingFindings, gateDecisions, GateDecision, gateRejected, rejectLabel,
     undecided } from '@/utils/agentGateReview'

@@ -29,7 +29,38 @@ export function toggleFileNow (task: any): void {
     else fileNowOpen.add(task.uuid)
 }
 
-/** Whether the standalone form shows: always outside a gate, at a gate once asked for. */
-export function standaloneFindingShown (task: any): boolean {
-    return !atHumanGate(task) || fileNowOpened(task)
+/**
+ * Whether a finding of this priority blocks on the board, as the server reads it: with no blocking priority
+ * (strict) every priority blocks, else those at or above it (a lower number).
+ */
+export function blocksOnBoard (priority: number, board: any): boolean {
+    const bp = board?.blockingPriority ?? null
+    return bp == null || priority <= bp
+}
+
+/**
+ * The priorities a finding filed now may take at a gate (RD2-18 run 1, T-1): only those that do not block, as
+ * the server refuses a blocking finding while the task waits on a person's verdict. None on a strict board.
+ */
+export function fileNowPriorities (board: any, levels: number | null | undefined): number[] {
+    return Array.from({ length: levels ?? 3 }, (_, i) => i + 1).filter(p => !blocksOnBoard(p, board))
+}
+
+/** What the gate box says when no finding can be filed now: every priority blocks on this board. */
+export const EVERY_PRIORITY_BLOCKS = 'Every priority blocks on this board, so a finding goes with your verdict.'
+
+/** The standalone form's line at a gate: it files now, and only what does not block. */
+export function fileNowLine (board: any, levels: number | null | undefined): string {
+    const ps = fileNowPriorities(board, levels)
+    const range = ps.length ? (ps.length === 1 ? `P${ps[0]}` : `P${ps[0]}–P${ps[ps.length - 1]}`) : ''
+    return `${FILE_NOW_LINE} Only a finding that does not block (${range}) can be filed here; a blocking one goes with your verdict.`
+}
+
+/**
+ * Whether the standalone form shows: always outside a gate; at a gate once asked for, and only where a finding
+ * that does not block can be filed.
+ */
+export function standaloneFindingShown (task: any, board?: any, levels?: number | null): boolean {
+    if (!atHumanGate(task)) return true
+    return fileNowOpened(task) && fileNowPriorities(board, levels).length > 0
 }

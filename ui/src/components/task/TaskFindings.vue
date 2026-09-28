@@ -57,16 +57,18 @@
 
     <!-- At a human gate the gate box's form rides on the verdict; this one, which files a round now,
          shows there only when asked for (RD2-18). -->
-    <div v-if="canDecide && standaloneFindingShown(task)" class="dsec" data-testid="file-finding">
+    <div v-if="canDecide && standaloneFindingShown(task, board, priorityLevels)" class="dsec" data-testid="file-finding">
         <div class="dsec__h">File a finding</div>
-        <div v-if="atHumanGate(task)" class="holdmeta" data-testid="file-now-line" style="margin-top: 0">{{ FILE_NOW_LINE }}</div>
+        <div v-if="atHumanGate(task)" class="holdmeta" data-testid="file-now-line" style="margin-top: 0">{{ fileNowLine(board, priorityLevels) }}</div>
         <n-space :size="6" align="center">
             <n-select v-model:value="fileSpec" :options="fileSpecOptions" size="small" style="width: 130px"/>
             <n-input v-model:value="fileTitle" size="small" placeholder="What is wrong" style="width: 200px"/>
-            <n-select v-model:value="filePriority" :options="priorityOptions" size="small" style="width: 72px"/>
+            <n-select v-model:value="filePriority" :options="filePriorityOptions" size="small" style="width: 72px"
+                      data-testid="file-priority"/>
             <n-select v-if="!aboutOf(fileSpec)" v-model:value="fileAbout" :options="aboutOptions" size="small"
                       clearable placeholder="about" style="width: 150px"/>
-            <n-button size="small" :disabled="!fileTitle.trim() || filePriority == null" @click="fileFinding">
+            <n-button size="small" :disabled="!fileTitle.trim() || filePriority == null || !filePriorityAllowed" @click="fileFinding"
+                      data-testid="file-submit">
                 File
             </n-button>
         </n-space>
@@ -81,7 +83,7 @@
 // The newest findings round of each indexed type, a person's decisions on its items, and filing a
 // new finding.
 import { computed, ref, watch } from 'vue'
-import { atHumanGate, FILE_NOW_LINE, standaloneFindingShown } from '@/utils/agentGateFinding'
+import { atHumanGate, fileNowLine, fileNowPriorities, standaloneFindingShown } from '@/utils/agentGateFinding'
 import { NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
 import ActorRef from '../ActorRef.vue'
 import { findingElement } from '@/utils/agentElements'
@@ -126,6 +128,11 @@ const fileAbout = ref<string | null>(null)
 
 const canDecide = computed(() => DECIDABLE_STATUSES.includes(props.task?.status) && canOperate(props.board))
 const priorityOptions = computed(() => priorityOptionsOf(props.priorityLevels))
+/** At a gate the form files now, so only priorities that do not block (RD2-18 run 1, T-1); elsewhere every one. */
+const filePriorityOptions = computed(() => atHumanGate(props.task)
+    ? priorityOptions.value.filter(o => fileNowPriorities(props.board, props.priorityLevels).includes(o.value))
+    : priorityOptions.value)
+const filePriorityAllowed = computed(() => filePriorityOptions.value.some(o => o.value === filePriority.value))
 const aboutOptions = computed(() => aboutOptionsOf(props.roles))
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
 
@@ -172,6 +179,10 @@ watch(() => props.task?.uuid, () => {
     deciding.value = null
     fileTitle.value = ''
     fileAbout.value = null
+})
+// A priority the form no longer offers (the task reached a gate) is dropped, not sent (RD2-18 run 1, T-1).
+watch(filePriorityOptions, opts => {
+    if (filePriority.value != null && !opts.some(o => o.value === filePriority.value)) filePriority.value = null
 })
 </script>
 
