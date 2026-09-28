@@ -19,6 +19,14 @@ describe('an inbox row with a long title', () => {
         expect(styles).toMatch(/\.inbox-card-head > \.n-tag \{\s*flex: 0 0 auto;\s*\}/)
     })
 
+    // Tester run 1 T-1: the title was an inline span, where max-width and the ellipsis do nothing, inside a
+    // link that did not clip -- so it ran under the tag anyway. Measured live at 1280: title right 1195 vs tag
+    // left 1109; with these two rules it ends at 1101 with the ellipsis.
+    it('makes the title a block and has the link clip it, so the ellipsis applies', () => {
+        expect(styles).toMatch(/\.inbox-message-title \{[^}]*display: block;/)
+        expect(styles).toMatch(/\.inbox-message-link \{[^}]*overflow: hidden;/)
+    })
+
     it('keeps the whole title on hover', () => {
         expect(template).toContain('class="inbox-message-title" data-testid="inbox-message-title" :title="c.title"')
     })

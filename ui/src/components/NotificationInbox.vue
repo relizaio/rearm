@@ -1263,6 +1263,8 @@ onUnmounted(() => {
     font: inherit;
     text-decoration: none;
     cursor: pointer;
+    /* The title ellipsizes inside the link; the link must clip it too (RD2-22 run 1). */
+    overflow: hidden;
 }
 .inbox-message-link:focus-visible {
     outline: 2px solid var(--n-color-primary, #2080f0);
@@ -1273,6 +1275,8 @@ onUnmounted(() => {
 /* CSS ellipsis (not JS slicing): clips on the rendered glyph boundary so a
  * multi-byte char / emoji at the cut point can't be split mid-surrogate. */
 .inbox-message-title {
+    /* A block, so max-width and the ellipsis apply; an inline span ran under the tag (RD2-22 run 1). */
+    display: block;
     font-weight: 500;
     line-height: 1.3;
     overflow: hidden;
