@@ -45,11 +45,8 @@
                 Board locked ({{ currentBoard.lock.level }}) — no new assignments.
                 <template v-if="currentBoard.lock.reason"> Reason: {{ currentBoard.lock.reason }}.</template>
                 <template v-if="actorLabel(currentBoard.lock.lockedBy)"> Held by {{ actorLabel(currentBoard.lock.lockedBy) }}.</template>
-                <n-button
-                    v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
-                    size="tiny" style="margin-left: 10px"
-                    @click="operatorLock(false)"
-                >Operator unlock</n-button>
+                <BoardLockControl v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
+                                  action="unlock" :board="currentBoard" :when="formatEventTime" @unlock="operatorLock(false)"/>
             </n-alert>
             <div class="boardmeta">
                 <n-tooltip v-if="currentBoard.declarative" trigger="hover">
@@ -105,7 +102,8 @@
                         ? 'At the per-agent WIP limit — this agent gets no new assignments until a task leaves ASSIGNED.'
                         : 'Concurrently assigned tasks vs the board per-agent limit.' }}
                 </n-tooltip>
-                <n-button v-if="!isLocked && canOperate(currentBoard)" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
+                <BoardLockControl v-if="!isLocked && canOperate(currentBoard)" action="lock" :board="currentBoard"
+                                  :when="formatEventTime" @lock="p => operatorLock(true, p.reason)"/>
             </div>
             <!-- One warning for what the board lacks (task 5c70990d): the delivery loop's capabilities,
                  then what no key can do on the board. -->
@@ -974,6 +972,7 @@ const templateTypeRows = computed(() => templateRows(
     editingBoard.value && !editingBoardIsNew.value && editingBoard.value.uuid === selectedBoard.value ? roles.value : [],
     editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
+import BoardLockControl from '@/components/BoardLockControl.vue'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import AiAgentRevisionHistory from '@/components/AiAgentRevisionHistory.vue'
@@ -1959,12 +1958,8 @@ async function savePreset () {
     }
 }
 
-async function operatorLock (lock: boolean) {
-    let reason: string | undefined
-    if (lock) {
-        reason = window.prompt('Lock reason (shown to agents and on the board):') ?? undefined
-        if (reason === undefined) return
-    }
+/** Lock with the reason the in-page form asked for, or unlock once confirmed (RD2-17). */
+async function operatorLock (lock: boolean, reason?: string) {
     try {
         await store.dispatch('setAgentBoardOperatorLock', { boardUuid: selectedBoard.value, lock, reason })
         notification.success({ content: lock ? 'Board locked (OPERATOR)' : 'Board unlocked', duration: 3000 })
