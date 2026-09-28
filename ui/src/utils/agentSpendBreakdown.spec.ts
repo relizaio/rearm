@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { breakdownEmpty, hopsLabel, partsSum, roleRows } from './agentSpendBreakdown'
+import { breakdownEmpty, breakdownErrorText, hopsLabel, partsSum, roleRows } from './agentSpendBreakdown'
 
 // The Usage tab's breakdown (RD2-8): rows that add up to the total, and "no usage" only when there is none.
 const b = {
@@ -33,5 +33,12 @@ describe('no usage', () => {
             .toBe(false, 'a coordinator-only board is not "no usage"')
         expect(breakdownEmpty({ byRole: [], bySession: [], coordinatorEstimateMicros: 0, unattributedMicros: 0, totalMicros: 0 })).toBe(true)
         expect(breakdownEmpty(null)).toBe(true)
+    })
+})
+
+describe('a breakdown that could not be read', () => {
+    it('says why, without the GraphQL prefix, or only that it could not', () => {
+        expect(breakdownErrorText(new Error('GraphQL error: Not authorized'))).toBe('Could not read the breakdown: Not authorized')
+        expect(breakdownErrorText(null)).toBe('Could not read the breakdown.')
     })
 })

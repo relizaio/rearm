@@ -52,6 +52,7 @@
                         :bordered="false"
                         data-testid="by-role"
                     />
+                    <n-text v-else-if="breakdownError" type="error" data-testid="by-role-error">{{ breakdownError }}</n-text>
                     <n-text v-else depth="3" data-testid="by-role-empty">No usage in this window.</n-text>
                 </n-card>
             </n-grid-item>
@@ -68,6 +69,7 @@
                 :bordered="false"
                 data-testid="top-sessions"
             />
+            <n-text v-else-if="breakdownError" type="error" data-testid="top-sessions-error">{{ breakdownError }}</n-text>
             <n-text v-else depth="3" data-testid="top-sessions-empty">No sessions with usage in this window.</n-text>
         </n-card>
     </div>
@@ -88,7 +90,7 @@ import {
     byModelRows,
     modelDisplayName,
 } from '@/utils/agentUsage'
-import { hopsLabel, LOWER_BOUND_NOTE, roleRows } from '@/utils/agentSpendBreakdown'
+import { breakdownErrorText, hopsLabel, LOWER_BOUND_NOTE, roleRows } from '@/utils/agentSpendBreakdown'
 
 const props = defineProps<{
     /** The board's budget and what it has spent since it was created; the budget line shows when both are known. */
@@ -102,6 +104,8 @@ const props = defineProps<{
 const store = useStore()
 const usage = ref<UsageTotals | null>(null)
 const breakdown = ref<any>(null)
+/** Why the breakdown could not be read: shown in its place, never as "no usage" beside a total (RD2-8 run 1, T-2). */
+const breakdownError = ref<string | null>(null)
 const loading = ref(false)
 const periodHours = ref<number>(USAGE_PERIODS[1].hours)
 
@@ -119,6 +123,8 @@ const windowLabel = computed(() => {
 async function load () {
     if (!props.boardUuid) {
         usage.value = null
+        breakdown.value = null
+        breakdownError.value = null
         return
     }
     loading.value = true
@@ -127,16 +133,19 @@ async function load () {
         // The total and its breakdown, over the same window (RD2-8).
         const [u, b] = await Promise.all([
             store.dispatch('fetchAgentBoardUsage', { boardUuid: props.boardUuid, from, to }),
-            store.dispatch('fetchAgentBoardSpendBreakdown', { boardUuid: props.boardUuid, from, to }).catch(() => null),
+            store.dispatch('fetchAgentBoardSpendBreakdown', { boardUuid: props.boardUuid, from, to })
+                .then((x: any) => ({ ok: x }), (e: any) => ({ error: breakdownErrorText(e) })),
         ])
         usage.value = u
-        breakdown.value = b
+        breakdown.value = 'ok' in b ? b.ok : null
+        breakdownError.value = 'error' in b ? b.error : null
     } catch {
         // A failed rollup leaves the panel empty rather than throwing into the
         // board view: usage is an overlay on the board, never a precondition
         // for using it.
         usage.value = null
         breakdown.value = null
+        breakdownError.value = null
     } finally {
         loading.value = false
     }

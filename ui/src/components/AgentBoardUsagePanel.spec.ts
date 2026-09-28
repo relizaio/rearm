@@ -71,4 +71,37 @@ describe('AgentBoardUsagePanel', () => {
         expect(w.find('[data-testid="top-sessions-empty"]').exists()).toBe(true)
         expect(w.find('[data-testid="lower-bound"]').exists()).toBe(false)
     })
+
+    // Tester run 1 T-2: the breakdown failed (T-1's ClassCastException) and the panel printed "no usage"
+    // beside a non-zero Total. The failure now shows in the breakdown's place, and the total still reads.
+    it('shows why the breakdown could not be read, never "no usage", beside the total', async () => {
+        dispatch.mockImplementation(async (action: string) => {
+            if (action === 'fetchAgentBoardSpendBreakdown') throw new Error('GraphQL error: Internal server error')
+            return { ...tokens, derivedCostMicros: 800_000, costComplete: true, byModel: [] }
+        })
+        const w = await mounted()
+        expect(w.find('[data-testid="by-role-error"]').text()).toBe('Could not read the breakdown: Internal server error')
+        expect(w.find('[data-testid="top-sessions-error"]').text()).toBe('Could not read the breakdown: Internal server error')
+        expect(w.find('[data-testid="by-role-empty"]').exists()).toBe(false)
+        expect(w.find('[data-testid="top-sessions-empty"]').exists()).toBe(false)
+        expect(w.text()).toContain('$0.80')
+    })
+
+    it('clears the error once a later read succeeds', async () => {
+        let fail = true
+        dispatch.mockImplementation(async (action: string) => {
+            if (action === 'fetchAgentBoardSpendBreakdown') {
+                if (fail) throw new Error('boom')
+                return { totalMicros: 0, costComplete: true, coordinatorEstimateMicros: 0, unattributedMicros: 0, byRole: [], bySession: [] }
+            }
+            return { ...tokens, derivedCostMicros: 0, costComplete: true, byModel: [] }
+        })
+        const w = await mounted()
+        expect(w.find('[data-testid="by-role-error"]').exists()).toBe(true)
+        fail = false
+        await (w.vm as any).load()
+        await flushPromises()
+        expect(w.find('[data-testid="by-role-error"]').exists()).toBe(false)
+        expect(w.find('[data-testid="by-role-empty"]').exists()).toBe(true)
+    })
 })

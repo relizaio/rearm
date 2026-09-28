@@ -57,3 +57,9 @@ export function partsSum (b: any): number {
 
 /** The note shown when some usage had no price. */
 export const LOWER_BOUND_NOTE = 'Some usage has no price; totals are a lower bound.'
+
+/** What the By role and Top sessions cards say when the breakdown could not be read (RD2-8 run 1, T-2). */
+export function breakdownErrorText (e: any): string {
+    const why = String(e?.message ?? e ?? '').replace(/^GraphQL error:\s*/, '').trim()
+    return why ? `Could not read the breakdown: ${why}` : 'Could not read the breakdown.'
+}
