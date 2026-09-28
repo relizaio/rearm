@@ -131,7 +131,7 @@
         </div>
         <div class="deprow">
             <disabled-hint :reason="hint('complete')">
-                <n-button size="small" type="primary" ghost :disabled="!completable" data-testid="complete-open"
+                <n-button size="small" type="primary" ghost :disabled="!!hint('complete')" data-testid="complete-open"
                           @click="showComplete = true">Complete…</n-button>
             </disabled-hint>
             <n-input v-model:value="cancelNote" size="small" placeholder="Why cancel (optional)"
@@ -234,7 +234,7 @@ import { NButton, NCheckbox, NDynamicTags, NInput, NInputNumber, NModal, NPopcon
 import { groupOptions, groupToSend, NO_GROUP, parseTags, tagKeys, tagsProblem, tagsToSet } from '@/utils/agentTaskGroups'
 import ActorRef from '../ActorRef.vue'
 import DisabledHint from './DisabledHint.vue'
-import { boardLocked, COMPLETABLE, disabledReason, HintedAction, reopenLine } from '@/utils/agentTaskHints'
+import { boardLocked, disabledReason, HintedAction, reopenLine } from '@/utils/agentTaskHints'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
@@ -318,7 +318,6 @@ const authorizable = computed(() =>
     props.task?.status === 'PENDING_INTAKE' || props.task?.status === 'AWAITING_COORDINATOR')
 // DELIVERING: a person completing it says the delivery happened (a PR merged by hand where CI does
 // not report), and the server completes it outright.
-const completable = computed(() => COMPLETABLE.includes(props.task?.status))
 /** Why a button is disabled, from the same rules the server applies (RD2-16). */
 function hint (action: HintedAction): string | null {
     return disabledReason(action, props.task, props.board, { role: authorizeRole.value, order: orderDraft.value,
