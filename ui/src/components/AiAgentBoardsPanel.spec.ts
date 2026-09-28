@@ -285,3 +285,23 @@ describe('the board page for a reader', () => {
         expect(open).not.toContain('showSpec.value = false')
     })
 })
+
+// RD2-14: Subscribe only for an org admin, opening the prefilled subscription form; everyone else a hint in its
+// place, from subscribeOffer (agentBoardAccess.spec covers who gets which).
+describe('the board header: Subscribe', () => {
+    it('shows the button only when the offer is Subscribe, and the hint otherwise', () => {
+        const button = template.indexOf('data-testid="subscribe"')
+        expect(button).toBeGreaterThan(-1)
+        expect(template.slice(template.lastIndexOf('<n-button', button), button))
+            .toContain("v-if=\"currentBoard && subscribeOffer(currentBoard, isAdmin).kind === 'subscribe'\"")
+        const hint = template.indexOf('data-testid="subscribe-hint"')
+        expect(template.slice(template.lastIndexOf('<span', hint), hint)).toContain('v-else-if="currentBoard"')
+        expect(template.slice(hint, template.indexOf('</span>', hint))).toContain('subscribeOffer(currentBoard, isAdmin)')
+    })
+
+    it('opens the subscription form prefilled for the board, as before', () => {
+        expect(source).toContain("query: { tab: 'integrations', integrationsTab: 'subscriptions', newBoardSub: currentBoard.value.uuid }")
+        expect(source).toContain('const isAdmin = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))')
+    })
+})
+
