@@ -7,6 +7,7 @@
                     v-if="boards.length"
                     v-model:value="selectedBoard"
                     :options="boardOptions"
+                    :render-label="renderBoardOption"
                     size="small"
                     style="min-width: 220px"
                 />
@@ -124,7 +125,7 @@
                 {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting your review:
                 <n-button v-for="t in awaitingHumanReview" :key="t.uuid" size="tiny" quaternary
                           style="margin-left: 6px" @click="openTask(t)">
-                    {{ t.externalRef ? '#' + t.externalRef.split('#').pop() : t.title }} ({{ t.hold.gateRole }})
+                    {{ reviewBannerLabel(t) }}
                 </n-button>
             </n-alert>
             <n-alert v-else-if="awaitingHumanReview.length" type="info" class="lockbanner" data-testid="review-banner-info">
@@ -952,6 +953,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
 import { isOrgAdmin } from '@/utils/agentReopen'
 import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentLabel, agentNamesOf } from '@/utils/agentSessionLabel'
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
+import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/utils/agentTaskKeys'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
@@ -1364,7 +1366,8 @@ function depLabel (t: any): string {
     return title.length > 16 ? title.slice(0, 15) + '…' : title
 }
 
-const boardOptions = computed(() => boards.value.map(b => ({ label: b.name, value: b.uuid })))
+// "<prefix> · <name>", a locked board tagged (RD2-22).
+const boardOptions = computed(() => boardPickerOptions(boards.value))
 const currentBoard = computed(() => boards.value.find(b => b.uuid === selectedBoard.value) ?? null)
 const isLocked = computed(() => {
     const lvl = currentBoard.value?.lock?.level
@@ -1424,7 +1427,8 @@ const TaskCard = defineComponent({
                 workRank(p.t) === 1 ? 'tcard--ready' : '',
                 workRank(p.t) >= 2 && workRank(p.t) <= 3 ? 'tcard--stuck' : ''] }, { default: () => [
             h('div', { class: 'tcard__title' }, [
-                // The level where the key goes (RD2-1; RD2-22 puts the key beside it).
+                // The key leads the card, as on the task page (RD2-22); the level beside it (RD2-1).
+                p.t.key ? h('span', { class: 'tcard__key', 'data-testid': 'card-key' }, p.t.key) : null,
                 levelLabel(p.t, currentBoard.value) ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__level' },
                         { default: () => levelLabel(p.t, currentBoard.value) }),
@@ -2045,6 +2049,7 @@ async function operatorLock (lock: boolean) {
     .lane { margin-bottom: 12px; }
     .lane__head { font-weight: 600; font-size: 13px; margin: 6px 0; }
     .tcard__level { margin-right: 6px; }
+    .tcard__key { margin-right: 6px; font-family: monospace; font-size: 12px; color: #666; }
     .tcard__group { margin-right: 6px; font-family: monospace; }
     .board {
         display: grid;
