@@ -48,7 +48,7 @@ describe('why Complete is disabled', () => {
         const task = { status: 'AWAITING_COORDINATOR', pullRequests: [abandoned, closed, merged] }
         expect(blockedDelivery(task, prBoard)).toEqual(['relizaio/rearm-saas/pull/692 attested abandoned',
             'relizaio/rearm-saas/pull/700 closed without merging'])
-        expect(disabledReason('complete', task, prBoard)).toMatch(/^its delivery will not land: .*attested abandoned; .*closed without merging; reopen it, or link the PR that replaces it$/)
+        expect(disabledReason('complete', task, prBoard)).toMatch(/^its delivery will not land: .*attested abandoned; .*closed without merging; reopen it, or link the replacement and declare the closed PR superseded \(task supersedepr\)$/)
     })
 
     it('a closed PR attested delivered does not block', () => {
@@ -62,7 +62,7 @@ describe('why Complete is disabled', () => {
         const none = { deliveryPolicy: { mode: 'NONE', attest: true } }
         const task = { status: 'AWAITING_COORDINATOR', deliveries: [{ outcome: 'DELIVERED' }, { outcome: 'ABANDONED' }] }
         expect(disabledReason('complete', task, none)).toBe('its delivery will not land: its delivery attested abandoned;'
-            + ' reopen it, or link the PR that replaces it')
+            + ' reopen it')
         expect(disabledReason('complete', { ...task, deliveries: [{ outcome: 'ABANDONED' }, { outcome: 'DELIVERED' }] }, none))
             .toBeNull()
     })

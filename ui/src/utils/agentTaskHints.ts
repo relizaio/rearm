@@ -79,8 +79,12 @@ export function disabledReason (action: HintedAction, task: any, board: any, d: 
                 : `a ${String(task?.status ?? 'task').toLowerCase().replace(/_/g, ' ')} task is not completed by hand`
         }
         const blocked = blockedDelivery(task, board)
-        return blocked.length ? `its delivery will not land: ${blocked.join('; ')}; reopen it, or link the PR that replaces it`
-            : null
+        if (!blocked.length) return null
+        // A PR closed unmerged is superseded once its replacement is linked (task RD3-13); one attested
+        // abandoned cannot be, so only the reopen is offered for it -- as the server's refusal says.
+        const supersedable = blocked.some(b => b.endsWith(' closed without merging'))
+        return `its delivery will not land: ${blocked.join('; ')}; reopen it`
+            + (supersedable ? ', or link the replacement and declare the closed PR superseded (task supersedepr)' : '')
     }
     case 'authorize':
         return d.role ? null : 'pick the role to authorize it for'
