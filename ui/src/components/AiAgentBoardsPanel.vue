@@ -323,7 +323,7 @@
         </template>
 
         <!-- Board create / edit modal -->
-        <n-modal :show="editingBoard !== null" preset="card"
+        <n-modal :show="editingBoard !== null" preset="card" class="boardForm"
                  :title="editingBoardIsNew ? 'New board' : `Edit board: ${editingBoard?.name}`"
                  style="max-width: 680px"
                  @update:show="(v: boolean) => { if (!v) editingBoard = null }">
@@ -359,58 +359,56 @@
                 <!-- Budget and stops (task 40f270be): the board file's settings, checked as a file's are.
                      A value emptied here is cleared; one left alone is not sent. -->
                 <div class="flabel">budget and stops</div>
-                <n-space :size="8" data-testid="board-settings">
-                    <n-input-number v-model:value="editingBoard.budgetDollars" :min="0" :step="1" :precision="2"
-                                    placeholder="no budget" style="width: 170px">
-                        <template #prefix><span class="flabel">budget $</span></template>
-                    </n-input-number>
-                    <n-input-number v-model:value="editingBoard.softAlertPercent" :min="1" :max="100"
-                                    placeholder="80" style="width: 150px">
-                        <template #prefix><span class="flabel">alert %</span></template>
-                    </n-input-number>
-                    <n-input-number v-model:value="editingBoard.cycleCap" :min="1" placeholder="3" style="width: 140px">
-                        <template #prefix><span class="flabel">cycle cap</span></template>
-                    </n-input-number>
-                    <n-input-number v-model:value="editingBoard.noProgressRepeatsToStop" :min="1" placeholder="1"
-                                    style="width: 170px">
-                        <template #prefix><span class="flabel">no-progress stop</span></template>
-                    </n-input-number>
-                    <n-input-number v-model:value="editingBoard.blockingPriority" :min="1" :max="priorityLevels" placeholder="strict"
-                                    style="width: 150px">
-                        <template #prefix><span class="flabel">blocking P≤</span></template>
-                    </n-input-number>
-                    <n-input-number v-model:value="editingBoard.completionPriority" :min="1" :max="priorityLevels" placeholder="strict"
-                                    style="width: 160px">
-                        <template #prefix><span class="flabel">completion P≤</span></template>
-                    </n-input-number>
+                <!-- Label above each field, two columns at 1280 (RD2-12): no placeholder is cut and every control
+                     shows whole. Placeholders are the defaults a blank field takes. -->
+                <div class="form-grid" data-testid="board-settings">
+                    <label class="fcell"><span class="flabel">budget $</span>
+                        <n-input-number v-model:value="editingBoard.budgetDollars" :min="0" :step="1" :precision="2"
+                                        placeholder="none" data-testid="board-budget"/>
+                    </label>
+                    <label class="fcell"><span class="flabel">alert %</span>
+                        <n-input-number v-model:value="editingBoard.softAlertPercent" :min="1" :max="100" placeholder="80"/>
+                    </label>
+                    <label class="fcell"><span class="flabel">cycle cap</span>
+                        <n-input-number v-model:value="editingBoard.cycleCap" :min="1" placeholder="3"/>
+                    </label>
+                    <label class="fcell"><span class="flabel">no-progress stop</span>
+                        <n-input-number v-model:value="editingBoard.noProgressRepeatsToStop" :min="1" placeholder="1"/>
+                    </label>
+                    <label class="fcell"><span class="flabel">blocking P≤</span>
+                        <n-input-number v-model:value="editingBoard.blockingPriority" :min="1" :max="priorityLevels" placeholder="strict"/>
+                    </label>
+                    <label class="fcell"><span class="flabel">completion P≤</span>
+                        <n-input-number v-model:value="editingBoard.completionPriority" :min="1" :max="priorityLevels" placeholder="strict"/>
+                    </label>
                     <!-- task 28dc4afb: a task waiting on a person longer than this raises a queue-age
                          notification (AGENT_TASK_QUEUE_AGE); empty or 0 is off. -->
-                    <n-tooltip trigger="hover">
-                        <template #trigger>
-                            <n-input-number v-model:value="editingBoard.humanQueueAgeMinutes" :min="0" placeholder="off"
-                                            style="width: 250px" data-testid="board-human-queue-age">
-                                <template #prefix><span class="flabel">notify a person after, min</span></template>
-                            </n-input-number>
-                        </template>
-                        A task waiting on a person longer than this raises a notification; empty or 0 is off.
-                    </n-tooltip>
+                    <label class="fcell"><span class="flabel">notify a person after, min</span>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-input-number v-model:value="editingBoard.humanQueueAgeMinutes" :min="0" placeholder="off"
+                                                data-testid="board-human-queue-age"/>
+                            </template>
+                            A task waiting on a person longer than this raises a notification; empty or 0 is off.
+                        </n-tooltip>
+                    </label>
                     <!-- task 04dedcc5: how long the event log keeps an event; 0 keeps everything. -->
-                    <n-input-number v-model:value="editingBoard.eventRetentionDays" :min="0" placeholder="15"
-                                    style="width: 170px" data-testid="board-event-retention">
-                        <template #prefix><span class="flabel">keep events, days</span></template>
-                    </n-input-number>
+                    <label class="fcell"><span class="flabel">keep events, days</span>
+                        <n-input-number v-model:value="editingBoard.eventRetentionDays" :min="0" placeholder="15"
+                                        data-testid="board-event-retention"/>
+                    </label>
                     <!-- RD2-1: the level a task without its own reads; blank clears it. -->
-                    <n-tooltip trigger="hover">
-                        <template #trigger>
-                            <n-input-number v-model:value="editingBoard.defaultTaskLevel" :min="0" :max="MAX_LEVEL" :precision="0"
-                                            placeholder="none" style="width: 180px" data-testid="board-default-level"
-                                            :status="boardFieldErrors.defaultTaskLevel ? 'error' : undefined">
-                                <template #prefix><span class="flabel">default level</span></template>
-                            </n-input-number>
-                        </template>
-                        {{ LEVEL_LADDER_HINT }}
-                    </n-tooltip>
-                </n-space>
+                    <label class="fcell"><span class="flabel">default level</span>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-input-number v-model:value="editingBoard.defaultTaskLevel" :min="0" :max="MAX_LEVEL" :precision="0"
+                                                placeholder="none" data-testid="board-default-level"
+                                                :status="boardFieldErrors.defaultTaskLevel ? 'error' : undefined"/>
+                            </template>
+                            {{ LEVEL_LADDER_HINT }}
+                        </n-tooltip>
+                    </label>
+                </div>
                 <n-text v-if="boardFieldErrors.defaultTaskLevel" type="error" data-testid="board-default-level-error"
                         style="font-size: 12px; margin-top: -6px;">{{ boardFieldErrors.defaultTaskLevel }}</n-text>
                 <!-- task c0a2134c: on (the default, null) a no-progress or cycle-cap stop parks for the
@@ -429,7 +427,7 @@
                 <div class="flabel">delivery</div>
                 <n-space :size="8" align="center" data-testid="board-delivery">
                     <n-select v-model:value="editingBoard.deliveryMode" :options="deliveryModeOptions" clearable
-                              placeholder="PRs registered here (default)" size="small" style="width: 260px"/>
+                              placeholder="PRs registered here (default)" size="small" style="min-width: 280px"/>
                     <n-checkbox v-if="editingBoard.deliveryMode === 'NONE'" v-model:checked="editingBoard.deliveryAttest">
                         wait for a push or release to be attested
                     </n-checkbox>
@@ -438,13 +436,13 @@
                 <!-- task 71a3dd22: who merges and how; blank fields take the defaults the placeholders name. -->
                 <n-space :size="8" align="center" data-testid="board-merge">
                     <n-select v-model:value="editingBoard.merge.by" :options="mergeByOptions" clearable size="small"
-                              :placeholder="'merged by: ' + effectiveMergeBy" style="width: 230px"/>
+                              :placeholder="'merged by: ' + effectiveMergeBy" style="min-width: 240px"/>
                     <n-input v-if="editingBoard.merge.by === 'ROLE'" v-model:value="editingBoard.merge.byRole"
                              placeholder="role name" size="small" style="width: 140px"/>
                     <n-select v-model:value="editingBoard.merge.method" :options="mergeMethodOptions" clearable
-                              placeholder="merge commit (default)" size="small" style="width: 190px"/>
+                              placeholder="merge commit (default)" size="small" style="min-width: 220px"/>
                     <n-select v-model:value="editingBoard.merge.order" :options="mergeOrderOptions" clearable
-                              placeholder="as the notes say (default)" size="small" style="width: 210px"/>
+                              placeholder="as the notes say (default)" size="small" style="min-width: 220px"/>
                     <n-checkbox v-model:checked="editingBoard.merge.atTestedHead">only at the tested head</n-checkbox>
                     <n-checkbox :checked="editingBoard.deliveryMode === 'ATTESTED' || editingBoard.merge.requireAttestation"
                                 :disabled="editingBoard.deliveryMode === 'ATTESTED'"
@@ -2012,6 +2010,12 @@ async function operatorLock (lock: boolean, reason?: string) {
 </script>
 
 <style lang="scss">
+// The board form's settings, label above each field, two columns (RD2-12). The form is a modal, which naive
+// teleports to the body, out of .boardsPanel: these rules hang off the modal's own class (tester run 1 T-2).
+.boardForm .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.boardForm .form-grid .fcell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.boardForm .form-grid .fcell .n-input-number { width: 100%; }
+.boardForm .form-grid .flabel { color: #888; font-size: 12px; }
 .boardsPanel {
     .section-head {
         display: flex;

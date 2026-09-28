@@ -24,8 +24,8 @@
             <n-space :size="6" style="margin-top: 8px" align="center">
                 <n-input v-model:value="gateFindingTitle" size="small"
                          placeholder="Finding or correction (optional)" style="width: 230px"/>
-                <n-select v-model:value="gateFindingPriority" :options="priorityOptions" size="small"
-                          style="width: 72px"/>
+                <n-select v-model:value="gateFindingPriority" :options="priorityOptions" size="small" placeholder="severity"
+                          style="width: 96px" data-testid="gate-severity"/>
                 <n-select v-model:value="gateAbout" :options="aboutOptions" size="small" clearable
                           placeholder="about" style="width: 150px"/>
             </n-space>
