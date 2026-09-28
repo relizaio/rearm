@@ -8,7 +8,7 @@
             <template v-if="r.release.document?.round"> · round {{ r.release.document.round }}</template>
             <n-tag v-if="documentVerdict(r.release)" size="tiny" :bordered="false"
                    :type="verdictType(documentVerdict(r.release))" style="margin-left: 6px">
-                {{ documentVerdict(r.release) }}
+                {{ outcomeWord(documentVerdict(r.release)) }}
             </n-tag>
         </div>
         <div v-for="f in r.findings" :key="f.id ?? ''" class="frow"
@@ -102,6 +102,7 @@ import {
     statusType,
     verdictType,
 } from '@/utils/agentDocuments'
+import { outcomeWord } from '@/utils/agentWords'
 import { canOperate } from '@/utils/agentBoardAccess'
 import { aboutOptionsOf, fileSpecOptions, priorityOptionsOf } from '@/utils/agentTaskOptions'
 

@@ -25,7 +25,7 @@ describe('question rounds', () => {
         expect(r.askedBy?.roleName).toBe('coder')
         expect(r.waitingOn?.roleName).toBe('architect')
         expect(r.withCoordinator).toBe(false)
-        expect(questionRoundLabel(r)).toBe('Questions from coder · round 1 · about ARCHITECTURE round 1')
+        expect(questionRoundLabel(r)).toBe('Questions from coder · round 1 · about architecture round 1')
         expect(questionStateLabel(r)).toBe('open (2)')
         expect(questionStateType(r)).toBe('warning')
     })
@@ -46,11 +46,11 @@ describe('question rounds', () => {
         const [second, first] = questionRounds({ documents: [q2, a2, q1, a1], questionStack: [], signOffs }, roles)
         expect(first.askedBy?.roleName).toBe('coder')
         expect(second.askedBy?.roleName).toBe('coder')
-        expect(questionRoundLabel(second)).toBe('Questions from coder · round 2 · about ARCHITECTURE round 1')
+        expect(questionRoundLabel(second)).toBe('Questions from coder · round 2 · about architecture round 1')
 
         const nobody = latestQuestionRound({ documents: [q1, a1], questionStack: [], signOffs: [] }, roles)!
         expect(nobody.askedBy).toBeNull()
-        expect(questionRoundLabel(nobody)).toBe('Questions from a role · round 1 · about ARCHITECTURE round 1')
+        expect(questionRoundLabel(nobody)).toBe('Questions from a role · round 1 · about architecture round 1')
     })
 
     it('names a role no longer on the board by what its sign-off recorded', () => {
@@ -65,7 +65,7 @@ describe('question rounds', () => {
     it('says what a round is about, with the round when the task has that document', () => {
         const unknown = latestQuestionRound({ documents: [doc('q1', 'QUESTIONS', 1, [item('Q-1', 'OPEN')],
             { specification: 'ARCHITECTURE', release: 'elsewhere' })] }, roles)!
-        expect(aboutLabel(unknown)).toBe('about ARCHITECTURE')
+        expect(aboutLabel(unknown)).toBe('about architecture')
         const none = latestQuestionRound({ documents: [doc('q1', 'QUESTIONS', 1, [item('Q-1', 'OPEN')])] }, roles)!
         expect(aboutLabel(none)).toBe('')
         expect(questionRoundLabel(none)).toBe('Questions from a role · round 1')
@@ -91,7 +91,7 @@ describe('question rounds', () => {
         for (const r of [first, second]) {
             expect(r.state).toBe('answered')
             expect(r.answeredBy).toEqual([{ specification: 'ARCHITECTURE', round: 2, release: 'a2' }])
-            expect(answeredByLabel(r.answeredBy[0])).toBe('answered by ARCHITECTURE round 2')
+            expect(answeredByLabel(r.answeredBy[0])).toBe('answered by architecture round 2')
         }
         expect(first.waitingOn).toBeNull()
     })

@@ -9,6 +9,10 @@ import TaskTitle from './TaskTitle.vue'
 import TaskHeader from './TaskHeader.vue'
 import TaskHistory from './TaskHistory.vue'
 import TaskHops from './TaskHops.vue'
+import TaskFindings from './TaskFindings.vue'
+import TaskDocuments from './TaskDocuments.vue'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import AiAgentRevisionHistory from '../AiAgentRevisionHistory.vue'
 import AgentTime from '../AgentTime.vue'
 import { fixtureRoles, richTask } from './taskFixtures'
@@ -100,5 +104,19 @@ describe('task page wording', () => {
         expect(decisionFailedText([{ action: 'ACCEPT' }])).toBe('Decision failed')
         expect(decisionFailedText([{ action: 'FILE' }, { action: 'DISMISS' }])).toBe('Decision failed')
         expect(decisionFailedText([])).toBe('Decision failed')
+    })
+
+    // Tester run 1 T-1: a round's verdict tag printed "PASSED"/"REJECTED" where the hop tags beside it read words.
+    it('names a round\'s verdict in words in its heading, in the Documents list and on its release page', () => {
+        const task = richTask()
+        const findings = mount(TaskFindings, { props: { task, roles: fixtureRoles, board: {}, priorityLevels: 3 } as any })
+        expect(findings.findAll('.dsec__h .n-tag').map(t => t.text())).toEqual(['rejected', 'passed'])
+        const documents = mount(TaskDocuments, { props: { task } })
+        const tags = documents.findAll('.drow .n-tag').map(t => t.text())
+        expect(tags.filter(t => t === 'rejected' || t === 'passed')).toEqual(['rejected', 'rejected', 'rejected', 'passed'])
+        expect(tags.join(' ')).not.toMatch(/PASSED|REJECTED/)
+        const release = readFileSync(join(process.cwd(), 'src/components/ReleaseView.vue'), 'utf8')
+        expect(release).toContain('{{ outcomeWord(documentVerdict(release)) }}')
+        expect(release).not.toMatch(/\{\{ documentVerdict\(release\) \}\}/)
     })
 })
