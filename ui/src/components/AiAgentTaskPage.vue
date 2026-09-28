@@ -36,11 +36,11 @@
                                   @authorize="authorizeTask" @order="orderTask" @complete="completeTask"
                                   @cancel="cancelTask" @reopen="reopenTask" @decide="decideFindings"
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
-                                  @set-level="setLevel" @set-group="setGroup" @set-tags="setTags"/>
+                                  @set-level="setLevel" @set-group="setGroup" @set-tags="setTags" @delivered="delivered"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames"/>
                     <task-usage :task="task" :board="board"/>
-                    <task-pull-requests :task="task"/>
+                    <task-pull-requests :task="task" :can-operate="canReopen" @delivered="delivered"/>
                 </div>
             </div>
         </template>
@@ -135,7 +135,7 @@ watch(taskUuid, load, { immediate: true })
 const {
     humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags,
+    setGroup, setTags, delivered,
 } = useAgentTaskActions(async () => { await load() })
 
 // A finding's element chip opens the element under its document (elements.md §8).

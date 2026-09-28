@@ -26,6 +26,7 @@
                               @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
                               @set-level="p => emit('set-level', p)"
                               @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
+                              @delivered="p => emit('delivered', p)"
                               @set-budget="p => emit('set-budget', p)"/>
                 <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
                               @open="t => emit('open', t)"/>
@@ -75,6 +76,7 @@ const emit = defineEmits<{
     (e: 'set-level', p: { task: any, level: number | null }): void
     (e: 'set-group', p: { task: any, group: string | null }): void
     (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
+    (e: 'delivered', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 </script>

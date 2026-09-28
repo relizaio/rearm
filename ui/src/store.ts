@@ -3353,6 +3353,26 @@ const storeObject : any = {
             })
             return response.data.agentBoardReseedCoordinatorPrompt
         },
+        /**
+         * A person's attestation of a delivery unit (RD2-10, the verb of task 18c5c293): a linked PR merged
+         * where this ReARM cannot see it, a push or release on a board without PRs, or a unit abandoned.
+         * BOARD_WRITE on the task's board.
+         */
+        async agentTaskDelivered (context: any, payload: { taskUuid: string, unit: string, commit: string | null,
+            outcome: string, note: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskDelivered($taskUuid: ID!, $unit: String!, $commit: String,
+                        $outcome: AgentDeliveryOutcome, $note: String) {
+                        agentTaskDelivered(taskUuid: $taskUuid, unit: $unit, commit: $commit, outcome: $outcome, note: $note) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskDelivered
+        },
         /** A task's level, 0 to 9; null clears it to the board default (RD2-1). BOARD_WRITE. */
         async agentTaskSetLevel (context: any, payload: { taskUuid: string, level: number | null }) {
             const response = await graphqlClient.mutate({

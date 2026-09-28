@@ -247,7 +247,7 @@
                 @authorize="authorizeTask" @order="orderTask"
                 @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
                 @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget" @set-level="setLevel"
-                @set-group="setGroup" @set-tags="setTags"
+                @set-group="setGroup" @set-tags="setTags" @delivered="delivered"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
@@ -1275,7 +1275,7 @@ async function reseedCoordinator (presetName: string) {
 const {
     humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags,
+    setGroup, setTags, delivered,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
     await refreshBoardContent()
