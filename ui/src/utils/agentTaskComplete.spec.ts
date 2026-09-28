@@ -48,7 +48,7 @@ describe('why Complete is disabled', () => {
         const task = { status: 'AWAITING_COORDINATOR', pullRequests: [abandoned, closed, merged] }
         expect(blockedDelivery(task, prBoard)).toEqual(['relizaio/rearm-saas/pull/692 attested abandoned',
             'relizaio/rearm-saas/pull/700 closed without merging'])
-        expect(disabledReason('complete', task, prBoard)).toMatch(/^its delivery will not land: .*attested abandoned; .*closed without merging; reopen it, or link the replacement and declare the closed PR superseded \(task supersedepr\)$/)
+        expect(disabledReason('complete', task, prBoard)).toMatch(/^its delivery will not land: .*attested abandoned; .*closed without merging; reopen it, or have the role that pushes code link the PR that replaces it and declare this one superseded \(task supersedepr\)$/)
     })
 
     it('a closed PR attested delivered does not block', () => {
@@ -70,5 +70,11 @@ describe('why Complete is disabled', () => {
     it('the status rule still comes first', () => {
         expect(disabledReason('complete', { status: 'ASSIGNED', pullRequests: [closed] }, prBoard))
             .toBe('assigned to a session; release or force-close it first')
+    })
+
+    it('offers the supersede for a PR attested abandoned too (RD3-13 architecture-2)', () => {
+        expect(disabledReason('complete', { status: 'AWAITING_COORDINATOR', pullRequests: [abandoned] }, prBoard))
+            .toBe('its delivery will not land: relizaio/rearm-saas/pull/692 attested abandoned; reopen it, or have the role'
+                + ' that pushes code link the PR that replaces it and declare this one superseded (task supersedepr)')
     })
 })

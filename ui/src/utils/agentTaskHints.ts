@@ -80,11 +80,12 @@ export function disabledReason (action: HintedAction, task: any, board: any, d: 
         }
         const blocked = blockedDelivery(task, board)
         if (!blocked.length) return null
-        // A PR closed unmerged is superseded once its replacement is linked (task RD3-13); one attested
-        // abandoned cannot be, so only the reopen is offered for it -- as the server's refusal says.
-        const supersedable = blocked.some(b => b.endsWith(' closed without merging'))
+        // A blocking PR, closed unmerged or attested abandoned, is superseded once its replacement is linked
+        // (task RD3-13 architecture-2); a board without PRs has none to supersede -- as the server's refusal says.
+        const supersedable = board?.deliveryPolicy?.mode !== 'NONE'
         return `its delivery will not land: ${blocked.join('; ')}; reopen it`
-            + (supersedable ? ', or link the replacement and declare the closed PR superseded (task supersedepr)' : '')
+            + (supersedable ? ', or have the role that pushes code link the PR that replaces it and declare this one'
+                + ' superseded (task supersedepr)' : '')
     }
     case 'authorize':
         return d.role ? null : 'pick the role to authorize it for'
