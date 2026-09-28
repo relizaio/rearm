@@ -305,3 +305,26 @@ describe('the board header: Subscribe', () => {
     })
 })
 
+// The task key wherever a task is named (RD2-22): the card, the review banner and the board picker read
+// through agentTaskKeys, whose own spec covers the labels.
+describe('the board page: task keys', () => {
+    const card = source.slice(source.indexOf('const TaskCard = defineComponent'), source.indexOf('const TaskCard = defineComponent') + 2500)
+
+    it('leads the kanban card with the key, before the level, the group and the title', () => {
+        const key = card.indexOf("'data-testid': 'card-key'")
+        expect(key).toBeGreaterThan(-1)
+        expect(card.indexOf('levelLabel(p.t, currentBoard.value)')).toBeGreaterThan(key)
+        expect(card.indexOf('p.t.title,')).toBeGreaterThan(card.indexOf("'data-testid': 'card-group'"))
+    })
+
+    it('names each task awaiting review key first in the banner', () => {
+        expect(template).toContain('{{ reviewBannerLabel(t) }}')
+        expect(template).not.toContain("t.externalRef ? '#' + t.externalRef.split('#').pop() : t.title")
+    })
+
+    it('offers each board as prefix · name with a locked tag', () => {
+        expect(template).toMatch(/:options="boardOptions"\s+:render-label="renderBoardOption"/)
+        expect(source).toContain('const boardOptions = computed(() => boardPickerOptions(boards.value))')
+    })
+})
+
