@@ -10,7 +10,7 @@
         <n-alert v-else-if="loadError" type="error" :title="loadError"/>
 
         <template v-if="task">
-            <task-title :task="task" :board="board"/>
+            <task-title :task="task" :board="board" :roles="roles"/>
 
             <!-- Two columns above 1200px: the record on the left (what was found, asked, produced
                  and done), the person's controls and the task's place on the board on the right.

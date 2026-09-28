@@ -12,7 +12,7 @@
             <!-- A QUESTIONS round's verdict is the asking hop's REJECTED; it reads as if the
                  questions were rejected, so the round says whether it is open or answered. -->
             <n-tag v-if="documentVerdict(d) && d.document?.specification !== 'QUESTIONS'" size="tiny" :bordered="false"
-                   :type="verdictType(documentVerdict(d))">{{ documentVerdict(d) }}</n-tag>
+                   :type="verdictType(documentVerdict(d))">{{ outcomeWord(documentVerdict(d)) }}</n-tag>
             <template v-if="questionRoundFor(d)">
                 <n-tag size="tiny" :bordered="false" :type="questionStateType(questionRoundFor(d)!)"
                        class="drow__qstate">{{ questionStateLabel(questionRoundFor(d)!) }}</n-tag>
@@ -49,6 +49,7 @@ import { NButton, NTag } from 'naive-ui'
 import AiAgentCheckReport from '../AiAgentCheckReport.vue'
 import AiAgentDocumentElements from '../AiAgentDocumentElements.vue'
 import { DocumentRelease, advisoryLabel, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
+import { outcomeWord } from '@/utils/agentWords'
 import { documentDefining, elementsOf } from '@/utils/agentElements'
 import { answeredByLabel, questionRounds, questionStateLabel, questionStateType } from '@/utils/agentQuestionRounds'
 

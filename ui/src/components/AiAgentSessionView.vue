@@ -135,8 +135,8 @@
                         <span v-else class="dim">—</span>
                     </n-descriptions-item>
                     <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
-                    <n-descriptions-item label="Started">{{ formatDate(session.startedAt) }}</n-descriptions-item>
-                    <n-descriptions-item label="Closed">{{ formatDate(session.closedAt) }}</n-descriptions-item>
+                    <n-descriptions-item label="Started"><agent-time :at="session.startedAt"/></n-descriptions-item>
+                    <n-descriptions-item label="Closed"><agent-time :at="session.closedAt"/></n-descriptions-item>
                     <n-descriptions-item v-if="closeAttribution(session)" label="Closed by">
                         <span class="close-attribution">{{ closeAttribution(session) }}</span>
                     </n-descriptions-item>
@@ -153,7 +153,7 @@
                             <span v-if="t.role" class="dim"> ({{ t.role }})</span>
                         </span>
                     </n-descriptions-item>
-                    <n-descriptions-item label="Last activity">{{ formatDate(session.lastActivityAt) }}</n-descriptions-item>
+                    <n-descriptions-item label="Last activity"><agent-time :at="session.lastActivityAt"/></n-descriptions-item>
                     <n-descriptions-item label="Commits"><strong>{{ session.commits?.length ?? 0 }}</strong></n-descriptions-item>
                     <n-descriptions-item label="Artifacts"><strong>{{ session.artifacts?.length ?? 0 }}</strong></n-descriptions-item>
                     <n-descriptions-item label="Releases"><strong>{{ releaseRows.length }}</strong></n-descriptions-item>
@@ -229,9 +229,11 @@ import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
 import { closeAttribution, forceCloseReason, idleWarningText, isIdleWarned } from '@/utils/agentSessionIdle'
-import { taskPagePath } from '@/utils/agentTaskFormat'
+import { taskPagePath, ts } from '@/utils/agentTaskFormat'
+import { lifecycleWord } from '@/utils/agentWords'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import AgentUsageSummary from './AgentUsageSummary.vue'
+import AgentTime from './AgentTime.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
 import { PrismEditor } from 'vue-prism-editor'
 import 'vue-prism-editor/dist/prismeditor.min.css'
@@ -536,8 +538,14 @@ async function downloadArtifact (a: any) {
     }
 }
 
+/** The session page's times in the board surfaces' one format (RD2-23); text-only uses such as the idle line. */
 function formatDate (s: string | null | undefined) {
-    return s ? new Date(s).toLocaleString('en-CA') : '—'
+    return ts(s)
+}
+
+/** A time cell: the one format, the full timestamp on hover. */
+function timeCell (s: string | null | undefined) {
+    return s ? h(AgentTime, { at: s }) : '—'
 }
 
 function openPolicy (uuid: string) {
@@ -562,7 +570,7 @@ function renderSignatureBadge (sig: any) {
         sig.format ? `format: ${sig.format}` : '',
         sig.signedByOwnerType ? `owner: ${sig.signedByOwnerType}` : '',
         sig.keyFingerprint ? `fp: ${sig.keyFingerprint}` : '',
-        sig.verifiedAt ? `verified: ${new Date(sig.verifiedAt).toLocaleString('en-CA')}` : '',
+        sig.verifiedAt ? `verified: ${ts(sig.verifiedAt)}` : '',
     ].filter(Boolean).join(' · ')
     return h(NTooltip, {}, {
         trigger: () => h(NTag, { size: 'tiny', type: tone, bordered: false }, { default: () => state }),
@@ -608,7 +616,7 @@ const commitColumns: DataTableColumns<any> = [
                 const label = rel.componentDetails?.name
                     ? `${rel.componentDetails.name} ${rel.version || ''}`.trim()
                     : (rel.version || rel.uuid.slice(0, 8))
-                const lc = rel.lifecycle ? h(NTag, { size: 'small', bordered: false }, { default: () => rel.lifecycle }) : null
+                const lc = rel.lifecycle ? h(NTag, { size: 'small', bordered: false, title: rel.lifecycle }, { default: () => lifecycleWord(rel.lifecycle) }) : null
                 const link = h('a', {
                     href: '#',
                     onClick: (e: Event) => { e.preventDefault(); router.push({ name: 'ReleaseView', params: { uuid: rel.uuid } }) },
@@ -620,7 +628,7 @@ const commitColumns: DataTableColumns<any> = [
             }))
         },
     },
-    { title: 'Date', key: 'dateActual', width: 170, render: (row: any) => row.dateActual ? new Date(row.dateActual).toLocaleString('en-CA') : '—' },
+    { title: 'Date', key: 'dateActual', width: 170, render: (row: any) => timeCell(row.dateActual) },
 ]
 
 function externalUri (a: any): string | null {
@@ -695,13 +703,13 @@ const releaseColumns: DataTableColumns<any> = [
         title: 'Lifecycle',
         key: 'lifecycle',
         width: 160,
-        render: (row: any) => row.lifecycle ? h(NTag, { size: 'small', bordered: false }, { default: () => row.lifecycle }) : '—',
+        render: (row: any) => row.lifecycle ? h(NTag, { size: 'small', bordered: false, title: row.lifecycle }, { default: () => lifecycleWord(row.lifecycle) }) : '—',
     },
     {
         title: 'Created',
         key: 'createdDate',
         width: 170,
-        render: (row: any) => row.createdDate ? new Date(row.createdDate).toLocaleString('en-CA') : '—',
+        render: (row: any) => timeCell(row.createdDate),
     },
 ]
 
@@ -728,7 +736,7 @@ const prColumns: DataTableColumns<any> = [
         title: 'Created',
         key: 'prCreatedDate',
         width: 170,
-        render: (row: any) => row.prCreatedDate ? new Date(row.prCreatedDate).toLocaleString('en-CA') : '—',
+        render: (row: any) => timeCell(row.prCreatedDate),
     },
 ]
 
@@ -757,7 +765,7 @@ const policyColumns: DataTableColumns<any> = [
         },
     },
     { title: 'Message', key: 'message', render: (row: any) => row.message || '—' },
-    { title: 'Evaluated', key: 'evaluatedAt', width: 170, render: (row: any) => row.evaluatedAt ? new Date(row.evaluatedAt).toLocaleString('en-CA') : '—' },
+    { title: 'Evaluated', key: 'evaluatedAt', width: 170, render: (row: any) => timeCell(row.evaluatedAt) },
 ]
 </script>
 

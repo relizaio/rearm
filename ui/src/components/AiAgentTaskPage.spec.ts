@@ -46,9 +46,11 @@ describe('AiAgentTaskPage', () => {
         await flushPromises()
         const headings = w.findAll('.dsec__h').map(h => h.text())
         for (const h of ['Human review', 'Task actions', 'Dependencies', 'Lineage', 'Usage', 'File a finding',
-            'Documents', 'History', 'Pull requests', 'Waiting on', 'Answer', 'Status history', 'Provenance']) {
+            'Documents', 'Hops', 'Pull requests', 'Waiting on', 'Answer', 'Status history', 'Provenance']) {
             expect(headings, h).toContain(h)
         }
+        // One word, one list (RD2-23, sweep UI-15): the hops are "Hops", the revisions "Revisions".
+        expect(headings).not.toContain('History')
         expect(headings.some(h => h.startsWith('Review findings') && h.includes('round 3'))).toBe(true)
         expect(headings.some(h => h.startsWith('Test findings'))).toBe(true)
         // the newest review round only: F-4 is new in round 3, F-1 is shown closed

@@ -1113,7 +1113,7 @@
                                 </n-descriptions-item>
                                 <n-descriptions-item label="Verdict" v-if="documentVerdict(release)">
                                     <n-tag size="small" :type="verdictType(documentVerdict(release))">
-                                        {{ documentVerdict(release) }}
+                                        {{ outcomeWord(documentVerdict(release)) }}
                                     </n-tag>
                                 </n-descriptions-item>
                             </n-descriptions>
@@ -1404,6 +1404,7 @@ import {
     statusType,
     verdictType,
 } from '@/utils/agentDocuments'
+import { outcomeWord } from '@/utils/agentWords'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'

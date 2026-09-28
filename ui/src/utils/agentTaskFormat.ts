@@ -1,13 +1,42 @@
 // Formatting and small derivations shared by the task page, the task drawer and their section
 // components (components/task/*). Kept here rather than in one component so the page and the
 // drawer cannot drift apart on how a time, a duration or a task's label reads.
+import { statusWord, triggerWord } from './agentWords'
 
-export function ts (iso: string | null | undefined): string {
+const pad = (n: number) => String(n).padStart(2, '0')
+
+function localDate (d: Date): string {
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * The one date format on board, task, session and document surfaces (task RD2-23, sweep UI-16):
+ * "2026-09-27 15:36", ISO date and local time, with the seconds only within a minute of now, where they
+ * tell two moments apart. {@link tsFull} is the title attribute's full timestamp.
+ */
+export function ts (iso: string | null | undefined, now: number = Date.now()): string {
     if (!iso) return '—'
     const d = new Date(iso)
-    return isNaN(d.getTime()) ? '—' : d.toLocaleString('en-CA', {
-        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-    })
+    if (isNaN(d.getTime())) return '—'
+    const base = `${localDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+    return Math.abs(now - d.getTime()) < 60_000 ? `${base}:${pad(d.getSeconds())}` : base
+}
+
+/** The full timestamp behind {@link ts}, for a title attribute: "2026-09-27 15:36:12 UTC-04:00". Empty when unknown. */
+export function tsFull (iso: string | null | undefined): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    const off = -d.getTimezoneOffset()
+    const zone = `UTC${off < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`
+    return `${localDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${zone}`
+}
+
+/** A date alone, as {@link ts} writes it: "2026-09-27". */
+export function tsDate (iso: string | null | undefined): string {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    return isNaN(d.getTime()) ? '—' : localDate(d)
 }
 
 /** From one instant to another (or to now), coarsened: minutes, then hours, then days. */
@@ -109,4 +138,29 @@ export function hopHistory (task: any): HopEntry[] {
 /** The route of a task's page. */
 export function taskPagePath (uuid: string): string {
     return `/aiAgentTask/${uuid}`
+}
+
+/**
+ * A status-history row's words (task RD2-23, sweep UI-50): the transition in words, and, when routing wrote
+ * why, "routing: findings decided; back to designer" in place of the bare trigger. Rows without a note -- a
+ * person's action, or routing before notes were kept -- read as before.
+ */
+export function statusRowWords (c: { from?: string | null, to?: string | null, trigger?: string | null,
+    actor?: { kind?: string | null, name?: string | null } | null, note?: string | null }):
+    { arrow: string, routing: string | null, trigger: string } {
+    const byRouting = c.actor?.kind === 'SYSTEM' && c.actor?.name === 'routing'
+    return {
+        arrow: `${c.from ? statusWord(c.from) : '·'} → ${statusWord(c.to)}`,
+        routing: byRouting && c.note ? `routing: ${c.note}` : null,
+        trigger: triggerWord(c.trigger),
+    }
+}
+
+/**
+ * The required roles still to pass, as the line under the task's status (task RD2-23, sweep UI-32):
+ * "Required sign-offs: reviewer ✗ · coder ✗". Null when none is missing. It sat under "Human review" as
+ * chips, though it says nothing about human review.
+ */
+export function requiredSignOffsLine (missing: string[]): string | null {
+    return missing.length ? `Required sign-offs: ${missing.map(m => `${m} ✗`).join(' · ')}` : null
 }

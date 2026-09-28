@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { agentName, dur, hopHistory, isTerminal, missingRequiredRoles, roleName, shortId, statusTone,
-    taskLabel, taskPagePath, ts } from './agentTaskFormat'
+import { agentName, dur, hopHistory, isTerminal, missingRequiredRoles, requiredSignOffsLine, roleName, shortId, statusRowWords,
+    statusTone, taskLabel, taskPagePath, ts, tsDate, tsFull } from './agentTaskFormat'
 
 describe('agentTaskFormat', () => {
     it('formats times and durations', () => {
@@ -68,5 +68,37 @@ describe('agentTaskFormat', () => {
 
     it('builds the task page path', () => {
         expect(taskPagePath('t1')).toBe('/aiAgentTask/t1')
+    })
+
+    // RD2-23 (sweep UI-16): one format on every board surface, "2026-09-27 15:36", local time.
+    it('writes a time as ISO date and local time, seconds only within a minute of now', () => {
+        const at = new Date(2026, 8, 27, 15, 36, 12).toISOString()
+        const later = new Date(2026, 8, 27, 18, 0, 0).getTime()
+        expect(ts(at, later)).toBe('2026-09-27 15:36')
+        expect(ts(at, new Date(2026, 8, 27, 15, 36, 40).getTime())).toBe('2026-09-27 15:36:12')
+        expect(ts(new Date(2026, 0, 5, 9, 7).toISOString(), later)).toBe('2026-01-05 09:07')
+        expect(tsFull(at)).toMatch(/^2026-09-27 15:36:12 UTC[+-]\d\d:\d\d$/)
+        expect(tsFull(null)).toBe('')
+        expect(tsDate(at)).toBe('2026-09-27')
+        expect(tsDate(undefined)).toBe('—')
+    })
+
+    // RD2-23 (sweep UI-50): routing's note in place of the bare trigger; other rows as before.
+    it('words a status-history row, with routing\'s reason when it wrote one', () => {
+        const routing = { kind: 'SYSTEM', name: 'routing' }
+        expect(statusRowWords({ from: 'QUEUED', to: 'QUEUED', trigger: 'AUTHORIZE', actor: routing,
+            note: 'findings decided; back to designer' }))
+            .toEqual({ arrow: 'queued → queued', routing: 'routing: findings decided; back to designer', trigger: 'authorize' })
+        expect(statusRowWords({ from: 'QUEUED', to: 'QUEUED', trigger: 'AUTHORIZE', actor: routing, note: null }).routing)
+            .toBeNull()
+        expect(statusRowWords({ from: 'PENDING_INTAKE', to: 'QUEUED', trigger: 'AUTHORIZE',
+            actor: { kind: 'USER', name: 'pavel' }, note: 'go' }).routing).toBeNull()
+        expect(statusRowWords({ from: null, to: 'PENDING_INTAKE', trigger: 'REGISTER' }).arrow).toBe('· → pending intake')
+    })
+
+    // RD2-23 (sweep UI-32): the roles still to pass, as their own line.
+    it('lines up the required sign-offs still missing', () => {
+        expect(requiredSignOffsLine(['reviewer', 'coder'])).toBe('Required sign-offs: reviewer ✗ · coder ✗')
+        expect(requiredSignOffsLine([])).toBeNull()
     })
 })

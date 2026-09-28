@@ -22,7 +22,7 @@
                     <td>
                         <router-link v-if="r.taskUuid" :to="taskPagePath(r.taskUuid)" data-testid="round-task" @click.stop>{{ r.task }}</router-link>
                     </td>
-                    <td>{{ ts(r.publishedAt) }}</td>
+                    <td><agent-time :at="r.publishedAt"/></td>
                 </tr>
             </tbody>
         </table>
@@ -32,12 +32,14 @@
 <script lang="ts" setup>
 // A DOCUMENT component's page (board-documents.md §5, task 36d0549e): the board it belongs to, and its
 // releases as the rounds they are. The software panels are not shown for it; ComponentView decides.
+import AgentTime from './AgentTime.vue'
 import { computed, ref, watch } from 'vue'
 import { NAlert } from 'naive-ui'
 import { RouterLink, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import { documentBoardBanner, documentRoundRows, lifecycleWord } from '@/utils/agentDocumentsView'
-import { taskPagePath, ts } from '@/utils/agentTaskFormat'
+import { documentBoardBanner, documentRoundRows } from '@/utils/agentDocumentsView'
+import { lifecycleWord } from '@/utils/agentWords'
+import { taskPagePath } from '@/utils/agentTaskFormat'
 
 const props = defineProps<{
     /** The component, with agentBoard { uuid name taskPrefix }. */

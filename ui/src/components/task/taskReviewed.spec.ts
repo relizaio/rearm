@@ -22,7 +22,7 @@ describe('hop row reviewed chips', () => {
         }
         const w = mount(TaskHops, { props: { task, agentNames: {} } })
         const chips = w.findAll('.hist__rev').map(c => c.text())
-        expect(chips).toEqual(['reviewed: ARCHITECTURE → READY_TO_SHIP', 'reviewed: DETAILED_DESIGN round 2 — not promoted'])
+        expect(chips).toEqual(['reviewed: architecture → ready to ship', 'reviewed: detailed design · round 2 — not promoted'])
         expect(w.findAll('.hist__reviewed')).toHaveLength(1)
     })
 })

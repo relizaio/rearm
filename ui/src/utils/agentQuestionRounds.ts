@@ -3,6 +3,7 @@
 // the QUESTIONS rounds with their items and `about`, and the sign-offs' outputs. Pure, like
 // agentDocuments.ts, so the specs need no store.
 import type { DocumentRelease, Finding } from './agentDocuments'
+import { specWord } from './agentWords'
 
 export type RoleRef = { roleUuid: string | null, roleName: string | null }
 
@@ -189,11 +190,12 @@ export function questionRoundOf (task: any, roles: any[] | null | undefined, rel
     return questionRounds(task, roles).find(r => r.release === release) ?? null
 }
 
+/** A round inside a phrase, in words (RD2-23): "architecture round 2". */
 function roundText (spec: string, round: number | null): string {
-    return round == null ? spec : `${spec} round ${round}`
+    return round == null ? specWord(spec) : `${specWord(spec)} round ${round}`
 }
 
-/** "about ARCHITECTURE round 1", or "" when the round says nothing about what it asks about. */
+/** "about architecture round 1", or "" when the round says nothing about what it asks about. */
 export function aboutLabel (r: QuestionRound | null): string {
     return r?.about ? `about ${roundText(r.about.specification, r.about.round)}` : ''
 }

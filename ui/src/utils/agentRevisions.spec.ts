@@ -105,9 +105,13 @@ describe('agent revisions', () => {
     it('summarises a snapshot per kind', () => {
         expect(revisionSummary('task', { status: 'ON_HOLD', role: 'coder', hold: { kind: 'MANUAL' }, orderIndex: 2,
             budgetMicros: 1_500_000, requiredStrength: 0.8 }))
-            .toEqual(['ON HOLD', 'role coder', 'hold manual', 'order 2', 'budget $1.50', 'strength 0.8'])
+            .toEqual(['on hold', 'role coder', 'manual hold', 'order 2', 'budget $1.50', 'strength 0.8'])
+        // In words (RD2-23, sweep UI-31): the snapshot's "human_gate" read "hold human_gate".
+        expect(revisionSummary('task', { status: 'ON_HOLD', hold: { kind: 'human_gate', level: 'operator' } }))
+            .toEqual(['on hold', 'held at the human gate'])
+        expect(revisionSummary('task', { hold: { kind: 'MANUAL', level: 'OPERATOR' } })).toEqual(['operator hold'])
         expect(revisionSummary('board', { status: 'ACTIVE', lock: { level: 'SOFT' }, cycleCap: 3 }))
-            .toEqual(['ACTIVE', 'lock soft', 'cycle cap 3'])
+            .toEqual(['active', 'lock soft', 'cycle cap 3'])
         expect(revisionSummary('role', { active: false, orderIndex: 10, prompt: 'abc' }))
             .toEqual(['inactive', 'order 10', 'prompt 3 chars'])
         expect(revisionSummary('task', null)).toEqual(['unreadable snapshot'])

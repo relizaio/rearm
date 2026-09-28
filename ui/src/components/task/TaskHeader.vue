@@ -5,9 +5,11 @@
         {{ lockBannerText(board) }}
     </n-alert>
     <n-alert v-if="task.hold" type="error"
-             :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review' : `On hold (${(task.hold.level ?? '').toLowerCase()})`">
+             :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review' : `On hold (${holdWord(task.hold)})`">
         {{ task.hold.reason }}
-        <div class="holdmeta">held by <actor-ref :actor="task.hold.heldBy" :task="task"/> · {{ ts(task.hold.heldAt) }}
+        <!-- A gated sign-off is held by the gate, not by the system actor that placed it (RD2-23). -->
+        <div class="holdmeta"><template v-if="task.hold.kind === 'HUMAN_GATE'">{{ holdPhrase(task.hold) }}</template><template
+            v-else>held by <actor-ref :actor="task.hold.heldBy" :task="task"/></template> · <agent-time :at="task.hold.heldAt"/>
             <n-tag v-if="holdWho" size="small" :bordered="false" class="holdwho"
                    :type="task.hold.level === 'OPERATOR' ? 'error' : 'info'">{{ holdWho }}</n-tag>
         </div>
@@ -128,7 +130,8 @@
         </n-space>
     </n-alert>
 
-    <div v-if="!terminal" class="dsec">
+    <!-- The flag only; the required roles still to pass are a line under the status (RD2-23). -->
+    <div v-if="!terminal && (task.requireHumanReview || canOperate)" class="dsec">
         <div class="dsec__h">Human review</div>
         <div class="deprow">
             <n-tag v-if="task.requireHumanReview" size="small" :bordered="false" type="warning">
@@ -138,9 +141,6 @@
                       @click="emit('require-review', { task, value: !task.requireHumanReview })">
                 {{ task.requireHumanReview ? 'clear flag (operator)' : 'require human review of next sign-off' }}
             </n-button>
-            <n-tag v-for="m in missingRequired" :key="m" size="small" :bordered="false" type="error">
-                required: {{ m }} ✗
-            </n-tag>
         </div>
     </div>
 </template>
@@ -155,7 +155,9 @@ import { NAlert, NButton, NInput, NPopconfirm, NRadioButton, NRadioGroup, NSelec
 import { approveConfirm, approveLabel, gateBlockingFindings, gateDecisions, GateDecision, gateRejected, rejectLabel,
     undecided } from '@/utils/agentGateReview'
 import ActorRef from '../ActorRef.vue'
-import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
+import AgentTime from '../AgentTime.vue'
+import { isTerminal } from '@/utils/agentTaskFormat'
+import { holdPhrase, holdWord } from '@/utils/agentWords'
 import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
 import { subtaskProgress } from '@/utils/agentTaskLabels'
 import { holdReleaseNote, isLoopStopHold, personMayRelease, releaseLabel, releasePayload, releaseRoleOptions } from '@/utils/agentHoldRelease'
@@ -206,7 +208,6 @@ const aboutOptions = computed(() => aboutOptionsOf(props.roles))
 const terminal = computed(() => isTerminal(props.task))
 const subtasks = computed(() => subtaskProgress(props.task, props.tasks ?? []))
 const answerWhere = computed(() => props.questionsOnPage ? 'on the task page' : 'under Waiting on')
-const missingRequired = computed(() => missingRequiredRoles(props.task, props.roles))
 
 // Task queued in a HUMAN-kind role: org admins sign off directly (no claim step).
 const humanStageRole = computed(() => {

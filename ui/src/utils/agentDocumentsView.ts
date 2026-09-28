@@ -1,6 +1,7 @@
 // A board's documents as the UI shows them (board-documents.md §5, task 36d0549e): inside their board,
 // out of the org's component lists and pickers, and on a component page that speaks the document's
 // language. Access is unchanged (board-permissions.md D18); this is presentation only.
+import { lifecycleWord } from './agentWords'
 
 /** The kinds the component lists and pickers show: software. DOCUMENT components are shown inside their board. */
 export const SOFTWARE_KINDS = ['GENERIC', 'HELM']
@@ -44,11 +45,6 @@ export interface RoundRow {
     /** The task's uuid, for its link; empty when the round names none. */
     taskUuid: string
     publishedAt: string | null
-}
-
-/** A release lifecycle as a word ("ASSEMBLED" reads "assembled", "READY_TO_SHIP" "ready to ship") (RD2-24). */
-export function lifecycleWord (lifecycle: string | null | undefined): string {
-    return String(lifecycle ?? '').toLowerCase().replace(/_/g, ' ')
 }
 
 /** The Documents tab's Latest: "round 1 · v0", the version labelled (RD2-24). */

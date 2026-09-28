@@ -5,7 +5,7 @@
         <div class="dsec__h">{{ title }}</div>
         <div v-if="latest?.waitingOn" class="oq__sub">waiting on {{ latest.waitingOn.roleName ?? 'a role' }}</div>
         <div v-else-if="latest?.withCoordinator" class="oq__sub">with the coordinator to name a role</div>
-        <div v-if="latest?.askedAt" class="oq__since" data-testid="open-questions-since">since {{ ts(latest.askedAt) }}</div>
+        <div v-if="latest?.askedAt" class="oq__since" data-testid="open-questions-since">since <agent-time :at="latest.askedAt"/></div>
         <div v-for="g in openQuestionGroups" :key="String(g.priority)" class="fgroup">
             <div v-for="f in g.findings" :key="f.id ?? ''" class="frow">
                 <code class="frow__id">{{ f.id }}</code>
@@ -17,9 +17,9 @@
 
 <script lang="ts" setup>
 // The task's open questions, read-only: the round that asked them and whom they wait on.
+import AgentTime from '../AgentTime.vue'
 import { computed } from 'vue'
 import { Finding, groupByPriority } from '@/utils/agentDocuments'
-import { ts } from '@/utils/agentTaskFormat'
 import { latestQuestionRound, questionRoundLabel } from '@/utils/agentQuestionRounds'
 
 const props = defineProps<{ task: any, roles?: any[] }>()

@@ -7,6 +7,15 @@ import { useNotification } from 'naive-ui'
 export type AfterAction = (task: any, keepOpen: boolean) => Promise<void>
 
 /**
+ * The failure toast's lead for a findings decision (task RD2-23, sweep UI-49): a refused File names filing,
+ * not a decision the person did not make; any other decision keeps "Decision failed".
+ */
+export function decisionFailedText (decisions: { action?: string | null }[] | null | undefined): string {
+    const all = decisions ?? []
+    return all.length > 0 && all.every(d => d?.action === 'FILE') ? 'Could not file the finding' : 'Decision failed'
+}
+
+/**
  * @param after reloads once an action succeeded. keepOpen is false after a verdict that hands the
  * task on (a gate review, a human sign-off, a release, an answer), where the board panel closes its
  * drawer; the task page stays on the task either way.
@@ -123,7 +132,7 @@ export function useAgentTaskActions (after: AfterAction) {
             () => store.dispatch('agentTaskDecideFindings', { taskUuid: p.task.uuid, specification: p.specification,
                 decisions: p.decisions, about: p.about }),
             (res: any) => res?.status === 'QUEUED' && res?.role !== p.task.role
-                ? `Decided — back to ${res.role}` : 'Decided', 'Decision failed')
+                ? `Decided — back to ${res.role}` : 'Decided', decisionFailedText(p.decisions))
     }
 
     /** A task's required strength; null clears it (task 6fdc5a37). */
