@@ -24,6 +24,7 @@
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
                               @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
+                              @release-assignment="p => emit('release-assignment', p)"
                               @set-level="p => emit('set-level', p)"
                               @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
                               @delivered="p => emit('delivered', p)"
@@ -78,6 +79,7 @@ const emit = defineEmits<{
     (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
     (e: 'delivered', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
+    (e: 'release-assignment', p: { task: any, reason: string }): void
 }>()
 </script>
 

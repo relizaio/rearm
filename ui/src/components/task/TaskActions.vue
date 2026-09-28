@@ -105,6 +105,15 @@
                           @click="placeHold">Put on hold (operator)</n-button>
             </disabled-hint>
         </div>
+        <!-- task RD3-4: a person takes a stalled assignment back to the queue for the same role. -->
+        <div v-if="!terminal" class="deprow releaserow">
+            <n-input v-model:value="releaseReason" size="small" placeholder="Why release the assignment (required)"
+                     style="width: 260px" data-testid="release-reason"/>
+            <disabled-hint :reason="hint('release')">
+                <n-button size="small" type="warning" ghost :disabled="!!hint('release')" data-testid="release-assignment"
+                          @click="releaseAssignment">Release assignment</n-button>
+            </disabled-hint>
+        </div>
         <!-- What this task may spend, on top of the board's limit (task 6f1b348d). Blank and set
              clears it. A raise does not release a budget hold: release the hold to resume. -->
         <div class="deprow budrow">
@@ -230,7 +239,7 @@ import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { roleOptionsOf } from '@/utils/agentTaskOptions'
-import { canPlaceHold, holdPayload, strengthPlaceholder, strengthToSet } from '@/utils/agentTaskAdmin'
+import { canPlaceHold, holdPayload, releasePayload, strengthPlaceholder, strengthToSet } from '@/utils/agentTaskAdmin'
 import { levelPlaceholder, levelToSet, MAX_LEVEL } from '@/utils/agentTaskLevel'
 import { budgetChanged, dollarsToMicros, microsToDollars } from '@/utils/agentBudget'
 import { AttestDraft, attestDraftOf, attestPayload, commitProblem } from '@/utils/agentDelivery'
@@ -259,6 +268,7 @@ const emit = defineEmits<{
     (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
     (e: 'delivered', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
+    (e: 'release-assignment', p: { task: any, reason: string }): void
 }>()
 
 const authorizeRole = ref<string | null>(null)
@@ -286,6 +296,14 @@ const groupDraft = ref<string>(NO_GROUP)
 const groupChanged = computed(() => groupToSend(groupDraft.value) !== (props.task?.group?.key ?? null))
 const tagsDraft = ref<string[]>([])
 const tagsReady = computed(() => tagsToSet(props.task, tagsDraft.value) !== undefined && !tagsProblem(tagsDraft.value))
+const releaseReason = ref('')
+function releaseAssignment () {
+    const p = releasePayload(props.task, releaseReason.value)
+    if (p) {
+        emit('release-assignment', p)
+        releaseReason.value = ''
+    }
+}
 const holdReason = ref('')
 function placeHold () {
     const p = holdPayload(props.task, holdReason.value)
@@ -304,7 +322,8 @@ const completable = computed(() => COMPLETABLE.includes(props.task?.status))
 /** Why a button is disabled, from the same rules the server applies (RD2-16). */
 function hint (action: HintedAction): string | null {
     return disabledReason(action, props.task, props.board, { role: authorizeRole.value, order: orderDraft.value,
-        holdReason: holdReason.value, reopenRole: reopenRole.value, reopenReason: reopenReason.value })
+        holdReason: holdReason.value, reopenRole: reopenRole.value, reopenReason: reopenReason.value,
+        releaseReason: releaseReason.value })
 }
 const terminal = computed(() => isTerminal(props.task))
 const roleOptions = computed(() => roleOptionsOf(props.roles))

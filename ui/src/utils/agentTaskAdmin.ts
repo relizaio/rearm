@@ -17,6 +17,15 @@ export function holdPayload (task: any, reason: string | null | undefined): { ta
     return r ? { task, reason: r } : null
 }
 
+/**
+ * The release to send (task RD3-4): an ASSIGNED task back to the queue for the same role, with the
+ * reason the server requires; null when either is missing.
+ */
+export function releasePayload (task: any, reason: string | null | undefined): { task: any, reason: string } | null {
+    const r = (reason ?? '').trim()
+    return r && task?.status === 'ASSIGNED' ? { task, reason: r } : null
+}
+
 /** The strength floor of the role the task is with, when that role has one. */
 export function roleFloor (task: any, roles: any[] | null | undefined): number | null {
     const rc = (roles ?? []).find((r: any) => r?.name === task?.role)

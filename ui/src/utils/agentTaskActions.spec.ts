@@ -31,6 +31,8 @@ const TABLE: [string, any, string, any, boolean][] = [
     ['setStrength', { task, requiredStrength: 4.5 }, 'agentTaskSetStrength', { taskUuid: 't1', requiredStrength: 4.5 }, true],
     ['operatorHold', { task, reason: 'waiting on legal' }, 'agentTaskOperatorHold',
         { taskUuid: 't1', hold: true, reason: 'waiting on legal' }, true],
+    ['releaseAssignment', { task, reason: 'the agent is gone' }, 'agentTaskReleaseAssignment',
+        { taskUuid: 't1', reason: 'the agent is gone' }, true],
     ['setBudget', { task, budgetMicros: 2_500_000 }, 'agentTaskSetBudget', { taskUuid: 't1', budgetMicros: 2_500_000 }, true],
     ['setLevel', { task, level: 2 }, 'agentTaskSetLevel', { taskUuid: 't1', level: 2 }, true],
     ['setGroup', { task, group: 'core-work' }, 'agentTaskSetGroup', { taskUuid: 't1', group: 'core-work' }, true],

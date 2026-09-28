@@ -184,6 +184,13 @@ export function useAgentTaskActions (after: AfterAction) {
             () => 'On hold (operator)', 'Hold failed')
     }
 
+    /** A person takes a stalled assignment back to the queue for the same role (task RD3-4). */
+    function releaseAssignment (p: { task: any, reason: string }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskReleaseAssignment', { taskUuid: p.task.uuid, reason: p.reason }),
+            () => 'Assignment released: the task is queued again', 'Release failed')
+    }
+
     function requireReview (p: { task: any, value: boolean }) {
         return kept(p.task,
             () => store.dispatch('agentTaskRequireHumanReview', { taskUuid: p.task.uuid, value: p.value }),
@@ -192,7 +199,7 @@ export function useAgentTaskActions (after: AfterAction) {
 
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget,
+        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, releaseAssignment, setBudget,
         setLevel, setGroup, setTags, delivered,
     }
 }

@@ -40,7 +40,7 @@ export function reopenLine (task: any, when: (at: string) => string): string | n
     return head + (last.role ? ` to ${last.role}` : '') + ` by ${reopenedBy(last.by)}` + (last.reason ? `: ${last.reason}` : '')
 }
 
-export type HintedAction = 'complete' | 'authorize' | 'order' | 'hold' | 'reopen'
+export type HintedAction = 'complete' | 'authorize' | 'order' | 'hold' | 'reopen' | 'release'
 
 export interface ActionDrafts {
     role?: string | null
@@ -48,6 +48,7 @@ export interface ActionDrafts {
     holdReason?: string | null
     reopenRole?: string | null
     reopenReason?: string | null
+    releaseReason?: string | null
 }
 
 /** The statuses a person completes from (the server's complete). */
@@ -74,5 +75,10 @@ export function disabledReason (action: HintedAction, task: any, board: any, d: 
         }
         if (!d.reopenRole) return 'pick the role to reopen it to'
         return (d.reopenReason ?? '').trim() ? null : 'say why its delivery cannot land'
+    case 'release':
+        // task RD3-4: a person takes a stalled assignment back to the queue
+        if (task?.status !== 'ASSIGNED') return 'only an assigned task has an assignment to release'
+        if (!board?.myPermissions?.includes('BOARD_WRITE')) return 'releasing an assignment needs BOARD_WRITE on this board'
+        return (d.releaseReason ?? '').trim() ? null : 'say why the assignment is released'
     }
 }
