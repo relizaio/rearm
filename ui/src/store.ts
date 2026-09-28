@@ -165,6 +165,7 @@ const AGENT_TASK_SELECTION = `
     requiredRolesSkipped
     reopenedAt
     reopenCount
+    reopens { role at reason by { kind uuid name } }
     pullRequests { url state targetBranch mergedDate registered
         attestation { unit commit outcome by { kind uuid name } at note } }
     deliveries { unit commit outcome by { kind uuid name } at note }
@@ -3795,6 +3796,7 @@ const storeObject : any = {
                             closedBy { kind uuid name }
                             closeReason
                             idleWarnedAt
+                            idleCloseAt
                             boardsWorked
                             tasksWorked { uuid key title role board boardName }
                             providerSessions {

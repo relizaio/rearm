@@ -37,3 +37,13 @@ export function forceCloseReason (reason: string | null | undefined): string | n
     const r = (reason ?? '').trim()
     return r || null
 }
+
+/**
+ * The "Closing idle" tooltip (task RD2-15, sweep UI-29): when it was warned, when the sweep closes it, and
+ * what a person may do -- not a CLI verb, which is the agent's business.
+ */
+export function idleWarningText (session: any, when: (at: string) => string): string {
+    const warned = session?.idleWarnedAt ? `Warned ${when(session.idleWarnedAt)}; closes` : 'Closes'
+    const at = session?.idleCloseAt ? ` at ${when(session.idleCloseAt)}` : ' soon'
+    return `${warned}${at} unless the agent calls again. A person with Board write may force-close it now.`
+}

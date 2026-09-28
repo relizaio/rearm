@@ -23,8 +23,7 @@
                 <template #trigger>
                     <n-tag size="small" type="warning" class="idle-warned">Closing idle</n-tag>
                 </template>
-                Warned {{ formatDate(session.idleWarnedAt) }} that it will be auto-closed for inactivity.
-                Any call with its session id, or <code>rearm agent session touch</code>, keeps it open.
+                <span data-testid="idle-warning">{{ idleWarningText(session, formatDate) }}</span>
             </n-tooltip>
             <code class="dim">{{ session.uuid }}</code>
             <span class="dim">·</span>
@@ -229,7 +228,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
-import { closeAttribution, forceCloseReason, isIdleWarned } from '@/utils/agentSessionIdle'
+import { closeAttribution, forceCloseReason, idleWarningText, isIdleWarned } from '@/utils/agentSessionIdle'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import AgentUsageSummary from './AgentUsageSummary.vue'

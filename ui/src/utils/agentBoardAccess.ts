@@ -40,3 +40,18 @@ export function specRefusal (e: any): string {
     if (!raw || /^not authori[sz]ed\.?$/i.test(raw)) return 'Needs Configuration read on this board to show it as a spec.'
     return raw
 }
+
+/**
+ * What the board header offers for notifications (RD2-14, sweep UI-23). Subscriptions are org integration
+ * configuration, an org admin's: only an admin gets Subscribe, which opens the prefilled form. A BOARD_WRITE
+ * holder already gets the board's events as inbox rows (task 5c70990d); a reader is told whom to ask.
+ */
+export type SubscribeOffer = { kind: 'subscribe' } | { kind: 'hint', text: string }
+
+export const INBOX_HINT = 'Board events reach your inbox (Board write)'
+export const ASK_ADMIN_HINT = 'Ask an org admin to subscribe a channel to this board'
+
+export function subscribeOffer (board: WithPermissions | null | undefined, orgAdmin: boolean): SubscribeOffer {
+    if (orgAdmin) return { kind: 'subscribe' }
+    return { kind: 'hint', text: canOperate(board) ? INBOX_HINT : ASK_ADMIN_HINT }
+}

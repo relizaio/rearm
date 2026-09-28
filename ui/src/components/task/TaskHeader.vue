@@ -1,4 +1,9 @@
 <template>
+    <!-- The board's lock, as the board page shows it (RD2-16): a task on a locked board says so here too. -->
+    <n-alert v-if="lockBannerText(board)" :type="board.lock.level === 'OPERATOR' ? 'error' : 'warning'"
+             class="boardlock" data-testid="task-board-lock" :bordered="false">
+        {{ lockBannerText(board) }}
+    </n-alert>
     <n-alert v-if="task.hold" type="error"
              :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review' : `On hold (${(task.hold.level ?? '').toLowerCase()})`">
         {{ task.hold.reason }}
@@ -22,6 +27,17 @@
                 <n-select v-model:value="gateAbout" :options="aboutOptions" size="small" clearable
                           placeholder="about" style="width: 150px"/>
             </n-space>
+            <!-- One finding form at a gate (RD2-18): this one rides on the verdict; the findings section's
+                 form, which files a round now, opens from here only when asked for. -->
+            <div class="holdmeta gatemode" data-testid="gate-finding-mode">
+                {{ GATE_FINDING_MODE }}
+                <!-- Filing now takes only what does not block (RD2-18 run 1, T-1): none on a strict board. -->
+                <span v-if="!fileNowPriorities(board, priorityLevels).length" data-testid="gate-every-blocks">{{ EVERY_PRIORITY_BLOCKS }}</span>
+                <n-button v-else text size="tiny" type="primary" class="gatefilenow" data-testid="gate-file-now"
+                          @click="toggleFileNow(task)">
+                    {{ fileNowOpened(task) ? 'hide the file-now form' : 'file now without deciding' }}
+                </n-button>
+            </div>
             <!-- The gated hop rejected with items that block (task RD2-25): approving past them needs a
                  decision on each, with the person's words, as the server requires; sending it back
                  leads. -->
@@ -134,6 +150,7 @@
 // stage of a HUMAN role, and the human-review flag. A gate verdict or a release must stay one click
 // away wherever the task is shown, so the drawer's preview keeps this whole.
 import { computed, ref, watch } from 'vue'
+import { EVERY_PRIORITY_BLOCKS, fileNowOpened, fileNowPriorities, GATE_FINDING_MODE, toggleFileNow } from '@/utils/agentGateFinding'
 import { NAlert, NButton, NInput, NPopconfirm, NRadioButton, NRadioGroup, NSelect, NSpace, NTag } from 'naive-ui'
 import { approveConfirm, approveLabel, gateBlockingFindings, gateDecisions, GateDecision, gateRejected, rejectLabel,
     undecided } from '@/utils/agentGateReview'
@@ -142,6 +159,7 @@ import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
 import { subtaskProgress } from '@/utils/agentTaskLabels'
 import { holdReleaseNote, isLoopStopHold, personMayRelease, releaseLabel, releasePayload, releaseRoleOptions } from '@/utils/agentHoldRelease'
+import { lockBannerText } from '@/utils/agentTaskHints'
 
 const props = defineProps<{
     task: any
