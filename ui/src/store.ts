@@ -3794,6 +3794,7 @@ const storeObject : any = {
                             closeReason
                             idleWarnedAt
                             boardsWorked
+                            tasksWorked { uuid key title role board boardName }
                             providerSessions {
                                 provider
                                 id
