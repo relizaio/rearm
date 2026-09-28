@@ -41,7 +41,7 @@
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
-                    <task-pull-requests :task="task" :can-operate="canReopen" @delivered="delivered"/>
+                    <task-pull-requests :task="task" :can-operate="canReopen" @delivered="delivered" @supersede="supersedePr"/>
                 </div>
             </div>
         </template>
@@ -140,7 +140,7 @@ watch(taskUuid, load, { immediate: true })
 const {
     humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags, delivered, releaseAssignment,
+    setGroup, setTags, delivered, releaseAssignment, supersedePr,
 } = useAgentTaskActions(async () => { await load() })
 
 // A finding's element chip opens the element under its document (elements.md §8).

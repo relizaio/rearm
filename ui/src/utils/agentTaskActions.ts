@@ -178,6 +178,15 @@ export function useAgentTaskActions (after: AfterAction) {
             'Could not attest')
     }
 
+    /** A person declares a linked PR superseded by its replacement (task RD3-18). */
+    function supersedePr (p: { task: any, oldUrl: string, byUrl: string, note: string | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskSupersedePullRequest', { taskUuid: p.task.uuid, oldUrl: p.oldUrl, byUrl: p.byUrl,
+                note: p.note }),
+            (res: any) => `${p.oldUrl} superseded by ${p.byUrl}` + (res?.status === 'COMPLETED' ? ': task completed' : ''),
+            'Could not declare it superseded')
+    }
+
     /** An operator hold, which the coordinator cannot lift (task 6fdc5a37). */
     function operatorHold (p: { task: any, reason: string }) {
         return kept(p.task,
@@ -201,6 +210,6 @@ export function useAgentTaskActions (after: AfterAction) {
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
         completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, releaseAssignment, setBudget,
-        setLevel, setGroup, setTags, delivered,
+        setLevel, setGroup, setTags, delivered, supersedePr,
     }
 }

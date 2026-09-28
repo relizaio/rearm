@@ -65,3 +65,56 @@ export function canForceClose (session: any, admin: boolean, boards?: any[] | nu
 export function forceCloseNeedsBoards (session: any, admin: boolean): boolean {
     return !admin && session?.status === 'OPEN' && (session?.boardsWorked ?? []).length > 0
 }
+
+// ---------- declaring a linked PR superseded (task RD3-18) ----------
+
+/**
+ * A PR URL's repository, as the server keys it (RD3-13): scheme and host lower-cased, trailing slashes and a
+ * query or fragment dropped, then the last two path segments ("pull/692") cut. Null for a blank URL.
+ */
+export function prRepository (url: string | null | undefined): string | null {
+    const raw = String(url ?? '').trim()
+    if (!raw) return null
+    let s = raw.replace(/[?#].*$/, '').replace(/\/+$/, '')
+    const m = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]+)(.*)$/.exec(s)
+    if (m) s = m[1].toLowerCase() + m[2]
+    for (let i = 0; i < 2 && s.lastIndexOf('/') > 0; i++) s = s.slice(0, s.lastIndexOf('/'))
+    return s
+}
+
+/** The task's PR row for a URL, as the task read resolves it. */
+function prRow (task: any, url: string): any {
+    return (task?.pullRequests ?? []).find((p: any) => p?.url === url)
+}
+
+/**
+ * Whether a row offers "Declare superseded": its tracker reports it closed and unmerged, and no attestation
+ * already settles it as delivered or superseded (one attested abandoned may be superseded, RD3-13).
+ */
+export function offersSupersede (task: any, url: string): boolean {
+    const pr = prRow(task, url)
+    if (!pr || pr.state !== 'CLOSED') return false
+    const outcome = pr.attestation?.outcome
+    return outcome !== 'SUPERSEDED' && outcome !== 'DELIVERED'
+}
+
+/** The task's other linked PRs on the same repository: what may replace `url`. */
+export function supersedeCandidates (task: any, url: string): string[] {
+    const repo = prRepository(url)
+    return ((task?.prUrls ?? []) as string[]).filter(u => u !== url && null !== repo && prRepository(u) === repo)
+}
+
+/** Why "Declare superseded" is disabled, or null (RD2-16): the permission, then a replacement to name. */
+export function supersedeDisabledReason (task: any, url: string, canOperate: boolean): string | null {
+    if (!canOperate) return 'declaring a PR superseded needs BOARD_WRITE on this board'
+    if (!supersedeCandidates(task, url).length) return 'link the PR that replaces it first, on the same repository'
+    return null
+}
+
+/** The user mutation's variables, or null while no replacement is picked. */
+export function supersedePayload (task: any, oldUrl: string, byUrl: string | null | undefined, note: string | null | undefined):
+        { task: any, oldUrl: string, byUrl: string, note: string | null } | null {
+    if (!byUrl || !supersedeCandidates(task, oldUrl).includes(byUrl)) return null
+    const n = (note ?? '').trim()
+    return { task, oldUrl, byUrl, note: n || null }
+}
