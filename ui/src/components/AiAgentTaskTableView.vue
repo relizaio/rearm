@@ -32,6 +32,8 @@ import { taskPagePath } from '@/utils/agentTaskFormat'
 import { compareTaskKeys, matchesTaskText, roleTagFor, shortRef } from '@/utils/agentTaskLabels'
 import { levelLabel, levelOf, levelTooltip, matchesLevel } from '@/utils/agentTaskLevel'
 import { actorLabel } from '@/utils/agentActors'
+import SessionRef from './SessionRef.vue'
+import { AgentName, sessionOf } from '@/utils/agentSessionLabel'
 import { groupColour, groupOptions, groupRank, matchesGroupOrTag, NO_GROUP, passesGroupAndTag, tagKeys, tagOptions } from '@/utils/agentTaskGroups'
 
 const props = defineProps<{
@@ -45,6 +47,8 @@ const props = defineProps<{
     groupFilter?: string | null
     /** The tag filter: a tag key, or null for any. */
     tagFilter?: string | null
+    /** Agents with their own name apart from the key's note, for the Agent column (RD2-11). */
+    agentDir?: Record<string, AgentName>
 }>()
 const emit = defineEmits<{
     (e: 'open', task: any): void
@@ -151,7 +155,11 @@ const columns: DataTableColumns<any> = [
     { title: 'Order', key: 'orderIndex', width: 70, sorter: (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0) },
     {
         title: 'Agent', key: 'agent', width: 140,
-        render: (t: any) => t.assignment ? (props.agentNames[t.assignment.agent] ?? t.assignment.agent?.slice(0, 8)) : '—',
+        // The session working it, role first and linked (RD2-11), not the key's note shared by every session on it.
+        render: (t: any) => !t.assignment ? '—'
+            : t.assignment.session
+                ? h(SessionRef, { session: sessionOf(t.assignment.session, t.assignment.agent, props.agentDir, t.assignment.role) })
+                : (props.agentNames[t.assignment.agent] ?? t.assignment.agent?.slice(0, 8)),
     },
     { title: 'Deps', key: 'deps', width: 60, render: (t: any) => (t.dependsOn?.length ?? 0) || '—' },
     { title: 'Hops', key: 'hops', width: 60, render: (t: any) => (t.signOffs?.length ?? 0) || '—' },

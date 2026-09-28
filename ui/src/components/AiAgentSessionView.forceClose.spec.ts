@@ -80,7 +80,8 @@ describe('session force close', () => {
         await w.find('.pc__yes').trigger('click')
         await flushPromises()
         expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', { sessionUuid: 's1', reason: 'agent crashed' })
-        expect(w.find('.close-attribution').text()).toBe('pm@example.com — force-closed by pm@example.com: agent crashed')
+        // The closer named once (RD2-11): the reason already says who.
+        expect(w.find('.close-attribution').text()).toBe('Force-closed by pm@example.com: agent crashed')
     })
 
     it('flags an open session the sweep has warned', async () => {
@@ -143,5 +144,36 @@ describe('session force close', () => {
         await w.find('.pc__yes').trigger('click')
         await flushPromises()
         expect(notifyError).toHaveBeenCalledWith(expect.objectContaining({ content: 'Could not force-close: Not authorized' }))
+    })
+})
+
+// RD2-11: the page lists what the session worked, linked -- its boards by name and its tasks by key, title and role.
+describe('what a session worked', () => {
+    beforeEach(() => { dispatch.mockReset() })
+
+    it('lists the boards and tasks, the board named from its tasks', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession'
+            ? { ...session('CLOSED'), boardsWorked: ['b1', 'b2'], tasksWorked: [
+                { uuid: 't2', key: 'RD-2', title: 'second', role: 'tester', board: 'b1', boardName: 'Dogfood' },
+                { uuid: 't1', key: 'RD-1', title: 'first', role: 'coder', board: 'b1', boardName: 'Dogfood' },
+            ] }
+            : [])
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        const boards = w.findAll('[data-testid="board-worked"]').map(b => b.text())
+        expect(boards).toEqual(['Dogfood', 'b2'], 'a board with no readable task shows its short id')
+        const tasks = w.findAll('[data-testid="task-worked"]').map(t => t.text().replace(/\s+/g, ' '))
+        expect(tasks).toEqual(['RD-2 · second (tester)', 'RD-1 · first (coder)'])
+        expect(dispatch.mock.calls.map(c => c[0])).not.toContain('fetchAgentBoard', 'the names come with the session')
+    })
+
+    it('shows neither row for a session that worked nothing', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession' ? { ...session('OPEN'), boardsWorked: [], tasksWorked: [] } : [])
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(w.find('[data-testid="board-worked"]').exists()).toBe(false)
+        expect(w.find('[data-testid="task-worked"]').exists()).toBe(false)
     })
 })

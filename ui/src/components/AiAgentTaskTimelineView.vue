@@ -14,9 +14,11 @@
                 <svg :width="width" :height="height" class="tl-svg">
                     <line v-for="(g, i) in gridLines" :key="'g' + i"
                           :x1="g.x" :y1="0" :x2="g.x" :y2="height - AXIS_H" class="tl-grid"/>
-                    <g v-for="(lane, li) in lanes" :key="lane.agent">
+                    <g v-for="(lane, li) in lanes" :key="lane.key">
                         <line v-if="li > 0" :x1="0" :y1="laneY(li)" :x2="width" :y2="laneY(li)" class="tl-lanesep"/>
-                        <text class="tl-agent" x="6" :y="laneY(li) + 16">{{ lane.name }}</text>
+                        <!-- One lane per session (RD2-11): two sessions on one key are two lanes, each linked. -->
+                        <text class="tl-agent" :class="{ 'tl-agent--link': lane.session }" x="6" :y="laneY(li) + 16"
+                              :data-lane="lane.key" @click="openSession(lane.session)">{{ lane.name }}</text>
                         <g v-for="(bar, bi) in lane.bars" :key="'b' + bi"
                            class="tl-bar" :class="`tl-bar--${bar.tone}`" @click="emit('open', bar.task)">
                             <rect :x="bar.x" :y="laneY(li) + LANE_PAD_TOP" :width="Math.max(bar.w, 4)" :height="BAR_H" rx="4"/>
@@ -37,7 +39,7 @@
                 </svg>
             </div>
             <p class="tl-note">
-                One lane per agent; each bar is one assignment from pickup to sign-off (click to
+                One lane per session; each bar is one assignment from pickup to sign-off (click to
                 open the task). Diamonds are returns. Gaps are idle time or work on other boards.
             </p>
         </template>
@@ -46,6 +48,8 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { AgentName, sessionLabel, sessionOf, sessionPath } from '@/utils/agentSessionLabel'
 import { cardRef } from '@/utils/agentTaskFormat'
 import { refWithLevel } from '@/utils/agentTaskLevel'
 
@@ -54,8 +58,15 @@ const props = defineProps<{
     agentNames: Record<string, string>
     /** The board, for the level a task without its own reads (RD2-1). */
     board?: any
+    /** Agents with their own name apart from the key's note, for the lanes (RD2-11). */
+    agentDir?: Record<string, AgentName>
 }>()
 const emit = defineEmits<{ (e: 'open', task: any): void }>()
+const router = useRouter()
+
+function openSession (session: string | null | undefined) {
+    if (session) router.push(sessionPath(session))
+}
 
 const LANE_H = 46
 const LANE_PAD_TOP = 22
@@ -68,19 +79,19 @@ type Bar = { x: number, w: number, tone: string, label: string, tip: string, tas
 type Mark = { x: number, tip: string, task: any }
 
 const events = computed(() => {
-    const out: { agent: string, from?: number, to?: number, at?: number, kind: string, rec: any, task: any }[] = []
+    const out: { agent: string, session: string | null, from?: number, to?: number, at?: number, kind: string, rec: any, task: any }[] = []
     for (const t of props.tasks ?? []) {
         for (const s of t.signOffs ?? []) {
             const from = time(s.assignedAt); const to = time(s.signedOffAt)
-            if (from && to) out.push({ agent: s.agent, from, to, kind: s.outcome === 'PASSED' ? 'passed' : 'rejected', rec: s, task: t })
+            if (from && to) out.push({ agent: s.agent, session: s.session ?? null, from, to, kind: s.outcome === 'PASSED' ? 'passed' : 'rejected', rec: s, task: t })
         }
         for (const r of t.returns ?? []) {
             const at = time(r.returnedAt)
-            if (at && r.agent) out.push({ agent: r.agent, at, kind: 'return', rec: r, task: t })
+            if (at && r.agent) out.push({ agent: r.agent, session: r.session ?? null, at, kind: 'return', rec: r, task: t })
         }
         if (t.assignment) {
             const from = time(t.assignment.assignedAt)
-            if (from) out.push({ agent: t.assignment.agent, from, to: Date.now(), kind: 'active', rec: t.assignment, task: t })
+            if (from) out.push({ agent: t.assignment.agent, session: t.assignment.session ?? null, from, to: Date.now(), kind: 'active', rec: t.assignment, task: t })
         }
     }
     return out
@@ -105,10 +116,14 @@ function xOf (t: number): number {
 }
 
 const lanes = computed(() => {
-    const byAgent = new Map<string, { bars: Bar[], marks: Mark[] }>()
+    // Keyed by session: every session on one key used to fold into one lane named by the key's note.
+    // A hop from before sessions were recorded keeps its agent's lane.
+    const byLane = new Map<string, { agent: string, session: string | null, roles: string[], bars: Bar[], marks: Mark[] }>()
     for (const e of events.value) {
-        if (!byAgent.has(e.agent)) byAgent.set(e.agent, { bars: [], marks: [] })
-        const lane = byAgent.get(e.agent)!
+        const key = e.session ?? `agent:${e.agent}`
+        if (!byLane.has(key)) byLane.set(key, { agent: e.agent, session: e.session, roles: [], bars: [], marks: [] })
+        const lane = byLane.get(key)!
+        if (e.rec?.role && !lane.roles.includes(e.rec.role)) lane.roles.push(e.rec.role)
         const ref = refOf(e.task)
         if (e.kind === 'return') {
             lane.marks.push({
@@ -129,8 +144,8 @@ const lanes = computed(() => {
             })
         }
     }
-    return [...byAgent.entries()]
-        .map(([agent, v]) => ({ agent, name: nameOf(agent), ...v }))
+    return [...byLane.entries()]
+        .map(([key, v]) => ({ key, name: v.session ? sessionLabel(sessionOf(v.session, v.agent, props.agentDir, v.roles.join('/') || null)) : nameOf(v.agent), ...v }))
         .sort((a, b) => a.name.localeCompare(b.name))
 })
 
@@ -188,6 +203,7 @@ function diamond (cx: number, cy: number): string {
 .tl-scroll { overflow: auto; }
 .tl-svg { display: block; }
 .tl-grid { stroke: rgba(128, 128, 128, 0.15); stroke-width: 1; }
+.tl-agent--link { cursor: pointer; text-decoration: underline; }
 .tl-lanesep { stroke: rgba(128, 128, 128, 0.25); stroke-width: 1; }
 .tl-agent { font-size: 11px; fill: #777; font-weight: 600; }
 .tl-bar {

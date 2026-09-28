@@ -218,10 +218,10 @@
                 <AiAgentTaskPertView :tasks="tasks" :board="currentBoard"/>
             </n-tab-pane>
             <n-tab-pane name="timeline" tab="Timeline">
-                <AiAgentTaskTimelineView :tasks="tasks" :agent-names="agentNames" :board="currentBoard" @open="openTask"/>
+                <AiAgentTaskTimelineView :tasks="tasks" :agent-names="agentNames" :agent-dir="agentDir" :board="currentBoard" @open="openTask"/>
             </n-tab-pane>
             <n-tab-pane name="table" tab="Table">
-                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" :board-has-sources="boardHasSources" :board="currentBoard"
+                <AiAgentTaskTableView :tasks="tasks" :agent-names="agentNames" :agent-dir="agentDir" :board-has-sources="boardHasSources" :board="currentBoard"
                                       :group-filter="groupFilter" :tag-filter="tagFilter"
                                       @update:group-filter="setGroupFilter" @update:tag-filter="setTagFilter"
                                       @open="openTask"/>
@@ -930,7 +930,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, onMounted, provide, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -951,6 +951,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentLabel, agentNamesOf } from '@/utils/agentSessionLabel'
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/utils/agentTaskKeys'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
@@ -1164,6 +1165,10 @@ const editingRoleIsNew = ref(false)
 const saving = ref(false)
 const selectedTask = ref<any>(null)
 const agentNames = ref<Record<string, string>>({})
+// Agents by uuid with their own name apart from the key's note, for naming sessions (RD2-11).
+const agentDir = ref<Record<string, AgentName>>({})
+provide(AGENT_DIR, agentDir)
+provide(COORDINATOR_SEAT, computed(() => currentBoard.value?.coordinatorSeat ?? null))
 
 function openTask (t: any) {
     // resolve to the freshest copy from the board so drawer navigation
@@ -1219,7 +1224,8 @@ const agentWip = computed(() => {
         }
     }
     return [...counts.entries()]
-        .map(([agent, count]) => ({ agent, count, name: agentNames.value[agent] ?? agent.slice(0, 8) }))
+        // Per agent, as the server counts the limit; named by the agent, not the key's note (RD2-11).
+        .map(([agent, count]) => ({ agent, count, name: agentLabel(agent, agentDir.value) }))
         .sort((a, b) => b.count - a.count)
 })
 
@@ -1677,9 +1683,8 @@ async function refreshBoardContent () {
     // lazily once per panel life, refreshed with board content
     models.value = await store.dispatch('fetchModelOntologiesOfOrg', props.orgUuid).catch(() => []) ?? []
     const agents = await store.dispatch('fetchAgentsOfOrg', props.orgUuid) ?? []
-    const m: Record<string, string> = {}
-    for (const a of agents) m[a.uuid] = a.effectiveDisplayName || a.name || a.uuid.slice(0, 8)
-    agentNames.value = m
+    agentDir.value = agentDirectory(agents)
+    agentNames.value = agentNamesOf(agents)
 }
 
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).

@@ -15,7 +15,7 @@ describe('closeAttribution', () => {
             closeReason: 'idle since 2026-09-25T21:17Z, window 24 h' }))
             .toBe('idle-sweep — idle since 2026-09-25T21:17Z, window 24 h')
         expect(closeAttribution({ status: 'CLOSED', closedBy: { kind: 'USER', uuid: 'u1', name: 'pm@example.com' },
-            closeReason: 'force-closed by pm@example.com' })).toBe('pm@example.com — force-closed by pm@example.com')
+            closeReason: 'force-closed by pm@example.com' })).toBe('Force-closed by pm@example.com', 'the closer once (RD2-11)')
     })
 
     it('shows what it has on older rows and nothing on an open session', () => {

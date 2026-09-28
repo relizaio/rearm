@@ -23,7 +23,7 @@
                     <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
                     <task-answered-questions :task="task" :roles="roles"/>
                     <task-documents :task="task" :focus="elementFocus" :can-rerun="canReopen"/>
-                    <task-hops :task="task" :agent-names="agentNames"/>
+                    <task-hops :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-history :task="task"/>
                     <AiAgentRevisionHistory v-if="canReadHistory && task.uuid" kind="task" :uuid="task.uuid" :current="task"/>
                 </div>
@@ -38,7 +38,7 @@
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
                                   @set-level="setLevel" @set-group="setGroup" @set-tags="setTags" @delivered="delivered"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
-                    <task-assignment :task="task" :agent-names="agentNames"/>
+                    <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
                     <task-pull-requests :task="task" :can-operate="canReopen" @delivered="delivered"/>
                 </div>
@@ -51,7 +51,7 @@
 // A page per board task (gaps §1.26): everything the drawer used to carry, laid out for reading.
 // It loads from its uuid alone -- the task, then its board, the board's tasks and roles -- so a
 // deep link works without the board panel having been open.
-import { computed, ref, watch } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NBreadcrumb, NBreadcrumbItem, NSpin } from 'naive-ui'
@@ -71,6 +71,7 @@ import TaskAnsweredQuestions from './task/TaskAnsweredQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
 import { boardCan, canOperate } from '@/utils/agentBoardAccess'
+import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentNamesOf } from '@/utils/agentSessionLabel'
 import { taskLoadErrorText } from '@/utils/agentAccessMessages'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
@@ -85,6 +86,10 @@ const board = ref<any>(null)
 const tasks = ref<any[]>([])
 const roles = ref<any[]>([])
 const agentNames = ref<Record<string, string>>({})
+// Agents by uuid with their own name apart from the key's note, for naming sessions (RD2-11).
+const agentDir = ref<Record<string, AgentName>>({})
+provide(AGENT_DIR, agentDir)
+provide(COORDINATOR_SEAT, computed(() => board.value?.coordinatorSeat ?? null))
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 
@@ -117,9 +122,8 @@ async function load () {
         board.value = b
         tasks.value = ts ?? []
         roles.value = rs ?? []
-        const names: Record<string, string> = {}
-        for (const a of agents ?? []) names[a.uuid] = a.effectiveDisplayName || a.name || a.uuid.slice(0, 8)
-        agentNames.value = names
+        agentDir.value = agentDirectory(agents)
+        agentNames.value = agentNamesOf(agents)
     } catch (e: any) {
         task.value = null
         // A refusal says what it needs (RD2-9); any other error keeps the server's words.

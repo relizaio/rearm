@@ -141,6 +141,19 @@
                     <n-descriptions-item v-if="closeAttribution(session)" label="Closed by">
                         <span class="close-attribution">{{ closeAttribution(session) }}</span>
                     </n-descriptions-item>
+                    <!-- What the session worked, linked (RD2-11): its boards, and its tasks by key and title. -->
+                    <n-descriptions-item v-if="session.boardsWorked?.length" label="Boards worked" :span="2">
+                        <span v-for="b in session.boardsWorked" :key="b" class="worked" data-testid="board-worked">
+                            <router-link :to="{ name: 'AiAgentsOfOrg', params: { orguuid: session.org }, query: { tab: 'boards', board: b } }">
+                                {{ boardNames[b] ?? b.slice(0, 8) }}</router-link>
+                        </span>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="session.tasksWorked?.length" label="Tasks worked" :span="2">
+                        <span v-for="t in session.tasksWorked" :key="t.uuid" class="worked" data-testid="task-worked">
+                            <router-link :to="taskPagePath(t.uuid)">{{ t.key ? t.key + ' · ' : '' }}{{ t.title }}</router-link>
+                            <span v-if="t.role" class="dim"> ({{ t.role }})</span>
+                        </span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Last activity">{{ formatDate(session.lastActivityAt) }}</n-descriptions-item>
                     <n-descriptions-item label="Commits"><strong>{{ session.commits?.length ?? 0 }}</strong></n-descriptions-item>
                     <n-descriptions-item label="Artifacts"><strong>{{ session.artifacts?.length ?? 0 }}</strong></n-descriptions-item>
@@ -217,6 +230,7 @@ import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
 import { closeAttribution, forceCloseReason, isIdleWarned } from '@/utils/agentSessionIdle'
+import { taskPagePath } from '@/utils/agentTaskFormat'
 import { isOrgAdmin } from '@/utils/agentReopen'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
@@ -381,6 +395,8 @@ const closeReasonInput = ref('')
 // The org's boards the reader sees, with their myPermissions: read only when they decide whether a
 // non-admin may force-close (task RD2-5). A failed read offers nothing, as the server would refuse.
 const orgBoards = ref<any[]>([])
+// Board names for the boards the session worked; a board the reader cannot list keeps its short id.
+const boardNames = ref<Record<string, string>>({})
 async function forceClose () {
     closing.value = true
     try {
@@ -413,6 +429,9 @@ async function load () {
     orgBoards.value = forceCloseNeedsBoards(session.value, isAdmin.value)
         ? await store.dispatch('fetchAgentBoardsOfOrg', session.value.org).catch(() => []) ?? []
         : []
+    // Board names from the tasks worked, which carry them: no second read of the boards (RD2-11).
+    boardNames.value = Object.fromEntries((session.value?.tasksWorked ?? []).filter((t: any) => t.boardName)
+        .map((t: any) => [t.board, t.boardName]))
     if (session.value?.agent) {
         agent.value = await store.dispatch('fetchAgent', session.value.agent).catch(() => null)
     }
@@ -744,6 +763,7 @@ const policyColumns: DataTableColumns<any> = [
 </script>
 
 <style scoped>
+.worked { margin-right: 12px; display: inline-block; }
 .aiAgentSessionView { padding: 16px; }
 .forceclose-reason { margin-top: 6px; }
 .idle-warned { margin-left: 4px; }

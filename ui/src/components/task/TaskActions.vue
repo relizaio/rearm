@@ -16,7 +16,7 @@
             <n-button size="small" :disabled="orderDraft == null || orderDraft === task.orderIndex"
                       @click="emit('order', { task, orderIndex: orderDraft as number })">Set order</n-button>
             <span v-if="task.orderSetBy" class="holdmeta" style="margin-top: 0">
-                set by {{ actorLabel(task.orderSetBy) }} · {{ ts(task.orderSetAt) }}
+                set by <actor-ref :actor="task.orderSetBy" :task="task"/> · {{ ts(task.orderSetAt) }}
             </span>
         </div>
         <!-- A task's required model strength (D20: lowering it is a person's call). -->
@@ -32,7 +32,7 @@
             <n-button v-if="task.requiredStrength != null" size="small" quaternary
                       @click="emit('set-strength', { task, requiredStrength: null })">Clear</n-button>
             <span v-if="task.strengthSetBy" class="holdmeta" style="margin-top: 0">
-                set by {{ actorLabel(task.strengthSetBy) }} · {{ ts(task.strengthSetAt) }}
+                set by <actor-ref :actor="task.strengthSetBy" :task="task"/> · {{ ts(task.strengthSetAt) }}
             </span>
         </div>
         <!-- The task's level, the depth in the product tree (RD2-1): a declaration the board makes
@@ -49,7 +49,7 @@
             <n-button v-if="task.level != null" size="small" quaternary data-testid="level-clear"
                       @click="emit('set-level', { task, level: null })">Clear</n-button>
             <span v-if="task.levelSetBy" class="holdmeta" style="margin-top: 0">
-                set by {{ actorLabel(task.levelSetBy) }} · {{ ts(task.levelSetAt) }}
+                set by <actor-ref :actor="task.levelSetBy" :task="task"/> · {{ ts(task.levelSetAt) }}
             </span>
         </div>
         <!-- The task's group and tags (RD2-31): a move goes into an OPEN group or out of every group;
@@ -111,7 +111,7 @@
                 {{ budgetDraft == null && task.budgetMicros != null ? 'Clear budget' : 'Set budget' }}
             </n-button>
             <span v-if="task.budgetSetBy" class="holdmeta" style="margin-top: 0">
-                set by {{ actorLabel(task.budgetSetBy) }} · {{ ts(task.budgetSetAt) }}
+                set by <actor-ref :actor="task.budgetSetBy" :task="task"/> · {{ ts(task.budgetSetAt) }}
             </span>
         </div>
         <div class="deprow">
@@ -213,7 +213,7 @@
 import { computed, ref, watch } from 'vue'
 import { NButton, NCheckbox, NDynamicTags, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui'
 import { groupOptions, groupToSend, NO_GROUP, parseTags, tagKeys, tagsProblem, tagsToSet } from '@/utils/agentTaskGroups'
-import { actorLabel } from '@/utils/agentActors'
+import ActorRef from '../ActorRef.vue'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
