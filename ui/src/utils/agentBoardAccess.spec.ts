@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { boardCan, canConfigure, canOperate, canConfigureRead, specRefusal } from './agentBoardAccess'
+import { boardCan, canConfigure, canOperate, canConfigureRead, specRefusal, ASK_ADMIN_HINT, INBOX_HINT, subscribeOffer } from './agentBoardAccess'
 
 // Board enforcement (task d8e7bd7e): controls follow the board's myPermissions.
 describe('board access', () => {
@@ -42,3 +42,23 @@ describe('reading the board as configuration', () => {
         expect(specRefusal(null)).toBe('Needs Configuration read on this board to show it as a spec.')
     })
 })
+
+// RD2-14: subscriptions are an org admin's; a writer's board events already reach the inbox; a reader asks.
+describe('what the board header offers for notifications', () => {
+    const writer = { myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }
+    const reader = { myPermissions: ['BOARD_READ'] }
+
+    it('offers Subscribe to an org admin, whatever the board grants', () => {
+        expect(subscribeOffer(reader, true)).toEqual({ kind: 'subscribe' })
+        expect(subscribeOffer(writer, true)).toEqual({ kind: 'subscribe' })
+    })
+
+    it('tells a writer the events reach the inbox, and a reader to ask an admin', () => {
+        expect(subscribeOffer(writer, false)).toEqual({ kind: 'hint', text: INBOX_HINT })
+        expect(INBOX_HINT).toBe('Board events reach your inbox (Board write)')
+        expect(subscribeOffer(reader, false)).toEqual({ kind: 'hint', text: ASK_ADMIN_HINT })
+        expect(subscribeOffer({ myPermissions: null }, false)).toEqual({ kind: 'hint', text: ASK_ADMIN_HINT })
+        expect(ASK_ADMIN_HINT).toBe('Ask an org admin to subscribe a channel to this board')
+    })
+})
+

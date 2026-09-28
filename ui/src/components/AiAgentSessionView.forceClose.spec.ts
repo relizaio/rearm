@@ -177,3 +177,22 @@ describe('what a session worked', () => {
         expect(w.find('[data-testid="task-worked"]').exists()).toBe(false)
     })
 })
+
+// RD2-15: the closing-idle tooltip on the page gives the close time and names no CLI verb.
+describe('a session closing idle', () => {
+    beforeEach(() => { dispatch.mockReset() })
+
+    it('says when it closes and what a person may do', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession'
+            ? { ...session('OPEN'), idleWarnedAt: '2026-09-27T20:00:00Z', idleCloseAt: '2026-09-27T22:00:00Z' } : [])
+        const tip = { template: '<span class="tt"><slot name="trigger"/><span class="tt__body"><slot/></span></span>' }
+        const w = mount(SessionView, { global: { stubs: { ...stubs, NTooltip: tip, Tooltip: tip } } })
+        await flushPromises()
+        expect(w.find('.idle-warned').text()).toBe('Closing idle')
+        const text = w.find('[data-testid="idle-warning"]').text()
+        expect(text).toMatch(/^Warned .+; closes at .+ unless the agent calls again\. A person with Board write may force-close it now\.$/)
+        expect(w.text()).not.toContain('rearm agent session touch')
+    })
+})
+

@@ -18,10 +18,15 @@
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard && canConfigureRead(currentBoard)"
                           data-testid="view-as-spec">View as spec</n-button>
-                <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
+                <!-- Subscriptions are an org admin's (RD2-14); everyone else is told how the board reaches them. -->
+                <n-button size="small" quaternary @click="subscribeToBoard"
+                          v-if="currentBoard && subscribeOffer(currentBoard, isAdmin).kind === 'subscribe'" data-testid="subscribe"
                           title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
                     Subscribe
                 </n-button>
+                <span v-else-if="currentBoard" class="subhint" data-testid="subscribe-hint">
+                    {{ (subscribeOffer(currentBoard, isAdmin) as any).text }}
+                </span>
                 <n-button size="small" quaternary @click="applyKinds = ['BOARD']"
                           v-if="canApplySpec || canConfigure(currentBoard)">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
@@ -46,11 +51,8 @@
                 Board locked ({{ currentBoard.lock.level }}) — no new assignments.
                 <template v-if="currentBoard.lock.reason"> Reason: {{ currentBoard.lock.reason }}.</template>
                 <template v-if="actorLabel(currentBoard.lock.lockedBy)"> Held by {{ actorLabel(currentBoard.lock.lockedBy) }}.</template>
-                <n-button
-                    v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
-                    size="tiny" style="margin-left: 10px"
-                    @click="operatorLock(false)"
-                >Operator unlock</n-button>
+                <BoardLockControl v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
+                                  action="unlock" :board="currentBoard" :when="formatEventTime" @unlock="operatorLock(false)"/>
             </n-alert>
             <div class="boardmeta">
                 <n-tooltip v-if="currentBoard.declarative" trigger="hover">
@@ -106,7 +108,8 @@
                         ? 'At the per-agent WIP limit — this agent gets no new assignments until a task leaves ASSIGNED.'
                         : 'Concurrently assigned tasks vs the board per-agent limit.' }}
                 </n-tooltip>
-                <n-button v-if="!isLocked && canOperate(currentBoard)" size="tiny" quaternary @click="operatorLock(true)">Operator lock</n-button>
+                <BoardLockControl v-if="!isLocked && canOperate(currentBoard)" action="lock" :board="currentBoard"
+                                  :when="formatEventTime" @lock="p => operatorLock(true, p.reason)"/>
             </div>
             <!-- One warning for what the board lacks (task 5c70990d): the delivery loop's capabilities,
                  then what no key can do on the board. -->
@@ -955,7 +958,7 @@ import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentLabel, age
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/utils/agentTaskKeys'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
-import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal } from '@/utils/agentBoardAccess'
+import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal, subscribeOffer } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
     levelPlaceholder, levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
@@ -976,6 +979,7 @@ const templateTypeRows = computed(() => templateRows(
     editingBoard.value && !editingBoardIsNew.value && editingBoard.value.uuid === selectedBoard.value ? roles.value : [],
     editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
+import BoardLockControl from '@/components/BoardLockControl.vue'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import AiAgentRevisionHistory from '@/components/AiAgentRevisionHistory.vue'
@@ -1963,12 +1967,8 @@ async function savePreset () {
     }
 }
 
-async function operatorLock (lock: boolean) {
-    let reason: string | undefined
-    if (lock) {
-        reason = window.prompt('Lock reason (shown to agents and on the board):') ?? undefined
-        if (reason === undefined) return
-    }
+/** Lock with the reason the in-page form asked for, or unlock once confirmed (RD2-17). */
+async function operatorLock (lock: boolean, reason?: string) {
     try {
         await store.dispatch('setAgentBoardOperatorLock', { boardUuid: selectedBoard.value, lock, reason })
         notification.success({ content: lock ? 'Board locked (OPERATOR)' : 'Board unlocked', duration: 3000 })
@@ -2049,6 +2049,7 @@ async function operatorLock (lock: boolean) {
     .lane { margin-bottom: 12px; }
     .lane__head { font-weight: 600; font-size: 13px; margin: 6px 0; }
     .tcard__level { margin-right: 6px; }
+    .subhint { font-size: 12px; color: #888; align-self: center; }
     .tcard__key { margin-right: 6px; font-family: monospace; font-size: 12px; color: #666; }
     .tcard__group { margin-right: 6px; font-family: monospace; }
     .board {

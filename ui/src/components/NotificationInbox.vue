@@ -187,6 +187,14 @@
                                         data-testid="inbox-cell-channel-disabled"
                                     > (disabled)</span></span>
                                     <span v-if="c.failed" class="inbox-fail-note">&mdash; message was not delivered</span>
+                                    <!-- An agent-board row: where to act on it (RD2-15). -->
+                                    <template v-if="c.links.task || c.links.board">
+                                        <span class="inbox-meta-sep">&middot;</span>
+                                        <a v-if="c.links.task" href="#" class="inbox-go" data-testid="inbox-open-task"
+                                           @click.prevent.stop="goTo(c.links.task)">Open task</a>
+                                        <a v-if="c.links.board" href="#" class="inbox-go" data-testid="inbox-open-board"
+                                           @click.prevent.stop="goTo(c.links.board)">Open board</a>
+                                    </template>
                                 </div>
                             </div>
                             <div class="inbox-card-side">
@@ -282,6 +290,12 @@
                     <div v-if="inboxDrawerRow.description" class="inbox-drawer-desc">
                         {{ inboxDrawerRow.description }}
                     </div>
+                    <n-space v-if="drawerLinks.task || drawerLinks.board" :size="8" data-testid="inbox-drawer-links">
+                        <n-button v-if="drawerLinks.task" size="small" data-testid="inbox-drawer-open-task"
+                                  @click="goTo(drawerLinks.task)">Open task</n-button>
+                        <n-button v-if="drawerLinks.board" size="small" data-testid="inbox-drawer-open-board"
+                                  @click="goTo(drawerLinks.board)">Open board</n-button>
+                    </n-space>
 
                     <!-- column=1 in this narrow drawer — column=2 wraps
                          the labels mid-word ("Severit/y", "Chann/el", etc).
@@ -433,6 +447,7 @@ import {
     formatHistoryTimestamp, relativeTime, extractError
 } from '@/utils/notificationsCommon'
 import { loadNotificationInboxPage } from '@/utils/notificationInboxQuery'
+import { inboxLinksOf } from '@/utils/agentInboxLinks'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 
 const props = defineProps<{
@@ -558,6 +573,15 @@ const approvalRoleNameById = computed<Record<string, string>>(() => {
 
 const inboxDrawerOpen = ref<boolean>(false)
 const inboxDrawerRow = ref<InboxRow | null>(null)
+const drawerLinks = computed(() => inboxLinksOf(inboxDrawerRow.value))
+
+/** Leave the inbox for the task or board a row is about (RD2-15). */
+function goTo (path: string | null): void {
+    if (!path) return
+    inboxDrawerOpen.value = false
+    inboxListDrawerOpen.value = false
+    router.push(path)
+}
 const inboxDrawerPayload = computed<Record<string, unknown> | null>(() => {
     const raw = inboxDrawerRow.value?.payloadJson
     if (!raw) return null
@@ -1095,6 +1119,7 @@ const inboxCards = computed(() => inboxItems.value.map(row => {
             ? row.eventType.replace(/_/g, ' ').toLowerCase()
             : '(no content)'),
         channel: channelLabel(row),
+        links: inboxLinksOf(row),
         rail: railColor(row.severity),
         kind: row.severity ? null : kindLabel(row.eventType),
         // FAILED = the delivery didn't reach the channel; surfaced inline so a
@@ -1323,6 +1348,7 @@ onUnmounted(() => {
 .inbox-card-select { flex: 0 0 auto; width: 20px; padding-top: 2px; }
 .inbox-card-main { flex: 1 1 auto; min-width: 0; }
 .inbox-card-head { display: flex; align-items: center; gap: 8px; }
+.inbox-go { font-size: 12px; margin-right: 8px; }
 .inbox-card-head .inbox-message-link { flex: 1 1 auto; min-width: 0; }
 /* The title ellipsizes before the tag; the tag keeps its width (RD2-22). */
 .inbox-card-head > .n-tag { flex: 0 0 auto; }
