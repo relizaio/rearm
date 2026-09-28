@@ -3,12 +3,9 @@
         <n-grid x-gap="8" cols="10">
             <!-- DevOps view (header View dropdown) swaps the two charts for the
                  "Deployed to" table; Security keeps the charts. -->
-            <!-- A board's document series (task 36d0549e): its board and its rounds, not the software charts. -->
-            <n-gi v-if="isDocument" span="10">
-                <document-component-panel :component="componentData" :org-uuid="componentData?.org"
-                                          :base-branch-uuid="baseBranchUuid"/>
-            </n-gi>
-            <n-gi v-else-if="myview === 'devops'" span="10">
+            <!-- A board's document series (task 36d0549e) shows no software charts; its panel sits below the
+                 component's title (RD2-24 run 1, T-2). -->
+            <n-gi v-if="!isDocument && myview === 'devops'" span="10">
                 <deployed-to-widget
                     v-if="componentData?.uuid"
                     :org-uuid="myorg?.uuid || ''"
@@ -17,7 +14,7 @@
                     @open-release="openReleaseFromDeployedTo"
                 />
             </n-gi>
-            <n-gi v-else span="10">
+            <n-gi v-else-if="!isDocument" span="10">
                 <n-grid x-gap="12" cols="2">
                     <n-gi>
                         <releases-per-day-chart
@@ -1146,6 +1143,9 @@
                         </div>
                     </div>
                 </div>
+                <!-- The board it belongs to and its rounds, under the component's title (RD2-24). -->
+                <document-component-panel v-if="isDocument" :component="componentData" :org-uuid="componentData?.org"
+                                          :base-branch-uuid="baseBranchUuid"/>
                 <div class="componentDetails" v-if="!isDocument">
                     <n-tabs v-if="componentData" v-model:value="selectedTab" type="segment" @update:value="handleTabChange" animated>
                         <n-tab-pane name="latest" tab="Latest">

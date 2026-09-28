@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-    SOFTWARE_KINDS,
-    documentBoardBanner,
-    documentRoundRows,
-    documentSeriesRows,
-    isDocumentComponent,
-    splitDocumentDependencies,
+    SOFTWARE_KINDS, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, checkVerdictOf, documentRoundView, latestLabel, lifecycleWord,
 } from './agentDocumentsView'
 import { cardRef } from './agentTaskFormat'
 
@@ -60,7 +55,7 @@ describe('documents view', () => {
                 latestRound: null, roundsCount: 0, openFindings: 3, checkVerdict: null },
         ])
         expect(rows.map(r => r.label)).toEqual(['architecture', 'review findings'])
-        expect(rows[0]).toMatchObject({ componentName: 'rd-architecture', latest: 'round 2 · 5', roundsCount: 5, checkVerdict: 'PASS' })
+        expect(rows[0]).toMatchObject({ componentName: 'rd-architecture', latest: 'round 2 · v5', roundsCount: 5, checkVerdict: 'PASS' })  // the version labelled (RD2-24)
         expect(rows[1]).toMatchObject({ latest: '—', openFindings: 3 })
         expect(documentSeriesRows([])).toEqual([])
         expect(documentSeriesRows(null)).toEqual([])
@@ -82,3 +77,51 @@ describe('the banner for a person who cannot open the board', () => {
         expect(documentBoardBanner({ uuid: 'b1', name: 'Plain', readable: true }).board).toBe('b1')
     })
 })
+
+// RD2-24: the Documents tab labels the version, counts the checks as the task page does, and reads the verdict by
+// one rule from those counts; a round's release page shows the round.
+describe('document surfaces', () => {
+    it('labels the latest round\'s version', () => {
+        expect(latestLabel({ round: 1, version: '0' })).toBe('round 1 · v0')
+        expect(latestLabel({ round: 3, version: null })).toBe('round 3')
+        expect(latestLabel(null)).toBe('—')
+    })
+
+    it('reads the verdict by one rule: FAIL on a blocking fail, WARN on any other fail, PASS otherwise', () => {
+        expect(checkVerdictOf({ pass: 7, fail: 1, skip: 2, blockingFailed: 1 })).toBe('FAIL')
+        expect(checkVerdictOf({ pass: 7, fail: 1, skip: 2, blockingFailed: 0 })).toBe('WARN')
+        expect(checkVerdictOf({ pass: 7, fail: 0, skip: 2, blockingFailed: 0 })).toBe('PASS')
+    })
+
+    it('shows the task page\'s summary on the Documents tab, the verdict from the counts', () => {
+        const [row] = documentSeriesRows([{ specification: 'ARCHITECTURE', component: { uuid: 'c1' }, roundsCount: 1,
+            latestRound: { round: 1, version: '0', lifecycle: 'ASSEMBLED' }, checkVerdict: 'WARN',
+            checkCounts: { pass: 7, fail: 1, skip: 2, blockingFailed: 1 } }])
+        expect(row.checks).toBe('7 pass · 1 fail · 2 skip')
+        expect(row.checkVerdict).toBe('FAIL', 'the rule over the counts, never a WARN beside a blocking fail')
+        expect(row.lifecycle).toBe('assembled')
+        const [old] = documentSeriesRows([{ specification: 'ARCHITECTURE', component: { uuid: 'c1' }, roundsCount: 1,
+            latestRound: null, checkVerdict: 'PASS' }])
+        expect(old.checks).toBe('PASS', 'a server without counts: the verdict alone')
+    })
+
+    it('words a lifecycle', () => {
+        expect(lifecycleWord('READY_TO_SHIP')).toBe('ready to ship')
+        expect(lifecycleWord(null)).toBe('')
+    })
+
+    it('describes a round for its release page', () => {
+        const release = { uuid: 'r1', document: { specification: 'REVIEW_FINDINGS', round: 2, path: 'review/RD-1/r2.md', task: 't1',
+            findings: { findings: [{ id: 'F-1', status: 'OPEN' }, { id: 'F-2', status: 'RESOLVED' }] },
+            elements: { elements: [{ id: 'E1' }, { id: 'E2' }, { id: 'E3' }] } } }
+        expect(documentRoundView(release, { key: 'RD-1', board: 'b1' }, 'o1', { pass: 2, fail: 0, skip: 1, blockingFailed: 0 }))
+            .toEqual({ specification: 'review findings', round: 2, path: 'review/RD-1/r2.md', taskLabel: 'RD-1',
+                taskPath: '/aiAgentTask/t1', boardPath: '/aiAgentsOfOrg/o1?tab=boards&board=b1',
+                findings: '1 open · 2 items', checks: { line: '2 pass · 0 fail · 1 skip', verdict: 'PASS' }, elementsCount: 3 })
+        const bare = documentRoundView({ document: { specification: 'ARCHITECTURE', round: 1, path: 'a.md', task: 't1234567890' } },
+            null, 'o1', null)
+        expect(bare).toMatchObject({ taskLabel: 't1234567', boardPath: null, findings: null, checks: null, elementsCount: null })
+        expect(documentRoundView({ uuid: 'r' }, null, 'o1', null)).toBeNull()
+    })
+})
+
