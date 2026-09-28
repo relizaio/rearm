@@ -2,6 +2,7 @@
 // notes ("agent board budget key"), because the page printed the agent's effectiveDisplayName, which
 // falls back to the key's note. Here a session reads "<role> · <agent or session name> · <uuid8>", and
 // the key's note comes last, only when nothing names the agent. Pure, so the rule is testable.
+import type { InjectionKey, Ref } from 'vue'
 
 export interface AgentName {
     /** The agent's own name: its displayName, else its name. */
@@ -52,6 +53,27 @@ export function sessionOf (uuid: string | null | undefined, agent: string | null
 export function sessionOfActor (actor: any, role?: string | null): SessionLabelInput | null {
     if (actor?.kind !== 'SESSION' || !actor?.uuid) return null
     return { uuid: actor.uuid, role: role ?? null, name: null, notes: actor.name ?? null }
+}
+
+/** The agent directory a page provides, so every session reference under it names the agent. */
+export const AGENT_DIR: InjectionKey<Ref<Record<string, AgentName>>> = Symbol('agentDir')
+
+/** The agent a session worked a task as: its assignment, sign-offs or returns say. */
+export function agentOfSession (task: any, session: string): string | null {
+    if (task?.assignment?.session === session && task.assignment.agent) return task.assignment.agent
+    for (const r of [...(task?.signOffs ?? []), ...(task?.returns ?? [])]) {
+        if (r?.session === session && r.agent) return r.agent
+    }
+    return null
+}
+
+/**
+ * A session as the task it appears on names it (RD2-11 run 1, T-2): the role it worked there, unless the
+ * caller knows the role better (a hop's own role), and its agent's name.
+ */
+export function sessionOnTask (task: any, session: string, agents: Record<string, AgentName> | null | undefined,
+    role?: string | null): SessionLabelInput {
+    return sessionOf(session, agentOfSession(task, session), agents, role ?? roleOfSession(task, session))
 }
 
 /** Where a session's page is. */

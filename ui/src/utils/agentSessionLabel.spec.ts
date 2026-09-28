@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentDirectory, agentNameOf, sessionLabel, sessionOf, sessionOfActor, sessionPath } from './agentSessionLabel'
+import { agentDirectory, agentNameOf, agentOfSession, sessionLabel, sessionOf, sessionOfActor, sessionOnTask, sessionPath } from './agentSessionLabel'
 
 // Sessions and agents told apart (RD2-11).
 describe('a session\'s label', () => {
@@ -34,5 +34,28 @@ describe('a session\'s label', () => {
             .toEqual({ uuid: 's1', role: 'tester', name: null, notes: 'budget key' })
         expect(sessionOfActor({ kind: 'USER', uuid: 'u1', name: 'pavel' })).toBeNull()
         expect(sessionPath('s1')).toBe('/aiAgentSession/s1')
+    })
+})
+
+describe('a session named by the task it appears on (RD2-11 run 1, T-2)', () => {
+    const task = {
+        assignment: { session: 's-open', agent: 'a2', role: 'tester' },
+        signOffs: [{ session: 's-done', agent: 'a1', role: 'coder', signedOffAt: '2026-09-27T09:00:00Z' }],
+        returns: [{ session: 's-ret', agent: 'a1', role: 'reviewer', returnedAt: '2026-09-27T10:00:00Z' }],
+    }
+    const dir = agentDirectory([{ uuid: 'a1', name: 'claude-code' }, { uuid: 'a2', displayName: 'codex' }])
+
+    it('finds the agent from the assignment, sign-offs or returns', () => {
+        expect(agentOfSession(task, 's-open')).toBe('a2')
+        expect(agentOfSession(task, 's-done')).toBe('a1')
+        expect(agentOfSession(task, 's-ret')).toBe('a1')
+        expect(agentOfSession(task, 'other')).toBeNull()
+    })
+
+    it('labels it role first, a known role overriding the task\'s', () => {
+        expect(sessionLabel(sessionOnTask(task, 's-open', dir))).toBe('tester · codex · s-open')
+        expect(sessionLabel(sessionOnTask(task, 's-done', dir))).toBe('coder · claude-code · s-done')
+        expect(sessionLabel(sessionOnTask(task, 's-done', dir, 'designer'))).toBe('designer · claude-code · s-done')
+        expect(sessionLabel(sessionOnTask(task, 'unknown1', dir))).toBe('unknown1', 'a session the task does not know')
     })
 })

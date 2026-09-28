@@ -929,7 +929,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, onMounted, provide, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -950,7 +950,7 @@ import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch,
     normaliseTaskPrefix, priorTaskPrefixes, slug, taskDescriptionProblem, taskPrefixPatch, taskRegisterInput,
     taskTitleProblem, taskPrefixPlaceholder, taskPrefixProblem } from '@/utils/agentBoardNaming'
 import { isOrgAdmin } from '@/utils/agentReopen'
-import { AgentName, agentDirectory, agentLabel, agentNamesOf } from '@/utils/agentSessionLabel'
+import { AGENT_DIR, AgentName, agentDirectory, agentLabel, agentNamesOf } from '@/utils/agentSessionLabel'
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal } from '@/utils/agentBoardAccess'
@@ -1165,6 +1165,7 @@ const selectedTask = ref<any>(null)
 const agentNames = ref<Record<string, string>>({})
 // Agents by uuid with their own name apart from the key's note, for naming sessions (RD2-11).
 const agentDir = ref<Record<string, AgentName>>({})
+provide(AGENT_DIR, agentDir)
 
 function openTask (t: any) {
     // resolve to the freshest copy from the board so drawer navigation

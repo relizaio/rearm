@@ -118,11 +118,12 @@ function xOf (t: number): number {
 const lanes = computed(() => {
     // Keyed by session: every session on one key used to fold into one lane named by the key's note.
     // A hop from before sessions were recorded keeps its agent's lane.
-    const byLane = new Map<string, { agent: string, session: string | null, bars: Bar[], marks: Mark[] }>()
+    const byLane = new Map<string, { agent: string, session: string | null, roles: string[], bars: Bar[], marks: Mark[] }>()
     for (const e of events.value) {
         const key = e.session ?? `agent:${e.agent}`
-        if (!byLane.has(key)) byLane.set(key, { agent: e.agent, session: e.session, bars: [], marks: [] })
+        if (!byLane.has(key)) byLane.set(key, { agent: e.agent, session: e.session, roles: [], bars: [], marks: [] })
         const lane = byLane.get(key)!
+        if (e.rec?.role && !lane.roles.includes(e.rec.role)) lane.roles.push(e.rec.role)
         const ref = refOf(e.task)
         if (e.kind === 'return') {
             lane.marks.push({
@@ -144,7 +145,7 @@ const lanes = computed(() => {
         }
     }
     return [...byLane.entries()]
-        .map(([key, v]) => ({ key, name: v.session ? sessionLabel(sessionOf(v.session, v.agent, props.agentDir, null)) : nameOf(v.agent), ...v }))
+        .map(([key, v]) => ({ key, name: v.session ? sessionLabel(sessionOf(v.session, v.agent, props.agentDir, v.roles.join('/') || null)) : nameOf(v.agent), ...v }))
         .sort((a, b) => a.name.localeCompare(b.name))
 })
 

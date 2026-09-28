@@ -9,11 +9,11 @@
                            :type="e.rec.outcome === 'PASSED' ? 'success' : 'error'">
                         {{ e.rec.outcome }}
                     </n-tag>
-                    <span class="hist__role">{{ e.rec.role }}</span>
+                    <span v-if="e.rec.reviewedBy || !e.rec.session" class="hist__role">{{ e.rec.role }}</span>
                     <n-tag v-if="e.rec.reviewedBy" size="tiny" :bordered="false" type="info">human</n-tag>
                     <!-- The session that worked the hop, role first and linked (RD2-11); a person's verdict by name. -->
                     <span class="hist__agent"><actor-ref v-if="e.rec.reviewedBy" :actor="e.rec.reviewedBy"/><session-ref
-                        v-else-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, null)"/><template
+                        v-else-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, e.rec.role)"/><template
                         v-else>{{ agentName(agentNames, e.rec.agent) }}</template></span>
                     <span class="hist__time">{{ ts(e.rec.signedOffAt) }}<template v-if="e.rec.assignedAt">
                         · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</template></span>
@@ -40,8 +40,8 @@
                 </template>
                 <template v-else>
                     <n-tag size="tiny" :bordered="false" type="warning">RETURNED</n-tag>
-                    <span class="hist__role">{{ e.rec.role }}</span>
-                    <span class="hist__agent"><session-ref v-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, null)"/><template
+                    <span v-if="!e.rec.session" class="hist__role">{{ e.rec.role }}</span>
+                    <span class="hist__agent"><session-ref v-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, e.rec.role)"/><template
                         v-else>{{ agentName(agentNames, e.rec.agent) }}</template></span>
                     <span class="hist__time">{{ ts(e.rec.returnedAt) }} · {{ e.rec.reason }}</span>
                     <span v-if="hopHasUsage(e.rec)" class="hist__usage"

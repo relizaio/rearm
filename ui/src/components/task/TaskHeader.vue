@@ -2,7 +2,7 @@
     <n-alert v-if="task.hold" type="error"
              :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review' : `On hold (${(task.hold.level ?? '').toLowerCase()})`">
         {{ task.hold.reason }}
-        <div class="holdmeta">held by <actor-ref :actor="task.hold.heldBy"/> · {{ ts(task.hold.heldAt) }}
+        <div class="holdmeta">held by <actor-ref :actor="task.hold.heldBy" :task="task"/> · {{ ts(task.hold.heldAt) }}
             <n-tag v-if="holdWho" size="small" :bordered="false" class="holdwho"
                    :type="task.hold.level === 'OPERATOR' ? 'error' : 'info'">{{ holdWho }}</n-tag>
         </div>

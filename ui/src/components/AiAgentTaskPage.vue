@@ -51,7 +51,7 @@
 // A page per board task (gaps §1.26): everything the drawer used to carry, laid out for reading.
 // It loads from its uuid alone -- the task, then its board, the board's tasks and roles -- so a
 // deep link works without the board panel having been open.
-import { computed, ref, watch } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NBreadcrumb, NBreadcrumbItem, NSpin } from 'naive-ui'
@@ -71,7 +71,7 @@ import TaskAnsweredQuestions from './task/TaskAnsweredQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
 import { boardCan, canOperate } from '@/utils/agentBoardAccess'
-import { AgentName, agentDirectory, agentNamesOf } from '@/utils/agentSessionLabel'
+import { AGENT_DIR, AgentName, agentDirectory, agentNamesOf } from '@/utils/agentSessionLabel'
 import { taskLoadErrorText } from '@/utils/agentAccessMessages'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
@@ -88,6 +88,7 @@ const roles = ref<any[]>([])
 const agentNames = ref<Record<string, string>>({})
 // Agents by uuid with their own name apart from the key's note, for naming sessions (RD2-11).
 const agentDir = ref<Record<string, AgentName>>({})
+provide(AGENT_DIR, agentDir)
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 
