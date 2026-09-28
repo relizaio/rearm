@@ -18,10 +18,15 @@
                 <n-button size="small" quaternary @click="showRoles = true" v-if="currentBoard">Roles</n-button>
                 <n-button size="small" quaternary @click="openSpec" v-if="currentBoard && canConfigureRead(currentBoard)"
                           data-testid="view-as-spec">View as spec</n-button>
-                <n-button size="small" quaternary @click="subscribeToBoard" v-if="currentBoard"
+                <!-- Subscriptions are an org admin's (RD2-14); everyone else is told how the board reaches them. -->
+                <n-button size="small" quaternary @click="subscribeToBoard"
+                          v-if="currentBoard && subscribeOffer(currentBoard, isAdmin).kind === 'subscribe'" data-testid="subscribe"
                           title="Get notified when this board needs a person: alerts, holds, returns, tasks waiting">
                     Subscribe
                 </n-button>
+                <span v-else-if="currentBoard" class="subhint" data-testid="subscribe-hint">
+                    {{ (subscribeOffer(currentBoard, isAdmin) as any).text }}
+                </span>
                 <n-button size="small" quaternary @click="applyKinds = ['BOARD']"
                           v-if="canApplySpec || canConfigure(currentBoard)">Apply spec</n-button>
                 <n-button size="small" quaternary @click="openPresets">Org presets</n-button>
@@ -953,7 +958,7 @@ import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentLabel, age
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/utils/agentTaskKeys'
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
-import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal } from '@/utils/agentBoardAccess'
+import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal, subscribeOffer } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
     levelPlaceholder, levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
@@ -2044,6 +2049,7 @@ async function operatorLock (lock: boolean, reason?: string) {
     .lane { margin-bottom: 12px; }
     .lane__head { font-weight: 600; font-size: 13px; margin: 6px 0; }
     .tcard__level { margin-right: 6px; }
+    .subhint { font-size: 12px; color: #888; align-self: center; }
     .tcard__key { margin-right: 6px; font-family: monospace; font-size: 12px; color: #666; }
     .tcard__group { margin-right: 6px; font-family: monospace; }
     .board {
