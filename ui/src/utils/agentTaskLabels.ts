@@ -94,3 +94,24 @@ export function shortRef (task: any, boardHasSources: boolean): string {
     if (task?.externalRef) return String(task.externalRef).replace(/^github:/, '')
     return boardHasSources ? 'draft' : '—'
 }
+
+/**
+ * What a task waits on, named once (RD2-13, sweep UI-42): its dependencies not yet COMPLETED, by key (else the
+ * source's issue number, else the uuid's first eight). A finished task waits on nothing. The card used to name
+ * the blocker twice, as "blocked by …" and again as "AFTER …".
+ */
+export function waitsOn (task: any, tasks: any[] | null | undefined): string[] {
+    if (TERMINAL.includes(task?.status) || !task?.dependsOn?.length) return []
+    const byId = new Map((tasks ?? []).map((t: any) => [t.uuid, t]))
+    return (task.dependsOn as string[])
+        .map(id => byId.get(id) ?? { uuid: id })
+        .filter((d: any) => d.status !== 'COMPLETED')
+        .map((d: any) => d.key ?? (String(d.externalRef ?? '').includes('#') ? '#' + String(d.externalRef).split('#').pop()
+            : String(d.uuid ?? '').slice(0, 8)))
+}
+
+/** The card's one blocker chip: "waits on RD-1, RD-2", or null. */
+export function waitsOnLabel (task: any, tasks: any[] | null | undefined): string | null {
+    const on = waitsOn(task, tasks)
+    return on.length ? `waits on ${on.join(', ')}` : null
+}
