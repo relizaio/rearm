@@ -147,7 +147,7 @@
                                         data-testid="inbox-message-link"
                                         @click="openInboxRow(c.row)"
                                     >
-                                        <span class="inbox-message-title" data-testid="inbox-message-title">{{ c.title }}</span>
+                                        <span class="inbox-message-title" data-testid="inbox-message-title" :title="c.title">{{ c.title }}</span>
                                     </button>
                                     <!-- Severity tag when the row has one; otherwise a neutral
                                          kind pill (RELEASE/APPROVAL/...) so the head always
@@ -1320,6 +1320,8 @@ onUnmounted(() => {
 .inbox-card-main { flex: 1 1 auto; min-width: 0; }
 .inbox-card-head { display: flex; align-items: center; gap: 8px; }
 .inbox-card-head .inbox-message-link { flex: 1 1 auto; min-width: 0; }
+/* The title ellipsizes before the tag; the tag keeps its width (RD2-22). */
+.inbox-card-head > .n-tag { flex: 0 0 auto; }
 .inbox-unread-dot {
     flex: 0 0 8px;
     width: 8px; height: 8px;
