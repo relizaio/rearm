@@ -143,6 +143,8 @@ defineExpose({ load })
     font-size: 12px;
 }
 .revhist__facts { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+// The date keeps its line; the facts give way first (RD2-12 tester run 1 T-4).
+.revhist__at { flex-shrink: 0; white-space: nowrap; }
 .revhist__actions { display: inline-flex; flex-shrink: 0; white-space: nowrap; gap: 2px; }
 .revhist__rev {
     font-weight: 600;

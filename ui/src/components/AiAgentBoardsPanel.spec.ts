@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { compileString } from 'sass'
 import { BOARD_SETTING_KEYS, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
 
 // humanQueueAgeMinutes in the board settings form (task 28dc4afb). The panel is not mounted here
@@ -342,14 +343,29 @@ describe('board pages at 1280', () => {
         expect(block).not.toContain('<template #prefix>')
         expect(block).toContain('placeholder="none" data-testid="board-budget"')
         expect(block).toContain('placeholder="off"')
-        expect(source).toMatch(/\.form-grid \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/)
         expect(template).toContain('placeholder="PRs registered here (default)" size="small" style="min-width: 280px"')
+        // 220 px: "merge commit (default)" is 168 px at 14 px, and the select's arrow and padding take 40 (tester run 1 T-5).
+        expect(template).toContain('placeholder="merge commit (default)" size="small" style="min-width: 220px"')
+    })
+
+    // Tester run 1 T-2: the rules sat under .boardsPanel, and naive teleports the modal to the body, out of it.
+    it('styles the settings grid through the board modal\'s own class, which the teleported card carries', () => {
+        const modal = template.slice(template.indexOf('<n-modal :show="editingBoard !== null"'))
+        expect(modal.slice(0, modal.indexOf('>'))).toContain('class="boardForm"')
+        expect(modal.indexOf('<div class="form-grid" data-testid="board-settings">')).toBeLessThan(modal.indexOf('</n-modal>'))
+        const css = parseSfc(source).descriptor.styles.filter(st => !st.scoped).map(st => compileString(st.content).css).join('\n')
+        const selectorsOf = (decl: string) => [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+            .filter(m => m[2].includes(decl)).map(m => m[1].trim())
+        expect(selectorsOf('grid-template-columns: repeat(2, minmax(0, 1fr))')).toEqual(['.boardForm .form-grid'])
+        expect(selectorsOf('flex-direction: column')).toContain('.boardForm .form-grid .fcell')
+        expect(css).not.toMatch(/\.boardsPanel[^{]*\.form-grid/)
     })
 
     it('gives the task page\'s selects and budget short placeholders', () => {
         expect(read('./task/TaskFindings.vue')).toContain('placeholder="severity"')
         expect(read('./task/TaskHeader.vue')).toContain('placeholder="severity"')
-        expect(read('./task/TaskActions.vue')).toContain('placeholder="none" style="width: 150px" data-testid="task-budget"')
+        // 170 px: the "budget $" prefix and the steppers leave the input 52 px; "none" needs 35 (tester run 1 T-3).
+        expect(read('./task/TaskActions.vue')).toContain('placeholder="none" style="width: 170px" data-testid="task-budget"')
     })
 
     it('keeps the table\'s headers on one line, Order wide enough', () => {
@@ -364,6 +380,8 @@ describe('board pages at 1280', () => {
         expect(rev).toContain('<span class="revhist__actions">')
         expect(rev).toContain('.revhist__actions { display: inline-flex; flex-shrink: 0; white-space: nowrap;')
         expect(rev).toMatch(/\.revhist__line \{\s*display: flex;\s*flex-wrap: nowrap;/)
+        // Tester run 1 T-4: at 1280 the date wrapped before the facts gave way.
+        expect(rev).toContain('.revhist__at { flex-shrink: 0; white-space: nowrap; }')
     })
 })
 

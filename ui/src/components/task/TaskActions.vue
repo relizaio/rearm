@@ -109,7 +109,7 @@
              clears it. A raise does not release a budget hold: release the hold to resume. -->
         <div class="deprow budrow">
             <n-input-number v-model:value="budgetDraft" size="small" :min="0" :precision="2"
-                            placeholder="none" style="width: 150px" data-testid="task-budget">
+                            placeholder="none" style="width: 170px" data-testid="task-budget">
                 <template #prefix><span class="deplab" style="min-width: 0">budget $</span></template>
             </n-input-number>
             <n-button size="small" :disabled="!budgetChanged(task.budgetMicros, budgetDraft)"

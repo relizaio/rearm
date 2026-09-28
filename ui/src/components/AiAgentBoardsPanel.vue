@@ -323,7 +323,7 @@
         </template>
 
         <!-- Board create / edit modal -->
-        <n-modal :show="editingBoard !== null" preset="card"
+        <n-modal :show="editingBoard !== null" preset="card" class="boardForm"
                  :title="editingBoardIsNew ? 'New board' : `Edit board: ${editingBoard?.name}`"
                  style="max-width: 680px"
                  @update:show="(v: boolean) => { if (!v) editingBoard = null }">
@@ -440,7 +440,7 @@
                     <n-input v-if="editingBoard.merge.by === 'ROLE'" v-model:value="editingBoard.merge.byRole"
                              placeholder="role name" size="small" style="width: 140px"/>
                     <n-select v-model:value="editingBoard.merge.method" :options="mergeMethodOptions" clearable
-                              placeholder="merge commit (default)" size="small" style="min-width: 200px"/>
+                              placeholder="merge commit (default)" size="small" style="min-width: 220px"/>
                     <n-select v-model:value="editingBoard.merge.order" :options="mergeOrderOptions" clearable
                               placeholder="as the notes say (default)" size="small" style="min-width: 220px"/>
                     <n-checkbox v-model:checked="editingBoard.merge.atTestedHead">only at the tested head</n-checkbox>
@@ -2012,6 +2012,12 @@ async function operatorLock (lock: boolean, reason?: string) {
 </script>
 
 <style lang="scss">
+// The board form's settings, label above each field, two columns (RD2-12). The form is a modal, which naive
+// teleports to the body, out of .boardsPanel: these rules hang off the modal's own class (tester run 1 T-2).
+.boardForm .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.boardForm .form-grid .fcell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.boardForm .form-grid .fcell .n-input-number { width: 100%; }
+.boardForm .form-grid .flabel { color: #888; font-size: 12px; }
 .boardsPanel {
     .section-head {
         display: flex;
@@ -2081,10 +2087,6 @@ async function operatorLock (lock: boolean, reason?: string) {
     .lane { margin-bottom: 12px; }
     .lane__head { font-weight: 600; font-size: 13px; margin: 6px 0; }
     .tcard__level { margin-right: 6px; }
-    // The board form's settings, label above each field, two columns (RD2-12).
-    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
-    .form-grid .fcell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .form-grid .fcell .n-input-number { width: 100%; }
     .subhint { font-size: 12px; color: #888; align-self: center; }
     .tcard__key { margin-right: 6px; font-family: monospace; font-size: 12px; color: #666; }
     .tcard__group { margin-right: 6px; font-family: monospace; }
