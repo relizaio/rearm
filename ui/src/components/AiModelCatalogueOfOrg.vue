@@ -19,6 +19,12 @@
             cannot be derived for them until they carry pricing, either by mapping them onto an
             existing row or by adding entries directly.
         </n-alert>
+        <!-- One model in several rows (RD2-27): the rows share a canonical id; a merge folds them. -->
+        <n-alert v-if="duplicateIds.length" type="warning" style="margin-bottom: 12px;" :bordered="false"
+                 data-testid="merge-duplicates-hint">
+            Merge duplicates: {{ duplicateIds.join(', ') }} {{ duplicateIds.length === 1 ? 'is' : 'are' }} carried by
+            more than one row. Use "Map to…" on one of them to fold it into the other; its usage moves with it.
+        </n-alert>
 
         <n-data-table
             :columns="columns"
@@ -145,9 +151,9 @@
         <n-modal v-model:show="showMerge" preset="card" style="width: 560px;" title="Map this model onto another">
             <template v-if="mergeSource">
                 <n-text>
-                    <code>{{ modelLabel(mergeSource) }}</code> will be merged into the row you pick.
-                    Its names become aliases there, and every agent, session and usage row pointing at
-                    it is re-pointed before it is removed. Usage history is preserved, not discarded.
+                    Pick the row <code>{{ modelLabel(mergeSource) }}</code> is the same model as. The two become
+                    one: the survivor keeps its pricing, the other row's names become its aliases, and every
+                    agent, session and usage line is re-pointed. Usage history is preserved, not discarded.
                 </n-text>
                 <n-select
                     v-model:value="mergeTarget"
@@ -156,9 +162,24 @@
                     style="margin-top: 14px;"
                 />
                 <n-alert v-if="!mergeOptions.length" type="warning" :bordered="false" style="margin-top: 12px;">
-                    No candidates — the server ranks other rows of this org by similarity and found
-                    none close enough to suggest.
+                    No other row to merge with.
                 </n-alert>
+                <!-- The preview (RD2-27): both rows, and which one the rule keeps. -->
+                <table v-if="mergePlan" class="mergeprev" data-testid="merge-preview">
+                    <tr><th/><th>Pricing</th><th>Usage, 30 days</th><th/></tr>
+                    <tr v-for="r in [mergePlan.survivor, mergePlan.folded]" :key="r.uuid" :data-uuid="r.uuid">
+                        <td><code>{{ modelLabel(r) }}</code><div class="subtle">{{ modelDeclaredAs(r) }}</div></td>
+                        <td>{{ livePricing(r).length ? `${livePricing(r).length} live` : 'none' }}</td>
+                        <td>{{ usageLabel(r.usage) }}</td>
+                        <td>
+                            <n-tag v-if="r.uuid === mergePlan.survivor.uuid" size="tiny" type="success">survives</n-tag>
+                            <n-tag v-else size="tiny">folded</n-tag>
+                        </td>
+                    </tr>
+                </table>
+                <n-text v-if="mergePlan" depth="3" style="display: block; margin-top: 8px;" data-testid="merge-direction">
+                    {{ mergeDirection(mergePlan) }}
+                </n-text>
                 <n-space justify="end" style="margin-top: 16px;">
                     <n-button size="small" @click="showMerge = false">Cancel</n-button>
                     <n-button size="small" type="primary" :disabled="!mergeTarget" :loading="saving" @click="doMerge">
@@ -167,6 +188,52 @@
                 </n-space>
             </template>
         </n-modal>
+
+        <!-- ---------- Edit drawer (RD2-27) ---------- -->
+        <n-drawer v-model:show="showEdit" :width="520" placement="right">
+            <n-drawer-content :title="editing ? `Edit ${modelLabel(editing)}` : 'Edit'" closable>
+                <n-form v-if="editing && editDraft" label-placement="top" size="small" data-testid="model-edit-form">
+                    <n-form-item label="Name" :feedback="fieldError('name') ?? undefined"
+                                 :validation-status="fieldError('name') ? 'error' : undefined">
+                        <n-input v-model:value="editDraft.name" data-testid="model-edit-name"/>
+                    </n-form-item>
+                    <n-form-item label="Version">
+                        <n-input v-model:value="editDraft.version" placeholder="unknown" data-testid="model-edit-version"/>
+                    </n-form-item>
+                    <n-form-item label="Canonical id" :feedback="fieldError('canonicalId') ?? canonicalNote ?? undefined"
+                                 :validation-status="fieldError('canonicalId') ? 'error' : canonicalNote ? 'warning' : undefined">
+                        <n-select v-model:value="editDraft.canonicalId" :options="bundleSelectOptions" filterable tag clearable
+                                  placeholder="The provider's model id; clear it to resolve from the name"
+                                  data-testid="model-edit-canonical"/>
+                    </n-form-item>
+                    <n-form-item label="Publisher">
+                        <n-input v-model:value="editDraft.publisher"/>
+                    </n-form-item>
+                    <n-form-item label="Provenance">
+                        <n-select v-model:value="editDraft.tier" :options="provenanceOptions" clearable/>
+                    </n-form-item>
+                    <n-form-item label="Strength" :feedback="fieldError('strength') ?? undefined"
+                                 :validation-status="fieldError('strength') ? 'error' : undefined">
+                        <n-input-number v-model:value="editDraft.strength" :min="0" :precision="2" :step="0.25" clearable
+                                        placeholder="unrated"/>
+                    </n-form-item>
+                    <n-form-item label="Description">
+                        <n-input v-model:value="editDraft.description" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }"/>
+                    </n-form-item>
+                    <n-form-item label="Notes">
+                        <n-input v-model:value="editDraft.notes" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }"/>
+                    </n-form-item>
+                    <n-text v-if="editError && !modelFieldOfError(editError)" type="error" data-testid="model-edit-error">
+                        {{ editError }}
+                    </n-text>
+                    <n-space justify="end">
+                        <n-button size="small" @click="showEdit = false">Cancel</n-button>
+                        <n-button size="small" type="primary" :loading="saving" data-testid="model-edit-save"
+                                  :disabled="!modelEditChanged(editing, editDraft)" @click="saveEdit">Save</n-button>
+                    </n-space>
+                </n-form>
+            </n-drawer-content>
+        </n-drawer>
     </div>
 </template>
 
@@ -178,6 +245,10 @@ import {
     NDrawer, NDrawerContent, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSpace, NTag, NText,
     DataTableColumns, useNotification,
 } from 'naive-ui'
+
+import { bundleOptions, canonicalIsFree, hasDuplicate, isSyntheticRow, mergeDirection, mergeSurvivor, modelDeclaredAs, modelDraftOf,
+    ModelDraft, modelEditChanged, modelFieldOfError, modelLabel, modelUpdateInput, sharedCanonicalIds, unresolvedCount as countUnresolved,
+    usageLabel } from '@/utils/modelCatalogue'
 
 const props = defineProps<{ orgUuid: string }>()
 
@@ -234,10 +305,6 @@ const draft = ref<any>({
     contextAbove: null, serviceTier: null, hosting: null, source: '',
 })
 
-function modelLabel (m: any): string {
-    const v = m.version && m.version !== 'unknown' ? ' ' + m.version : ''
-    return (m.name ?? '(unnamed)') + v
-}
 
 /**
  * Declared rather than derived from the object's keys. facts stopped being a free-form
@@ -272,7 +339,12 @@ function factPairs (m: any): string[] {
         .map(([k, label]) => `${label}: ${factValue(k, f[k])}`)
 }
 
-const unresolvedCount = computed(() => models.value.filter(m => m.resolution === 'UNRESOLVED').length)
+const unresolvedCount = computed(() => countUnresolved(models.value))
+const duplicateIds = computed(() => sharedCanonicalIds(models.value))
+
+function livePricing (m: any): any[] {
+    return (m?.pricing ?? []).filter((p: any) => !p.effectiveTo || new Date(p.effectiveTo) > new Date())
+}
 
 /**
  * Newest first. Pricing is a dated history and the current rate is the one an
@@ -284,11 +356,24 @@ const sortedPricing = computed(() => {
     return rows.sort((a, b) => String(b.effectiveFrom ?? '').localeCompare(String(a.effectiveFrom ?? '')))
 })
 
-const mergeOptions = computed(() =>
-    (mergeSource.value?.mergeCandidates ?? []).map((c: any) => ({
-        label: modelLabel(c) + (c.canonicalId ? ` — ${c.canonicalId}` : ''),
-        value: c.uuid,
-    })))
+// Every other row (RD2-27), the server's ranked candidates first -- a row with the same canonical
+// id leads them -- then the rest by label; never the synthetic pseudo-row.
+const mergeOptions = computed(() => {
+    const source = mergeSource.value
+    if (!source) return []
+    const ranked: string[] = (source.mergeCandidates ?? []).map((c: any) => c.uuid)
+    const others = models.value.filter(m => m.uuid !== source.uuid && !isSyntheticRow(m))
+    const rank = (m: any) => { const i = ranked.indexOf(m.uuid); return i < 0 ? ranked.length : i }
+    return [...others]
+        .sort((a, b) => rank(a) - rank(b) || modelLabel(a).localeCompare(modelLabel(b)))
+        .map(m => ({ label: `${modelLabel(m)} — ${modelDeclaredAs(m)}`, value: m.uuid }))
+})
+
+/** Which row the merge keeps and which it folds, by RD2-26's rule. */
+const mergePlan = computed(() => {
+    const target = models.value.find(m => m.uuid === mergeTarget.value)
+    return mergeSource.value && target ? mergeSurvivor(mergeSource.value, target) : null
+})
 
 async function load () {
     loading.value = true
@@ -388,12 +473,61 @@ async function doMerge () {
     if (!mergeSource.value || !mergeTarget.value) return
     saving.value = true
     try {
-        await store.dispatch('mergeModelOntology', { from: mergeSource.value.uuid, into: mergeTarget.value })
+        const plan = mergePlan.value
+        if (!plan) return
+        await store.dispatch('mergeModelOntology', { from: plan.folded.uuid, into: plan.survivor.uuid })
         notification.success({ title: 'Models merged', duration: 3000 })
         showMerge.value = false
         await load()
     } catch (e: any) {
         notification.error({ title: 'Could not merge', content: e?.message, duration: 6000 })
+    } finally {
+        saving.value = false
+    }
+}
+
+// ---------- the edit drawer (RD2-27) ----------
+const showEdit = ref(false)
+const editing = ref<any>(null)
+const editDraft = ref<ModelDraft | null>(null)
+const editError = ref<string | null>(null)
+const bundle = ref<{ canonicalId: string, name?: string, version?: string, publisher?: string }[]>([])
+const bundleSelectOptions = computed(() => bundleOptions(bundle.value))
+const provenanceOptions = ['FRONTIER', 'OPEN_WEIGHT_STOCK', 'OPEN_WEIGHT_FINE_TUNED'].map(v => ({ label: v, value: v }))
+/** Free text the bundle does not know: kept, but priced by nothing until the row carries pricing. */
+const canonicalNote = computed(() => editDraft.value && canonicalIsFree(editDraft.value.canonicalId, bundle.value)
+    ? 'Not in the bundled catalogue: kept as typed, and the row is treated as resolved, but nothing prices it until you add pricing.'
+    : null)
+
+function fieldError (field: string): string | null {
+    return editError.value && modelFieldOfError(editError.value) === field ? editError.value : null
+}
+
+async function openEdit (row: any) {
+    editing.value = row
+    editDraft.value = modelDraftOf(row)
+    editError.value = null
+    showEdit.value = true
+    if (!bundle.value.length) {
+        try {
+            bundle.value = await store.dispatch('fetchModelCatalogueBundle') ?? []
+        } catch (e: any) {
+            // The select still takes free text without the bundle.
+        }
+    }
+}
+
+async function saveEdit () {
+    if (!editing.value || !editDraft.value) return
+    saving.value = true
+    editError.value = null
+    try {
+        await store.dispatch('updateModelOntology', modelUpdateInput(editing.value, editDraft.value))
+        notification.success({ title: 'Model saved', duration: 3000 })
+        showEdit.value = false
+        await load()
+    } catch (e: any) {
+        editError.value = String(e?.message ?? e).replace(/^GraphQL error:\s*/, '')
     } finally {
         saving.value = false
     }
@@ -411,7 +545,18 @@ function openPricing (row: any) {
 }
 
 const columns = computed<DataTableColumns<any>>(() => [
-    { title: 'Model', key: 'name', render: (r: any) => modelLabel(r) },
+    {
+        // The model, then what was declared (RD2-27): never name and version run together.
+        title: 'Model',
+        key: 'name',
+        render: (r: any) => h('div', { 'data-model': r.uuid }, [
+            h('div', { class: 'mlabel' }, [modelLabel(r),
+                hasDuplicate(r, models.value)
+                    ? h(NTag, { size: 'tiny', type: 'warning', style: 'margin-left: 6px;' }, { default: () => 'duplicate' }) : null]),
+            h('div', { class: 'subtle' }, modelDeclaredAs(r)),
+        ]),
+    },
+    { title: 'Usage, 30 days', key: 'usage', render: (r: any) => h('span', { 'data-usage': r.uuid }, usageLabel(r.usage)) },
     { title: 'Canonical id', key: 'canonicalId', render: (r: any) => h('code', { style: 'font-size: 11px;' }, r.canonicalId ?? '—') },
     { title: 'Provenance', key: 'tier', render: (r: any) => r.tier ?? '—' },
     {
@@ -448,8 +593,12 @@ const columns = computed<DataTableColumns<any>>(() => [
         render: (r: any) => h(NSpace, { size: 6 }, {
             default: () => [
                 h(NButton, { size: 'tiny', onClick: () => openPricing(r) }, { default: () => 'Pricing' }),
-                r.resolution === 'UNRESOLVED' && (r.mergeCandidates ?? []).length
-                    ? h(NButton, { size: 'tiny', onClick: () => openMerge(r) }, { default: () => 'Map to…' })
+                !isSyntheticRow(r)
+                    ? h(NButton, { size: 'tiny', 'data-testid': 'model-edit', onClick: () => openEdit(r) }, { default: () => 'Edit' })
+                    : null,
+                // On every row (RD2-27): resolved duplicates need a merge too.
+                !isSyntheticRow(r) && models.value.some(m => m.uuid !== r.uuid && !isSyntheticRow(m))
+                    ? h(NButton, { size: 'tiny', 'data-testid': 'model-map', onClick: () => openMerge(r) }, { default: () => 'Map to…' })
                     : null,
                 r.canonicalId
                     ? h(NButton, { size: 'tiny', onClick: () => applyPreset(r) }, { default: () => 'Apply preset' })
@@ -501,6 +650,26 @@ const pricingColumns = computed<DataTableColumns<any>>(() => [
 </script>
 
 <style scoped>
+.subtle {
+    font-size: 11px;
+    color: #999;
+}
+.mergeprev {
+    margin-top: 12px;
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+}
+.mergeprev th {
+    text-align: left;
+    color: #999;
+    font-weight: 500;
+}
+.mergeprev td {
+    padding: 4px 6px 4px 0;
+    border-top: 1px solid #eee;
+    vertical-align: top;
+}
 .sec {
     font-size: 11px;
     font-weight: 600;

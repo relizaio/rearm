@@ -3653,6 +3653,9 @@ const storeObject : any = {
                                 canonicalId
                                 resolution
                             }
+                            declaredVersion
+                            suggestedCanonicalId
+                            usage(days: 30) { sessions lines days }
                         }
                     }`,
                 variables: { orgUuid },
@@ -3711,6 +3714,34 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.updateModelOntology
+        },
+        /**
+         * An operator's edit to a catalogue row (RD2-27): the uuid and only what changed -- name,
+         * version and canonical id re-resolve the row. A refusal comes back as the error's message.
+         */
+        async updateModelOntology (context: any, input: Record<string, any>) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateModelOntology($input: ModelOntologyUpdateInput!) {
+                        updateModelOntology(input: $input) {
+                            uuid name version canonicalId resolution publisher tier strength description notes
+                        }
+                    }`,
+                variables: { input },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.updateModelOntology
+        },
+        /** The bundled catalogue's entries: what a row's canonical id may link to (RD2-27). */
+        async fetchModelCatalogueBundle () {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query modelCatalogueBundle {
+                        modelCatalogueBundle { canonicalId name version publisher }
+                    }`,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.modelCatalogueBundle
         },
         async mergeModelOntology (context: any, payload: { from: string, into: string }) {
             const response = await graphqlClient.mutate({

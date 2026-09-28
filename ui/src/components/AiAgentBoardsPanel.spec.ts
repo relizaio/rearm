@@ -244,3 +244,27 @@ describe('the board page: groups and tags', () => {
         expect(template).toContain('@set-group="setGroup" @set-tags="setTags"')
     })
 })
+
+// Controls shown to people who cannot act (RD2-6): the review banner asks only who can approve and
+// informs a reader; View as spec needs configuration read; a refused spec read is said in the modal.
+describe('the board page for a reader', () => {
+    it('asks a person who can approve, and tells a reader the board waits on a person', () => {
+        expect(template).toContain('<n-alert v-if="awaitingHumanReview.length && canOperate(currentBoard)" type="error" class="lockbanner"')
+        const asked = template.slice(template.indexOf('data-testid="review-banner"'))
+        expect(asked.slice(0, asked.indexOf('</n-alert>'))).toContain('awaiting your review:')
+        const told = template.slice(template.indexOf('data-testid="review-banner-info"'))
+        const info = told.slice(0, told.indexOf('</n-alert>'))
+        expect(info).toContain('awaiting human review.')
+        expect(info).not.toContain('your review')
+        expect(info).not.toContain('<n-button')
+    })
+
+    it('offers View as spec only with configuration read, and shows a refusal in the modal', () => {
+        expect(template).toContain('@click="openSpec" v-if="currentBoard && canConfigureRead(currentBoard)"')
+        expect(template).toContain('<n-alert v-if="specError" type="warning" :bordered="false" data-testid="spec-error">{{ specError }}</n-alert>')
+        expect(template).toContain('<pre v-else class="specBlock">{{ specText }}</pre>')
+        const open = source.slice(source.indexOf('async function openSpec'), source.indexOf('async function copySpec'))
+        expect(open).toContain('specError.value = specRefusal(e)')
+        expect(open).not.toContain('showSpec.value = false')
+    })
+})
