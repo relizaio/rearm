@@ -20,7 +20,9 @@ function mountDrawer (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD
     })
 }
 
-const PAGE_ONLY = ['Review findings', 'Test findings', 'File a finding', 'Open questions', 'Documents', 'History',
+// The open questions are in the preview too, read-only (RD2-7): what the task waits on is what a
+// reader opens the drawer for. Every other round table stays on the page.
+const PAGE_ONLY = ['Review findings', 'Test findings', 'File a finding', 'Documents', 'History',
     'Pull requests', 'Waiting on', 'Answer', 'Status history', 'Provenance', 'Dependencies', 'Lineage', 'Usage',
     'Current assignment']
 
@@ -31,7 +33,7 @@ describe('AiAgentTaskDetailDrawer', () => {
             const headings = w.findAll('.dsec__h').map(h => h.text())
             expect(headings, name).toContain('Summary')
             for (const h of PAGE_ONLY) expect(headings.some(x => x.startsWith(h)), `${name}: ${h}`).toBe(false)
-            expect(w.findAll('.frow'), name).toHaveLength(0)
+            expect(w.findAll('.frow').filter(r => !r.element.closest('[data-testid="open-questions"]')), name).toHaveLength(0)
             expect(w.find('.hist').exists(), name).toBe(false)
         }
     })
@@ -40,7 +42,7 @@ describe('AiAgentTaskDetailDrawer', () => {
         const held = mountDrawer(richTask())
         // the fixture's hold is routing's no-progress stop, released past the stop (4c566d0d)
         expect(held.text()).toContain('Release past the stop')
-        expect(held.findAll('.dsec__h').map(h => h.text())).toEqual(['Human review', 'Task actions', 'Summary'])
+        expect(held.findAll('.dsec__h').map(h => h.text())).toEqual(['Human review', 'Open questions', 'Task actions', 'Summary'])
         const gate = mountDrawer(fixtureVariants().humanGate)
         // The fixture's reviewer rejected over F-4: sending it back leads, and approving past F-4
         // needs a decision on it -- never "pass" on a rejection (task RD2-25).
@@ -48,7 +50,8 @@ describe('AiAgentTaskDetailDrawer', () => {
         expect(gate.text()).toContain('Approve past the findings')
         expect(gate.text()).not.toContain('reviewer pass')
         const done = mountDrawer(fixtureVariants().completed)
-        expect(done.findAll('.dsec__h').map(h => h.text())).toEqual(['Reopen', 'Summary'])
+        // The fixture still carries its open questions; a completed task shows them as they are.
+        expect(done.findAll('.dsec__h').map(h => h.text())).toEqual(['Open questions', 'Reopen', 'Summary'])
     })
 
     it('summarises what the page shows in full', () => {

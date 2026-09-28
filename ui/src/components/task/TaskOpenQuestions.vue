@@ -1,8 +1,11 @@
 <template>
-    <div class="dsec" v-if="openQuestionGroups.length && !answering">
+    <!-- For every reader, not only the operator who answers (RD2-7): what the task waits on, who
+         asked it and since when. The answer form is TaskQuestions', below this, for BOARD_WRITE. -->
+    <div class="dsec" v-if="openQuestionGroups.length" data-testid="open-questions">
         <div class="dsec__h">{{ title }}</div>
         <div v-if="latest?.waitingOn" class="oq__sub">waiting on {{ latest.waitingOn.roleName ?? 'a role' }}</div>
         <div v-else-if="latest?.withCoordinator" class="oq__sub">with the coordinator to name a role</div>
+        <div v-if="latest?.askedAt" class="oq__since" data-testid="open-questions-since">since {{ ts(latest.askedAt) }}</div>
         <div v-for="g in openQuestionGroups" :key="String(g.priority)" class="fgroup">
             <div v-for="f in g.findings" :key="f.id ?? ''" class="frow">
                 <code class="frow__id">{{ f.id }}</code>
@@ -13,16 +16,14 @@
 </template>
 
 <script lang="ts" setup>
-// Open questions, when there is no answer form showing them: the task is with the role meant to
-// answer, and a reader still wants to see what it is waiting on.
+// The task's open questions, read-only: the round that asked them and whom they wait on.
 import { computed } from 'vue'
 import { Finding, groupByPriority } from '@/utils/agentDocuments'
-import { answerableQuestions } from '@/utils/agentTaskQuestions'
+import { ts } from '@/utils/agentTaskFormat'
 import { latestQuestionRound, questionRoundLabel } from '@/utils/agentQuestionRounds'
 
 const props = defineProps<{ task: any, roles?: any[] }>()
 
-const answering = computed(() => answerableQuestions(props.task).length > 0)
 const openQuestionGroups = computed(() => groupByPriority((props.task?.openQuestions ?? []) as Finding[]))
 // "Questions from coder · round 1 · about ARCHITECTURE round 1 · open (2)" (gaps §1.27).
 const latest = computed(() => latestQuestionRound(props.task, props.roles))
@@ -35,7 +36,7 @@ const title = computed(() => {
 <style scoped lang="scss">
 @use './taskSections';
 
-.oq__sub {
+.oq__sub, .oq__since {
     font-size: 12px;
     opacity: 0.75;
     margin: -2px 0 4px;
