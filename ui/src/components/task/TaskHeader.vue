@@ -80,12 +80,14 @@
             </div>
             <n-input v-model:value="releaseNote" size="small"
                      placeholder="Note on release (optional)" style="margin-top: 8px"/>
+            <!-- Every release a person gives may name the role it routes to, a manual hold's as well as a
+                 stop's (RD2-20): the verb takes one, and the feed says "routed to <role>". -->
             <n-space style="margin-top: 8px" align="center">
-                <n-select v-if="loopStop" v-model:value="releaseRole" :options="roleOptions" size="small"
+                <n-select v-model:value="releaseRole" :options="roleOptions" size="small"
                           clearable placeholder="role routing picks" style="width: 190px" class="relrole"/>
                 <n-button size="small" class="relbtn"
-                          @click="emit('operator-release', releasePayload(task, releaseNote, loopStop ? releaseRole : null))">
-                    {{ releaseLabel(loopStop, loopStop ? releaseRole : null) }}
+                          @click="emit('operator-release', releasePayload(task, releaseNote, releaseRole))">
+                    {{ releaseLabel(loopStop, releaseRole) }}
                 </n-button>
             </n-space>
         </template>
