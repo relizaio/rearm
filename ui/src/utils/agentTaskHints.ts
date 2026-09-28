@@ -2,6 +2,7 @@
 // to which role and why; that its board is locked; and why an action button is disabled. Each hint says what
 // the server would say, so it never claims a refusal the server does not make. Pure, so the specs need no store.
 import { actorLabel } from './agentActors'
+import { shortPr } from './agentDelivery'
 
 /** A board lock that refuses something: any level but NONE. */
 export function boardLocked (board: any): boolean {
@@ -54,13 +55,33 @@ export interface ActionDrafts {
 /** The statuses a person completes from (the server's complete). */
 export const COMPLETABLE = ['AWAITING_COORDINATOR', 'PENDING_INTAKE', 'QUEUED', 'ON_HOLD', 'DELIVERING']
 
+/**
+ * What will not land, as the server's complete refuses it (task RD3-16): a PR attested abandoned or closed
+ * without merging -- the newest attestation settles a PR, as on the board -- or, on a board that delivers
+ * without PRs, a task whose newest attestation is abandoned. Empty when nothing blocks.
+ */
+export function blockedDelivery (task: any, board: any): string[] {
+    if (board?.deliveryPolicy?.mode === 'NONE') {
+        const newest = (task?.deliveries ?? []).at(-1)
+        return newest?.outcome === 'ABANDONED' ? ['its delivery attested abandoned'] : []
+    }
+    return (task?.pullRequests ?? [])
+        .filter((pr: any) => pr.attestation ? pr.attestation.outcome === 'ABANDONED' : pr.state === 'CLOSED')
+        .map((pr: any) => shortPr(pr.url) + (pr.attestation ? ' attested abandoned' : ' closed without merging'))
+}
+
 /** Why an action's button is disabled, or null when it is not. */
 export function disabledReason (action: HintedAction, task: any, board: any, d: ActionDrafts = {}): string | null {
     switch (action) {
-    case 'complete':
-        if (COMPLETABLE.includes(task?.status)) return null
-        return task?.status === 'ASSIGNED' ? 'assigned to a session; release or force-close it first'
-            : `a ${String(task?.status ?? 'task').toLowerCase().replace(/_/g, ' ')} task is not completed by hand`
+    case 'complete': {
+        if (!COMPLETABLE.includes(task?.status)) {
+            return task?.status === 'ASSIGNED' ? 'assigned to a session; release or force-close it first'
+                : `a ${String(task?.status ?? 'task').toLowerCase().replace(/_/g, ' ')} task is not completed by hand`
+        }
+        const blocked = blockedDelivery(task, board)
+        return blocked.length ? `its delivery will not land: ${blocked.join('; ')}; reopen it, or link the PR that replaces it`
+            : null
+    }
     case 'authorize':
         return d.role ? null : 'pick the role to authorize it for'
     case 'order':

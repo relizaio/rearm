@@ -110,7 +110,8 @@ export function useAgentTaskActions (after: AfterAction) {
         return kept(p.task,
             () => store.dispatch('agentTaskComplete', { taskUuid: p.task.uuid, note: p.note,
                 skipRequiredRoles: p.skipRequiredRoles }),
-            () => 'Task completed', 'Complete failed')
+            (res: any) => res?.status === 'DELIVERING' ? 'Passed: waiting for its delivery' : 'Task completed',
+            'Could not complete')
     }
 
     function cancelTask (p: { task: any, note: string }) {
