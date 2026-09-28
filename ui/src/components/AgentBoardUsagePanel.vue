@@ -14,6 +14,9 @@
 
         <n-card size="small" title="Total" style="margin-bottom: 14px;">
             <agent-usage-summary :usage="usage" :show-by-model="false"/>
+            <n-text v-if="breakdown && !breakdown.costComplete" depth="3" style="font-size: 12px;" data-testid="lower-bound">
+                {{ LOWER_BOUND_NOTE }}
+            </n-text>
             <!-- The window above is a period; the budget is the board's whole life (task 40f270be). -->
             <div v-if="budgetLine" class="budgetline" data-testid="budget-line">
                 <n-tag size="small" :bordered="false" :type="budgetLine.type">{{ budgetLine.label }}</n-tag>
@@ -37,20 +40,20 @@
             </n-grid-item>
             <n-grid-item span="2 m:1">
                 <n-card size="small" title="By role">
+                    <!-- The server's breakdown of the same rows as the total (RD2-8): the roles, the
+                         coordinator seat and what no hop owns add up to the total above. -->
                     <n-data-table
-                        v-if="roleRows.length"
+                        v-if="byRoleRows.length"
                         size="small"
                         :columns="roleColumns"
-                        :data="roleRows"
+                        :data="byRoleRows"
+                        :row-key="(r: any) => r.key"
                         :pagination="false"
                         :bordered="false"
+                        data-testid="by-role"
                     />
-                    <!-- Roles come from the tasks on screen, not from the period
-                         rollup, so this says plainly when the two disagree rather
-                         than rendering an empty table that looks like zero spend. -->
-                    <n-text v-else depth="3">
-                        No hop usage on the tasks currently loaded for this board.
-                    </n-text>
+                    <n-text v-else-if="breakdownError" type="error" data-testid="by-role-error">{{ breakdownError }}</n-text>
+                    <n-text v-else depth="3" data-testid="by-role-empty">No usage in this window.</n-text>
                 </n-card>
             </n-grid-item>
         </n-grid>
@@ -61,10 +64,13 @@
                 size="small"
                 :columns="sessionColumns"
                 :data="sessionRows"
+                :row-key="(r: any) => r.session"
                 :pagination="{ pageSize: 10 }"
                 :bordered="false"
+                data-testid="top-sessions"
             />
-            <n-text v-else depth="3">No sessions with recorded usage on these tasks.</n-text>
+            <n-text v-else-if="breakdownError" type="error" data-testid="top-sessions-error">{{ breakdownError }}</n-text>
+            <n-text v-else depth="3" data-testid="top-sessions-empty">No sessions with usage in this window.</n-text>
         </n-card>
     </div>
 </template>
@@ -80,12 +86,11 @@ import {
     UsageTotals,
     USAGE_PERIODS,
     periodRange,
-    addTokenClasses,
     formatCostMicros,
-    totalTokens,
     byModelRows,
     modelDisplayName,
 } from '@/utils/agentUsage'
+import { breakdownErrorText, hopsLabel, LOWER_BOUND_NOTE, roleRows } from '@/utils/agentSpendBreakdown'
 
 const props = defineProps<{
     /** The board's budget and what it has spent since it was created; the budget line shows when both are known. */
@@ -93,12 +98,14 @@ const props = defineProps<{
     lifetimeSpentMicros?: number | null
     softAlertPercent?: number | null
     boardUuid: string | null,
-    tasks: any[],
     agentNames: Record<string, string>,
 }>()
 
 const store = useStore()
 const usage = ref<UsageTotals | null>(null)
+const breakdown = ref<any>(null)
+/** Why the breakdown could not be read: shown in its place, never as "no usage" beside a total (RD2-8 run 1, T-2). */
+const breakdownError = ref<string | null>(null)
 const loading = ref(false)
 const periodHours = ref<number>(USAGE_PERIODS[1].hours)
 
@@ -116,19 +123,29 @@ const windowLabel = computed(() => {
 async function load () {
     if (!props.boardUuid) {
         usage.value = null
+        breakdown.value = null
+        breakdownError.value = null
         return
     }
     loading.value = true
     try {
         const { from, to } = periodRange(periodHours.value)
-        usage.value = await store.dispatch('fetchAgentBoardUsage', {
-            boardUuid: props.boardUuid, from, to,
-        })
+        // The total and its breakdown, over the same window (RD2-8).
+        const [u, b] = await Promise.all([
+            store.dispatch('fetchAgentBoardUsage', { boardUuid: props.boardUuid, from, to }),
+            store.dispatch('fetchAgentBoardSpendBreakdown', { boardUuid: props.boardUuid, from, to })
+                .then((x: any) => ({ ok: x }), (e: any) => ({ error: breakdownErrorText(e) })),
+        ])
+        usage.value = u
+        breakdown.value = 'ok' in b ? b.ok : null
+        breakdownError.value = 'error' in b ? b.error : null
     } catch {
         // A failed rollup leaves the panel empty rather than throwing into the
         // board view: usage is an overlay on the board, never a precondition
         // for using it.
         usage.value = null
+        breakdown.value = null
+        breakdownError.value = null
     } finally {
         loading.value = false
     }
@@ -139,51 +156,10 @@ watch(() => props.boardUuid, load)
 
 const modelRows = computed(() => byModelRows(usage.value))
 
-/**
- * Role and session breakdowns are derived from the hop snapshots on the tasks
- * already loaded, because the server's period rollup is summed by model and
- * does not carry a role dimension. That makes them a view of the loaded tasks
- * rather than of the period, which the empty states say out loud instead of
- * implying the numbers are the same thing as the total above.
- */
-const hopRecords = computed(() => {
-    const out: { role: string, session: string | null, usage: any }[] = []
-    for (const t of (props.tasks ?? [])) {
-        for (const so of (t.signOffs ?? [])) {
-            if ((so?.usage?.reports ?? 0) > 0) out.push({ role: so.role, session: so.session, usage: so.usage })
-        }
-        for (const r of (t.returns ?? [])) {
-            if ((r?.usage?.reports ?? 0) > 0) out.push({ role: r.role, session: r.session, usage: r.usage })
-        }
-    }
-    return out
-})
-
-function accumulate (key: (h: any) => string | null) {
-    const acc = new Map<string, { key: string, tokens: number, usage: UsageTotals, cost: number | null, hops: number, turns: number }>()
-    for (const rec of hopRecords.value) {
-        const k = key(rec) ?? '—'
-        const cur = acc.get(k) ?? { key: k, tokens: 0, usage: {}, cost: null, hops: 0, turns: 0 }
-        cur.tokens += totalTokens(rec.usage)
-        // The classes too, so the row shows the split behind its total (task RD2-3).
-        addTokenClasses(cur.usage, rec.usage)
-        cur.hops += 1
-        cur.turns += rec.usage.turns ?? 0
-        if (rec.usage.derivedCostMicros != null) {
-            // Null stays null until something priced: summing nulls as zero
-            // would present an unpriced role as a free one.
-            cur.cost = (cur.cost ?? 0) + rec.usage.derivedCostMicros
-        }
-        acc.set(k, cur)
-    }
-    return Array.from(acc.values()).sort((a, b) => {
-        if (a.cost != null && b.cost != null && a.cost !== b.cost) return b.cost - a.cost
-        return b.tokens - a.tokens
-    })
-}
-
-const roleRows = computed(() => accumulate(r => r.role))
-const sessionRows = computed(() => accumulate(r => r.session))
+// By role and by session: the server's breakdown, from the same rows as the total, never a
+// derivation from the tasks on screen, which are a page of the board rather than the window.
+const byRoleRows = computed(() => roleRows(breakdown.value))
+const sessionRows = computed(() => breakdown.value?.bySession ?? [])
 
 const costCell = (micros: number | null) => h('span', formatCostMicros(micros) ?? 'no price')
 
@@ -195,23 +171,23 @@ const modelColumns = computed<DataTableColumns<any>>(() => [
 ])
 
 const roleColumns = computed<DataTableColumns<any>>(() => [
-    { title: 'Role', key: 'key' },
-    { title: 'Hops', key: 'hops' },
-    { title: 'Turns', key: 'turns' },
-    { title: 'Tokens', key: 'tokens', render: (r: any) => h(TokenSplit, { usage: r.usage, compact: true }) },
-    { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.cost) },
+    { title: 'Role', key: 'label', render: (r: any) => h('span', { 'data-row': r.key }, r.label) },
+    { title: 'Hops', key: 'hops', render: (r: any) => hopsLabel(r) },
+    { title: 'Tokens', key: 'tokens', render: (r: any) => r.tokens ? h(TokenSplit, { usage: r.tokens, compact: true }) : '' },
+    { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.costMicros) },
 ])
 
 const sessionColumns = computed<DataTableColumns<any>>(() => [
     {
         title: 'Session',
-        key: 'key',
-        render: (r: any) => h('code', { style: 'font-size: 11px;' },
-            r.key === '—' ? '—' : String(r.key).slice(0, 8) + '…'),
+        key: 'session',
+        render: (r: any) => h('code', { style: 'font-size: 11px;', 'data-session': r.session },
+            r.session ? String(r.session).slice(0, 8) + '…' : '—'),
     },
-    { title: 'Hops', key: 'hops' },
-    { title: 'Tokens', key: 'tokens', render: (r: any) => h(TokenSplit, { usage: r.usage, compact: true }) },
-    { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.cost) },
+    { title: 'Agent', key: 'agent', render: (r: any) => props.agentNames?.[r.agent] ?? (r.agent ? String(r.agent).slice(0, 8) : '—') },
+    { title: 'Role', key: 'role', render: (r: any) => r.role ?? 'unattributed' },
+    { title: 'Tokens', key: 'tokens', render: (r: any) => r.tokens ? h(TokenSplit, { usage: r.tokens, compact: true }) : '' },
+    { title: 'Cost', key: 'cost', render: (r: any) => costCell(r.costMicros) },
 ])
 </script>
 
