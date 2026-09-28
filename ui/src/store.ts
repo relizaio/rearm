@@ -56,6 +56,7 @@ const AGENT_BOARD_SELECTION = `
     effectiveDeliveryPolicy { mode attest }
     effectiveCoordinatorStopRelease
     eventRetentionDays
+    staleness { roleUnstaffedMinutes hopNoProgressMinutes deliveryStuckMinutes seatSilentMinutes repeatMinutes }
     createdDate
     declarative { specHash appliedAt source { repo path commit } }
     groups { uuid key name description order dependsOn defaultLevel status createdAt
@@ -3492,6 +3493,18 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskOperatorHold
+        },
+        /** A person with BOARD_WRITE releases a stalled assignment back to the queue (task RD3-4). */
+        async agentTaskReleaseAssignment (context: any, payload: { taskUuid: string, reason: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskReleaseAssignment($taskUuid: ID!, $reason: String!) {
+                        agentTaskReleaseAssignment(taskUuid: $taskUuid, reason: $reason) { uuid status role }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskReleaseAssignment
         },
         async agentTaskRequireHumanReview (context: any, payload: { taskUuid: string, value: boolean }) {
             const response = await graphqlClient.mutate({

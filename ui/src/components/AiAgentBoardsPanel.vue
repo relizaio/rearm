@@ -271,6 +271,7 @@
                 @authorize="authorizeTask" @order="orderTask"
                 @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
                 @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget" @set-level="setLevel"
+                @release-assignment="releaseAssignment"
                 @set-group="setGroup" @set-tags="setTags" @delivered="delivered"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
@@ -396,6 +397,16 @@
                     <label class="fcell"><span class="flabel">keep events, days</span>
                         <n-input-number v-model:value="editingBoard.eventRetentionDays" :min="0" placeholder="15"
                                         data-testid="board-event-retention"/>
+                    </label>
+                    <!-- task RD3-4: when the board ALERTs that work went stale; blank is off. Only an ALERT. -->
+                    <label v-for="f in STALENESS_FIELDS" :key="f.key" class="fcell"><span class="flabel">{{ f.label }}</span>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-input-number v-model:value="editingBoard.stalenessDraft[f.key]" :min="1" placeholder="off"
+                                                :data-testid="'board-staleness-' + f.key"/>
+                            </template>
+                            {{ f.help }}
+                        </n-tooltip>
                     </label>
                     <!-- RD2-1: the level a task without its own reads; blank clears it. -->
                     <label class="fcell"><span class="flabel">default level</span>
@@ -965,6 +976,7 @@ import AgentTime from '@/components/AgentTime.vue'
 import AgentBoardDocumentsPanel from '@/components/AgentBoardDocumentsPanel.vue'
 import AgentBoardGroupsPanel from '@/components/AgentBoardGroupsPanel.vue'
 import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
+import { STALENESS_FIELDS, stalenessDraftOf, stalenessPatch, stalenessProblem } from '@/utils/agentStaleness'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag, waitsOnLabel } from '@/utils/agentTaskLabels'
 import { columnFolded, EMPTY_BOARD_HINT, moreLanesHint, stripMeasure } from '@/utils/agentKanban'
@@ -1304,7 +1316,7 @@ async function reseedCoordinator (presetName: string) {
 const {
     humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags, delivered,
+    setGroup, setTags, delivered, releaseAssignment,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
     await refreshBoardContent()
@@ -1750,6 +1762,7 @@ function startEditBoard (b: any | null) {
     // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])], budgetDollars: microsToDollars(b.budgetMicros),
         documentsRepo: b.documentsRepo?.uri ?? '',
+        stalenessDraft: stalenessDraftOf(b.staleness),
         documentPaths: { ...(b.documentPaths ?? {}) },
         coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])],
         perspectives: [...(b.perspectives ?? [])],
@@ -1758,7 +1771,7 @@ function startEditBoard (b: any | null) {
         merge: mergeDraftOf(b.deliveryPolicy) }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
-            coordinatorCapabilities: [], perspectives: [], merge: mergeDraftOf(null),
+            coordinatorCapabilities: [], perspectives: [], merge: mergeDraftOf(null), stalenessDraft: stalenessDraftOf(null),
             taskPrefix: '', documentsDraft: documentsDraftOf(null), target: null }
 }
 
@@ -1821,6 +1834,11 @@ async function saveBoard () {
         boardFieldErrors.value = { target: `Board requires a target component: ${TARGET_HINT}` }
         return
     }
+    const staleProblem = stalenessProblem(editingBoard.value.stalenessDraft ?? {})
+    if (staleProblem) {
+        notification.error({ content: staleProblem, duration: 8000 })
+        return
+    }
     saving.value = true
     try {
         const input: any = {
@@ -1849,8 +1867,11 @@ async function saveBoard () {
         if (target !== undefined) input.target = target
         const perspectives = perspectivesPatch(original, editingBoard.value.perspectives)
         if (perspectives !== undefined) input.perspectives = perspectives
-        const settings = settingsPatch(original, settingsDraftOf(editingBoard.value))
+        const settings: Record<string, any> | null = settingsPatch(original, settingsDraftOf(editingBoard.value))
         if (settings) input.settings = settings
+        // The staleness block goes whole when it changed, null when emptied (task RD3-4).
+        const stale = stalenessPatch(original?.staleness, editingBoard.value.stalenessDraft ?? {})
+        if (stale !== undefined) input.settings = { ...(input.settings ?? {}), staleness: stale }
         // Only when changed; cleared restores the default, PR_ROWS (task 18c5c293).
         const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest,
             editingBoard.value.merge)
