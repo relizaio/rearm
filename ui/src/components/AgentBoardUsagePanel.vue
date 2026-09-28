@@ -80,6 +80,7 @@ import { computed, onMounted, ref, watch, h } from 'vue'
 import { useStore } from 'vuex'
 import { NCard, NDataTable, NGrid, NGridItem, NSelect, NSpace, NSpin, NTag, NText, DataTableColumns } from 'naive-ui'
 import { budgetChip } from '@/utils/agentBudget'
+import { tsDate } from '@/utils/agentTaskFormat'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import TokenSplit from './TokenSplit.vue'
 import {
@@ -117,7 +118,7 @@ const budgetLine = computed(() => props.budgetMicros === null || props.budgetMic
 
 const windowLabel = computed(() => {
     const { from, to } = periodRange(periodHours.value)
-    return new Date(from).toLocaleDateString() + ' — ' + new Date(to).toLocaleDateString()
+    return tsDate(from) + ' — ' + tsDate(to)
 })
 
 async function load () {

@@ -20,7 +20,7 @@
                           @click="emit('order', { task, orderIndex: orderDraft as number })">Set order</n-button>
             </disabled-hint>
             <span v-if="task.orderSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.orderSetBy" :task="task"/> · {{ ts(task.orderSetAt) }}
+                set by <actor-ref :actor="task.orderSetBy" :task="task"/> · <agent-time :at="task.orderSetAt"/>
             </span>
         </div>
         <!-- A task's required model strength (D20: lowering it is a person's call). -->
@@ -36,7 +36,7 @@
             <n-button v-if="task.requiredStrength != null" size="small" quaternary
                       @click="emit('set-strength', { task, requiredStrength: null })">Clear</n-button>
             <span v-if="task.strengthSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.strengthSetBy" :task="task"/> · {{ ts(task.strengthSetAt) }}
+                set by <actor-ref :actor="task.strengthSetBy" :task="task"/> · <agent-time :at="task.strengthSetAt"/>
             </span>
         </div>
         <!-- The task's level, the depth in the product tree (RD2-1): a declaration the board makes
@@ -53,7 +53,7 @@
             <n-button v-if="task.level != null" size="small" quaternary data-testid="level-clear"
                       @click="emit('set-level', { task, level: null })">Clear</n-button>
             <span v-if="task.levelSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.levelSetBy" :task="task"/> · {{ ts(task.levelSetAt) }}
+                set by <actor-ref :actor="task.levelSetBy" :task="task"/> · <agent-time :at="task.levelSetAt"/>
             </span>
         </div>
         <!-- The task's group and tags (RD2-31): a move goes into an OPEN group or out of every group;
@@ -117,7 +117,7 @@
                 {{ budgetDraft == null && task.budgetMicros != null ? 'Clear budget' : 'Set budget' }}
             </n-button>
             <span v-if="task.budgetSetBy" class="holdmeta" style="margin-top: 0">
-                set by <actor-ref :actor="task.budgetSetBy" :task="task"/> · {{ ts(task.budgetSetAt) }}
+                set by <actor-ref :actor="task.budgetSetBy" :task="task"/> · <agent-time :at="task.budgetSetAt"/>
             </span>
         </div>
         <div class="deprow">
@@ -219,6 +219,7 @@
 <script lang="ts" setup>
 // A person's verbs on a task: authorize, order, complete, cancel, reopen, and the decisions a
 // completion needs. The drawer's preview and the task page both carry this whole.
+import AgentTime from '../AgentTime.vue'
 import { computed, ref, watch } from 'vue'
 import { NButton, NCheckbox, NDynamicTags, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NTag } from 'naive-ui'
 import { groupOptions, groupToSend, NO_GROUP, parseTags, tagKeys, tagsProblem, tagsToSet } from '@/utils/agentTaskGroups'

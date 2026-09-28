@@ -59,7 +59,7 @@
                     <template #trigger>
                         <span class="srcchip">applied from {{ provenanceLabel(currentBoard.declarative) }}</span>
                     </template>
-                    Last configured from a board file, {{ formatEventTime(currentBoard.declarative.appliedAt) }}
+                    Last configured from a board file, <agent-time :at="currentBoard.declarative.appliedAt"/>
                     (spec {{ (currentBoard.declarative.specHash ?? '').slice(0, 12) }}). Edits made here since
                     show in the next export, and the file wins for every field it declares when applied again.
                 </n-tooltip>
@@ -140,7 +140,7 @@
                         <n-tag size="tiny" :bordered="false"
                                :type="e.kind === 'ALERT' ? 'error' : e.kind === 'LOCKED' ? 'warning' : 'default'">{{ e.kind }}</n-tag>
                         <span class="evmsg">{{ e.message }}</span>
-                        <span class="evmeta">{{ actorLabel(e.actor) }} · {{ formatEventTime(e.eventAt) }}</span>
+                        <span class="evmeta">{{ actorLabel(e.actor) }} · <agent-time :at="e.eventAt"/></span>
                     </div>
                 </n-collapse-item>
             </n-collapse>
@@ -963,6 +963,7 @@ import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
 import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
+import AgentTime from '@/components/AgentTime.vue'
 import AgentBoardDocumentsPanel from '@/components/AgentBoardDocumentsPanel.vue'
 import AgentBoardGroupsPanel from '@/components/AgentBoardGroupsPanel.vue'
 import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from '@/utils/agentBudget'
@@ -1002,7 +1003,7 @@ const templateTypeRows = computed(() => templateRows(
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
 import BoardLockControl from '@/components/BoardLockControl.vue'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
-import { taskPagePath } from '@/utils/agentTaskFormat'
+import { taskPagePath, ts } from '@/utils/agentTaskFormat'
 import AiAgentRevisionHistory from '@/components/AiAgentRevisionHistory.vue'
 import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'
@@ -1232,12 +1233,9 @@ const priorityOptions = [
 const sortedPresets = computed(() =>
     [...presets.value].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)))
 
+/** The board's times in the one format (RD2-23); a function prop for the lock control's line. */
 function formatEventTime (iso: string | null | undefined): string {
-    if (!iso) return ''
-    const d = new Date(iso)
-    return isNaN(d.getTime()) ? '' : d.toLocaleString('en-CA', {
-        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-    })
+    return iso ? ts(iso) : ''
 }
 
 // Concurrently assigned tasks per agent on this board (drives the WIP chips).

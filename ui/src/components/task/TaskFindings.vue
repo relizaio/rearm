@@ -28,7 +28,7 @@
             <code v-if="findingLocation(f)" class="frow__loc" :title="findingLocationFull(f)">{{ findingLocation(f) }}</code>
             <span v-if="f.decidedBy" class="frow__dec" :title="f.resolution ?? ''">
                 {{ f.decidedBy.kind === 'USER' ? 'decided by' : 'agent decided' }}
-                <actor-ref :actor="f.decidedBy" :task="task"/><template v-if="f.decidedAt"> · {{ ts(f.decidedAt) }}</template>
+                <actor-ref :actor="f.decidedBy" :task="task"/><template v-if="f.decidedAt"> · <agent-time :at="f.decidedAt"/></template>
             </span>
             <n-button v-if="canDecide && f.status === 'OPEN'" size="tiny" quaternary
                       @click="toggleDecide(r.spec, f)">decide</n-button>
@@ -82,6 +82,7 @@
 <script lang="ts" setup>
 // The newest findings round of each indexed type, a person's decisions on its items, and filing a
 // new finding.
+import AgentTime from '../AgentTime.vue'
 import { computed, ref, watch } from 'vue'
 import { atHumanGate, fileNowLine, fileNowPriorities, standaloneFindingShown } from '@/utils/agentGateFinding'
 import { NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
@@ -101,7 +102,6 @@ import {
     statusType,
     verdictType,
 } from '@/utils/agentDocuments'
-import { ts } from '@/utils/agentTaskFormat'
 import { canOperate } from '@/utils/agentBoardAccess'
 import { aboutOptionsOf, fileSpecOptions, priorityOptionsOf } from '@/utils/agentTaskOptions'
 

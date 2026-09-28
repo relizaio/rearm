@@ -10,7 +10,7 @@
                     v-if="aboutLabel(frameRound(f))"> · {{ aboutLabel(frameRound(f)) }}</template></template></span>
                 <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">{{
                     frameKind(task, f) === 'findings' ? 'findings' : 'questions' }}</router-link>
-                <span class="qstack__time">{{ ts(f.askedAt) }}</span>
+                <span class="qstack__time"><agent-time :at="f.askedAt"/></span>
             </div>
         </div>
         <div v-if="!task.questionStack[task.questionStack.length - 1].answeringRole"
@@ -54,9 +54,10 @@
 
 <script lang="ts" setup>
 // The question stack the task is waiting on, and a person's answer to it.
+import AgentTime from '../AgentTime.vue'
 import { computed, ref } from 'vue'
 import { NButton, NCheckbox, NInput, NSpace } from 'naive-ui'
-import { roleName, ts } from '@/utils/agentTaskFormat'
+import { roleName } from '@/utils/agentTaskFormat'
 import { AnswerPayload, answerPayloadOf, answerableQuestions } from '@/utils/agentTaskQuestions'
 import { aboutLabel, findingsFrameLabel, frameKind, questionRounds } from '@/utils/agentQuestionRounds'
 

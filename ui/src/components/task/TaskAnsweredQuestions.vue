@@ -12,7 +12,7 @@
             <div v-if="q.answer" class="aq__a">{{ q.answer }}</div>
             <div class="aq__meta">
                 {{ askedByLabel(q.askedIn) }}<template v-if="q.answeredBy"> · {{ answeredByLabel(q.answeredBy) }}</template><template
-                    v-else-if="q.withdrawn"> · does not apply</template><template v-if="q.answeredAt"> · {{ ts(q.answeredAt) }}</template>
+                    v-else-if="q.withdrawn"> · does not apply</template><template v-if="q.answeredAt"> · <agent-time :at="q.answeredAt"/></template>
             </div>
         </div>
         <n-button v-if="answered.length > ANSWERED_SHOWN" size="tiny" quaternary data-testid="answered-toggle"
@@ -21,9 +21,9 @@
 </template>
 
 <script lang="ts" setup>
+import AgentTime from '../AgentTime.vue'
 import { computed, ref } from 'vue'
 import { NButton, NTag } from 'naive-ui'
-import { ts } from '@/utils/agentTaskFormat'
 import { ANSWERED_SHOWN, answeredByLabel, answeredQuestions, askedByLabel } from '@/utils/agentQuestionRounds'
 
 const props = defineProps<{ task: any, roles?: any[] }>()

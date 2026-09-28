@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-    SOFTWARE_KINDS, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, checkVerdictOf, documentRoundView, latestLabel, lifecycleWord,
+    SOFTWARE_KINDS, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, checkVerdictOf, documentRoundView, latestLabel,
 } from './agentDocumentsView'
+import { lifecycleWord } from './agentWords'
 import { cardRef } from './agentTaskFormat'
 
 // Documents inside the board (task 36d0549e).
@@ -105,7 +106,7 @@ describe('document surfaces', () => {
         expect(old.checks).toBe('PASS', 'a server without counts: the verdict alone')
     })
 
-    it('words a lifecycle', () => {
+    it('words a lifecycle, from the one table in agentWords (RD2-23)', () => {
         expect(lifecycleWord('READY_TO_SHIP')).toBe('ready to ship')
         expect(lifecycleWord(null)).toBe('')
     })

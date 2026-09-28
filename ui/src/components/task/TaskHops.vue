@@ -1,13 +1,13 @@
 <template>
     <div class="dsec">
-        <div class="dsec__h">History</div>
+        <div class="dsec__h">Hops</div>
         <div v-if="!history.length" class="empty">No hops recorded yet.</div>
         <div class="hist">
             <div v-for="(e, i) in history" :key="i" class="hist__row">
                 <template v-if="e.kind === 'signoff'">
                     <n-tag size="tiny" :bordered="false"
                            :type="e.rec.outcome === 'PASSED' ? 'success' : 'error'">
-                        {{ e.rec.outcome }}
+                        {{ outcomeWord(e.rec.outcome) }}
                     </n-tag>
                     <span v-if="e.rec.reviewedBy || !e.rec.session" class="hist__role">{{ e.rec.role }}</span>
                     <n-tag v-if="e.rec.reviewedBy" size="tiny" :bordered="false" type="info">human</n-tag>
@@ -15,7 +15,7 @@
                     <span class="hist__agent"><actor-ref v-if="e.rec.reviewedBy" :actor="e.rec.reviewedBy"/><session-ref
                         v-else-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, e.rec.role)"/><template
                         v-else>{{ agentName(agentNames, e.rec.agent) }}</template></span>
-                    <span class="hist__time">{{ ts(e.rec.signedOffAt) }}<template v-if="e.rec.assignedAt">
+                    <span class="hist__time"><agent-time :at="e.rec.signedOffAt"/><template v-if="e.rec.assignedAt">
                         · worked {{ dur(e.rec.assignedAt, e.rec.signedOffAt) }}</template></span>
                     <code v-if="e.rec.promptVersion" class="hist__pv"
                           title="Served role-prompt version">{{ e.rec.promptVersion }}</code>
@@ -39,11 +39,11 @@
                     <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                 </template>
                 <template v-else>
-                    <n-tag size="tiny" :bordered="false" type="warning">RETURNED</n-tag>
+                    <n-tag size="tiny" :bordered="false" type="warning">returned</n-tag>
                     <span v-if="!e.rec.session" class="hist__role">{{ e.rec.role }}</span>
                     <span class="hist__agent"><session-ref v-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, e.rec.role)"/><template
                         v-else>{{ agentName(agentNames, e.rec.agent) }}</template></span>
-                    <span class="hist__time">{{ ts(e.rec.returnedAt) }} · {{ e.rec.reason }}</span>
+                    <span class="hist__time"><agent-time :at="e.rec.returnedAt"/> · {{ enumWord(e.rec.reason) }}</span>
                     <span v-if="hopHasUsage(e.rec)" class="hist__usage"
                           :title="hopTitle(e.rec)">{{ hopLabel(e.rec) }}</span>
                     <div v-if="hopOutputs(e.rec).length" class="hist__outputs">
@@ -62,6 +62,7 @@
 
 <script lang="ts" setup>
 import ActorRef from '../ActorRef.vue'
+import AgentTime from '../AgentTime.vue'
 import SessionRef from '../SessionRef.vue'
 import { AgentName, sessionOf } from '@/utils/agentSessionLabel'
 // The hop log: sign-offs and returns, each with its cost, the documents it recorded and, for a
@@ -71,7 +72,8 @@ import { NTag, NTooltip } from 'naive-ui'
 import { actorLabel } from '@/utils/agentActors'
 import { costLabel, formatTokenSplit, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@/utils/agentDocuments'
-import { agentName, dur, hopHistory, ts } from '@/utils/agentTaskFormat'
+import { agentName, dur, hopHistory } from '@/utils/agentTaskFormat'
+import { enumWord, outcomeWord } from '@/utils/agentWords'
 import { reviewedChips } from '@/utils/agentReviewed'
 
 const props = defineProps<{ task: any, agentNames: Record<string, string>, agentDir?: Record<string, AgentName> }>()

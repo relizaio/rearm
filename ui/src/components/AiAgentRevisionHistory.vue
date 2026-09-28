@@ -1,13 +1,13 @@
 <template>
     <n-collapse class="revhist" @item-header-click="onHeader">
-        <n-collapse-item title="History" name="history">
+        <n-collapse-item title="Revisions" name="history">
             <n-spin :show="loading">
                 <div v-if="error" class="revhist__note revhist__note--error">{{ error }}</div>
                 <div v-else-if="loaded && !revisions.length" class="revhist__note">No earlier revisions.</div>
                 <div v-for="(e, i) in shown" :key="e.revision ?? 'current'" class="revhist__row">
                     <div class="revhist__line">
                         <span class="revhist__rev">{{ e.revision === null ? 'current' : `rev ${e.revision}` }}</span>
-                        <span v-if="e.at" class="revhist__at">{{ when(e.at) }}</span>
+                        <agent-time v-if="e.at" class="revhist__at" :at="e.at"/>
                         <span class="revhist__facts">{{ revisionSummary(kind, e.snapshot).join(' · ') }}</span>
                         <n-button v-if="i + 1 < shown.length" size="tiny" quaternary class="revhist__compare"
                                   @click="flip('compare', i)">
@@ -50,6 +50,7 @@
 import { computed, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { NButton, NCollapse, NCollapseItem, NSpin } from 'naive-ui'
+import AgentTime from './AgentTime.vue'
 import { diffSnapshots, historyEntries, revisionSummary } from '@/utils/agentRevisions'
 import type { Revision, RevisionKind } from '@/utils/agentRevisions'
 
@@ -85,11 +86,6 @@ function flip (which: 'compare' | 'full', i: number) {
     if (next.has(i)) next.delete(i)
     else next.add(i)
     set.value = next
-}
-
-function when (at: string) {
-    const d = new Date(at)
-    return isNaN(d.getTime()) ? at : d.toLocaleString()
 }
 
 async function load (reset: boolean) {
