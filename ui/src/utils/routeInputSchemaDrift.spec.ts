@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, coerceInputValue, type GraphQLSchema, type GraphQLInputType } from 'graphql'
+import { coerceInputValue, type GraphQLSchema, type GraphQLInputType } from 'graphql'
+import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // notificationsCommon imports commonFunctions, which boots the graphql client
 // + keycloak as an import side effect. Same stub as notificationsCommon.spec.ts
@@ -22,18 +21,6 @@ const { buildNotificationRouteInput } = await import('./notificationsCommon')
 // Same convention as notificationInboxSchemaDrift.spec.ts: the CE mirror ships
 // in this repo so its checks always run; the Pro schema lives in the sibling
 // rearm-core checkout and is skipped (not failed) when absent.
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-const PRO_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../../rearm-core/backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-
-function loadSchema (path: string): GraphQLSchema | null {
-    return existsSync(path) ? buildSchema(readFileSync(path, 'utf8')) : null
-}
-
-const ceSchema = loadSchema(CE_SCHEMA_PATH)
-const proSchema = loadSchema(PRO_SCHEMA_PATH)
-
 /** Coercion errors for `value` against input type `typeName`, [] if it is valid. */
 function coerceErrors (schema: GraphQLSchema, typeName: string, value: unknown): string[] {
     const type = schema.getType(typeName) as GraphQLInputType
@@ -58,10 +45,6 @@ const ROUTE_WITH_TEAMS = {
 const ROUTE_NO_TEAMS = { ...ROUTE_WITH_TEAMS, teams: [], _raw: { andEnvIn: ['prod'] } }
 
 describe('buildNotificationRouteInput vs the CE mirror schema (in-repo, always runs)', () => {
-    it('has the CE mirror schema available', () => {
-        expect(ceSchema).not.toBeNull()
-    })
-
     // The old premise test here asserted CE really DID lack `teams`, as the
     // reminder to simplify the omission once CE caught up. The 2026-08 Pro sync
     // brought `teams` into the CE mirror, so the premise flipped: assert the
@@ -69,13 +52,11 @@ describe('buildNotificationRouteInput vs the CE mirror schema (in-repo, always r
     // it is harmless on both editions (absent and empty lists are equivalent)
     // and still protects any deployed CE backend that predates the sync.
     it('CE now models `teams` -- a route WITH teams coerces cleanly on CE too', () => {
-        if (!ceSchema) return
         expect(coerceErrors(ceSchema, 'NotificationRouteInput',
             buildNotificationRouteInput(ROUTE_WITH_TEAMS))).toEqual([])
     })
 
     it('a route with NO teams coerces cleanly on CE', () => {
-        if (!ceSchema) return
         expect(coerceErrors(ceSchema, 'NotificationRouteInput', buildNotificationRouteInput(ROUTE_NO_TEAMS)))
             .toEqual([])
     })
@@ -88,9 +69,7 @@ describe('buildNotificationRouteInput vs the CE mirror schema (in-repo, always r
         const unmodelled = { _raw: { andEnvIn: ['prod'], teams: ['team-1'] }, channels: ['ch-1'] }
         const built = buildNotificationRouteInput(unmodelled)
         expect(built).not.toHaveProperty('teams')
-        if (ceSchema) {
-            expect(coerceErrors(ceSchema, 'NotificationRouteInput', built)).toEqual([])
-        }
+        expect(coerceErrors(ceSchema, 'NotificationRouteInput', built)).toEqual([])
     })
 
     it('drops nothing else while stripping teams', () => {
@@ -173,7 +152,6 @@ describe('Pro-only BOOLEAN route fields (notifyComponentOwner)', () => {
      * question for that feature's owner -- noted on the board rather than decided here.
      */
     it('CE now accepts the field, and the off-state payload still coerces there', () => {
-        if (!ceSchema) return
         expect(coerceErrors(ceSchema, 'NotificationRouteInput',
             { channels: ['ch-1'], notifyComponentOwner: true }),
         'CE rejected notifyComponentOwner -- if the sync no longer carries it, the builder'

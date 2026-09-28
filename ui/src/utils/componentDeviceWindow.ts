@@ -11,9 +11,9 @@ import { isSchemaDriftError, type DriftFallbackClient } from './graphqlDriftFall
  * The device support window on a PRODUCT COMPONENT (decision D7).
  *
  * <p>Its own small document, deliberately NOT part of `COMPONENT_FULL_DATA`. That fragment is
- * the response selection of the `updateComponent` MUTATION, and CE's schema declares
- * `Component.medicalProfile` without `deviceSupportWindow` inside it -- so adding the subfield
- * there would make the whole mutation document invalid on CE and break EVERY component save,
+ * the response selection of the `updateComponent` MUTATION, and a backend that declares
+ * `Component.medicalProfile` without `deviceSupportWindow` inside it (in practice a Pro build
+ * older than the field) would reject the whole mutation document and break EVERY component save,
  * not just this field. That is the same trap `supportInjection` hit in #339, and the same
  * answer: read it separately, write it without selecting it back.
  */

@@ -1,13 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, visit, print, Kind, type DocumentNode, type GraphQLSchema } from 'graphql'
+import { validate, visit, print, Kind, type DocumentNode, type GraphQLSchema } from 'graphql'
 import {
     ARTIFACT_FINDINGS_QUERY,
     ARTIFACT_FINDINGS_QUERY_CORE,
     RELEASE_FINDINGS_QUERY,
     RELEASE_FINDINGS_QUERY_CORE
 } from './findingsQuery'
+import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // The findings modal's two loads (a release's findings, an artifact's
 // findings) checked against the backend schemas. Before these documents moved
@@ -20,21 +19,8 @@ import {
 // without them (a CE install behind this UI), and must validate on CE or the
 // modal blanks there. Both validate on CE since the mirror.
 //
-// A schema is the three SDL files together (root fields live in user.graphqls).
 // CE ships in this repo; Pro is checked when a sibling rearm-core checkout is
 // present, which is never in this repo's own CI.
-const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
-const CE_SCHEMA_DIR = fileURLToPath(new URL('../../../backend/src/main/resources/schema/', import.meta.url))
-const PRO_SCHEMA_DIR = fileURLToPath(new URL('../../../../rearm-core/backend/src/main/resources/schema/', import.meta.url))
-
-function loadSchema (dir: string): GraphQLSchema | null {
-    const files = SCHEMA_FILES.map(f => dir + f)
-    if (!files.every(existsSync)) return null
-    return buildSchema(files.map(f => readFileSync(f, 'utf8')).join('\n'))
-}
-
-const ceSchema = loadSchema(CE_SCHEMA_DIR)
-const proSchema = loadSchema(PRO_SCHEMA_DIR)
 
 const errorsAgainst = (schema: GraphQLSchema, doc: DocumentNode) => validate(schema, doc).map(e => e.message)
 
@@ -63,16 +49,12 @@ describe('findings modal documents vs the Pro schema (skipped if rearm-core abse
 })
 
 describe('findings modal documents vs the CE mirror schema (in-repo, always runs)', () => {
-    it('has the CE mirror schema available', () => {
-        expect(ceSchema, `CE mirror schema not found at ${CE_SCHEMA_DIR}`).not.toBeNull()
-    })
-
     it.each(PAIRS)('%s CORE is valid against CE', (_name, _full, core) => {
-        expect(errorsAgainst(ceSchema as GraphQLSchema, core)).toEqual([])
+        expect(errorsAgainst(ceSchema, core)).toEqual([])
     })
 
     it.each(PAIRS)('%s FULL is valid against CE', (_name, full) => {
-        expect(errorsAgainst(ceSchema as GraphQLSchema, full)).toEqual([])
+        expect(errorsAgainst(ceSchema, full)).toEqual([])
     })
 })
 

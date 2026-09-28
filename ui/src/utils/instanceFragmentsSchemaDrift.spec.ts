@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { buildSchema, validate, parse, DocumentNode } from 'graphql'
+import { validate, parse, DocumentNode } from 'graphql'
 import graphqlQueries from './graphqlQueries'
+import { ceSchema } from './schemaDriftSupport'
 
 // The instance view is fetched in two halves: a core document without
 // DeployedRelease.releaseDetails, plus one deferred document per release list
@@ -16,10 +15,6 @@ import graphqlQueries from './graphqlQueries'
 // Checked against the CE schema only, same reasoning as
 // releaseFragmentsSchemaDrift.spec.ts: it ships in this repo, and the Pro
 // schema is a superset of it for the Instance type.
-const CE_SCHEMA_PATH = fileURLToPath(new URL(
-    '../../../backend/src/main/resources/schema/schema.graphqls', import.meta.url))
-
-const ceSchema = buildSchema(readFileSync(CE_SCHEMA_PATH, 'utf8'))
 
 function asInstanceQuery (fragment: string) {
     return parse(`query FragmentCheck($instanceUuid: ID!) {
