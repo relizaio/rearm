@@ -74,6 +74,24 @@
                       @click="emit('set-tags', { task, tags: tagsToSet(task, tagsDraft) ?? [] })">Save tags</n-button>
             <span v-if="tagsProblem(tagsDraft)" class="holdmeta" style="margin-top: 0; color: #d03050">{{ tagsProblem(tagsDraft) }}</span>
         </div>
+        <!-- A DELIVERING task on a board with no PRs waits for its push or release to be attested
+             (RD2-10); a linked PR is attested from its row under Pull requests instead. -->
+        <div v-if="task.status === 'DELIVERING' && !(task.prUrls?.length)" class="deprow attestrow" data-testid="attest-delivery-row">
+            <template v-if="!deliveryDraft">
+                <n-button size="small" data-testid="attest-delivery" @click="deliveryDraft = attestDraftOf(null)">Attest delivery…</n-button>
+            </template>
+            <template v-else>
+                <n-input v-model:value="deliveryDraft.unit" size="small" placeholder="Unit: the branch or release"
+                         style="width: 200px" data-testid="attest-delivery-unit"/>
+                <n-input v-model:value="deliveryDraft.commit" size="small" placeholder="Commit (7 to 40 hex)" style="width: 170px"
+                         data-testid="attest-delivery-commit"
+                         :status="deliveryDraft.commit && commitProblem(deliveryDraft.commit) ? 'error' : undefined"/>
+                <n-input v-model:value="deliveryDraft.note" size="small" placeholder="Note (optional)" style="width: 180px"/>
+                <n-button size="small" type="primary" :disabled="!attestPayload(task, deliveryDraft)" data-testid="attest-delivery-submit"
+                          @click="submitDelivery">Attest</n-button>
+                <n-button size="small" quaternary @click="deliveryDraft = null">Cancel</n-button>
+            </template>
+        </div>
         <!-- An operator hold: the coordinator cannot lift it; the hold banner offers the release. -->
         <div v-if="canPlaceHold(task, !!admin)" class="deprow holdrow">
             <n-input v-model:value="holdReason" size="small" placeholder="Why hold it (required)"
@@ -203,6 +221,7 @@ import { roleOptionsOf } from '@/utils/agentTaskOptions'
 import { canPlaceHold, holdPayload, strengthPlaceholder, strengthToSet } from '@/utils/agentTaskAdmin'
 import { levelPlaceholder, levelToSet, MAX_LEVEL } from '@/utils/agentTaskLevel'
 import { budgetChanged, dollarsToMicros, microsToDollars } from '@/utils/agentBudget'
+import { AttestDraft, attestDraftOf, attestPayload, commitProblem } from '@/utils/agentDelivery'
 
 const props = defineProps<{
     task: any
@@ -226,6 +245,7 @@ const emit = defineEmits<{
     (e: 'set-level', p: { task: any, level: number | null }): void
     (e: 'set-group', p: { task: any, group: string | null }): void
     (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
+    (e: 'delivered', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 
@@ -243,6 +263,13 @@ function reopen () {
 }
 const strengthDraft = ref<number | null>(null)
 const levelDraft = ref<number | null>(null)
+const deliveryDraft = ref<AttestDraft | null>(null)
+function submitDelivery () {
+    const p = deliveryDraft.value ? attestPayload(props.task, deliveryDraft.value) : null
+    if (!p) return
+    emit('delivered', p)
+    deliveryDraft.value = null
+}
 const groupDraft = ref<string>(NO_GROUP)
 const groupChanged = computed(() => groupToSend(groupDraft.value) !== (props.task?.group?.key ?? null))
 const tagsDraft = ref<string[]>([])
@@ -279,6 +306,7 @@ watch(() => props.task?.uuid, () => {
     orderDraft.value = props.task?.orderIndex ?? null
     strengthDraft.value = props.task?.requiredStrength ?? null
     levelDraft.value = props.task?.level ?? null
+    deliveryDraft.value = null
     groupDraft.value = props.task?.group?.key ?? NO_GROUP
     tagsDraft.value = tagKeys(props.task)
     holdReason.value = ''

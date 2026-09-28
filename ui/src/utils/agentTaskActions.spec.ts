@@ -35,6 +35,8 @@ const TABLE: [string, any, string, any, boolean][] = [
     ['setLevel', { task, level: 2 }, 'agentTaskSetLevel', { taskUuid: 't1', level: 2 }, true],
     ['setGroup', { task, group: 'core-work' }, 'agentTaskSetGroup', { taskUuid: 't1', group: 'core-work' }, true],
     ['setTags', { task, tags: [{ key: 'urgent' }] }, 'agentTaskSetTags', { taskUuid: 't1', tags: [{ key: 'urgent' }] }, true],
+    ['delivered', { task, unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null },
+        'agentTaskDelivered', { taskUuid: 't1', unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null }, true],
 ]
 
 describe('useAgentTaskActions', () => {
@@ -69,6 +71,17 @@ describe('useAgentTaskActions', () => {
         await useAgentTaskActions(after).cancelTask({ task, note: '' })
         expect(error).toHaveBeenCalledWith({ content: 'Cancel failed: Not authorized', duration: 8000 })
         expect(after).not.toHaveBeenCalled()
+    })
+
+    it('says a refused attestation in its own words (RD2-10)', async () => {
+        dispatch.mockRejectedValue(new Error('The unit x is not a PR linked to this task'))
+        const after = vi.fn(async () => {})
+        await useAgentTaskActions(after).delivered({ task, unit: 'x', commit: 'abc1234', outcome: 'DELIVERED', note: null })
+        expect(error).toHaveBeenCalledWith({ content: 'Could not attest: The unit x is not a PR linked to this task', duration: 8000 })
+        expect(after).not.toHaveBeenCalled()
+        dispatch.mockResolvedValue({ status: 'COMPLETED' })
+        await useAgentTaskActions(after).delivered({ task, unit: 'x', commit: 'abc1234', outcome: 'DELIVERED', note: null })
+        expect(success).toHaveBeenCalledWith(expect.objectContaining({ content: 'Delivery attested: task completed' }))
     })
 
     it('keeps the messages the panel showed', async () => {

@@ -11,6 +11,7 @@ import TaskDependencies from './TaskDependencies.vue'
 import TaskDocuments from './TaskDocuments.vue'
 import TaskFindings from './TaskFindings.vue'
 import TaskHeader from './TaskHeader.vue'
+import TaskPullRequests from './TaskPullRequests.vue'
 import TaskQuestions from './TaskQuestions.vue'
 import TaskSummary from './TaskSummary.vue'
 import { fixtureRoles, fixtureTasks, richTask } from './taskFixtures'
@@ -28,17 +29,18 @@ const { default: Page } = await import('../AiAgentTaskPage.vue')
 const EMITTERS: [any, string, string[]][] = [
     [TaskHeader, 'TaskHeader', ['human-review', 'human-signoff', 'operator-release', 'require-review']],
     [TaskActions, 'TaskActions', ['authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget', 'set-level',
-        'set-group', 'set-tags']],
+        'set-group', 'set-tags', 'delivered']],
     [TaskDependencies, 'TaskDependencies', ['open']],
     [TaskSummary, 'TaskSummary', ['open']],
     [TaskFindings, 'TaskFindings', ['decide', 'open-element']],
     [TaskQuestions, 'TaskQuestions', ['answer']],
+    [TaskPullRequests, 'TaskPullRequests', ['delivered']],
 ]
 
 /** What the board panel listens to on the drawer, bar close. */
 const DRAWER_EVENTS = ['open', 'human-review', 'human-signoff', 'operator-release', 'require-review',
     'authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget', 'set-level',
-    'set-group', 'set-tags']
+    'set-group', 'set-tags', 'delivered']
 
 /** The store action the page runs for each event ('open' navigates instead). */
 const PAGE_ACTIONS: Record<string, string> = {
@@ -48,6 +50,7 @@ const PAGE_ACTIONS: Record<string, string> = {
     cancel: 'agentTaskCancel', reopen: 'agentTaskReopen', decide: 'agentTaskDecideFindings',
     answer: 'agentTaskAnswer', 'set-strength': 'agentTaskSetStrength', 'operator-hold': 'agentTaskOperatorHold', 'set-budget': 'agentTaskSetBudget',
     'set-level': 'agentTaskSetLevel', 'set-group': 'agentTaskSetGroup', 'set-tags': 'agentTaskSetTags',
+    delivered: 'agentTaskDelivered',
 }
 
 const stubs = {

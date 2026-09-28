@@ -21,13 +21,17 @@ export function splitDocumentDependencies<T extends { component?: { kind?: strin
     return { software, documents }
 }
 
-export interface BoardRef { uuid?: string | null, name?: string | null, taskPrefix?: string | null }
+export interface BoardRef { uuid?: string | null, name?: string | null, taskPrefix?: string | null, readable?: boolean | null }
 
 /** The banner on a document component's page: its board, or that no board owns it. */
 export function documentBoardBanner (ref: BoardRef | null | undefined): { text: string, board: string | null } {
     if (!ref?.uuid) return { text: 'Document component, no board', board: null }
     const name = ref.name ?? ref.uuid
-    return { text: `Belongs to board ${ref.taskPrefix ? ref.taskPrefix + ' · ' : ''}${name}`, board: ref.uuid }
+    const text = `Belongs to board ${ref.taskPrefix ? ref.taskPrefix + ' · ' : ''}${name}`
+    // The component reads under its own permission, the board under the board's (RD2-9): link only to a
+    // board the person may open, and say so otherwise rather than link to a refusal.
+    if (ref.readable !== true) return { text: `${text} (board not visible to you)`, board: null }
+    return { text, board: ref.uuid }
 }
 
 export interface RoundRow {

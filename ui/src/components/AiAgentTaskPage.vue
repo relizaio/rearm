@@ -21,6 +21,7 @@
                                    @decide="decideFindings" @open-element="openElement"/>
                     <task-open-questions :task="task" :roles="roles"/>
                     <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
+                    <task-answered-questions :task="task" :roles="roles"/>
                     <task-documents :task="task" :focus="elementFocus" :can-rerun="canReopen"/>
                     <task-hops :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-history :task="task"/>
@@ -35,11 +36,11 @@
                                   @authorize="authorizeTask" @order="orderTask" @complete="completeTask"
                                   @cancel="cancelTask" @reopen="reopenTask" @decide="decideFindings"
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
-                                  @set-level="setLevel" @set-group="setGroup" @set-tags="setTags"/>
+                                  @set-level="setLevel" @set-group="setGroup" @set-tags="setTags" @delivered="delivered"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
-                    <task-pull-requests :task="task"/>
+                    <task-pull-requests :task="task" :can-operate="canReopen" @delivered="delivered"/>
                 </div>
             </div>
         </template>
@@ -66,10 +67,12 @@ import TaskHops from './task/TaskHops.vue'
 import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
 import TaskPullRequests from './task/TaskPullRequests.vue'
 import TaskQuestions from './task/TaskQuestions.vue'
+import TaskAnsweredQuestions from './task/TaskAnsweredQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
 import { boardCan, canOperate } from '@/utils/agentBoardAccess'
 import { AgentName, agentDirectory, agentNamesOf } from '@/utils/agentSessionLabel'
+import { taskLoadErrorText } from '@/utils/agentAccessMessages'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
 
@@ -121,7 +124,8 @@ async function load () {
         agentNames.value = agentNamesOf(agents)
     } catch (e: any) {
         task.value = null
-        loadError.value = `Could not load the task: ${e?.message ?? e}`
+        // A refusal says what it needs (RD2-9); any other error keeps the server's words.
+        loadError.value = taskLoadErrorText(e)
     } finally {
         loading.value = false
     }
@@ -133,7 +137,7 @@ watch(taskUuid, load, { immediate: true })
 const {
     humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags,
+    setGroup, setTags, delivered,
 } = useAgentTaskActions(async () => { await load() })
 
 // A finding's element chip opens the element under its document (elements.md §8).

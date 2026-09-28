@@ -217,6 +217,8 @@
             ></prism-editor>
         </n-modal>
     </div>
+    <!-- The wait ends in what the server said (RD2-9), never a spinner that keeps turning. -->
+    <n-alert v-else-if="sessionError" type="error" :title="sessionError" data-testid="session-error"/>
     <n-spin v-else size="small"/>
 </template>
 
@@ -224,8 +226,9 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
+import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
 import { closeAttribution, forceCloseReason, isIdleWarned } from '@/utils/agentSessionIdle'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import { isOrgAdmin } from '@/utils/agentReopen'
@@ -408,8 +411,21 @@ async function forceClose () {
     }
 }
 
+const sessionError = ref<string | null>(null)
+
 async function load () {
-    session.value = await store.dispatch('fetchSession', sessionUuid.value)
+    sessionError.value = null
+    try {
+        session.value = await store.dispatch('fetchSession', sessionUuid.value)
+    } catch (e: any) {
+        session.value = null
+        sessionError.value = sessionLoadErrorText(e)
+        return
+    }
+    if (!session.value) {
+        sessionError.value = sessionLoadErrorText(null)
+        return
+    }
     orgBoards.value = forceCloseNeedsBoards(session.value, isAdmin.value)
         ? await store.dispatch('fetchAgentBoardsOfOrg', session.value.org).catch(() => []) ?? []
         : []

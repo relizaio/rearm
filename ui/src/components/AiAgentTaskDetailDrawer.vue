@@ -17,6 +17,8 @@
                              @human-signoff="p => emit('human-signoff', p)"
                              @operator-release="p => emit('operator-release', p)"
                              @require-review="p => emit('require-review', p)"/>
+                <!-- What the task waits on, for every reader (RD2-7). -->
+                <task-open-questions :task="task" :roles="roles"/>
                 <task-actions v-if="canOperate(board)" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                               @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
@@ -24,6 +26,7 @@
                               @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
                               @set-level="p => emit('set-level', p)"
                               @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
+                              @delivered="p => emit('delivered', p)"
                               @set-budget="p => emit('set-budget', p)"/>
                 <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
                               @open="t => emit('open', t)"/>
@@ -37,6 +40,7 @@ import { RouterLink } from 'vue-router'
 import { NDrawer, NDrawerContent } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
 import TaskHeader from './task/TaskHeader.vue'
+import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
 import TaskSummary from './task/TaskSummary.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import { taskPagePath } from '@/utils/agentTaskFormat'
@@ -72,6 +76,7 @@ const emit = defineEmits<{
     (e: 'set-level', p: { task: any, level: number | null }): void
     (e: 'set-group', p: { task: any, group: string | null }): void
     (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
+    (e: 'delivered', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
 }>()
 </script>

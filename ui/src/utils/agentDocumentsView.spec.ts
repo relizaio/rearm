@@ -33,9 +33,9 @@ describe('documents view', () => {
     })
 
     it('the banner names the board with its prefix, or says there is none', () => {
-        expect(documentBoardBanner({ uuid: 'b1', name: 'ReARM Dogfood', taskPrefix: 'RD' }))
+        expect(documentBoardBanner({ uuid: 'b1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: true }))
             .toEqual({ text: 'Belongs to board RD · ReARM Dogfood', board: 'b1' })
-        expect(documentBoardBanner({ uuid: 'b1', name: 'Plain' }).text).toBe('Belongs to board Plain')
+        expect(documentBoardBanner({ uuid: 'b1', name: 'Plain', readable: true }).text).toBe('Belongs to board Plain')
         expect(documentBoardBanner(null)).toEqual({ text: 'Document component, no board', board: null })
     })
 
@@ -70,5 +70,15 @@ describe('documents view', () => {
         expect(cardRef({ key: 'RD-7', externalRef: 'github:a/b#42' }, 'draft')).toBe('RD-7')
         expect(cardRef({ externalRef: 'github:a/b#42' }, 'draft')).toBe('#42')
         expect(cardRef({ title: 'x' }, 'draft')).toBe('draft')
+    })
+})
+
+// RD2-9: a document component reads under its own permission, its board under the board's.
+describe('the banner for a person who cannot open the board', () => {
+    it('keeps the board name and links only when the board is readable', () => {
+        expect(documentBoardBanner({ uuid: 'b1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: false }))
+            .toEqual({ text: 'Belongs to board RD · ReARM Dogfood (board not visible to you)', board: null })
+        expect(documentBoardBanner({ uuid: 'b1', name: 'Plain', readable: null }).board).toBeNull()
+        expect(documentBoardBanner({ uuid: 'b1', name: 'Plain', readable: true }).board).toBe('b1')
     })
 })
