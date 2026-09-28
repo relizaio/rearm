@@ -26,7 +26,7 @@ describe('the Board-as-a-spec modal', () => {
     it('renders the spec in a .specBlock', () => {
         const template = descriptor.template?.content ?? ''
         const modal = template.slice(template.indexOf('title="Board as a spec"'))
-        expect(modal.slice(0, modal.indexOf('</n-modal>'))).toContain('<pre class="specBlock">{{ specText }}</pre>')
+        expect(modal.slice(0, modal.indexOf('</n-modal>'))).toContain('<pre v-else class="specBlock">{{ specText }}</pre>')
     })
 
     // A top-level rule: n-modal teleports the card to <body>, outside .boardsPanel, so a nested
