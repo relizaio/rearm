@@ -30,6 +30,8 @@
                     </table>
                     <h5 style="margin-top: 16px;">Notes</h5>
                     <p>{{ notes || '—' }}</p>
+                    <h5 style="margin-top: 16px;">Device login</h5>
+                    <SessionLimitEditor :api-key="apiKey" :notify="notify" @saved="emit('saved')" />
                 </n-spin>
                 <n-space style="margin-top: 20px;"><n-button @click="emit('update:show', false)">Close</n-button></n-space>
             </div>
@@ -87,6 +89,9 @@
                         <n-button @click="emit('update:show', false)">Cancel</n-button>
                     </n-space>
                 </n-tab-pane>
+                <n-tab-pane name="device-login" tab="Device Login">
+                    <SessionLimitEditor :api-key="apiKey" :notify="notify" @saved="emit('saved')" />
+                </n-tab-pane>
                 <n-tab-pane name="notes" tab="Notes">
                     <p style="color: #555; margin-top: 0;">Free-text notes for this key: what it is used for, where it lives, expiry.</p>
                     <n-input v-model:value="notes" type="textarea" :autosize="{ minRows: 4, maxRows: 16 }" placeholder="What this key is used for, who owns it, expiry, etc." />
@@ -105,7 +110,8 @@
 /**
  * Permissions + notes editor for an RBAC key (FREEFORM or USER). Loads the org's perspectives,
  * components, products and instances itself, so it can be used from org settings and from the
- * user's own keys on the profile page. Saves through setPermissionsOnFreeformApiKey / setNotesOnApiKey.
+ * user's own keys on the profile page. Saves through setPermissionsOnFreeformApiKey / setNotesOnApiKey,
+ * and the device-login session limit through setApiKeySessionMaxMinutes (SessionLimitEditor).
  */
 import { NModal, NTabs, NTabPane, NSpace, NButton, NInput, NSpin, NAlert, NFormItem } from 'naive-ui'
 import { ref, computed, watch } from 'vue'
@@ -115,6 +121,7 @@ import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import ScopedPermissions from './ScopedPermissions.vue'
+import SessionLimitEditor from './SessionLimitEditor.vue'
 import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
 
 const props = defineProps<{

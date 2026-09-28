@@ -1248,6 +1248,7 @@ import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
+import { hardEndCell } from '@/utils/cliSessionLifetime'
 import { DASHBOARD_VIEWS, DASHBOARD_VIEW_LABELS, DashboardView, dashboardViewToWire } from '@/utils/dashboardView'
 import constants from '../utils/constants'
 import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
@@ -1371,12 +1372,13 @@ const keySessions: Ref<any[]> = ref([])
 async function showKeySessions (row: any) {
     keySessionsKey.value = row
     try {
-        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } createdDate expiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
+        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } createdDate expiresDate hardExpiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
         keySessions.value = (resp.data.cliSessionsOfKey || []).map((s: any) => { const u = users.value.find((x: any) => x.uuid === s.user); return Object.assign({}, s, {
             userName: u ? (u.name || u.email) : (s.user || ''),
             createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
             lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
-            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '' }) })
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '',
+            hardEndDisplay: hardEndCell(s.hardExpiresDate, (d: Date) => d.toLocaleString('en-CA')) }) })
         showKeySessionsModal.value = true
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
@@ -1397,6 +1399,7 @@ const keySessionFields: Ref<any> = ref([
     { key: 'createdDisplay', width: 170, title: 'Signed in' },
     { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
     { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'hardEndDisplay', width: 170, title: 'Ends (key limit)' },
     { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeKeySession(row) }, { default: () => 'Revoke' }) }
 ])
 
@@ -4385,6 +4388,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     status
                                     holder
                                     adminDisabled
+                                    sessionMaxMinutes
                                     federation { provider issuer owner repository repositoryUri repositoryId ownerId pinnedDate lastRef lastRunId lastActor }
                                     secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {
