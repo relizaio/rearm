@@ -73,6 +73,7 @@ import type { MenuOption } from 'naive-ui'
 import { ref, h, ComputedRef, computed, Ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { navKeyOf } from '@/utils/leftNavKey'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
 import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Robot, Truck } from '@vicons/tabler'
@@ -293,43 +294,11 @@ const computedMenuOptions : ComputedRef<MenuOption[]> = computed((): MenuOption[
 const activeKey: Ref<string> =  ref<string>('home')
 const collapsed: Ref<boolean> =  ref(true)
 
-// Map route names to menu keys
-const routeToMenuKey: Record<string, string> = {
-    'home': 'home',
-    'ComponentsOfOrg': 'components',
-    'ProductsOfOrg': 'products',
-    'VcsReposOfOrg': 'vcsRepos',
-    'VcsRepository': 'vcsRepos',
-    'PullRequestsOfOrg': 'pullRequests',
-    'PullRequestView': 'pullRequests',
-    'AiAgentsOfOrg': 'aiAgents',
-    'AiAgentsTableOfOrg': 'aiAgents',
-    'AiAgentView': 'aiAgents',
-    'AiAgentSessionView': 'aiAgents',
-    'AiAgentPoliciesOfOrg': 'aiAgents',
-    'AiAgentPolicyView': 'aiAgents',
-    'CommittersOfOrg': 'orgsettings',
-    'CommitterView': 'orgsettings',
-    'InstancesOfOrg': 'instances',
-    'Instance': 'instances',
-    'DistributionOfOrg': 'distribution',
-    'SecretsOfOrg': 'secrets',
-    'AnalyticsOfOrg': 'analytics',
-    'VulnerabilityAnalysis': 'vulnerabilityAnalysis',
-    'VexProposalReview': 'vulnerabilityAnalysis',
-    'MitigationAttestationReview': 'vulnerabilityAnalysis',
-    'OrgSettings': 'orgsettings'
-}
-
-// Watch route changes to update active menu key
+// The entry a route lights: its meta.nav (every AI Agents page), else its name's (RD2-19).
 const route = useRoute()
-watch(() => route.name, (newRouteName) => {
-    if (newRouteName && typeof newRouteName === 'string') {
-        const menuKey = routeToMenuKey[newRouteName]
-        if (menuKey) {
-            activeKey.value = menuKey
-        }
-    }
+watch(() => [route.name, route.meta], () => {
+    const menuKey = navKeyOf(route.name, route.meta as Record<string, unknown>)
+    if (menuKey) activeKey.value = menuKey
 }, { immediate: true })
 
 
