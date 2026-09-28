@@ -22,6 +22,15 @@
                 <n-select v-model:value="gateAbout" :options="aboutOptions" size="small" clearable
                           placeholder="about" style="width: 150px"/>
             </n-space>
+            <!-- One finding form at a gate (RD2-18): this one rides on the verdict; the findings section's
+                 form, which files a round now, opens from here only when asked for. -->
+            <div class="holdmeta gatemode" data-testid="gate-finding-mode">
+                {{ GATE_FINDING_MODE }}
+                <n-button text size="tiny" type="primary" class="gatefilenow" data-testid="gate-file-now"
+                          @click="toggleFileNow(task)">
+                    {{ fileNowOpened(task) ? 'hide the file-now form' : 'file now without deciding' }}
+                </n-button>
+            </div>
             <!-- The gated hop rejected with items that block (task RD2-25): approving past them needs a
                  decision on each, with the person's words, as the server requires; sending it back
                  leads. -->
@@ -134,6 +143,7 @@
 // stage of a HUMAN role, and the human-review flag. A gate verdict or a release must stay one click
 // away wherever the task is shown, so the drawer's preview keeps this whole.
 import { computed, ref, watch } from 'vue'
+import { fileNowOpened, GATE_FINDING_MODE, toggleFileNow } from '@/utils/agentGateFinding'
 import { NAlert, NButton, NInput, NPopconfirm, NRadioButton, NRadioGroup, NSelect, NSpace, NTag } from 'naive-ui'
 import { approveConfirm, approveLabel, gateBlockingFindings, gateDecisions, GateDecision, gateRejected, rejectLabel,
     undecided } from '@/utils/agentGateReview'

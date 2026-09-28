@@ -55,8 +55,11 @@
         </div>
     </div>
 
-    <div v-if="canDecide" class="dsec">
+    <!-- At a human gate the gate box's form rides on the verdict; this one, which files a round now,
+         shows there only when asked for (RD2-18). -->
+    <div v-if="canDecide && standaloneFindingShown(task)" class="dsec" data-testid="file-finding">
         <div class="dsec__h">File a finding</div>
+        <div v-if="atHumanGate(task)" class="holdmeta" data-testid="file-now-line" style="margin-top: 0">{{ FILE_NOW_LINE }}</div>
         <n-space :size="6" align="center">
             <n-select v-model:value="fileSpec" :options="fileSpecOptions" size="small" style="width: 130px"/>
             <n-input v-model:value="fileTitle" size="small" placeholder="What is wrong" style="width: 200px"/>
@@ -78,6 +81,7 @@
 // The newest findings round of each indexed type, a person's decisions on its items, and filing a
 // new finding.
 import { computed, ref, watch } from 'vue'
+import { atHumanGate, FILE_NOW_LINE, standaloneFindingShown } from '@/utils/agentGateFinding'
 import { NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
 import ActorRef from '../ActorRef.vue'
 import { findingElement } from '@/utils/agentElements'
