@@ -6,10 +6,11 @@
 import type { DetailedMetric } from './metrics'
 import { findingTypeOf } from './findingUtils'
 import { FindingType } from '@/constants/findingType'
+import { LatestFixVerdict } from '@/constants/latestFixVerdict'
 
 /** Whether the rows carry the latest-version fields: the backend served the LATEST document. */
 export function hasLatestFields (rows: DetailedMetric[]): boolean {
-    return rows.some(row => row.fixedByLatest !== undefined)
+    return rows.some(row => row.latestFix !== undefined)
 }
 
 export interface GroupLatest {
@@ -29,7 +30,7 @@ export function groupLatestOf (rows: DetailedMetric[]): GroupLatest | null {
     return {
         version: known.sbomMatch.latestVersion,
         checked: known.sbomMatch.latestVersionChecked ?? null,
-        fixes: vulnerabilities.filter(row => row.fixedByLatest === true).length,
+        fixes: vulnerabilities.filter(row => row.latestFix === LatestFixVerdict.FIXES).length,
         of: vulnerabilities.length
     }
 }

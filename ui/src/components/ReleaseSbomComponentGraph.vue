@@ -136,6 +136,7 @@ import { fixedInText, fixedInTitle } from '@/utils/fixedInDisplay'
 import { loadRichestServed } from '@/utils/graphqlDriftFallback'
 import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from '@/utils/sbomComponentFindingsQuery'
 import { checkedDay } from '@/utils/latestVersionDisplay'
+import { LatestFixVerdict } from '@/constants/latestFixVerdict'
 
 interface Props {
     releaseUuid: string
@@ -265,9 +266,10 @@ const findingColumns: DataTableColumns<any> = [
     { title: 'Fixed in', key: 'fixedIn', width: 160, render: (row: any) => h('span', { title: fixedInTitle(row.fixedIn) }, fixedInText(row.fixedIn)) },
     {
         title: 'Latest fixes',
-        key: 'fixedByLatest',
+        key: 'latestFix',
         width: 110,
-        render: (row: any) => row.fixedByLatest === true ? 'yes' : (row.fixedByLatest === false ? 'no' : '')
+        render: (row: any) => row.latestFix === LatestFixVerdict.FIXES ? 'yes'
+            : (row.latestFix === LatestFixVerdict.DOES_NOT_FIX ? 'no' : '')
     },
     {
         title: 'Status',

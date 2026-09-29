@@ -17,7 +17,7 @@ const withoutFindings = (doc: DocumentNode) => print(visit(doc, {
 
 // LATEST with the latest-version fields (PR G) taken out.
 const withoutLatest = (doc: DocumentNode) => print(visit(doc, {
-    Field: node => ['component', 'latestFixes', 'fixedByLatest'].includes(node.name.value) ? null : undefined
+    Field: node => ['component', 'latestFixes', 'latestFix'].includes(node.name.value) ? null : undefined
 }))
 
 describe('SBOM component findings documents', () => {

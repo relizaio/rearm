@@ -13,6 +13,7 @@ import {
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 import { FIXED_IN_TITLES } from './fixedInDisplay'
 import { FindingSbomMissReason } from '@/constants/findingSbomMissReason'
+import { LatestFixVerdict } from '@/constants/latestFixVerdict'
 
 // The findings modal's two loads (a release's findings, an artifact's
 // findings) checked against the backend schemas. Before these documents moved
@@ -36,7 +37,7 @@ const errorsAgainst = (schema: GraphQLSchema, doc: DocumentNode) => validate(sch
 const SCORE_FIELDS = new Set(['scores', 'topScore', 'epss'])
 const FIX_FIELDS = new Set(['fixedIn', 'fixTargets'])
 const SBOM_FIELDS = new Set(['sbomMatch'])
-const LATEST_FIELDS = new Set(['latestVersion', 'latestVersionChecked', 'fixedByLatest'])
+const LATEST_FIELDS = new Set(['latestVersion', 'latestVersionChecked', 'latestFix'])
 
 // A document with the given fields taken out, and the score fragment with them
 // when the scores go.
@@ -173,7 +174,7 @@ describe('the release findings LATEST document', () => {
         expect(errorsAgainst(proSchema as GraphQLSchema, RELEASE_FINDINGS_QUERY_LATEST)).toEqual([])
     })
 
-    it('is MATCHED plus the latest version and fixedByLatest', () => {
+    it('is MATCHED plus the latest version and latestFix', () => {
         expect(without(RELEASE_FINDINGS_QUERY_LATEST, LATEST_FIELDS)).toBe(print(RELEASE_FINDINGS_QUERY_MATCHED))
     })
 
@@ -184,5 +185,10 @@ describe('the release findings LATEST document', () => {
      */
     it('is ahead of CE', () => {
         expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_LATEST).length).toBeGreaterThan(0)
+    })
+
+    it.runIf(proSchema)('the verdicts mirror LatestFixVerdict on Pro (skipped if rearm-core absent)', () => {
+        expect(Object.values(LatestFixVerdict).sort())
+            .toEqual(enumValuesOf(proSchema as GraphQLSchema, 'LatestFixVerdict').sort())
     })
 })

@@ -25,7 +25,7 @@ export const SBOM_COMPONENT_FINDINGS_QUERY_LATEST = gql`
                 analysisState
                 knownExploited
                 topScore { ...VulnScoreFields }${FINDING_FIX_FIELDS}
-                fixedByLatest
+                latestFix
             }
         }
     }

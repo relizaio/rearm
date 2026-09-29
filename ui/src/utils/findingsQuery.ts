@@ -41,7 +41,7 @@ const FINDING_SBOM_FIELDS = `
 // but without the latest version still groups on the server.
 const FINDING_SBOM_LATEST_FIELDS = `
             sbomMatch { sbomComponentUuid canonicalPurl missReason latestVersion latestVersionChecked }
-            fixedByLatest`
+            latestFix`
 
 const findingsMetrics = (optionalFields: string, metricsFields = '') => `
     metrics {${metricsFields}

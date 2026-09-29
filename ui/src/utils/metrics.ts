@@ -8,6 +8,7 @@ import { resolveKevCveId } from '@/utils/kevService'
 import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, severityBucketOf } from '@/utils/findingUtils'
 import { FindingType } from '@/constants/findingType'
 import type { FindingSbomMissReason } from '@/constants/findingSbomMissReason'
+import type { LatestFixVerdict } from '@/constants/latestFixVerdict'
 import constants from '@/utils/constants'
 import type { FindingComponentGroup } from '@/utils/findingGroups'
 import type { ComponentFixTargets, FixedIn, VulnScore } from '@/utils/vulnerabilityRecordService'
@@ -83,8 +84,8 @@ export type DetailedMetric = {
   sbomMatch?: FindingSbomMatch | null
   // A release's vulnerability rows only, when the query selected it: whether the
   // component's latest version is out of the row's affected ranges; null when
-  // that cannot be told.
-  fixedByLatest?: boolean | null
+  // the row matched no component or the component has no latest version.
+  latestFix?: LatestFixVerdict | null
 }
 
 // Column a findings table opens sorted by: severity ascending (worst first),
@@ -140,7 +141,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         fixedIn: vuln.fixedIn,
         fixTargets: fixTargetsByPurl.get(vuln.purl) ?? null,
         sbomMatch: vuln.sbomMatch,
-        fixedByLatest: vuln.fixedByLatest
+        latestFix: vuln.latestFix
       })
     })
   }
