@@ -23,6 +23,11 @@ export interface DocumentRef {
     advisory?: boolean | null
     /** The role the round was published as; absent on older rounds. */
     publishedByRole?: string | null
+    /**
+     * The release that replaced this version of the round (task RD4-7): the same hop published the same
+     * path again. Absent on the current version.
+     */
+    supersededBy?: string | null
 }
 
 export interface DocumentRelease {
@@ -134,6 +139,17 @@ export function advisoryLabel (release?: DocumentRelease | null): string | null 
     return doc.publishedByRole ? `advisory · ${doc.publishedByRole}` : 'advisory'
 }
 
+/**
+ * The chip on a version a later publish of the same round replaced (task RD4-7): "replaced by v7", naming
+ * the replacing release's version as the list shows it. Null on a current version, so nothing is shown.
+ */
+export function replacedByLabel (release?: DocumentRelease | null, documents?: (DocumentRelease | null)[] | null): string | null {
+    const by = release?.document?.supersededBy
+    if (!by) return null
+    const version = (documents ?? []).find(d => d?.uuid === by)?.version
+    return version ? `replaced by v${version}` : 'replaced'
+}
+
 export function documentLabel (release?: DocumentRelease | null): string {
     const spec = release?.document?.specification
     if (!spec) return '—'
@@ -165,8 +181,9 @@ const UNSETTLED = ['PENDING', 'CANCELLED', 'REJECTED']
  * first. The newest round is the current state: each one carries forward what the last left open.
  */
 export function latestRound (documents: DocumentRelease[] | null | undefined, spec: string): DocumentRelease | null {
+    // A replaced version is never the newest of its round (task RD4-7).
     return (documents ?? []).find(d => d?.document?.specification === spec && !!d?.document?.findings
-        && !UNSETTLED.includes(d?.lifecycle ?? '')) ?? null
+        && !d?.document?.supersededBy && !UNSETTLED.includes(d?.lifecycle ?? '')) ?? null
 }
 
 /** Task states in which a person may decide findings; on a hold the server also refuses a new blocking item. */

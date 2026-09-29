@@ -102,6 +102,7 @@ const AGENT_TASK_SELECTION = `
             round
             advisory
             publishedByRole
+            supersededBy
             elements {
                 grammarVersion
                 digest
