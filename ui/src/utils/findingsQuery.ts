@@ -18,10 +18,16 @@ const FINDING_SCORE_FIELDS = `
             epss { ...VulnScoreFields }`
 
 const FINDING_FIX_FIELDS = `
-            fixedIn { version verdict versionEndIncluding sources }`
+            fixedIn { version verdict versionEndIncluding sources identities }`
 
-const findingsMetrics = (optionalFields: string) => `
-    metrics {
+// Per component, the fix versions its findings' advisories name and which
+// findings each one fixes: the group view's Bump to. Metrics-level, so it
+// rides with the fix versions in the FULL document.
+const FIX_TARGET_FIELDS = `
+        fixTargets { purl major targets { version sameMajor fixes } }`
+
+const findingsMetrics = (optionalFields: string, metricsFields = '') => `
+    metrics {${metricsFields}
         vulnerabilityDetails { 
             purl
             vulnId
@@ -105,7 +111,7 @@ const findingsMetrics = (optionalFields: string) => `
 // Scores and fix versions are selected on the release itself only: the modal
 // shows the release's own findings, and the parents are read for their
 // artifacts.
-const releaseForFindings = (optionalFields: string) => `
+const releaseForFindings = (optionalFields: string, metricsFields = '') => `
     uuid
     version
     org
@@ -133,7 +139,7 @@ const releaseForFindings = (optionalFields: string) => `
             }
         }
     }
-${findingsMetrics(optionalFields)}
+${findingsMetrics(optionalFields, metricsFields)}
 `
 
 const singleReleaseForVulnNoParent = releaseForFindings('')
@@ -158,8 +164,8 @@ const singleReleaseForVulnParentRecursion = `
     }
 `
 
-const releaseForVulnData = (optionalFields: string) => `
-    ${releaseForFindings(optionalFields)}
+const releaseForVulnData = (optionalFields: string, metricsFields = '') => `
+    ${releaseForFindings(optionalFields, metricsFields)}
     parentReleases {
         release
         releaseDetails {
@@ -171,7 +177,7 @@ const releaseForVulnData = (optionalFields: string) => `
 export const RELEASE_FINDINGS_QUERY = gql`
     query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
         release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
-            ${releaseForVulnData(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS)}
+            ${releaseForVulnData(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS, FIX_TARGET_FIELDS)}
         }
     }
     ${VULN_SCORE_FRAGMENT}
@@ -194,16 +200,16 @@ export const RELEASE_FINDINGS_QUERY_CORE = gql`
     }
 `
 
-const artifactFindings = (optionalFields: string) => `
+const artifactFindings = (optionalFields: string, metricsFields = '') => `
     uuid
     displayIdentifier
-    ${findingsMetrics(optionalFields)}
+    ${findingsMetrics(optionalFields, metricsFields)}
 `
 
 export const ARTIFACT_FINDINGS_QUERY = gql`
     query getArtifactDetails($artifactUuid: ID!) {
         artifact(artifactUuid: $artifactUuid) {
-            ${artifactFindings(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS)}
+            ${artifactFindings(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS, FIX_TARGET_FIELDS)}
         }
     }
     ${VULN_SCORE_FRAGMENT}

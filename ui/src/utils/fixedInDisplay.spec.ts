@@ -2,17 +2,24 @@ import { describe, it, expect } from 'vitest'
 import {
     FIXED_IN_TITLES,
     affectedPackagesOf,
+    appliesToFinding,
     bumpTargetsOf,
     bumpToText,
     bumpToTitle,
     fixVersionOf,
+    fixedByBump,
     fixedInText,
     fixedInTitle,
+    groupBumpOf,
+    groupBumpText,
+    groupBumpTitle,
+    groupBumpWithinMajorText,
     hasFixedInFields,
     isNoFix,
     rangeBoundsText
 } from './fixedInDisplay'
-import type { AffectedRange, FixedIn } from './vulnerabilityRecordService'
+import type { FixedInRow } from './fixedInDisplay'
+import type { AffectedRange, ComponentFixTargets, FixedIn } from './vulnerabilityRecordService'
 
 const fixedIn = (verdict: FixedIn['verdict'], extra: Partial<FixedIn> = {}): FixedIn => ({ verdict, sources: [], ...extra })
 
@@ -75,6 +82,108 @@ describe('a component\'s bump targets', () => {
         expect(bumpToText(['1', '2', '3', '4'])).toBe('4 targets')
         expect(bumpToTitle(['1', '2', '3', '4'])).toBe('Fix versions of this component\'s findings: 1, 2, 3, 4')
         expect(bumpToTitle([])).toBe('')
+    })
+})
+
+describe('a component group\'s one bump', () => {
+    // django@2.0.1 as the sandbox has it, cut down: 2.0.3 fixes A, 2.2.24 A and B, 5.2.17 all three
+    const django: ComponentFixTargets = {
+        purl: 'pkg:pypi/django@2.0.1',
+        major: '2',
+        targets: [
+            { version: '2.0.3', sameMajor: true, fixes: ['A'] },
+            { version: '2.2.24', sameMajor: true, fixes: ['A', 'B'] },
+            { version: '5.2.17', sameMajor: false, fixes: ['A', 'B', 'C'] }
+        ]
+    }
+    const row = (id: string, targets: ComponentFixTargets | null = django, extra: Partial<FixedInRow> = {}): FixedInRow =>
+        ({ id, type: 'Vulnerability', fixedIn: fixedIn('FIXED_IN', { version: '2.0.3' }), fixTargets: targets, ...extra })
+
+    it('is the version that fixes the most, with the best on the major version when it leaves it', () => {
+        const bump = groupBumpOf([row('A'), row('B'), row('C')])!
+        expect(bump).toEqual({
+            version: '5.2.17', fixed: ['A', 'B', 'C'], total: 3, major: '2', leavesMajor: true, withinMajor: { version: '2.2.24', fixed: ['A', 'B'] }
+        })
+        expect(groupBumpText(bump)).toBe('5.2.17 fixes 3 of 3')
+        expect(groupBumpWithinMajorText(bump)).toBe('within 2.x: 2.2.24 fixes 2')
+    })
+
+    it('counts the rows as filtered, and takes the lowest version on a tie', () => {
+        // with C filtered out, 2.2.24 fixes as many as 5.2.17 and is lower
+        const bump = groupBumpOf([row('A'), row('B')])!
+        expect(bump.version).toBe('2.2.24')
+        expect(bump.withinMajor).toBeNull()
+        expect(groupBumpWithinMajorText(bump)).toBeNull()
+    })
+
+    it('counts vulnerability rows only, and says what stays affected and why', () => {
+        const noFix = row('D', django, { fixedIn: fixedIn('NO_FIX_AVAILABLE') })
+        const violation: FixedInRow = { id: 'LICENSE', type: 'Violation' }
+        const rows = [row('A'), row('B'), noFix, violation]
+        const bump = groupBumpOf(rows)!
+        expect(bump.total).toBe(3)
+        // 2.2.24 and 5.2.17 both fix A and B: the lower one
+        expect(groupBumpText(bump)).toBe('2.2.24 fixes 2 of 3')
+        const title = groupBumpTitle(bump, rows)
+        expect(title).toBe('Bumping to 2.2.24 fixes 2 of this component\'s 3 vulnerability findings, as their advisories say.'
+            + ' Still affected: 1 no fix yet (D).')
+        const withC = [...rows, row('C')]
+        expect(groupBumpTitle(groupBumpOf(withC)!, withC)).toContain('5.2.17 is on another major version; within 2.x: 2.2.24 fixes 2.')
+        expect(fixedByBump(rows[0], bump)).toBe(true)
+        expect(fixedByBump(noFix, bump)).toBe(false)
+        expect(fixedByBump(violation, bump)).toBe(false)
+        expect(fixedByBump(rows[0], null)).toBe(false)
+    })
+
+    it('groups what stays affected by reason, naming a few', () => {
+        const noRange = (id: string) => row(id, django, { fixedIn: fixedIn('NO_RANGE_DATA') })
+        const rows = [row('A'), noRange('N1'), noRange('N2'), noRange('N3'), noRange('N4'), row('D', django, { fixedIn: fixedIn('NO_FIX_AVAILABLE') })]
+        expect(groupBumpTitle(groupBumpOf(rows)!, rows))
+            .toContain('Still affected: 4 no range data (N1, N2, N3, and 1 more); 1 no fix yet (D).')
+    })
+
+    it('says when the only bump leaves the major version', () => {
+        const pacote: ComponentFixTargets = { purl: 'pkg:npm/pacote@19.0.2', major: '19', targets: [{ version: '21.5.1', sameMajor: false, fixes: ['P'] }] }
+        const rows = [row('P', pacote)]
+        const bump = groupBumpOf(rows)!
+        expect(groupBumpWithinMajorText(bump)).toBe('no fix on 19.x')
+        expect(groupBumpTitle(bump, rows)).toContain('21.5.1 is on another major version; no fix on 19.x.')
+    })
+
+    it('answers each row from its own package URL in a group of several', () => {
+        // zlib under two Debian releases groups together; the fix is bookworm's only
+        const bookworm: ComponentFixTargets = { purl: 'pkg:deb/debian/zlib@1:1.2.13.dfsg-1?distro=debian-12', major: '1', targets: [{ version: '1:1.2.13.dfsg-1+deb12u1', sameMajor: true, fixes: ['CVE-X'] }] }
+        const trixie: ComponentFixTargets = { purl: 'pkg:deb/debian/zlib@1:1.2.13.dfsg-1?distro=debian-13', major: '1', targets: [] }
+        const rows = [row('CVE-X', bookworm), row('CVE-X', trixie), row('CVE-Y', null)]
+        const bump = groupBumpOf(rows)!
+        expect(groupBumpText(bump)).toBe('1:1.2.13.dfsg-1+deb12u1 fixes 1 of 3')
+        expect(rows.map(r => fixedByBump(r, bump))).toEqual([true, false, false])
+    })
+
+    it('does not say a bump leaves a major version it does not know', () => {
+        const guava: ComponentFixTargets = { purl: 'pkg:maven/com.google.guava/guava@r09', major: null, targets: [{ version: '24.1.1', sameMajor: false, fixes: ['G'] }] }
+        const bump = groupBumpOf([row('G', guava)])!
+        expect(bump.leavesMajor).toBe(false)
+        expect(groupBumpWithinMajorText(bump)).toBeNull()
+    })
+
+    it('is none without fix targets, or when none fixes a visible row', () => {
+        expect(groupBumpOf([row('A', null), row('B', null)])).toBeNull()
+        expect(groupBumpOf([row('Z')])).toBeNull()
+        expect(groupBumpOf([])).toBeNull()
+    })
+})
+
+describe('the details panel for a clicked finding', () => {
+    it('marks the packages the finding\'s verdict was taken from', () => {
+        const bookworm = 'pkg:deb/debian/openssl?arch=source&distro=bookworm'
+        const f = fixedIn('FIXED_IN', { version: '3.0.22-1~deb12u1', identities: [bookworm] })
+        expect(appliesToFinding(bookworm, f)).toBe(true)
+        expect(appliesToFinding('pkg:deb/debian/openssl?arch=source&distro=forky', f)).toBe(false)
+        expect(appliesToFinding(bookworm, fixedIn('FIXED_IN'))).toBe(false)
+        expect(appliesToFinding(bookworm, undefined)).toBe(false)
+        // checked against these ranges, but the version is outside them: not where a fix came from
+        expect(appliesToFinding(bookworm, fixedIn('NOT_IN_ADVISORY_RANGE', { identities: [bookworm] }))).toBe(false)
     })
 })
 

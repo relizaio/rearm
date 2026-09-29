@@ -18,9 +18,10 @@ import { FIXED_IN_TITLES } from './fixedInDisplay'
 // artifact query was inline in ReleaseView.vue.
 //
 // Each load is three documents, richest first (loadFindings): FULL adds the
-// per-finding scores and fix versions, SCORED the scores only, and CORE is
-// everything else, the fallback for a backend without them (a CE install
-// behind this UI), which must validate on CE or the modal blanks there.
+// per-finding scores and fix versions (and each component's fix targets),
+// SCORED the scores only, and CORE is everything else, the fallback for a
+// backend without them (a CE install behind this UI), which must validate on
+// CE or the modal blanks there.
 //
 // CE ships in this repo; Pro is checked when a sibling rearm-core checkout is
 // present, which is never in this repo's own CI.
@@ -28,7 +29,7 @@ import { FIXED_IN_TITLES } from './fixedInDisplay'
 const errorsAgainst = (schema: GraphQLSchema, doc: DocumentNode) => validate(schema, doc).map(e => e.message)
 
 const SCORE_FIELDS = new Set(['scores', 'topScore', 'epss'])
-const FIX_FIELDS = new Set(['fixedIn'])
+const FIX_FIELDS = new Set(['fixedIn', 'fixTargets'])
 
 // A document with the given fields taken out, and the score fragment with them
 // when the scores go.
@@ -66,22 +67,23 @@ describe('findings modal documents vs the CE mirror schema (in-repo, always runs
     })
 
     /**
-     * EXPECTED and TEMPORARY: CE rejects FULL, and only for the fix version,
-     * which is exactly the case the SCORED fallback exists for. Every error must
-     * be that one; when the mirror lands this fails and becomes a plain "FULL is
-     * valid against CE".
+     * EXPECTED and TEMPORARY: CE rejects FULL, and only for the fix versions
+     * and fix targets, which is exactly the case the SCORED fallback exists for.
+     * Every error must be one of those; when the mirror lands this fails and
+     * becomes a plain "FULL is valid against CE".
      */
-    it.each(TIERS)('%s FULL is still ahead of CE only by the fix version', (_name, full) => {
+    it.each(TIERS)('%s FULL is still ahead of CE only by the fix versions', (_name, full) => {
         const errs = errorsAgainst(ceSchema, full)
         expect(errs.length).toBeGreaterThan(0)
-        expect(errs.filter(e => !/field "fixedIn" on type "Vulnerability"/.test(e))).toEqual([])
+        expect(errs.filter(e => !/field "(fixedIn" on type "Vulnerability|fixTargets" on type "DependencyTrackMetrics)"/.test(e)))
+            .toEqual([])
     })
 })
 
 describe('the tiers stay one document', () => {
     // A field added to one tier and not the others would make the modal differ by
     // backend in more than the optional columns.
-    it.each(TIERS)('%s FULL is SCORED plus the fix version, and SCORED is CORE plus the scores', (_name, full, scored, core) => {
+    it.each(TIERS)('%s FULL is SCORED plus the fix versions, and SCORED is CORE plus the scores', (_name, full, scored, core) => {
         expect(without(full, FIX_FIELDS)).toBe(print(scored))
         expect(without(scored, SCORE_FIELDS)).toBe(print(core))
         expect(print(full)).not.toBe(print(scored))
@@ -101,6 +103,13 @@ describe('the tiers stay one document', () => {
         }
         expect(listsSelecting('topScore')).toBe(1)
         expect(listsSelecting('fixedIn')).toBe(1)
+        let metricsWithTargets = 0
+        visit(RELEASE_FINDINGS_QUERY, {
+            Field: node => {
+                if (node.name.value === 'fixTargets') metricsWithTargets++
+            }
+        })
+        expect(metricsWithTargets).toBe(1)
     })
 })
 

@@ -56,4 +56,22 @@ describe('VulnerabilityDetailsModal affected versions wiring', () => {
     it('shows the section only when the backend served the ranges', () => {
         expect(code).toMatch(/v-if="record\.affectedRanges !== undefined" label="Affected versions"/)
     })
+
+    it.each(['appliesToFinding', 'fixedInText', 'fixedInTitle'])('imports %s for the clicked finding, which it uses', (name) => {
+        expectImportedAndUsed(code, name)
+    })
+
+    it('says what applies to the finding only when opened from one with a fix version', () => {
+        expect(code).toMatch(/v-if="fixedIn && findingPurl" label="This finding"/)
+    })
+})
+
+describe('VulnerabilityModal opens the details panel with the clicked finding', () => {
+    const code = source('./VulnerabilityModal.vue')
+
+    it('passes the row\'s package and fix version, and not for an alias', () => {
+        expect(code).toMatch(/:finding-purl="vulnDetail\.purl"/)
+        expect(code).toMatch(/:fixed-in="vulnDetail\.fixedIn"/)
+        expect(code).toMatch(/vulnId === row\.id \? row : \{ severity: row\.severity, knownExploited: row\.knownExploited \}/)
+    })
 })

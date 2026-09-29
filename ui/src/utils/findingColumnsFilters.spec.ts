@@ -195,6 +195,33 @@ describe('the fix version columns', () => {
         }) as any[])).not.toContain('bumpTo')
     })
 
+    it('shows the one bump when the rows carry fix targets, and checks the rows it fixes when expanded', () => {
+        const targets = {
+            purl: 'pkg:pypi/django@2.0.1',
+            major: '2',
+            targets: [
+                { version: '2.2.24', sameMajor: true, fixes: ['A'] },
+                { version: '5.2.17', sameMajor: false, fixes: ['A', 'B'] }
+            ]
+        }
+        const rows = processMetricsData({
+            fixTargets: [targets],
+            vulnerabilityDetails: ['A', 'B', 'C'].map(id => ({ vulnId: id, purl: 'pkg:pypi/django@2.0.1', fixedIn: fixedIn('FIXED_IN', { version: '2.2.24' }) }))
+        })
+        expect(rows.map(r => r.fixTargets)).toEqual([targets, targets, targets])
+        const columns = buildComponentGroupColumns(h, Stub, Stub, {
+            findingColumns: () => [{ key: 'fixedIn', render: () => 'cell' }] as any, rowKey: (r: any) => r.id, onUpdateFilters: () => {}, showFixedIn: true
+        }) as any[]
+        const [group] = groupFindingsByComponent(rows)
+        const cell: any = column(columns, 'bumpTo').render(group)
+        expect(cell.children.map((line: any) => line?.children)).toEqual(['5.2.17 fixes 2 of 3', 'within 2.x: 2.2.24 fixes 1'])
+        expect(cell.props.title).toContain('Still affected: 1 fixed by another version (C).')
+        const nested: any = (columns[0] as any).renderExpand(group)
+        const fixedInCell = nested.props.columns[0].render
+        expect(fixedInCell(rows[0]).children[1].props.title).toBe('Fixed by the bump to 5.2.17')
+        expect(fixedInCell(rows[2])).toBe('cell')
+    })
+
     it('copies the fix version onto vulnerability rows, leaving it unset when not selected', () => {
         const [fixed] = processMetricsData({ vulnerabilityDetails: [{ vulnId: 'CVE-1', fixedIn: fixedIn('FIXED_IN', { version: '2' }) }] })
         expect(fixed.fixedIn).toEqual(fixedIn('FIXED_IN', { version: '2' }))

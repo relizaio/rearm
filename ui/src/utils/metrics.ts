@@ -9,8 +9,21 @@ import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, se
 import { FindingType } from '@/constants/findingType'
 import constants from '@/utils/constants'
 import type { FindingComponentGroup } from '@/utils/findingGroups'
-import type { FixedIn, VulnScore } from '@/utils/vulnerabilityRecordService'
-import { bumpTargetsOf, bumpToText, bumpToTitle, fixedInText, fixedInTitle, isNoFix } from '@/utils/fixedInDisplay'
+import type { ComponentFixTargets, FixedIn, VulnScore } from '@/utils/vulnerabilityRecordService'
+import {
+  bumpTargetsOf,
+  bumpToText,
+  bumpToTitle,
+  fixedByBump,
+  fixedInText,
+  fixedInTitle,
+  groupBumpOf,
+  groupBumpText,
+  groupBumpTitle,
+  groupBumpWithinMajorText,
+  isNoFix
+} from '@/utils/fixedInDisplay'
+import type { GroupBump } from '@/utils/fixedInDisplay'
 import {
   COMPUTED_FROM_VECTOR_TITLE,
   formatPrimaryScore,
@@ -47,6 +60,9 @@ export type DetailedMetric = {
   // Vulnerability rows only, when the query selected it: the advisory's fix
   // version for the row's package.
   fixedIn?: FixedIn | null
+  // Vulnerability rows only, when the query selected them: the fix versions of
+  // the row's component and the findings each fixes (the group's Bump to).
+  fixTargets?: ComponentFixTargets | null
 }
 
 // Column a findings table opens sorted by: severity ascending (worst first),
@@ -77,6 +93,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
   const combinedData: DetailedMetric[] = []
   if (!metrics) return combinedData
 
+  const fixTargetsByPurl = new Map<string, ComponentFixTargets>(
+    (metrics.fixTargets || []).map((t: ComponentFixTargets) => [t.purl, t]))
   if (metrics.vulnerabilityDetails) {
     metrics.vulnerabilityDetails.forEach((vuln: any) => {
       combinedData.push({
@@ -97,7 +115,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         scores: vuln.scores,
         topScore: vuln.topScore,
         epss: vuln.epss,
-        fixedIn: vuln.fixedIn
+        fixedIn: vuln.fixedIn,
+        fixTargets: fixTargetsByPurl.get(vuln.purl) ?? null
       })
     })
   }
@@ -574,12 +593,16 @@ function scoreColumns(h: any, NTag: any, sortOrderOf: (key: string) => object): 
   ]
 }
 
+// Key of the findings table's Fixed in column, which the group view's nested
+// tables mark.
+const FIXED_IN_COLUMN_KEY = 'fixedIn'
+
 // The advisory's fix version for the row's package; the hover text says why
 // when there is none. No sorter: the UI has no version ordering.
 function fixedInColumn(h: any, NTag: any) {
   return {
     title: 'Fixed in',
-    key: 'fixedIn',
+    key: FIXED_IN_COLUMN_KEY,
     // wide enough for a Debian security update (1:9.2p1-2+deb12u10) on one line
     width: 150,
     render: (row: any) => {
@@ -594,17 +617,43 @@ function fixedInColumn(h: any, NTag: any) {
   }
 }
 
-// The group view's fix column: the distinct fix versions of the group's findings.
+// The group view's fix column: the one fix version that fixes the most of the
+// group's findings, and the best on the component's major version when that
+// one leaves it. Without fix targets from the backend, the distinct fix
+// versions of the group's findings.
 function bumpToColumn(h: any) {
   return {
     title: 'Bump to',
     key: 'bumpTo',
-    width: 140,
+    width: 200,
     render: (group: FindingComponentGroup) => {
-      const targets = bumpTargetsOf(group.rows)
-      return h('span', { title: bumpToTitle(targets), style: 'overflow-wrap: anywhere;' }, bumpToText(targets))
+      const bump = groupBumpOf(group.rows)
+      if (!bump) {
+        const targets = bumpTargetsOf(group.rows)
+        return h('span', { title: bumpToTitle(targets), style: 'overflow-wrap: anywhere;' }, bumpToText(targets))
+      }
+      const within = groupBumpWithinMajorText(bump)
+      return h('div', { title: groupBumpTitle(bump, group.rows), style: 'overflow-wrap: anywhere;' }, [
+        h('div', {}, groupBumpText(bump)),
+        within ? h('div', { style: 'font-size: 12px; opacity: 0.7;' }, within) : null
+      ])
     }
   }
+}
+
+// The nested findings table's Fixed in cell, with a check on the rows the
+// group's bump fixes.
+function withBumpMarks(h: any, columns: DataTableColumns<any>, bump: GroupBump | null): DataTableColumns<any> {
+  if (!bump) return columns
+  return columns.map((column: any) => column.key !== FIXED_IN_COLUMN_KEY ? column : {
+    ...column,
+    render: (row: any, index: number) => {
+      const cell = column.render(row, index)
+      return fixedByBump(row, bump)
+        ? h('span', {}, [cell, h('span', { title: `Fixed by the bump to ${bump.version}`, style: 'color: #18a058; margin-left: 6px;' }, '\u2713')])
+        : cell
+    }
+  })
 }
 
 // The group view's score columns: the highest headline CVSS and EPSS among
@@ -657,7 +706,7 @@ export function buildComponentGroupColumns(
       type: 'expand',
       renderExpand: (group: FindingComponentGroup) => h(NDataTable, {
         data: group.rows,
-        columns: options.findingColumns(),
+        columns: options.showFixedIn ? withBumpMarks(h, options.findingColumns(), groupBumpOf(group.rows)) : options.findingColumns(),
         rowKey: options.rowKey,
         pagination: group.rows.length > 10 ? { pageSize: 10 } : false,
         scrollX: 1400,
