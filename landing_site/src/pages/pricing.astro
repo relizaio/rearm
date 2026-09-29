@@ -39,6 +39,7 @@ const standardBullets = [
   'Private VPC / VNet with SSO and unlimited artifact storage, option for on-prem deployment',
   'Enhanced support (24x7, 4 hours response time)',
   'Support for Multi-Organization Workflow',
+  'FDA 524B Compliance',
   'Free 60-day trial*',
 ];
 const enterpriseBullets = [
@@ -97,7 +98,7 @@ const tooltipFor = (b: string) =>
       <!-- Starter -->
       <div class="tier">
         <h3>ReARM Pro - Starter</h3>
-        <div class="price"><span class="amount" id="starter-price">$195</span><span class="unit">Per Month</span></div>
+        <div class="price"><span class="amount" id="starter-price">$295</span><span class="unit">Per Month</span></div>
         <div class="selector">
           <label for="starter-users">1-14 users:</label>
           <div class="selector-row">
@@ -120,7 +121,7 @@ const tooltipFor = (b: string) =>
       <div class="tier tier--popular">
         <span class="popular">POPULAR</span>
         <h3>ReARM Pro - Standard</h3>
-        <div class="price"><span class="amount" id="standard-price">$1,350</span><span class="unit">Per Month</span></div>
+        <div class="price"><span class="amount" id="standard-price">$1,450</span><span class="unit">Per Month</span></div>
         <div class="selector">
           <label for="standard-users">15-39 users:</label>
           <div class="selector-row">
@@ -173,13 +174,15 @@ const tooltipFor = (b: string) =>
   // so returning visitors keep their selection).
   const KEY = 'rearm_pricing_region';
   type Region = 'US' | 'EU' | 'CA' | 'GB' | 'AU' | 'SG';
-  const PRICES: Record<Region, { sym: string; startupBase: number; startupPerUser: number; standardBase: number; standardPerUser: number; enterprise: string }> = {
-    US: { sym: '$', startupBase: 195, startupPerUser: 45, standardBase: 1350, standardPerUser: 65, enterprise: '$75' },
-    EU: { sym: '€', startupBase: 165, startupPerUser: 40, standardBase: 1170, standardPerUser: 55, enterprise: '€65' },
-    CA: { sym: 'C$', startupBase: 250, startupPerUser: 60, standardBase: 1850, standardPerUser: 85, enterprise: 'C$100' },
-    GB: { sym: '£', startupBase: 145, startupPerUser: 35, standardBase: 1020, standardPerUser: 54, enterprise: '£60' },
-    AU: { sym: 'A$', startupBase: 275, startupPerUser: 65, standardBase: 1950, standardPerUser: 85, enterprise: 'A$105' },
-    SG: { sym: 'S$', startupBase: 245, startupPerUser: 55, standardBase: 1730, standardPerUser: 82, enterprise: 'S$95' },
+  // Standard is priced by its endpoints (15 and 39 users); the per-user step is
+  // the linear interpolation between them, rounded to whole currency units.
+  const PRICES: Record<Region, { sym: string; startupBase: number; startupPerUser: number; standardBase: number; standardMax: number; enterprise: string }> = {
+    US: { sym: '$', startupBase: 295, startupPerUser: 45, standardBase: 1450, standardMax: 2910, enterprise: '$75' },
+    EU: { sym: '€', startupBase: 250, startupPerUser: 40, standardBase: 1255, standardMax: 2490, enterprise: '€65' },
+    CA: { sym: 'C$', startupBase: 390, startupPerUser: 60, standardBase: 1990, standardMax: 3890, enterprise: 'C$100' },
+    GB: { sym: '£', startupBase: 220, startupPerUser: 35, standardBase: 1095, standardMax: 2316, enterprise: '£60' },
+    AU: { sym: 'A$', startupBase: 415, startupPerUser: 65, standardBase: 2090, standardMax: 3990, enterprise: 'A$105' },
+    SG: { sym: 'S$', startupBase: 370, startupPerUser: 55, standardBase: 1855, standardMax: 3698, enterprise: 'S$95' },
   };
 
   function detectRegion(): Region {
@@ -217,7 +220,10 @@ const tooltipFor = (b: string) =>
     const su = parseInt(starterNum.value, 10) || 1;
     const st = parseInt(standardNum.value, 10) || 15;
     document.getElementById('starter-price')!.textContent = p.sym + fmt(p.startupBase + (su - 1) * p.startupPerUser);
-    document.getElementById('standard-price')!.textContent = p.sym + fmt(p.standardBase + Math.max(0, st - 15) * p.standardPerUser);
+    const stMin = +standardNum.min, stMax = +standardNum.max;
+    const stClamped = Math.min(stMax, Math.max(stMin, st));
+    const stPrice = Math.round(p.standardBase + (stClamped - stMin) * (p.standardMax - p.standardBase) / (stMax - stMin));
+    document.getElementById('standard-price')!.textContent = p.sym + fmt(stPrice);
     document.getElementById('enterprise-price')!.textContent = p.enterprise;
     document.querySelectorAll('.region-btn').forEach((b) => {
       b.classList.toggle('region-btn--active', (b as HTMLElement).dataset.region === region);
