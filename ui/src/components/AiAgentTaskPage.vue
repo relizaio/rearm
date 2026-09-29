@@ -22,6 +22,7 @@
                     <task-open-questions :task="task" :roles="roles"/>
                     <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
                     <task-answered-questions :task="task" :roles="roles"/>
+                    <task-operator-questions :task="task"/>
                     <task-documents :task="task" :focus="elementFocus" :can-rerun="canReopen"/>
                     <task-hops :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-history :task="task"/>
@@ -65,6 +66,7 @@ import TaskFindings from './task/TaskFindings.vue'
 import TaskHeader from './task/TaskHeader.vue'
 import TaskHistory from './task/TaskHistory.vue'
 import TaskHops from './task/TaskHops.vue'
+import TaskOperatorQuestions from './task/TaskOperatorQuestions.vue'
 import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
 import TaskPullRequests from './task/TaskPullRequests.vue'
 import TaskQuestions from './task/TaskQuestions.vue'
