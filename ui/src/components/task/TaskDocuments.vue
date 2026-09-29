@@ -2,8 +2,11 @@
     <div class="dsec" v-if="taskDocuments.length">
         <div class="dsec__h">Documents</div>
         <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
-        <div class="drow">
+        <!-- A version the same hop replaced by publishing the path again stays listed, greyed (task RD4-7). -->
+        <div class="drow" :class="{ 'drow--superseded': !!replacedByLabel(d, taskDocuments) }">
             <span class="drow__label">{{ documentLabel(d) }}</span>
+            <n-tag v-if="replacedByLabel(d, taskDocuments)" size="tiny" :bordered="false"
+                   title="The same hop published this path again; the newer version is the round">{{ replacedByLabel(d, taskDocuments) }}</n-tag>
             <!-- An amendment another role put on this task while it did not hold it (task e97fde56). -->
             <n-tag v-if="advisoryLabel(d)" size="tiny" :bordered="false" type="warning"
                    title="Published by a role that did not hold the task; assembled at publish">{{ advisoryLabel(d) }}</n-tag>
@@ -48,7 +51,7 @@ import { computed, ref, watch } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 import AiAgentCheckReport from '../AiAgentCheckReport.vue'
 import AiAgentDocumentElements from '../AiAgentDocumentElements.vue'
-import { DocumentRelease, advisoryLabel, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, testCounts, verdictType } from '@/utils/agentDocuments'
+import { DocumentRelease, advisoryLabel, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, replacedByLabel, testCounts, verdictType } from '@/utils/agentDocuments'
 import { outcomeWord } from '@/utils/agentWords'
 import { documentDefining, elementsOf } from '@/utils/agentElements'
 import { answeredByLabel, questionRounds, questionStateLabel, questionStateType } from '@/utils/agentQuestionRounds'
@@ -94,5 +97,9 @@ watch(() => props.focus, (f) => {
 .drow__answered {
     font-size: 12px;
     opacity: 0.75;
+}
+
+.drow--superseded {
+    opacity: 0.5;
 }
 </style>
