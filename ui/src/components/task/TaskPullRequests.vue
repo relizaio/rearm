@@ -13,6 +13,10 @@
                 <n-tag v-if="c.heads" size="small" :bordered="false" class="prheads" :type="c.moved ? 'error' : 'default'">
                     {{ c.heads }}
                 </n-tag>
+                <!-- Commits CI reported on the PR's base since the round (task RD4-2): not a claim that it conflicts. -->
+                <n-tag v-if="c.baseMoved" size="small" :bordered="false" class="prbase" type="warning" data-testid="base-moved">
+                    {{ c.baseMoved }}
+                </n-tag>
                 <!-- A PR whose CI does not report here is attested by a person (RD2-10): BOARD_WRITE. -->
                 <template v-if="attesting && attestable(c) && !drafts[c.url]">
                     <n-button size="tiny" data-testid="attest-merge" @click="open(c.url, 'DELIVERED')">Attest merge…</n-button>
