@@ -91,12 +91,14 @@
                         ? 'STRICT: a worker may only take the top eligible task for it — coordinator ordering is enforced at assignment.'
                         : 'LAX: the poll offers work in priority order, but a worker may assign any eligible task.' }}
                 </n-tooltip>
-                <!-- The level a task without its own reads (RD2-1). -->
-                <n-tooltip v-if="currentBoard.defaultTaskLevel != null" trigger="hover">
+                <!-- The level a task without its own reads (RD2-1), only on a board with a ladder, where it is
+                     0 unless set (task RD3-6). -->
+                <n-tooltip v-if="hasLadder(currentBoard)" trigger="hover">
                     <template #trigger>
-                        <span class="wipchip" data-testid="default-level-chip">default level {{ currentBoard.defaultTaskLevel }}</span>
+                        <span class="wipchip" data-testid="default-level-chip">default level {{ levelLabel(currentBoard.defaultTaskLevel ?? 0, currentBoard) }}</span>
                     </template>
-                    Tasks without a level of their own read level {{ currentBoard.defaultTaskLevel }}. {{ LEVEL_LADDER_HINT }}
+                    Tasks without a level of their own, or of their group, read level {{ currentBoard.defaultTaskLevel ?? 0 }}.
+                    The ladder: {{ ladderHint(currentBoard) }}.
                 </n-tooltip>
                 <n-tooltip v-for="w in agentWip" :key="w.agent" trigger="hover">
                     <template #trigger>
@@ -152,11 +154,12 @@
                  grouping is generic: RD2-2 adds "group" to GROUPINGS, not a second toggle. -->
             <n-space :size="8" align="center" class="kanbanbar" data-testid="kanban-bar">
                 <span class="flabel">group by</span>
-                <n-radio-group :value="groupBy" size="small" @update:value="setGroupBy" data-testid="group-by">
-                    <n-radio-button v-for="o in GROUP_BY_OPTIONS" :key="o.value" :value="o.value" :label="o.label"/>
+                <n-radio-group :value="shownGroupBy" size="small" @update:value="setGroupBy" data-testid="group-by">
+                    <n-radio-button v-for="o in groupByOptions(currentBoard)" :key="o.value" :value="o.value" :label="o.label"/>
                 </n-radio-group>
-                <n-select :value="levelFilter" :options="levelFilterOptions" size="small" clearable
-                          placeholder="any level" style="width: 130px" data-testid="level-filter"
+                <!-- Only on a board with a ladder, its rungs by name (task RD3-6). -->
+                <n-select v-if="hasLadder(currentBoard)" :value="levelFilter" :options="levelOptions(currentBoard)" size="small" clearable
+                          placeholder="any level" style="width: 170px" data-testid="level-filter"
                           @update:value="setLevelFilter"/>
                 <!-- The group and tag filters (RD2-31), in the URL as ?group=core-work&tag=client-req. -->
                 <n-select v-if="currentBoard?.groups?.length" :value="groupFilter" :options="groupFilterOptions" size="small" clearable
@@ -168,8 +171,8 @@
             </n-space>
             <!-- Hub-and-spoke kanban: intake / per-role / awaiting coordinator / done -->
             <div v-for="lane in kanbanLanes" :key="lane.key" class="lane" :data-lane="lane.key">
-            <div v-if="groupBy !== 'none'" class="lane__head" data-testid="lane-head"
-                 :style="groupBy === 'group' && groupColour(lane.key === 'none' ? null : lane.key)
+            <div v-if="shownGroupBy !== 'none'" class="lane__head" data-testid="lane-head"
+                 :style="shownGroupBy === 'group' && groupColour(lane.key === 'none' ? null : lane.key)
                      ? { borderLeft: `4px solid ${groupColour(lane.key)}`, paddingLeft: '6px' } : undefined">{{ lane.label }}</div>
             <!-- Columns at a laptop's width (RD2-13): each head counts its cards, an empty column folds to
                  its head until opened, and a strip still too wide says how many columns sit past the edge. -->
@@ -312,8 +315,9 @@
                     <n-text v-if="tagsProblem(parseTags(registering.tagsText))" type="error" style="font-size: 12px; margin-top: -6px;">
                         {{ tagsProblem(parseTags(registering.tagsText)) }}
                     </n-text>
-                    <n-input-number v-model:value="registering.level" :min="0" :max="MAX_LEVEL" :step="1" :precision="0" clearable
-                                    data-testid="new-task-level" :placeholder="`Level: ${levelPlaceholder(currentBoard)}`"/>
+                    <!-- A level only on a board with a ladder, one of its rungs (task RD3-6). -->
+                    <n-select v-if="hasLadder(currentBoard)" v-model:value="registering.level" :options="levelOptions(currentBoard)" clearable
+                              data-testid="new-task-level" :placeholder="`Level: ${levelPlaceholder(currentBoard)}`"/>
                     <n-space justify="end">
                         <n-button size="small" @click="registering = null">Cancel</n-button>
                         <n-button size="small" type="primary" :disabled="!canRegister" @click="registerTask">
@@ -409,20 +413,18 @@
                             {{ f.help }}
                         </n-tooltip>
                     </label>
-                    <!-- RD2-1: the level a task without its own reads; blank clears it. -->
-                    <label class="fcell"><span class="flabel">default level</span>
-                        <n-tooltip trigger="hover">
-                            <template #trigger>
-                                <n-input-number v-model:value="editingBoard.defaultTaskLevel" :min="0" :max="MAX_LEVEL" :precision="0"
-                                                placeholder="none" data-testid="board-default-level"
-                                                :status="boardFieldErrors.defaultTaskLevel ? 'error' : undefined"/>
-                            </template>
-                            {{ LEVEL_LADDER_HINT }}
-                        </n-tooltip>
+                    <!-- RD2-1: the level a task without its own reads; blank clears it, to 0. Only with a ladder,
+                         one of the rungs being edited below (task RD3-6). -->
+                    <label v-if="draftLevelOptions(editingBoard.ladderDraft).length" class="fcell"><span class="flabel">default level</span>
+                        <n-select v-model:value="editingBoard.defaultTaskLevel" :options="draftLevelOptions(editingBoard.ladderDraft)"
+                                  clearable :placeholder="draftLevelOptions(editingBoard.ladderDraft)[0].label" data-testid="board-default-level"
+                                  :status="boardFieldErrors.defaultTaskLevel ? 'error' : undefined"/>
                     </label>
                 </div>
                 <n-text v-if="boardFieldErrors.defaultTaskLevel" type="error" data-testid="board-default-level-error"
                         style="font-size: 12px; margin-top: -6px;">{{ boardFieldErrors.defaultTaskLevel }}</n-text>
+                <!-- task RD3-6: the level ladder, opt-in; replaced whole when it changed, removed when emptied. -->
+                <AgentBoardLadderEditor v-model="editingBoard.ladderDraft" :error="boardFieldErrors.ladder"/>
                 <!-- task c0a2134c: on (the default, null) a no-progress or cycle-cap stop parks for the
                      coordinator first, which may release it once per stop kind per task or escalate it. -->
                 <n-checkbox :checked="editingBoard.coordinatorStopRelease !== false" data-testid="board-stop-release"
@@ -993,8 +995,10 @@ import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/util
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal, subscribeOffer } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
-import { defaultLevelPatch, GROUP_BY_OPTIONS, groupByFromQuery, groupTasks, LEVEL_LADDER_HINT, levelFromQuery, levelLabel, levelOf,
-    levelPlaceholder, levelTooltip, MAX_LEVEL, withLevelQuery } from '@/utils/agentTaskLevel'
+import { defaultLevelPatch, groupByFromQuery, groupByOptions, groupingFor, groupTasks, hasLadder, ladderHint, levelFromQuery,
+    levelLabel, levelOptions, levelPlaceholder, levelTooltip, passesLevel, taskLevelLabel, withLevelQuery } from '@/utils/agentTaskLevel'
+import { draftLevelOptions, ladderDraftOf, ladderPatch, ladderProblem } from '@/utils/agentLadder'
+import AgentBoardLadderEditor from '@/components/AgentBoardLadderEditor.vue'
 import { groupColour, groupFromQuery, groupLabel, groupByKey, groupOptions, NO_GROUP, parseTags, passesGroupAndTag,
     registerGroupFields, tagFromQuery, tagOptions, tagsProblem, waitingOnLabel, withGroupQuery } from '@/utils/agentTaskGroups'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
@@ -1054,7 +1058,8 @@ function setLevelFilter (v: number | null) {
     levelFilter.value = v ?? null
     syncQuery()
 }
-const levelFilterOptions = Array.from({ length: MAX_LEVEL + 1 }, (_, i) => ({ label: `L${i}`, value: i }))
+// The grouping shown: by level falls back to none on a board without a ladder (task RD3-6).
+const shownGroupBy = computed(() => groupingFor(groupBy.value, currentBoard.value))
 
 // The group and tag filters (RD2-31), shared by the kanban and the table and kept in the URL.
 const groupFilter = ref<string | null>(groupFromQuery(route.query))
@@ -1080,7 +1085,7 @@ const selectedBoard = ref<string | null>(null)
 const tasks = ref<any[]>([])
 // The kanban's tasks under the level filter, in lanes by the grouping (one lane for "none").
 const kanbanLanes = computed(() => groupTasks(
-    tasks.value.filter(t => (levelFilter.value == null || levelOf(t, currentBoard.value) === levelFilter.value)
+    tasks.value.filter(t => passesLevel(t, currentBoard.value, levelFilter.value)
         && passesGroupAndTag(t, groupFilter.value, tagFilter.value)),
     groupBy.value, currentBoard.value))
 const roles = ref<any[]>([])
@@ -1481,9 +1486,9 @@ const TaskCard = defineComponent({
             h('div', { class: 'tcard__title' }, [
                 // The key leads the card, as on the task page (RD2-22); the level beside it (RD2-1).
                 p.t.key ? h('span', { class: 'tcard__key', 'data-testid': 'card-key' }, p.t.key) : null,
-                levelLabel(p.t, currentBoard.value) ? h(NTooltip, { trigger: 'hover' }, {
-                    trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__level' },
-                        { default: () => levelLabel(p.t, currentBoard.value) }),
+                taskLevelLabel(p.t, currentBoard.value) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__level', 'data-testid': 'card-level' },
+                        { default: () => taskLevelLabel(p.t, currentBoard.value) }),
                     default: () => levelTooltip(p.t, currentBoard.value, actorLabel),
                 }) : null,
                 // The group beside the key and level (RD2-31).
@@ -1735,7 +1740,7 @@ async function refreshBoardContent () {
 }
 
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).
-const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultTaskLevel?: string, target?: string }>({})
+const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultTaskLevel?: string, target?: string, ladder?: string }>({})
 
 // The target picker's list (task RD2-4): the org's software components, read (cache-first) when the
 // form opens. Read into the form, not off the store getter, which also holds components fetched one
@@ -1763,7 +1768,7 @@ function startEditBoard (b: any | null) {
     // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])], budgetDollars: microsToDollars(b.budgetMicros),
         documentsRepo: b.documentsRepo?.uri ?? '',
-        stalenessDraft: stalenessDraftOf(b.staleness),
+        stalenessDraft: stalenessDraftOf(b.staleness), ladderDraft: ladderDraftOf(b.ladder),
         documentPaths: { ...(b.documentPaths ?? {}) },
         coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])],
         perspectives: [...(b.perspectives ?? [])],
@@ -1773,6 +1778,7 @@ function startEditBoard (b: any | null) {
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
             coordinatorCapabilities: [], perspectives: [], merge: mergeDraftOf(null), stalenessDraft: stalenessDraftOf(null),
+            ladderDraft: ladderDraftOf(null),
             taskPrefix: '', documentsDraft: documentsDraftOf(null), target: null }
 }
 
@@ -1840,6 +1846,12 @@ async function saveBoard () {
         notification.error({ content: staleProblem, duration: 8000 })
         return
     }
+    // The ladder's own problems are shown beside it (task RD3-6); the save waits for them.
+    const ladderIssue = ladderProblem(editingBoard.value.ladderDraft)
+    if (ladderIssue) {
+        notification.error({ content: ladderIssue, duration: 8000 })
+        return
+    }
     saving.value = true
     try {
         const input: any = {
@@ -1873,6 +1885,9 @@ async function saveBoard () {
         // The staleness block goes whole when it changed, null when emptied (task RD3-4).
         const stale = stalenessPatch(original?.staleness, editingBoard.value.stalenessDraft ?? {})
         if (stale !== undefined) input.settings = { ...(input.settings ?? {}), staleness: stale }
+        // The ladder goes whole when it changed, null when every level was removed (task RD3-6).
+        const ladder = ladderPatch(original?.ladder, editingBoard.value.ladderDraft)
+        if (ladder !== undefined) input.settings = { ...(input.settings ?? {}), ladder }
         // Only when changed; cleared restores the default, PR_ROWS (task 18c5c293).
         const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest,
             editingBoard.value.merge)

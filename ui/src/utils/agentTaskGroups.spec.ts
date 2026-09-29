@@ -191,6 +191,12 @@ describe('the groups tab\'s form', () => {
             dependsOn: ['core-work'], defaultLevel: 2, status: 'CLOSED' })
     })
 
+    it('leaves the default level out on a board without a ladder, which keeps it (task RD3-6)', () => {
+        const edit = groupDraftOf({ uuid: 'g1', key: 'ui-work', defaultLevel: 2, status: 'OPEN' })
+        expect(groupInputOf(edit, { withLevel: false })).not.toHaveProperty('defaultLevel')
+        expect(groupInputOf(edit, { withLevel: true }).defaultLevel).toBe(2)
+    })
+
     it('offers every other group as a dependency', () => {
         expect(dependencyOptions(board, 'ui-work').map(o => o.value)).toEqual(['core-work', 'old-work', 'docs-work'])
         expect(dependencyOptions(board, '').map(o => o.value)).toHaveLength(4)
@@ -203,6 +209,7 @@ describe('the groups tab\'s form', () => {
         expect(groupFieldOfError('group a depends on itself')).toBe('dependsOn')
         expect(groupFieldOfError('group cycle: a → b → a')).toBe('dependsOn')
         expect(groupFieldOfError('level is 0 to 9')).toBe('defaultLevel')
+        expect(groupFieldOfError("level 4 is not on this board's ladder: 0 requirements, 1 solution")).toBe('defaultLevel')
         expect(groupFieldOfError('A group name is one line')).toBe('name')
         expect(groupFieldOfError('Not authorized')).toBeNull()
         expect(groupFieldOfError(null)).toBeNull()
