@@ -777,7 +777,7 @@
     },
     {
       "name": "Pro Starter",
-      "price": "$195",
+      "price": "$295",
       "unit": "/mo",
       "border": "#E3E5EC",
       "bg": "#fff",
@@ -791,7 +791,7 @@
     },
     {
       "name": "Pro Standard",
-      "price": "$1,350",
+      "price": "$1,450",
       "unit": "/mo",
       "border": "#F08A4B",
       "bg": "#FFFDFB",
