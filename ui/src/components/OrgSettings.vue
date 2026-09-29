@@ -692,7 +692,7 @@
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2300"
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2560"
                                 class="table-hover">
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
@@ -750,6 +750,7 @@
                     </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
                     <template #header>CLI sessions on key {{ keySessionsKey?.uuid }}</template>
                     <p class="subtle">Active <code>rearm login</code> sessions acting as this key. Revoking signs that CLI out at once.</p>
@@ -1263,6 +1264,8 @@ import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
+import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
@@ -1753,6 +1756,47 @@ const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value })
 const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyControls.statusCell }
 const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeyControls.secretsCell }
+
+// ---- declared names (task RD3-11): the name an API_KEYS file knows a key by, and the apply that last wrote it ----
+const showDeclareModal = ref(false)
+const declareKey: Ref<any> = ref(null)
+function openDeclareKey (row: any) {
+    declareKey.value = row
+    showDeclareModal.value = true
+}
+async function releaseKeyName (row: any) {
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation releaseApiKeyName($apiKeyUuid: ID!, $name: String) { declareApiKey(apiKeyUuid: $apiKeyUuid, name: $name) { uuid declaredName } }`, variables: releasePayload(row.uuid), fetchPolicy: 'no-cache' })
+        notify('success', 'Released', `The name ${row.declaredName} was released`)
+        await loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const apiKeyDeclaredColumn = {
+    key: 'declaredName', width: 260, title: 'Declared As',
+    render: (row: any) => {
+        const lines: any[] = [row.declaredName ? h('code', row.declaredName) : h('span', { class: 'text-muted' }, '—')]
+        if (row.declarative) {
+            lines.push(h('div', h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h('span', { class: 'subtle' }, declaredSourceLabel(row.declarative)),
+                default: () => 'Last written by an API_KEYS apply' + (declaredSourceDetail(row.declarative) ? ': ' + declaredSourceDetail(row.declarative) : '')
+            })))
+        }
+        const life = secretExpiresLabel(row.secretExpiresDays)
+        if (life) lines.push(h('div', { class: 'subtle' }, life))
+        const actions: any[] = []
+        if (canDeclareKey(row, isOrgAdmin.value)) {
+            actions.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => openDeclareKey(row) }, { default: () => row.declaredName ? 'Rename…' : 'Declare as…' }))
+        }
+        if (canReleaseKeyName(row, isOrgAdmin.value)) {
+            actions.push(h(NPopconfirm, { positiveText: 'Release', negativeText: 'Cancel', onPositiveClick: () => releaseKeyName(row) }, {
+                trigger: () => h(NButton, { size: 'tiny', type: 'warning' }, { default: () => 'Release name' }),
+                default: () => `Release the name ${row.declaredName}? The next API_KEYS apply naming it creates a new key instead of updating this one.`
+            }))
+        }
+        if (actions.length) lines.push(h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin-top: 3px;' }, actions))
+        return h('div', lines)
+    }
+}
 /** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
 async function createOrgKey (apiType: string, notes: string | null, label: string) {
     let created: any
@@ -1901,6 +1945,7 @@ const freeFormKeyFields: Ref<any> = ref([
         width: 180,
         title: 'Notes'
     },
+    apiKeyDeclaredColumn,
     {
         key: 'boundAgents',
         width: 200,
@@ -4389,6 +4434,9 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     holder
                                     adminDisabled
                                     sessionMaxMinutes
+                                    declaredName
+                                    secretExpiresDays
+                                    declarative { appliedAt source { repo path commit } }
                                     federation { provider issuer owner repository repositoryUri repositoryId ownerId pinnedDate lastRef lastRunId lastActor }
                                     secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {
