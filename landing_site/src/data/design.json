@@ -559,7 +559,7 @@
       "pain": "FDA section 524B premarket cybersecurity requires SBOMs and ongoing vulnerability monitoring. Auditors ask for evidence years after ship. Build records scattered across CI systems do not survive that question.",
       "a1": "rgba(94,235,195,0.10)",
       "a2": "rgba(91,124,250,0.10)",
-      "stripLabel": "STANDARDS",
+      "stripLabel": "REGULATIONS",
       "strip": [
         "FDA 524B",
         "EU MDR"
