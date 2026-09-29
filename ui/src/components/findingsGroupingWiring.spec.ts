@@ -22,7 +22,7 @@ const code = readFileSync(fileURLToPath(new URL('./VulnerabilityModal.vue', impo
 const importBlock = (code.match(/^import\s[^;]*?\sfrom\s+'[^']+'/gms) || []).join('\n')
 
 describe('VulnerabilityModal group-by-component wiring', () => {
-    it.each(['groupFindingsByComponent', 'matchesFindingFilters', 'storedGroupByComponent', 'storeGroupByComponent',
+    it.each(['groupFindingsByComponent', 'componentIdentitiesOf', 'matchesFindingFilters', 'storedGroupByComponent', 'storeGroupByComponent',
         'componentCountOf', 'initialColumnFilters', 'buildComponentGroupColumns', 'buildVulnerabilityColumns'])('imports %s, which it uses', (name) => {
         expect(code).toMatch(new RegExp(`\\b${name}\\b(?![^\\n]*from ')`))
         expect(importBlock).toMatch(new RegExp(`\\b${name}\\b`))

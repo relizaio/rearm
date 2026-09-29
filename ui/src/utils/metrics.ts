@@ -7,6 +7,7 @@ import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 import { resolveKevCveId } from '@/utils/kevService'
 import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, severityBucketOf } from '@/utils/findingUtils'
 import { FindingType } from '@/constants/findingType'
+import type { FindingSbomMissReason } from '@/constants/findingSbomMissReason'
 import constants from '@/utils/constants'
 import type { FindingComponentGroup } from '@/utils/findingGroups'
 import type { ComponentFixTargets, FixedIn, VulnScore } from '@/utils/vulnerabilityRecordService'
@@ -34,6 +35,13 @@ import {
   scoreSortValue,
   summarizeScores
 } from '@/utils/vulnScoreDisplay'
+
+/** GraphQL FindingSbomMatch: the release SBOM component a finding's purl names, or why none does. */
+export interface FindingSbomMatch {
+  sbomComponentUuid: string | null
+  canonicalPurl: string | null
+  missReason: FindingSbomMissReason | null
+}
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -63,6 +71,10 @@ export type DetailedMetric = {
   // Vulnerability rows only, when the query selected them: the fix versions of
   // the row's component and the findings each fixes (the group's Bump to).
   fixTargets?: ComponentFixTargets | null
+  // A release's vulnerability rows only, when the query selected it: the
+  // component of the release's SBOM the server matched the row to (the
+  // grouped view's key), or why none matched.
+  sbomMatch?: FindingSbomMatch | null
 }
 
 // Column a findings table opens sorted by: severity ascending (worst first),
@@ -116,7 +128,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         topScore: vuln.topScore,
         epss: vuln.epss,
         fixedIn: vuln.fixedIn,
-        fixTargets: fixTargetsByPurl.get(vuln.purl) ?? null
+        fixTargets: fixTargetsByPurl.get(vuln.purl) ?? null,
+        sbomMatch: vuln.sbomMatch
       })
     })
   }
@@ -173,9 +186,10 @@ export function buildVulnerabilityColumns(
     getOrgUuid?: () => string
     getDtrackProjectUuids?: () => string[]
     // Preferred deep-link: caller opens our native ReleaseSbomComponentGraph
-    // modal for the clicked purl. When provided, this overrides the
-    // Dependency-Track deep-link flow.
-    onPurlClick?: (purl: string) => void
+    // modal for the clicked purl, with the row's SBOM component when the server
+    // matched it to one. When provided, this overrides the Dependency-Track
+    // deep-link flow.
+    onPurlClick?: (purl: string, sbomComponentUuid?: string) => void
     onEditFinding?: (row: any) => void
     onViewAnalysis?: (row: any) => void
     // Opens the CISA KEV details modal for a KEV-flagged CVE (Pro only —
@@ -228,7 +242,7 @@ export function buildVulnerabilityColumns(
           title: 'Open dependency graph for this purl',
           onClick: (e: Event) => {
             e.preventDefault()
-            onPurlClick(purlText)
+            onPurlClick(purlText, row.sbomMatch?.sbomComponentUuid || undefined)
           }
         }, purlText)
       }
@@ -688,7 +702,8 @@ export function buildComponentGroupColumns(
     // Forwarded from the nested tables so their filters and sort stay the view's.
     onUpdateFilters: (filters: Record<string, any>) => void
     onUpdateSorter?: (sorter: any) => void
-    onPurlClick?: (purl: string) => void
+    // Opens the dependency graph; with the SBOM component when the server matched the group to one.
+    onPurlClick?: (purl: string, sbomComponentUuid?: string) => void
     // Adds the Worst score and EPSS columns; set when the rows carry scores.
     showScores?: boolean
     // Adds the Bump to column; set when the rows carry fix versions.
@@ -731,10 +746,16 @@ export function buildComponentGroupColumns(
             title: `Open dependency graph for ${group.purl}`,
             onClick: (e: Event) => {
               e.preventDefault()
-              onPurlClick(group.purl!)
+              onPurlClick(group.purl!, group.sbomComponentUuid)
             }
           }, group.label)
           : h('span', { title: group.purl || group.label }, group.label))
+        if (group.notInSbom) {
+          parts.push(h(NTag, {
+            type: 'warning', size: 'small', bordered: false, style: 'margin-left: 6px;',
+            title: 'The release\'s SBOM does not list this package at this version: the findings may be carried over from an SBOM the release no longer has'
+          }, () => 'not in SBOM'))
+        }
         return h('span', {}, parts)
       }
     },

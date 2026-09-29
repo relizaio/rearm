@@ -9,15 +9,16 @@ import { VULN_SCORE_FRAGMENT } from './vulnerabilityRecordQuery'
 
 // Each finding's scores and fix version, read from the org's vulnerability
 // records. A CE backend that has not mirrored a field yet rejects the whole
-// document, so each load comes in three tiers, richest first: FULL (scores
-// and fix versions), SCORED (scores only) and CORE (neither), which keeps the
+// document, so each load comes in tiers, richest first: MATCHED (release
+// only: FULL plus each finding's SBOM component), FULL (scores and fix
+// versions), SCORED (scores only) and CORE (none of them), which keeps the
 // modal working there without those columns. See loadFindings.
 const FINDING_SCORE_FIELDS = `
             scores { ...VulnScoreFields }
             topScore { ...VulnScoreFields }
             epss { ...VulnScoreFields }`
 
-const FINDING_FIX_FIELDS = `
+export const FINDING_FIX_FIELDS = `
             fixedIn { version verdict versionEndIncluding sources identities }`
 
 // Per component, the fix versions its findings' advisories name and which
@@ -25,6 +26,13 @@ const FINDING_FIX_FIELDS = `
 // rides with the fix versions in the FULL document.
 const FIX_TARGET_FIELDS = `
         fixTargets { purl major targets { version sameMajor fixes } }`
+
+// Which component of the release's SBOM each finding is on, matched by the
+// server (the group view's grouping). Release findings only: an artifact's
+// findings belong to no one release. It costs one read of the release's SBOM,
+// so the MATCHED document is FULL plus this and nothing else.
+const FINDING_SBOM_FIELDS = `
+            sbomMatch { sbomComponentUuid canonicalPurl missReason }`
 
 const findingsMetrics = (optionalFields: string, metricsFields = '') => `
     metrics {${metricsFields}
@@ -172,6 +180,15 @@ const releaseForVulnData = (optionalFields: string, metricsFields = '') => `
             ${singleReleaseForVulnParentRecursion}        
         }
     }
+`
+
+export const RELEASE_FINDINGS_QUERY_MATCHED = gql`
+    query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
+        release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
+            ${releaseForVulnData(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS + FINDING_SBOM_FIELDS, FIX_TARGET_FIELDS)}
+        }
+    }
+    ${VULN_SCORE_FRAGMENT}
 `
 
 export const RELEASE_FINDINGS_QUERY = gql`

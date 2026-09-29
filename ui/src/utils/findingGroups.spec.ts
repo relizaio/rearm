@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
     componentCountOf,
+    componentIdentitiesOf,
     groupFindingsByComponent,
     initialColumnFilters,
     matchesFindingFilters,
@@ -9,6 +10,7 @@ import {
     storeGroupByComponent
 } from './findingGroups'
 import { severityBucketOf } from './findingUtils'
+import { FindingSbomMissReason } from '@/constants/findingSbomMissReason'
 import type { DetailedMetric } from './metrics'
 
 function row (partial: Partial<DetailedMetric> & Pick<DetailedMetric, 'type' | 'id'>): DetailedMetric {
@@ -163,5 +165,89 @@ describe('grouped view preference', () => {
         vi.stubGlobal('window', { localStorage: { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } } })
         expect(storedGroupByComponent()).toBe(false)
         expect(() => storeGroupByComponent(true)).not.toThrow()
+    })
+})
+
+describe('grouping on the server\'s SBOM match', () => {
+    const TAR_12 = 'pkg:deb/debian/tar@1.34+dfsg-1.2+deb12u1?distro=debian-12'
+    const TAR_12_15 = 'pkg:deb/debian/tar@1.34+dfsg-1.2+deb12u1?distro=debian-12.15'
+    const matched = (component: string, canonicalPurl: string) =>
+        ({ sbomComponentUuid: component, canonicalPurl, missReason: null })
+    const missed = (missReason: FindingSbomMissReason) => ({ sbomComponentUuid: null, canonicalPurl: null, missReason })
+
+    it('keys a matched finding by its component, so two distribution builds of one version stay apart', () => {
+        const groups = groupFindingsByComponent([
+            row({ type: 'Vulnerability', id: 'CVE-1', purl: TAR_12, severity: 'HIGH', sbomMatch: matched('c-12', TAR_12) }),
+            row({ type: 'Vulnerability', id: 'CVE-2', purl: TAR_12_15, severity: 'LOW', sbomMatch: matched('c-12-15', TAR_12_15) }),
+            // Dependency-Track's spelling of the same component
+            row({ type: 'Vulnerability', id: 'CVE-3', purl: 'pkg:deb/debian/tar@1.34%2Bdfsg-1.2%2Bdeb12u1?distro=debian-12',
+                severity: 'LOW', sbomMatch: matched('c-12', TAR_12) })
+        ])
+        expect(groups.map(g => [g.key, g.label, g.sbomComponentUuid, g.rows.map(r => r.id)])).toEqual([
+            ['sbom:c-12', 'debian/tar@1.34+dfsg-1.2+deb12u1 (debian-12)', 'c-12', ['CVE-1', 'CVE-3']],
+            ['sbom:c-12-15', 'debian/tar@1.34+dfsg-1.2+deb12u1 (debian-12.15)', 'c-12-15', ['CVE-2']]
+        ])
+        // the client grouping would have made one group of the three
+        expect(componentCountOf(groups.flatMap(g => g.rows))).toBe(2)
+    })
+
+    it('puts a violation with the component its purl\'s findings matched, when they matched one', () => {
+        const groups = groupFindingsByComponent([
+            row({ type: 'Vulnerability', id: 'CVE-1', purl: LOG4J, severity: 'CRITICAL',
+                sbomMatch: matched('c-log4j', 'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1') }),
+            row({ type: 'Violation', id: 'LICENSE', purl: LOG4J, severity: '-' })
+        ])
+        expect(groups).toHaveLength(1)
+        expect(groups[0].key).toBe('sbom:c-log4j')
+        expect(groups[0].violationCount).toBe(1)
+        expect(groups[0].label).toBe('org.apache.logging.log4j/log4j-core@2.14.1')
+    })
+
+    it('groups an unmatched finding by its purl and flags a group the release\'s SBOM does not hold', () => {
+        const carried = 'pkg:maven/org.apache.logging.log4j/log4j-core@2.24.3'
+        const groups = groupFindingsByComponent([
+            row({ type: 'Vulnerability', id: 'CVE-A', purl: carried, sbomMatch: missed(FindingSbomMissReason.NOT_IN_INVENTORY) }),
+            row({ type: 'Vulnerability', id: 'CVE-B', purl: carried, sbomMatch: missed(FindingSbomMissReason.NOT_IN_INVENTORY) }),
+            row({ type: 'Vulnerability', id: 'CVE-C', purl: GLIBC, sbomMatch: matched('c-glibc', GLIBC) })
+        ])
+        const byKey = new Map(groups.map(g => [g.key, g]))
+        expect(byKey.get('pkg:maven/org.apache.logging.log4j/log4j-core@2.24.3')?.notInSbom).toBe(true)
+        expect(byKey.get('pkg:maven/org.apache.logging.log4j/log4j-core@2.24.3')?.sbomComponentUuid).toBeUndefined()
+        expect(byKey.get('sbom:c-glibc')?.notInSbom).toBe(false)
+    })
+
+    it('falls back to the purl identity for rows without a match (a backend that does not match)', () => {
+        const groups = groupFindingsByComponent([
+            row({ type: 'Vulnerability', id: 'CVE-1', purl: GLIBC }),
+            row({ type: 'Vulnerability', id: 'CVE-2', purl: 'pkg:deb/debian/glibc@2.36-9%2Bdeb12u14?distro=debian-12' })
+        ])
+        expect(groups.map(g => [g.key, g.sbomComponentUuid, g.notInSbom])).toEqual([
+            ['pkg:deb/debian/glibc@2.36-9+deb12u14', undefined, false]
+        ])
+    })
+
+    it('keeps a finding the release\'s SBOM does not hold out of a matched group of the same package', () => {
+        // a finding carried over from a debian-11 build, next to the debian-12 build the release ships
+        const carriedOver = 'pkg:deb/debian/tar@1.34+dfsg-1.2+deb12u1?distro=debian-11'
+        const groups = groupFindingsByComponent([
+            row({ type: 'Vulnerability', id: 'CVE-1', purl: TAR_12, sbomMatch: matched('c-12', TAR_12) }),
+            row({ type: 'Vulnerability', id: 'CVE-2', purl: carriedOver, sbomMatch: missed(FindingSbomMissReason.NOT_IN_INVENTORY) })
+        ])
+        expect(groups.map(g => [g.key, g.notInSbom, g.rows.map(r => r.id)]).sort()).toEqual([
+            ['pkg:deb/debian/tar@1.34+dfsg-1.2+deb12u1', true, ['CVE-2']],
+            ['sbom:c-12', false, ['CVE-1']]
+        ])
+    })
+
+    it('never moves a row to another group when a filter hides others', () => {
+        const vuln = row({ type: 'Vulnerability', id: 'CVE-1', purl: LOG4J, severity: 'CRITICAL',
+            sbomMatch: matched('c-log4j', 'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1') })
+        const violation = row({ type: 'Violation', id: 'LICENSE', purl: LOG4J, severity: '-' })
+        const all = [vuln, violation]
+        const identities = componentIdentitiesOf(all)
+        // Type filter = Violation: the vulnerability that ties the violation to its component is hidden
+        const onlyViolations = groupFindingsByComponent([violation], identities)
+        expect(onlyViolations.map(g => g.key)).toEqual(['sbom:c-log4j'])
+        expect(componentCountOf(all, identities)).toBe(1)
     })
 })

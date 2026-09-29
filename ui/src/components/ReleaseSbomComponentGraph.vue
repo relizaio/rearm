@@ -27,7 +27,33 @@
                 <p style="margin: 4px 0;" v-if="selected.component?.isRoot">
                     <n-tag type="info" size="small" round>Root component</n-tag>
                 </p>
+                <div v-if="componentFindings" class="findings-badge">
+                    <strong>Findings in this release:</strong>
+                    <template v-if="componentFindings.length">
+                        <span
+                            v-for="severity in openSeverities"
+                            :key="severity"
+                            class="circle"
+                            :style="{ background: severityColor(severity) }"
+                            :title="`${openCounts[severity]} open ${severity.toLowerCase()}`">{{ openCounts[severity] }}</span>
+                        <n-tag v-if="openKevCount" type="error" size="small" :bordered="false"
+                            title="CISA Known Exploited Vulnerability">KEV {{ openKevCount }}</n-tag>
+                        <span v-if="suppressedCount" class="findings-suppressed">{{ suppressedCount }} suppressed</span>
+                    </template>
+                    <span v-else class="findings-suppressed">none</span>
+                </div>
             </div>
+
+            <template v-if="componentFindings && componentFindings.length">
+                <h4 style="margin-top: 16px; margin-bottom: 4px;">Findings ({{ componentFindings.length }})</h4>
+                <n-data-table
+                    :data="componentFindings"
+                    :columns="findingColumns"
+                    :row-key="(row: any) => row.rowIndex"
+                    :pagination="componentFindings.length > 10 ? { pageSize: 10 } : false"
+                    size="small"
+                />
+            </template>
 
             <h4 style="margin-bottom: 4px;">
                 Upstream paths to root ({{ upstreamPaths.length }}{{ upstreamTruncated ? '+' : '' }})
@@ -94,6 +120,14 @@ import { searchSbomComponentByPurl } from '@/utils/dtrack'
 import { computed, h, ref, watch, type Ref, type ComputedRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { NButton, NDataTable, NSpin, NTag, NTooltip, type DataTableColumns } from 'naive-ui'
+import constants from '@/utils/constants'
+import { ANALYSIS_STATE_OPTIONS, isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
+import { ROW_SEVERITIES, emptySeverityCounts, getSeverityTagType, renderFindingId, severityBucketOf } from '@/utils/findingUtils'
+import { FindingType } from '@/constants/findingType'
+import { formatPrimaryScore } from '@/utils/vulnScoreDisplay'
+import { fixedInText, fixedInTitle } from '@/utils/fixedInDisplay'
+import { loadRichestServed } from '@/utils/graphqlDriftFallback'
+import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE } from '@/utils/sbomComponentFindingsQuery'
 
 interface Props {
     releaseUuid: string
@@ -161,6 +195,68 @@ const GRAPH_QUERY = gql`
 
 const MAX_PATHS = 50
 
+// The component's findings in this release, loaded after the graph and on
+// their own: null when the backend does not serve them (a CE build without
+// ReleaseSbomComponent.findings) or the load failed, and the badge is hidden.
+// Uncached (loadRichestServed): the documents share the graph query's root
+// field and arguments, and a cached write would replace the graph's entry.
+const componentFindings: Ref<any[] | null> = ref(null)
+let findingsRequest = 0
+
+async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: string) {
+    const request = ++findingsRequest
+    componentFindings.value = null
+    try {
+        const result = await loadRichestServed(graphqlClient, {
+            documents: [SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE],
+            variables: { releaseUuid, sbomComponentUuid },
+            extractPath: data => data?.getReleaseSbomComponentGraph
+        })
+        // a later navigation owns the badge now
+        if (request !== findingsRequest || selected.value?.sbomComponentUuid !== sbomComponentUuid) return
+        if (result.served === 0 && result.data) {
+            componentFindings.value = (result.data.findings || []).map((f: any, i: number) => ({ ...f, rowIndex: i }))
+        }
+    } catch {
+        // decorative: the graph above is what the page is for
+    }
+}
+
+const openFindings = computed(() => (componentFindings.value || []).filter(f => !isSuppressedAnalysisState(f.analysisState)))
+const openCounts = computed(() => {
+    const counts = emptySeverityCounts()
+    openFindings.value.forEach(f => counts[severityBucketOf(f)]++)
+    return counts
+})
+const openSeverities = computed(() => ROW_SEVERITIES.filter(s => openCounts.value[s] > 0))
+const openKevCount = computed(() => openFindings.value.filter(f => f.knownExploited).length)
+const suppressedCount = computed(() => (componentFindings.value || []).length - openFindings.value.length)
+const severityColor = (severity: string) => (constants.VulnerabilityColors as Record<string, string>)[severity]
+const analysisStateLabel = (state: string) => ANALYSIS_STATE_OPTIONS.find(o => o.value === state)?.label ?? state
+
+const findingColumns: DataTableColumns<any> = [
+    { title: 'Vulnerability', key: 'vulnId', minWidth: 180, render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY) },
+    {
+        title: 'Severity',
+        key: 'severity',
+        width: 120,
+        render: (row: any) => h(NTag, { type: getSeverityTagType(severityBucketOf(row)), size: 'small' }, () => severityBucketOf(row))
+    },
+    { title: 'Score', key: 'topScore', width: 90, render: (row: any) => row.topScore ? formatPrimaryScore(row.topScore) : '' },
+    { title: 'Fixed in', key: 'fixedIn', width: 160, render: (row: any) => h('span', { title: fixedInTitle(row.fixedIn) }, fixedInText(row.fixedIn)) },
+    {
+        title: 'Status',
+        key: 'analysisState',
+        width: 140,
+        render: (row: any) => [
+            row.knownExploited
+                ? h(NTag, { type: 'error', size: 'small', bordered: false, style: 'margin-right: 4px;', title: 'CISA Known Exploited Vulnerability' }, () => 'KEV')
+                : null,
+            row.analysisState ? h('span', analysisStateLabel(row.analysisState)) : null
+        ]
+    }
+]
+
 async function fetchGraph (releaseUuid: string, sbomComponentUuid: string, useNetworkOnly = false) {
     loading.value = true
     loadingMessage.value = 'Loading dependency graph...'
@@ -181,6 +277,7 @@ async function fetchGraph (releaseUuid: string, sbomComponentUuid: string, useNe
             return
         }
         selected.value = row
+        fetchComponentFindings(releaseUuid, sbomComponentUuid)
     } catch (err: any) {
         errorMessage.value = err?.message || 'Failed to load release SBOM graph.'
         selected.value = null
@@ -396,6 +493,16 @@ const dependedOnByColumns: DataTableColumns<any> = [
 </script>
 
 <style scoped>
+.findings-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0 4px;
+}
+.findings-suppressed {
+    color: #999;
+    font-size: 12px;
+}
 .sbom-graph-page {
     padding: 16px 24px;
     max-width: 100%;

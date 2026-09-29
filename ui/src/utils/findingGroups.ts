@@ -10,6 +10,7 @@ import {
 } from './findingUtils'
 import type { RowSeverity } from './findingUtils'
 import { FindingType } from '@/constants/findingType'
+import { FindingSbomMissReason } from '@/constants/findingSbomMissReason'
 import type { VulnScore } from './vulnerabilityRecordService'
 import { maxEpssOf, scoreSortValue, worstScoreOf } from './vulnScoreDisplay'
 
@@ -55,9 +56,16 @@ export interface FindingComponentGroup {
     // is scored or the rows carry no scores.
     worstScore: VulnScore | null
     maxEpss: VulnScore | null
+    // The release SBOM component the server matched the group's findings to;
+    // unset when the rows carry no match and were grouped here.
+    sbomComponentUuid?: string
+    // Every vulnerability of the group is on a package the release's SBOM
+    // does not hold, e.g. carried forward from a BOM the release replaced.
+    notInSbom: boolean
 }
 
 const NO_COMPONENT_KEY = '(none)'
+const SBOM_COMPONENT_KEY_PREFIX = 'sbom:'
 
 interface ComponentIdentity { key: string, label: string, ecosystem?: string }
 
@@ -76,7 +84,9 @@ export function purlComponentIdentity (purl: string): ComponentIdentity {
     }
 }
 
-function identityOf (row: DetailedMetric): ComponentIdentity & { purl?: string } {
+type RowIdentity = ComponentIdentity & { purl?: string, sbomComponentUuid?: string }
+
+function identityOf (row: DetailedMetric): RowIdentity {
     const location = (row.purl || '').trim()
     if (!location || location === '-') return { key: NO_COMPONENT_KEY, label: 'No component' }
     if (location.startsWith('pkg:')) return { ...purlComponentIdentity(location), purl: row.purl }
@@ -84,14 +94,76 @@ function identityOf (row: DetailedMetric): ComponentIdentity & { purl?: string }
 }
 
 /**
+ * The component label of a canonical purl: its identity, plus the Debian /
+ * Alpine / RPM distribution release when the purl names one, since the server
+ * keeps a package's builds for two releases apart.
+ */
+function canonicalLabel (canonicalPurl: string): string {
+    const label = purlComponentIdentity(canonicalPurl).label
+    try {
+        const distro = PackageURL.fromString(canonicalPurl).qualifiers?.distro
+        return distro ? `${label} (${distro})` : label
+    } catch {
+        return label
+    }
+}
+
+/** The group identity of each finding row; see componentIdentitiesOf. */
+export type ComponentIdentities = Map<DetailedMetric, RowIdentity>
+
+/**
+ * The group identity of each row. A vulnerability the server matched to a
+ * component of the release's SBOM (sbomMatch) is keyed by that component.
+ * A row the server answered for without a match (a missReason) keeps its
+ * purl identity: the server said the release's SBOM does not hold it. A row
+ * with no answer at all (a violation, a weakness, or every row when the
+ * backend does not match) is keyed by its purl identity too, except that a
+ * purl identity the matched rows tie to exactly one component joins it, so a
+ * package's violations stay with its vulnerabilities.
+ *
+ * Built over all of a table's rows, not the filtered ones, so a filter never
+ * moves a row to another group.
+ */
+export function componentIdentitiesOf (rows: DetailedMetric[]): ComponentIdentities {
+    const byPurl = rows.map(identityOf)
+    const componentsOfPurl = new Map<string, Set<string>>()
+    const labelOf = new Map<string, string>()
+    rows.forEach((row, i) => {
+        const component = row.sbomMatch?.sbomComponentUuid
+        if (!component) return
+        const components = componentsOfPurl.get(byPurl[i].key) ?? new Set<string>()
+        components.add(component)
+        componentsOfPurl.set(byPurl[i].key, components)
+        const canonical = row.sbomMatch?.canonicalPurl
+        if (canonical && !labelOf.has(component)) labelOf.set(component, canonicalLabel(canonical))
+    })
+    const identities: ComponentIdentities = new Map()
+    rows.forEach((row, i) => {
+        const tied = row.sbomMatch ? undefined : componentsOfPurl.get(byPurl[i].key)
+        const component = row.sbomMatch?.sbomComponentUuid || (tied?.size === 1 ? [...tied][0] : undefined)
+        identities.set(row, component
+            ? {
+                ...byPurl[i],
+                key: SBOM_COMPONENT_KEY_PREFIX + component,
+                label: labelOf.get(component) ?? byPurl[i].label,
+                sbomComponentUuid: component
+            }
+            : byPurl[i])
+    })
+    return identities
+}
+
+/**
  * Groups rows by affected component, worst first: by worst severity, then
  * worst CVSS score, then known-exploited count, then finding count, then
- * label.
+ * label. Pass the identities of all the table's rows when grouping a
+ * filtered subset of them.
  */
-export function groupFindingsByComponent (rows: DetailedMetric[]): FindingComponentGroup[] {
+export function groupFindingsByComponent (rows: DetailedMetric[],
+    identities: ComponentIdentities = componentIdentitiesOf(rows)): FindingComponentGroup[] {
     const groups = new Map<string, FindingComponentGroup>()
     for (const row of rows) {
-        const identity = identityOf(row)
+        const identity = identities.get(row) ?? identityOf(row)
         let group = groups.get(identity.key)
         if (!group) {
             group = {
@@ -104,7 +176,9 @@ export function groupFindingsByComponent (rows: DetailedMetric[]): FindingCompon
                 violationCount: 0,
                 kevCount: 0,
                 worstScore: null,
-                maxEpss: null
+                maxEpss: null,
+                sbomComponentUuid: identity.sbomComponentUuid,
+                notInSbom: false
             }
             groups.set(identity.key, group)
         }
@@ -116,6 +190,9 @@ export function groupFindingsByComponent (rows: DetailedMetric[]): FindingCompon
     for (const group of groups.values()) {
         group.worstScore = worstScoreOf(group.rows)
         group.maxEpss = maxEpssOf(group.rows)
+        const vulnerabilities = group.rows.filter(row => findingTypeOf(row.type) === FindingType.VULNERABILITY)
+        group.notInSbom = vulnerabilities.length > 0
+            && vulnerabilities.every(row => row.sbomMatch?.missReason === FindingSbomMissReason.NOT_IN_INVENTORY)
     }
     return [...groups.values()].sort((a, b) =>
         worstSeverityIndex(a) - worstSeverityIndex(b)
@@ -126,8 +203,8 @@ export function groupFindingsByComponent (rows: DetailedMetric[]): FindingCompon
 }
 
 /** Number of distinct components the rows touch; rows without one are not a component. */
-export function componentCountOf (rows: DetailedMetric[]): number {
-    return new Set(rows.map(row => identityOf(row).key).filter(key => key !== NO_COMPONENT_KEY)).size
+export function componentCountOf (rows: DetailedMetric[], identities: ComponentIdentities = componentIdentitiesOf(rows)): number {
+    return new Set(rows.map(row => (identities.get(row) ?? identityOf(row)).key).filter(key => key !== NO_COMPONENT_KEY)).size
 }
 
 // Index into SEVERITY_ORDER of the group's worst severity; violation-only groups sort last.
