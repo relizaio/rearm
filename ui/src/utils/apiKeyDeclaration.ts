@@ -6,8 +6,11 @@
  */
 import { tsFull } from '@/utils/agentTaskFormat'
 
-/** The key types a file declares; the server refuses a name on any other. */
-export const DECLARABLE_KEY_TYPES: readonly string[] = ['FREEFORM', 'ORGANIZATION', 'ORGANIZATION_RW', 'COMPONENT']
+/**
+ * The key types a file declares: FREEFORM only. ORGANIZATION and ORGANIZATION_RW keys are deprecated and
+ * component keys stay with their components; the server refuses a name on any other type.
+ */
+export const DECLARABLE_KEY_TYPES: readonly string[] = ['FREEFORM']
 
 /** The longest declared name. */
 export const MAX_DECLARED_NAME = 128

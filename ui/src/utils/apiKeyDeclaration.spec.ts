@@ -7,21 +7,20 @@ const key = (type: string, status: string = 'ACTIVE', declaredName: string | nul
 
 describe('apiKeyDeclaration', () => {
     it('offers "Declare as…" to an org admin on a live key of a declarable type only', () => {
-        expect(DECLARABLE_KEY_TYPES).toEqual(['FREEFORM', 'ORGANIZATION', 'ORGANIZATION_RW', 'COMPONENT'])
-        for (const t of ['FREEFORM', 'ORGANIZATION', 'ORGANIZATION_RW', 'COMPONENT']) {
-            expect(canDeclareKey(key(t, 'ACTIVE'), true)).toBe(true)
-            expect(canDeclareKey(key(t, 'INACTIVE'), true)).toBe(true)
-            expect(canDeclareKey(key(t, 'REQUESTED'), true)).toBe(false)
-            expect(canDeclareKey(key(t, 'DENIED'), true)).toBe(false)
-        }
-        for (const t of ['USER', 'FEDERATED', 'INSTANCE', 'CLUSTER', 'REGISTRY_USER', 'APPROVAL']) {
+        expect(DECLARABLE_KEY_TYPES).toEqual(['FREEFORM'])
+        expect(canDeclareKey(key('FREEFORM', 'ACTIVE'), true)).toBe(true)
+        expect(canDeclareKey(key('FREEFORM', 'INACTIVE'), true)).toBe(true)
+        expect(canDeclareKey(key('FREEFORM', 'REQUESTED'), true)).toBe(false)
+        expect(canDeclareKey(key('FREEFORM', 'DENIED'), true)).toBe(false)
+        // ORGANIZATION and ORGANIZATION_RW keys are deprecated; component keys stay with their components.
+        for (const t of ['ORGANIZATION', 'ORGANIZATION_RW', 'COMPONENT', 'USER', 'FEDERATED', 'INSTANCE', 'CLUSTER', 'REGISTRY_USER', 'APPROVAL']) {
             expect(canDeclareKey(key(t), true)).toBe(false)
         }
     })
 
     it('offers nothing to a viewer who is not an org admin', () => {
         expect(canDeclareKey(key('FREEFORM'), false)).toBe(false)
-        expect(canDeclareKey(key('COMPONENT', 'ACTIVE', 'ci'), false)).toBe(false)
+        expect(canDeclareKey(key('FREEFORM', 'ACTIVE', 'ci'), false)).toBe(false)
         expect(canReleaseKeyName(key('FREEFORM', 'ACTIVE', 'ci'), false)).toBe(false)
         expect(canDeclareKey(null, true)).toBe(false)
     })

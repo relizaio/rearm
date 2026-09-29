@@ -712,7 +712,7 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Scoped Keys</h5>
                             <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
-                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2460"
+                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2200"
                                 class="table-hover">
                             </n-data-table>
                             <n-modal
@@ -1873,7 +1873,6 @@ const programmaticAccessFields: Ref<any> = ref([
         width: 180,
         title: 'Notes'
     },
-    apiKeyDeclaredColumn,
     {
         key: 'controls',
         title: 'Manage',
