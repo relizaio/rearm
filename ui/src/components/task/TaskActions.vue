@@ -40,14 +40,14 @@
             </span>
         </div>
         <!-- The task's level, the depth in the product tree (RD2-1): a declaration the board makes
-             about the work, as strength and budget are. Blank reads the board's default. -->
-        <div class="deprow lvlrow" data-testid="level-row">
-            <n-input-number v-model:value="levelDraft" size="small" :min="0" :max="MAX_LEVEL" :step="1" :precision="0"
-                            :placeholder="levelPlaceholder(board)" style="width: 190px">
-                <template #prefix><span class="deplab" style="min-width: 0">level</span></template>
-            </n-input-number>
-            <n-button size="small" :disabled="levelToSet(task, levelDraft) === undefined" data-testid="level-set"
-                      @click="emit('set-level', { task, level: levelToSet(task, levelDraft) as number })">
+             about the work, as strength and budget are. Blank reads the board's default. Only on a board
+             with a ladder, one of its rungs by name (task RD3-6). -->
+        <div v-if="hasLadder(board)" class="deprow lvlrow" data-testid="level-row">
+            <span class="deplab" style="min-width: 0">level</span>
+            <n-select v-model:value="levelDraft" size="small" :options="levelOptions(board)" data-testid="level-select"
+                      :placeholder="levelPlaceholder(board)" style="width: 220px"/>
+            <n-button size="small" :disabled="levelToSet(task, levelDraft, board) === undefined" data-testid="level-set"
+                      @click="emit('set-level', { task, level: levelToSet(task, levelDraft, board) as number })">
                 Set level
             </n-button>
             <n-button v-if="task.level != null" size="small" quaternary data-testid="level-clear"
@@ -240,7 +240,7 @@ import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { roleOptionsOf } from '@/utils/agentTaskOptions'
 import { canPlaceHold, holdPayload, releasePayload, strengthPlaceholder, strengthToSet } from '@/utils/agentTaskAdmin'
-import { levelPlaceholder, levelToSet, MAX_LEVEL } from '@/utils/agentTaskLevel'
+import { hasLadder, levelOptions, levelPlaceholder, levelToSet } from '@/utils/agentTaskLevel'
 import { budgetChanged, dollarsToMicros, microsToDollars } from '@/utils/agentBudget'
 import { AttestDraft, attestDraftOf, attestPayload, commitProblem } from '@/utils/agentDelivery'
 

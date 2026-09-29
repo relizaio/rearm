@@ -2,10 +2,10 @@
     <div class="dhead">
         <div class="dhead__title">
             <code v-if="task.key" class="dhead__key">{{ task.key }}</code>
-            <!-- The level after the key (RD2-1); none for a task with no level and no board default. -->
-            <n-tooltip v-if="levelLabel(task, board)" trigger="hover">
+            <!-- The level after the key (RD2-1), "1 · solution"; none on a board without a ladder (task RD3-6). -->
+            <n-tooltip v-if="taskLevelLabel(task, board)" trigger="hover">
                 <template #trigger>
-                    <n-tag size="small" :bordered="false" class="dhead__level" data-testid="level-chip">{{ levelLabel(task, board) }}</n-tag>
+                    <n-tag size="small" :bordered="false" class="dhead__level" data-testid="level-chip">{{ taskLevelLabel(task, board) }}</n-tag>
                 </template>
                 {{ levelTooltip(task, board, actorLabel) }}
             </n-tooltip>
@@ -58,7 +58,7 @@ import { NTag, NTooltip } from 'naive-ui'
 import { missingRequiredRoles, requiredSignOffsLine, statusTone } from '@/utils/agentTaskFormat'
 import { statusWord } from '@/utils/agentWords'
 import { refLabel, roleTagFor } from '@/utils/agentTaskLabels'
-import { levelLabel, levelTooltip } from '@/utils/agentTaskLevel'
+import { levelTooltip, taskLevelLabel } from '@/utils/agentTaskLevel'
 import { groupByKey, groupColour, groupLabel, tagKeys, waitingOnLabel } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
 

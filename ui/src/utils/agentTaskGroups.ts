@@ -276,9 +276,11 @@ export function groupDraftOf (g?: TaskGroup | null): GroupDraft {
 
 /**
  * The TaskGroupInput a draft sends (agentBoardGroupSet): the whole group, blanks as null, so an edit
- * says what the group is rather than what changed; the uuid names the group on an edit.
+ * says what the group is rather than what changed; the uuid names the group on an edit. On a board
+ * without a ladder (withLevel false, task RD3-6) the default level is left out, which keeps it: the
+ * server refuses a level there, and a group's level kept from before is not the form's to clear.
  */
-export function groupInputOf (d: GroupDraft): Record<string, any> {
+export function groupInputOf (d: GroupDraft, opts: { withLevel?: boolean } = {}): Record<string, any> {
     const input: Record<string, any> = {
         key: d.key.trim().toLowerCase(),
         name: d.name.trim() || null,
@@ -287,6 +289,7 @@ export function groupInputOf (d: GroupDraft): Record<string, any> {
         defaultLevel: d.defaultLevel,
         status: d.status,
     }
+    if (opts.withLevel === false) delete input.defaultLevel
     if (d.uuid) input.uuid = d.uuid
     return input
 }
@@ -317,7 +320,8 @@ export function groupFieldOfError (message: string | null | undefined): 'key' | 
     if (!m) return null
     if (m.includes('group key') || m.includes('exists on this board') || m.includes('key is immutable')) return 'key'
     if (m.includes('depends on') || m.includes('group cycle')) return 'dependsOn'
-    if (m.includes('level is')) return 'defaultLevel'
+    // A level off the board's ladder, or on a board without one (task RD3-6).
+    if (m.includes('level is') || m.includes('ladder')) return 'defaultLevel'
     if (m.includes('group name')) return 'name'
     return null
 }
