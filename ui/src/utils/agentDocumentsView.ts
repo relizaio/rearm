@@ -6,6 +6,14 @@ import { lifecycleWord } from './agentWords'
 /** The kinds the component lists and pickers show: software. DOCUMENT components are shown inside their board. */
 export const SOFTWARE_KINDS = ['GENERIC', 'HELM']
 
+/**
+ * The componentKinds the most-recent-releases widget sends (RD4-10): the software kinds, so a board's
+ * document rounds stay off the home page; null, every kind, for a caller that wants the rounds too.
+ */
+export function recentReleasesKinds (includeDocuments: boolean): string[] | null {
+    return includeDocuments ? null : SOFTWARE_KINDS
+}
+
 export function isDocumentComponent (c: { kind?: string | null } | null | undefined): boolean {
     return c?.kind === 'DOCUMENT'
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-    SOFTWARE_KINDS, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, checkVerdictOf, documentRoundView, latestLabel,
+    SOFTWARE_KINDS, recentReleasesKinds, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, checkVerdictOf, documentRoundView, latestLabel,
 } from './agentDocumentsView'
 import { lifecycleWord } from './agentWords'
 import { cardRef } from './agentTaskFormat'
@@ -126,3 +126,13 @@ describe('document surfaces', () => {
     })
 })
 
+
+// RD4-10: the home page's most-recent-releases widget lists software only.
+describe('the most-recent-releases kinds', () => {
+    it('are the software kinds, every kind but DOCUMENT, unless the caller wants the rounds', () => {
+        expect(recentReleasesKinds(false)).toBe(SOFTWARE_KINDS)
+        expect(recentReleasesKinds(false)).toEqual(['GENERIC', 'HELM'])
+        expect(recentReleasesKinds(false)).not.toContain('DOCUMENT')
+        expect(recentReleasesKinds(true)).toBeNull()
+    })
+})
