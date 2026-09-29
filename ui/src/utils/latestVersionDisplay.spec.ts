@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { checkedDay, groupLatestOf, groupLatestText, groupLatestTitle, hasLatestFields } from './latestVersionDisplay'
+import { LATEST_VERSION_NOTE, checkedDay, groupLatestOf, groupLatestText, groupLatestTitle, hasLatestFields, latestFixCell } from './latestVersionDisplay'
 import type { DetailedMetric } from './metrics'
 import { LatestFixVerdict } from '@/constants/latestFixVerdict'
 
@@ -20,9 +20,9 @@ describe('the latest version of a component group', () => {
             row({ type: 'Vulnerability', id: 'C', sbomMatch: match('1.5.0'), latestFix: null }),
             row({ type: 'Violation', id: 'LICENSE' })
         ])
-        expect(latest).toEqual({ version: '1.5.0', checked: '2026-09-29T06:00:00Z', fixes: 1, of: 3 })
+        expect(latest).toEqual({ version: '1.5.0', checked: '2026-09-29T06:00:00Z', fixes: 1, stillAffected: 1, of: 3 })
         expect(groupLatestText(latest!)).toBe('1.5.0 fixes 1 of 3')
-        expect(groupLatestTitle(latest!)).toContain('checked 2026-09-29')
+        expect(groupLatestTitle(latest!)).toContain('Checked 2026-09-29')
     })
 
     it('shows the bare version when it fixes none, and nothing when none is known', () => {
@@ -37,10 +37,23 @@ describe('the latest version of a component group', () => {
         expect(hasLatestFields([row({ type: 'Vulnerability', id: 'A' })])).toBe(false)
     })
 
+    it('tells "fixes none" from "cannot tell"', () => {
+        expect(groupLatestTitle({ version: '9.9.9', checked: null, fixes: 0, stillAffected: 2, of: 2 }))
+            .toContain('still inside the affected ranges of 2')
+        expect(groupLatestTitle({ version: '9.9.9', checked: null, fixes: 0, stillAffected: 0, of: 2 }))
+            .toContain('no ranges')
+        expect(latestFixCell(LatestFixVerdict.NOT_ABOVE_CURRENT).text).toBe('at or past latest')
+        expect(latestFixCell(null).text).toBe('')
+    })
+
     it('never words the latest version as end of support', () => {
-        const title = groupLatestTitle({ version: '9.9.9', checked: null, fixes: 0, of: 2 }).toLowerCase()
-        for (const word of ['end of support', 'end of life', 'eol', 'eos', 'outdated', 'unsupported']) {
-            expect(title).not.toContain(word)
+        const texts = [LATEST_VERSION_NOTE,
+            groupLatestTitle({ version: '9.9.9', checked: null, fixes: 0, stillAffected: 0, of: 2 }),
+            ...Object.values(LatestFixVerdict).map(v => latestFixCell(v).title)].map(t => t.toLowerCase())
+        for (const text of texts) {
+            for (const word of ['end of support', 'end of life', 'eol', 'eos', 'outdated', 'unsupported']) {
+                expect(text).not.toContain(word)
+            }
         }
         expect(checkedDay(null)).toBe('')
     })

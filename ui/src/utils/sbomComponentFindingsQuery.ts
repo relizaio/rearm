@@ -17,7 +17,6 @@ export const SBOM_COMPONENT_FINDINGS_QUERY_LATEST = gql`
         getReleaseSbomComponentGraph(releaseUuid: $releaseUuid, sbomComponentUuid: $sbomComponentUuid) {
             sbomComponentUuid
             component { latestVersion latestVersionChecked }
-            latestFixes
             findings {
                 vulnId
                 purl

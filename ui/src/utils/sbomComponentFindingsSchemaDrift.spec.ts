@@ -17,7 +17,7 @@ const withoutFindings = (doc: DocumentNode) => print(visit(doc, {
 
 // LATEST with the latest-version fields (PR G) taken out.
 const withoutLatest = (doc: DocumentNode) => print(visit(doc, {
-    Field: node => ['component', 'latestFixes', 'latestFix'].includes(node.name.value) ? null : undefined
+    Field: node => ['component', 'latestFix'].includes(node.name.value) ? null : undefined
 }))
 
 describe('SBOM component findings documents', () => {
@@ -47,8 +47,8 @@ describe('SBOM component findings documents', () => {
      * sync brings the field over.
      */
     // TEMPORARY with the canary below: flip once the CE sync of PR G lands.
-    it('LATEST is ahead of CE', () => {
-        expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY_LATEST).length).toBeGreaterThan(0)
+    it('LATEST is ahead of CE by the latest version', () => {
+        expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY_LATEST).some(e => /latestVersion/.test(e))).toBe(true)
     })
 
     it('FULL is ahead of CE by findings', () => {

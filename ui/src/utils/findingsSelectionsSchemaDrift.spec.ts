@@ -183,8 +183,8 @@ describe('the release findings LATEST document', () => {
      * Flip to "is valid against CE" with the MATCHED canary once the CE sync of
      * PR G brings them over.
      */
-    it('is ahead of CE', () => {
-        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_LATEST).length).toBeGreaterThan(0)
+    it('is ahead of CE by latestFix', () => {
+        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_LATEST).some(e => /latestFix/.test(e))).toBe(true)
     })
 
     it.runIf(proSchema)('the verdicts mirror LatestFixVerdict on Pro (skipped if rearm-core absent)', () => {

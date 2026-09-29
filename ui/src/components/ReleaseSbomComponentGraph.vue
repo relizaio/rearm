@@ -42,10 +42,10 @@
                     </template>
                     <span v-else class="findings-suppressed">none</span>
                 </div>
-                <p v-if="componentLatest" style="margin: 4px 0;" :title="latestTitle">
+                <p v-if="componentLatest" style="margin: 4px 0;" :title="LATEST_VERSION_NOTE">
                     <strong>Latest version:</strong> {{ componentLatest.version }}
-                    <span v-if="componentLatest.fixes.length" class="findings-suppressed">
-                        (fixes {{ componentLatest.fixes.length }} of {{ (componentFindings || []).length }} findings)
+                    <span v-if="latestFixCount" class="findings-suppressed">
+                        (fixes {{ latestFixCount }} of {{ (componentFindings || []).length }} findings)
                     </span>
                     <span v-if="componentLatest.checked" class="findings-suppressed">checked {{ checkedDay(componentLatest.checked) }}</span>
                 </p>
@@ -135,7 +135,7 @@ import { formatPrimaryScore } from '@/utils/vulnScoreDisplay'
 import { fixedInText, fixedInTitle } from '@/utils/fixedInDisplay'
 import { loadRichestServed } from '@/utils/graphqlDriftFallback'
 import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from '@/utils/sbomComponentFindingsQuery'
-import { checkedDay } from '@/utils/latestVersionDisplay'
+import { LATEST_VERSION_NOTE, checkedDay, latestFixCell } from '@/utils/latestVersionDisplay'
 import { LatestFixVerdict } from '@/constants/latestFixVerdict'
 
 interface Props {
@@ -212,7 +212,7 @@ const MAX_PATHS = 50
 const componentFindings: Ref<any[] | null> = ref(null)
 // The component's latest version (Dependency-Track's repository metadata) and the
 // findings it fixes; null when unknown or not served.
-const componentLatest: Ref<{ version: string, checked: string | null, fixes: string[] } | null> = ref(null)
+const componentLatest: Ref<{ version: string, checked: string | null } | null> = ref(null)
 let findingsRequest = 0
 
 async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: string) {
@@ -233,7 +233,7 @@ async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: s
         }
         const latest = result.served === 0 ? result.data?.component?.latestVersion : null
         componentLatest.value = latest
-            ? { version: latest, checked: result.data.component.latestVersionChecked ?? null, fixes: result.data.latestFixes ?? [] }
+            ? { version: latest, checked: result.data.component.latestVersionChecked ?? null }
             : null
     } catch {
         // decorative: the graph above is what the page is for
@@ -251,10 +251,22 @@ const openKevCount = computed(() => openFindings.value.filter(f => f.knownExploi
 const suppressedCount = computed(() => (componentFindings.value || []).length - openFindings.value.length)
 const severityColor = (severity: string) => (constants.VulnerabilityColors as Record<string, string>)[severity]
 const analysisStateLabel = (state: string) => ANALYSIS_STATE_OPTIONS.find(o => o.value === state)?.label ?? state
-const latestTitle = 'Latest version in the repositories Dependency-Track is configured with. '
-    + 'It says how current the component is, not whether it is supported.'
+// counted over the rows, as the per-row column and the findings modal count
+const latestFixCount = computed(() => (componentFindings.value || []).filter(f => f.latestFix === LatestFixVerdict.FIXES).length)
 
-const findingColumns: DataTableColumns<any> = [
+const latestFixColumn = {
+    title: 'Latest fixes',
+    key: 'latestFix',
+    width: 130,
+    render: (row: any) => {
+        const cell = latestFixCell(row.latestFix)
+        return h('span', { title: cell.title }, cell.text)
+    }
+}
+
+// The Latest fixes column only when the component has a latest version: the
+// backend may not serve it, and without one every cell would be blank.
+const findingColumns: ComputedRef<DataTableColumns<any>> = computed(() => [
     { title: 'Vulnerability', key: 'vulnId', minWidth: 180, render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY) },
     {
         title: 'Severity',
@@ -264,13 +276,7 @@ const findingColumns: DataTableColumns<any> = [
     },
     { title: 'Score', key: 'topScore', width: 90, render: (row: any) => row.topScore ? formatPrimaryScore(row.topScore) : '' },
     { title: 'Fixed in', key: 'fixedIn', width: 160, render: (row: any) => h('span', { title: fixedInTitle(row.fixedIn) }, fixedInText(row.fixedIn)) },
-    {
-        title: 'Latest fixes',
-        key: 'latestFix',
-        width: 110,
-        render: (row: any) => row.latestFix === LatestFixVerdict.FIXES ? 'yes'
-            : (row.latestFix === LatestFixVerdict.DOES_NOT_FIX ? 'no' : '')
-    },
+    ...(componentLatest.value ? [latestFixColumn] : []),
     {
         title: 'Status',
         key: 'analysisState',
@@ -282,7 +288,7 @@ const findingColumns: DataTableColumns<any> = [
             row.analysisState ? h('span', analysisStateLabel(row.analysisState)) : null
         ]
     }
-]
+])
 
 async function fetchGraph (releaseUuid: string, sbomComponentUuid: string, useNetworkOnly = false) {
     loading.value = true

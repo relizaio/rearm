@@ -32,15 +32,17 @@ const FIX_TARGET_FIELDS = `
 // server (the group view's grouping). Release findings only: an artifact's
 // findings belong to no one release. It costs one read of the release's SBOM,
 // so the MATCHED document is FULL plus this and nothing else.
+const SBOM_MATCH_SUBFIELDS = 'sbomComponentUuid canonicalPurl missReason'
+
 const FINDING_SBOM_FIELDS = `
-            sbomMatch { sbomComponentUuid canonicalPurl missReason }`
+            sbomMatch { ${SBOM_MATCH_SUBFIELDS} }`
 
 // The same plus the latest version of each finding's SBOM component and
 // whether it fixes the finding (rearm-saas PR G): the group view's Latest.
 // A tier of its own, LATEST, on top of MATCHED, so a backend with the match
 // but without the latest version still groups on the server.
 const FINDING_SBOM_LATEST_FIELDS = `
-            sbomMatch { sbomComponentUuid canonicalPurl missReason latestVersion latestVersionChecked }
+            sbomMatch { ${SBOM_MATCH_SUBFIELDS} latestVersion latestVersionChecked }
             latestFix`
 
 const findingsMetrics = (optionalFields: string, metricsFields = '') => `
