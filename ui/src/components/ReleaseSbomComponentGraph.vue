@@ -42,6 +42,13 @@
                     </template>
                     <span v-else class="findings-suppressed">none</span>
                 </div>
+                <p v-if="componentLatest" style="margin: 4px 0;" :title="latestTitle">
+                    <strong>Latest version:</strong> {{ componentLatest.version }}
+                    <span v-if="componentLatest.fixes.length" class="findings-suppressed">
+                        (fixes {{ componentLatest.fixes.length }} of {{ (componentFindings || []).length }} findings)
+                    </span>
+                    <span v-if="componentLatest.checked" class="findings-suppressed">checked {{ checkedDay(componentLatest.checked) }}</span>
+                </p>
             </div>
 
             <template v-if="componentFindings && componentFindings.length">
@@ -127,7 +134,8 @@ import { FindingType } from '@/constants/findingType'
 import { formatPrimaryScore } from '@/utils/vulnScoreDisplay'
 import { fixedInText, fixedInTitle } from '@/utils/fixedInDisplay'
 import { loadRichestServed } from '@/utils/graphqlDriftFallback'
-import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE } from '@/utils/sbomComponentFindingsQuery'
+import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from '@/utils/sbomComponentFindingsQuery'
+import { checkedDay } from '@/utils/latestVersionDisplay'
 
 interface Props {
     releaseUuid: string
@@ -201,22 +209,31 @@ const MAX_PATHS = 50
 // Uncached (loadRichestServed): the documents share the graph query's root
 // field and arguments, and a cached write would replace the graph's entry.
 const componentFindings: Ref<any[] | null> = ref(null)
+// The component's latest version (Dependency-Track's repository metadata) and the
+// findings it fixes; null when unknown or not served.
+const componentLatest: Ref<{ version: string, checked: string | null, fixes: string[] } | null> = ref(null)
 let findingsRequest = 0
 
 async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: string) {
     const request = ++findingsRequest
     componentFindings.value = null
+    componentLatest.value = null
     try {
         const result = await loadRichestServed(graphqlClient, {
-            documents: [SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE],
+            documents: [SBOM_COMPONENT_FINDINGS_QUERY_LATEST, SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE],
             variables: { releaseUuid, sbomComponentUuid },
             extractPath: data => data?.getReleaseSbomComponentGraph
         })
         // a later navigation owns the badge now
         if (request !== findingsRequest || selected.value?.sbomComponentUuid !== sbomComponentUuid) return
-        if (result.served === 0 && result.data) {
+        // served 0: findings and the latest version; 1: findings only; 2: neither
+        if (result.served <= 1 && result.data) {
             componentFindings.value = (result.data.findings || []).map((f: any, i: number) => ({ ...f, rowIndex: i }))
         }
+        const latest = result.served === 0 ? result.data?.component?.latestVersion : null
+        componentLatest.value = latest
+            ? { version: latest, checked: result.data.component.latestVersionChecked ?? null, fixes: result.data.latestFixes ?? [] }
+            : null
     } catch {
         // decorative: the graph above is what the page is for
     }
@@ -233,6 +250,8 @@ const openKevCount = computed(() => openFindings.value.filter(f => f.knownExploi
 const suppressedCount = computed(() => (componentFindings.value || []).length - openFindings.value.length)
 const severityColor = (severity: string) => (constants.VulnerabilityColors as Record<string, string>)[severity]
 const analysisStateLabel = (state: string) => ANALYSIS_STATE_OPTIONS.find(o => o.value === state)?.label ?? state
+const latestTitle = 'Latest version in the repositories Dependency-Track is configured with. '
+    + 'It says how current the component is, not whether it is supported.'
 
 const findingColumns: DataTableColumns<any> = [
     { title: 'Vulnerability', key: 'vulnId', minWidth: 180, render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY) },
@@ -244,6 +263,12 @@ const findingColumns: DataTableColumns<any> = [
     },
     { title: 'Score', key: 'topScore', width: 90, render: (row: any) => row.topScore ? formatPrimaryScore(row.topScore) : '' },
     { title: 'Fixed in', key: 'fixedIn', width: 160, render: (row: any) => h('span', { title: fixedInTitle(row.fixedIn) }, fixedInText(row.fixedIn)) },
+    {
+        title: 'Latest fixes',
+        key: 'fixedByLatest',
+        width: 110,
+        render: (row: any) => row.fixedByLatest === true ? 'yes' : (row.fixedByLatest === false ? 'no' : '')
+    },
     {
         title: 'Status',
         key: 'analysisState',

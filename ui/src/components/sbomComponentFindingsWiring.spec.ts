@@ -26,6 +26,7 @@ describe('ReleaseSbomComponentGraph findings wiring', () => {
     const code = source('./ReleaseSbomComponentGraph.vue')
 
     it.each(['loadRichestServed', 'SBOM_COMPONENT_FINDINGS_QUERY', 'SBOM_COMPONENT_FINDINGS_QUERY_CORE',
+        'SBOM_COMPONENT_FINDINGS_QUERY_LATEST', 'checkedDay',
         'isSuppressedAnalysisState', 'ANALYSIS_STATE_OPTIONS', 'ROW_SEVERITIES', 'emptySeverityCounts', 'severityBucketOf',
         'getSeverityTagType', 'renderFindingId', 'FindingType', 'formatPrimaryScore', 'fixedInText', 'fixedInTitle',
         'constants'])('imports %s, which it uses', (name) => {

@@ -9,10 +9,11 @@ import { VULN_SCORE_FRAGMENT } from './vulnerabilityRecordQuery'
 
 // Each finding's scores and fix version, read from the org's vulnerability
 // records. A CE backend that has not mirrored a field yet rejects the whole
-// document, so each load comes in tiers, richest first: MATCHED (release
-// only: FULL plus each finding's SBOM component), FULL (scores and fix
-// versions), SCORED (scores only) and CORE (none of them), which keeps the
-// modal working there without those columns. See loadFindings.
+// document, so each load comes in tiers, richest first: LATEST (release only:
+// MATCHED plus each component's latest version), MATCHED (release only: FULL
+// plus each finding's SBOM component), FULL (scores and fix versions), SCORED
+// (scores only) and CORE (none of them), which keeps the modal working there
+// without those columns. See loadFindings.
 const FINDING_SCORE_FIELDS = `
             scores { ...VulnScoreFields }
             topScore { ...VulnScoreFields }
@@ -33,6 +34,14 @@ const FIX_TARGET_FIELDS = `
 // so the MATCHED document is FULL plus this and nothing else.
 const FINDING_SBOM_FIELDS = `
             sbomMatch { sbomComponentUuid canonicalPurl missReason }`
+
+// The same plus the latest version of each finding's SBOM component and
+// whether it fixes the finding (rearm-saas PR G): the group view's Latest.
+// A tier of its own, LATEST, on top of MATCHED, so a backend with the match
+// but without the latest version still groups on the server.
+const FINDING_SBOM_LATEST_FIELDS = `
+            sbomMatch { sbomComponentUuid canonicalPurl missReason latestVersion latestVersionChecked }
+            fixedByLatest`
 
 const findingsMetrics = (optionalFields: string, metricsFields = '') => `
     metrics {${metricsFields}
@@ -180,6 +189,15 @@ const releaseForVulnData = (optionalFields: string, metricsFields = '') => `
             ${singleReleaseForVulnParentRecursion}        
         }
     }
+`
+
+export const RELEASE_FINDINGS_QUERY_LATEST = gql`
+    query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
+        release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
+            ${releaseForVulnData(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS + FINDING_SBOM_LATEST_FIELDS, FIX_TARGET_FIELDS)}
+        }
+    }
+    ${VULN_SCORE_FRAGMENT}
 `
 
 export const RELEASE_FINDINGS_QUERY_MATCHED = gql`

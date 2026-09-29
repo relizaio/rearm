@@ -23,7 +23,7 @@ const importBlock = (code.match(/^import\s[^;]*?\sfrom\s+'[^']+'/gms) || []).joi
 
 describe('VulnerabilityModal group-by-component wiring', () => {
     it.each(['groupFindingsByComponent', 'componentIdentitiesOf', 'matchesFindingFilters', 'storedGroupByComponent', 'storeGroupByComponent',
-        'componentCountOf', 'initialColumnFilters', 'buildComponentGroupColumns', 'buildVulnerabilityColumns'])('imports %s, which it uses', (name) => {
+        'componentCountOf', 'initialColumnFilters', 'buildComponentGroupColumns', 'buildVulnerabilityColumns', 'hasLatestFields'])('imports %s, which it uses', (name) => {
         expect(code).toMatch(new RegExp(`\\b${name}\\b(?![^\\n]*from ')`))
         expect(importBlock).toMatch(new RegExp(`\\b${name}\\b`))
     })

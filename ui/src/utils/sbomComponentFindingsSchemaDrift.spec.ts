@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { validate, visit, print, type DocumentNode, type GraphQLSchema } from 'graphql'
-import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE } from './sbomComponentFindingsQuery'
+import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from './sbomComponentFindingsQuery'
 import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // The dependency-graph page's findings badge (ReleaseSbomComponent.findings,
@@ -15,7 +15,20 @@ const withoutFindings = (doc: DocumentNode) => print(visit(doc, {
     FragmentDefinition: () => null
 }))
 
+// LATEST with the latest-version fields (PR G) taken out.
+const withoutLatest = (doc: DocumentNode) => print(visit(doc, {
+    Field: node => ['component', 'latestFixes', 'fixedByLatest'].includes(node.name.value) ? null : undefined
+}))
+
 describe('SBOM component findings documents', () => {
+    it.runIf(proSchema)('LATEST is valid against Pro (skipped if rearm-core absent)', () => {
+        expect(errorsAgainst(proSchema as GraphQLSchema, SBOM_COMPONENT_FINDINGS_QUERY_LATEST)).toEqual([])
+    })
+
+    it('LATEST is FULL plus the latest version and what it fixes', () => {
+        expect(withoutLatest(SBOM_COMPONENT_FINDINGS_QUERY_LATEST)).toBe(print(SBOM_COMPONENT_FINDINGS_QUERY))
+    })
+
     it.runIf(proSchema)('FULL is valid against Pro (skipped if rearm-core absent)', () => {
         expect(errorsAgainst(proSchema as GraphQLSchema, SBOM_COMPONENT_FINDINGS_QUERY)).toEqual([])
     })
@@ -33,6 +46,11 @@ describe('SBOM component findings documents', () => {
      * page shows no badge there. Flip to "FULL is valid against CE" once the CE
      * sync brings the field over.
      */
+    // TEMPORARY with the canary below: flip once the CE sync of PR G lands.
+    it('LATEST is ahead of CE', () => {
+        expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY_LATEST).length).toBeGreaterThan(0)
+    })
+
     it('FULL is ahead of CE by findings', () => {
         const errors = errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY)
         expect(errors.length).toBeGreaterThan(0)

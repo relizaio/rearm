@@ -25,6 +25,7 @@ import {
   isNoFix
 } from '@/utils/fixedInDisplay'
 import type { GroupBump } from '@/utils/fixedInDisplay'
+import { groupLatestOf, groupLatestText, groupLatestTitle } from '@/utils/latestVersionDisplay'
 import {
   COMPUTED_FROM_VECTOR_TITLE,
   formatPrimaryScore,
@@ -41,6 +42,11 @@ export interface FindingSbomMatch {
   sbomComponentUuid: string | null
   canonicalPurl: string | null
   missReason: FindingSbomMissReason | null
+  // When the query selected them: the latest version of the component's package
+  // that Dependency-Track's repository metadata reports, and when it was asked
+  // (UTC RFC-3339). A freshness signal, not end of support.
+  latestVersion?: string | null
+  latestVersionChecked?: string | null
 }
 
 export type DetailedMetric = {
@@ -75,6 +81,10 @@ export type DetailedMetric = {
   // component of the release's SBOM the server matched the row to (the
   // grouped view's key), or why none matched.
   sbomMatch?: FindingSbomMatch | null
+  // A release's vulnerability rows only, when the query selected it: whether the
+  // component's latest version is out of the row's affected ranges; null when
+  // that cannot be told.
+  fixedByLatest?: boolean | null
 }
 
 // Column a findings table opens sorted by: severity ascending (worst first),
@@ -129,7 +139,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         epss: vuln.epss,
         fixedIn: vuln.fixedIn,
         fixTargets: fixTargetsByPurl.get(vuln.purl) ?? null,
-        sbomMatch: vuln.sbomMatch
+        sbomMatch: vuln.sbomMatch,
+        fixedByLatest: vuln.fixedByLatest
       })
     })
   }
@@ -708,6 +719,8 @@ export function buildComponentGroupColumns(
     showScores?: boolean
     // Adds the Bump to column; set when the rows carry fix versions.
     showFixedIn?: boolean
+    // Adds the Latest column; set when the rows carry the latest versions.
+    showLatest?: boolean
   }
 ): DataTableColumns<FindingComponentGroup> {
   const severityCircle = (severity: string, count: number) => h('span', {
@@ -776,6 +789,7 @@ export function buildComponentGroupColumns(
     },
     ...(options.showScores ? groupScoreColumns(h) : []),
     ...(options.showFixedIn ? [bumpToColumn(h)] : []),
+    ...(options.showLatest ? [latestColumn(h)] : []),
     {
       title: 'KEV',
       key: 'kevCount',
@@ -792,4 +806,17 @@ export function buildComponentGroupColumns(
       render: (group: FindingComponentGroup) => String(group.rows.length)
     }
   ]
+}
+
+// The group's latest version and what it fixes (see latestVersionDisplay.ts).
+function latestColumn(h: any) {
+  return {
+    title: 'Latest',
+    key: 'latest',
+    width: 170,
+    render: (group: FindingComponentGroup) => {
+      const latest = groupLatestOf(group.rows)
+      return latest ? h('span', { title: groupLatestTitle(latest) }, groupLatestText(latest)) : ''
+    }
+  }
 }
