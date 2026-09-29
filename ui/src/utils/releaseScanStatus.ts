@@ -1,5 +1,6 @@
 import gql from 'graphql-tag'
 import graphqlClient from './graphql'
+import { isDocumentComponent } from './agentDocumentsView'
 
 /**
  * Per-org cache of configuredBaseIntegrations. The list is keyed by org uuid;
@@ -34,7 +35,7 @@ export async function isDtrackConfiguredForOrg (orgUuid: string): Promise<boolea
     }
 }
 
-export type ReleaseScanStatusKind = 'enrichment-pending' | 'dtrack-pending' | 'scan-pending' | 'rejected' | 'ready'
+export type ReleaseScanStatusKind = 'not-applicable' | 'enrichment-pending' | 'dtrack-pending' | 'scan-pending' | 'rejected' | 'ready'
 
 export interface ReleaseScanStatus {
     kind: ReleaseScanStatusKind
@@ -59,8 +60,14 @@ export interface ReleaseScanStatus {
  *                      is NOT remapped: rebom enrichment is artifact-level and
  *                      still finishes regardless of release lifecycle.
  *  ready               firstScanned is set — caller renders the existing circles
+ *  not-applicable      a board's document round (task RD4-11): never scanned, so
+ *                      the caller shows no scan state at all — no badge and no
+ *                      circles. Checked first: a document never becomes ready.
  */
 export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): ReleaseScanStatus {
+    if (isScanNotApplicable(release)) {
+        return { kind: 'not-applicable', label: '', title: 'Documents are not scanned for vulnerabilities' }
+    }
     const artifacts: any[] = collectArtifactsForStatus(release)
     const hasEnrichmentPending = artifacts.some((a) => a?.enrichmentStatus === 'PENDING')
     if (hasEnrichmentPending) {
@@ -91,6 +98,21 @@ export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): 
         }
     }
     return { kind: 'ready', label: '', title: '' }
+}
+
+/**
+ * Whether a release is outside vulnerability scanning (task RD4-11): its component
+ * is a board's DOCUMENT component, or the backend says so on the metrics it serves
+ * (NOT_APPLICABLE, which also covers a legacy board's GENERIC document component).
+ */
+export function isScanNotApplicable (release: any): boolean {
+    return isDocumentComponent(release?.componentDetails)
+        || release?.metrics?.dtrackFetchStatus === 'NOT_APPLICABLE'
+}
+
+/** Whether a status is drawn as a badge: every pending or rejected state, not ready or not-applicable. */
+export function showsScanBadge (status: ReleaseScanStatus): boolean {
+    return status.kind !== 'ready' && status.kind !== 'not-applicable'
 }
 
 function rejectedStatus (): ReleaseScanStatus {

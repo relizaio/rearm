@@ -81,6 +81,7 @@ const MULTI_RELEASE_GQL_DATA = `
         uuid
         name
         type
+        kind
         nature
         resourceGroup
     }
@@ -104,6 +105,7 @@ const MULTI_RELEASE_GQL_DATA = `
         release
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -135,6 +137,7 @@ const BRANCH_RELEASE_LIST_GQL_DATA = `
         removable
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -958,6 +961,7 @@ const singleReleaseDataNoParent = `
         }
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -1384,6 +1388,7 @@ query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
                 versionSchema
             }
             metrics {
+                dtrackFetchStatus
                 critical
                 high
                 medium
@@ -1479,6 +1484,7 @@ const singleReleaseProductNoParent = `
         type
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -1521,6 +1527,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                 type
             }
             metrics {
+                dtrackFetchStatus
                 lastScanned
                 firstScanned
                 critical
@@ -1557,6 +1564,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                         type
                     }
                     metrics {
+                        dtrackFetchStatus
                         lastScanned
                         firstScanned
                         critical
@@ -1753,6 +1761,7 @@ const MARKETING_RELEASE_GQL_DATA = `
     devReleaseDetails {
         version
         metrics {
+            dtrackFetchStatus
             lastScanned
             firstScanned
             critical
