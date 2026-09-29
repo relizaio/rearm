@@ -2,7 +2,8 @@
     <div class="ttable">
         <n-space :size="8" class="ttable__filters">
             <n-input v-model:value="textFilter" size="small" clearable
-                     placeholder="Filter by key, title, ref, level (L2), group or tag" style="width: 300px"/>
+                     :placeholder="hasLadder(board) ? 'Filter by key, title, ref, level (L2), group or tag' : 'Filter by key, title, ref, group or tag'"
+                     style="width: 300px"/>
             <n-select v-model:value="statusFilter" size="small" clearable multiple
                       :options="statusOptions" placeholder="Status" style="min-width: 220px"/>
             <!-- Group and tag (RD2-31): the board page keeps them in the URL, shared with the kanban. -->
@@ -31,7 +32,7 @@ import { NDataTable, NInput, NSelect, NSpace, NTag, DataTableColumns } from 'nai
 import { RouterLink } from 'vue-router'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import { compareTaskKeys, matchesTaskText, roleTagFor, shortRef } from '@/utils/agentTaskLabels'
-import { levelLabel, levelOf, levelTooltip, matchesLevel } from '@/utils/agentTaskLevel'
+import { hasLadder, levelOf, levelTooltip, matchesLevel, taskLevelLabel } from '@/utils/agentTaskLevel'
 import { actorLabel } from '@/utils/agentActors'
 import SessionRef from './SessionRef.vue'
 import { AgentName, sessionOf } from '@/utils/agentSessionLabel'
@@ -71,7 +72,7 @@ const filtered = computed(() => {
     return (props.tasks ?? []).filter(t => {
         if (statusFilter.value?.length && !statusFilter.value.includes(t.status)) return false
         if (!passesGroupAndTag(t, props.groupFilter, props.tagFilter)) return false
-        // "L2" or "level 2" filters by level; any other text by key, title, ref, group and tags.
+        // "L2" or "level 2" filters by level, on a board with a ladder; any other text by key, title, ref, group and tags.
         if (!matchesLevel(t, props.board, q) && !matchesTaskText(t, q) && !matchesGroupOrTag(t, q)) return false
         return true
     })
@@ -98,7 +99,7 @@ function blocked (t: any): boolean {
     })
 }
 
-const columns: DataTableColumns<any> = [
+const allColumns: DataTableColumns<any> = [
     {
         // The key leads (board-documents.md D12): what people say aloud and type in the filter.
         title: 'Key', key: 'key', width: 84, sorter: compareTaskKeys,
@@ -130,11 +131,11 @@ const columns: DataTableColumns<any> = [
         ]),
     },
     {
-        // The level the board reads (RD2-1): sorted numerically, a task with none last.
-        title: 'Level', key: 'level', width: 66,
+        // The level the board reads (RD2-1), "1 · solution" (task RD3-6): sorted numerically, a task with none last.
+        title: 'Level', key: 'level', width: 120,
         sorter: (a, b) => (levelOf(a, props.board) ?? 99) - (levelOf(b, props.board) ?? 99),
         render: (t: any) => {
-            const l = levelLabel(t, props.board)
+            const l = taskLevelLabel(t, props.board)
             return l ? h('span', { title: levelTooltip(t, props.board, actorLabel) ?? '', 'data-level': l }, l) : '—'
         },
     },
@@ -167,6 +168,8 @@ const columns: DataTableColumns<any> = [
     { title: 'PRs', key: 'prs', width: 56, render: (t: any) => (t.prUrls?.length ?? 0) || '—' },
     { title: 'Age', key: 'age', width: 64, sorter: (a, b) => new Date(a.createdDate ?? 0).getTime() - new Date(b.createdDate ?? 0).getTime(), render: ageOf },
 ]
+// The Level column only on a board with a ladder (task RD3-6): without one no task has a level.
+const columns = computed<DataTableColumns<any>>(() => allColumns.filter((c: any) => c.key !== 'level' || hasLadder(props.board)))
 
 function groupSortRank (t: any): number {
     return t.group?.key ? groupRank(t.group.key, props.board) : Number.MAX_SAFE_INTEGER

@@ -122,7 +122,7 @@ describe('the board warning: capabilities and coverage', () => {
 // Task level on the board (RD2-1): the form's default level, the header chip, lanes and the URL.
 describe('the board: task level', () => {
     it('the form has the default level beside the other settings, sent when changed, with its refusal beside it', () => {
-        expect(template).toContain('v-model:value="editingBoard.defaultTaskLevel"')
+        expect(template).toContain('<n-select v-model:value="editingBoard.defaultTaskLevel" :options="draftLevelOptions(editingBoard.ladderDraft)"')
         expect(template).toContain('data-testid="board-default-level-error"')
         expect(source).toContain('const defaultLevel = defaultLevelPatch(original, editingBoard.value.defaultTaskLevel)')
         expect(source).toContain('if (defaultLevel.changed) input.defaultTaskLevel = defaultLevel.value')
@@ -130,8 +130,8 @@ describe('the board: task level', () => {
         expect(save.indexOf('input.defaultTaskLevel = defaultLevel.value')).toBeLessThan(save.indexOf("store.dispatch('createAgentBoard'"))
     })
 
-    it('the header names the default level', () => {
-        expect(template).toContain('data-testid="default-level-chip">default level {{ currentBoard.defaultTaskLevel }}')
+    it('the header names the default level, 0 unless set', () => {
+        expect(template).toContain('data-testid="default-level-chip">default level {{ levelLabel(currentBoard.defaultTaskLevel ?? 0, currentBoard) }}')
     })
 
     it('the kanban groups by lane and filters by level, both kept in the URL', () => {
@@ -141,6 +141,56 @@ describe('the board: task level', () => {
         expect(source).toContain('const groupBy = ref<string>(groupByFromQuery(route.query))')
         expect(source).toContain('const levelFilter = ref<number | null>(levelFromQuery(route.query))')
         expect(source).toContain("withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },")
+    })
+})
+
+// The level ladder (task RD3-6): opt-in per board. The ladder's draft, patch and problems are pinned in
+// utils/agentLadder.spec.ts and the editor in AgentBoardLadderEditor.spec.ts; here, that the form sends the
+// ladder with the other settings and that everything level on the board page waits for a ladder.
+describe('the board: level ladder', () => {
+    const save = source.slice(source.indexOf('async function saveBoard'))
+    const tag = (testid: string) => {
+        const at = template.indexOf(`data-testid="${testid}"`)
+        expect(at, testid).toBeGreaterThan(-1)
+        return template.slice(template.lastIndexOf('<', at), at)
+    }
+
+    it('the form edits the ladder below the settings and loads it from the board', () => {
+        expect(template).toContain('<AgentBoardLadderEditor v-model="editingBoard.ladderDraft" :error="boardFieldErrors.ladder"/>')
+        expect(template.indexOf('<AgentBoardLadderEditor')).toBeGreaterThan(template.indexOf('data-testid="board-settings"'))
+        expect(source).toContain('ladderDraft: ladderDraftOf(b.ladder)')
+        expect(source).toContain('ladderDraft: ladderDraftOf(null)')
+    })
+
+    it('sends the ladder as settings.ladder when it changed, after its problems are checked', () => {
+        expect(save).toContain('const ladder = ladderPatch(original?.ladder, editingBoard.value.ladderDraft)')
+        expect(save).toContain('if (ladder !== undefined) input.settings = { ...(input.settings ?? {}), ladder }')
+        expect(save.indexOf('ladderProblem(editingBoard.value.ladderDraft)')).toBeLessThan(save.indexOf('saving.value = true'))
+        expect(save.indexOf('input.settings = { ...(input.settings ?? {}), ladder }')).toBeLessThan(save.indexOf("store.dispatch('createAgentBoard'"))
+        // After the settings patch, so it is not overwritten by it.
+        expect(save.indexOf('if (settings) input.settings = settings')).toBeLessThan(save.indexOf('const ladder = ladderPatch('))
+    })
+
+    it('offers the default level only with a ladder in the draft, its rungs by name', () => {
+        expect(tag('board-default-level').length).toBeGreaterThan(0)
+        const label = template.lastIndexOf('<label', template.indexOf('data-testid="board-default-level"'))
+        expect(template.slice(label, template.indexOf('>', label))).toContain('v-if="draftLevelOptions(editingBoard.ladderDraft).length"')
+    })
+
+    it('shows the level filter, the new task\'s level and the default level chip only on a board with a ladder', () => {
+        expect(tag('level-filter')).toContain('v-if="hasLadder(currentBoard)"')
+        expect(tag('level-filter')).toContain(':options="levelOptions(currentBoard)"')
+        expect(tag('new-task-level')).toContain('v-if="hasLadder(currentBoard)"')
+        expect(tag('new-task-level')).toContain(':options="levelOptions(currentBoard)"')
+        const chip = template.lastIndexOf('<n-tooltip', template.indexOf('data-testid="default-level-chip"'))
+        expect(template.slice(chip, template.indexOf('>', chip))).toContain('v-if="hasLadder(currentBoard)"')
+    })
+
+    it('groups by level only on a board with a ladder, and ignores a level filter left in the URL without one', () => {
+        expect(template).toContain('<n-radio-button v-for="o in groupByOptions(currentBoard)"')
+        expect(template).toContain('<n-radio-group :value="shownGroupBy"')
+        expect(source).toContain('const shownGroupBy = computed(() => groupingFor(groupBy.value, currentBoard.value))')
+        expect(source).toContain('tasks.value.filter(t => passesLevel(t, currentBoard.value, levelFilter.value)')
     })
 })
 
@@ -230,7 +280,7 @@ describe('the board page: groups and tags', () => {
         expect(card).toContain("'data-testid': 'card-group'")
         expect(card).toContain("'data-testid': 'card-waiting'")
         expect(card).toContain('{ default: () => waitingOnLabel(p.t) }')
-        expect(template).toContain("groupBy === 'group' && groupColour(lane.key === 'none' ? null : lane.key)")
+        expect(template).toContain("shownGroupBy === 'group' && groupColour(lane.key === 'none' ? null : lane.key)")
     })
 
     it('registers a task into an open group with tags and a level', () => {
@@ -316,7 +366,7 @@ describe('the board page: task keys', () => {
     it('leads the kanban card with the key, before the level, the group and the title', () => {
         const key = card.indexOf("'data-testid': 'card-key'")
         expect(key).toBeGreaterThan(-1)
-        expect(card.indexOf('levelLabel(p.t, currentBoard.value)')).toBeGreaterThan(key)
+        expect(card.indexOf('taskLevelLabel(p.t, currentBoard.value)')).toBeGreaterThan(key)
         expect(card.indexOf('p.t.title,')).toBeGreaterThan(card.indexOf("'data-testid': 'card-group'"))
     })
 
@@ -339,7 +389,8 @@ describe('board pages at 1280', () => {
     it('lays the board form\'s settings out label above, two columns, with short placeholders', () => {
         const grid = template.slice(template.indexOf('<div class="form-grid" data-testid="board-settings">'))
         const block = grid.slice(0, grid.indexOf('\n                </div>'))
-        expect(block.match(/<label class="fcell"><span class="flabel">/g)?.length).toBe(9, 'every setting labelled above')
+        // Eight plain fields, the staleness thresholds (one v-for) and the default level (with a ladder, task RD3-6).
+        expect(block.match(/<label[^>]*class="fcell"><span class="flabel">/g)?.length).toBe(10, 'every setting labelled above')
         expect(block).not.toContain('<template #prefix>')
         expect(block).toContain('placeholder="none" data-testid="board-budget"')
         expect(block).toContain('placeholder="off"')

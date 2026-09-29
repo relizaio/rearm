@@ -57,6 +57,7 @@ const AGENT_BOARD_SELECTION = `
     effectiveCoordinatorStopRelease
     eventRetentionDays
     staleness { roleUnstaffedMinutes hopNoProgressMinutes deliveryStuckMinutes seatSilentMinutes repeatMinutes }
+    ladder { levels { number name description } prompt }
     createdDate
     declarative { specHash appliedAt source { repo path commit } }
     groups { uuid key name description order dependsOn defaultLevel status createdAt
@@ -3412,7 +3413,7 @@ const storeObject : any = {
             })
             return response.data.agentTaskSupersedePullRequest
         },
-        /** A task's level, 0 to 9; null clears it to the board default (RD2-1). BOARD_WRITE. */
+        /** A task's level, a rung of the board's ladder (task RD3-6); null clears it to the default (RD2-1). BOARD_WRITE. */
         async agentTaskSetLevel (context: any, payload: { taskUuid: string, level: number | null }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
