@@ -7,18 +7,27 @@
 import gql from 'graphql-tag'
 import { VULN_SCORE_FRAGMENT } from './vulnerabilityRecordQuery'
 
-// Each finding's scores, read from the org's vulnerability records. Only the
-// FULL documents select them: a CE backend that has not mirrored the fields
-// yet rejects the whole document, and the CORE documents (everything else)
-// keep the modal working there, without the score columns. See
-// loadWithSchemaDriftFallback.
+// Each finding's scores and fix version, read from the org's vulnerability
+// records. A CE backend that has not mirrored a field yet rejects the whole
+// document, so each load comes in three tiers, richest first: FULL (scores
+// and fix versions), SCORED (scores only) and CORE (neither), which keeps the
+// modal working there without those columns. See loadFindings.
 const FINDING_SCORE_FIELDS = `
             scores { ...VulnScoreFields }
             topScore { ...VulnScoreFields }
             epss { ...VulnScoreFields }`
 
-const findingsMetrics = (scoreFields: string) => `
-    metrics {
+const FINDING_FIX_FIELDS = `
+            fixedIn { version verdict versionEndIncluding sources identities }`
+
+// Per component, the fix versions its findings' advisories name and which
+// findings each one fixes: the group view's Bump to. Metrics-level, so it
+// rides with the fix versions in the FULL document.
+const FIX_TARGET_FIELDS = `
+        fixTargets { purl major targets { version sameMajor fixes } }`
+
+const findingsMetrics = (optionalFields: string, metricsFields = '') => `
+    metrics {${metricsFields}
         vulnerabilityDetails { 
             purl
             vulnId
@@ -47,7 +56,7 @@ const findingsMetrics = (scoreFields: string) => `
             severities {
                 source
                 severity
-            }${scoreFields}
+            }${optionalFields}
         }
         violationDetails {
             purl
@@ -99,9 +108,10 @@ const findingsMetrics = (scoreFields: string) => `
     }
 `
 
-// Scores are selected on the release itself only: the modal shows the
-// release's own findings, and the parents are read for their artifacts.
-const releaseForFindings = (scoreFields: string) => `
+// Scores and fix versions are selected on the release itself only: the modal
+// shows the release's own findings, and the parents are read for their
+// artifacts.
+const releaseForFindings = (optionalFields: string, metricsFields = '') => `
     uuid
     version
     org
@@ -129,7 +139,7 @@ const releaseForFindings = (scoreFields: string) => `
             }
         }
     }
-${findingsMetrics(scoreFields)}
+${findingsMetrics(optionalFields, metricsFields)}
 `
 
 const singleReleaseForVulnNoParent = releaseForFindings('')
@@ -154,8 +164,8 @@ const singleReleaseForVulnParentRecursion = `
     }
 `
 
-const releaseForVulnData = (scoreFields: string) => `
-    ${releaseForFindings(scoreFields)}
+const releaseForVulnData = (optionalFields: string, metricsFields = '') => `
+    ${releaseForFindings(optionalFields, metricsFields)}
     parentReleases {
         release
         releaseDetails {
@@ -165,6 +175,15 @@ const releaseForVulnData = (scoreFields: string) => `
 `
 
 export const RELEASE_FINDINGS_QUERY = gql`
+    query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
+        release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
+            ${releaseForVulnData(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS, FIX_TARGET_FIELDS)}
+        }
+    }
+    ${VULN_SCORE_FRAGMENT}
+`
+
+export const RELEASE_FINDINGS_QUERY_SCORED = gql`
     query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
         release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
             ${releaseForVulnData(FINDING_SCORE_FIELDS)}
@@ -181,13 +200,22 @@ export const RELEASE_FINDINGS_QUERY_CORE = gql`
     }
 `
 
-const artifactFindings = (scoreFields: string) => `
+const artifactFindings = (optionalFields: string, metricsFields = '') => `
     uuid
     displayIdentifier
-    ${findingsMetrics(scoreFields)}
+    ${findingsMetrics(optionalFields, metricsFields)}
 `
 
 export const ARTIFACT_FINDINGS_QUERY = gql`
+    query getArtifactDetails($artifactUuid: ID!) {
+        artifact(artifactUuid: $artifactUuid) {
+            ${artifactFindings(FINDING_SCORE_FIELDS + FINDING_FIX_FIELDS, FIX_TARGET_FIELDS)}
+        }
+    }
+    ${VULN_SCORE_FRAGMENT}
+`
+
+export const ARTIFACT_FINDINGS_QUERY_SCORED = gql`
     query getArtifactDetails($artifactUuid: ID!) {
         artifact(artifactUuid: $artifactUuid) {
             ${artifactFindings(FINDING_SCORE_FIELDS)}
