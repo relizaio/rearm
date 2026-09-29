@@ -252,10 +252,11 @@
                                       @update:group-filter="setGroupFilter" @update:tag-filter="setTagFilter"
                                       @open="openTask"/>
             </n-tab-pane>
-            <n-tab-pane name="usage" tab="Usage">
-                <AgentBoardUsagePanel :board-uuid="selectedBoard" :agent-names="agentNames"
-                                      :budget-micros="currentBoard?.budgetMicros" :lifetime-spent-micros="lifetimeSpentMicros"
-                                      :soft-alert-percent="currentBoard?.softAlertPercent"/>
+            <!-- Who works the board, then what it spent (task RD3-5): one tab, replacing Usage. -->
+            <n-tab-pane name="agents" tab="Agents">
+                <AgentBoardAgentsPanel :board-uuid="selectedBoard"
+                                       :budget-micros="currentBoard?.budgetMicros" :lifetime-spent-micros="lifetimeSpentMicros"
+                                       :soft-alert-percent="currentBoard?.softAlertPercent"/>
             </n-tab-pane>
             <n-tab-pane name="documents" tab="Documents">
                 <AgentBoardDocumentsPanel :series="documentSeries" :org-uuid="orgUuid"/>
@@ -973,7 +974,7 @@ import { QuestionCircle20Regular } from '@vicons/fluent'
 import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
 import AiAgentTaskTableView from '@/components/AiAgentTaskTableView.vue'
-import AgentBoardUsagePanel from '@/components/AgentBoardUsagePanel.vue'
+import AgentBoardAgentsPanel from '@/components/AgentBoardAgentsPanel.vue'
 import AgentTime from '@/components/AgentTime.vue'
 import AgentBoardDocumentsPanel from '@/components/AgentBoardDocumentsPanel.vue'
 import AgentBoardGroupsPanel from '@/components/AgentBoardGroupsPanel.vue'
