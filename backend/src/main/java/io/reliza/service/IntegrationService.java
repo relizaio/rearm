@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -35,6 +36,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.EnumUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,10 +52,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import reactor.core.Exceptions;
 import reactor.core.publisher.Mono;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.DatabindException;
@@ -72,7 +77,11 @@ import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.DependencyTrackVersion;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.VulnerabilityRecordData.AffectedIdentityType;
+import io.reliza.model.VulnerabilityRecordData.AffectedRange;
+import io.reliza.model.VulnerabilityRecordData.AffectedRangeType;
 import io.reliza.model.VulnerabilityRecordData.CweEntry;
+import io.reliza.model.VulnerabilityRecordData.RangeSourceKey;
 import io.reliza.model.VulnerabilityRecordData.Fetcher;
 import io.reliza.model.VulnerabilityRecordData.UpstreamSource;
 import io.reliza.model.VulnerabilityRecordData.VulnScore;
@@ -94,6 +103,7 @@ import io.reliza.model.dto.TriggerIntegrationInputDto;
 import io.reliza.model.OrganizationData;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.IntegrationRepository;
+import io.reliza.service.VulnerabilityRecordService.FetchedAffectedRanges;
 import io.reliza.service.VulnerabilityRecordService.UpsertOrigin;
 import lombok.Data;
 
@@ -709,7 +719,30 @@ public class IntegrationService {
 			Double owaspRRLikelihoodScore, Double owaspRRTechnicalImpactScore,
 			Double owaspRRBusinessImpactScore, String owaspRRVector,
 			Double epssScore, Double epssPercentile,
-			String uuid, Date published, Date updated) {}
+			String uuid, Date published, Date updated,
+			List<DtrackAffectedComponentRaw> affectedComponents) {}
+
+	/** Subset of Dependency-Track's {@code AffectedVersionAttribution}: a source that vouches for a range. */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	record DtrackAffectedVersionAttributionRaw(String source) {}
+
+	/**
+	 * Subset of Dependency-Track's {@code AffectedComponent}. Only the
+	 * single-vulnerability endpoint fills {@code affectedComponents}; the
+	 * project listing leaves it out. Same fields on DT 4 and 5. The identity
+	 * type binds to our enum, whose names are DT's; the version type stays a
+	 * string so that an absent one can be told from one we do not know (see
+	 * {@link #toAffectedRanges}).
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	record DtrackAffectedComponentRaw(
+			@JsonFormat(with = JsonFormat.Feature.READ_UNKNOWN_ENUM_VALUES_AS_NULL) AffectedIdentityType identityType,
+			String identity,
+			String versionType,
+			String version,
+			String versionStartIncluding, String versionStartExcluding,
+			String versionEndIncluding, String versionEndExcluding,
+			List<DtrackAffectedVersionAttributionRaw> affectedVersionAttributions) {}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
@@ -807,7 +840,7 @@ public class IntegrationService {
 		// captures we deliberately don't recheck — the next scan that brings
 		// a vuln back into scope picks up upstream changes naturally.
 		if (orgUuid != null && attributedAt.toLocalDate().equals(java.time.LocalDate.now(ZoneOffset.UTC))) {
-			refreshVulnerabilityRecords(orgUuid, rowsByCanonical, aliasesByCanonical, fetcherEndpoint);
+			refreshVulnerabilityRecords(orgUuid, rowsByCanonical, aliasesByCanonical, fetcherEndpoint, apiToken);
 		}
 
 		return all;
@@ -897,7 +930,7 @@ public class IntegrationService {
 		});
 
 		if (orgUuid != null && attributedAt.toLocalDate().equals(java.time.LocalDate.now(ZoneOffset.UTC))) {
-			refreshVulnerabilityRecordsFromFindings(orgUuid, rowsByCanonical, aliasesByCanonical, fetcherEndpoint);
+			refreshVulnerabilityRecordsFromFindings(orgUuid, rowsByCanonical, aliasesByCanonical, fetcherEndpoint, apiToken);
 		}
 
 		return all;
@@ -907,9 +940,10 @@ public class IntegrationService {
 	private void refreshVulnerabilityRecordsFromFindings(UUID orgUuid,
 			Map<String, List<DtrackFindingVulnRaw>> rowsByCanonical,
 			Map<String, Set<String>> aliasesByCanonical,
-			String fetcherEndpoint) {
+			String fetcherEndpoint, String apiToken) {
 		if (rowsByCanonical.isEmpty()) return;
 		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
+		List<VulnerabilityRecordData> upserted = new ArrayList<>();
 		for (var entry : rowsByCanonical.entrySet()) {
 			String canonical = entry.getKey();
 			Set<String> aliases = aliasesByCanonical.getOrDefault(canonical, Set.of());
@@ -920,12 +954,13 @@ public class IntegrationService {
 					if (snap != null) snapshots.add(snap);
 				}
 				if (snapshots.isEmpty()) continue;
-				vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu);
+				upserted.add(vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu));
 			} catch (Exception e) {
 				log.error("Failed to upsert vulnerability_record (V5) for org={} canonical={}: {}",
 						orgUuid, canonical, e.getMessage());
 			}
 		}
+		fetchAffectedRangesInline(orgUuid, upserted, fetcherEndpoint, apiToken);
 	}
 
 	/** Build a {@link VulnSourceSnapshot} from a V5 finding's vulnerability object. */
@@ -978,13 +1013,16 @@ public class IntegrationService {
 	 *
 	 * <p>Best-effort: a single bad row or an isolated upsert failure must
 	 * not poison the rest of the DTrack ingest path — we log and continue.
+	 * Records that have never had their affected ranges fetched get them
+	 * right after, within limits; see {@link #fetchAffectedRangesInline}.
 	 */
 	private void refreshVulnerabilityRecords(UUID orgUuid,
 			Map<String, List<DtrackVulnRaw>> rowsByCanonical,
 			Map<String, Set<String>> aliasesByCanonical,
-			String fetcherEndpoint) {
+			String fetcherEndpoint, String apiToken) {
 		if (rowsByCanonical.isEmpty()) return;
 		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
+		List<VulnerabilityRecordData> upserted = new ArrayList<>();
 		for (var entry : rowsByCanonical.entrySet()) {
 			String canonical = entry.getKey();
 			List<DtrackVulnRaw> rows = entry.getValue();
@@ -996,12 +1034,13 @@ public class IntegrationService {
 					if (snap != null) snapshots.add(snap);
 				}
 				if (snapshots.isEmpty()) continue;
-				vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu);
+				upserted.add(vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu));
 			} catch (Exception e) {
 				log.error("Failed to upsert vulnerability_record for org={} canonical={}: {}",
 						orgUuid, canonical, e.getMessage());
 			}
 		}
+		fetchAffectedRangesInline(orgUuid, upserted, fetcherEndpoint, apiToken);
 	}
 
 	/** Ids we accept for a single-vulnerability fetch; also keeps the id safe as a URL path segment. */
@@ -1014,8 +1053,19 @@ public class IntegrationService {
 
 	private static final Duration SINGLE_VULN_FETCH_TIMEOUT = Duration.ofSeconds(10);
 
+	/** Per-request timeout of single-vulnerability fetches; a field so tests can shorten it. */
+	Duration singleVulnFetchTimeout = SINGLE_VULN_FETCH_TIMEOUT;
+
 	/** Upper bound on DT round-trips for one refresh (each 404 is a round-trip). */
 	private static final int MAX_SINGLE_VULN_FETCHES = 6;
+
+	/**
+	 * Upper bound on DT round-trips for one record's affected ranges: one per
+	 * GitHub / OSV id, which for a CVE in several distributions can pass the
+	 * refresh's six. Past it the ranges of the first ids, in key order, are
+	 * stored and the rest are not fetched; see {@link #fetchAffectedRanges}.
+	 */
+	private static final int MAX_RANGE_FETCHES = 20;
 
 	/** DT keys a vulnerability by (source, id): GitHub rows by GHSA, OSV rows by ecosystem id. */
 	private record DtrackVulnKey(UpstreamSource source, String vulnId) {}
@@ -1027,7 +1077,13 @@ public class IntegrationService {
 		/** At least one key failed with something other than a 404; the rest were still tried. */
 		FAILED,
 		/** DT refused the API key (401 / 403); the round stopped, since every key would be refused. */
-		AUTH_REJECTED
+		AUTH_REJECTED,
+		/**
+		 * DT could not be reached (connection refused, unknown host, timeout,
+		 * or a gateway in front of it answering 502 / 503 / 504); the round
+		 * stopped, since every key would fail the same way.
+		 */
+		UNREACHABLE
 	}
 
 	/**
@@ -1089,7 +1145,8 @@ public class IntegrationService {
 
 		Set<DtrackVulnKey> attempted = new LinkedHashSet<>();
 		List<DtrackVulnRaw> found = new ArrayList<>();
-		DtrackFetchOutcome outcome = fetchDtrackVulnKeys(keys, attempted, found, fetcherEndpoint, apiToken, orgUuid);
+		DtrackFetchOutcome outcome = fetchDtrackVulnKeys(keys, attempted, found, fetcherEndpoint, apiToken, orgUuid,
+				true, MAX_SINGLE_VULN_FETCHES);
 		if (outcome == DtrackFetchOutcome.AUTH_REJECTED) {
 			throw new RelizaException("Dependency-Track rejected this organization's API key;"
 					+ " check the Dependency-Track integration");
@@ -1105,8 +1162,8 @@ public class IntegrationService {
 			}
 		}
 		DtrackFetchOutcome aliasOutcome = fetchDtrackVulnKeys(aliasKeys, attempted, found, fetcherEndpoint,
-				apiToken, orgUuid);
-		boolean failed = outcome == DtrackFetchOutcome.FAILED || aliasOutcome != DtrackFetchOutcome.CLEAN;
+				apiToken, orgUuid, true, MAX_SINGLE_VULN_FETCHES);
+		boolean failed = outcome != DtrackFetchOutcome.CLEAN || aliasOutcome != DtrackFetchOutcome.CLEAN;
 
 		List<VulnSourceSnapshot> snapshots = new ArrayList<>();
 		for (DtrackVulnRaw dvr : found) {
@@ -1124,8 +1181,34 @@ public class IntegrationService {
 		}
 		// Concurrent refreshes / drains of the same record are serialised by
 		// the per-record lock inside the upsert.
-		return vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu,
-				UpsertOrigin.MANUAL_REFRESH);
+		VulnerabilityRecordData persisted = vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases,
+				snapshots, wu, UpsertOrigin.MANUAL_REFRESH);
+		return refreshAffectedRanges(orgUuid, persisted, fetcherEndpoint, apiToken, found);
+	}
+
+	/**
+	 * The refresh's ranges, fetched the way the sweep fetches them: the
+	 * refresh round keeps one row per source and may not reach every GitHub /
+	 * OSV id the record knows, so its responses alone are not a complete list.
+	 * The rows it did fetch are reused rather than requested again. A failure
+	 * here leaves the stored ranges as they were and the refresh still
+	 * succeeds.
+	 *
+	 * @return the record as stored after the ranges
+	 */
+	private VulnerabilityRecordData refreshAffectedRanges(UUID orgUuid, VulnerabilityRecordData persisted,
+			String fetcherEndpoint, String apiToken, List<DtrackVulnRaw> alreadyFetched) {
+		try {
+			AffectedRangesFetchResult result = fetchAffectedRanges(orgUuid, persisted, fetcherEndpoint, apiToken,
+					alreadyFetched);
+			if (result.status() != AffectedRangesFetchStatus.FETCHED) return persisted;
+			vulnerabilityRecordService.storeAffectedRanges(persisted.getUuid(), result.fetched());
+			return vulnerabilityRecordService.getData(orgUuid, persisted.getPrimaryVulnId()).orElse(persisted);
+		} catch (Exception e) {
+			log.error("Failed to refresh the affected ranges of vulnerability {} for org {}",
+					persisted.getPrimaryVulnId(), orgUuid, e);
+			return persisted;
+		}
 	}
 
 	private static void addFetchableKey(Set<DtrackVulnKey> keys, UpstreamSource source, String vulnId) {
@@ -1135,25 +1218,27 @@ public class IntegrationService {
 	}
 
 	/**
-	 * GET each not-yet-attempted key whose source has no row yet, up to
-	 * {@link #MAX_SINGLE_VULN_FETCHES} attempts in total, adding every 200 to
-	 * {@code found}. A 404 is the
+	 * GET each not-yet-attempted key (with {@code onePerSource}, only while
+	 * its source has no row yet), up to {@code maxAttempts} attempts in
+	 * total, adding every 200 to {@code found}. A 404 is the
 	 * normal "not under this source" answer. A 401 / 403 stops the round:
 	 * the key is refused for every source, so trying the rest would only
 	 * repeat the error. Other 4xx are logged without a stack trace (DT
-	 * answered, the request was wrong); 5xx, timeouts and transport or parse
-	 * errors keep theirs.
+	 * answered, the request was wrong); 5xx and parse errors keep theirs. No
+	 * connection, no answer in time, or a gateway's 502 / 503 / 504 stops the
+	 * round too: every key would fail the same way.
 	 */
 	private DtrackFetchOutcome fetchDtrackVulnKeys(Set<DtrackVulnKey> keys, Set<DtrackVulnKey> attempted,
-			List<DtrackVulnRaw> found, String fetcherEndpoint, String apiToken, UUID orgUuid) {
+			List<DtrackVulnRaw> found, String fetcherEndpoint, String apiToken, UUID orgUuid,
+			boolean onePerSource, int maxAttempts) {
 		DtrackFetchOutcome outcome = DtrackFetchOutcome.CLEAN;
 		for (DtrackVulnKey key : keys) {
-			if (attempted.size() >= MAX_SINGLE_VULN_FETCHES) break;
+			if (attempted.size() >= maxAttempts) break;
 			// One row per source: the record keeps one snapshot per (source,
 			// fetcher), so a second row for the same source would overwrite the
 			// first. Keys are ordered existing-snapshot first, so the record's
 			// own key wins and the next drain does not flip it back.
-			if (found.stream().anyMatch(f -> mapUpstreamSource(f.source()) == key.source())) continue;
+			if (onePerSource && found.stream().anyMatch(f -> mapUpstreamSource(f.source()) == key.source())) continue;
 			if (!attempted.add(key)) continue;
 			URI uri = URI.create(fetcherEndpoint + "/api/v1/vulnerability/source/" + toDtrackSource(key.source())
 					+ "/vuln/" + URLEncoder.encode(key.vulnId(), StandardCharsets.UTF_8));
@@ -1164,7 +1249,8 @@ public class IntegrationService {
 						.header("X-API-Key", apiToken)
 						.retrieve()
 						.toEntity(String.class)
-						.block(SINGLE_VULN_FETCH_TIMEOUT);
+						.timeout(singleVulnFetchTimeout)
+						.block();
 				if (resp != null && resp.getBody() != null) {
 					found.add(Utils.OM.readValue(resp.getBody(), DtrackVulnRaw.class));
 				}
@@ -1176,6 +1262,11 @@ public class IntegrationService {
 							status.value(), key.vulnId(), orgUuid);
 					return DtrackFetchOutcome.AUTH_REJECTED;
 				}
+				if (isGatewayUnavailable(status)) {
+					log.error("Dependency-Track at {} is unavailable ({}) fetching vulnerability {} for org {}",
+							fetcherEndpoint, status.value(), key.vulnId(), orgUuid);
+					return DtrackFetchOutcome.UNREACHABLE;
+				}
 				outcome = DtrackFetchOutcome.FAILED;
 				if (status.is4xxClientError()) {
 					log.error("Dependency-Track returned {} fetching vulnerability {} (source {}) for org {}: {}",
@@ -1185,12 +1276,37 @@ public class IntegrationService {
 							status.value(), key.vulnId(), key.source(), orgUuid, wcre);
 				}
 			} catch (Exception e) {
+				if (isUnreachable(e)) {
+					log.error("Dependency-Track at {} could not be reached fetching vulnerability {} for org {}: {}",
+							fetcherEndpoint, key.vulnId(), orgUuid, e.getMessage());
+					return DtrackFetchOutcome.UNREACHABLE;
+				}
 				outcome = DtrackFetchOutcome.FAILED;
 				log.error("Error fetching vulnerability {} (source {}) from Dependency-Track for org {}",
 						key.vulnId(), key.source(), orgUuid, e);
 			}
 		}
 		return outcome;
+	}
+
+	/**
+	 * Whether a failed request means Dependency-Track itself could not be
+	 * reached: no connection (WebClient wraps connect and I/O errors in
+	 * {@link WebClientRequestException}) or no answer within the timeout
+	 * ({@code Mono.timeout}'s TimeoutException, which {@code block()} wraps).
+	 */
+	private static boolean isUnreachable(Exception e) {
+		return e instanceof WebClientRequestException || Exceptions.unwrap(e) instanceof TimeoutException;
+	}
+
+	/**
+	 * Whether a status is a proxy or load balancer answering for a
+	 * Dependency-Track that is down or overloaded, rather than DT failing one
+	 * request: every other request of the round would get the same.
+	 */
+	private static boolean isGatewayUnavailable(HttpStatusCode status) {
+		return status.isSameCodeAs(HttpStatus.BAD_GATEWAY) || status.isSameCodeAs(HttpStatus.SERVICE_UNAVAILABLE)
+				|| status.isSameCodeAs(HttpStatus.GATEWAY_TIMEOUT);
 	}
 
 	/**
@@ -1226,6 +1342,218 @@ public class IntegrationService {
 			}
 		}
 		return out;
+	}
+
+	/** Cap on range fetches right after one drain; the rest wait for the nightly sweep. */
+	private static final int INLINE_AFFECTED_RANGES_LIMIT = 100;
+
+	/**
+	 * Wall-clock bound on the range fetches right after one drain. They run
+	 * on the ingest path (the per-minute synthetic tick, a GraphQL probe), so
+	 * a slow Dependency-Track must not hold it up; whatever is left waits for
+	 * the nightly sweep.
+	 */
+	private static final Duration INLINE_AFFECTED_RANGES_BUDGET = Duration.ofSeconds(15);
+
+	/** How fetching one record's affected ranges ended. */
+	public enum AffectedRangesFetchStatus {
+		/** Every source answered (a 404 counts); the ranges are complete, possibly empty. */
+		FETCHED,
+		/** The org has no Dependency-Track integration, so there is nowhere to fetch from. */
+		NO_INTEGRATION,
+		/** Dependency-Track refused the org's API key; every other record of the org would fail the same way. */
+		AUTH_REJECTED,
+		/** Dependency-Track could not be reached; every other record of the org would fail the same way. */
+		UNREACHABLE,
+		/** A source failed for this vulnerability (5xx, other 4xx, unreadable payload); nothing may be stored. */
+		FAILED
+	}
+
+	/**
+	 * @param fetched  the complete fetch, ready to store, when {@link AffectedRangesFetchStatus#FETCHED}; else null
+	 * @param requests Dependency-Track requests made; zero for a record with no GitHub or OSV id
+	 */
+	public record AffectedRangesFetchResult(AffectedRangesFetchStatus status, FetchedAffectedRanges fetched,
+			int requests) {}
+
+	/**
+	 * Fetch a record's affected ranges from its org's Dependency-Track: one
+	 * single-vulnerability GET per key of
+	 * {@link VulnerabilityRecordData#rangeFetchKeys}, the ranges of all
+	 * responses together. Does not store anything. A record with more than
+	 * {@link #MAX_RANGE_FETCHES} keys gets the ranges of the first ones in key
+	 * order, and the rest are never fetched (logged): treating the fetch as
+	 * incomplete would request the record in full every night instead.
+	 */
+	public AffectedRangesFetchResult fetchAffectedRanges(UUID orgUuid, VulnerabilityRecordData record) {
+		Optional<IntegrationData> dtrack = getIntegrationDataByOrgTypeIdentifier(orgUuid,
+				IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		if (dtrack.isEmpty()) {
+			return new AffectedRangesFetchResult(AffectedRangesFetchStatus.NO_INTEGRATION, null, 0);
+		}
+		return fetchAffectedRanges(orgUuid, record, dtrack.get().getUri().toString(),
+				encryptionService.decrypt(dtrack.get().getSecret()), List.of());
+	}
+
+	/**
+	 * @param alreadyFetched rows the caller already has for some keys (the
+	 *                       refresh round's); those keys are not requested again
+	 */
+	private AffectedRangesFetchResult fetchAffectedRanges(UUID orgUuid, VulnerabilityRecordData record,
+			String fetcherEndpoint, String apiToken, List<DtrackVulnRaw> alreadyFetched) {
+		// Taken before the requests: a slower fetch must not look newer than one that started later.
+		ZonedDateTime startedAt = ZonedDateTime.now();
+		Set<RangeSourceKey> fromKeys = record.rangeFetchKeys();
+		Set<DtrackVulnKey> keys = new LinkedHashSet<>();
+		for (RangeSourceKey k : fromKeys) addFetchableKey(keys, k.source(), k.vulnId());
+		Set<DtrackVulnKey> attempted = new LinkedHashSet<>();
+		List<DtrackVulnRaw> found = new ArrayList<>();
+		for (DtrackVulnRaw dvr : alreadyFetched) {
+			DtrackVulnKey key = new DtrackVulnKey(mapUpstreamSource(dvr.source()), dvr.vulnId());
+			if (keys.contains(key) && attempted.add(key)) found.add(dvr);
+		}
+		int reused = attempted.size();
+		DtrackFetchOutcome outcome = keys.isEmpty() ? DtrackFetchOutcome.CLEAN
+				: fetchDtrackVulnKeys(keys, attempted, found, fetcherEndpoint, apiToken, orgUuid, false,
+						MAX_RANGE_FETCHES);
+		if (outcome == DtrackFetchOutcome.CLEAN && !attempted.containsAll(keys)) {
+			log.info("Vulnerability {} of org {} has {} GitHub / OSV ids; ranges fetched from the first {}, the rest not fetched",
+					record.getPrimaryVulnId(), orgUuid, keys.size(), MAX_RANGE_FETCHES);
+		}
+		AffectedRangesFetchStatus status = switch (outcome) {
+			case CLEAN -> AffectedRangesFetchStatus.FETCHED;
+			case FAILED -> AffectedRangesFetchStatus.FAILED;
+			case AUTH_REJECTED -> AffectedRangesFetchStatus.AUTH_REJECTED;
+			case UNREACHABLE -> AffectedRangesFetchStatus.UNREACHABLE;
+		};
+		return new AffectedRangesFetchResult(status, status == AffectedRangesFetchStatus.FETCHED
+				? new FetchedAffectedRanges(affectedRangesOf(found), startedAt, fromKeys) : null,
+				attempted.size() - reused);
+	}
+
+	/**
+	 * Right after a drain, fetch and store the affected ranges of the records
+	 * it created, so a new vulnerability has its ranges within minutes rather
+	 * than after the nightly sweep. Only new records: everything else due for
+	 * a fetch (the backlog after an upgrade, changed sources) is the sweep's,
+	 * off the ingest path. Bounded by {@link #INLINE_AFFECTED_RANGES_LIMIT}
+	 * fetches and {@link #INLINE_AFFECTED_RANGES_BUDGET}, and stops at the
+	 * first failed fetch: the ingest path must not wait on a struggling
+	 * Dependency-Track. What is left, the sweep picks up.
+	 */
+	private void fetchAffectedRangesInline(UUID orgUuid, List<VulnerabilityRecordData> records,
+			String fetcherEndpoint, String apiToken) {
+		fetchAffectedRangesInline(orgUuid, records, fetcherEndpoint, apiToken,
+				INLINE_AFFECTED_RANGES_LIMIT, INLINE_AFFECTED_RANGES_BUDGET);
+	}
+
+	/** {@link #fetchAffectedRangesInline(UUID, List, String, String)} with explicit bounds, for tests. */
+	void fetchAffectedRangesInline(UUID orgUuid, List<VulnerabilityRecordData> records,
+			String fetcherEndpoint, String apiToken, int limit, Duration budget) {
+		long deadline = System.nanoTime() + budget.toNanos();
+		int fetched = 0;
+		int left = 0;
+		for (VulnerabilityRecordData record : records) {
+			if (!createdByThisDrain(record) || record.getAffectedRangesFetchedAt() != null) continue;
+			if (left > 0 || fetched >= limit || System.nanoTime() > deadline) {
+				left++;
+				continue;
+			}
+			try {
+				AffectedRangesFetchResult result = fetchAffectedRanges(orgUuid, record, fetcherEndpoint, apiToken,
+						List.of());
+				if (result.status() != AffectedRangesFetchStatus.FETCHED) {
+					// fetchDtrackVulnKeys has logged the cause.
+					left++;
+					continue;
+				}
+				vulnerabilityRecordService.storeAffectedRanges(record.getUuid(), result.fetched());
+				if (result.requests() > 0) fetched++;
+			} catch (Exception e) {
+				log.error("Failed to store affected ranges of vulnerability record {} for org {}",
+						record.getPrimaryVulnId(), orgUuid, e);
+				left++;
+			}
+		}
+		if (left > 0) {
+			log.info("Affected ranges fetched for {} new vulnerability records of org {}; {} left for the nightly sweep",
+					fetched, orgUuid, left);
+		}
+	}
+
+	/**
+	 * Whether the upsert that returned {@code record} created it: an insert
+	 * sets lastUpdatedDate to firstSeenDate, and any later write moves it on.
+	 * Relies on the upsert writing on every call for an existing row (the
+	 * merger stamps lastUpdatedDate each time); should that stop, a row never
+	 * rewritten since its insert would look new here, and the upsert should
+	 * report inserts itself instead.
+	 */
+	private static boolean createdByThisDrain(VulnerabilityRecordData record) {
+		return record != null && record.getUuid() != null && record.getFirstSeenDate() != null
+				&& record.getLastUpdatedDate() != null
+				&& record.getFirstSeenDate().toInstant().equals(record.getLastUpdatedDate().toInstant());
+	}
+
+	/** The package-URL ranges of Dependency-Track single-vulnerability responses, all together. */
+	private static List<AffectedRange> affectedRangesOf(List<DtrackVulnRaw> rows) {
+		List<AffectedRange> out = new ArrayList<>();
+		for (DtrackVulnRaw dvr : rows) out.addAll(toAffectedRanges(dvr.affectedComponents(), dvr.source()));
+		return out;
+	}
+
+	/**
+	 * One response's {@code affectedComponents} as ranges. Keeps package-URL
+	 * identities only (see {@link VulnerabilityRecordData#PURL_RANGE_SOURCES}).
+	 * A range's sources are
+	 * its attributions; a range without any is attributed to the row's own
+	 * source. Not normalized: the record's setter does that.
+	 *
+	 * <p>An every-version row (OSV {@code introduced: "0"} with nothing fixed,
+	 * as in Debian's tracker for an unfixed package) comes from
+	 * Dependency-Track 4 without a version type and from Dependency-Track 5
+	 * as a range from {@code "0"}. Both become a range with no bounds (the
+	 * record's setter drops a start of {@code "0"}, see
+	 * {@link AffectedRange#normalize}), so the same advisory reads the same
+	 * from either version. A row without a type but with a version is that
+	 * exact version. A version type we do not know is kept without a type,
+	 * with whatever version or bounds came with it.
+	 */
+	static List<AffectedRange> toAffectedRanges(List<DtrackAffectedComponentRaw> components, String rowSource) {
+		List<AffectedRange> out = new ArrayList<>();
+		if (components == null) return out;
+		for (DtrackAffectedComponentRaw c : components) {
+			if (c == null || c.identityType() != AffectedIdentityType.PURL || StringUtils.isBlank(c.identity())) continue;
+			AffectedRange r = new AffectedRange();
+			r.setIdentityType(AffectedIdentityType.PURL);
+			r.setIdentity(c.identity());
+			AffectedRangeType type = rangeTypeOf(c);
+			r.setRangeType(type);
+			if (type != AffectedRangeType.RANGE) r.setExactVersion(c.version());
+			r.setVersionStartIncluding(c.versionStartIncluding());
+			r.setVersionStartExcluding(c.versionStartExcluding());
+			r.setVersionEndIncluding(c.versionEndIncluding());
+			r.setVersionEndExcluding(c.versionEndExcluding());
+			List<UpstreamSource> sources = new ArrayList<>();
+			if (c.affectedVersionAttributions() != null) {
+				for (DtrackAffectedVersionAttributionRaw a : c.affectedVersionAttributions()) {
+					if (a != null && a.source() != null) sources.add(mapUpstreamSource(a.source()));
+				}
+			}
+			if (sources.isEmpty()) sources.add(mapUpstreamSource(rowSource));
+			r.setSources(sources);
+			out.add(r);
+		}
+		return out;
+	}
+
+	/**
+	 * A row's version type as ours: absent means a range, or that exact
+	 * version when the row carries one; a type we do not know is null.
+	 */
+	private static AffectedRangeType rangeTypeOf(DtrackAffectedComponentRaw c) {
+		if (c.versionType() != null) return EnumUtils.getEnum(AffectedRangeType.class, c.versionType());
+		return StringUtils.isNotBlank(c.version()) ? AffectedRangeType.EXACT : AffectedRangeType.RANGE;
 	}
 
 	/**

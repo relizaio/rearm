@@ -2189,7 +2189,8 @@ public class ReleaseDatafetcher {
 	 * computed from the rows.
 	 */
 	static final List<String> RELEASE_METRICS_ROW_SELECTIONS = List.of(
-		"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails", "metrics/riskSummary");
+		"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails", "metrics/riskSummary",
+		"metrics/fixTargets");
 
 	/**
 	 * The same for an artifact, plus kevCount: an artifact's stored rows are
@@ -2198,7 +2199,7 @@ public class ReleaseDatafetcher {
 	 */
 	static final List<String> ARTIFACT_METRICS_ROW_SELECTIONS = List.of(
 		"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails", "metrics/riskSummary",
-		"metrics/kevCount");
+		"metrics/fixTargets", "metrics/kevCount");
 
 	static boolean selectsAny(DataFetchingFieldSelectionSet selection, List<String> globs) {
 		return globs.stream().anyMatch(selection::contains);

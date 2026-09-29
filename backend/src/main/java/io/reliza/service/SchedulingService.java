@@ -97,6 +97,9 @@ public class SchedulingService {
     @Autowired
     VulnerabilityRecordService vulnerabilityRecordService;
 
+    @Autowired
+    AffectedRangesService affectedRangesService;
+
 
     // Gates the every-3h legacy per-artifact DTrack project phase-out
     // (deletes phased-out legacy projects on DTrack).
@@ -625,18 +628,21 @@ public class SchedulingService {
     private static final String DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON = "0 55 4 * * *";
 
     /**
-     * Daily recompute sweep for {@code vulnerability_records} rows still in
-     * the shape written before the merged scores list existed: converts them,
-     * and in the same recompute fills a CVSS score from a vector where no
-     * source published one. Shared, not {@code saas/}: records are shared
-     * code, so CE converts too.
+     * Daily recompute sweep for {@code vulnerability_records}, in two phases,
+     * each failing on its own. First, rows still in the shape written before
+     * the merged scores list existed: converts them, and in the same
+     * recompute fills a CVSS score from a vector where no source published
+     * one. Second, affected ranges that are due for a fetch
+     * ({@link AffectedRangesService#refreshDueAffectedRanges}). Shared, not
+     * {@code saas/}: records are shared code, so CE runs both.
      *
      * <p>Daily at 04:55 by default ({@code relizaprops.recomputeVulnerabilityRecordsCron}),
      * in the quiet-hour band with the other daily housekeeping, not hourly:
-     * the finder reads every row's JSONB (no index covers the predicate),
-     * about 1 GB of detoast at 100k rows, and the job is one-shot -- the
-     * first run converts the backlog and every write since stores the new
-     * shape, so later runs select zero rows.
+     * both finders read every row's JSONB (no index covers their
+     * predicates), about 1 GB of detoast at 100k rows. The conversion is
+     * one-shot -- every write since stores the new shape, so later runs
+     * select zero rows and it suspends its scan. The ranges phase reads the
+     * table every night, resuming where the previous run stopped.
      */
     @Scheduled(cron = "${relizaprops.recomputeVulnerabilityRecordsCron:" + DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON + "}")
     public void recomputeVulnerabilityRecords() {
@@ -644,7 +650,10 @@ public class SchedulingService {
             Boolean lock = getLock(AdvisoryLockKey.RECOMPUTE_VULNERABILITY_RECORDS);
             if (lock) {
                 try {
-                    vulnerabilityRecordService.convertLegacyScoreRecords();
+                    SchedulerGuard.runIsolated("vulnerability record score conversion",
+                            vulnerabilityRecordService::convertLegacyScoreRecords);
+                    SchedulerGuard.runIsolated("vulnerability record affected ranges",
+                            affectedRangesService::refreshDueAffectedRanges);
                 } finally {
                     releaseLock(AdvisoryLockKey.RECOMPUTE_VULNERABILITY_RECORDS);
                 }

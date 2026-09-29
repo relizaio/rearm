@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,10 +44,13 @@ import com.sun.net.httpserver.HttpServer;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.VulnerabilityRecordData.AffectedRange;
+import io.reliza.model.VulnerabilityRecordData.RangeSourceKey;
 import io.reliza.model.VulnerabilityRecordData.UpstreamSource;
 import io.reliza.model.VulnerabilityRecordData.VulnSourceSnapshot;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.IntegrationRepository;
+import io.reliza.service.VulnerabilityRecordService.FetchedAffectedRanges;
 import io.reliza.service.VulnerabilityRecordService.UpsertOrigin;
 
 /**
@@ -296,5 +301,69 @@ class IntegrationServiceSingleVulnFetchTest {
 		assertEquals("No Dependency-Track integration is configured for this organization", e.getMessage());
 		assertTrue(requested.isEmpty());
 		verify(vulnerabilityRecordService, never()).upsertFromSnapshots(any(), any(), any(), any(), any());
+	}
+
+	private static final String DJANGO_RANGES = ",\"affectedComponents\":["
+			+ "{\"identityType\":\"PURL\",\"identity\":\"pkg:pypi/django\",\"versionType\":\"RANGE\","
+			+ "\"versionStartIncluding\":\"1.11\",\"versionEndExcluding\":\"1.11.11\","
+			+ "\"affectedVersionAttributions\":[{\"source\":\"OSV\"}]},"
+			+ "{\"identityType\":\"CPE\",\"identity\":\"cpe:2.3:a:djangoproject:django:*:*:*:*:*:*:*:*\","
+			+ "\"versionType\":\"RANGE\",\"versionEndExcluding\":\"1.11.11\"}]";
+
+	private static final String DEBIAN_RANGES = ",\"affectedComponents\":["
+			+ "{\"identityType\":\"PURL\",\"identity\":\"pkg:deb/debian/python-django?arch=source\","
+			+ "\"affectedVersionAttributions\":[{\"source\":\"OSV\"}]}]";
+
+	private static String withRanges(String vulnJson, String ranges) {
+		return vulnJson.substring(0, vulnJson.length() - 1) + ranges + "}";
+	}
+
+	/** What the upsert hands back: the record as stored, having had both OSV advisories as snapshots. */
+	private VulnerabilityRecordData persistedDjangoRecord() {
+		VulnerabilityRecordData persisted = new VulnerabilityRecordData();
+		persisted.setUuid(UUID.randomUUID());
+		persisted.setPrimaryVulnId("CVE-2018-7536");
+		persisted.setAliases(new LinkedHashSet<>(List.of("CVE-2018-7536", "PYSEC-2018-5", "DEBIAN-CVE-2018-7536")));
+		persisted.setAffectedRangesSourceKeys(List.of(new RangeSourceKey(UpstreamSource.OSV, "DEBIAN-CVE-2018-7536")));
+		VulnSourceSnapshot osv = new VulnSourceSnapshot();
+		osv.setUpstreamSource(UpstreamSource.OSV);
+		osv.setUpstreamVulnId("PYSEC-2018-5");
+		persisted.setSources(new ArrayList<>(List.of(osv)));
+		return persisted;
+	}
+
+	@Test
+	void aRefreshStoresTheRangesOfEveryGithubAndOsvIdTheRecordKnows() throws Exception {
+		respond("OSV/PYSEC-2018-5", 200, withRanges(vulnJson("PYSEC-2018-5", "OSV", "CVE-2018-7536", null), DJANGO_RANGES));
+		respond("OSV/DEBIAN-CVE-2018-7536", 200,
+				withRanges(vulnJson("DEBIAN-CVE-2018-7536", "OSV", null, null), DEBIAN_RANGES));
+		VulnerabilityRecordData persisted = persistedDjangoRecord();
+		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any())).thenReturn(persisted);
+
+		service.fetchSingleVulnerabilityFromDtrack(org, "PYSEC-2018-5", wu);
+
+		// The refresh round keeps one OSV row; the ranges fetch reaches the other OSV advisory
+		// and reuses the row the round already has.
+		assertTrue(requested.contains("OSV/DEBIAN-CVE-2018-7536"));
+		assertEquals(1, Collections.frequency(requested, "OSV/PYSEC-2018-5"));
+		ArgumentCaptor<FetchedAffectedRanges> stored = ArgumentCaptor.forClass(FetchedAffectedRanges.class);
+		verify(vulnerabilityRecordService).storeAffectedRanges(eq(persisted.getUuid()), stored.capture());
+		// The CPE row is dropped; both purl identities are kept.
+		assertEquals(Set.of("pkg:pypi/django", "pkg:deb/debian/python-django?arch=source"),
+				stored.getValue().ranges().stream().map(AffectedRange::getIdentity).collect(Collectors.toSet()));
+		assertEquals(persisted.rangeFetchKeys(), stored.getValue().fromKeys());
+		assertNotNull(stored.getValue().fetchedAt());
+	}
+
+	@Test
+	void aRangesFetchThatFailsLeavesTheRefreshSuccessful() throws Exception {
+		respond("OSV/PYSEC-2018-5", 200, vulnJson("PYSEC-2018-5", "OSV", "CVE-2018-7536", null));
+		respond("OSV/DEBIAN-CVE-2018-7536", 503, "busy");
+		VulnerabilityRecordData persisted = persistedDjangoRecord();
+		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any())).thenReturn(persisted);
+
+		assertSame(persisted, service.fetchSingleVulnerabilityFromDtrack(org, "PYSEC-2018-5", wu));
+
+		verify(vulnerabilityRecordService, never()).storeAffectedRanges(any(), any());
 	}
 }

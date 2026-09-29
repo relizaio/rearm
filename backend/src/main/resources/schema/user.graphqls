@@ -2683,6 +2683,26 @@ type VulnerabilityRecordDetails {
 	sources: [VulnerabilitySourceSnapshot!]!
 	firstSeenDate: DateTime
 	lastUpdatedDate: DateTime
+	# Package versions the advisory says are affected, fetched from
+	# Dependency-Track. Package-URL identities only: NVD's CPE rows are not
+	# kept. Empty until the first fetch (see affectedRangesFetchedAt), and for
+	# vulnerabilities whose sources publish no package ranges.
+	affectedRanges: [AffectedRange!]!
+	# When the affected ranges were last fetched; null if never. The details
+	# refresh fetches them, and a nightly sweep keeps them current.
+	affectedRangesFetchedAt: DateTime
+	# The affected ranges as one vers line per package identity, in the order
+	# of affectedRanges; an identity whose bounds do not parse has none.
+	affectedVers: [AffectedVers!]!
+}
+
+# All affected ranges of one package identity as a single vers range
+# (package-url vers-spec), for example vers:pypi/>=1.8|<1.8.19|>=1.11|<1.11.11
+# or vers:deb/* when every version is affected. Derived on read from the
+# stored bounds, never stored. vers is canonical: show it as is.
+type AffectedVers {
+	identity: String!
+	vers: String!
 }
 
 # VulnScore, VulnSubScore and their enums are declared in schema.graphqls,
@@ -2706,6 +2726,44 @@ type VulnerabilitySourceSnapshot {
 	scores: [VulnScore!]!
 	lastFetchedDate: DateTime
 	lastModifiedDate: DateTime
+}
+
+# One affected package and version range from an advisory. identity is the
+# package without a version, as the source wrote it (a purl keeps its
+# qualifiers). The bounds are the source's own strings; comparing a version
+# against them needs the package ecosystem's ordering. A RANGE with no bounds
+# covers every version (no fixed version is known); a range without a
+# rangeType came with a version type this server does not know.
+type AffectedRange {
+	identityType: AffectedIdentityType
+	identity: String!
+	rangeType: AffectedRangeType
+	exactVersion: String
+	versionStartIncluding: String
+	versionStartExcluding: String
+	versionEndIncluding: String
+	versionEndExcluding: String
+	# Sources that attribute this range.
+	sources: [UpstreamSource!]!
+	# All ranges of this identity as one vers range, the same line on each of
+	# them (see AffectedVers); null when none of their bounds parses.
+	vers: String
+}
+
+# The kind of package identity an AffectedRange names.
+enum AffectedIdentityType {
+	PURL
+	CPE
+}
+
+# How an AffectedRange bounds the affected versions; null when the server does
+# not know the source's version type.
+enum AffectedRangeType {
+	# Bounded by the version start / end fields, any of which may be absent;
+	# with none, every version.
+	RANGE
+	# Exactly exactVersion.
+	EXACT
 }
 
 # The manufacturer's ATTESTED claim about what a component's upstream maintainer is

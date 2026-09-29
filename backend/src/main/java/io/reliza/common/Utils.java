@@ -1353,6 +1353,20 @@ public class Utils {
 	}
 
 	/**
+	 * {@code purl} as a {@link PackageURL}; null when it is not a pkg: purl or
+	 * does not parse. Parsed as written: a raw {@code +} stays a {@code +}
+	 * (unlike {@link #purlsSemanticallyEqual}, which encodes it first).
+	 */
+	public static PackageURL parsePurlOrNull(String purl) {
+		if (!isPurl(purl)) return null;
+		try {
+			return new PackageURL(purl);
+		} catch (MalformedPackageURLException e) {
+			return null;
+		}
+	}
+
+	/**
 	 * Escapes SQL LIKE wildcards ({@code %}, {@code _}) and the escape
 	 * character itself so the input matches literally under {@code ESCAPE '\'}.
 	 * Backslash is escaped first, or it would double-escape the escapes the
