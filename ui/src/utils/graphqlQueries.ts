@@ -1825,8 +1825,8 @@ query EnvironmentTypes($orgUuid: ID!) {
 }`
 
 const RELEASES_BY_DATE_RANGE_GQL = gql`
-query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType) {
-    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType) {
+query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType, $componentKinds: [ComponentKind]) {
+    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`
@@ -1847,8 +1847,8 @@ query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
     }
 }`
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
-query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType) {
-    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType) {
+query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType, $componentKinds: [ComponentKind]) {
+    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`

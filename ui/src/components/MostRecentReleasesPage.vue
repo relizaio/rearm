@@ -44,6 +44,7 @@
                 :start-date="dateFrom"
                 :end-date="dateTo"
                 :component-type="componentTypeValue"
+                :include-documents="true"
             />
         </div>
     </div>
