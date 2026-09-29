@@ -548,6 +548,9 @@
         <n-modal v-model:show="showDtModal" preset="dialog" :show-icon="false">
             <n-card style="width: 600px" size="huge" title="Add Dependency-Track Integration" :bordered="false" role="dialog" aria-modal="true">
                 <n-form>
+                    <n-text depth="3" style="font-size: 12px;">
+                        Dependency-Track 5 is recommended; Dependency-Track 4 is also supported.
+                    </n-text>
                     <n-form-item label="Dependency-Track API Server URI">
                         <n-input v-model:value="createIntegrationObject.uri" required placeholder="Enter Dependency-Track API Server URI" />
                     </n-form-item>
