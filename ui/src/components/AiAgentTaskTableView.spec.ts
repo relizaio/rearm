@@ -19,33 +19,46 @@ describe('AiAgentTaskTableView', () => {
     })
 })
 
-// The Level column (RD2-1): sorted numerically with no level last, and the filter box takes "L2".
+// The Level column (RD2-1): sorted numerically with no level last, and the filter box takes "L2". Only on a
+// board with a ladder, each level named (task RD3-6).
 describe('AiAgentTaskTableView: level', () => {
     const tasks = [
         { uuid: 'a', key: 'RD2-1', title: 'deep', status: 'QUEUED', level: 3 },
         { uuid: 'b', key: 'RD2-2', title: 'none of its own', status: 'QUEUED', level: null },
         { uuid: 'c', key: 'RD2-3', title: 'shallow', status: 'QUEUED', level: 0 },
     ]
+    const LADDER = { levels: [{ number: 0, name: 'requirements' }, { number: 1, name: 'solution' },
+        { number: 2, name: 'objects' }, { number: 3, name: 'components' }] }
+    const board = { ladder: LADDER, defaultTaskLevel: 1 }
 
-    it('shows each task\'s level, the board default for one without', () => {
-        const w = mount(TableView, { props: { tasks, agentNames: {}, board: { defaultTaskLevel: 1 } }, global: { stubs } })
-        expect(w.findAll('[data-level]').map(e => e.text())).toEqual(['L3', 'L1', 'L0'])
+    it('shows each task\'s level by name, the board default for one without', () => {
+        const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
+        expect(w.findAll('[data-level]').map(e => e.text())).toEqual(['3 · components', '1 · solution', '0 · requirements'])
     })
 
-    it('sorts by level, no level last', async () => {
-        const w = mount(TableView, { props: { tasks, agentNames: {}, board: {} }, global: { stubs } })
+    it('has no Level column on a board without a ladder, whatever level a task kept', () => {
+        for (const b of [{}, { defaultTaskLevel: 1 }, { ladder: null }]) {
+            const w = mount(TableView, { props: { tasks, agentNames: {}, board: b }, global: { stubs } })
+            expect(w.findAll('th').some(th => th.text().includes('Level')), JSON.stringify(b)).toBe(false)
+            expect(w.findAll('[data-level]')).toHaveLength(0)
+            expect(w.find('input').attributes('placeholder')).not.toContain('level')
+        }
+    })
+
+    it('sorts by level, the default for a task without its own', async () => {
+        const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
         const order = () => w.findAll('tbody tr').map(r => r.text().includes('shallow') ? 'c' : r.text().includes('deep') ? 'a' : 'b')
         const header = () => w.findAll('th').find(th => th.text().includes('Level'))!
         await header().trigger('click')
         const first = order()
         await header().trigger('click')
         const second = order()
-        // One click sorts one way and the next the other: 0, 3, then no level (or reversed).
-        expect([first, second]).toEqual(expect.arrayContaining([['c', 'a', 'b'], ['b', 'a', 'c']]))
+        // One click sorts one way and the next the other: 0, 1 (the default), 3 (or reversed).
+        expect([first, second]).toEqual(expect.arrayContaining([['c', 'b', 'a'], ['a', 'b', 'c']]))
     })
 
     it('filters by "L2" or "level 2", and by text otherwise', async () => {
-        const w = mount(TableView, { props: { tasks, agentNames: {}, board: {} }, global: { stubs } })
+        const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
         await w.find('input').setValue('L3')
         expect(w.findAll('tbody tr').map(r => r.text())).toHaveLength(1)
         expect(w.find('tbody').text()).toContain('deep')

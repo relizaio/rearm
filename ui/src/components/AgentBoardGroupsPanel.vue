@@ -3,7 +3,8 @@
          board's order, what it has done and spent, what it waits on; edited by who configures the board. -->
     <div class="boardGroups">
         <div v-if="!groups.length" class="boardGroups__empty">
-            No groups yet. A group batches tasks, can wait on another group, and gives its tasks a default level.
+            No groups yet. A group batches tasks, can wait on another group<template v-if="ladder">, and gives its tasks a
+            default level</template>.
         </div>
         <table v-else class="boardGroups__table">
             <thead>
@@ -22,7 +23,10 @@
                         <n-tag v-if="groupWaitingOn(g, board).length" size="tiny" :bordered="false" type="warning"
                                data-testid="group-waiting">waiting on {{ groupWaitingOn(g, board).join(', ') }}</n-tag>
                         <n-tag v-if="g.status === 'CLOSED'" size="tiny" :bordered="false" data-testid="group-closed">closed</n-tag>
-                        <span v-if="g.defaultLevel != null" class="boardGroups__meta">L{{ g.defaultLevel }} default</span>
+                        <!-- Only on a board with a ladder (task RD3-6); a level kept from before is ignored. -->
+                        <span v-if="ladder && g.defaultLevel != null" class="boardGroups__meta" data-testid="group-default-level">
+                            {{ levelLabel(g.defaultLevel, board) }} default
+                        </span>
                     </td>
                     <td class="boardGroups__actions">
                         <template v-if="canConfigure">
@@ -55,9 +59,10 @@
                           placeholder="Waits on groups (optional)" data-testid="group-depends"
                           :status="fieldError('dependsOn') ? 'error' : undefined"/>
                 <n-text v-if="fieldError('dependsOn')" type="error" class="boardGroups__err" data-testid="group-depends-error">{{ fieldError('dependsOn') }}</n-text>
-                <n-input-number v-model:value="draft.defaultLevel" :min="0" :max="MAX_LEVEL" :step="1" :precision="0" clearable
-                                placeholder="Default level for its tasks (optional)" data-testid="group-level"
-                                :status="fieldError('defaultLevel') ? 'error' : undefined"/>
+                <!-- A default level only on a board with a ladder, one of its rungs (task RD3-6). -->
+                <n-select v-if="ladder" v-model:value="draft.defaultLevel" :options="levelOptions(board)" clearable
+                          placeholder="Default level for its tasks (optional)" data-testid="group-level"
+                          :status="fieldError('defaultLevel') ? 'error' : undefined"/>
                 <n-text v-if="fieldError('defaultLevel')" type="error" class="boardGroups__err">{{ fieldError('defaultLevel') }}</n-text>
                 <n-radio-group v-model:value="draft.status" size="small">
                     <n-radio-button value="OPEN" label="open"/>
@@ -77,11 +82,11 @@
 
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
-import { NButton, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NTag, NText } from 'naive-ui'
+import { NButton, NInput, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NTag, NText } from 'naive-ui'
 import { dependencyOptions, groupColour, groupDraftOf, GroupDraft, groupFieldOfError, groupInputOf, groupKeyTaken, groupProgress,
     groupWaitingOn, sortedGroups, TaskGroup } from '@/utils/agentTaskGroups'
 import { formatCostMicros } from '@/utils/agentUsage'
-import { MAX_LEVEL } from '@/utils/agentTaskLevel'
+import { hasLadder, levelLabel, levelOptions } from '@/utils/agentTaskLevel'
 
 const props = defineProps<{
     board: any
@@ -92,6 +97,8 @@ const props = defineProps<{
 }>()
 
 const groups = computed<TaskGroup[]>(() => sortedGroups(props.board))
+// Whether the board has a level ladder (task RD3-6): without one the default level is neither shown nor sent.
+const ladder = computed(() => hasLadder(props.board))
 const draft = ref<GroupDraft | null>(null)
 const error = ref<string | null>(null)
 const rowError = ref<string | null>(null)
@@ -127,7 +134,7 @@ async function save () {
     saving.value = true
     error.value = null
     try {
-        await props.saveGroup(groupInputOf(draft.value))
+        await props.saveGroup(groupInputOf(draft.value, { withLevel: ladder.value }))
         draft.value = null
     } catch (e: any) {
         error.value = messageOf(e)

@@ -7,7 +7,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import Panel from './AgentBoardGroupsPanel.vue'
 
+// A board with a level ladder (task RD3-6): the group default level is shown by name and edited.
+const LADDER = { levels: [{ number: 0, name: 'requirements' }, { number: 1, name: 'solution' }, { number: 2, name: 'objects' }] }
 const board = {
+    ladder: LADDER,
     groups: [
         { uuid: 'g2', key: 'ui-work', name: 'Front end', order: 2, dependsOn: ['core-work'], status: 'OPEN', defaultLevel: 2,
             progress: { total: 4, done: 1, open: 3, complete: false }, spentMicros: 1_250_000 },
@@ -28,7 +31,7 @@ describe('AgentBoardGroupsPanel', () => {
         expect(rows[0].text()).toContain('3 of 5 done')
         expect(rows[1].text()).toContain('Front end')
         expect(rows[1].find('[data-testid="group-waiting"]').text()).toBe('waiting on core-work')
-        expect(rows[1].text()).toContain('L2 default')
+        expect(rows[1].find('[data-testid="group-default-level"]').text()).toBe('2 · objects default')
         expect(rows[1].text()).toContain('$1.25')
         expect(rows[0].find('[data-testid="group-waiting"]').exists()).toBe(false)
         expect(rows[2].find('[data-testid="group-closed"]').exists()).toBe(true)
@@ -120,5 +123,31 @@ describe('AgentBoardGroupsPanel', () => {
         await w.find('[data-testid="group-save"]').trigger('click')
         await flushPromises()
         expect(saveGroup).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'g2', key: 'ui-work' }))
+    })
+
+    // Levels are opt-in (task RD3-6): without a ladder the group default is neither shown, edited nor sent.
+    describe('on a board without a ladder', () => {
+        const flat = { ...board, ladder: null }
+
+        it('hides the default level in the row and the form, and keeps it on save', async () => {
+            const saveGroup = vi.fn().mockResolvedValue({})
+            const w = mount(Panel, { props: { board: flat, canConfigure: true, saveGroup }, global })
+            const row = w.find('[data-testid="group-row"][data-key="ui-work"]')
+            expect(row.find('[data-testid="group-default-level"]').exists()).toBe(false)
+            expect(row.text()).not.toContain('default')
+            await row.find('[data-testid="group-edit"]').trigger('click')
+            expect(w.find('[data-testid="group-form"]').exists()).toBe(true)
+            expect(w.find('[data-testid="group-level"]').exists()).toBe(false)
+            await w.find('[data-testid="group-save"]').trigger('click')
+            await flushPromises()
+            expect(saveGroup).toHaveBeenCalledOnce()
+            expect(saveGroup.mock.calls[0][0]).not.toHaveProperty('defaultLevel')
+        })
+
+        it('shows the default level field with a ladder', async () => {
+            const w = mount(Panel, { props: { board, canConfigure: true, saveGroup: vi.fn() }, global })
+            await w.find('[data-testid="group-add"]').trigger('click')
+            expect(w.find('[data-testid="group-level"]').exists()).toBe(true)
+        })
     })
 })
