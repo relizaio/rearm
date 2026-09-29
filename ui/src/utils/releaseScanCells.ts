@@ -22,8 +22,12 @@ function circle (title: string, color: string, value: any, onClick: () => void) 
     return h('div', { title, class: 'circle', style: `background: ${color}; cursor: pointer;`, onClick: (e: Event) => { e.stopPropagation(); onClick() } }, value)
 }
 
-/** Vulnerabilities cell: badge when the scan is not ready, five severity circles otherwise, 'N/A' without metrics. */
+/**
+ * Vulnerabilities cell: nothing for a release that is never scanned (a board's document, RD4-11), a badge
+ * when the scan is not ready, five severity circles otherwise, 'N/A' without metrics.
+ */
 export function renderVulnerabilityCells (row: any, status: ReleaseScanStatus, open: OpenVulnDetails) {
+    if (status.kind === 'not-applicable') return []
     if (status.kind !== 'ready') return [renderPendingBadge(status)]
     if (!(row.metrics && row.metrics.lastScanned)) return [h('div'), 'N/A']
     const m = row.metrics
@@ -36,8 +40,9 @@ export function renderVulnerabilityCells (row: any, status: ReleaseScanStatus, o
     ])]
 }
 
-/** Violations cell: badge when the scan is not ready, three policy circles otherwise, 'N/A' without metrics. */
+/** Violations cell: nothing for a release that is never scanned, badge when not ready, three policy circles otherwise, 'N/A' without metrics. */
 export function renderViolationCells (row: any, status: ReleaseScanStatus, open: OpenVulnDetails) {
+    if (status.kind === 'not-applicable') return []
     if (status.kind !== 'ready') return [renderPendingBadge(status)]
     if (!(row.metrics && row.metrics.lastScanned)) return [h('div'), 'N/A']
     const m = row.metrics
