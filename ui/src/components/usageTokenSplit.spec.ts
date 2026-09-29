@@ -11,7 +11,7 @@ vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters: {} }) }))
 const { default: AgentUsageSummary } = await import('./AgentUsageSummary.vue')
 const { default: TaskUsage } = await import('./task/TaskUsage.vue')
 const { default: TaskHops } = await import('./task/TaskHops.vue')
-const { default: AgentBoardUsagePanel } = await import('./AgentBoardUsagePanel.vue')
+const { default: AgentBoardAgentsPanel } = await import('./AgentBoardAgentsPanel.vue')
 
 const tooltip = { template: '<span class="tt"><slot name="trigger"/><span class="tt__body"><slot/></span></span>' }
 const stubs = { NTooltip: tooltip, Tooltip: tooltip }
@@ -39,17 +39,19 @@ describe('the token split on every usage surface', () => {
     })
 
     it('every row of the board usage tables', async () => {
-        // The total, and its breakdown by role and session (RD2-8), each row carrying its classes.
+        // The total, and its breakdown by role (RD2-8), each row carrying its classes. The per-session rows
+        // moved to the Agents table (RD3-5), which shows a session's spend and cache share, not a token split.
         dispatch.mockImplementation(async (action: string) => action === 'fetchAgentBoardSpendBreakdown'
             ? { totalMicros: 1_500_000, costComplete: true, coordinatorEstimateMicros: 0, unattributedMicros: 0,
                 byRole: [{ role: 'coder', costMicros: 1_500_000, closedHops: 1, openHops: 0, tokens: usage }],
                 bySession: [{ session: 's1', agent: 'a1', role: 'coder', costMicros: 1_500_000, tokens: usage }] }
-            : { ...usage, byModel: [{ model: 'm1', modelName: 'Opus', ...usage }] })
-        const w = mount(AgentBoardUsagePanel, { props: { boardUuid: 'b1', agentNames: {} }, global: { stubs } })
+            : action === 'fetchAgentBoardAgents' ? []
+                : { ...usage, byModel: [{ model: 'm1', modelName: 'Opus', ...usage }] })
+        const w = mount(AgentBoardAgentsPanel, { props: { boardUuid: 'b1' }, global: { stubs } })
         await flushPromises()
         const cells = w.findAll('.tokensplit')
-        // the total's figure, the model row, the role row, the session row
-        expect(cells.length).toBe(4)
+        // the total's figure, the model row, the role row
+        expect(cells.length).toBe(3)
         for (const c of cells) expect(c.find('.tt__body').text()).toBe(split)
     })
 })

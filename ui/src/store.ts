@@ -3595,6 +3595,27 @@ const storeObject : any = {
             })
             return response.data.agentBoard?.spendBreakdown ?? null
         },
+        /** Who works the board (task RD3-5): the Agents tab's rows over the window. */
+        async fetchAgentBoardAgents (context: any, payload: { boardUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardAgents($uuid: ID!, $from: DateTime, $to: DateTime) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            agents(from: $from, to: $to) {
+                                session agent agentName roles lastPollAt lastOfferAt lastActivityAt tasksCompleted
+                                costMicros cacheShare
+                                state { kind taskUuid taskKey since closedBy { kind uuid name } }
+                                tokens { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports }
+                                stale { rule message }
+                            }
+                        }
+                    }`,
+                variables: { uuid: payload.boardUuid, from: payload.from, to: payload.to },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.agents ?? []
+        },
         async fetchAgentBoardUsage (context: any, payload: { boardUuid: string, from: string, to: string }) {
             const response = await graphqlClient.query({
                 query: gql`
