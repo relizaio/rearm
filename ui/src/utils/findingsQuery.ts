@@ -28,17 +28,17 @@ export const FINDING_FIX_FIELDS = `
 const FIX_TARGET_FIELDS = `
         fixTargets { purl major targets { version sameMajor fixes } }`
 
-// Which component of the release's SBOM each finding is on, matched by the
-// server (the group view's grouping). Release findings only: an artifact's
-// findings belong to no one release. It costs one read of the release's SBOM,
-// so the MATCHED document is FULL plus this and nothing else.
 const SBOM_MATCH_SUBFIELDS = 'sbomComponentUuid canonicalPurl missReason'
 
+// Which component of the release's SBOM each finding is on, matched by the
+// server (the group view's grouping; rearm-saas#705). Release findings only: an
+// artifact's findings belong to no one release. It costs one read of the
+// release's SBOM, so the MATCHED document is FULL plus this and nothing else.
 const FINDING_SBOM_FIELDS = `
             sbomMatch { ${SBOM_MATCH_SUBFIELDS} }`
 
 // The same plus the latest version of each finding's SBOM component and
-// whether it fixes the finding (rearm-saas PR G): the group view's Latest.
+// whether it fixes the finding (rearm-saas#708): the group view's Latest.
 // A tier of its own, LATEST, on top of MATCHED, so a backend with the match
 // but without the latest version still groups on the server.
 const FINDING_SBOM_LATEST_FIELDS = `

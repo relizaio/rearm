@@ -168,7 +168,7 @@ describe('the release findings MATCHED document', () => {
 })
 
 // LATEST: MATCHED plus each finding's component's latest version and whether it
-// fixes the finding (rearm-saas PR G), the group view's Latest column.
+// fixes the finding (rearm-saas#708), the group view's Latest column.
 describe('the release findings LATEST document', () => {
     it.runIf(proSchema)('is valid against Pro (skipped if rearm-core absent)', () => {
         expect(errorsAgainst(proSchema as GraphQLSchema, RELEASE_FINDINGS_QUERY_LATEST)).toEqual([])
@@ -180,10 +180,11 @@ describe('the release findings LATEST document', () => {
 
     /**
      * TEMPORARY: CE has mirrored neither sbomMatch nor the latest version yet.
-     * Flip to "is valid against CE" with the MATCHED canary once the CE sync of
-     * PR G brings them over.
+     * Once the CE sync of rearm-saas#708 brings them over, flip this to "is
+     * valid against CE" (with the MATCHED canary) and add a CE run of the
+     * LatestFixVerdict mirror check below.
      */
-    it('is ahead of CE by latestFix', () => {
+    it('is ahead of CE, latestFix included', () => {
         expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_LATEST).some(e => /latestFix/.test(e))).toBe(true)
     })
 

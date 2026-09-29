@@ -38,16 +38,14 @@
                             :title="`${openCounts[severity]} open ${severity.toLowerCase()}`">{{ openCounts[severity] }}</span>
                         <n-tag v-if="openKevCount" type="error" size="small" :bordered="false"
                             title="CISA Known Exploited Vulnerability">KEV {{ openKevCount }}</n-tag>
-                        <span v-if="suppressedCount" class="findings-suppressed">{{ suppressedCount }} suppressed</span>
+                        <span v-if="suppressedCount" class="findings-muted">{{ suppressedCount }} suppressed</span>
                     </template>
-                    <span v-else class="findings-suppressed">none</span>
+                    <span v-else class="findings-muted">none</span>
                 </div>
-                <p v-if="componentLatest" style="margin: 4px 0;" :title="LATEST_VERSION_NOTE">
+                <p v-if="componentLatest" style="margin: 4px 0;" :title="groupLatestTitle(componentLatest)">
                     <strong>Latest version:</strong> {{ componentLatest.version }}
-                    <span v-if="latestFixCount" class="findings-suppressed">
-                        (fixes {{ latestFixCount }} of {{ (componentFindings || []).length }} findings)
-                    </span>
-                    <span v-if="componentLatest.checked" class="findings-suppressed">checked {{ checkedDay(componentLatest.checked) }}</span>
+                    <span class="findings-muted">{{ latestFixesText(componentLatest) }}</span>
+                    <span v-if="componentLatest.checked" class="findings-muted">checked {{ checkedDay(componentLatest.checked) }}</span>
                 </p>
             </div>
 
@@ -135,8 +133,8 @@ import { formatPrimaryScore } from '@/utils/vulnScoreDisplay'
 import { fixedInText, fixedInTitle } from '@/utils/fixedInDisplay'
 import { loadRichestServed } from '@/utils/graphqlDriftFallback'
 import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from '@/utils/sbomComponentFindingsQuery'
-import { LATEST_VERSION_NOTE, checkedDay, latestFixCell } from '@/utils/latestVersionDisplay'
-import { LatestFixVerdict } from '@/constants/latestFixVerdict'
+import { checkedDay, groupLatestTitle, latestFixCell, latestFixesText, latestOf } from '@/utils/latestVersionDisplay'
+import type { GroupLatest } from '@/utils/latestVersionDisplay'
 
 interface Props {
     releaseUuid: string
@@ -210,15 +208,15 @@ const MAX_PATHS = 50
 // Uncached (loadRichestServed): the documents share the graph query's root
 // field and arguments, and a cached write would replace the graph's entry.
 const componentFindings: Ref<any[] | null> = ref(null)
-// The component's latest version (Dependency-Track's repository metadata) and the
-// findings it fixes; null when unknown or not served.
-const componentLatest: Ref<{ version: string, checked: string | null } | null> = ref(null)
+// The component's latest version (Dependency-Track's repository metadata) and when it
+// was checked; null when unknown or not served.
+const latestFound: Ref<Pick<GroupLatest, 'version' | 'checked'> | null> = ref(null)
 let findingsRequest = 0
 
 async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: string) {
     const request = ++findingsRequest
     componentFindings.value = null
-    componentLatest.value = null
+    latestFound.value = null
     try {
         const result = await loadRichestServed(graphqlClient, {
             documents: [SBOM_COMPONENT_FINDINGS_QUERY_LATEST, SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE],
@@ -227,14 +225,12 @@ async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: s
         })
         // a later navigation owns the badge now
         if (request !== findingsRequest || selected.value?.sbomComponentUuid !== sbomComponentUuid) return
-        // served 0: findings and the latest version; 1: findings only; 2: neither
-        if (result.served <= 1 && result.data) {
-            componentFindings.value = (result.data.findings || []).map((f: any, i: number) => ({ ...f, rowIndex: i }))
+        // which tier was served, by the fields it carries: findings, then the latest version
+        if (Array.isArray(result.data?.findings)) {
+            componentFindings.value = result.data.findings.map((f: any, i: number) => ({ ...f, rowIndex: i }))
         }
-        const latest = result.served === 0 ? result.data?.component?.latestVersion : null
-        componentLatest.value = latest
-            ? { version: latest, checked: result.data.component.latestVersionChecked ?? null }
-            : null
+        const latest = result.data?.component?.latestVersion
+        latestFound.value = latest ? { version: latest, checked: result.data.component.latestVersionChecked ?? null } : null
     } catch {
         // decorative: the graph above is what the page is for
     }
@@ -252,7 +248,9 @@ const suppressedCount = computed(() => (componentFindings.value || []).length - 
 const severityColor = (severity: string) => (constants.VulnerabilityColors as Record<string, string>)[severity]
 const analysisStateLabel = (state: string) => ANALYSIS_STATE_OPTIONS.find(o => o.value === state)?.label ?? state
 // counted over the rows, as the per-row column and the findings modal count
-const latestFixCount = computed(() => (componentFindings.value || []).filter(f => f.latestFix === LatestFixVerdict.FIXES).length)
+const componentLatest = computed(() => latestFound.value
+    ? latestOf(latestFound.value.version, latestFound.value.checked, (componentFindings.value || []).map(f => f.latestFix))
+    : null)
 
 const latestFixColumn = {
     title: 'Latest fixes',
@@ -532,7 +530,7 @@ const dependedOnByColumns: DataTableColumns<any> = [
     gap: 4px;
     margin: 6px 0 4px;
 }
-.findings-suppressed {
+.findings-muted {
     color: #999;
     font-size: 12px;
 }

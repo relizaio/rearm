@@ -3,7 +3,7 @@
 // client) so the schema-drift spec can import it without a browser.
 //
 // Three documents, richest first, for loadRichestServed: LATEST adds the
-// component's latest version and which findings it fixes (rearm-saas PR G);
+// component's latest version and whether it fixes each finding (rearm-saas#708);
 // FULL selects the component's findings, which a CE backend that has not
 // mirrored ReleaseSbomComponent.findings rejects; CORE selects only what every
 // backend serves, so the page then shows no badge rather than an error.

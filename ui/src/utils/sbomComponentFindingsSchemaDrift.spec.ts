@@ -15,7 +15,7 @@ const withoutFindings = (doc: DocumentNode) => print(visit(doc, {
     FragmentDefinition: () => null
 }))
 
-// LATEST with the latest-version fields (PR G) taken out.
+// LATEST with the latest-version fields (rearm-saas#708) taken out.
 const withoutLatest = (doc: DocumentNode) => print(visit(doc, {
     Field: node => ['component', 'latestFix'].includes(node.name.value) ? null : undefined
 }))
@@ -42,15 +42,19 @@ describe('SBOM component findings documents', () => {
     })
 
     /**
-     * TEMPORARY: CE has not mirrored ReleaseSbomComponent.findings yet, so the
-     * page shows no badge there. Flip to "FULL is valid against CE" once the CE
-     * sync brings the field over.
+     * TEMPORARY: CE has not mirrored the latest version (rearm-saas#708) yet, so
+     * the page shows no latest line there. Flip to "LATEST is valid against CE"
+     * once the CE sync brings it over.
      */
-    // TEMPORARY with the canary below: flip once the CE sync of PR G lands.
     it('LATEST is ahead of CE by the latest version', () => {
         expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY_LATEST).some(e => /latestVersion/.test(e))).toBe(true)
     })
 
+    /**
+     * TEMPORARY: CE has not mirrored ReleaseSbomComponent.findings yet, so the
+     * page shows no badge there. Flip to "FULL is valid against CE" once the CE
+     * sync brings the field over.
+     */
     it('FULL is ahead of CE by findings', () => {
         const errors = errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY)
         expect(errors.length).toBeGreaterThan(0)

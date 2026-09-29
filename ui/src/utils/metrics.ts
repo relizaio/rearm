@@ -703,6 +703,19 @@ function groupScoreColumns(h: any): DataTableColumns<FindingComponentGroup> {
 
 // Columns of the group-by-component view: one row per affected component, its
 // findings table (the flat columns) nested in the expanded row.
+// The group's latest version and what it fixes (see latestVersionDisplay.ts).
+function latestColumn(h: any) {
+  return {
+    title: 'Latest',
+    key: 'latest',
+    width: 170,
+    render: (group: FindingComponentGroup) => {
+      const latest = groupLatestOf(group.rows)
+      return latest ? h('span', { title: groupLatestTitle(latest) }, groupLatestText(latest)) : ''
+    }
+  }
+}
+
 export function buildComponentGroupColumns(
   h: any,
   NTag: any,
@@ -809,15 +822,3 @@ export function buildComponentGroupColumns(
   ]
 }
 
-// The group's latest version and what it fixes (see latestVersionDisplay.ts).
-function latestColumn(h: any) {
-  return {
-    title: 'Latest',
-    key: 'latest',
-    width: 170,
-    render: (group: FindingComponentGroup) => {
-      const latest = groupLatestOf(group.rows)
-      return latest ? h('span', { title: groupLatestTitle(latest) }, groupLatestText(latest)) : ''
-    }
-  }
-}
