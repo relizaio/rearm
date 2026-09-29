@@ -20,7 +20,7 @@ import { FIXED_IN_TITLES } from './fixedInDisplay'
 // Each load is three documents, richest first (loadFindings): FULL adds the
 // per-finding scores and fix versions (and each component's fix targets),
 // SCORED the scores only, and CORE is everything else, the fallback for a
-// backend without them (a CE install behind this UI), which must validate on
+// backend without them (a build older than the fields), which must validate on
 // CE or the modal blanks there.
 //
 // CE ships in this repo; Pro is checked when a sibling rearm-core checkout is
@@ -67,16 +67,14 @@ describe('findings modal documents vs the CE mirror schema (in-repo, always runs
     })
 
     /**
-     * EXPECTED and TEMPORARY: CE rejects FULL, and only for the fix versions
-     * and fix targets, which is exactly the case the SCORED fallback exists for.
-     * Every error must be one of those; when the mirror lands this fails and
-     * becomes a plain "FULL is valid against CE".
+     * NOTE: this used to assert FULL was still ahead of CE by the fix versions
+     * and fix targets. The 2026-09 CE sync (#472) brought them over, so that
+     * canary was retired.
+     * The SCORED and CORE fallbacks stay for a backend without the fields (a build
+     * older than them); what keeps them honest is "the tiers stay one document".
      */
-    it.each(TIERS)('%s FULL is still ahead of CE only by the fix versions', (_name, full) => {
-        const errs = errorsAgainst(ceSchema, full)
-        expect(errs.length).toBeGreaterThan(0)
-        expect(errs.filter(e => !/field "(fixedIn" on type "Vulnerability|fixTargets" on type "DependencyTrackMetrics)"/.test(e)))
-            .toEqual([])
+    it.each(TIERS)('%s FULL is valid against CE', (_name, full) => {
+        expect(errorsAgainst(ceSchema, full)).toEqual([])
     })
 })
 
@@ -113,9 +111,13 @@ describe('the tiers stay one document', () => {
     })
 })
 
-describe('fix version verdicts vs the Pro schema (skipped if rearm-core absent)', () => {
+describe('fix version verdicts vs the schemas', () => {
     // The Fixed in column labels every verdict; one the schema adds would show raw.
-    it.runIf(proSchema)('the column labels exactly the FixedInVerdict values', () => {
+    it('the column labels exactly the FixedInVerdict values on CE', () => {
+        expect(Object.keys(FIXED_IN_TITLES).sort()).toEqual(enumValuesOf(ceSchema, 'FixedInVerdict').sort())
+    })
+
+    it.runIf(proSchema)('and on Pro (skipped if rearm-core absent)', () => {
         expect(Object.keys(FIXED_IN_TITLES).sort()).toEqual(enumValuesOf(proSchema as GraphQLSchema, 'FixedInVerdict').sort())
     })
 })

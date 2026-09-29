@@ -59,7 +59,7 @@ export const FIXED_IN_TITLES: Record<FixedInVerdict, string> = {
 // Up to this many bump targets show by name; more show as a count.
 const BUMP_TARGETS_SHOWN = 3
 
-/** Whether the rows came from a query that selected fix versions (a CE backend without them leaves the field out). */
+/** Whether the rows came from a query that selected fix versions (a backend older than them leaves the field out). */
 export function hasFixedInFields (rows: FixedInRow[]): boolean {
     return rows.some(row => row.fixedIn !== undefined)
 }
