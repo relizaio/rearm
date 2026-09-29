@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 // mock it out; these tests only exercise the pure status logic.
 vi.mock('./graphql', () => ({ default: { query: vi.fn() } }))
 
-import { collectArtifactsForStatus, getReleaseScanStatus } from './releaseScanStatus'
+import { collectArtifactsForStatus, getReleaseScanStatus, isScanNotApplicable, showsScanBadge } from './releaseScanStatus'
 
 /** A minimal unscanned BOM artifact — the shape isBomDtrackPending flags. */
 function pendingBom (componentUuid?: string) {
@@ -66,5 +66,40 @@ describe('getReleaseScanStatus with shared-SCE artifacts', () => {
     it('still reports DTrack pending for this component\'s own unscanned BOM', () => {
         const release = releaseWithSceArts([pendingBom(OWN_COMPONENT)])
         expect(getReleaseScanStatus(release, true).kind).toBe('dtrack-pending')
+    })
+})
+
+describe('a board document is never scanned (RD4-11)', () => {
+    const unscanned = { lifecycle: 'DRAFT', metrics: null, artifactDetails: [pendingBom()] }
+
+    it('reports not-applicable for a DOCUMENT component, whatever its metrics say', () => {
+        const release = { ...unscanned, componentDetails: { uuid: OWN_COMPONENT, kind: 'DOCUMENT' } }
+        expect(isScanNotApplicable(release)).toBe(true)
+        expect(getReleaseScanStatus(release, true).kind).toBe('not-applicable')
+        expect(getReleaseScanStatus(release, false).kind).toBe('not-applicable')
+    })
+
+    it('reports not-applicable when the backend serves NOT_APPLICABLE (a legacy GENERIC document component)', () => {
+        const release = { lifecycle: 'ASSEMBLED', componentDetails: { kind: 'GENERIC' },
+            metrics: { dtrackFetchStatus: 'NOT_APPLICABLE', firstScanned: null } }
+        expect(isScanNotApplicable(release)).toBe(true)
+        expect(getReleaseScanStatus(release, true).kind).toBe('not-applicable')
+    })
+
+    it('leaves a software release as it was: pending until scanned, then ready', () => {
+        const pending = { ...unscanned, componentDetails: { uuid: OWN_COMPONENT, kind: 'GENERIC' } }
+        expect(isScanNotApplicable(pending)).toBe(false)
+        expect(getReleaseScanStatus(pending, true).kind).toBe('dtrack-pending')
+        expect(getReleaseScanStatus({ ...pending, artifactDetails: [], metrics: {} }, false).kind).toBe('scan-pending')
+        const ready = { componentDetails: { kind: 'HELM' }, metrics: { firstScanned: '2026-09-29T00:00:00Z' } }
+        expect(getReleaseScanStatus(ready, true).kind).toBe('ready')
+    })
+
+    it('draws a badge for pending and rejected states only', () => {
+        expect(showsScanBadge({ kind: 'not-applicable', label: '', title: '' })).toBe(false)
+        expect(showsScanBadge({ kind: 'ready', label: '', title: '' })).toBe(false)
+        for (const kind of ['scan-pending', 'dtrack-pending', 'enrichment-pending', 'rejected'] as const) {
+            expect(showsScanBadge({ kind, label: '', title: '' })).toBe(true)
+        }
     })
 })

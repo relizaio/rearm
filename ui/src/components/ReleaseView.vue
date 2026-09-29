@@ -650,11 +650,11 @@
                     </n-gi>
                     <n-gi v-if="!isDocumentRound" span="2">
                         <span
-                            v-if="releaseScanStatus.kind !== 'ready'"
+                            v-if="showsScanBadge(releaseScanStatus)"
                             :title="releaseScanStatus.title"
                             :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', background: releaseScanStatus.kind === 'rejected' ? '#d03050' : releaseScanStatus.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
                         >{{ releaseScanStatus.label }}</span>
-                        <n-space :size="1" v-else>
+                        <n-space :size="1" v-else-if="releaseScanStatus.kind === 'ready'">
                             <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.critical }}</span>
                             <span title="High Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.HIGH, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'HIGH', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.high }}</span>
                             <span title="Medium Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'MEDIUM', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.medium }}</span>
@@ -1436,7 +1436,7 @@ import { summarise } from '@/utils/agentChecks'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
-import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus } from '@/utils/releaseScanStatus'
+import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus, showsScanBadge } from '@/utils/releaseScanStatus'
 import { resolveApprovalRoles } from '@/utils/approvalRoles'
 import { processMetricsData } from '@/utils/metrics'
 import { annotateKnownExploited, fetchArtifactKevVulnIds } from '@/utils/kevService'
@@ -6017,6 +6017,7 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
             const child = row?.releaseDetails
             if (!child) return [h('div'), 'N/A']
             const status = getReleaseScanStatus(child, dtrackConfigured.value)
+            if (status.kind === 'not-applicable') return []
             if (status.kind !== 'ready') return [renderChildScanStatusBadge(status)]
             let els: any[] = []
             if (child.metrics) {
@@ -6038,6 +6039,7 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
             const child = row?.releaseDetails
             if (!child) return [h('div'), 'N/A']
             const status = getReleaseScanStatus(child, dtrackConfigured.value)
+            if (status.kind === 'not-applicable') return []
             if (status.kind !== 'ready') return [renderChildScanStatusBadge(status)]
             let els: any[] = []
             if (child.metrics) {

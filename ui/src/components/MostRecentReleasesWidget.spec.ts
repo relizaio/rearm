@@ -12,6 +12,7 @@ vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification
 vi.mock('@/utils/releaseScanStatus', () => ({
     isDtrackConfiguredForOrg: async () => false,
     getReleaseScanStatus: () => ({ kind: 'ready', label: '', title: '' }),
+    showsScanBadge: () => false,
 }))
 vi.mock('@/utils/releaseVulnerabilityService', () => ({ ReleaseVulnerabilityService: {} }))
 vi.mock('./VulnerabilityModal.vue', () => ({ default: { name: 'VulnerabilityModal', render: () => null } }))
