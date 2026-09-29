@@ -67,6 +67,10 @@ import io.reliza.model.dto.notifications.NotificationSubscriptionData;
 import io.reliza.model.dto.notifications.NotificationSubscriptionData.FilterConfig;
 import io.reliza.model.dto.notifications.NotificationSubscriptionData.RouteConfig;
 import io.reliza.model.NotificationSubscriptionStatus;
+import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.VulnerabilityRecordData.AffectedIdentityType;
+import io.reliza.model.VulnerabilityRecordData.AffectedRange;
+import io.reliza.model.VulnerabilityRecordData.AffectedRangeType;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.NotificationDeliveryRepository;
 import io.reliza.repositories.NotificationOutboxEventRepository;
@@ -97,6 +101,7 @@ class NotificationFanOutServiceTest {
     private NotificationReadService readService;
     private TeamService teamService;
     private ComponentOwnershipService componentOwnershipService;
+    private VulnerabilityRecordService vulnerabilityRecordService;
     private Map<UUID, UUID> channelOrgs;
     private NotificationFanOutService fanOut;
 
@@ -115,6 +120,7 @@ class NotificationFanOutServiceTest {
         readService = mock(NotificationReadService.class);
         teamService = mock(TeamService.class);
         componentOwnershipService = mock(ComponentOwnershipService.class);
+        vulnerabilityRecordService = mock(VulnerabilityRecordService.class);
         channelOrgs = new HashMap<>();
         // Defaults: no team channels, no owner channels. Tests that exercise
         // T3 / T4a targeting override per-call.
@@ -154,6 +160,7 @@ class NotificationFanOutServiceTest {
         inject(fanOut, "readService", readService);
         inject(fanOut, "teamService", teamService);
         inject(fanOut, "componentOwnershipService", componentOwnershipService);
+        inject(fanOut, "vulnerabilityRecordService", vulnerabilityRecordService);
         // drainBatch reaches the per-event transaction boundary through `self`.
         // Point it at the instance itself: these tests have no Spring proxy, so
         // there is no transaction to enter anyway, and this keeps them
@@ -1380,6 +1387,196 @@ class NotificationFanOutServiceTest {
         assertNull(event.getRecordData().get("affectedComponent"));
         verify(deliveryRepo, times(1)).save(any());
         assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
+    }
+
+    // ---------- fixVersion enrichment ----------
+
+    /** A record whose only range for pkg:npm/lodash ends before 4.17.21 and, for pkg:npm/left-pad, never ends. */
+    private void wireRecordWithRanges(UUID orgUuid, String cve) {
+        AffectedRange fixed = new AffectedRange();
+        fixed.setIdentityType(AffectedIdentityType.PURL);
+        fixed.setIdentity("pkg:npm/lodash");
+        fixed.setRangeType(AffectedRangeType.RANGE);
+        fixed.setVersionEndExcluding("4.17.21");
+        AffectedRange unfixed = new AffectedRange();
+        unfixed.setIdentityType(AffectedIdentityType.PURL);
+        unfixed.setIdentity("pkg:npm/left-pad");
+        unfixed.setRangeType(AffectedRangeType.RANGE);
+        unfixed.setVersionStartIncluding("1.0.0");
+        VulnerabilityRecordData record = new VulnerabilityRecordData();
+        record.setPrimaryVulnId(cve);
+        record.setAffectedRanges(List.of(fixed, unfixed));
+        when(vulnerabilityRecordService.getDataByOrgAndVulnIds(orgUuid, Set.of(cve)))
+                .thenReturn(Map.of(cve, record));
+    }
+
+    private NotificationOutboxEvent drainOneVulnEventFor(String purl, String cve) throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, cve);
+        wireOneAffectedRelease(orgUuid, cve);
+        wireRecordWithRanges(orgUuid, cve);
+        when(artifactRepo.findVulnPurlsForVulnId(orgUuid.toString(), cve)).thenReturn(List.of(purl));
+        NotificationSubscription sub = subscriptionWith(
+                orgUuid, null, NotificationSeverity.LOW, UUID.randomUUID());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+        fanOut.drainBatch(50);
+        return event;
+    }
+
+    @Test
+    void newVulnEventGetsTheAdvisoryFixVersionOfItsComponent() throws Exception {
+        NotificationOutboxEvent event = drainOneVulnEventFor("pkg:npm/lodash@4.17.20", "CVE-2025-FIX-1");
+
+        assertEquals("4.17.21", event.getRecordData().get("fixVersion"));
+        NewVulnAffectsReleasesPayload p = Utils.OM.convertValue(event.getRecordData(), NewVulnAffectsReleasesPayload.class);
+        assertEquals("4.17.21", p.fixVersion());
+        verify(deliveryRepo, times(1)).save(any());
+    }
+
+    @Test
+    void aComponentWithoutAFixGetsNoFixVersion() throws Exception {
+        NotificationOutboxEvent event = drainOneVulnEventFor("pkg:npm/left-pad@1.3.0", "CVE-2025-FIX-2");
+
+        assertNull(event.getRecordData().get("fixVersion"));
+        verify(deliveryRepo, times(1)).save(any());
+    }
+
+    @Test
+    void aComponentOutsideTheAdvisoryRangesGetsNoFixVersion() throws Exception {
+        NotificationOutboxEvent event = drainOneVulnEventFor("pkg:npm/lodash@4.17.21", "CVE-2025-FIX-3");
+
+        assertNull(event.getRecordData().get("fixVersion"));
+    }
+
+    @Test
+    void noRecordMeansNoFixVersion() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-FIX-4");
+        wireOneAffectedRelease(orgUuid, "CVE-2025-FIX-4");
+        when(artifactRepo.findVulnPurlsForVulnId(orgUuid.toString(), "CVE-2025-FIX-4"))
+                .thenReturn(List.of("pkg:npm/lodash@4.17.20"));
+        when(vulnerabilityRecordService.getDataByOrgAndVulnIds(any(), any())).thenReturn(Map.of());
+        NotificationSubscription sub = subscriptionWith(
+                orgUuid, null, NotificationSeverity.LOW, UUID.randomUUID());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        assertNull(event.getRecordData().get("fixVersion"));
+        verify(deliveryRepo, times(1)).save(any());
+    }
+
+    @Test
+    void aRecordReadFaultStillShipsTheEventWithoutAFixVersion() throws Exception {
+        // An in-memory fault only: a DB-level failure would mark the real
+        // per-event transaction rollback-only (see enrichVulnEventIfNeeded),
+        // which a mocked service cannot show.
+        UUID orgUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-FIX-5");
+        wireOneAffectedRelease(orgUuid, "CVE-2025-FIX-5");
+        when(artifactRepo.findVulnPurlsForVulnId(orgUuid.toString(), "CVE-2025-FIX-5"))
+                .thenReturn(List.of("pkg:npm/lodash@4.17.20"));
+        when(vulnerabilityRecordService.getDataByOrgAndVulnIds(any(), any()))
+                .thenThrow(new RuntimeException("postgres connection blip"));
+        NotificationSubscription sub = subscriptionWith(
+                orgUuid, null, NotificationSeverity.LOW, UUID.randomUUID());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        assertNull(event.getRecordData().get("fixVersion"));
+        assertNotNull(event.getRecordData().get("affectedComponent"));
+        verify(deliveryRepo, times(1)).save(any());
+        assertEquals(NotificationOutboxStatus.FANNED_OUT, event.getStatus());
+    }
+
+    @Test
+    void aProducerFixVersionIsNotClobbered() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        NewVulnAffectsReleasesPayload payload = new NewVulnAffectsReleasesPayload(
+                "CVE-2025-FIX-6", List.of(), 9.8, "vec", 0.5, false, "9.9.9",
+                NotificationSeverity.CRITICAL,
+                new AffectedComponent("pkg:npm/lodash@4.17.20", "lodash", "4.17.20"),
+                List.of(new AffectedRelease(
+                        UUID.randomUUID(), "myapp", "v1.0", "main", null, List.of())));
+        NotificationOutboxEvent event = new NotificationOutboxEvent();
+        event.setUuid(UUID.randomUUID());
+        event.setOrg(orgUuid);
+        event.setEventType(NotificationEventType.NEW_VULN_AFFECTS_RELEASES);
+        event.setStatus(NotificationOutboxStatus.PENDING);
+        event.setOccurredAt(ZonedDateTime.now());
+        event.setRecordData(Utils.OM.convertValue(payload, Map.class));
+        wireRecordWithRanges(orgUuid, "CVE-2025-FIX-6");
+        NotificationSubscription sub = subscriptionWith(
+                orgUuid, null, NotificationSeverity.LOW, UUID.randomUUID());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        assertEquals("9.9.9", event.getRecordData().get("fixVersion"));
+        verify(vulnerabilityRecordService, never()).getDataByOrgAndVulnIds(any(), any());
+    }
+
+    @Test
+    void aProducerComponentGetsItsFixVersion() throws Exception {
+        // a synthetic event names its own component; the fix follows from it
+        UUID orgUuid = UUID.randomUUID();
+        NewVulnAffectsReleasesPayload payload = new NewVulnAffectsReleasesPayload(
+                "CVE-2025-FIX-7", List.of(), 9.8, "vec", 0.5, false, null,
+                NotificationSeverity.CRITICAL,
+                new AffectedComponent("pkg:npm/lodash@4.17.20", "lodash", "4.17.20"),
+                List.of(new AffectedRelease(
+                        UUID.randomUUID(), "myapp", "v1.0", "main", null, List.of())));
+        NotificationOutboxEvent event = new NotificationOutboxEvent();
+        event.setUuid(UUID.randomUUID());
+        event.setOrg(orgUuid);
+        event.setEventType(NotificationEventType.NEW_VULN_AFFECTS_RELEASES);
+        event.setStatus(NotificationOutboxStatus.PENDING);
+        event.setOccurredAt(ZonedDateTime.now());
+        event.setRecordData(Utils.OM.convertValue(payload, Map.class));
+        wireRecordWithRanges(orgUuid, "CVE-2025-FIX-7");
+        NotificationSubscription sub = subscriptionWith(
+                orgUuid, null, NotificationSeverity.LOW, UUID.randomUUID());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        assertEquals("4.17.21", event.getRecordData().get("fixVersion"));
+    }
+
+    @Test
+    void vulnRecordUpdatedEventGetsNoFixVersion() throws Exception {
+        // Only the NEW_VULN payload carries fixVersion, even when the event
+        // names a component.
+        UUID orgUuid = UUID.randomUUID();
+        NotificationOutboxEvent event = new NotificationOutboxEvent();
+        event.setUuid(UUID.randomUUID());
+        event.setOrg(orgUuid);
+        event.setEventType(NotificationEventType.VULNERABILITY_RECORD_UPDATED);
+        event.setStatus(NotificationOutboxStatus.PENDING);
+        event.setOccurredAt(ZonedDateTime.now());
+        Map<String, Object> rd = new HashMap<>();
+        rd.put("vulnPrimaryId", "CVE-2025-FIX-8");
+        rd.put("affectedComponent", Map.of("purl", "pkg:npm/lodash@4.17.20", "name", "lodash"));
+        event.setRecordData(rd);
+        wireOneAffectedRelease(orgUuid, "CVE-2025-FIX-8");
+        wireRecordWithRanges(orgUuid, "CVE-2025-FIX-8");
+        NotificationSubscription sub = subscriptionFor(
+                orgUuid, List.of(NotificationEventType.VULNERABILITY_RECORD_UPDATED),
+                null, null, UUID.randomUUID());
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        verify(artifactRepo, times(1)).findArtifactsWithVulnId(orgUuid.toString(), "CVE-2025-FIX-8");
+        verify(vulnerabilityRecordService, never()).getDataByOrgAndVulnIds(any(), any());
+        assertFalse(event.getRecordData().containsKey("fixVersion"));
     }
 
     // ---------- Phase 12: perspective-scoped routes ----------

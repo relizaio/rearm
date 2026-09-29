@@ -31,6 +31,8 @@ import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 
 import io.reliza.common.Utils;
+import io.reliza.dto.FixedIn;
+import io.reliza.dto.FixedIn.FixedInVerdict;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
@@ -53,6 +55,7 @@ import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationOutboxStatus;
 import io.reliza.model.NotificationSeverity;
 import io.reliza.model.NotificationSubscription;
+import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.dto.notifications.NotificationSubscriptionData;
 import io.reliza.model.dto.notifications.NotificationSubscriptionData.RouteConfig;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload;
@@ -182,6 +185,9 @@ public class NotificationFanOutService {
 
     @Autowired
     private GetComponentService getComponentService;
+
+    @Autowired
+    private VulnerabilityRecordService vulnerabilityRecordService;
 
     // T4a -- owner-aware route targeting. Ownership policy (which states are
     // routable, USER vs TEAM) lives in the ownership service; fan-out only
@@ -1561,7 +1567,8 @@ public class NotificationFanOutService {
      * deployed CVE (log4shell class) attached to hundreds of artifacts
      * in one org will fan out hundreds of DB round-trips inside the
      * advisory-lock-held tx. The S-3 component fill adds a second org-wide
-     * {@code vulnerabilityDetails} scan per NEW_VULN event on top of that.
+     * {@code vulnerabilityDetails} scan per NEW_VULN event on top of that,
+     * and the fix version one keyed record read.
      * Acceptable in v1 because vuln events are sparse and the advisory
      * lock lets us finish the batch before the next tick. A batched query
      * that joins {@code metrics->vulnerabilityDetails} straight to
@@ -1634,7 +1641,53 @@ public class NotificationFanOutService {
                         event.getUuid(), vulnPrimaryId, e.getMessage());
             }
         }
+
+        // fixVersion: the advisory's fix for that component. Same
+        // delivering-pass and don't-clobber rules, since it follows from the
+        // component picked above.
+        if (type == NotificationEventType.NEW_VULN_AFFECTS_RELEASES
+                && (willDeliverNow || forChannelTest)
+                && recordData.get("fixVersion") == null) {
+            String purl = affectedComponentPurl(recordData.get("affectedComponent"));
+            if (purl != null) {
+                try {
+                    String fixVersion = resolveFixVersion(event.getOrg(), vulnPrimaryId, purl);
+                    if (fixVersion != null) recordData.put("fixVersion", fixVersion);
+                } catch (RuntimeException e) {
+                    log.warn("Failed to enrich vuln event {} with fixVersion for {}: {}",
+                            event.getUuid(), vulnPrimaryId, e.getMessage());
+                }
+            }
+        }
         return result;
+    }
+
+    /** The purl of a payload's affectedComponent, stored as a map or, from a producer, as the record. */
+    private static String affectedComponentPurl(Object affectedComponent) {
+        if (affectedComponent instanceof AffectedComponent ac) return ac.purl();
+        if (affectedComponent instanceof Map<?, ?> m && m.get("purl") instanceof String purl) return purl;
+        return null;
+    }
+
+    /**
+     * The version the advisory says fixes {@code purl}, from the affected
+     * ranges on the org's record of the vuln; null unless the range holding
+     * the purl's version ends before a named version ({@code FIXED_IN}).
+     * Ranges of a new record are fetched during the drain that creates it,
+     * before this runs, but only up to
+     * {@code IntegrationService.INLINE_AFFECTED_RANGES_LIMIT} new records a
+     * run; a vuln past that cap gets its ranges from the nightly sweep and
+     * ships without a fix version. The record read shares the caveat in
+     * {@link #enrichVulnEventIfNeeded}: a DB-level failure inside it marks the
+     * per-event transaction rollback-only, so the catch at the call site
+     * rescues in-memory faults only.
+     */
+    private String resolveFixVersion(UUID orgUuid, String vulnPrimaryId, String purl) {
+        VulnerabilityRecordData record = vulnerabilityRecordService
+                .getDataByOrgAndVulnIds(orgUuid, Set.of(vulnPrimaryId)).get(vulnPrimaryId);
+        if (record == null) return null;
+        FixedIn fixedIn = FixedInResolver.resolve(purl, record.getAffectedRanges(), vulnPrimaryId);
+        return fixedIn.verdict() == FixedInVerdict.FIXED_IN ? fixedIn.version() : null;
     }
 
     /**

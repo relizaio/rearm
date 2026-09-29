@@ -1284,6 +1284,32 @@ type DependencyTrackMetrics {
 	kevCount: Int
 	"Read-time summary over the OPEN vulnerability findings (FALSE_POSITIVE / NOT_AFFECTED / RESOLVED excluded), scored from the org's vulnerability records; never stored. Null when these metrics were not reached through a Release or an Artifact"
 	riskSummary: RiskSummary
+	"Read-time, per component of vulnerabilityDetails: the fix versions its findings' advisories name, and which findings each one fixes; never stored. Components with none are left out. Null when these metrics were not reached through a Release or an Artifact, or a vulnerability record read failed"
+	fixTargets: [ComponentFixTargets!]
+}
+
+# The versions a component could move to, among those the advisories of its
+# findings name as fixes. A version fixes a finding when it is out of the
+# finding's affected ranges, compared as FixedIn compares the component's own
+# version (per distribution release included). Only findings those ranges
+# say the component's version is affected by count.
+# - purl: the component's package URL with its version, as its findings carry it.
+# - major: the component's major version, its first number; null when it has none.
+# - targets: lowest first; each fixes at least one finding.
+type ComponentFixTargets {
+	purl: String!
+	major: String
+	targets: [FixTarget!]!
+}
+
+# One version a component could move to, and which of its findings it fixes.
+# - version: a fix version the advisory of one of the component's findings names.
+# - sameMajor: whether the version is on the component's major version.
+# - fixes: the vulnerability ids of the component's findings it fixes.
+type FixTarget {
+	version: String!
+	sameMajor: Boolean!
+	fixes: [String!]!
 }
 
 # Read-time risk summary of one metrics object. The population is the open
@@ -1671,6 +1697,50 @@ type Vulnerability {
 	topScore: VulnScore
 	"The EPSS entry (score = probability 0..1, sub-score PERCENTILE); null when none"
 	epss: VulnScore
+	"Which version fixes this finding, from the affected ranges the org's vulnerability record holds for the finding's package; null when these metrics were not reached through a Release or an Artifact, or when the record could not be read"
+	fixedIn: FixedIn
+}
+
+# Which version fixes a finding, according to the affected ranges its
+# advisory publishes for the finding's package (the advisory's claim; whether
+# a release ships the fix is not checked). Versions are compared with the
+# package ecosystem's rules, as Dependency-Track compares them. Where the
+# ranges are given per distribution release, only the finding's own
+# release's ranges count.
+# - version: the version the finding's range ends before; set only for
+#   FIXED_IN, and always above the finding's version.
+# - versionEndIncluding: the last affected version; set only for FIXED_AFTER.
+# - sources: the sources whose ranges contain the finding's version.
+# - identities: the identities of the ranges the verdict was taken from, as
+#   AffectedRange.identity has them (for a Debian finding, its own release's);
+#   empty when there was no verdict to take (NO_RANGE_DATA, UNCOMPARABLE).
+type FixedIn {
+	version: String
+	verdict: FixedInVerdict!
+	versionEndIncluding: String
+	sources: [UpstreamSource!]!
+	identities: [String!]!
+}
+
+enum FixedInVerdict {
+	# The finding's range ends before version, the first version outside it.
+	FIXED_IN
+	# The finding's range ends at versionEndIncluding; a later version fixes
+	# it, but the advisory names none.
+	FIXED_AFTER
+	# The finding's range has no end: every later version is affected too.
+	NO_FIX_AVAILABLE
+	# The advisory has ranges for the package, but none contains the finding's
+	# version: the finding was matched by some other rule.
+	NOT_IN_ADVISORY_RANGE
+	# No ranges for the finding's package: none fetched yet, none published,
+	# or the finding has no package URL.
+	NO_RANGE_DATA
+	# The finding's version cannot be placed in its package's ranges: it, or
+	# every bound, is not a version under the package ecosystem's rules, or the
+	# ranges differ per distribution release (Debian's per-release rows) and
+	# the finding's release is not named or not listed.
+	UNCOMPARABLE
 }
 
 # One score of one type (CVSS v2 / v3 / v4, EPSS, OWASP Risk Rating).
