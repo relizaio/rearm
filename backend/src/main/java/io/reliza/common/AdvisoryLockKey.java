@@ -32,7 +32,8 @@ public enum AdvisoryLockKey {
 	 * whose second key is the record; unlike the others it is not a
 	 * scheduler lock.
 	 */
-	VULNERABILITY_RECORD_WRITE(37);
+	VULNERABILITY_RECORD_WRITE(37),
+	LATEST_VERSION_REFRESH(38);
 	
 	private int queryVal;
 	

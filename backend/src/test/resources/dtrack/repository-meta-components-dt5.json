@@ -1,0 +1,13 @@
+[
+ {"name": "agent", "version": "3.0.0", "group": "@npmcli", "purl": "pkg:npm/%40npmcli/agent@3.0.0",
+  "repositoryMeta": {"repositoryType": "NPM", "namespace": "@npmcli", "name": "agent", "latestVersion": "5.0.2",
+   "lastCheck": 1790580692105, "latestVersionPublishedAt": 1781893556923}},
+ {"name": "just-diff", "version": "6.0.2", "purl": "pkg:npm/just-diff@6.0.2",
+  "repositoryMeta": {"repositoryType": "NPM", "name": "just-diff", "latestVersion": "6.0.2",
+   "lastCheck": 1790580696489, "latestVersionPublishedAt": 1679792376579}},
+ {"name": "mercurial", "version": "6.3.2", "purl": "pkg:pypi/mercurial@6.3.2",
+  "repositoryMeta": {"repositoryType": "PYPI", "name": "mercurial", "latestVersion": "7.2.4",
+   "lastCheck": 1790580696677, "latestVersionPublishedAt": 1786451908667}},
+ {"name": "base-files", "version": "12.4+deb12u15", "group": "debian",
+  "purl": "pkg:deb/debian/base-files@12.4%2Bdeb12u15?distro=debian-12.15"}
+]

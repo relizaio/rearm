@@ -10,6 +10,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,11 +23,15 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.stream.Collectors;
 
+import org.dataloader.DataLoader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,6 +46,10 @@ import com.netflix.graphql.dgs.InputArgument;
 import graphql.execution.DataFetcherResult;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.dto.ComponentFixTargets;
+import io.reliza.dto.FindingSbomMatch;
+import io.reliza.dto.LatestFixVerdict;
+import io.reliza.dto.RiskSummary;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactSbomComponent;
 import io.reliza.model.ComponentData;
@@ -63,10 +72,18 @@ import io.reliza.model.SupportState;
 import io.reliza.model.SupportStatus;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.VulnerabilityRecordData.AffectedRange;
 import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
+import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.FindingPurlBridge;
+import io.reliza.service.FindingPurlBridge.ComponentIndex;
+import io.reliza.service.FixTargetResolver;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.RiskSummaryCalculator;
 import io.reliza.service.SbomComponentService;
 import io.reliza.service.SupportInjectionService;
 import io.reliza.service.SbomComponentService.ComponentPurlToSbom;
@@ -74,6 +91,9 @@ import io.reliza.service.SbomComponentService.SbomComponentSearchQuery;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.oss.OssPerspectiveService;
+import io.reliza.ws.ReleaseInventoryDataLoader.InventoryLookup;
+import io.reliza.ws.VulnerabilityRecordDataLoader.VulnRecordKey;
+import io.reliza.ws.VulnerabilityRecordDataLoader.VulnRecordLookup;
 
 /**
  * GraphQL surface for the per-release SBOM component aggregation and the
@@ -141,7 +161,57 @@ public class SbomComponentDataFetcher {
 			// The enclosing device's support window for the per-component DeviceSupportRisk
 			// derivation, resolved from the PRODUCT COMPONENT (D7) rather than from the
 			// release's own eos/eol; null when no window is declared.
-			DeviceLifecycle deviceLifecycle) {}
+			DeviceLifecycle deviceLifecycle,
+			// The release and its org, for the findings fields' own context (MetricsContext).
+			UUID org,
+			UUID releaseUuid,
+			// The release's findings by component, for the findings fields.
+			ReleaseComponentFindings findings) {}
+
+	/**
+	 * The release's vulnerability findings by the component of the loaded rows each one's
+	 * purl names (see {@link FindingPurlBridge}). Indexed and grouped on first use, then
+	 * kept for the request: most SBOM queries select no findings field and pay nothing, and
+	 * a page that does pays one pass over the release's findings, not one per row. Only the
+	 * loaded rows are indexed, so on a paged load a finding of an off-page component lands
+	 * nowhere, which is what the page asks for.
+	 */
+	static final class ReleaseComponentFindings {
+
+		private final Map<UUID, ReleaseSbomComponent> rows;
+		private final Map<UUID, SbomComponent> components;
+		private final List<VulnerabilityDto> releaseFindings;
+		private ComponentIndex index;
+		private Map<UUID, List<VulnerabilityDto>> byComponent;
+
+		ReleaseComponentFindings(Map<UUID, ReleaseSbomComponent> rows, Map<UUID, SbomComponent> components,
+				List<VulnerabilityDto> releaseFindings) {
+			this.rows = rows;
+			this.components = components;
+			this.releaseFindings = releaseFindings == null ? List.of() : releaseFindings;
+		}
+
+		synchronized List<VulnerabilityDto> of(UUID component) {
+			if (byComponent == null) byComponent = FindingPurlBridge.findingsByComponent(index(), releaseFindings);
+			return byComponent.getOrDefault(component, List.of());
+		}
+
+		synchronized String canonicalPurlOf(UUID component) {
+			return index().canonicalPurlOf(component);
+		}
+
+		private ComponentIndex index() {
+			if (index == null) {
+				Map<UUID, String> canonicalByRow = new HashMap<>(rows.size() * 2);
+				for (UUID id : rows.keySet()) {
+					SbomComponent sc = components.get(id);
+					if (sc != null && sc.getCanonicalPurl() != null) canonicalByRow.put(id, sc.getCanonicalPurl());
+				}
+				index = ComponentIndex.of(canonicalByRow);
+			}
+			return index;
+		}
+	}
 
 	private static final Comparator<Map<String, Object>> EDGE_SORTER = (a, b) -> {
 		String ta = (String) a.get("targetCanonicalPurl");
@@ -189,8 +259,16 @@ public class SbomComponentDataFetcher {
 	 * {@code parents} into a forward-edge map keyed by source uuid so the
 	 * downstream field resolvers are O(1) lookups instead of N+1 queries.
 	 */
-	private ReleaseGraphLoad loadReleaseGraph(UUID releaseUuid, UUID orgUuid, DeviceLifecycle deviceLifecycle) {
-		return loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycle, null, null);
+	private ReleaseGraphLoad loadReleaseGraph(UUID releaseUuid, UUID orgUuid, DeviceLifecycle deviceLifecycle,
+			List<VulnerabilityDto> releaseFindings) {
+		return loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycle, null, null, releaseFindings);
+	}
+
+	/** The release's vulnerability finding rows, as its stored metrics hold them; empty when none. */
+	private static List<VulnerabilityDto> findingsOf(Optional<ReleaseData> ord) {
+		return ord.map(ReleaseData::getMetrics)
+				.map(ReleaseMetricsDto::getVulnerabilityDetails)
+				.orElse(List.of());
 	}
 
 	/**
@@ -205,10 +283,11 @@ public class SbomComponentDataFetcher {
 	 *        to select those fields.
 	 * @param preResolved artifact rows the caller already resolved, to avoid resolving the
 	 *        release a second time; null to resolve here.
+	 * @param releaseFindings the release's vulnerability finding rows, for the findings fields
 	 */
 	private ReleaseGraphLoad loadReleaseGraph(UUID releaseUuid, UUID orgUuid,
 			DeviceLifecycle deviceLifecycle, Set<UUID> restrictTo,
-			List<ArtifactSbomComponent> preResolved) {
+			List<ArtifactSbomComponent> preResolved, List<VulnerabilityDto> releaseFindings) {
 		List<ReleaseSbomComponent> rows =
 				sbomComponentService.listReleaseSbomComponents(releaseUuid, restrictTo, preResolved);
 
@@ -258,7 +337,8 @@ public class SbomComponentDataFetcher {
 		}
 
 		ReleaseGraphContext ctx = new ReleaseGraphContext(
-				rowByComponentUuid, componentByUuid, supportByComponentUuid, forwardEdgesBySource, deviceLifecycle);
+				rowByComponentUuid, componentByUuid, supportByComponentUuid, forwardEdgesBySource, deviceLifecycle,
+				orgUuid, releaseUuid, new ReleaseComponentFindings(rowByComponentUuid, componentByUuid, releaseFindings));
 		List<Map<String, Object>> dtos = rows.stream()
 				.map(SbomComponentDataFetcher::toDto)
 				.toList();
@@ -278,7 +358,7 @@ public class SbomComponentDataFetcher {
 				releaseUuid, Collections.singletonList(ro), CallType.READ);
 
 		UUID orgUuid = ord.map(ReleaseData::getOrg).orElse(null);
-		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord));
+		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord), findingsOf(ord));
 		return DataFetcherResult.<List<Map<String, Object>>>newResult()
 				.data(load.dtos())
 				.localContext(load.ctx())
@@ -331,7 +411,7 @@ public class SbomComponentDataFetcher {
 		// back grouped by a map rather than in query order.
 		Set<UUID> pageIds = new LinkedHashSet<>(page.componentUuids());
 		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord), pageIds,
-				page.resolvedArtifactRows());
+				page.resolvedArtifactRows(), findingsOf(ord));
 		Map<UUID, Map<String, Object>> dtoByComponent = new HashMap<>();
 		for (Map<String, Object> dto : load.dtos()) {
 			dtoByComponent.put((UUID) dto.get("sbomComponentUuid"), dto);
@@ -394,7 +474,7 @@ public class SbomComponentDataFetcher {
 				releaseUuid, Collections.singletonList(ro), CallType.READ);
 
 		UUID orgUuid = ord.map(ReleaseData::getOrg).orElse(null);
-		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord));
+		ReleaseGraphLoad load = loadReleaseGraph(releaseUuid, orgUuid, deviceLifecycleFor(ord), findingsOf(ord));
 		ReleaseSbomComponent target = load.ctx().rowByComponentUuid().get(sbomComponentUuid);
 		if (target == null) {
 			return DataFetcherResult.<Map<String, Object>>newResult()
@@ -894,6 +974,142 @@ public class SbomComponentDataFetcher {
 		return out;
 	}
 
+	/**
+	 * The release's vulnerability findings on this component, in stored order. They carry
+	 * a {@link MetricsContext} for the release, so their scores, fix and SBOM match resolve
+	 * as under {@code Release.metrics}. Empty, not null, outside a release query.
+	 */
+	@DgsData(parentType = "ReleaseSbomComponent", field = "findings")
+	public DataFetcherResult<List<VulnerabilityDto>> getFindings(DgsDataFetchingEnvironment dfe) {
+		UUID componentUuid = extractUuid(dfe.getSource(), "sbomComponentUuid");
+		if (!(dfe.getLocalContext() instanceof ReleaseGraphContext ctx) || componentUuid == null) {
+			return DataFetcherResult.<List<VulnerabilityDto>>newResult().data(List.of()).build();
+		}
+		SbomComponent component = ctx.componentByUuid().get(componentUuid);
+		FindingSbomMatch match = FindingSbomMatch.matched(componentUuid, ctx.findings().canonicalPurlOf(componentUuid),
+				component == null ? null : component.getLatestVersion(),
+				component == null ? null : utcInstantOf(component.getLatestVersionChecked()));
+		return DataFetcherResult.<List<VulnerabilityDto>>newResult()
+				.data(ctx.findings().of(componentUuid))
+				.localContext(MetricsContext.ofComponent(ctx.org(), ctx.releaseUuid(), match))
+				.build();
+	}
+
+	/**
+	 * {@code riskSummary} of this component's findings, as {@code DependencyTrackMetrics}
+	 * has it for the release's. Null outside a release query and when a record read failed.
+	 */
+	@DgsData(parentType = "ReleaseSbomComponent", field = "riskSummary")
+	public CompletionStage<RiskSummary> getRiskSummary(DgsDataFetchingEnvironment dfe) {
+		UUID componentUuid = extractUuid(dfe.getSource(), "sbomComponentUuid");
+		if (!(dfe.getLocalContext() instanceof ReleaseGraphContext ctx) || componentUuid == null || ctx.org() == null) {
+			return CompletableFuture.completedFuture(null);
+		}
+		List<VulnerabilityDto> rows = ctx.findings().of(componentUuid);
+		return VulnerabilityScoreDataFetcher.openRecords(dfe, ctx.org(), rows)
+				.thenApply(byId -> byId == null ? null : RiskSummaryCalculator.computeOfRows(rows, byId));
+	}
+
+	/**
+	 * {@code fixTargets} of this component's findings, as {@code DependencyTrackMetrics}
+	 * has them for the release's, from the same per-request placement budget. Null outside
+	 * a release query and when a record read failed.
+	 */
+	@DgsData(parentType = "ReleaseSbomComponent", field = "fixTargets")
+	public CompletionStage<List<ComponentFixTargets>> getFixTargets(DgsDataFetchingEnvironment dfe) {
+		UUID componentUuid = extractUuid(dfe.getSource(), "sbomComponentUuid");
+		if (!(dfe.getLocalContext() instanceof ReleaseGraphContext ctx) || componentUuid == null || ctx.org() == null) {
+			return CompletableFuture.completedFuture(null);
+		}
+		return VulnerabilityScoreDataFetcher.fixTargets(dfe, ctx.org(), ctx.findings().of(componentUuid));
+	}
+
+	/**
+	 * Which of this component's findings its latest version fixes ({@link LatestFixVerdict#FIXES}).
+	 * Null when the component has no latest version, outside a release query, and when a
+	 * record read failed; empty when the latest version fixes none of them.
+	 */
+	@DgsData(parentType = "ReleaseSbomComponent", field = "latestFixes")
+	public CompletionStage<List<String>> getLatestFixes(DgsDataFetchingEnvironment dfe) {
+		UUID componentUuid = extractUuid(dfe.getSource(), "sbomComponentUuid");
+		if (!(dfe.getLocalContext() instanceof ReleaseGraphContext ctx) || componentUuid == null || ctx.org() == null) {
+			return CompletableFuture.completedFuture(null);
+		}
+		SbomComponent component = ctx.componentByUuid().get(componentUuid);
+		String latest = component == null ? null : component.getLatestVersion();
+		if (latest == null) return CompletableFuture.completedFuture(null);
+		List<VulnerabilityDto> rows = ctx.findings().of(componentUuid);
+		List<String> ids = rows.stream().map(VulnerabilityDto::vulnId).filter(Objects::nonNull).distinct().toList();
+		if (ids.isEmpty()) return CompletableFuture.completedFuture(List.of());
+		List<VulnRecordKey> keys = ids.stream().map(id -> new VulnRecordKey(ctx.org(), id)).toList();
+		DataLoader<VulnRecordKey, VulnRecordLookup> records = dfe.getDataLoader(VulnerabilityRecordDataLoader.NAME);
+		return records.loadMany(keys).thenApply(loaded -> {
+			Map<String, List<AffectedRange>> rangesById = new HashMap<>();
+			for (int i = 0; i < keys.size(); i++) {
+				if (loaded.get(i).failed()) return null;
+				rangesById.put(ids.get(i), loaded.get(i).data().map(VulnerabilityRecordData::getAffectedRanges).orElse(List.of()));
+			}
+			// each finding placed at its own purl: one component's rows can differ in spelling
+			List<String> fixed = new ArrayList<>();
+			for (VulnerabilityDto row : rows) {
+				if (row.vulnId() == null || fixed.contains(row.vulnId())) continue;
+				if (FixTargetResolver.fixedAt(row.purl(), row.vulnId(), rangesById.get(row.vulnId()), latest) == LatestFixVerdict.FIXES) {
+					fixed.add(row.vulnId());
+				}
+			}
+			return fixed;
+		});
+	}
+
+	/**
+	 * Whether the latest version of the finding's SBOM component fixes the finding
+	 * ({@link FixTargetResolver#fixedAt}). Null when the finding matched no component, the
+	 * component has no latest version, and when a read failed.
+	 */
+	@DgsData(parentType = "Vulnerability", field = "latestFix")
+	public CompletionStage<LatestFixVerdict> getLatestFix(DgsDataFetchingEnvironment dfe) {
+		VulnerabilityDto vuln = dfe.getSource();
+		if (vuln == null || vuln.vulnId() == null || !(dfe.getLocalContext() instanceof MetricsContext ctx)
+				|| ctx.org() == null) {
+			return CompletableFuture.completedFuture(null);
+		}
+		return getSbomMatch(dfe).thenCompose(match -> {
+			if (match == null || match.latestVersion() == null) return CompletableFuture.completedFuture(null);
+			DataLoader<VulnRecordKey, VulnRecordLookup> records = dfe.getDataLoader(VulnerabilityRecordDataLoader.NAME);
+			return records.load(new VulnRecordKey(ctx.org(), vuln.vulnId())).thenApply(lookup -> lookup.failed() ? null
+					: FixTargetResolver.fixedAt(vuln.purl(), vuln.vulnId(),
+							lookup.data().map(VulnerabilityRecordData::getAffectedRanges).orElse(List.of()), match.latestVersion()));
+		});
+	}
+
+	/**
+	 * The release SBOM component a finding's purl names, or why none does. The whole
+	 * release's inventory, one read per release per request whatever the number of
+	 * findings; under {@code ReleaseSbomComponent.findings} the row the finding was listed
+	 * under, with no read. Null when the finding was not reached through a release (an
+	 * artifact's findings belong to no one release) and when the inventory read failed.
+	 */
+	@DgsData(parentType = "Vulnerability", field = "sbomMatch")
+	public CompletionStage<FindingSbomMatch> getSbomMatch(DgsDataFetchingEnvironment dfe) {
+		VulnerabilityDto vuln = dfe.getSource();
+		if (vuln == null || !(dfe.getLocalContext() instanceof MetricsContext ctx) || ctx.release() == null) {
+			return CompletableFuture.completedFuture(null);
+		}
+		if (ctx.componentMatch() != null) return CompletableFuture.completedFuture(ctx.componentMatch());
+		DataLoader<UUID, InventoryLookup> loader = dfe.getDataLoader(ReleaseInventoryDataLoader.NAME);
+		return loader.load(ctx.release())
+				.thenApply(lookup -> lookup.failed() ? null : lookup.inventory().match(vuln.purl()));
+	}
+
+	/**
+	 * RFC-3339 UTC instant with a trailing Z, never ZonedDateTime.toString(); null for null.
+	 * Formats latestVersionChecked as SbomComponentRepository.CANONICAL_PURL_ROW_COLUMNS does
+	 * in SQL for the same fields: keep the two in step.
+	 */
+	private static String utcInstantOf(ZonedDateTime zdt) {
+		return zdt == null ? null : zdt.toInstant().truncatedTo(ChronoUnit.SECONDS).toString();
+	}
+
 	private static Map<String, Object> toDto(ReleaseSbomComponent row) {
 		Map<String, Object> dto = new LinkedHashMap<>();
 		dto.put("uuid", row.getUuid());
@@ -917,6 +1133,8 @@ public class SbomComponentDataFetcher {
 		Map<String, Object> dto = new LinkedHashMap<>();
 		dto.put("uuid", sc.getUuid());
 		dto.put("canonicalPurl", sc.getCanonicalPurl());
+		dto.put("latestVersion", sc.getLatestVersion());
+		dto.put("latestVersionChecked", utcInstantOf(sc.getLatestVersionChecked()));
 		Map<String, Object> rd = sc.getRecordData();
 		if (rd != null) {
 			dto.put("type", rd.get("type"));

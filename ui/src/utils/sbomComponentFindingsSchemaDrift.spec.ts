@@ -47,22 +47,17 @@ describe('SBOM component findings documents', () => {
     })
 
     /**
-     * TEMPORARY: CE has not mirrored the latest version (rearm-saas#708) yet, so
-     * the page shows no latest line there. Flip to "LATEST is valid against CE"
-     * once the CE sync brings it over.
+     * NOTE: these used to assert LATEST and FULL were still ahead of CE, by the
+     * latest version (rearm-saas#708) and ReleaseSbomComponent.findings
+     * (rearm-saas#705). The 2026-09 CE sync brought both over, so those canaries
+     * were retired. FULL and CORE stay the fallbacks: FULL for a backend without
+     * the latest version, CORE for one without the findings as well.
      */
-    it('LATEST is ahead of CE by the latest version', () => {
-        expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY_LATEST).some(e => /latestVersion/.test(e))).toBe(true)
+    it('LATEST is valid against CE', () => {
+        expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY_LATEST)).toEqual([])
     })
 
-    /**
-     * TEMPORARY: CE has not mirrored ReleaseSbomComponent.findings yet, so the
-     * page shows no badge there. Flip to "FULL is valid against CE" once the CE
-     * sync brings the field over.
-     */
-    it('FULL is ahead of CE by findings', () => {
-        const errors = errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY)
-        expect(errors.length).toBeGreaterThan(0)
-        expect(errors.every(e => /findings/.test(e))).toBe(true)
+    it('FULL is valid against CE', () => {
+        expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY)).toEqual([])
     })
 })

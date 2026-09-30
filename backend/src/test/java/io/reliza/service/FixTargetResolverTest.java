@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 import io.reliza.dto.ComponentFixTargets;
 import io.reliza.dto.ComponentFixTargets.FixTarget;
+import io.reliza.dto.LatestFixVerdict;
 import io.reliza.model.VulnerabilityRecordData.AffectedIdentityType;
 import io.reliza.model.VulnerabilityRecordData.AffectedRange;
 import io.reliza.model.VulnerabilityRecordData.AffectedRangeType;
@@ -234,5 +235,50 @@ class FixTargetResolverTest {
 		assertEquals(Map.of(LOG4J + "@2.14.1", Set.of("A", "B"), LOG4J + "@2.17.0", Set.of("A")),
 				FixTargetResolver.vulnIdsByPurl(metrics));
 		assertTrue(FixTargetResolver.vulnIdsByPurl(null).isEmpty());
+	}
+
+	@Test
+	void aLatestVersionFixesAFindingWhenItIsOutOfItsRanges() {
+		String at = LOG4J + "@2.14.1";
+		List<AffectedRange> fixedBy215 = List.of(range(LOG4J, null, "2.15.0"));
+		assertEquals(LatestFixVerdict.FIXES, FixTargetResolver.fixedAt(at, "A", fixedBy215, "2.26.1"));
+		// a later affected range: latest >= the fix version would have said fixed
+		List<AffectedRange> twoRanges = List.of(range(LOG4J, null, "2.15.0"), range(LOG4J, "2.20.0", "2.27.0"));
+		assertEquals(LatestFixVerdict.DOES_NOT_FIX, FixTargetResolver.fixedAt(at, "B", twoRanges, "2.26.1"));
+		// no end: every later version is affected
+		assertEquals(LatestFixVerdict.DOES_NOT_FIX, FixTargetResolver.fixedAt(at, "C", List.of(range(LOG4J, "2.0", null)), "2.26.1"));
+	}
+
+	@Test
+	void aLatestVersionThatIsNotAboveTheComponentsOwnFixesNothing() {
+		List<AffectedRange> ranges = List.of(range(LOG4J, null, "2.15.0"));
+		assertEquals(LatestFixVerdict.NOT_ABOVE_CURRENT, FixTargetResolver.fixedAt(LOG4J + "@2.14.1", "A", ranges, "2.14.1"));
+		// a registry can report a version below a private build: a downgrade is no fix
+		assertEquals(LatestFixVerdict.NOT_ABOVE_CURRENT, FixTargetResolver.fixedAt(LOG4J + "@2.14.1", "A", ranges, "2.0.0"));
+	}
+
+	@Test
+	void aLatestVersionSaysNothingWithoutRangesThatHoldTheComponent() {
+		assertEquals(LatestFixVerdict.NO_RANGE_DATA, FixTargetResolver.fixedAt(LOG4J + "@2.14.1", "A", List.of(), "2.26.1"));
+		assertEquals(LatestFixVerdict.NO_RANGE_DATA, FixTargetResolver.fixedAt(LOG4J + "@2.14.1", "A", null, "2.26.1"));
+		// the component's version is outside the ranges: the finding was matched by another rule
+		assertEquals(LatestFixVerdict.NOT_IN_ADVISORY_RANGE,
+				FixTargetResolver.fixedAt(LOG4J + "@2.20.0", "A", List.of(range(LOG4J, null, "2.15.0")), "2.26.1"));
+		// another package's range only
+		assertEquals(LatestFixVerdict.NO_RANGE_DATA, FixTargetResolver.fixedAt(LOG4J + "@2.14.1", "A",
+				List.of(range("pkg:maven/other/pkg", null, "9.0")), "2.26.1"));
+		assertEquals(LatestFixVerdict.UNCOMPARABLE,
+				FixTargetResolver.fixedAt(LOG4J + "@2.14.1", "A", List.of(range(LOG4J, null, "2.15.0")), null));
+	}
+
+	@Test
+	void anUncomparableGenericVersionSaysNothing() {
+		String generic = "pkg:generic/acme/tool";
+		// generic orders a pre-release above the release: the placement is refused
+		assertEquals(LatestFixVerdict.UNCOMPARABLE, FixTargetResolver.fixedAt(generic + "@1.0.0-rc1", "A",
+				List.of(range(generic, null, "1.0.0")), "2.0.0"));
+		// generic with numbers only still answers
+		assertEquals(LatestFixVerdict.FIXES, FixTargetResolver.fixedAt(generic + "@1.0.0", "A",
+				List.of(range(generic, null, "1.2.0")), "2.0.0"));
 	}
 }
