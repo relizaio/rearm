@@ -781,6 +781,7 @@
                                                         </template>
                                                         <CelExpressionBuilder
                                                             v-model="inputTrigger.preconditionCelExpression"
+                                                            @update:issues="(v: string[]) => { rulePreconditionIssues = v }"
                                                             :approval-entry-options="approvalEntryOptionsForTriggers"
                                                             :suppress-first-scanned-warning="true"
                                                             placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
@@ -798,6 +799,7 @@
                                                         </template>
                                                         <CelExpressionBuilder
                                                             v-model="inputTrigger.celExpression"
+                                                            @update:issues="(v: string[]) => { ruleConditionIssues = v }"
                                                             :approval-entry-options="approvalEntryOptionsForTriggers"
                                                             :error="celExpressionError"
                                                             :precondition-cel-expression="inputTrigger.preconditionCelExpression"
@@ -831,9 +833,16 @@
                                                             </n-button>
                                                         </n-space>
                                                     </n-form-item>
-                                                    <n-button @click="addInputTrigger" type="success">
-                                                        Save
-                                                    </n-button>
+                                                    <n-space align="center" size="small">
+                                                        <n-button @click="addInputTrigger" type="success"
+                                                            :disabled="ruleConditionIssues.length > 0 || rulePreconditionIssues.length > 0"
+                                                            data-testid="rule-save">
+                                                            Save
+                                                        </n-button>
+                                                        <span v-if="ruleConditionIssues.length > 0 || rulePreconditionIssues.length > 0" style="font-size: 12px; color: #d03050;">
+                                                            Complete the condition before saving.
+                                                        </span>
+                                                    </n-space>
                                                 </n-space>
                                             </n-form>
                                         </n-modal>
@@ -2314,6 +2323,9 @@ const inputTrigger: Ref<InputTriggerEvent> = ref({
     preconditionCelExpression: ''
 })
 const celExpressionError = ref('')
+// Incomplete clauses reported by the two builders; either blocks the rule's Save.
+const ruleConditionIssues = ref<string[]>([])
+const rulePreconditionIssues = ref<string[]>([])
 
 function resetInputTrigger () {
     inputTrigger.value = {
@@ -3557,7 +3569,7 @@ async function addInputTrigger () {
     celExpressionError.value = ''
     const validation = validateInputTrigger(inputTriggerToPush)
     if (!validation.valid) {
-        if (validation.error === 'Condition is required.') {
+        if (validation.field === 'celExpression') {
             celExpressionError.value = validation.error
         } else {
             notify('error', 'Validation Error', validation.error!)

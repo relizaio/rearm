@@ -282,6 +282,7 @@
                                         </template>
                                         <CelExpressionBuilder
                                             v-model="globalInputEvent.preconditionCelExpression"
+                                            @update:issues="(v: string[]) => { globalRulePreconditionIssues = v }"
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :suppress-first-scanned-warning="true"
                                             placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
@@ -299,6 +300,7 @@
                                         </template>
                                         <CelExpressionBuilder
                                             v-model="globalInputEvent.celExpression"
+                                            @update:issues="(v: string[]) => { globalRuleConditionIssues = v }"
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :error="globalCelExpressionError"
                                             :precondition-cel-expression="globalInputEvent.preconditionCelExpression"
@@ -329,7 +331,14 @@
                                             </n-button>
                                         </n-space>
                                     </n-form-item>
-                                    <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
+                                    <n-space align="center" size="small">
+                                        <n-button @click="addGlobalInputEvent" type="success"
+                                            :disabled="globalRuleConditionIssues.length > 0 || globalRulePreconditionIssues.length > 0"
+                                            data-testid="global-rule-save">Save</n-button>
+                                        <span v-if="globalRuleConditionIssues.length > 0 || globalRulePreconditionIssues.length > 0" style="font-size: 12px; color: #d03050;">
+                                            Complete the condition before saving.
+                                        </span>
+                                    </n-space>
                                 </n-space>
                             </n-form>
                         </n-modal>
@@ -5460,6 +5469,9 @@ const globalInputEvent: Ref<InputTriggerEvent> = ref({
 })
 
 const globalCelExpressionError = ref('')
+// Incomplete clauses reported by the two builders; either blocks the rule's Save.
+const globalRuleConditionIssues = ref<string[]>([])
+const globalRulePreconditionIssues = ref<string[]>([])
 
 function resetGlobalInputEvent () {
     globalInputEvent.value = {
@@ -5924,7 +5936,7 @@ function addGlobalInputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalInputEvent.value)
     const validation = validateInputTrigger(eventToPush)
     if (!validation.valid) {
-        if (validation.error === 'Condition is required.') {
+        if (validation.field === 'celExpression') {
             globalCelExpressionError.value = validation.error
         } else {
             notify('error', 'Validation Error', validation.error!)
