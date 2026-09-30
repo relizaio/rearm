@@ -52,6 +52,8 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.IntegrationRepository;
 import io.reliza.service.VulnerabilityRecordService.FetchedAffectedRanges;
 import io.reliza.service.VulnerabilityRecordService.UpsertOrigin;
+import io.reliza.service.VulnerabilityRecordService.UpsertOutcome;
+import io.reliza.service.VulnerabilityRecordService.UpsertResult;
 
 /**
  * {@link IntegrationService#fetchSingleVulnerabilityFromDtrack} against a
@@ -198,7 +200,7 @@ class IntegrationServiceSingleVulnFetchTest {
 		respond("OSV/CVE-2026-0001", 200, vulnJson("CVE-2026-0001", "OSV", null, null));
 		VulnerabilityRecordData merged = new VulnerabilityRecordData();
 		when(vulnerabilityRecordService.upsertFromSnapshots(eq(org), any(), any(), eq(wu),
-				eq(UpsertOrigin.MANUAL_REFRESH))).thenReturn(merged);
+				eq(UpsertOrigin.MANUAL_REFRESH))).thenReturn(upserted(merged));
 
 		assertSame(merged, service.fetchSingleVulnerabilityFromDtrack(org, "CVE-2026-0001", wu));
 	}
@@ -208,7 +210,7 @@ class IntegrationServiceSingleVulnFetchTest {
 		respond("OSV/PYSEC-2018-5", 200, vulnJson("PYSEC-2018-5", "OSV", "CVE-2018-7536", "GHSA-r28v-mw67-m5p9"));
 		respond("GITHUB/GHSA-r28v-mw67-m5p9", 200, vulnJson("GHSA-r28v-mw67-m5p9", "GITHUB", "CVE-2018-7536", null));
 		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any()))
-				.thenReturn(new VulnerabilityRecordData());
+				.thenReturn(upserted(new VulnerabilityRecordData()));
 
 		service.fetchSingleVulnerabilityFromDtrack(org, "PYSEC-2018-5", wu);
 
@@ -236,7 +238,7 @@ class IntegrationServiceSingleVulnFetchTest {
 		respond("OSV/PYSEC-2018-5", 200, vulnJson("PYSEC-2018-5", "OSV", "CVE-2018-7536", null));
 		respond("OSV/CVE-2018-7536", 200, vulnJson("CVE-2018-7536", "OSV", null, null));
 		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any()))
-				.thenReturn(new VulnerabilityRecordData());
+				.thenReturn(upserted(new VulnerabilityRecordData()));
 
 		service.fetchSingleVulnerabilityFromDtrack(org, "CVE-2018-7536", wu);
 
@@ -263,7 +265,7 @@ class IntegrationServiceSingleVulnFetchTest {
 		when(vulnerabilityRecordService.getByAlias(org, "GHSA-abcd-efgh-ijkl")).thenReturn(Optional.of(existing));
 		respond("GITHUB/GHSA-abcd-efgh-ijkl", 200, vulnJson("GHSA-abcd-efgh-ijkl", "GITHUB", null, null));
 		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any()))
-				.thenReturn(new VulnerabilityRecordData());
+				.thenReturn(upserted(new VulnerabilityRecordData()));
 
 		service.fetchSingleVulnerabilityFromDtrack(org, "GHSA-abcd-efgh-ijkl", wu);
 
@@ -318,6 +320,11 @@ class IntegrationServiceSingleVulnFetchTest {
 		return vulnJson.substring(0, vulnJson.length() - 1) + ranges + "}";
 	}
 
+	/** An upsert that rewrote an existing record into {@code data}. */
+	private static UpsertResult upserted(VulnerabilityRecordData data) {
+		return new UpsertResult(data, UpsertOutcome.UPDATED);
+	}
+
 	/** What the upsert hands back: the record as stored, having had both OSV advisories as snapshots. */
 	private VulnerabilityRecordData persistedDjangoRecord() {
 		VulnerabilityRecordData persisted = new VulnerabilityRecordData();
@@ -338,7 +345,7 @@ class IntegrationServiceSingleVulnFetchTest {
 		respond("OSV/DEBIAN-CVE-2018-7536", 200,
 				withRanges(vulnJson("DEBIAN-CVE-2018-7536", "OSV", null, null), DEBIAN_RANGES));
 		VulnerabilityRecordData persisted = persistedDjangoRecord();
-		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any())).thenReturn(persisted);
+		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any())).thenReturn(upserted(persisted));
 
 		service.fetchSingleVulnerabilityFromDtrack(org, "PYSEC-2018-5", wu);
 
@@ -360,7 +367,7 @@ class IntegrationServiceSingleVulnFetchTest {
 		respond("OSV/PYSEC-2018-5", 200, vulnJson("PYSEC-2018-5", "OSV", "CVE-2018-7536", null));
 		respond("OSV/DEBIAN-CVE-2018-7536", 503, "busy");
 		VulnerabilityRecordData persisted = persistedDjangoRecord();
-		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any())).thenReturn(persisted);
+		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any())).thenReturn(upserted(persisted));
 
 		assertSame(persisted, service.fetchSingleVulnerabilityFromDtrack(org, "PYSEC-2018-5", wu));
 

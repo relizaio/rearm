@@ -1236,6 +1236,13 @@ class VariableQueries {
 			and a.record_data->>'identifier' = 'base'
 		""";
 
+	/** Every org's base integration of one type, enabled or not. */
+	protected static final String LIST_BASE_INTEGRATIONS_BY_TYPE = """
+			select * from rearm.integrations a
+			where a.record_data->>'type' = :typeAsString
+			and a.record_data->>'identifier' = 'base'
+		""";
+
 	/**
 	 * Per-org KEV sync orchestration (V54): list enabled integrations of one
 	 * type across all orgs. KevCatalogSyncService iterates the result and

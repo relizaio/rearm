@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -58,6 +59,8 @@ import io.reliza.service.IntegrationService.AffectedRangesFetchResult;
 import io.reliza.service.IntegrationService.AffectedRangesFetchStatus;
 import io.reliza.service.IntegrationService.DtrackAffectedComponentRaw;
 import io.reliza.service.VulnerabilityRecordService.FetchedAffectedRanges;
+import io.reliza.service.VulnerabilityRecordService.UpsertOutcome;
+import io.reliza.service.VulnerabilityRecordService.UpsertResult;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
 
@@ -177,14 +180,11 @@ class IntegrationServiceAffectedRangesTest {
 		responses.put(key, Map.entry(200, Utils.OM.writeValueAsString(liveShapes(resource).get(key))));
 	}
 
-	/** A record as a drain's upsert returns it right after creating it (first seen == last updated). */
+	/** A record with snapshots of these "SOURCE/id" pairs. */
 	private static VulnerabilityRecordData record(String primaryVulnId, String... sourceAndIds) {
 		VulnerabilityRecordData d = new VulnerabilityRecordData();
 		d.setUuid(UUID.randomUUID());
 		d.setPrimaryVulnId(primaryVulnId);
-		ZonedDateTime now = ZonedDateTime.now();
-		d.setFirstSeenDate(now);
-		d.setLastUpdatedDate(now);
 		List<VulnSourceSnapshot> snaps = new ArrayList<>();
 		for (String sourceAndId : sourceAndIds) {
 			String[] parts = sourceAndId.split("/", 2);
@@ -195,6 +195,11 @@ class IntegrationServiceAffectedRangesTest {
 		}
 		d.setSources(snaps);
 		return d;
+	}
+
+	/** What a drain's upserts report for records they created. */
+	private static List<UpsertResult> inserted(VulnerabilityRecordData... records) {
+		return Arrays.stream(records).map(d -> new UpsertResult(d, UpsertOutcome.INSERTED)).toList();
 	}
 
 	// --- binding: live shapes ---------------------------------------------
@@ -509,7 +514,7 @@ class IntegrationServiceAffectedRangesTest {
 		VulnerabilityRecordData django = record("PYSEC-2018-5", "OSV/PYSEC-2018-5");
 		VulnerabilityRecordData overLimit = record("GHSA-dddd-eeee-ffff", "GITHUB/GHSA-dddd-eeee-ffff");
 
-		service.fetchAffectedRangesInline(org, List.of(alreadyFetched, nvdOnly, handlebars, django, overLimit),
+		service.fetchAffectedRangesInline(org, inserted(alreadyFetched, nvdOnly, handlebars, django, overLimit),
 				endpoint, "dt-key", 2, Duration.ofMinutes(1));
 
 		// A record that needs no request does not count against the limit.
@@ -523,10 +528,12 @@ class IntegrationServiceAffectedRangesTest {
 	void afterADrainARecordItDidNotCreateIsLeftToTheSweep() throws Exception {
 		respondLive("OSV/PYSEC-2018-5");
 		VulnerabilityRecordData existing = record("PYSEC-2018-5", "OSV/PYSEC-2018-5");
-		// Created earlier and rewritten by this drain: never fetched, but not new.
-		existing.setFirstSeenDate(existing.getLastUpdatedDate().minusDays(3));
 
-		service.fetchAffectedRangesInline(org, List.of(existing), endpoint, "dt-key", 100, Duration.ofMinutes(1));
+		// Created earlier, never fetched, but not new: rewritten by this drain,
+		// or left alone by it.
+		service.fetchAffectedRangesInline(org,
+				List.of(new UpsertResult(existing, UpsertOutcome.UPDATED), new UpsertResult(existing, UpsertOutcome.UNCHANGED)),
+				endpoint, "dt-key", 100, Duration.ofMinutes(1));
 
 		assertTrue(requested.isEmpty());
 		verify(vulnerabilityRecordService, never()).storeAffectedRanges(any(), any());
@@ -537,7 +544,7 @@ class IntegrationServiceAffectedRangesTest {
 		responses.put("GITHUB/GHSA-f2jv-r9rf-7988", Map.entry(500, "boom"));
 		respondLive("OSV/PYSEC-2018-5");
 
-		service.fetchAffectedRangesInline(org, List.of(record("GHSA-f2jv-r9rf-7988", "GITHUB/GHSA-f2jv-r9rf-7988"),
+		service.fetchAffectedRangesInline(org, inserted(record("GHSA-f2jv-r9rf-7988", "GITHUB/GHSA-f2jv-r9rf-7988"),
 				record("PYSEC-2018-5", "OSV/PYSEC-2018-5")), endpoint, "dt-key", 100, Duration.ofMinutes(1));
 
 		assertEquals(List.of("GITHUB/GHSA-f2jv-r9rf-7988"), requested);
@@ -549,7 +556,7 @@ class IntegrationServiceAffectedRangesTest {
 		respondLive("OSV/PYSEC-2018-5");
 		VulnerabilityRecordData django = record("PYSEC-2018-5", "OSV/PYSEC-2018-5");
 
-		service.fetchAffectedRangesInline(org, List.of(django), endpoint, "dt-key", 100, Duration.ofMinutes(1));
+		service.fetchAffectedRangesInline(org, inserted(django), endpoint, "dt-key", 100, Duration.ofMinutes(1));
 
 		ArgumentCaptor<FetchedAffectedRanges> fetched = ArgumentCaptor.forClass(FetchedAffectedRanges.class);
 		verify(vulnerabilityRecordService).storeAffectedRanges(eq(django.getUuid()), fetched.capture());
