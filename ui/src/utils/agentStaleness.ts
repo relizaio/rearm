@@ -2,7 +2,7 @@
 // whole when it is saved. The sweep only ALERTs; a person releases a stalled assignment by hand.
 
 export const STALENESS_KEYS = ['roleUnstaffedMinutes', 'hopNoProgressMinutes', 'deliveryStuckMinutes',
-    'seatSilentMinutes', 'repeatMinutes'] as const
+    'seatSilentMinutes', 'repeatMinutes', 'investigationOverdueMinutes'] as const
 export type StalenessKey = typeof STALENESS_KEYS[number]
 export type Staleness = Partial<Record<StalenessKey, number | null>>
 
@@ -12,8 +12,12 @@ export const STALENESS_FIELDS: { key: StalenessKey, label: string, help: string 
     { key: 'hopNoProgressMinutes', label: 'hop stalled, min', help: 'A task assigned this long with nothing from its holder: no document, sign-off, question or usage report.' },
     { key: 'deliveryStuckMinutes', label: 'delivery stuck, min', help: 'A task delivering this long with a linked PR not delivered.' },
     { key: 'seatSilentMinutes', label: 'seat silent, min', help: 'A task waiting on the coordinator this long while the seat is held.' },
-    { key: 'repeatMinutes', label: 're-alert after, min', help: 'How long a standing breach stays quiet before it is alerted again; blank is 240.' }
+    { key: 'repeatMinutes', label: 're-alert after, min', help: 'How long a standing breach stays quiet before it is alerted again; blank is 240.' },
+    { key: 'investigationOverdueMinutes', label: 'investigation overdue, min', help: 'An investigation not completed this long after its deadline; 0 alerts as soon as the deadline passes.' }
 ]
+
+/** Thresholds counted past a deadline rather than from a state (task RD4-12): 0 is a threshold, not off. */
+const ZERO_ALLOWED: StalenessKey[] = ['investigationOverdueMinutes']
 
 /** The form's draft: each threshold as a number or null. */
 export function stalenessDraftOf (block: Staleness | null | undefined): Record<StalenessKey, number | null> {
@@ -22,11 +26,18 @@ export function stalenessDraftOf (block: Staleness | null | undefined): Record<S
     return out
 }
 
-/** Why the draft cannot be saved, or '' when it can: each threshold is a whole number of minutes, at least 1. */
+/**
+ * Why the draft cannot be saved, or '' when it can: each threshold is a whole number of minutes, at least 1, or at
+ * least 0 for the investigation deadline's grace.
+ */
 export function stalenessProblem (draft: Staleness): string {
     for (const k of STALENESS_KEYS) {
         const v = draft[k]
-        if (v != null && (!Number.isInteger(v) || v < 1)) return `${k} must be at least 1 minute; leave it blank to turn it off`
+        const floor = ZERO_ALLOWED.includes(k) ? 0 : 1
+        if (v != null && (!Number.isInteger(v) || v < floor)) {
+            return floor === 0 ? `${k} cannot be negative; 0 alerts at the deadline, blank turns it off`
+                : `${k} must be at least 1 minute; leave it blank to turn it off`
+        }
     }
     return ''
 }

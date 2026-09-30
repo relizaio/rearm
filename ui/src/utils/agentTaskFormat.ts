@@ -2,6 +2,7 @@
 // components (components/task/*). Kept here rather than in one component so the page and the
 // drawer cannot drift apart on how a time, a duration or a task's label reads.
 import { statusWord, triggerWord } from './agentWords'
+import { investigationRequiredRoles, isInvestigation } from './agentInvestigation'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -113,9 +114,10 @@ export function isTerminal (task: any): boolean {
  */
 export function missingRequiredRoles (task: any, roles: any[] | null | undefined): string[] {
     if (!task || isTerminal(task) || task.childTasks?.length) return []
-    return (roles ?? [])
-        .filter((r: any) => r.active && r.necessity === 'REQUIRED')
-        .map((r: any) => r.name as string)
+    // An investigation needs its investigating role and its reviewer, not the board's pipeline (task RD4-12).
+    const required = isInvestigation(task) ? investigationRequiredRoles(task)
+        : (roles ?? []).filter((r: any) => r.active && r.necessity === 'REQUIRED').map((r: any) => r.name as string)
+    return required
         .filter((role: string) => {
             const last = [...(task.signOffs ?? [])].reverse()
                 .find((s: any) => (s.role ?? '').toLowerCase() === role.toLowerCase())

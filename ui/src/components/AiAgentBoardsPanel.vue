@@ -776,6 +776,8 @@
                     </div>
                     <RoleStrengthEditor v-if="editingRole.kind !== 'HUMAN'" v-model:strength="editingRole.strength"
                                         :models="models"/>
+                    <RoleCommissionsEditor v-if="editingRole.kind !== 'HUMAN'" v-model:commissions="editingRole.commissions"
+                                           :roles="roles" :self="editingRole.name"/>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">{{ editingRole.kind === 'HUMAN'
                             ? 'reviewer guidance (shown to the human in the UI)'
@@ -1024,6 +1026,9 @@ import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
 import { mergeOutputs, strengthDraft, strengthInput, strengthSummary } from '@/utils/roleStrength'
+import { OUTPUT_TYPE_OPTIONS } from '@/utils/agentTaskOptions'
+import { commissionsDraftOf, commissionsPatch } from '@/utils/agentInvestigation'
+import RoleCommissionsEditor from './RoleCommissionsEditor.vue'
 
 const props = defineProps<{ orgUuid: string }>()
 
@@ -1230,16 +1235,8 @@ const capabilityOptions = toOptions(CAPABILITIES)
 // The coordinator always has the tracker verbs, and the server refuses them here.
 const coordinatorCapabilityOptions = toOptions(COORDINATOR_CAPABILITIES)
 
-/**
- * Document types a role can be required to publish.
- *
- * The task-scoped pair only. A component-scoped document belongs to the thing rather than to a
- * hop, so requiring one per hop would refuse a sign-off on the second task to touch it.
- */
-const outputTypeOptions = [
-    { label: 'review findings', value: 'REVIEW_FINDINGS' },
-    { label: 'test report', value: 'TEST_REPORT' },
-]
+/** Document types a role can be required to publish: the tested list in agentTaskOptions. */
+const outputTypeOptions = OUTPUT_TYPE_OPTIONS
 
 const priorityOptions = [
     { label: 'LAX — priority is advisory; workers may take any eligible task', value: 'LAX' },
@@ -1651,7 +1648,7 @@ const roleColumns: DataTableColumns<any> = [
         // Editing a role's prompt is configuring the board (task d8e7bd7e): hidden without CONFIGURATION_WRITE.
         render: (r: any) => !canConfigure(currentBoard.value) ? null : h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r, hopDollars: microsToDollars(r.hopBudgetMicros),
             producesOutputTypes: (r.producesOutputs ?? []).map((p: any) => p?.specification).filter(Boolean),
-            strength: strengthDraft(r) } } }, { default: () => 'Edit' }),
+            strength: strengthDraft(r), commissions: commissionsDraftOf(r) } } }, { default: () => 'Edit' }),
     },
 ]
 
@@ -1930,7 +1927,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null) }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null), commissions: commissionsDraftOf(null) }
 }
 
 async function saveRole () {
@@ -1961,6 +1958,9 @@ async function saveRole () {
                     : mergeOutputs(editingRole.value.producesOutputs, editingRole.value.producesOutputTypes ?? []),
                 // A HUMAN role has no model; leaving the fields out leaves nothing to refuse.
                 ...(editingRole.value.kind === 'HUMAN' ? {} : strengthInput(editingRole.value.strength)),
+                // Who it may commission for a report (task RD4-12): the whole block, or null for nobody. A HUMAN
+                // role holds no session to commission from, so it sends nothing.
+                ...(editingRole.value.kind === 'HUMAN' ? {} : { commissions: commissionsPatch(editingRole.value.commissions) }),
             },
         })
         notification.success({ content: `Role ${editingRole.value.name} saved`, duration: 3000 })

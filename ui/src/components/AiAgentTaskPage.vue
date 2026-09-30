@@ -17,6 +17,7 @@
                  One column below, controls first. -->
             <div class="tpage">
                 <div class="tpage__main tsecs">
+                    <task-investigation :task="task" :tasks="tasks"/>
                     <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels" :board="board"
                                    @decide="decideFindings" @open-element="openElement"/>
                     <task-open-questions :task="task" :roles="roles"/>
@@ -39,6 +40,7 @@
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
                                   @release-assignment="releaseAssignment"
                                   @set-level="setLevel" @set-group="setGroup" @set-tags="setTags" @delivered="delivered"/>
+                    <task-commission v-if="canReopen" :task="task" :board="board" :roles="roles" @commission="commission"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
@@ -59,6 +61,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NBreadcrumb, NBreadcrumbItem, NSpin } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
 import TaskAssignment from './task/TaskAssignment.vue'
+import TaskCommission from './task/TaskCommission.vue'
+import TaskInvestigation from './task/TaskInvestigation.vue'
 import TaskDependencies from './task/TaskDependencies.vue'
 import AiAgentRevisionHistory from './AiAgentRevisionHistory.vue'
 import TaskDocuments from './task/TaskDocuments.vue'
@@ -142,7 +146,7 @@ watch(taskUuid, load, { immediate: true })
 const {
     humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags, delivered, releaseAssignment, supersedePr,
+    setGroup, setTags, delivered, releaseAssignment, supersedePr, commission,
 } = useAgentTaskActions(async () => { await load() })
 
 // A finding's element chip opens the element under its document (elements.md §8).

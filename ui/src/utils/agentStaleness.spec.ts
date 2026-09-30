@@ -6,7 +6,7 @@ import { releasePayload } from './agentTaskAdmin'
 describe('agentStaleness', () => {
     it('reads a board block, or none, into a draft of every threshold', () => {
         expect(stalenessDraftOf(null)).toEqual({ roleUnstaffedMinutes: null, hopNoProgressMinutes: null,
-            deliveryStuckMinutes: null, seatSilentMinutes: null, repeatMinutes: null })
+            deliveryStuckMinutes: null, seatSilentMinutes: null, repeatMinutes: null, investigationOverdueMinutes: null })
         expect(stalenessDraftOf({ hopNoProgressMinutes: 90 }).hopNoProgressMinutes).toBe(90)
         expect(STALENESS_FIELDS.map(f => f.key)).toEqual([...STALENESS_KEYS])
     })

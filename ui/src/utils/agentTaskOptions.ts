@@ -28,3 +28,15 @@ export function aboutOptionsOf (roles: any[] | null | undefined): Option<string>
 /** The indexed types a person may file a finding in. */
 export const fileSpecOptions: Option<string>[] = INDEXED_TYPES
     .map(s => ({ label: s === 'TEST_REPORT' ? 'test report' : 'review', value: s }))
+
+/**
+ * Document types a role can be required to publish, in the role form. Task-scoped only: a component-scoped
+ * document belongs to the thing rather than to a hop, so requiring one per hop would refuse a sign-off on the
+ * second task to touch it. INVESTIGATION_REPORT (task RD4-12) is what the role delivers when another commissions
+ * it; it is never owed on a work task.
+ */
+export const OUTPUT_TYPE_OPTIONS: Option<string>[] = [
+    { label: 'review findings', value: 'REVIEW_FINDINGS' },
+    { label: 'test report', value: 'TEST_REPORT' },
+    { label: 'investigation report (when commissioned)', value: 'INVESTIGATION_REPORT' },
+]

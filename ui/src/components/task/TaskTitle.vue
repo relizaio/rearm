@@ -2,6 +2,13 @@
     <div class="dhead">
         <div class="dhead__title">
             <code v-if="task.key" class="dhead__key">{{ task.key }}</code>
+            <!-- An investigation delivers a report, not code (task RD4-12). -->
+            <n-tooltip v-if="isInvestigation(task)" trigger="hover">
+                <template #trigger>
+                    <n-tag size="small" :bordered="false" type="info" class="dhead__level" data-testid="kind-chip">investigation</n-tag>
+                </template>
+                A report for {{ task.investigation.commissionedBy?.role ?? 'a person' }}, by {{ task.investigation.role }}: no PRs, no delivery step
+            </n-tooltip>
             <!-- The level after the key (RD2-1), "1 · solution"; none on a board without a ladder (task RD3-6). -->
             <n-tooltip v-if="taskLevelLabel(task, board)" trigger="hover">
                 <template #trigger>
@@ -61,6 +68,7 @@ import { refLabel, roleTagFor } from '@/utils/agentTaskLabels'
 import { levelTooltip, taskLevelLabel } from '@/utils/agentTaskLevel'
 import { groupByKey, groupColour, groupLabel, tagKeys, waitingOnLabel } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
+import { isInvestigation } from '@/utils/agentInvestigation'
 
 const props = defineProps<{ task: any, board?: any, clamp?: boolean, roles?: any[] }>()
 // A board without sources is its own tracker: no task has a ref there, and none is a "draft".
