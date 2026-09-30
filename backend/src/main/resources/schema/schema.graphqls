@@ -1699,6 +1699,67 @@ type Vulnerability {
 	epss: VulnScore
 	"Which version fixes this finding, from the affected ranges the org's vulnerability record holds for the finding's package; null when these metrics were not reached through a Release or an Artifact, or when the record could not be read"
 	fixedIn: FixedIn
+	"The component of the release's SBOM this finding's package URL names, or why none does; null when these metrics were not reached through a Release (an artifact's findings belong to no one release), or when the release's SBOM could not be read. Costs one read of the release's SBOM per release in the response: select it on one release's findings, not across a list of releases"
+	sbomMatch: FindingSbomMatch
+	"Whether moving the finding's SBOM component to its latest version (FindingSbomMatch.latestVersion) takes it out of the finding's affected ranges, compared as fixedIn compares; the advisory's claim, like fixedIn. Null when the finding matched no component, the component has no latest version, or a read failed. Same cost as sbomMatch"
+	latestFix: LatestFixVerdict
+}
+
+enum LatestFixVerdict {
+	# The latest version is out of the finding's ranges.
+	FIXES
+	# The latest version is still inside the finding's ranges.
+	DOES_NOT_FIX
+	# The latest version is not above the component's own: a registry can
+	# report one below a private or pre-release build, and a downgrade is no fix.
+	NOT_ABOVE_CURRENT
+	# The advisory has ranges for the package, but none contains the
+	# component's version.
+	NOT_IN_ADVISORY_RANGE
+	# No ranges for the finding's package.
+	NO_RANGE_DATA
+	# The component's version, the latest version or a range cannot be placed
+	# under the package ecosystem's rules.
+	UNCOMPARABLE
+}
+
+# The component of a release's SBOM that a finding's package URL names: the
+# same package at the same version with the same identity qualifiers (for
+# instance a Debian package's distro), whatever the percent-encoding; a
+# component recorded without any qualifiers also matches the qualified
+# finding of the same package and version. Matched at read time, never
+# stored. A PRODUCT release's SBOM includes its dependency releases'.
+# - sbomComponentUuid / canonicalPurl: the matched component; null when none.
+# - missReason: why no component matched; null when one did.
+# - latestVersion: the latest version of the matched component's package that
+#   Dependency-Track's repository metadata reports: a freshness signal only,
+#   not end of support or end of life, and possibly a pre-release on
+#   Dependency-Track 4. Null when none is known (no repository for the purl
+#   type, package unknown, or not looked up yet).
+# - latestVersionChecked: when ReARM last asked, a UTC RFC-3339 instant.
+type FindingSbomMatch {
+	sbomComponentUuid: ID
+	canonicalPurl: String
+	missReason: FindingSbomMissReason
+	latestVersion: String
+	latestVersionChecked: String
+}
+
+enum FindingSbomMissReason {
+	# The finding carries no package URL (none at all, or a CPE).
+	NO_PURL
+	# The finding's package URL does not parse.
+	UNPARSEABLE_PURL
+	# The release resolves to no SBOM components: no BOM artifact, a BOM
+	# stored elsewhere, or one not indexed yet.
+	NO_INVENTORY
+	# No component matched while an SBOM reconcile of the release (or of a
+	# product's dependency) is still queued, so its components may be stale.
+	INVENTORY_PENDING
+	# The release's components do not include the finding's package at its
+	# version, for instance a finding carried forward from a BOM the release
+	# no longer has.
+	NOT_IN_INVENTORY
 }
 
 # Which version fixes a finding, according to the affected ranges its

@@ -16,6 +16,7 @@ import io.reliza.model.VulnerabilityRecordData.VulnScore;
 import io.reliza.model.VulnerabilityRecordData.VulnScoreType;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 
 /**
  * Read-time risk summary over one metrics object's open vulnerability
@@ -63,9 +64,15 @@ public final class RiskSummaryCalculator {
 
 	/** The distinct vulnerability ids of the open rows, for one batched record load. */
 	public static Set<String> openVulnIds(ReleaseMetricsDto metrics) {
+		return openVulnIdsOfRows(rows(metrics));
+	}
+
+	/** The same over any set of finding rows. */
+	public static Set<String> openVulnIdsOfRows(List<VulnerabilityDto> rows) {
 		Set<String> ids = new LinkedHashSet<>();
-		for (VulnerabilityDto v : rows(metrics)) {
-			if (isOpen(v) && v.vulnId() != null) ids.add(v.vulnId());
+		if (rows == null) return ids;
+		for (VulnerabilityDto v : rows) {
+			if (v != null && isOpen(v) && v.vulnId() != null) ids.add(v.vulnId());
 		}
 		return ids;
 	}
@@ -100,6 +107,21 @@ public final class RiskSummaryCalculator {
 	 * order keeps the maximum.
 	 */
 	public static RiskSummary compute(ReleaseMetricsDto metrics, Map<String, VulnerabilityRecordData> recordsByVulnId) {
+		return summarize(rows(metrics), recordsByVulnId, severityWeightedScore(metrics));
+	}
+
+	/**
+	 * The summary of a set of finding rows that has no stored counts, such as
+	 * one SBOM component's findings: as {@link #compute}, except that
+	 * {@code severityWeightedScore} weights the open rows' own severities.
+	 */
+	public static RiskSummary computeOfRows(List<VulnerabilityDto> rows, Map<String, VulnerabilityRecordData> recordsByVulnId) {
+		List<VulnerabilityDto> population = rows == null ? List.of() : rows;
+		return summarize(population, recordsByVulnId, severityWeightedScoreOfRows(population));
+	}
+
+	private static RiskSummary summarize(List<VulnerabilityDto> rows, Map<String, VulnerabilityRecordData> recordsByVulnId,
+			int severityWeightedScore) {
 		Map<String, VulnerabilityRecordData> records = recordsByVulnId == null ? Map.of() : recordsByVulnId;
 		int critical = 0, high = 0, medium = 0, low = 0, none = 0, unscored = 0;
 		int epssHigh = 0, kev = 0, total = 0;
@@ -108,8 +130,8 @@ public final class RiskSummaryCalculator {
 		String maxCvssVulnId = null;
 		Double maxEpss = null;
 		String maxEpssVulnId = null;
-		for (VulnerabilityDto v : rows(metrics)) {
-			if (!isOpen(v)) continue;
+		for (VulnerabilityDto v : rows) {
+			if (v == null || !isOpen(v)) continue;
 			total++;
 			if (Boolean.TRUE.equals(v.knownExploited())) kev++;
 			VulnerabilityRecordData record = v.vulnId() == null ? null : records.get(v.vulnId());
@@ -143,7 +165,7 @@ public final class RiskSummaryCalculator {
 		}
 		return new RiskSummary(maxCvss, maxCvssType, maxCvssVulnId, maxEpss, maxEpssVulnId,
 				new CvssBands(critical, high, medium, low, none, unscored),
-				epssHigh, kev, severityWeightedScore(metrics), total - unscored, total);
+				epssHigh, kev, severityWeightedScore, total - unscored, total);
 	}
 
 	/**
@@ -152,8 +174,32 @@ public final class RiskSummaryCalculator {
 	 */
 	static int severityWeightedScore(ReleaseMetricsDto m) {
 		if (m == null) return 0;
-		return intOf(m.getCritical()) * 10 + intOf(m.getHigh()) * 5 + intOf(m.getMedium()) * 3
-				+ intOf(m.getLow()) + intOf(m.getUnassigned()) * 5;
+		return intOf(m.getCritical()) * weightOf(VulnerabilitySeverity.CRITICAL)
+				+ intOf(m.getHigh()) * weightOf(VulnerabilitySeverity.HIGH)
+				+ intOf(m.getMedium()) * weightOf(VulnerabilitySeverity.MEDIUM)
+				+ intOf(m.getLow()) * weightOf(VulnerabilitySeverity.LOW)
+				+ intOf(m.getUnassigned()) * weightOf(VulnerabilitySeverity.UNASSIGNED);
+	}
+
+	/** The same weighting over the open rows' stored severities; a row without one adds nothing. */
+	static int severityWeightedScoreOfRows(List<VulnerabilityDto> rows) {
+		int score = 0;
+		for (VulnerabilityDto v : rows) {
+			if (v == null || v.severity() == null || !isOpen(v)) continue;
+			score += weightOf(v.severity());
+		}
+		return score;
+	}
+
+	/** Dependency-Track's inherited-risk weight of one finding of {@code severity}. */
+	private static int weightOf(VulnerabilitySeverity severity) {
+		return switch (severity) {
+		case CRITICAL -> 10;
+		case HIGH -> 5;
+		case MEDIUM -> 3;
+		case LOW -> 1;
+		case UNASSIGNED -> 5;
+		};
 	}
 
 	private static List<VulnerabilityDto> rows(ReleaseMetricsDto metrics) {

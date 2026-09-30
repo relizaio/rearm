@@ -3797,6 +3797,14 @@ type ReleaseSbomComponent {
 	ancestors: [ReleaseSbomComponent]
 	createdDate: DateTime
 	lastUpdatedDate: DateTime
+	"The release's vulnerability findings on this component, in stored order: the rows of the release's metrics whose package URL names it (see FindingSbomMatch). Their score, fix and sbomMatch fields resolve as under Release.metrics. A finding of a component off the current page of getReleaseSbomComponentsPage lands on no row. Empty when there are none, and outside the release component queries"
+	findings: [Vulnerability!]!
+	"DependencyTrackMetrics.riskSummary over this component's findings; severityWeightedScore weights their own severities. Null outside the release component queries, or when a vulnerability record read failed"
+	riskSummary: RiskSummary
+	"DependencyTrackMetrics.fixTargets over this component's findings, from the same per-request budget. Null outside the release component queries, or when a vulnerability record read failed"
+	fixTargets: [ComponentFixTargets!]
+	"The vulnerability ids of this component's findings that its latest version (component.latestVersion) fixes: those whose Vulnerability.latestFix is FIXES. Null when the component has no latest version, outside the release component queries, or when a vulnerability record read failed; empty when it fixes none"
+	latestFixes: [String!]
 }
 
 type ReleaseSbomComponentsPage {
@@ -3906,6 +3914,13 @@ type SbomComponent {
 	name: String
 	version: String
 	isRoot: Boolean
+	# The latest version of the package that Dependency-Track's repository metadata reports
+	# (refreshed daily): a freshness signal only, never end of support or end of life, and
+	# possibly a pre-release on Dependency-Track 4. Null when none is known: no repository for
+	# the purl type (deb, apk, rpm, generic), the package unknown to Dependency-Track, or not
+	# looked up yet. latestVersionChecked is when ReARM last asked (UTC RFC-3339), null if never.
+	latestVersion: String
+	latestVersionChecked: String
 	# FDA-Readiness-1 per-component support disclosure. Dates + provenance live per-milestone
 	# (see supportMilestones); supportStatus is DERIVED from them and the current date (never
 	# stored). Dates are ISO-8601 (YYYY-MM-DD); supportLastAssessed is a UTC RFC-3339 instant.

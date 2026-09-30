@@ -92,6 +92,9 @@ public class SchedulingService {
     SyntheticSbomService syntheticSbomService;
 
     @Autowired
+    ComponentLatestVersionService componentLatestVersionService;
+
+    @Autowired
     KevCatalogSyncService kevCatalogSyncService;
 
     @Autowired
@@ -323,6 +326,35 @@ public class SchedulingService {
 		}
     }
     
+    /**
+     * Latest versions of the org's components from Dependency-Track's repository metadata
+     * (ComponentLatestVersionService): due after 24 h, capped per org per run, nothing to do
+     * in steady state. On its own tick and lock, not the shared synthetic one: during the
+     * first backfill each org spends up to relizaprops.latestVersionFetchLimit DT requests,
+     * which must not stretch submit / ingest / fan-out.
+     */
+    @Scheduled(fixedDelayString = "${relizaprops.latestVersionRefreshDelay:PT5M}")
+    public void scheduleLatestVersionRefresh () {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.LATEST_VERSION_REFRESH);
+            if (lock) {
+                try {
+                    for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
+                        try {
+                            componentLatestVersionService.refreshOrg(orgUuid);
+                        } catch (Exception e) {
+                            log.error("latest-version refresh failed for org {}", orgUuid, e);
+                        }
+                    }
+                } finally {
+                    releaseLock(AdvisoryLockKey.LATEST_VERSION_REFRESH);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Latest-version refresh run failed with an error", e);
+        }
+    }
+
     /**
      * Dedicated enrichment-pull tick, split from the shared synthetic tick after
      * [ENRICH-TICK] telemetry measured the pass at ~25s/org mid-drain -- on the

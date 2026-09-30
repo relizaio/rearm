@@ -2206,10 +2206,11 @@ public class ReleaseDatafetcher {
 	}
 
 	/**
-	 * The stored metrics as they are, with the release's org attached as
-	 * local context: {@code ReleaseMetricsDto} does not carry the org, and
-	 * the score fields below it read the org's vulnerability records (see
-	 * {@link VulnerabilityScoreDataFetcher}). Loads nothing itself.
+	 * The stored metrics as they are, with the release's org and uuid attached
+	 * as local context: {@code ReleaseMetricsDto} carries neither, the score
+	 * fields below it read the org's vulnerability records (see
+	 * {@link VulnerabilityScoreDataFetcher}), and {@code Vulnerability.sbomMatch}
+	 * reads the release's SBOM components. Loads nothing itself.
 	 */
 	@DgsData(parentType = "Release", field = "metrics")
 	public DataFetcherResult<ReleaseMetricsDto> metricsOfRelease(DgsDataFetchingEnvironment dfe) {
@@ -2217,7 +2218,7 @@ public class ReleaseDatafetcher {
 		if (rd == null) return DataFetcherResult.<ReleaseMetricsDto>newResult().build();
 		return DataFetcherResult.<ReleaseMetricsDto>newResult()
 				.data(rd.getMetrics())
-				.localContext(new MetricsContext(rd.getOrg()))
+				.localContext(MetricsContext.ofRelease(rd.getOrg(), rd.getUuid()))
 				.build();
 	}
 

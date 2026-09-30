@@ -215,7 +215,7 @@ public class ArtifactDataFetcher {
 		return DataFetcherResult.<ReleaseMetricsDto>newResult()
 				.data(kevStampedIfSelected(dfe, ad))
 				// the org, for the score fields below; see VulnerabilityScoreDataFetcher
-				.localContext(new MetricsContext(ad.getOrg()))
+				.localContext(MetricsContext.ofArtifact(ad.getOrg()))
 				.build();
 	}
 

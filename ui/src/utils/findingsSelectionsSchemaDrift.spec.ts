@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validate, visit, print, parse, Kind, type DocumentNode, type GraphQLSchema } from 'graphql'
+import { validate, visit, print, Kind, type DocumentNode, type GraphQLSchema } from 'graphql'
 import {
     ARTIFACT_FINDINGS_QUERY,
     ARTIFACT_FINDINGS_QUERY_CORE,
@@ -139,14 +139,12 @@ describe('the release findings MATCHED document', () => {
     })
 
     /**
-     * TEMPORARY: CE has not mirrored sbomMatch yet, so the modal falls back to
-     * FULL there and groups on the client. Once the CE sync brings the field
-     * over, flip this to "is valid against CE" (as the F2 canaries were retired
-     * after #472) and add a CE run of the FindingSbomMissReason mirror check below.
+     * NOTE: this used to assert MATCHED was still ahead of CE by sbomMatch. The
+     * 2026-09 CE sync of rearm-saas#705 brought it over, so that canary was
+     * retired; FULL stays the fallback for a backend without the field.
      */
-    it('is ahead of CE by sbomMatch only', () => {
-        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_MATCHED).length).toBeGreaterThan(0)
-        expect(errorsAgainst(ceSchema, parse(without(RELEASE_FINDINGS_QUERY_MATCHED, SBOM_FIELDS)))).toEqual([])
+    it('is valid against CE', () => {
+        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_MATCHED)).toEqual([])
     })
 
     it('is FULL plus sbomMatch, selected on the release\'s own findings only', () => {
@@ -159,6 +157,10 @@ describe('the release findings MATCHED document', () => {
             }
         })
         expect(lists).toBe(1)
+    })
+
+    it('the miss reasons mirror FindingSbomMissReason on CE', () => {
+        expect(Object.values(FindingSbomMissReason).sort()).toEqual(enumValuesOf(ceSchema, 'FindingSbomMissReason').sort())
     })
 
     it.runIf(proSchema)('the miss reasons mirror FindingSbomMissReason on Pro (skipped if rearm-core absent)', () => {
@@ -179,13 +181,16 @@ describe('the release findings LATEST document', () => {
     })
 
     /**
-     * TEMPORARY: CE has mirrored neither sbomMatch nor the latest version yet.
-     * Once the CE sync of rearm-saas#708 brings them over, flip this to "is
-     * valid against CE" (with the MATCHED canary) and add a CE run of the
-     * LatestFixVerdict mirror check below.
+     * NOTE: this used to assert LATEST was still ahead of CE by the latest version
+     * and latestFix. The 2026-09 CE sync of rearm-saas#708 brought them over, so
+     * that canary was retired; MATCHED stays the fallback for a backend without them.
      */
-    it('is ahead of CE, latestFix included', () => {
-        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_LATEST).some(e => /latestFix/.test(e))).toBe(true)
+    it('is valid against CE', () => {
+        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_LATEST)).toEqual([])
+    })
+
+    it('the verdicts mirror LatestFixVerdict on CE', () => {
+        expect(Object.values(LatestFixVerdict).sort()).toEqual(enumValuesOf(ceSchema, 'LatestFixVerdict').sort())
     })
 
     it.runIf(proSchema)('the verdicts mirror LatestFixVerdict on Pro (skipped if rearm-core absent)', () => {

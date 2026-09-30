@@ -208,4 +208,26 @@ class RiskSummaryCalculatorTest {
 				row("pkg:npm/d@1", "D", null, null))));
 		assertEquals(0, RiskSummaryCalculator.openKevCount(null));
 	}
+
+	@Test
+	void aComponentsRowsAreSummarisedAndWeightedByTheirOwnSeverities() {
+		VulnerabilityDto critical = new VulnerabilityDto("pkg:npm/a@1", "A", VulnerabilitySeverity.CRITICAL, Set.of(),
+				Set.of(), Set.of(), null, null, null, null, null, null, null, null, true);
+		VulnerabilityDto suppressed = new VulnerabilityDto("pkg:npm/a@1", "B", VulnerabilitySeverity.CRITICAL, Set.of(),
+				Set.of(), Set.of(), AnalysisState.FALSE_POSITIVE, null, null, null, null, null, null, null, true);
+		VulnerabilityDto noSeverity = new VulnerabilityDto("pkg:npm/a@1", "C", null, Set.of(),
+				Set.of(), Set.of(), null, null, null, null, null, null, null, null, false);
+		Map<String, VulnerabilityRecordData> records = new HashMap<>();
+		records.put("A", record(cvss(VulnScoreType.CVSS_V3, 9.1)));
+
+		RiskSummary s = RiskSummaryCalculator.computeOfRows(List.of(critical, suppressed, row("D"), noSeverity), records);
+
+		assertEquals(3, s.totalFindings());
+		assertEquals(1, s.scoredFindings());
+		assertEquals(1, s.kevCount());
+		assertEquals(9.1, s.maxCvss());
+		// critical 10 + high 5; the suppressed row and the row without a severity add nothing
+		assertEquals(15, s.severityWeightedScore());
+		assertEquals(0, RiskSummaryCalculator.computeOfRows(null, null).totalFindings());
+	}
 }

@@ -786,7 +786,7 @@ public class IntegrationService {
 	// deterministic DtrackPageResult instances.
 	record DtrackPageResult(List<Object> results, int totalCount) {}
 	
-	private static int parseDtrackTotalCountHeader(org.springframework.http.ResponseEntity<?> resp) {
+	static int parseDtrackTotalCountHeader(org.springframework.http.ResponseEntity<?> resp) {
 		String header = resp.getHeaders().getFirst("X-Total-Count");
 		if (header != null) {
 			try {

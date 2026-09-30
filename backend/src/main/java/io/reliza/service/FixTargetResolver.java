@@ -19,6 +19,7 @@ import io.reliza.dto.ComponentFixTargets;
 import io.reliza.dto.ComponentFixTargets.FixTarget;
 import io.reliza.dto.FixedIn;
 import io.reliza.dto.FixedIn.FixedInVerdict;
+import io.reliza.dto.LatestFixVerdict;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.VulnerabilityRecordData.AffectedRange;
 import io.reliza.model.dto.ReleaseMetricsDto;
@@ -63,9 +64,14 @@ public final class FixTargetResolver {
 
 	/** The vulnerability ids of the metrics' findings, by the package URL each finding carries, as it carries it. */
 	public static Map<String, Set<String>> vulnIdsByPurl(ReleaseMetricsDto metrics) {
+		return vulnIdsByPurlOfRows(metrics == null ? null : metrics.getVulnerabilityDetails());
+	}
+
+	/** The same over any set of finding rows. */
+	public static Map<String, Set<String>> vulnIdsByPurlOfRows(List<VulnerabilityDto> rows) {
 		Map<String, Set<String>> idsByPurl = new LinkedHashMap<>();
-		if (metrics == null || metrics.getVulnerabilityDetails() == null) return idsByPurl;
-		for (VulnerabilityDto v : metrics.getVulnerabilityDetails()) {
+		if (rows == null) return idsByPurl;
+		for (VulnerabilityDto v : rows) {
 			if (v == null || v.vulnId() == null || !Utils.isPurl(v.purl())) continue;
 			idsByPurl.computeIfAbsent(v.purl(), k -> new LinkedHashSet<>()).add(v.vulnId());
 		}
@@ -146,6 +152,46 @@ public final class FixTargetResolver {
 			}
 		}
 		return new Resolved(new ComponentFixTargets(purl, major, List.copyOf(targets)), (int) placements);
+	}
+
+	/**
+	 * Whether moving the component at {@code purl} to {@code version} fixes the finding, by the
+	 * rules the fix targets follow: the finding's ranges (only the component's own rows, per
+	 * distribution release included) must contain the component's version and be readable, and
+	 * {@code version} fixes it when it is out of them ({@link LatestFixVerdict}).
+	 *
+	 * @param ranges the affected ranges on the finding's record; null or empty for none
+	 */
+	public static LatestFixVerdict fixedAt(String purl, String vulnId, List<AffectedRange> ranges, String version) {
+		PackageURL component = Utils.parsePurlOrNull(purl);
+		String coordinate = Utils.purlCoordinateBase(purl);
+		if (component == null || coordinate == null || component.getVersion() == null || version == null) {
+			return LatestFixVerdict.UNCOMPARABLE;
+		}
+		if (ranges == null || ranges.isEmpty()) return LatestFixVerdict.NO_RANGE_DATA;
+		List<String> order = VersRanges.ascending(purl, List.of(component.getVersion(), version)).orElse(null);
+		if (order == null) return LatestFixVerdict.UNCOMPARABLE;
+		if (order.size() != 2 || !version.equals(order.get(1))) return LatestFixVerdict.NOT_ABOVE_CURRENT;
+		List<AffectedRange> own = ranges.stream()
+				.filter(r -> r != null && coordinate.equals(Utils.purlCoordinateBase(r.getIdentity())))
+				.toList();
+		FixedIn now = FixedInResolver.resolve(purl, own, vulnId);
+		switch (now.verdict()) {
+		case NO_RANGE_DATA:
+			return LatestFixVerdict.NO_RANGE_DATA;
+		case NOT_IN_ADVISORY_RANGE:
+			return LatestFixVerdict.NOT_IN_ADVISORY_RANGE;
+		case UNCOMPARABLE:
+			return LatestFixVerdict.UNCOMPARABLE;
+		default:
+			break;
+		}
+		List<AffectedRange> placed = own.stream().filter(r -> now.identities().contains(r.getIdentity())).toList();
+		String at = withVersion(component, version);
+		if (!VersRanges.boundsReadable(purl, placed) || at == null) return LatestFixVerdict.UNCOMPARABLE;
+		FixedInVerdict then = FixedInResolver.resolve(at, own, vulnId).verdict();
+		if (then == FixedInVerdict.NOT_IN_ADVISORY_RANGE) return LatestFixVerdict.FIXES;
+		return IN_RANGE.contains(then) ? LatestFixVerdict.DOES_NOT_FIX : LatestFixVerdict.UNCOMPARABLE;
 	}
 
 	/** The component's package URL at {@code version}, qualifiers kept; null when it cannot be built. */
