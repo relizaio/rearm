@@ -1,15 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { validate, visit, print, Kind, type DocumentNode, type GraphQLSchema } from 'graphql'
+import { validate, visit, print, parse, Kind, type DocumentNode, type GraphQLSchema } from 'graphql'
 import {
     ARTIFACT_FINDINGS_QUERY,
     ARTIFACT_FINDINGS_QUERY_CORE,
     ARTIFACT_FINDINGS_QUERY_SCORED,
     RELEASE_FINDINGS_QUERY,
     RELEASE_FINDINGS_QUERY_CORE,
+    RELEASE_FINDINGS_QUERY_LATEST,
+    RELEASE_FINDINGS_QUERY_MATCHED,
     RELEASE_FINDINGS_QUERY_SCORED
 } from './findingsQuery'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 import { FIXED_IN_TITLES } from './fixedInDisplay'
+import { FindingSbomMissReason } from '@/constants/findingSbomMissReason'
+import { LatestFixVerdict } from '@/constants/latestFixVerdict'
 
 // The findings modal's two loads (a release's findings, an artifact's
 // findings) checked against the backend schemas. Before these documents moved
@@ -21,7 +25,9 @@ import { FIXED_IN_TITLES } from './fixedInDisplay'
 // per-finding scores and fix versions (and each component's fix targets),
 // SCORED the scores only, and CORE is everything else, the fallback for a
 // backend without them (a build older than the fields), which must validate on
-// CE or the modal blanks there.
+// CE or the modal blanks there. The release load has two more on top: MATCHED,
+// FULL plus each finding's SBOM component, and LATEST, MATCHED plus each
+// component's latest version (see the end of the file).
 //
 // CE ships in this repo; Pro is checked when a sibling rearm-core checkout is
 // present, which is never in this repo's own CI.
@@ -30,6 +36,8 @@ const errorsAgainst = (schema: GraphQLSchema, doc: DocumentNode) => validate(sch
 
 const SCORE_FIELDS = new Set(['scores', 'topScore', 'epss'])
 const FIX_FIELDS = new Set(['fixedIn', 'fixTargets'])
+const SBOM_FIELDS = new Set(['sbomMatch'])
+const LATEST_FIELDS = new Set(['latestVersion', 'latestVersionChecked', 'latestFix'])
 
 // A document with the given fields taken out, and the score fragment with them
 // when the scores go.
@@ -119,5 +127,69 @@ describe('fix version verdicts vs the schemas', () => {
 
     it.runIf(proSchema)('and on Pro (skipped if rearm-core absent)', () => {
         expect(Object.keys(FIXED_IN_TITLES).sort()).toEqual(enumValuesOf(proSchema as GraphQLSchema, 'FixedInVerdict').sort())
+    })
+})
+
+// The release load has a fourth document on top, MATCHED: FULL plus each
+// finding's SBOM component (Vulnerability.sbomMatch, rearm-saas#705), which
+// the grouped view keys on. Release findings only.
+describe('the release findings MATCHED document', () => {
+    it.runIf(proSchema)('is valid against Pro (skipped if rearm-core absent)', () => {
+        expect(errorsAgainst(proSchema as GraphQLSchema, RELEASE_FINDINGS_QUERY_MATCHED)).toEqual([])
+    })
+
+    /**
+     * TEMPORARY: CE has not mirrored sbomMatch yet, so the modal falls back to
+     * FULL there and groups on the client. Once the CE sync brings the field
+     * over, flip this to "is valid against CE" (as the F2 canaries were retired
+     * after #472) and add a CE run of the FindingSbomMissReason mirror check below.
+     */
+    it('is ahead of CE by sbomMatch only', () => {
+        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_MATCHED).length).toBeGreaterThan(0)
+        expect(errorsAgainst(ceSchema, parse(without(RELEASE_FINDINGS_QUERY_MATCHED, SBOM_FIELDS)))).toEqual([])
+    })
+
+    it('is FULL plus sbomMatch, selected on the release\'s own findings only', () => {
+        expect(without(RELEASE_FINDINGS_QUERY_MATCHED, SBOM_FIELDS)).toBe(print(RELEASE_FINDINGS_QUERY))
+        let lists = 0
+        visit(RELEASE_FINDINGS_QUERY_MATCHED, {
+            Field: node => {
+                if (node.name.value !== 'vulnerabilityDetails') return
+                if (node.selectionSet?.selections.some(s => s.kind === Kind.FIELD && s.name.value === 'sbomMatch')) lists++
+            }
+        })
+        expect(lists).toBe(1)
+    })
+
+    it.runIf(proSchema)('the miss reasons mirror FindingSbomMissReason on Pro (skipped if rearm-core absent)', () => {
+        expect(Object.values(FindingSbomMissReason).sort())
+            .toEqual(enumValuesOf(proSchema as GraphQLSchema, 'FindingSbomMissReason').sort())
+    })
+})
+
+// LATEST: MATCHED plus each finding's component's latest version and whether it
+// fixes the finding (rearm-saas#708), the group view's Latest column.
+describe('the release findings LATEST document', () => {
+    it.runIf(proSchema)('is valid against Pro (skipped if rearm-core absent)', () => {
+        expect(errorsAgainst(proSchema as GraphQLSchema, RELEASE_FINDINGS_QUERY_LATEST)).toEqual([])
+    })
+
+    it('is MATCHED plus the latest version and latestFix', () => {
+        expect(without(RELEASE_FINDINGS_QUERY_LATEST, LATEST_FIELDS)).toBe(print(RELEASE_FINDINGS_QUERY_MATCHED))
+    })
+
+    /**
+     * TEMPORARY: CE has mirrored neither sbomMatch nor the latest version yet.
+     * Once the CE sync of rearm-saas#708 brings them over, flip this to "is
+     * valid against CE" (with the MATCHED canary) and add a CE run of the
+     * LatestFixVerdict mirror check below.
+     */
+    it('is ahead of CE, latestFix included', () => {
+        expect(errorsAgainst(ceSchema, RELEASE_FINDINGS_QUERY_LATEST).some(e => /latestFix/.test(e))).toBe(true)
+    })
+
+    it.runIf(proSchema)('the verdicts mirror LatestFixVerdict on Pro (skipped if rearm-core absent)', () => {
+        expect(Object.values(LatestFixVerdict).sort())
+            .toEqual(enumValuesOf(proSchema as GraphQLSchema, 'LatestFixVerdict').sort())
     })
 })
