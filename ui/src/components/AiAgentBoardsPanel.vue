@@ -1024,6 +1024,7 @@ import DeclarativeApplyModal from '@/components/DeclarativeApplyModal.vue'
 import type { SpecKind } from '@/utils/declarativeSpec'
 import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
 import { mergeOutputs, strengthDraft, strengthInput, strengthSummary } from '@/utils/roleStrength'
+import { holdChip } from '@/utils/agentOperatorQuestion'
 
 const props = defineProps<{ orgUuid: string }>()
 
@@ -1514,11 +1515,13 @@ const TaskCard = defineComponent({
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tag--history' }, { default: () => roleTagFor(p.t)?.text }),
                     default: () => roleTagFor(p.t)?.tooltip,
                 }) : null,
-                p.t.status === 'ON_HOLD' ? h(NTooltip, { trigger: 'hover' }, {
-                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, {
-                        default: () => p.t.hold?.kind === 'HUMAN_GATE' ? '\u270b human review' : 'on hold',
+                // A question for the operator, a hop's or the seat's, reads as one on the card (RD4-17).
+                holdChip(p.t) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error',
+                        'data-testid': holdChip(p.t)?.operator ? 'card-awaiting-operator' : undefined }, {
+                        default: () => holdChip(p.t)?.label,
                     }),
-                    default: () => p.t.hold?.reason ?? 'on hold',
+                    default: () => holdChip(p.t)?.tooltip,
                 }) : null,
                 p.t.requireHumanReview ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'review flagged' }),
