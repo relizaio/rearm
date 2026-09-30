@@ -59,15 +59,6 @@
                     size="small"
                 />
             </template>
-            <vulnerability-details-modal
-                v-model:show="vulnDetail.show"
-                :org-uuid="findingsOrgUuid"
-                :vuln-id="vulnDetail.vulnId"
-                :severity="vulnDetail.severity"
-                :known-exploited="vulnDetail.knownExploited"
-                :finding-purl="vulnDetail.purl"
-                :fixed-in="vulnDetail.fixedIn"
-            />
 
             <h4 style="margin-bottom: 4px;">
                 Upstream paths to root ({{ upstreamPaths.length }}{{ upstreamTruncated ? '+' : '' }})
@@ -120,6 +111,16 @@
                 :pagination="{ pageSize: 10 }"
             />
         </div>
+
+        <vulnerability-details-modal
+            v-model:show="vulnDetail.show"
+            :org-uuid="findingsOrgUuid"
+            :vuln-id="vulnDetail.vulnId"
+            :severity="vulnDetail.severity"
+            :known-exploited="vulnDetail.knownExploited"
+            :finding-purl="vulnDetail.purl"
+            :fixed-in="vulnDetail.fixedIn"
+        />
     </div>
 </template>
 
@@ -144,8 +145,8 @@ import { loadRichestServed } from '@/utils/graphqlDriftFallback'
 import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from '@/utils/sbomComponentFindingsQuery'
 import { checkedDay, groupLatestTitle, latestFixCell, latestFixesText, latestOf } from '@/utils/latestVersionDisplay'
 import type { GroupLatest } from '@/utils/latestVersionDisplay'
-import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
 import VulnerabilityDetailsModal from './VulnerabilityDetailsModal.vue'
+import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
 
 interface Props {
     releaseUuid: string
@@ -285,13 +286,7 @@ const latestFixColumn = {
 // The Latest fixes column only when the component has a latest version: the
 // backend may not serve it, and without one every cell would be blank.
 const findingColumns: ComputedRef<DataTableColumns<any>> = computed(() => [
-    {
-        title: 'Vulnerability',
-        key: 'vulnId',
-        minWidth: 180,
-        render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY, (vulnId: string) => openVulnDetail(vulnId,
-            { severity: row.severity, knownExploited: row.knownExploited, purl: row.purl, fixedIn: row.fixedIn }))
-    },
+    { title: 'Vulnerability', key: 'vulnId', minWidth: 180, render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY, (vulnId: string) => openVulnDetail(vulnId, row)) },
     {
         title: 'Severity',
         key: 'severity',

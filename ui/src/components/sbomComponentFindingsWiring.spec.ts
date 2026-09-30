@@ -29,13 +29,21 @@ describe('ReleaseSbomComponentGraph findings wiring', () => {
         'SBOM_COMPONENT_FINDINGS_QUERY_LATEST', 'checkedDay', 'groupLatestTitle', 'latestFixCell', 'latestFixesText', 'latestOf',
         'isSuppressedAnalysisState', 'ANALYSIS_STATE_OPTIONS', 'ROW_SEVERITIES', 'emptySeverityCounts', 'severityBucketOf',
         'getSeverityTagType', 'renderFindingId', 'FindingType', 'formatPrimaryScore', 'fixedInText', 'fixedInTitle',
-        'constants', 'useVulnerabilityDetail', 'VulnerabilityDetailsModal'])('imports %s, which it uses', (name) => {
+        'constants', 'useVulnerabilityDetail'])('imports %s, which it uses', (name) => {
         expectImportedAndUsed(code, name)
     })
 
     it('opens a finding id in the details panel, not the external page', () => {
         expect(code).toMatch(/renderFindingId\(h, row\.vulnId, FindingType\.VULNERABILITY, \(vulnId: string\) => openVulnDetail\(/)
         expect(code).toMatch(/<vulnerability-details-modal[^>]*:org-uuid="findingsOrgUuid"/)
+        expect(importBlockOf(code)).toMatch(/import VulnerabilityDetailsModal from '\.\/VulnerabilityDetailsModal\.vue'/)
+    })
+
+    it('reads the release org the documents bring for the details panel, the route having none by component id', () => {
+        expect(code).toMatch(/extractPath: data => data\n/)
+        expect(code).toMatch(/releaseOrgUuid\.value = result\.data\?\.release\?\.org/)
+        expect(code).toMatch(/const graphRow = result\.data\?\.getReleaseSbomComponentGraph/)
+        expect(code).toMatch(/useVulnerabilityDetail\(\(\) => findingsOrgUuid\.value\)/)
     })
 
     it('loads the findings once the graph row is in', () => {
