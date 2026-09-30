@@ -60,8 +60,10 @@ describe('operator questions', () => {
         expect(operatorQuestions(task({ statusHistory: [asked, cancelled] }))[0].answer).toBeNull()
     })
 
-    it('ignores holds that are not a parked hop', () => {
-        expect(operatorQuestions(task({ statusHistory: [{ ...asked, actor: pat }, { ...asked, from: 'QUEUED' }] }))).toEqual([])
+    // A HOLD row from QUEUED by a session with the question is the seat's (RD4-17): see agentSeatOperatorHold.spec.ts.
+    it('ignores holds that ask the operator nothing', () => {
+        expect(operatorQuestions(task({ statusHistory: [{ ...asked, actor: pat },
+            { ...asked, from: 'QUEUED', note: 'waiting on the tracker' }] }))).toEqual([])
     })
 
     it('strips the words before the question and the answer', () => {

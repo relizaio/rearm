@@ -1,6 +1,10 @@
 <template>
     <div v-if="!terminal" class="dsec">
         <div class="dsec__h">Task actions</div>
+        <!-- A task the seat parked for the operator (RD4-17): completing or reopening it answers the question. -->
+        <div v-if="actingAnswers(task)" class="holdmeta" style="margin: 0 0 6px" data-testid="acting-answers">
+            {{ actingAnswers(task) }}
+        </div>
         <div v-if="authorizable" class="deprow">
             <n-select v-model:value="authorizeRole" :options="roleOptions" size="small"
                       placeholder="role" style="width: 170px"/>
@@ -80,7 +84,7 @@
         </div>
         <!-- A DELIVERING task on a board with no PRs waits for its push or release to be attested
              (RD2-10); a linked PR is attested from its row under Pull requests instead. -->
-        <div v-if="task.status === 'DELIVERING' && !(task.prUrls?.length)" class="deprow attestrow" data-testid="attest-delivery-row">
+        <div v-if="effectiveStatus(task) === 'DELIVERING' && !(task.prUrls?.length)" class="deprow attestrow" data-testid="attest-delivery-row">
             <template v-if="!deliveryDraft">
                 <n-button size="small" data-testid="attest-delivery" @click="deliveryDraft = attestDraftOf(null)">Attest delivery…</n-button>
             </template>
@@ -236,6 +240,7 @@ import ActorRef from '../ActorRef.vue'
 import DisabledHint from './DisabledHint.vue'
 import { boardLocked, disabledReason, HintedAction, reopenLine } from '@/utils/agentTaskHints'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
+import { actingAnswers, effectiveStatus } from '@/utils/agentOperatorQuestion'
 import { DocumentRelease, completionBlockers } from '@/utils/agentDocuments'
 import { isTerminal, missingRequiredRoles, ts } from '@/utils/agentTaskFormat'
 import { roleOptionsOf } from '@/utils/agentTaskOptions'

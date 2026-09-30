@@ -6,7 +6,7 @@
     </n-alert>
     <n-alert v-if="task.hold" type="error"
              :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review'
-                 : parked ? 'Awaiting the operator' : `On hold (${holdWord(task.hold)})`">
+                 : awaiting ? 'Awaiting the operator' : `On hold (${holdWord(task.hold)})`">
         {{ task.hold.reason }}
         <!-- A gated sign-off is held by the gate, not by the system actor that placed it (RD2-23). -->
         <div class="holdmeta"><template v-if="task.hold.kind === 'HUMAN_GATE'">{{ holdPhrase(task.hold) }}</template><template
@@ -103,16 +103,25 @@
                 The {{ task.role }} hop working this task asks the operator. Your answer is recorded on the task,
                 and the hop resumes with its holder.
             </div>
+            <!-- A task the coordinator seat parked for the operator (task RD4-17): the release is the answer too,
+                 and it returns the task to where it was parked; anything a person does on the task answers it as
+                 well (architecture round 2), recorded as "<action> by <person>: <note>". -->
+            <div v-else-if="seat" class="holdmeta relparked" data-testid="seat-parked">
+                The coordinator asks the operator. Your answer is recorded on the task, and the task returns to
+                {{ returnsTo(task) }}. Anything else you do on it (answering its questions, attesting, superseding,
+                completing, reopening, cancelling, a new order or level) answers it too, and is recorded as the
+                answer.
+            </div>
             <n-input v-model:value="releaseNote" size="small" data-testid="release-note"
-                     :placeholder="parked ? 'Your answer (required)' : 'Note on release (optional)'" style="margin-top: 8px"/>
+                     :placeholder="awaiting ? 'Your answer (required)' : 'Note on release (optional)'" style="margin-top: 8px"/>
             <!-- Every release a person gives may name the role it routes to, a manual hold's as well as a
                  stop's (RD2-20): the verb takes one, and the feed says "routed to <role>". -->
             <n-space style="margin-top: 8px" align="center">
-                <n-select v-if="!parked" v-model:value="releaseRole" :options="roleOptions" size="small"
+                <n-select v-if="!awaiting" v-model:value="releaseRole" :options="roleOptions" size="small"
                           clearable placeholder="role routing picks" style="width: 190px" class="relrole"/>
                 <n-button size="small" class="relbtn" :disabled="releaseNeedsAnswer(task, releaseNote)"
-                          @click="emit('operator-release', releasePayload(task, releaseNote, parked ? null : releaseRole))">
-                    {{ parked ? 'Answer and release' : releaseLabel(loopStop, releaseRole) }}
+                          @click="emit('operator-release', releasePayload(task, releaseNote, awaiting ? null : releaseRole))">
+                    {{ awaiting ? 'Answer and release' : releaseLabel(loopStop, releaseRole) }}
                 </n-button>
             </n-space>
         </template>
@@ -171,7 +180,7 @@ import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
 import { subtaskProgress } from '@/utils/agentTaskLabels'
 import { holdReleaseNote, isLoopStopHold, personMayRelease, releaseLabel, releasePayload, releaseRoleOptions } from '@/utils/agentHoldRelease'
 import { lockBannerText } from '@/utils/agentTaskHints'
-import { parkedHop, releaseNeedsAnswer } from '@/utils/agentOperatorQuestion'
+import { awaitingOperator, parkedHop, releaseNeedsAnswer, returnsTo, seatParked } from '@/utils/agentOperatorQuestion'
 
 const props = defineProps<{
     task: any
@@ -199,6 +208,8 @@ const releaseNote = ref('')
 const releaseRole = ref<string | null>(null)
 const loopStop = computed(() => isLoopStopHold(props.task?.hold))
 const parked = computed(() => parkedHop(props.task))
+const seat = computed(() => seatParked(props.task))
+const awaiting = computed(() => awaitingOperator(props.task))
 const holdWho = computed(() => holdReleaseNote(props.task?.hold))
 const roleOptions = computed(() => releaseRoleOptions(props.roles))
 const gateFindingTitle = ref('')
