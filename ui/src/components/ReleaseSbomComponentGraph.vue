@@ -45,7 +45,7 @@
                 <p v-if="componentLatest" style="margin: 4px 0;" :title="groupLatestTitle(componentLatest)">
                     <strong>Latest version:</strong> {{ componentLatest.version }}
                     <span class="findings-muted">{{ latestFixesText(componentLatest) }}</span>
-                    <span v-if="componentLatest.checked" class="findings-muted">checked {{ checkedDay(componentLatest.checked) }}</span>
+                    <span v-if="componentLatest.checked" class="findings-muted" style="margin-left: 6px;">checked {{ checkedDay(componentLatest.checked) }}</span>
                 </p>
             </div>
 
