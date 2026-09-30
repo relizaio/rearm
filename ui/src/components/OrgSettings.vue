@@ -524,6 +524,8 @@
                                 :components="orgComponents"
                                 :instances="orgInstances"
                                 :clusters="orgClusters"
+                                :lock-org-type="selectedUser.uuid === myUser.uuid"
+                                :show-admin-approvals="true"
                             />
                             <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
                                 <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
@@ -2920,17 +2922,22 @@ const userFields = [
             let el = h('div')
             let els: any[] = []
             if (isOrgAdmin.value) {
-                if (row.uuid !== myUser.value.uuid) {
+                // Your own row: editable -- a sole admin otherwise has no way to take an approval role
+                // -- but not removable, and the dialog keeps your organization-wide level fixed.
+                const editIcon = h(
+                    NIcon,
+                    {
+                        title: row.uuid === myUser.value.uuid ? 'Modify my approval roles' : 'Modify user permissions',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => editUser(row.email)
+                    }, { default: () => h(EditIcon) }
+                )
+                if (row.uuid === myUser.value.uuid) {
+                    els = [editIcon]
+                } else {
                     els = [
-                        h(
-                            NIcon,
-                            {
-                                title: 'Modify user permissions',
-                                class: 'icons clickable',
-                                size: 25,
-                                onClick: () => editUser(row.email)
-                            }, { default: () => h(EditIcon) }
-                        ),
+                        editIcon,
                         h(
                             NIcon,
                             {

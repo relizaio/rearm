@@ -12,7 +12,7 @@
                     v-for="pt in permissionTypesWithAdmin"
                     :key="pt"
                     :value="pt"
-                    :disabled="!!maxOrgType && permissionTypesWithAdmin.indexOf(pt) > permissionTypesWithAdmin.indexOf(maxOrgType)"
+                    :disabled="(lockOrgType && pt !== orgPermission.type) || (!!maxOrgType && permissionTypesWithAdmin.indexOf(pt) > permissionTypesWithAdmin.indexOf(maxOrgType))"
                 >
                     <span v-if="pt === 'ESSENTIAL_READ'" style="display: inline-flex; align-items: center;">
                         {{ translatePermissionName(pt) }}
@@ -48,11 +48,20 @@
         </n-space>
 
         <!-- Organization-Wide Approvals -->
-        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'ADMIN' && orgPermission.type !== 'NONE' && approvalRoles && approvalRoles.length">
+        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'NONE' && (orgPermission.type !== 'ADMIN' || showAdminApprovals) && approvalRoles && approvalRoles.length">
             <n-h5>
                 <n-text depth="1">
                     Organization-Wide Approval Permissions:
                 </n-text>
+                <n-tooltip v-if="orgPermission.type === 'ADMIN'" trigger="hover" style="max-width: 360px;">
+                    <template #trigger>
+                        <n-icon size="16" style="margin-left: 4px; vertical-align: middle; cursor: help;">
+                            <QuestionCircle20Regular />
+                        </n-icon>
+                    </template>
+                    An organization admin can already vote with any approval role. The roles ticked here decide
+                    which releases show up in their "Needs my approval" queue and which approval requests they receive.
+                </n-tooltip>
             </n-h5>
             <n-checkbox-group v-model:value="orgPermission.approvals" @update:value="emitUpdate">
                 <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
@@ -355,6 +364,13 @@ interface Props {
     showSbomProbing?: boolean
     /** highest organization-wide level offered; radios above it are disabled (a personal key is capped by its owner) */
     maxOrgType?: string
+    /** keep the organization-wide level as it is -- an admin editing their own permissions must not demote themselves */
+    lockOrgType?: boolean
+    /**
+     * offer approval roles on an organization-wide ADMIN permission. For a user they populate "Needs my
+     * approval"; a key has no such queue, so the key editors leave this off.
+     */
+    showAdminApprovals?: boolean
     /** when set, only these functions are offered anywhere in the editor (the owner's own functions) */
     allowedFunctions?: string[]
     modelValue: {
