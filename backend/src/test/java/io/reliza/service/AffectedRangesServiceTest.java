@@ -100,16 +100,16 @@ class AffectedRangesServiceTest {
 
 	/** One window holding {@code due} in the first pass, then the end of the table; nothing due by age. */
 	private void windowOf(List<UUID> due) {
-		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(), null));
-		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass(), any()))
 				.thenReturn(new AffectedRangesWindow(due, null));
 	}
 
 	/** Nothing due in the first pass; {@code window} for every window of the second. */
 	private void byAgeWindows(AffectedRangesWindow window) {
-		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any())).thenReturn(window);
-		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any(), any())).thenReturn(window);
+		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(), null));
 	}
 
@@ -239,7 +239,7 @@ class AffectedRangesServiceTest {
 		sweep.refreshDueAffectedRanges();
 
 		ArgumentCaptor<UUID> cursors = ArgumentCaptor.forClass(UUID.class);
-		verify(records, times(2)).nextAffectedRangesWindow(cursors.capture(), anyInt(), secondPass(), secondPass());
+		verify(records, times(2)).nextAffectedRangesWindow(cursors.capture(), anyInt(), secondPass(), secondPass(), any());
 		// The first run starts at the beginning and stops after two fetches; the second picks up there.
 		assertEquals(Arrays.asList(null, due.get(1)), cursors.getAllValues());
 	}
@@ -250,9 +250,9 @@ class AffectedRangesServiceTest {
 		UUID first = due(org, "V-1");
 		UUID second = due(org, "V-2");
 		UUID cursor = UUID.randomUUID();
-		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(), null));
-		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(first), cursor))
 				.thenReturn(new AffectedRangesWindow(List.of(), cursor))
 				.thenReturn(new AffectedRangesWindow(List.of(second), null));
@@ -260,7 +260,7 @@ class AffectedRangesServiceTest {
 
 		sweep.refreshDueAffectedRanges();
 
-		verify(records, times(3)).nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass());
+		verify(records, times(3)).nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass(), any());
 		verify(records).storeAffectedRanges(eq(first), any());
 		verify(records).storeAffectedRanges(eq(second), any());
 	}
@@ -276,12 +276,25 @@ class AffectedRangesServiceTest {
 		ArgumentCaptor<Instant> staleBefore = ArgumentCaptor.forClass(Instant.class);
 		ArgumentCaptor<Instant> undatedStaleBefore = ArgumentCaptor.forClass(Instant.class);
 		verify(records, times(2)).nextAffectedRangesWindow(any(), anyInt(), staleBefore.capture(),
-				undatedStaleBefore.capture());
+				undatedStaleBefore.capture(), any());
 		// The first pass leaves out every refresh by age; the second applies both windows.
 		assertEquals(List.of(Instant.EPOCH, Instant.EPOCH),
 				List.of(staleBefore.getAllValues().get(0), undatedStaleBefore.getAllValues().get(0)));
 		assertEquals(Duration.ofDays(83),
 				Duration.between(staleBefore.getAllValues().get(1), undatedStaleBefore.getAllValues().get(1)));
+	}
+
+	@Test
+	void everyWindowKnowsTheOrgsOnDependencyTrack5() {
+		UUID v5Org = UUID.randomUUID();
+		when(integration.listOrgsWithDtrackV5()).thenReturn(Set.of(v5Org));
+		windowOf(List.of());
+
+		sweep.refreshDueAffectedRanges();
+
+		// Looked up once per run, handed to both passes.
+		verify(integration, times(1)).listOrgsWithDtrackV5();
+		verify(records, times(2)).nextAffectedRangesWindow(any(), anyInt(), any(), any(), eq(Set.of(v5Org)));
 	}
 
 	@Test
@@ -296,7 +309,7 @@ class AffectedRangesServiceTest {
 		ArgumentCaptor<Instant> staleBefore = ArgumentCaptor.forClass(Instant.class);
 		ArgumentCaptor<Instant> undatedStaleBefore = ArgumentCaptor.forClass(Instant.class);
 		verify(records, times(2)).nextAffectedRangesWindow(any(), anyInt(), staleBefore.capture(),
-				undatedStaleBefore.capture());
+				undatedStaleBefore.capture(), any());
 		assertFalse(staleBefore.getAllValues().get(1).isAfter(dayBeforeTheRunEnded));
 		assertFalse(undatedStaleBefore.getAllValues().get(1).isAfter(dayBeforeTheRunEnded));
 	}
@@ -307,9 +320,9 @@ class AffectedRangesServiceTest {
 		UUID org = UUID.randomUUID();
 		UUID edited = due(org, "EDITED");
 		List<UUID> old = List.of(due(org, "OLD-1"), due(org, "OLD-2"), due(org, "OLD-3"));
-		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any(), any()))
 				.thenReturn(new AffectedRangesWindow(old, null));
-		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(edited), null));
 		when(integration.fetchAffectedRanges(eq(org), any())).thenReturn(fetched(1));
 
@@ -333,7 +346,7 @@ class AffectedRangesServiceTest {
 		sweep.refreshDueAffectedRanges();
 
 		ArgumentCaptor<UUID> cursors = ArgumentCaptor.forClass(UUID.class);
-		verify(records, times(2)).nextAffectedRangesWindow(cursors.capture(), anyInt(), firstPass(), firstPass());
+		verify(records, times(2)).nextAffectedRangesWindow(cursors.capture(), anyInt(), firstPass(), firstPass(), any());
 		// The failing records filled the first run's limit; the second run's first pass goes on after them.
 		assertEquals(Arrays.asList(null, failing.get(1)), cursors.getAllValues());
 	}
@@ -342,13 +355,13 @@ class AffectedRangesServiceTest {
 	void aRecordThatFailedInTheFirstPassIsNotTriedAgainInTheSecond() {
 		UUID org = UUID.randomUUID();
 		UUID failing = due(org, "V-1");
-		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), any(), any(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(failing), null));
 		when(integration.fetchAffectedRanges(eq(org), any())).thenReturn(status(AffectedRangesFetchStatus.FAILED));
 
 		sweep.refreshDueAffectedRanges();
 
-		verify(records, times(2)).nextAffectedRangesWindow(any(), anyInt(), any(), any());
+		verify(records, times(2)).nextAffectedRangesWindow(any(), anyInt(), any(), any(), any());
 		verify(integration, times(1)).fetchAffectedRanges(eq(org), any());
 	}
 
@@ -363,16 +376,16 @@ class AffectedRangesServiceTest {
 		byAgeWindows(new AffectedRangesWindow(List.of(old1, old2), null));
 		sweep.refreshDueAffectedRanges();
 		// Run 2: two edited records fill the limit in the first pass.
-		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(due(org, "EDITED-1"), due(org, "EDITED-2")), null));
 		sweep.refreshDueAffectedRanges();
 		// Run 3: the refreshes by age go on after OLD-1.
-		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass()))
+		when(records.nextAffectedRangesWindow(any(), anyInt(), firstPass(), firstPass(), any()))
 				.thenReturn(new AffectedRangesWindow(List.of(), null));
 		sweep.refreshDueAffectedRanges();
 
 		ArgumentCaptor<UUID> cursors = ArgumentCaptor.forClass(UUID.class);
-		verify(records, times(2)).nextAffectedRangesWindow(cursors.capture(), anyInt(), secondPass(), secondPass());
+		verify(records, times(2)).nextAffectedRangesWindow(cursors.capture(), anyInt(), secondPass(), secondPass(), any());
 		assertEquals(Arrays.asList(null, old1), cursors.getAllValues());
 	}
 

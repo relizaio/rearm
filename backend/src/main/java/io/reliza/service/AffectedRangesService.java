@@ -87,10 +87,11 @@ public class AffectedRangesService {
 
 	/**
 	 * The same for a record without an upstream {@code updated} date, whose
-	 * advisory edits nothing else reveals: every record drained from
-	 * Dependency-Track 5, whose finding rows carry no such date. A fix
-	 * published for such a record shows within this many days. Configurable
-	 * via {@code relizaprops.affectedRangesUndatedRefreshDays}.
+	 * advisory edits nothing else reveals: every record of an org on
+	 * Dependency-Track 5, whose finding rows carry no such date (a refresh may
+	 * leave one behind, which no drain then moves). A fix published for such
+	 * a record shows within this many days. Configurable via
+	 * {@code relizaprops.affectedRangesUndatedRefreshDays}.
 	 */
 	@Value("${relizaprops.affectedRangesUndatedRefreshDays:7}")
 	private int undatedRefreshDays;
@@ -119,9 +120,12 @@ public class AffectedRangesService {
 		final Map<UUID, Integer> unreachableInARow = new HashMap<>();
 		/** Records whose fetch failed, so the second pass does not try them again. */
 		final Set<UUID> failedRecords = new HashSet<>();
+		/** Orgs on Dependency-Track 5, whose records are refreshed as undated. */
+		final Set<UUID> undatedOrgs;
 
-		Run(long deadline) {
+		Run(long deadline, Set<UUID> undatedOrgs) {
 			this.deadline = deadline;
+			this.undatedOrgs = undatedOrgs;
 		}
 	}
 
@@ -145,7 +149,7 @@ public class AffectedRangesService {
 		Instant now = Instant.now();
 		Instant staleBefore = now.minus(Duration.ofDays(Math.max(1, refreshDays)));
 		Instant undatedStaleBefore = now.minus(Duration.ofDays(Math.max(1, undatedRefreshDays)));
-		Run run = new Run(System.nanoTime() + TIME_BUDGET.toNanos());
+		Run run = new Run(System.nanoTime() + TIME_BUDGET.toNanos(), integrationService.listOrgsWithDtrackV5());
 		// Nothing is fetched before the epoch, so these thresholds leave out every refresh by age.
 		firstPassResumeAfter = walk(firstPassResumeAfter, Instant.EPOCH, Instant.EPOCH, run);
 		if (!run.stopped) secondPassResumeAfter = walk(secondPassResumeAfter, staleBefore, undatedStaleBefore, run);
@@ -170,7 +174,7 @@ public class AffectedRangesService {
 		UUID cursor = from;
 		do {
 			AffectedRangesWindow window = vulnerabilityRecordService.nextAffectedRangesWindow(cursor, WINDOW_SIZE,
-					staleBefore, undatedStaleBefore);
+					staleBefore, undatedStaleBefore, run.undatedOrgs);
 			for (UUID uuid : window.due()) {
 				if (run.fetched >= fetchLimit || System.nanoTime() > run.deadline) {
 					run.stopped = true;

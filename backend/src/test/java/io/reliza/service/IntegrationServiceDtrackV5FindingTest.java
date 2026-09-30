@@ -111,6 +111,17 @@ class IntegrationServiceDtrackV5FindingTest {
 				"GHSA alias missing");
 	}
 
+	/** An integration whose version is not detected yet is taken as version 5. */
+	@Test
+	void undetectedVersionReadsFindingEndpoint() throws Exception {
+		CapturingService svc = new CapturingService(V5_FINDING_JSON);
+		svc.fetchDependencyTrackVulnerabilityDetailsWithCpe(
+				URI.create("https://dtrack5.example"), "fake-token",
+				"55555555-5555-5555-5555-555555555555", null, null, null, null);
+		assertTrue(svc.fetchedBaseUri.contains("/api/v1/finding/project/"),
+				"an undetected version must hit the finding endpoint, got: " + svc.fetchedBaseUri);
+	}
+
 	/** V4 default still targets the vulnerability endpoint (no regression). */
 	@Test
 	void v4DrainStillReadsVulnerabilityEndpoint() throws Exception {
