@@ -4,6 +4,10 @@
         <div v-if="task.status === 'DELIVERING'" class="holdmeta" style="margin: 0 0 6px">
             Every required role passed; the task completes when these merge.
         </div>
+        <!-- A delivery the seat parked for the operator (RD4-17): attesting or superseding here answers it. -->
+        <div v-if="actingAnswers(task)" class="holdmeta" style="margin: 0 0 6px" data-testid="acting-answers">
+            {{ actingAnswers(task) }}
+        </div>
         <div v-for="c in prChips(task)" :key="c.url" class="prrow">
             <div class="deprow">
                 <n-tag size="small" :bordered="false" :type="c.type">{{ c.state }}</n-tag>
@@ -69,6 +73,7 @@
 import { computed, ref, watch } from 'vue'
 import { NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
 import { AttestDraft, attestable, attestDraftOf, attestPayload, commitProblem, prChips, shortPr } from '@/utils/agentDelivery'
+import { actingAnswers, effectiveStatus } from '@/utils/agentOperatorQuestion'
 import { offersSupersede, supersedeCandidates, supersedeDisabledReason, supersedePayload } from '@/utils/agentTaskAdmin'
 import DisabledHint from './DisabledHint.vue'
 
@@ -83,7 +88,8 @@ const emit = defineEmits<{
 }>()
 
 // Only a DELIVERING task waits on its PRs; everywhere else the chips are the record.
-const attesting = computed(() => !!props.canOperate && props.task?.status === 'DELIVERING')
+// A delivery the seat parked for the operator is attested as a delivery: that answers it (RD4-17).
+const attesting = computed(() => !!props.canOperate && effectiveStatus(props.task) === 'DELIVERING')
 const drafts = ref<Record<string, AttestDraft>>({})
 
 function open (url: string, outcome: 'DELIVERED' | 'ABANDONED') {

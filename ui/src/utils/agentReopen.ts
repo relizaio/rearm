@@ -1,5 +1,6 @@
 // Reopening a completed task to a role (task 56116a77): who is offered the control, which roles it
 // offers, and what it sends. Pure, so the drawer's rules are testable without mounting it.
+import { effectiveStatus } from './agentOperatorQuestion'
 
 /** An org admin: the server's check for agentTaskReopen, mirrored so the control is not offered in vain. */
 export function isOrgAdmin (permissions: any[] | null | undefined, orgUuid: string | null | undefined): boolean {
@@ -13,7 +14,8 @@ export function isOrgAdmin (permissions: any[] | null | undefined, orgUuid: stri
  */
 export function reopenRoleOptions (task: any, roles: any[] | null | undefined,
     canReopen: boolean): { label: string, value: string }[] {
-    if (!canReopen || !['COMPLETED', 'DELIVERING'].includes(task?.status)) return []
+    // A delivery the seat parked for the operator reopens as a delivery: that answers it (RD4-17).
+    if (!canReopen || !['COMPLETED', 'DELIVERING'].includes(effectiveStatus(task) ?? '')) return []
     return (roles ?? [])
         .filter((r: any) => r?.active !== false && r?.name)
         .slice()

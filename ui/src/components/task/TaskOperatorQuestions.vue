@@ -1,6 +1,7 @@
 <template>
-    <!-- The questions a hop of this task parked for the operator (task RD4-5), each with the answer a
-         person's release gave: the record of a decision reached on the board rather than in a chat. -->
+    <!-- The questions a hop of this task (task RD4-5), or the coordinator seat (RD4-17), parked it on for the
+         operator, each with the answer a person's release or action gave: the record of a decision reached on the
+         board rather than in a chat. -->
     <div v-if="questions.length" class="dsec" data-testid="operator-questions">
         <div class="dsec__h">Asked of the operator ({{ questions.length }})</div>
         <div v-for="(q, i) in questions" :key="i" class="oq" :data-answered="q.answer !== null">
@@ -8,7 +9,7 @@
             <div v-if="q.answer !== null" class="oq__a" data-testid="operator-answer">{{ q.answer }}</div>
             <div v-else class="oq__a oq__a--waiting" data-testid="operator-waiting">awaiting the operator</div>
             <div class="oq__meta">
-                asked by <actor-ref :actor="q.askedBy" :task="task"/><template v-if="q.askedAt"> · <agent-time
+                asked by <template v-if="q.askedByCoordinator">the coordinator, </template><actor-ref :actor="q.askedBy" :task="task"/><template v-if="q.askedAt"> · <agent-time
                     :at="q.askedAt"/></template><template v-if="q.answer !== null"> · answered by <actor-ref
                     :actor="q.answeredBy" :task="task"/><template v-if="q.answeredAt"> · <agent-time
                     :at="q.answeredAt"/></template></template>
