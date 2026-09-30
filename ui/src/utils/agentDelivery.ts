@@ -18,6 +18,12 @@ export interface PrChip {
      */
     heads?: string
     moved?: boolean
+    /**
+     * "base moved: N commits since your round" (task RD4-2): commits CI reported on the PR's target branch since
+     * the task's newest round began. Only for a PR registered here, and only when the base moved; it says nothing
+     * about whether the PR still merges.
+     */
+    baseMoved?: string
 }
 
 /** A PR URL as the board matches it: no query, fragment, trailing slash or .git, and case-folded. */
@@ -45,6 +51,12 @@ export function headLine (tested: string | undefined, head: string | undefined):
     return {}
 }
 
+/** The base-moved line of one PR (task RD4-2); nothing when the count is unknown (null) or zero. */
+export function baseMovedLine (baseMovedBy: number | null | undefined): { baseMoved?: string } {
+    if (typeof baseMovedBy !== 'number' || baseMovedBy < 1) return {}
+    return { baseMoved: `base moved: ${baseMovedBy} ${baseMovedBy === 1 ? 'commit' : 'commits'} since your round` }
+}
+
 export function shortPr (url: string): string {
     const parts = String(url ?? '').replace(/\/+$/, '').split('/')
     return parts.slice(-4).join('/')
@@ -59,7 +71,8 @@ export function prChips (task: any): PrChip[] {
     const tested = new Map<string, string>((task?.testedHeads ?? []).map((t: any) => [prKey(t.pr), t.head]))
     if (resolved.length) {
         // An attestation settles the chip (task 18c5c293); the heads line stays on it (task 3b97ccfd).
-        return resolved.map((pr: any) => ({ ...(attestationChip(pr) ?? chipOf(pr)), ...headLine(tested.get(prKey(pr.url)), pr.head) }))
+        return resolved.map((pr: any) => ({ ...(attestationChip(pr) ?? chipOf(pr)), ...headLine(tested.get(prKey(pr.url)), pr.head),
+            ...baseMovedLine(pr.baseMovedBy) }))
     }
     return (task?.prUrls ?? []).map((url: string) => ({ url, label: shortPr(url), state: 'linked', type: 'default',
         title: 'linked PR' }))
