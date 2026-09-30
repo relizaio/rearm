@@ -5,7 +5,8 @@
 // Two documents, richest first, for loadRichestServed: FULL selects the
 // component's findings, which a CE backend that has not mirrored
 // ReleaseSbomComponent.findings rejects; CORE selects only what every backend
-// serves, so the page then shows no badge rather than an error.
+// serves, so the page then shows no badge rather than an error. Both select the
+// release's org, which the finding details panel reads the records of.
 
 import gql from 'graphql-tag'
 import { VULN_SCORE_FRAGMENT } from './vulnerabilityRecordQuery'
@@ -24,6 +25,10 @@ export const SBOM_COMPONENT_FINDINGS_QUERY = gql`
                 topScore { ...VulnScoreFields }${FINDING_FIX_FIELDS}
             }
         }
+        release(releaseUuid: $releaseUuid) {
+            uuid
+            org
+        }
     }
     ${VULN_SCORE_FRAGMENT}
 `
@@ -32,6 +37,10 @@ export const SBOM_COMPONENT_FINDINGS_QUERY_CORE = gql`
     query getReleaseSbomComponentFindings($releaseUuid: ID!, $sbomComponentUuid: ID!) {
         getReleaseSbomComponentGraph(releaseUuid: $releaseUuid, sbomComponentUuid: $sbomComponentUuid) {
             sbomComponentUuid
+        }
+        release(releaseUuid: $releaseUuid) {
+            uuid
+            org
         }
     }
 `
