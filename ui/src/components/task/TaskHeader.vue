@@ -104,11 +104,13 @@
                 and the hop resumes with its holder.
             </div>
             <!-- A task the coordinator seat parked for the operator (task RD4-17): the release is the answer too,
-                 and it returns the task to where it was parked; acting on the task answers it as well. -->
+                 and it returns the task to where it was parked; anything a person does on the task answers it as
+                 well (architecture round 2), recorded as "<action> by <person>: <note>". -->
             <div v-else-if="seat" class="holdmeta relparked" data-testid="seat-parked">
                 The coordinator asks the operator. Your answer is recorded on the task, and the task returns to
-                {{ returnsTo(task) }}. Attesting, superseding, completing or reopening it answers it too, and is
-                recorded as the answer.
+                {{ returnsTo(task) }}. Anything else you do on it (answering its questions, attesting, superseding,
+                completing, reopening, cancelling, a new order or level) answers it too, and is recorded as the
+                answer.
             </div>
             <n-input v-model:value="releaseNote" size="small" data-testid="release-note"
                      :placeholder="awaiting ? 'Your answer (required)' : 'Note on release (optional)'" style="margin-top: 8px"/>

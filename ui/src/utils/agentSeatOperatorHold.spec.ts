@@ -56,14 +56,20 @@ describe('a task the seat parked for the operator', () => {
 
     it('lists the question as the coordinator\'s, and the answer a person\'s action gave', () => {
         const acted = { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-09-30T11:00:00Z', trigger: 'RELEASE_HOLD', actor: pat,
-            note: 'released by Pat Operator: answered by attesting https://github.com/acme/app/pull/401 delivered at 0123456' }
+            note: 'attested by Pat Operator: https://github.com/acme/app/pull/401 delivered at 0123456' }
         const qs = operatorQuestions(held({ status: 'COMPLETED', hold: null,
             statusHistory: [...held().statusHistory, acted] }))
         expect(qs).toHaveLength(1)
         expect(qs[0].question).toBe(QUESTION)
         expect(qs[0].askedByCoordinator).toBe(true)
-        expect(qs[0].answer).toBe('answered by attesting https://github.com/acme/app/pull/401 delivered at 0123456')
+        expect(qs[0].answer).toBe('attested by Pat Operator: https://github.com/acme/app/pull/401 delivered at 0123456')
         expect(qs[0].answeredBy).toEqual(pat)
+        // any other action of a person (architecture round 2): its row is the answer, then the action's own row
+        const cancelled = operatorQuestions(held({ status: 'CANCELLED', hold: null, statusHistory: [...held().statusHistory,
+            { ...acted, to: 'DELIVERING', note: 'cancelled by Pat Operator: a duplicate of RD4-3' },
+            { from: 'DELIVERING', to: 'CANCELLED', at: '2026-09-30T11:00:00Z', trigger: 'CANCEL', actor: pat,
+                note: 'a duplicate of RD4-3' }] }))
+        expect(cancelled[0].answer).toBe('cancelled by Pat Operator: a duplicate of RD4-3')
         // a hop's own question stays the hop's
         const hop = operatorQuestions({ statusHistory: [{ ...asked, from: 'ASSIGNED' }] })
         expect(hop[0].askedByCoordinator).toBe(false)

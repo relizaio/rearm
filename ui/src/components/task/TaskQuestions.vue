@@ -26,6 +26,10 @@
         -->
         <div v-if="answerable.length" class="qans">
             <div class="dsec__h" style="margin-top: 4px">Answer</div>
+            <!-- A task the coordinator seat parked (RD4-17): answering the questions answers the seat's question too. -->
+            <div v-if="actingAnswers(task)" class="qstack__note" data-testid="acting-answers">
+                {{ actingAnswers(task) }}
+            </div>
             <div v-for="f in answerable" :key="f.id" class="qans__row">
                 <div class="qans__id">
                     <span class="qans__tag">{{ f.id }}</span>
@@ -58,6 +62,7 @@ import AgentTime from '../AgentTime.vue'
 import { computed, ref } from 'vue'
 import { NButton, NCheckbox, NInput, NSpace } from 'naive-ui'
 import { roleName } from '@/utils/agentTaskFormat'
+import { actingAnswers } from '@/utils/agentOperatorQuestion'
 import { AnswerPayload, answerPayloadOf, answerableQuestions } from '@/utils/agentTaskQuestions'
 import { aboutLabel, findingsFrameLabel, frameKind, questionRounds } from '@/utils/agentQuestionRounds'
 

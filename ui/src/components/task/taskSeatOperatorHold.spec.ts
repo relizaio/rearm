@@ -9,6 +9,7 @@ import TaskHeader from './TaskHeader.vue'
 import TaskOperatorQuestions from './TaskOperatorQuestions.vue'
 import TaskPullRequests from './TaskPullRequests.vue'
 import TaskActions from './TaskActions.vue'
+import TaskQuestions from './TaskQuestions.vue'
 import { fixtureRoles, richTask } from './taskFixtures'
 
 vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) }))
@@ -36,7 +37,8 @@ describe('a task the seat parked on the task page', () => {
         const note = w.find('[data-testid="seat-parked"]').text()
         expect(note).toContain('The coordinator asks the operator')
         expect(note).toContain('the task returns to delivering')
-        expect(note).toContain('Attesting, superseding, completing or reopening it answers it too')
+        expect(note).toContain('Anything else you do on it (answering its questions, attesting, superseding, completing,'
+            + ' reopening, cancelling, a new order or level) answers it too')
         expect(w.find('[data-testid="parked-hop"]').exists(), 'not a hop\'s question').toBe(false)
         expect(w.find('.relrole').exists(), 'the answer returns the task; nothing routes').toBe(false)
         expect(w.find('.relbtn').text()).toBe('Answer and release')
@@ -68,6 +70,24 @@ describe('a task the seat parked on the task page', () => {
         const a = mount(TaskActions, { props: { task: parked(), roles: fixtureRoles, board: {}, canReopen: true, admin: true } })
         expect(a.find('[data-testid="acting-answers"]').text()).toContain('Acting here answers it')
         expect(a.find('[data-testid="reopen"]').exists(), 'a person may answer by reopening').toBe(true)
+    })
+
+    it('says beside the answer form that answering the questions answers the seat too', () => {
+        // the tester's T-1 (run 1): the answer to the task's open questions is an action like any other
+        const frame = { askingRole: null, answeringRole: null, questionsRelease: null, askedAt: '2026-09-30T09:30:00Z' }
+        const t = parked()
+        t.hold.returnTo = 'AWAITING_COORDINATOR'
+        t.questionStack = [frame]
+        t.openQuestions = [{ id: 'q1', title: 'Who writes the test plan?', status: 'OPEN', priority: 1 }]
+        const w = mount(TaskQuestions, { props: { task: t, roles: fixtureRoles } })
+        expect(w.find('[data-testid="acting-answers"]').text()).toContain('Acting here answers it')
+        expect(w.find('[data-testid="acting-answers"]').text()).toContain('returns to awaiting coordinator')
+        expect(w.find('.qans').text()).toContain('Answer and release')
+        const plain = richTask({ status: 'AWAITING_COORDINATOR', hold: null, questionStack: [frame],
+            openQuestions: [{ id: 'q1', title: 'Who writes the test plan?', status: 'OPEN', priority: 1 }] })
+        const p = mount(TaskQuestions, { props: { task: plain, roles: fixtureRoles } })
+        expect(p.find('.qans').exists()).toBe(true)
+        expect(p.find('[data-testid="acting-answers"]').exists(), 'nobody parked it').toBe(false)
     })
 
     it('says nothing of the kind on a delivery nobody parked', () => {

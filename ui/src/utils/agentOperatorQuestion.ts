@@ -6,8 +6,9 @@
 //
 // The coordinator seat parks a task nobody is working the same way (task RD4-17), from PENDING_INTAKE, QUEUED,
 // AWAITING_COORDINATOR or DELIVERING. Its hold records returnTo, the status a person's answer returns the task to,
-// and a person acting on the task (an attestation, a supersede, a complete, a reopen) answers it too: the release
-// row then reads "released by <person>: answered by <what they did>".
+// and anything else a person does on the task (answering its questions, an attestation, a cancel, a new order ...)
+// answers it too (architecture round 2): the release row then reads "<action> by <person>: <note>", for example
+// "cancelled by Pat: a duplicate", and the page shows that row's note whole as the answer.
 
 export const AWAITING_THE_OPERATOR = 'awaiting the operator: '
 
