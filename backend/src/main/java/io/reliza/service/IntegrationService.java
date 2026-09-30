@@ -8,6 +8,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -105,6 +107,8 @@ import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.IntegrationRepository;
 import io.reliza.service.VulnerabilityRecordService.FetchedAffectedRanges;
 import io.reliza.service.VulnerabilityRecordService.UpsertOrigin;
+import io.reliza.service.VulnerabilityRecordService.UpsertOutcome;
+import io.reliza.service.VulnerabilityRecordService.UpsertResult;
 import lombok.Data;
 
 @Service
@@ -164,6 +168,15 @@ public class IntegrationService {
             .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(dtrackBufferSize))
             .build();
     
+	/** How long a version probe waits for Dependency-Track's answer. */
+	private static final Duration DTRACK_VERSION_PROBE_TIMEOUT = Duration.ofSeconds(10);
+
+	/**
+	 * How often an integration detected as version 4 is probed again, to catch
+	 * an in-place upgrade; an undetected one is probed every sweep run.
+	 */
+	private static final Duration DTRACK_V4_REPROBE_INTERVAL = Duration.ofDays(1);
+
 	private final WebClient dtrackWebClient = WebClient
 			.builder()
 			.exchangeStrategies(dtrackExchangeStrategies)
@@ -289,6 +302,31 @@ public class IntegrationService {
 			.map(UUID::fromString)
 			.collect(Collectors.toList());
 	}
+
+	/**
+	 * The orgs whose Dependency-Track integration is enabled and detected as
+	 * version 5. Their drains carry no upstream advisory dates, which the
+	 * affected-ranges sweep needs to know. An integration whose version is
+	 * not detected is left out, whatever version it is taken as meanwhile:
+	 * the sweep already reads its drained snapshots, which carry no date, as
+	 * undated. One query; an integration that cannot be read is logged and
+	 * left out rather than failing the caller.
+	 */
+	public Set<UUID> listOrgsWithDtrackV5() {
+		Set<UUID> out = new HashSet<>();
+		for (Integration i : repository.listBaseIntegrationsByType(IntegrationType.DEPENDENCYTRACK.name())) {
+			try {
+				IntegrationData id = IntegrationData.dataFromRecord(i);
+				if (id.getOrg() != null && id.getDtrackVersion() == DependencyTrackVersion.V5
+						&& !Boolean.FALSE.equals(id.getIsEnabled())) {
+					out.add(id.getOrg());
+				}
+			} catch (RuntimeException e) {
+				log.warn("Unreadable Dependency-Track integration {}, left out of the version 5 orgs", i.getUuid(), e);
+			}
+		}
+		return out;
+	}
 	
 	/**
 	 * KEV per-org integration upsert (V54). Creates the {@code (org, type,
@@ -337,43 +375,135 @@ public class IntegrationService {
 		if (StringUtils.isNotEmpty(schedule)) id.setSchedule(schedule.toString());
 		// Auto-detect the Dependency-Track generation from its /api/version so the
 		// vuln drain picks the right endpoint without the operator having to know
-		// or declare it. Best-effort: a probe failure leaves it null (== V4).
+		// or declare it. A probe that fails leaves it undetected, for
+		// redetectDtrackVersions to settle, rather than guessing. Changing the
+		// URI or the key means deleting and re-creating the integration, which
+		// detects again.
 		if (type == IntegrationType.DEPENDENCYTRACK && uri != null) {
-			id.setDtrackVersion(detectDtrackVersion(uri, secret));
+			try {
+				id.setDtrackVersion(probeDtrackVersion(uri, secret));
+			} catch (RelizaException e) {
+				log.warn("Could not detect the Dependency-Track version at {}: {}; taken as {} until a probe succeeds",
+						uri, e.getMessage(), IntegrationData.DEFAULT_DTRACK_VERSION);
+			}
 		}
 		return saveIntegration(i, Utils.dataToRecord(id), wu);
 	}
 
 	/**
 	 * Probe a Dependency-Track instance's {@code /api/version} and map its
-	 * reported version to a {@link DependencyTrackVersion}. Returns V5 when the
-	 * reported version starts with {@code 5.} (or greater), otherwise V4.
-	 * Never throws -- an unreachable / unparseable instance resolves to V4, the
-	 * historical default, and the operator can correct it on edit.
+	 * reported version to a {@link DependencyTrackVersion}: V5 when the major
+	 * version is 5 or greater, otherwise the legacy V4.
+	 *
+	 * @throws RelizaException when the instance cannot be reached or does not
+	 *         say which version it is; the caller decides how loudly to log it
 	 */
-	protected DependencyTrackVersion detectDtrackVersion(URI baseUri, String apiToken) {
+	protected DependencyTrackVersion probeDtrackVersion(URI baseUri, String apiToken) throws RelizaException {
+		URI versionUri = URI.create(baseUri.toString() + "/api/version");
+		String body;
 		try {
-			URI versionUri = URI.create(baseUri.toString() + "/api/version");
 			var resp = dtrackWebClient.get().uri(versionUri).header("X-API-Key", apiToken)
-					.retrieve().toEntity(String.class).block();
-			if (resp == null || resp.getBody() == null) return DependencyTrackVersion.V4;
-			@SuppressWarnings("unchecked")
-			Map<String, Object> body = Utils.OM.readValue(resp.getBody(), Map.class);
-			Object version = body.get("version");
-			if (version != null) {
-				String vs = version.toString().trim();
-				int firstDot = vs.indexOf('.');
-				String major = firstDot > 0 ? vs.substring(0, firstDot) : vs;
+					.retrieve().toEntity(String.class).block(DTRACK_VERSION_PROBE_TIMEOUT);
+			body = resp == null ? null : resp.getBody();
+		} catch (Exception e) {
+			throw new RelizaException("no answer from " + versionUri + ": " + e.getMessage());
+		}
+		if (body == null) throw new RelizaException("empty answer from " + versionUri);
+		Object version;
+		try {
+			version = Utils.OM.readValue(body, Map.class).get("version");
+		} catch (Exception e) {
+			throw new RelizaException("unreadable answer from " + versionUri);
+		}
+		String vs = version == null ? "" : version.toString().trim();
+		int firstDot = vs.indexOf('.');
+		String major = firstDot > 0 ? vs.substring(0, firstDot) : vs;
+		try {
+			return Integer.parseInt(major) >= 5 ? DependencyTrackVersion.V5 : DependencyTrackVersion.V4;
+		} catch (NumberFormatException nfe) {
+			throw new RelizaException("unparseable version '" + vs + "' from " + versionUri);
+		}
+	}
+
+	/**
+	 * Integrations already warned about (undetected) or logged as failing,
+	 * so a lasting problem is reported once per process rather than every run.
+	 */
+	private final Set<UUID> dtrackRedetectReported = ConcurrentHashMap.newKeySet();
+
+	/** When each version 4 integration was last probed, per process; see {@link #DTRACK_V4_REPROBE_INTERVAL}. */
+	private final Map<UUID, Instant> dtrackV4ProbedAt = new ConcurrentHashMap<>();
+
+	/**
+	 * Probe the Dependency-Track integrations whose version may be wrong and
+	 * store what the probe tells: every run those not detected yet (created
+	 * before detection existed, or whose instance could not be probed; taken
+	 * as {@link IntegrationData#DEFAULT_DTRACK_VERSION} meanwhile), and once
+	 * per {@link #DTRACK_V4_REPROBE_INTERVAL} those stored as the legacy
+	 * version 4 (upgraded in place since, or stored when a failed probe still
+	 * meant version 4). A version 4 that does not answer keeps its version
+	 * quietly. The row is read again after the probe and that fresh copy is
+	 * written, so a change made while the probe waited is kept and a row
+	 * deleted meanwhile is not brought back. One integration failing does not
+	 * stop the others. The caller holds the {@code REDETECT_DTRACK_VERSIONS}
+	 * lock.
+	 *
+	 * @return integrations whose version was stored
+	 */
+	public int redetectDtrackVersions() {
+		int stored = 0;
+		Instant now = Instant.now();
+		Set<UUID> stillReported = new HashSet<>();
+		Set<UUID> v4 = new HashSet<>();
+		for (Integration row : repository.listBaseIntegrationsByType(IntegrationType.DEPENDENCYTRACK.name())) {
+			try {
+				IntegrationData id = IntegrationData.dataFromRecord(row);
+				DependencyTrackVersion known = id.getDtrackVersion();
+				if (known == DependencyTrackVersion.V5 || id.getUri() == null) continue;
+				if (known == DependencyTrackVersion.V4) {
+					v4.add(row.getUuid());
+					Instant last = dtrackV4ProbedAt.get(row.getUuid());
+					if (last != null && last.plus(DTRACK_V4_REPROBE_INTERVAL).isAfter(now)) continue;
+					dtrackV4ProbedAt.put(row.getUuid(), now);
+				}
+				DependencyTrackVersion detected;
 				try {
-					if (Integer.parseInt(major) >= 5) return DependencyTrackVersion.V5;
-				} catch (NumberFormatException nfe) {
-					log.warn("Unparseable Dependency-Track version '{}' from {}, defaulting to V4", vs, versionUri);
+					detected = probeDtrackVersion(id.getUri(), encryptionService.decrypt(id.getSecret()));
+				} catch (RelizaException e) {
+					if (known == null) {
+						stillReported.add(row.getUuid());
+						if (dtrackRedetectReported.add(row.getUuid())) {
+							log.warn("Could not detect the Dependency-Track version of org {}: {}; taken as {} until a probe succeeds",
+									id.getOrg(), e.getMessage(), IntegrationData.DEFAULT_DTRACK_VERSION);
+						}
+					}
+					continue;
+				}
+				if (detected == DependencyTrackVersion.V4) {
+					v4.add(row.getUuid());
+					dtrackV4ProbedAt.put(row.getUuid(), now);
+				}
+				if (detected == known) continue;
+				Optional<Integration> fresh = repository.findById(row.getUuid());
+				if (fresh.isEmpty()) continue;
+				IntegrationData freshData = IntegrationData.dataFromRecord(fresh.get());
+				if (freshData.getDtrackVersion() != known || !Objects.equals(freshData.getUri(), id.getUri())) continue;
+				freshData.setDtrackVersion(detected);
+				saveIntegration(fresh.get(), Utils.dataToRecord(freshData), WhoUpdated.getAutoWhoUpdated());
+				stored++;
+				log.info("Detected Dependency-Track {} for org {} (was {})", detected, id.getOrg(),
+						known == null ? "not detected" : known);
+			} catch (Exception e) {
+				// An unreadable row or a secret that no longer decrypts: needs someone, once.
+				stillReported.add(row.getUuid());
+				if (dtrackRedetectReported.add(row.getUuid())) {
+					log.error("Dependency-Track version re-detection failed for integration {}", row.getUuid(), e);
 				}
 			}
-		} catch (Exception e) {
-			log.warn("Could not detect Dependency-Track version at {}: {} -- defaulting to V4", baseUri, e.getMessage());
 		}
-		return DependencyTrackVersion.V4;
+		dtrackRedetectReported.retainAll(stillReported);
+		dtrackV4ProbedAt.keySet().retainAll(v4);
+		return stored;
 	}
 	
 	private URI adoUrlEncode (@NonNull String baseUri) {
@@ -759,17 +889,31 @@ public class IntegrationService {
 	 * finding with its component's CPE so the synthetic-SBOM ingest can map
 	 * cpe-only (purl-less) findings back to their canonical component.
 	 *
-	 * <p>Dispatches on {@code dtrackVersion}: V5 reads the finding endpoint
-	 * (see {@link #fetchDependencyTrackFindingDetailsWithCpe}), everything else
-	 * the historical vulnerability endpoint below.
+	 * <p>Dispatches on {@code dtrackVersion} (null: not detected, taken as
+	 * {@link IntegrationData#DEFAULT_DTRACK_VERSION}): Dependency-Track 5
+	 * reads the finding endpoint ({@link #fetchDependencyTrackFindingDetailsWithCpe}),
+	 * the legacy Dependency-Track 4 the vulnerability endpoint
+	 * ({@link #fetchLegacyDtrack4VulnerabilityDetailsWithCpe}).
 	 */
 	public List<VulnWithCpe> fetchDependencyTrackVulnerabilityDetailsWithCpe(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned,
 			DependencyTrackVersion dtrackVersion) throws DatabindException, JacksonException, RelizaException {
-		if (dtrackVersion == DependencyTrackVersion.V5) {
-			return fetchDependencyTrackFindingDetailsWithCpe(dtrackBaseUri, apiToken, dtrackProject,
+		return switch (IntegrationData.effectiveDtrackVersion(dtrackVersion)) {
+			case V5 -> fetchDependencyTrackFindingDetailsWithCpe(dtrackBaseUri, apiToken, dtrackProject,
 					artifactUuid, orgUuid, lastScanned);
-		}
+			case V4 -> fetchLegacyDtrack4VulnerabilityDetailsWithCpe(dtrackBaseUri, apiToken, dtrackProject,
+					artifactUuid, orgUuid, lastScanned);
+		};
+	}
+
+	/**
+	 * Legacy Dependency-Track 4 drain over {@code /api/v1/vulnerability/project/{uuid}},
+	 * whose rows carry the aliases inline. Same output and records refresh as
+	 * the version 5 drain ({@link #fetchDependencyTrackFindingDetailsWithCpe}).
+	 */
+	private List<VulnWithCpe> fetchLegacyDtrack4VulnerabilityDetailsWithCpe(URI dtrackBaseUri,
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned)
+			throws DatabindException, JacksonException, RelizaException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		// Use lastScanned (DTrack scan time) as attributedAt so findings are included in First Scanned VDR
@@ -943,7 +1087,7 @@ public class IntegrationService {
 			String fetcherEndpoint, String apiToken) {
 		if (rowsByCanonical.isEmpty()) return;
 		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
-		List<VulnerabilityRecordData> upserted = new ArrayList<>();
+		List<UpsertResult> upserted = new ArrayList<>();
 		for (var entry : rowsByCanonical.entrySet()) {
 			String canonical = entry.getKey();
 			Set<String> aliases = aliasesByCanonical.getOrDefault(canonical, Set.of());
@@ -1022,7 +1166,7 @@ public class IntegrationService {
 			String fetcherEndpoint, String apiToken) {
 		if (rowsByCanonical.isEmpty()) return;
 		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
-		List<VulnerabilityRecordData> upserted = new ArrayList<>();
+		List<UpsertResult> upserted = new ArrayList<>();
 		for (var entry : rowsByCanonical.entrySet()) {
 			String canonical = entry.getKey();
 			List<DtrackVulnRaw> rows = entry.getValue();
@@ -1182,7 +1326,7 @@ public class IntegrationService {
 		// Concurrent refreshes / drains of the same record are serialised by
 		// the per-record lock inside the upsert.
 		VulnerabilityRecordData persisted = vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases,
-				snapshots, wu, UpsertOrigin.MANUAL_REFRESH);
+				snapshots, wu, UpsertOrigin.MANUAL_REFRESH).data();
 		return refreshAffectedRanges(orgUuid, persisted, fetcherEndpoint, apiToken, found);
 	}
 
@@ -1441,20 +1585,22 @@ public class IntegrationService {
 	 * first failed fetch: the ingest path must not wait on a struggling
 	 * Dependency-Track. What is left, the sweep picks up.
 	 */
-	private void fetchAffectedRangesInline(UUID orgUuid, List<VulnerabilityRecordData> records,
+	private void fetchAffectedRangesInline(UUID orgUuid, List<UpsertResult> upserts,
 			String fetcherEndpoint, String apiToken) {
-		fetchAffectedRangesInline(orgUuid, records, fetcherEndpoint, apiToken,
+		fetchAffectedRangesInline(orgUuid, upserts, fetcherEndpoint, apiToken,
 				INLINE_AFFECTED_RANGES_LIMIT, INLINE_AFFECTED_RANGES_BUDGET);
 	}
 
 	/** {@link #fetchAffectedRangesInline(UUID, List, String, String)} with explicit bounds, for tests. */
-	void fetchAffectedRangesInline(UUID orgUuid, List<VulnerabilityRecordData> records,
+	void fetchAffectedRangesInline(UUID orgUuid, List<UpsertResult> upserts,
 			String fetcherEndpoint, String apiToken, int limit, Duration budget) {
 		long deadline = System.nanoTime() + budget.toNanos();
 		int fetched = 0;
 		int left = 0;
-		for (VulnerabilityRecordData record : records) {
-			if (!createdByThisDrain(record) || record.getAffectedRangesFetchedAt() != null) continue;
+		for (UpsertResult upsert : upserts) {
+			if (upsert == null || upsert.outcome() != UpsertOutcome.INSERTED) continue;
+			VulnerabilityRecordData record = upsert.data();
+			if (record.getAffectedRangesFetchedAt() != null) continue;
 			if (left > 0 || fetched >= limit || System.nanoTime() > deadline) {
 				left++;
 				continue;
@@ -1479,20 +1625,6 @@ public class IntegrationService {
 			log.info("Affected ranges fetched for {} new vulnerability records of org {}; {} left for the nightly sweep",
 					fetched, orgUuid, left);
 		}
-	}
-
-	/**
-	 * Whether the upsert that returned {@code record} created it: an insert
-	 * sets lastUpdatedDate to firstSeenDate, and any later write moves it on.
-	 * Relies on the upsert writing on every call for an existing row (the
-	 * merger stamps lastUpdatedDate each time); should that stop, a row never
-	 * rewritten since its insert would look new here, and the upsert should
-	 * report inserts itself instead.
-	 */
-	private static boolean createdByThisDrain(VulnerabilityRecordData record) {
-		return record != null && record.getUuid() != null && record.getFirstSeenDate() != null
-				&& record.getLastUpdatedDate() != null
-				&& record.getFirstSeenDate().toInstant().equals(record.getLastUpdatedDate().toInstant());
 	}
 
 	/** The package-URL ranges of Dependency-Track single-vulnerability responses, all together. */

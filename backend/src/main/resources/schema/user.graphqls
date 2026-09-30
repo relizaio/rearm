@@ -141,7 +141,8 @@ type Query {
 
 	configuredBaseIntegrations(org: ID!): [IntegrationType]
 	# Detected Dependency-Track generation ("V4"/"V5") of the org's base
-	# DEPENDENCYTRACK integration; null when none is configured.
+	# DEPENDENCYTRACK integration; null when none is configured, or while the
+	# version is not detected yet (the drain then takes it as V5).
 	dependencyTrackVersion(org: ID!): String
 	ciIntegrations(org: ID!): [CiIntegration]
 

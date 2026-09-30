@@ -25,6 +25,7 @@ public enum AdvisoryLockKey {
 	FLUSH_INSTANCE_DEPLOYMENT_COALESCE(33),
 	PURGE_CLI_SESSIONS(34),
 	RECOMPUTE_VULNERABILITY_RECORDS(36),
+	REDETECT_DTRACK_VERSIONS(43),
 	/**
 	 * Namespace of the per-record transaction lock on vulnerability_records
 	 * (VulnerabilityRecordRepository.lockRecord), taken with the two-key form

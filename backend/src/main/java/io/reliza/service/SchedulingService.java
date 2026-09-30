@@ -624,6 +624,36 @@ public class SchedulingService {
         }
     }
 
+    /**
+     * Detect the version of Dependency-Track integrations that have none, and
+     * once a day check the ones detected as version 4 for an in-place upgrade
+     * ({@link IntegrationService#redetectDtrackVersions}). Undetected ones are
+     * taken as Dependency-Track 5 meanwhile. The short initial delay settles
+     * them soon after startup, ahead of most drains; later runs cover an
+     * instance that was unreachable. Each probe is one {@code /api/version}
+     * call of at most 10 seconds. Shared, not {@code saas/}: CE has the
+     * integration too.
+     */
+    @Scheduled(
+            fixedDelayString = "${relizaprops.dtrackVersionRedetectInterval:PT1H}",
+            initialDelayString = "${relizaprops.dtrackVersionRedetectInitialDelay:PT30S}")
+    public void redetectDtrackVersions() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.REDETECT_DTRACK_VERSIONS);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    integrationService.redetectDtrackVersions();
+                } catch (Exception e) {
+                    log.error("Exception during Dependency-Track version re-detection", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.REDETECT_DTRACK_VERSIONS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Dependency-Track version re-detection run failed with an error", e);
+        }
+    }
+
     /** Default recompute sweep schedule -- 04:55 daily. */
     private static final String DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON = "0 55 4 * * *";
 
