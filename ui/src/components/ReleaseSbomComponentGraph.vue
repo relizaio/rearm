@@ -59,6 +59,15 @@
                     size="small"
                 />
             </template>
+            <vulnerability-details-modal
+                v-model:show="vulnDetail.show"
+                :org-uuid="findingsOrgUuid"
+                :vuln-id="vulnDetail.vulnId"
+                :severity="vulnDetail.severity"
+                :known-exploited="vulnDetail.knownExploited"
+                :finding-purl="vulnDetail.purl"
+                :fixed-in="vulnDetail.fixedIn"
+            />
 
             <h4 style="margin-bottom: 4px;">
                 Upstream paths to root ({{ upstreamPaths.length }}{{ upstreamTruncated ? '+' : '' }})
@@ -135,6 +144,8 @@ import { loadRichestServed } from '@/utils/graphqlDriftFallback'
 import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from '@/utils/sbomComponentFindingsQuery'
 import { checkedDay, groupLatestTitle, latestFixCell, latestFixesText, latestOf } from '@/utils/latestVersionDisplay'
 import type { GroupLatest } from '@/utils/latestVersionDisplay'
+import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
+import VulnerabilityDetailsModal from './VulnerabilityDetailsModal.vue'
 
 interface Props {
     releaseUuid: string
@@ -213,6 +224,13 @@ const componentFindings: Ref<any[] | null> = ref(null)
 const latestFound: Ref<Pick<GroupLatest, 'version' | 'checked'> | null> = ref(null)
 let findingsRequest = 0
 
+// The org whose vulnerability records the details panel reads: the route's
+// when the page was opened by purl, else the release's, which comes with the
+// findings (the page is opened by component id without one).
+const releaseOrgUuid: Ref<string> = ref('')
+const findingsOrgUuid = computed(() => props.orgUuid || releaseOrgUuid.value)
+const { vulnDetail, openVulnDetail } = useVulnerabilityDetail(() => findingsOrgUuid.value)
+
 async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: string) {
     const request = ++findingsRequest
     componentFindings.value = null
@@ -221,16 +239,18 @@ async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: s
         const result = await loadRichestServed(graphqlClient, {
             documents: [SBOM_COMPONENT_FINDINGS_QUERY_LATEST, SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE],
             variables: { releaseUuid, sbomComponentUuid },
-            extractPath: data => data?.getReleaseSbomComponentGraph
+            extractPath: data => data
         })
         // a later navigation owns the badge now
         if (request !== findingsRequest || selected.value?.sbomComponentUuid !== sbomComponentUuid) return
+        releaseOrgUuid.value = result.data?.release?.org || ''
+        const graphRow = result.data?.getReleaseSbomComponentGraph
         // which tier was served, by the fields it carries: findings, then the latest version
-        if (Array.isArray(result.data?.findings)) {
-            componentFindings.value = result.data.findings.map((f: any, i: number) => ({ ...f, rowIndex: i }))
+        if (Array.isArray(graphRow?.findings)) {
+            componentFindings.value = graphRow.findings.map((f: any, i: number) => ({ ...f, rowIndex: i }))
         }
-        const latest = result.data?.component?.latestVersion
-        latestFound.value = latest ? { version: latest, checked: result.data.component.latestVersionChecked ?? null } : null
+        const latest = graphRow?.component?.latestVersion
+        latestFound.value = latest ? { version: latest, checked: graphRow.component.latestVersionChecked ?? null } : null
     } catch {
         // decorative: the graph above is what the page is for
     }
@@ -265,7 +285,13 @@ const latestFixColumn = {
 // The Latest fixes column only when the component has a latest version: the
 // backend may not serve it, and without one every cell would be blank.
 const findingColumns: ComputedRef<DataTableColumns<any>> = computed(() => [
-    { title: 'Vulnerability', key: 'vulnId', minWidth: 180, render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY) },
+    {
+        title: 'Vulnerability',
+        key: 'vulnId',
+        minWidth: 180,
+        render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY, (vulnId: string) => openVulnDetail(vulnId,
+            { severity: row.severity, knownExploited: row.knownExploited, purl: row.purl, fixedIn: row.fixedIn }))
+    },
     {
         title: 'Severity',
         key: 'severity',

@@ -29,8 +29,13 @@ describe('ReleaseSbomComponentGraph findings wiring', () => {
         'SBOM_COMPONENT_FINDINGS_QUERY_LATEST', 'checkedDay', 'groupLatestTitle', 'latestFixCell', 'latestFixesText', 'latestOf',
         'isSuppressedAnalysisState', 'ANALYSIS_STATE_OPTIONS', 'ROW_SEVERITIES', 'emptySeverityCounts', 'severityBucketOf',
         'getSeverityTagType', 'renderFindingId', 'FindingType', 'formatPrimaryScore', 'fixedInText', 'fixedInTitle',
-        'constants'])('imports %s, which it uses', (name) => {
+        'constants', 'useVulnerabilityDetail', 'VulnerabilityDetailsModal'])('imports %s, which it uses', (name) => {
         expectImportedAndUsed(code, name)
+    })
+
+    it('opens a finding id in the details panel, not the external page', () => {
+        expect(code).toMatch(/renderFindingId\(h, row\.vulnId, FindingType\.VULNERABILITY, \(vulnId: string\) => openVulnDetail\(/)
+        expect(code).toMatch(/<vulnerability-details-modal[^>]*:org-uuid="findingsOrgUuid"/)
     })
 
     it('loads the findings once the graph row is in', () => {
