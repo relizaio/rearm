@@ -24,6 +24,11 @@ describe('SBOM component findings documents', () => {
         expect(withoutFindings(SBOM_COMPONENT_FINDINGS_QUERY)).toBe(print(SBOM_COMPONENT_FINDINGS_QUERY_CORE))
     })
 
+    it.each([['FULL', SBOM_COMPONENT_FINDINGS_QUERY], ['CORE', SBOM_COMPONENT_FINDINGS_QUERY_CORE]])(
+        '%s selects the release org the finding details panel reads', (_name, doc) => {
+            expect(print(doc)).toMatch(/release\(releaseUuid: \$releaseUuid\) \{\s*uuid\s*org\s*\}/)
+        })
+
     it('CORE is valid against CE', () => {
         expect(errorsAgainst(ceSchema, SBOM_COMPONENT_FINDINGS_QUERY_CORE)).toEqual([])
     })

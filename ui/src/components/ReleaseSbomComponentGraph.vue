@@ -54,15 +54,6 @@
                     size="small"
                 />
             </template>
-            <vulnerability-details-modal
-                v-model:show="vulnDetail.show"
-                :org-uuid="findingsOrgUuid"
-                :vuln-id="vulnDetail.vulnId"
-                :severity="vulnDetail.severity"
-                :known-exploited="vulnDetail.knownExploited"
-                :finding-purl="vulnDetail.purl"
-                :fixed-in="vulnDetail.fixedIn"
-            />
 
             <h4 style="margin-bottom: 4px;">
                 Upstream paths to root ({{ upstreamPaths.length }}{{ upstreamTruncated ? '+' : '' }})
@@ -115,6 +106,16 @@
                 :pagination="{ pageSize: 10 }"
             />
         </div>
+
+        <vulnerability-details-modal
+            v-model:show="vulnDetail.show"
+            :org-uuid="findingsOrgUuid"
+            :vuln-id="vulnDetail.vulnId"
+            :severity="vulnDetail.severity"
+            :known-exploited="vulnDetail.knownExploited"
+            :finding-purl="vulnDetail.purl"
+            :fixed-in="vulnDetail.fixedIn"
+        />
     </div>
 </template>
 
@@ -137,8 +138,8 @@ import { formatPrimaryScore } from '@/utils/vulnScoreDisplay'
 import { fixedInText, fixedInTitle } from '@/utils/fixedInDisplay'
 import { loadRichestServed } from '@/utils/graphqlDriftFallback'
 import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE } from '@/utils/sbomComponentFindingsQuery'
-import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
 import VulnerabilityDetailsModal from './VulnerabilityDetailsModal.vue'
+import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
 
 interface Props {
     releaseUuid: string
@@ -233,9 +234,9 @@ async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: s
         // a later navigation owns the badge now
         if (request !== findingsRequest || selected.value?.sbomComponentUuid !== sbomComponentUuid) return
         releaseOrgUuid.value = result.data?.release?.org || ''
-        const component = result.data?.getReleaseSbomComponentGraph
-        if (result.served === 0 && component) {
-            componentFindings.value = (component.findings || []).map((f: any, i: number) => ({ ...f, rowIndex: i }))
+        const graphRow = result.data?.getReleaseSbomComponentGraph
+        if (result.served === 0 && graphRow) {
+            componentFindings.value = (graphRow.findings || []).map((f: any, i: number) => ({ ...f, rowIndex: i }))
         }
     } catch {
         // decorative: the graph above is what the page is for
@@ -255,13 +256,7 @@ const severityColor = (severity: string) => (constants.VulnerabilityColors as Re
 const analysisStateLabel = (state: string) => ANALYSIS_STATE_OPTIONS.find(o => o.value === state)?.label ?? state
 
 const findingColumns: DataTableColumns<any> = [
-    {
-        title: 'Vulnerability',
-        key: 'vulnId',
-        minWidth: 180,
-        render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY, (vulnId: string) => openVulnDetail(vulnId,
-            { severity: row.severity, knownExploited: row.knownExploited, purl: row.purl, fixedIn: row.fixedIn }))
-    },
+    { title: 'Vulnerability', key: 'vulnId', minWidth: 180, render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY, (vulnId: string) => openVulnDetail(vulnId, row)) },
     {
         title: 'Severity',
         key: 'severity',
